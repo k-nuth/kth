@@ -80,6 +80,8 @@ struct mempool_entry_info {
 
 /// Unified blockchain interface.
 /// Thread safety: get_* methods are NOT thread safe, fetch_* methods are thread safe.
+namespace detail { struct block_chain_internal; }
+
 struct KB_API block_chain {
     using executor_type = ::asio::any_io_executor;
 
@@ -758,6 +760,24 @@ struct KB_API block_chain {
     std::filesystem::path data_dir() const;
 
     /// Access the header index (for headers-first sync).
+    /// True only while the node is hydrating: from the start of block_chain::
+    /// start until the header index has been materialised.
+    ///
+    /// The chain state reads its header from the index, which is the runtime
+    /// source of truth. During hydration there is no index to read yet -- start
+    /// publishes a chain view before the organizer runs sync_tip(), so
+    /// active_at() answers null for every height -- and the durable checkpoint is
+    /// the right place to ask.
+    ///
+    /// Explicit rather than inferred from an absent entry. "The index does not
+    /// have it" means one thing while hydrating and something else afterwards:
+    /// once the node is running, a header the index cannot produce is a broken
+    /// invariant, and quietly answering it from the checkpoint would restore the
+    /// dependency this exists to remove (#697).
+    [[nodiscard]] bool hydrating() const { return hydrating_.load(std::memory_order_acquire); }
+
+
+
     [[nodiscard]] header_index& headers() { return header_index_; }
     [[nodiscard]] header_index const& headers() const { return header_index_; }
 
@@ -923,6 +943,8 @@ struct KB_API block_chain {
     [[nodiscard]] ::asio::awaitable<code>
     filter_transactions(get_data_ptr message) const;
 
+    domain::chain::chain_state::ptr chain_state() const;
+
 private:
     using handle = database::data_base::handle;
 
@@ -1033,7 +1055,6 @@ private:
     /// is what produced the combinations #605 was about. The one legitimate use
     /// is seeding a branch's state below.
     [[nodiscard]]
-    domain::chain::chain_state::ptr chain_state() const;
 
     mutable capture_gate capture_gate_;
 
@@ -1078,6 +1099,32 @@ private:
         uint64_t coinbase_reserve_size;
     };
     mutable boost::atomic_shared_ptr<template_snapshot> template_cache_;
+    /// Ends the hydration phase. Called once, by the start path, after the header
+    /// index has been materialised. One way only: there is no counterpart that
+    /// reopens it, so a run that has begun answering from the index cannot go
+    /// back to answering from the checkpoint.
+    void end_hydration() { hydrating_.store(false, std::memory_order_release); }
+
+    /// The lock and the cursor behind the single header-persistence writer.
+    ///
+    /// The cursor is a cache of what was written, never a substitute for it: it
+    /// moves forward only after a successful write, so losing it costs a rewrite
+    /// and cannot open a gap. Seeded at start from the durable marker, because a
+    /// fresh process over an existing datadir otherwise believes nothing is
+    /// durable and rewrites the whole table on its first request.
+    /// Both are guarded by `header_persist_mutex_` and neither is atomic: the
+    /// cursor belongs to the whole critical section, not to a single load. A
+    /// public unsynchronised read of it is a data race with the writer, whatever
+    /// the reader intends to do with the value.
+    [[nodiscard]] std::mutex& header_persist_mutex() { return header_persist_mutex_; }
+    [[nodiscard]] uint32_t headers_persisted_through() const { return headers_persisted_through_; }
+    void set_headers_persisted_through(uint32_t height) { headers_persisted_through_ = height; }
+
+    friend struct detail::block_chain_internal;
+
+    std::atomic<bool> hydrating_{true};
+    std::mutex header_persist_mutex_;
+    uint32_t headers_persisted_through_{0};
     mutable std::mutex template_rebuild_mutex_;
 
     transaction_organizer transaction_organizer_;

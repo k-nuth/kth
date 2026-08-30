@@ -4,6 +4,7 @@
 
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -46,10 +47,53 @@ bool is_transaction_pool(branch::const_ptr branch) {
     return branch->empty();
 }
 
+namespace detail {
+
+// No production path writes this. Armed only by a control that needs the ABLA
+// lookup to fail with something other than an absent row, which is the one
+// distinction that cannot be arranged from outside: an absent row is the
+// ordinary case, a read that FAILS needs a broken store.
+std::atomic<bool> abla_lookup_fault{false};
+
+void fail_abla_lookup(bool enabled) {
+    abla_lookup_fault.store(enabled, std::memory_order_release);
+}
+
+bool abla_lookup_faulted() {
+    return abla_lookup_fault.load(std::memory_order_acquire);
+}
+
+} // namespace detail
+
+// The header index entry for an active-chain height, or null_index.
+//
+// Every reader below goes through here first. They are asked for a WINDOW of
+// heights -- the retarget span, the median-time-past span -- not just the tip, so
+// a run whose durable table lags by even one block cannot build a chain state at
+// all if they read the table. That is what ended the mainnet run in #697: the
+// header lookup was only the first thing to fail.
+inline
+header_index::index_t active_index_at(block_chain const& chain, size_t height) {
+    return chain.headers().active_at(static_cast<int32_t>(height));
+}
+
 bool populate_chain_state::get_bits(uint32_t& out_bits, size_t height, branch::const_ptr branch) const {
     // branch returns false only if the height is out of range.
     if (branch->get_bits(out_bits, height)) {
         return true;
+    }
+    // From the index: it is the runtime source of truth for headers, and the
+    // durable table is a checkpoint that lags.
+    if (auto const idx = active_index_at(chain_, height);
+        idx != header_index::null_index) {
+        out_bits = chain_.headers().get_bits(idx);
+        return true;
+    }
+
+    // Hydration only. The index is not materialised until sync_tip() runs, and a
+    // start publishes a chain view before that.
+    if ( ! chain_.hydrating()) {
+        return false;
     }
     auto result = chain_.get_bits(height);
     if ( ! result) {
@@ -64,6 +108,19 @@ bool populate_chain_state::get_version(uint32_t& out_version, size_t height, bra
     if (branch->get_version(out_version, height)) {
         return true;
     }
+    // From the index: it is the runtime source of truth for headers, and the
+    // durable table is a checkpoint that lags.
+    if (auto const idx = active_index_at(chain_, height);
+        idx != header_index::null_index) {
+        out_version = chain_.headers().get_version(idx);
+        return true;
+    }
+
+    // Hydration only. The index is not materialised until sync_tip() runs, and a
+    // start publishes a chain view before that.
+    if ( ! chain_.hydrating()) {
+        return false;
+    }
     auto result = chain_.get_version(height);
     if ( ! result) {
         return false;
@@ -77,6 +134,19 @@ bool populate_chain_state::get_timestamp(uint32_t& out_timestamp, size_t height,
     if (branch->get_timestamp(out_timestamp, height)) {
         return true;
     }
+    // From the index: it is the runtime source of truth for headers, and the
+    // durable table is a checkpoint that lags.
+    if (auto const idx = active_index_at(chain_, height);
+        idx != header_index::null_index) {
+        out_timestamp = chain_.headers().get_timestamp(idx);
+        return true;
+    }
+
+    // Hydration only. The index is not materialised until sync_tip() runs, and a
+    // start publishes a chain view before that.
+    if ( ! chain_.hydrating()) {
+        return false;
+    }
     auto result = chain_.get_timestamp(height);
     if ( ! result) {
         return false;
@@ -88,6 +158,15 @@ bool populate_chain_state::get_timestamp(uint32_t& out_timestamp, size_t height,
 bool populate_chain_state::get_block_hash(hash_digest& out_hash, size_t height, branch::const_ptr branch) const {
     if (branch->get_block_hash(out_hash, height)) {
         return true;
+    }
+    if (auto const idx = active_index_at(chain_, height);
+        idx != header_index::null_index) {
+        out_hash = chain_.headers().get_hash(idx);
+        return true;
+    }
+
+    if ( ! chain_.hydrating()) {
+        return false;
     }
     auto result = chain_.get_block_hash(height);
     if ( ! result) {
@@ -264,13 +343,89 @@ chain_state::assert_anchor_block_info_t populate_chain_state::get_assert_anchor_
 #endif // defined(KTH_CURRENCY_BCH)
 
 chain_state::ptr populate_chain_state::populate(size_t connected_top) const {
-    auto const header_result = chain_.get_header_and_abla_state(connected_top);
-    if ( ! header_result) {
-        spdlog::error("[blockchain] Failed to populate chain state: no header at height {}",
-                      connected_top);
+    // From the header index, which is the runtime source of truth for headers.
+    // `internal_db` is a durable checkpoint: it is written incrementally and read
+    // back when the node hydrates or recovers, and asking it during a run makes
+    // the chain state depend on how far a checkpoint happens to have got. It did
+    // -- a run whose chain grew past the point where header sync declared itself
+    // complete reached a height whose header had never been written, could not
+    // describe the batch it had just connected, and could not be reopened
+    // afterwards because a start publishes through this same call (#697).
+    auto const& index = chain_.headers();
+    auto const idx = index.active_at(static_cast<int32_t>(connected_top));
+
+    uint64_t block_size = 0;
+    uint64_t control_block_size = 0;
+    uint64_t elastic_buffer_size = 0;
+
+    domain::chain::header last_header;
+    if (idx != header_index::null_index) {
+        last_header = index.get_header(idx);
+    } else if ( ! chain_.hydrating()) {
+        // Running, and the index cannot produce a header it is the source of
+        // truth for. That is a broken invariant, not a cache miss, and answering
+        // it from the durable checkpoint would restore exactly the dependency
+        // this change removes -- the chain state would again be decided by how
+        // far a checkpoint happened to get (#697).
+        spdlog::error("[blockchain] Failed to populate chain state: the header index has no "
+                      "header at height {} while the node is running", connected_top);
+        return {};
+    } else {
+        // Hydration, and the only place the durable table is the right one to
+        // ask. block_chain::start publishes a chain view before the organizer has
+        // materialised the active chain, so active_at() answers null for every
+        // height until sync_tip() runs. Reading the checkpoint here is what a
+        // start is for -- and the phase is explicit, so it cannot be entered
+        // later by an absent entry alone.
+        auto const stored = chain_.get_header_and_abla_state(connected_top);
+        if ( ! stored) {
+            spdlog::error("[blockchain] Failed to populate chain state: no header at height {}",
+                          connected_top);
+            return {};
+        }
+        last_header = std::get<0>(*stored);
+    }
+
+    // The ABLA state, from the only place it lives.
+    //
+    // Taken separately from the header, and on BOTH paths, because the two are
+    // not the same question. The header has to come from memory or a run
+    // describes itself by how far a checkpoint got, which is what #697 is; the
+    // ABLA state has no home in the index at all, so reading it from the index
+    // would mean answering zero at runtime and whatever the record holds while
+    // hydrating -- the same chain state changing under the node as it leaves the
+    // start. Whether these fields should live in the index is #700's question;
+    // until it is answered they are read where they are written.
+    //
+    // Three answers, and only two of them are the same.
+    //
+    // A record that IS there decides, zeros included: that is what every header
+    // the three-argument push_header wrote holds, and the branch below already
+    // reads zero as "use the static maximum".
+    //
+    // `key_not_found` is the durable table lagging behind the index -- the run in
+    // #697 reached a height whose row had never been written -- and it must not
+    // stop a chain state being built, or the fix is undone.
+    //
+    // Anything else is a read that FAILED: a fault in the store, a malformed
+    // record. Treating that as absence would take a corrupt or unreadable
+    // database and quietly answer with the static maximum, which is a consensus
+    // input invented from an error. It fails closed and says which error it was.
+    auto const stored = detail::abla_lookup_faulted()
+        ? std::expected<database::header_with_abla_state_t, database::result_code>(
+              std::unexpected(database::result_code::other))
+        : chain_.get_header_and_abla_state(connected_top);
+
+    if (stored) {
+        block_size = std::get<1>(*stored);
+        control_block_size = std::get<2>(*stored);
+        elastic_buffer_size = std::get<3>(*stored);
+    } else if (stored.error() != database::result_code::key_not_found) {
+        spdlog::error("[blockchain] Failed to populate chain state: reading the ABLA state at "
+                      "height {} failed with {}", connected_top,
+                      database::result_code_name(stored.error()));
         return {};
     }
-    auto const& [last_header, block_size, control_block_size, elastic_buffer_size] = *header_result;
 
     chain_state::data data;
     data.hash = null_hash;

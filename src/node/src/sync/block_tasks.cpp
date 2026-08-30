@@ -2228,6 +2228,32 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             timestamp_window.push_back(block_timestamp);
         }
 
+        // Step 1a. The headers this batch will need, made durable BEFORE anything
+        // is opened or mutated.
+        //
+        // NOT because the chain state needs them: that reads the index now, and a
+        // batch can be described whether or not the table has caught up. This is
+        // the restart invariant instead -- the height markers this batch is about
+        // to publish must never name a block the durable table cannot describe,
+        // because a start reconciles to those markers and builds a chain state
+        // for them. A run that got that wrong ended consistent and unopenable,
+        // both markers at 966112 over a table that stopped at 966107 (#697).
+        //
+        // Placed before the first mutation and not later: a failure here costs
+        // nothing -- no transition open, no delta applied, no marker moved, and
+        // the next batch simply not attempted -- while after the delta it would
+        // find the set already changed and the markers already published, which
+        // is the state there is no recovery for.
+        //
+        // Not a per-block flush: the range is coalesced and gap-only, so once
+        // header sync has caught up this is a marker read.
+        if ( ! ensure_headers_persisted(chain, chain.headers(), batch_end)) {
+            spdlog::critical("[utxo_build] The headers through height {} could not be made "
+                "durable; this batch is not applied", batch_end);
+            on_fatal("a batch's headers could not be persisted before it mutated the stores");
+            co_return;
+        }
+
         // Entry closes here, before the first mutation, and the captures already
         // admitted are drained before anything moves. A template that entered
         // earlier finishes on copies it already holds; nothing new may capture

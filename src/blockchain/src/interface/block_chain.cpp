@@ -250,6 +250,19 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::error("[blockchain] Failed to read the last heights.");
         return false;
     }
+    // Seed the persistence cursor from what the table already holds. A fresh
+    // process over an existing datadir starts at zero otherwise, and the first
+    // request rewrites every header from 1 to the tip -- idempotent, and on a
+    // mainnet datadir a million rows of it.
+    //
+    // `last_header_height` is written in the same transaction as the headers it
+    // describes, so it cannot name a height the table does not hold: seeding from
+    // it can under-claim after a crash, never over-claim.
+    {
+        std::lock_guard<std::mutex> const guard(header_persist_mutex_);
+        headers_persisted_through_ = connected->header;
+    }
+
     auto const reconciled = reconcile_connected_tip(connected->block);
     if ( ! reconciled) {
         // Fail-closed. An unreadable marker is not an absent one: continuing would
@@ -2015,9 +2028,28 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
         return error::pool_state_failed;
     }
 
-    auto const tip_hash = get_block_hash(connected_tip_height);
-    if ( ! tip_hash) {
-        spdlog::error("[blockchain] Could not resolve the block hash at height {}", connected_tip_height);
+    // From the index, for the same reason the state above is: this is the second
+    // reader of the tip, and reading it from the durable table would keep the
+    // publish depending on how far a checkpoint got even after the chain state
+    // stopped doing so. In #697 that is not hypothetical -- it is where the run
+    // died, one call after the one everybody looked at.
+    hash_digest tip_hash;
+    if (auto const idx = header_index_.active_at(static_cast<int32_t>(connected_tip_height));
+        idx != header_index::null_index) {
+        tip_hash = header_index_.get_hash(idx);
+    } else if (hydrating()) {
+        // The index is not materialised until sync_tip() runs, and a start
+        // publishes before that.
+        auto const stored = get_block_hash(connected_tip_height);
+        if ( ! stored) {
+            spdlog::error("[blockchain] Could not resolve the block hash at height {}",
+                connected_tip_height);
+            return error::pool_state_failed;
+        }
+        tip_hash = *stored;
+    } else {
+        spdlog::error("[blockchain] The header index has no block at height {} while the node "
+            "is running", connected_tip_height);
         return error::pool_state_failed;
     }
 
@@ -2041,7 +2073,7 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
 
     built->state = std::move(state);
     built->connected_tip_height = connected_tip_height;
-    built->tip_hash = *tip_hash;
+    built->tip_hash = tip_hash;
     built->generation = view_generation_.fetch_add(1, std::memory_order_relaxed) + 1;
 
     // One swap. A reader holds the previous triple or this one.
