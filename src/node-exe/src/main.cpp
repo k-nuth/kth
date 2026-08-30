@@ -200,7 +200,14 @@ bool menu(kth::node::parser& metadata, kth::node::executor& host, std::ostream& 
 
 #if ! defined(KTH_DB_READONLY)
     if (config.init_and_run) {
-        if ( ! host.verify_directory()) {
+        auto const present = host.probe_directory();
+        if ( ! present) return false;               // already reported, with the reason
+
+        // Absent is the ordinary first run, and the reason this branch exists.
+        // A directory that could not be queried is not: creating one over a
+        // path the system would not answer for is how a real fault gets turned
+        // into a second, less legible one.
+        if ( ! *present) {
             auto res = host.do_initchain(version());
             if ( ! res) {
                 return res;
