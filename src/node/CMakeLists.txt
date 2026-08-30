@@ -305,6 +305,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/body_range_extension.cpp
           test/body_range_reopen.cpp
           test/connected_tip_remainder.cpp
+          test/directory_probe.cpp
           test/executor_lifecycle.cpp
           test/internal_shutdown_exit.cpp
           test/scope_action.cpp

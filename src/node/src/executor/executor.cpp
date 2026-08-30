@@ -57,7 +57,6 @@ using kth::database::data_base;
 using std::placeholders::_1;
 
 static constexpr int directory_exists = 0;
-static constexpr int directory_not_found = 2;
 static auto const mode = std::ofstream::out | std::ofstream::app;
 
 // =============================================================================
@@ -623,8 +622,10 @@ void executor::begin_admitted_start(start_handler handler) {
 
 #if ! defined(KTH_DB_READONLY)
     if (auto const ec = init_directory_if_necessary(); ec != error::success) {
-        auto const& directory = config_.database.directory;
-        spdlog::error("[node] Failed to create directory {} with error, '{}'.", directory.string(), ec.message());
+        // Which of the two stages failed, and why, is reported by the one that
+        // knows: testing the directory and creating it fail for different
+        // reasons and a single message here could only be wrong about one of
+        // them.
         failure = ec;
         return;             // as above (#673)
     }
@@ -1155,31 +1156,41 @@ bool executor::do_initchain(std::string_view extra) {
 }
 
 error_code executor::init_directory_if_necessary() {
-    if (verify_directory()) return error::success;
+    auto const& directory = config_.database.directory;
 
+    auto const present = probe_directory();
+    if ( ! present) return present.error();     // already reported, with the reason
+
+    if (*present) return error::success;
+
+    // Absent. Not a failure: this is a first run, and creating it is what this
+    // function is for.
     error_code ec;
     if (init_directory(ec)) return error::success;
 
+    spdlog::error("[node] Failed to create directory {} with error, '{}'.",
+        directory.string(), ec.message());
     return ec;
 }
 #endif // ! defined(KTH_DB_READONLY)
 
-bool executor::verify_directory() {
-    error_code ec;
+std::expected<bool, std::error_code> executor::probe_directory() const {
     auto const& directory = config_.database.directory;
 
-    if (exists(directory, ec)) {
-        return true;
-    }
+    error_code ec;
+    auto const present = exists(directory, ec);
 
-    if (ec.value() == directory_not_found) {
-        spdlog::error("[node] The {} directory is not initialized, run: kth --initchain", directory.string());
-        return false;
-    }
+    // `exists` does not report a path that is simply not there as an error:
+    // absence is the answer, and `ec` stays clear — as it does for a path whose
+    // parent is not a directory, which the standard also folds into "not
+    // found". Reading a clear `ec` as a failure is what put an error line
+    // naming errno 0, `Success`, on the first line of every first run, and it
+    // is why the branch meant for a real failure was never reached.
+    if ( ! ec) return present;
 
-    auto const message = ec.message();
-    spdlog::error("[node] Failed to test directory {} with error, '{}'.", directory.string(), message);
-    return false;
+    spdlog::error("[node] Failed to test directory {} with error, '{}'.",
+        directory.string(), ec.message());
+    return std::unexpected(ec);
 }
 
 void executor::print_version(std::string_view extra) {
