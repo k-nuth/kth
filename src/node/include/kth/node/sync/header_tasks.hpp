@@ -8,6 +8,7 @@
 #include <asio/awaitable.hpp>
 
 #include <kth/blockchain.hpp>
+
 #include <kth/node/sync/messages.hpp>
 
 namespace kth::node::sync {
@@ -24,13 +25,12 @@ namespace kth::node::sync {
 //
 // =============================================================================
 
-// max_header_height: The maximum height to sync headers to.
-// When from_height >= max_header_height, signals sync complete.
-// Use 0 for unlimited (sync to network tip).
+// max_header_height: the maximum height to sync headers to. When
+// from_height >= max_header_height, the tip is confirmed. 0 for unlimited.
 ::asio::awaitable<void> header_download_task(
     header_download_input_channel& input,
     header_download_output_channel& output,
-    uint32_t max_header_height = 0
+    uint32_t max_header_height
 );
 
 // =============================================================================

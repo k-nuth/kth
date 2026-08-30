@@ -319,6 +319,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/configuration.cpp
           test/header_list.cpp
           test/header_stall_after_empty.cpp
+          test/header_tip_confirmation.cpp
+          test/header_tip_block_sync.cpp
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp

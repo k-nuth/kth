@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <variant>
+#include <optional>
 #include <vector>
 
 #include <asio/steady_timer.hpp>
@@ -40,6 +41,17 @@ struct stop_request {};
 struct header_request {
     uint32_t from_height;
     hash_digest from_hash;
+
+    // The peer whose answer produced this request and moved nothing. It is
+    // spent for this walk: a peer that returns headers the chain already holds
+    // has said exactly what one that returns none has, and asking it again
+    // reproduces its answer. Empty when the request does not follow such an
+    // answer.
+    //
+    // The download task cannot work this out for itself — whether headers were
+    // new is the organizer's verdict, two hops downstream — so the coordinator
+    // carries it back on the request it sends next.
+    std::optional<uint64_t> spent_peer;
 };
 
 struct downloaded_headers {
