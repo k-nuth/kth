@@ -110,6 +110,22 @@ public:
     using start_handler = std::function<void(code)>;
     using stop_handler = std::function<void()>;
 
+    /// Wait, up to `patience`, for the node's own run to finish. True if it has.
+    ///
+    /// The unambiguous half of "an external signal OR the node finished on its
+    /// own". A caller that owns the process needs both: a node that stops because
+    /// something inside it failed has ended just as definitely as one that was
+    /// signalled, and waiting only for the signal leaves the process alive with
+    /// its threads held until somebody notices (#698).
+    ///
+    /// This is the run coroutine having completed -- published once and never
+    /// unpublished -- and not `running()`, which reports a lifecycle state that
+    /// says nothing about whether anyone still owes work. The wait is on a
+    /// condition variable rather than the run-completed future, which release()
+    /// already waits on: one future, one waiter.
+    [[nodiscard]]
+    bool wait_for_run_completion(std::chrono::milliseconds patience);
+
     executor(kth::node::configuration const& config, bool stdout_enabled = true);
     ~executor() noexcept;
 
@@ -438,6 +454,11 @@ private:
     std::promise<void> run_completed_promise_;
     std::future<void> run_completed_future_;
     std::atomic<bool> run_completed_satisfied_{false};
+
+    // Woken once, by satisfy_run_completed, for a caller that owns the process
+    // and is waiting to learn the node ended without being told to.
+    std::mutex run_completed_mutex_;
+    std::condition_variable run_completed_cv_;
 };
 
 } // namespace kth::node
