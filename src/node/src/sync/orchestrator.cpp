@@ -766,6 +766,7 @@ static
     //    Sequential header download with sticky peer selection
     // -------------------------------------------------------------------------
     auto const max_header_height = 0u;  // 0 = unlimited, download all headers from peers
+
     all_tasks.spawn("header_download_task", header_download_task(
         header_download_input,
         header_download_output,
@@ -1390,7 +1391,36 @@ static
                     }
                 }
 
-                if (result->result) {
+                if (result->result.value() == error::stale_chain) {
+                    // Not a failure, and this is the distinction the node did not
+                    // make. `stale_chain` is the organizer saying the batch was
+                    // valid and added nothing — which is what a peer sends when
+                    // it is at the same tip we are, and answers our locator with
+                    // headers we already hold. The wire cannot tell that apart
+                    // from progress; only this verdict can.
+                    //
+                    // Treated as a peer failure it produced an identical request
+                    // to the same peer, eleven times in 1.43 s, and never let the
+                    // tip be confirmed (#705). The peer is spent for this walk
+                    // instead, and the download task asks the next eligible one.
+                    std::optional<uint64_t> spent;
+                    if (result->source_peer) {
+                        spent = result->source_peer->nonce();
+                    }
+
+                    spdlog::debug("[sync_coordinator] No new headers at height {} from peer {}; "
+                        "asking the next eligible peer",
+                        headers_synced_to,
+                        result->source_peer ? result->source_peer->authority_with_agent() : "unknown");
+
+                    if ( ! header_download_input.try_send(std::error_code{}, header_request{
+                        .from_height = headers_synced_to,
+                        .from_hash = active_hash_at(organizer.index(), headers_synced_to),
+                        .spent_peer = spent
+                    })) {
+                        spdlog::warn("[sync_coordinator] Channel full, no-progress header_request dropped");
+                    }
+                } else if (result->result) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",
                         result->result.message(),

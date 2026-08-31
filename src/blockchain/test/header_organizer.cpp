@@ -103,6 +103,52 @@ TEST_CASE("header_organizer stale batch returns stale_chain error", "[header_org
     REQUIRE(result.headers_added == 0);
 }
 
+TEST_CASE("header_organizer a batch of headers already held adds nothing and reports stale_chain",
+          "[header_organizer][stale]") {
+    // The premise of #705, pinned. A peer answering a locator at the tip may
+    // reply with headers the index already holds -- 2000 of them, on BCH
+    // mainnet, in 157ms -- rather than with an empty message. On the wire that
+    // is indistinguishable from progress; only this verdict tells them apart.
+    //
+    // Distinct from the case above, which submits NEW headers on a side branch.
+    // Here every header is one the index already has.
+    header_index index;
+    build_chain(index, 10);
+    REQUIRE(index.size() == 10);
+
+    auto settings = make_test_settings();
+    header_organizer organizer(index, settings, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+
+    // Rebuild the very headers the chain was built from, in order, exactly as a
+    // peer would re-send them.
+    domain::message::header::list known;
+    hash_digest prev = null_hash;
+    for (uint32_t i = 0; i < 10; ++i) {
+        auto hdr = make_header_with_prev(prev, i);
+        prev = kth::domain::chain::hash(hdr);
+        known.push_back(hdr);
+    }
+    REQUIRE(prev == index.get_hash(9));     // the fixture really did re-derive the chain
+
+    auto const before = index.size();
+    auto const result = organizer.add_headers(known);
+
+    // Nothing new, and the index did not grow.
+    CHECK(result.headers_added == 0);
+    CHECK(index.size() == before);
+
+    // Reported as stale_chain, which the coordinator must read as "this peer
+    // has nothing new" and not as "this peer failed". Read as a failure it
+    // produced an identical request to the same peer, eleven times in 1.43s,
+    // and the tip was never confirmed.
+    CHECK(result.error == error::stale_chain);
+
+    // And it is not a reorg candidate: same chain, same work.
+    CHECK_FALSE(result.reorg_candidate);
+}
+
 TEST_CASE("header_organizer normal batch returns success", "[header_organizer][stale]") {
     // Setup: Create an index with a chain of 10 headers
     header_index index;
