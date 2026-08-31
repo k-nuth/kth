@@ -7,12 +7,14 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <expected>
 #include <functional>
 #include <future>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <system_error>
 #include <thread>
 
 #include <kth/database/databases/property_code.hpp>
@@ -205,7 +207,16 @@ public:
     std::error_code init_directory_if_necessary();
 #endif
 
-    bool verify_directory();
+    /// Whether the configured datadir is there.
+    ///
+    /// Three answers, not two: it is there, it is not there, or the question
+    /// could not be answered. Absence is an answer — a datadir that does not
+    /// exist yet is the ordinary first run, and both callers go on to create
+    /// it — so only the third case is a failure, and only the third case
+    /// carries a reason. It is also the only one that is reported.
+    [[nodiscard]]
+    std::expected<bool, std::error_code> probe_directory() const;
+
     void print_version(std::string_view extra);
     void initialize_output(std::string_view extra, kth::database::db_mode_type db_mode);
 

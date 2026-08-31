@@ -112,8 +112,8 @@ node::configuration make_config(std::filesystem::path const& base) {
 // Two causes, deliberately far apart in the start sequence, so that what the
 // controls pin is the executor's teardown and not one particular way of failing.
 
-// A database directory that exists and holds no database. verify_directory() is
-// satisfied by its existence, so nothing initializes it, and LMDB fails to open
+// A database directory that exists and holds no database. probe_directory()
+// reports it as present, so nothing initializes it, and LMDB fails to open
 // before the blockchain is ever consulted. This is the shape a datadir has after
 // a half-finished copy or a wiped volume.
 void make_unopenable_database(node::configuration const& cfg) {
