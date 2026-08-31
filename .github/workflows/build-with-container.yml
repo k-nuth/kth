@@ -275,7 +275,7 @@ jobs:
           # is fine.
           EXTRA_CONAN_OPTS=""
           if [ "${{ inputs.enable-asan }}" = "true" ]; then
-            EXTRA_CONAN_OPTS="-o secp256k1_use_asm=False"
+            EXTRA_CONAN_OPTS="-o secp256k1_asm=off"
           fi
 
           # Choose build strategy based on whether we need to upload

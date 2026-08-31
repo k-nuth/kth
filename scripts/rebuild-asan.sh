@@ -65,7 +65,7 @@ cmake --preset conan-relwithdebinfo \
     -DCMAKE_C_FLAGS="${SANITIZER_FLAGS}" \
     -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
-    -DSECP256K1_USE_ASM=OFF \
+    -DSECP256K1_ASM=OFF \
     -DENABLE_TSAN_TESTS=OFF
 
 if [ $? -ne 0 ]; then

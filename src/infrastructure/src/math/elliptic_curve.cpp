@@ -87,9 +87,12 @@ bool verify_signature(secp256k1_context const* context,
     secp256k1_pubkey const point, hash_digest const& hash,
     ec_signature const& signature) {
 
-    // Copy to avoid exposing external types.
+    // Load the compact (r||s) signature. The secp256k1_ecdsa_signature
+    // internal layout is opaque, so parse rather than copy its bytes.
     secp256k1_ecdsa_signature parsed;
-    std::copy_n(signature.begin(), ec_signature_size, std::begin(parsed.data));
+    if (secp256k1_ecdsa_signature_parse_compact(context, &parsed, signature.data()) != 1) {
+        return false;
+    }
 
     // secp256k1_ecdsa_verify rejects non-normalized (low-s) signatures, but
     // bitcoin does not have such a limitation, so we always normalize.
@@ -250,7 +253,7 @@ bool parse_signature(ec_signature& out, const der_signature& der_signature, bool
     }
 
     if (valid) {
-        std::copy_n(std::begin(parsed.data), ec_signature_size, out.begin());
+        secp256k1_ecdsa_signature_serialize_compact(context, out.data(), &parsed);
     }
 
     return valid;
@@ -275,11 +278,14 @@ bool check_low_s(der_signature const& der_signature) {
 }
 
 bool encode_signature(der_signature& out, ec_signature const& signature) {
-    // Copy to avoid exposing external types.
-    secp256k1_ecdsa_signature sign;
-    std::copy_n(signature.begin(), ec_signature_size, std::begin(sign.data));
-
     auto const context = signing.context();
+
+    // Load the compact (r||s) signature; the internal layout is opaque.
+    secp256k1_ecdsa_signature sign;
+    if (secp256k1_ecdsa_signature_parse_compact(context, &sign, signature.data()) != 1) {
+        return false;
+    }
+
     auto size = max_der_signature_size;
     out.resize(size);
 
@@ -292,11 +298,13 @@ bool encode_signature(der_signature& out, ec_signature const& signature) {
 }
 
 bool encode_signature(compact_signature& out, ec_signature const& signature) {
-    // Copy to avoid exposing external types.
-    secp256k1_ecdsa_signature sign;
-    std::copy_n(signature.begin(), ec_signature_size, std::begin(sign.data));
-
     auto const context = signing.context();
+
+    // Load the compact (r||s) signature; the internal layout is opaque.
+    secp256k1_ecdsa_signature sign;
+    if (secp256k1_ecdsa_signature_parse_compact(context, &sign, signature.data()) != 1) {
+        return false;
+    }
 
     if (secp256k1_ecdsa_signature_serialize_compact(context, out.data(), &sign) != 1) {
         return false;
@@ -322,7 +330,7 @@ bool sign_ecdsa(ec_signature& out, ec_secret const& secret, hash_digest const& h
         return false;
     }
 
-    std::copy_n(std::begin(signature.data), out.size(), out.begin());
+    secp256k1_ecdsa_signature_serialize_compact(context, out.data(), &signature);
     return true;
 }
 
@@ -372,14 +380,17 @@ bool verify_signature(ec_uncompressed const& point, hash_digest const& hash, ec_
 }
 
 bool verify_signature(byte_span point, hash_digest const& hash, ec_signature const& signature) {
-    // Copy to avoid exposing external types.
+    auto const context = verification.context();
+
+    // Load the compact (r||s) signature; the internal layout is opaque.
     secp256k1_ecdsa_signature parsed;
-    std::copy_n(signature.begin(), ec_signature_size, std::begin(parsed.data));
+    if (secp256k1_ecdsa_signature_parse_compact(context, &parsed, signature.data()) != 1) {
+        return false;
+    }
 
     // secp256k1_ecdsa_verify rejects non-normalized (low-s) signatures, but
     // bitcoin does not have such a limitation, so we always normalize.
     secp256k1_ecdsa_signature normal;
-    auto const context = verification.context();
     secp256k1_ecdsa_signature_normalize(context, &normal, &parsed);
 
     // This uses a byte span and calls secp256k1_ec_pubkey_parse() in place of
