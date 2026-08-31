@@ -141,6 +141,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/detail/block_announcements.cpp
+    src/detail/header_request_delivery.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
@@ -320,6 +322,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_list.cpp
           test/header_stall_after_empty.cpp
           test/header_tip_confirmation.cpp
+          test/block_announcements.cpp
           test/header_tip_block_sync.cpp
           test/main.cpp
           test/node.cpp

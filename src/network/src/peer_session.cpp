@@ -123,6 +123,7 @@ peer_session::~peer_session() {
     headers_responses_.close();
     block_responses_.close();
     addr_responses_.close();
+
 }
 
 // =============================================================================
@@ -254,7 +255,26 @@ void peer_session::stop(code const& ec) {
     headers_responses_.close();
     block_responses_.close();
     addr_responses_.close();
+
+    // Closing does not discard what a channel already holds: a closed channel
+    // still hands out its buffered values and only then reports closure. A
+    // response nobody will ever read — the one a read loop delivers after the
+    // requester timed out, retired the session and drained — would otherwise
+    // sit there for as long as this object lives. Emptied here, where it is
+    // certain nobody is coming for it.
+    drain_response_channels();
+
     spdlog::debug("[peer_session] stop() checkpoint 12: all channels closed, done");
+}
+
+void peer_session::drain_response_channels() {
+    auto drain = [](response_channel& channel) {
+        while (channel.try_receive([](std::error_code, raw_message) {})) {
+        }
+    };
+    drain(headers_responses_);
+    drain(block_responses_);
+    drain(addr_responses_);
 }
 
 bool peer_session::stopped() const {
@@ -283,6 +303,41 @@ bool peer_session::stopped() const {
 
 peer_session::inbound_channel& peer_session::messages() {
     return inbound_;
+}
+
+void peer_session::expect_headers_response() {
+    // A retired session is never asked again, so nothing should be arming it.
+    // Refusing here rather than asserting keeps the rule true even if a caller
+    // forgets to check.
+    if (retired_from_header_requests_.load(std::memory_order_acquire)) {
+        return;
+    }
+    awaiting_headers_response_.store(true, std::memory_order_release);
+}
+
+bool peer_session::claim_headers_response() {
+    return awaiting_headers_response_.exchange(false, std::memory_order_acq_rel);
+}
+
+void peer_session::retire_from_header_requests() {
+    retired_from_header_requests_.store(true, std::memory_order_release);
+    awaiting_headers_response_.store(false, std::memory_order_release);
+
+    // And the session ends. Retiring without ending it would be a trap: the
+    // connection stays up, holds its slot, and the connection manager never
+    // falls below target and never dials a replacement — so with enough
+    // timeouts every slot is held by a session that cannot serve headers, and
+    // header sync has no eligible peer and no way to ever get one.
+    //
+    // Ending it means the manager notices, dials, and what answers is a new
+    // session with a new nonce: safe to ask again, because nothing of ours is
+    // outstanding on it. It is also what disposes of a response delivered after
+    // the requester gave up, since stop() drains the response channels.
+    stop();
+}
+
+bool peer_session::retired_from_header_requests() const {
+    return retired_from_header_requests_.load(std::memory_order_acquire);
 }
 
 peer_session::response_channel& peer_session::headers_responses() {

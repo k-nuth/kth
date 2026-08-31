@@ -93,6 +93,13 @@ enum class request_outcome {
     // two notions of eligible disagreeing is the shape of this whole defect.
     auto is_eligible = [&](network::peer_session::ptr const& p) {
         if (p->stopped()) return false;
+        // A session that timed out on a header request gave up without
+        // consuming the answer, so a `headers` may still be in flight on it with
+        // nothing about it to recognise. Asking again would let that message be
+        // attributed to the new request (#706), so the session is retired — and
+        // retiring ends it, because a session kept alive but unusable for
+        // headers would hold a slot the connection manager never replaces.
+        if (p->retired_from_header_requests()) return false;
         if (last_failed_nonce && p->nonce() == *last_failed_nonce) return false;
         if (peers_without_progress.contains(p->nonce())) return false;
         return true;
@@ -336,20 +343,27 @@ enum class request_outcome {
         spdlog::debug("[header_download] Received {} headers from {} in {}ms",
             headers_count, peer->authority_with_agent(), elapsed_ms);
 
-        // Send to validation
-        if (!output.try_send(std::error_code{}, downloaded_headers{
+        // Send to validation, awaited for the same reason the completion signal
+        // is: dropping it leaves the request parked with no event behind it, so
+        // the coordinator goes on believing a walk is running and an
+        // announcement coalesced against it is never reconsidered. Draining
+        // this channel does not wake this task either — it reads from `input`,
+        // and nothing turns a drop here into an inbound message — so the drop
+        // used to wait on unrelated peer churn, exactly the way #692 did.
+        //
+        // Waiting is backpressure on a task that has nothing else to do until
+        // these headers are taken.
+        auto [send_ec] = co_await output.async_send(std::error_code{}, downloaded_headers{
             .headers = result->elements(),
             .start_height = request.from_height + 1,
             .source_peer = peer
-        })) {
-            // No driver. Draining this output channel does not wake this task:
-            // it reads from `input`, and nothing turns a drop here into an
-            // inbound message. The request then waits on unrelated peer churn,
-            // exactly the way #692 did. Tracked separately -- the trigger is
-            // saturation, not an empty answer, and the fix is backpressure.
-            spdlog::warn("[header_download] Channel full, headers dropped");
-            pending_request = request;
-            co_return request_outcome::parked_for_external_event;
+        }, ::asio::as_tuple(::asio::use_awaitable));
+
+        if (send_ec) {
+            // Closed, which happens on shutdown and nowhere else.
+            spdlog::debug("[header_download] Output channel closed while delivering headers");
+            pending_request.reset();
+            co_return request_outcome::settled;
         }
 
         // Report performance to peer_provider (for slow peer tracking)

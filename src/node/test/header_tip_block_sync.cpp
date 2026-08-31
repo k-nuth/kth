@@ -61,7 +61,12 @@ struct captured_log {
     std::shared_ptr<spdlog::logger> previous;
 
     captured_log()
-        : sink(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(4096))
+        // Large enough that nothing these cases count can be evicted before
+        // they count it. The coordinator's stop bridge logs four lines every
+        // 100ms, so a run that spends a minute winding down writes thousands on
+        // its own, and an exact count taken afterwards would be counting what
+        // survived rather than what happened.
+        : sink(std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(262144))
         , installed(std::make_shared<spdlog::logger>("captured", sink))
         , previous(spdlog::default_logger()) {
         installed->set_level(spdlog::level::trace);
@@ -369,4 +374,303 @@ TEST_CASE("integrated: confirming the tip opens the first block range, exactly o
     REQUIRE(ranged != std::string::npos);
     CHECK(confirmed < completed);
     CHECK(completed < ranged);
+}
+
+TEST_CASE("integrated: a block announced after the tip is confirmed is taken in",
+          "[header_tip][integration][announcements]") {
+    // The point of #706, end to end. The node confirms the tip, starts block
+    // sync, and then the chain moves. Nothing polls, and until this change
+    // nothing observed the eight announcements that arrived per block either —
+    // so the confirmed tip stayed confirmed and the new block was never asked
+    // for.
+    chain_fixture fixture{"tip_announce"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - 35 * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == 5);
+    persist_headers(fixture, trunk, 1);
+
+    std::vector<domain::chain::block> const connected(trunk.begin(), trunk.begin() + 2);
+    connect_bodies(fixture, connected, 1);
+
+    // The block that appears while the node is not looking. Its header is what
+    // the peer will hand over when asked again.
+    auto const arrival = mine_block(prev, 6, base_time + 6 * block_spacing, 0, {}, 0);
+    auto const arrival_hash = arrival.hash();
+    REQUIRE(fixture.organizer().index().find(arrival_hash)
+        == blockchain::header_index::null_index);
+
+    ::asio::io_context peer_ioc;
+    auto peer_config = peer_settings();
+    auto peer = make_peer(peer_ioc, peer_config, 9201);
+    claim_height(peer, 5);
+
+    // First the five it already has, so the tip is confirmed; then the six,
+    // which is what a peer answers once the chain has moved.
+    {
+        network::raw_message known;
+        known.payload = known_headers_payload(peer, trunk);
+        REQUIRE(peer->headers_responses().try_send(std::error_code{}, std::move(known)));
+    }
+    auto with_arrival = trunk;
+    with_arrival.push_back(arrival);
+    for (int i = 0; i < 3; ++i) {
+        network::raw_message extended;
+        extended.payload = known_headers_payload(peer, with_arrival);
+        REQUIRE(peer->headers_responses().try_send(std::error_code{}, std::move(extended)));
+    }
+
+    io_thread const peer_runner{peer_ioc};
+
+    captured_log log;
+
+    auto const network_config = peer_settings();
+    bool confirmed = false;
+    bool taken_in = false;
+    {
+    p2p_node network(network_config);
+
+    auto start_result = ::asio::co_spawn(network.thread_pool().get_executor(),
+        [&network]() -> ::asio::awaitable<int> {
+            auto const ec = co_await network.start();
+            co_return ec.value();
+        }, ::asio::use_future);
+    REQUIRE(start_result.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+    REQUIRE(start_result.get() == 0);
+
+    auto orchestrator_result = ::asio::co_spawn(network.thread_pool().get_executor(),
+        sync_orchestrator(fixture.chain(), fixture.organizer(), network,
+            domain::config::network::regtest,
+            [](std::string const& reason) {
+                spdlog::error("[test] fatal reported: {}", reason);
+            }),
+        ::asio::use_future);
+
+    REQUIRE(wait_until([&]() {
+        return network.peer_events().try_send(std::error_code{},
+            peer_notification{peer, peer_event_type::connected});
+    }, std::chrono::seconds(10)));
+
+    // The tip is confirmed on what the node already had.
+    confirmed = wait_until(
+        [&]() { return log.count("confirming the tip") > 0; }, std::chrono::seconds(30));
+
+    // Eight peers announce the same block, as they did on mainnet. The hashes
+    // are registered before the doorbell rings, so the seven dropped rings
+    // announce nothing the first drain will miss.
+    for (int i = 0; i < 8; ++i) {
+        network.announce_blocks({arrival_hash});
+    }
+
+    // And it is taken in: the announcement reopens the walk, the peer answers
+    // with the longer chain, and the organizer adds the header.
+    taken_in = wait_until([&]() {
+        return fixture.organizer().index().find(arrival_hash)
+            != blockchain::header_index::null_index;
+    }, std::chrono::seconds(30));
+
+    peer->stop();
+    if (network.peer_events().try_send(std::error_code{},
+            peer_notification{peer, peer_event_type::disconnected})) {
+        wait_until([&]() { return log.count("Peer disconnected") > 0; },
+            std::chrono::seconds(10));
+    }
+
+    network.stop();
+    auto const stopped_cleanly =
+        orchestrator_result.wait_for(std::chrono::seconds(120)) == std::future_status::ready;
+    if (stopped_cleanly) {
+        orchestrator_result.get();
+    }
+    CHECK(stopped_cleanly);
+    }   // the node goes down here
+
+    log.dump();
+
+    CHECK(confirmed);
+    CHECK(taken_in);
+
+    // Eight announcements, one request. The coalescing is on the announcement,
+    // not on the peer, so the seven that follow the first cost nothing.
+    CHECK(log.count("Block announced and unknown; asking from height") == 1u);
+
+    // Nothing polled, and nothing overlapped. Two requests left the node in the
+    // whole run: the one that confirmed the tip, and the one the announcement
+    // produced. A poll would show more; two walks at once would too.
+    CHECK(log.count("[header_download] Requesting headers from") == 2u);
+}
+
+TEST_CASE("integrated: a peer arriving drives the parked request first, then clears the announcement",
+          "[header_tip][integration][announcements]") {
+    // The answer to "can an in-flight request stay in flight forever and strand
+    // a coalesced announcement?" A request parked for want of an eligible peer
+    // produces no completion event, so the coordinator still believes one is
+    // outstanding — and an announcement arriving then is coalesced rather than
+    // acted on.
+    //
+    // It is not stranded, because the parked request and the announcement are
+    // waiting for the SAME event: a peer that can be asked. When it arrives the
+    // parked request is driven, it asks from the tip and takes everything above
+    // it — the announced block included — and the announcement is then found
+    // already held and clears without a second request.
+    chain_fixture fixture{"tip_parked"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base_time = uint32_t(zulu_time()) - 35 * block_spacing;
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == 5);
+    persist_headers(fixture, trunk, 1);
+
+    std::vector<domain::chain::block> const connected(trunk.begin(), trunk.begin() + 2);
+    connect_bodies(fixture, connected, 1);
+
+    auto const arrival = mine_block(prev, 6, base_time + 6 * block_spacing, 0, {}, 0);
+    auto const arrival_hash = arrival.hash();
+
+    ::asio::io_context peer_ioc;
+    auto peer_config = peer_settings();
+
+    // Claims height 6 while the chain holds 5, so running out of eligible peers
+    // is NOT a tip confirmation: the answer is genuinely missing and the request
+    // parks. Answers empty, every time.
+    auto silent = make_peer(peer_ioc, peer_config, 9301);
+    claim_height(silent, 6);
+    for (int i = 0; i < 4; ++i) {
+        network::raw_message empty;
+        empty.payload = known_headers_payload(silent, {});
+        REQUIRE(silent->headers_responses().try_send(std::error_code{}, std::move(empty)));
+    }
+
+    // The peer that arrives later and can actually serve the missing header.
+    auto arriving = make_peer(peer_ioc, peer_config, 9302);
+    claim_height(arriving, 6);
+    auto with_arrival = trunk;
+    with_arrival.push_back(arrival);
+    {
+        network::raw_message extended;
+        extended.payload = known_headers_payload(arriving, with_arrival);
+        REQUIRE(arriving->headers_responses().try_send(std::error_code{}, std::move(extended)));
+    }
+    for (int i = 0; i < 4; ++i) {
+        network::raw_message empty;
+        empty.payload = known_headers_payload(arriving, {});
+        REQUIRE(arriving->headers_responses().try_send(std::error_code{}, std::move(empty)));
+    }
+
+    io_thread const peer_runner{peer_ioc};
+
+    captured_log log;
+
+    auto const network_config = peer_settings();
+    bool parked = false;
+    bool coalesced = false;
+    bool taken_in = false;
+    {
+    p2p_node network(network_config);
+
+    auto start_result = ::asio::co_spawn(network.thread_pool().get_executor(),
+        [&network]() -> ::asio::awaitable<int> {
+            auto const ec = co_await network.start();
+            co_return ec.value();
+        }, ::asio::use_future);
+    REQUIRE(start_result.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+    REQUIRE(start_result.get() == 0);
+
+    auto orchestrator_result = ::asio::co_spawn(network.thread_pool().get_executor(),
+        sync_orchestrator(fixture.chain(), fixture.organizer(), network,
+            domain::config::network::regtest,
+            [](std::string const& reason) {
+                spdlog::error("[test] fatal reported: {}", reason);
+            }),
+        ::asio::use_future);
+
+    REQUIRE(wait_until([&]() {
+        return network.peer_events().try_send(std::error_code{},
+            peer_notification{silent, peer_event_type::connected});
+    }, std::chrono::seconds(10)));
+
+    // The request parks: nobody left to ask, and the chain is short of what the
+    // peer claims.
+    parked = wait_until(
+        [&]() { return log.count("): waiting") > 0; }, std::chrono::seconds(30));
+
+    // Two blocks are announced while that request is still outstanding, in two
+    // separate announcements so the order is this test's and not a container's.
+    // Only the second is one a peer here will ever serve.
+    //
+    // Keeping a single hash would keep the LAST, and the walk brings that one
+    // in — so the debt would read as settled and the first block, which nobody
+    // served, would never be asked about again.
+    auto const never_served = kth::domain::chain::hash(
+        mine_block(arrival_hash, 7, base_time + 7 * block_spacing, 0, {}, 0).header());
+
+    network.announce_blocks({never_served});
+    coalesced = wait_until(
+        [&]() { return log.count("coalescing until it settles") > 0; },
+        std::chrono::seconds(30));
+    REQUIRE(coalesced);
+
+    network.announce_blocks({arrival_hash});
+    REQUIRE(wait_until(
+        [&]() { return log.count("coalescing until it settles") > 1; },
+        std::chrono::seconds(30)));
+
+    // And now a peer that can serve it arrives.
+    REQUIRE(wait_until([&]() {
+        return network.peer_events().try_send(std::error_code{},
+            peer_notification{arriving, peer_event_type::connected});
+    }, std::chrono::seconds(10)));
+
+    taken_in = wait_until([&]() {
+        return fixture.organizer().index().find(arrival_hash)
+            != blockchain::header_index::null_index;
+    }, std::chrono::seconds(30));
+
+    // Give the coordinator its chance to consult the coalesced announcement.
+    wait_until([&]() { return log.count("no follow-up needed") > 0; },
+        std::chrono::seconds(30));
+
+    silent->stop();
+    arriving->stop();
+    network.stop();
+    auto const stopped_cleanly =
+        orchestrator_result.wait_for(std::chrono::seconds(120)) == std::future_status::ready;
+    if (stopped_cleanly) {
+        orchestrator_result.get();
+    }
+    CHECK(stopped_cleanly);
+    }
+
+    log.dump();
+
+    CHECK(parked);
+    CHECK(coalesced);
+    CHECK(taken_in);
+
+    // The order is the point: the arriving peer drove the parked request first,
+    // and only then was the announcement consulted.
+    //
+    // And what it found was that one of the two announced blocks had arrived
+    // and the other had not, so it asked once — for the one still missing.
+    // Keeping a single hash would have answered "all known" here and dropped
+    // the second block on the floor.
+    CHECK(log.count("Announced block still unknown after the walk settled") == 1u);
+    CHECK(log.count("Announced block already in the index; no follow-up needed") == 0u);
 }

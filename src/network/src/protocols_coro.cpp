@@ -613,10 +613,16 @@ awaitable_expected<domain::message::headers> request_headers(
     spdlog::debug("[protocol] Requesting headers from [{}] with {} locator hashes",
         peer.authority(), locator_hashes.size());
 
+    // Armed before the request leaves, so a response that arrives while this
+    // coroutine is still suspending is attributed to it and not read as an
+    // announcement. See peer_session's "Header request attribution".
+    peer.expect_headers_response();
+
     // Send getheaders
     auto ec = co_await peer.send(request);
     if (ec != error::success) {
         spdlog::debug("[protocol] Failed to send getheaders to [{}]", peer.authority());
+        peer.retire_from_header_requests();
         co_return std::unexpected(ec);
     }
 
@@ -631,13 +637,27 @@ awaitable_expected<domain::message::headers> request_headers(
     );
 
     if (result.index() == 1) {
-        spdlog::debug("[protocol] Timeout waiting for headers from [{}]", peer.authority());
+        // Given up without consuming anything, so a `headers` for this request
+        // may still be on its way with nothing about it to recognise. The
+        // session is retired: it is never asked for headers again, so that
+        // message can only ever be classified as an announcement, and no later
+        // request can be answered by it.
+        spdlog::debug("[protocol] Timeout waiting for headers from [{}]; "
+            "retiring the session and ending it", peer.authority());
+        // Retiring ends the session — see peer_session — so the connection
+        // manager replaces it rather than leaving a slot held by a peer that
+        // cannot serve headers. The cost is a peer that may still have been
+        // good for block download; the alternative is a node that cannot sync
+        // headers at all.
+        peer.retire_from_header_requests();
+
         co_return std::unexpected(error::channel_timeout);
     }
 
     auto& [recv_ec, raw] = std::get<0>(result);
     if (recv_ec) {
         spdlog::debug("[protocol] Channel error waiting for headers from [{}]", peer.authority());
+        peer.retire_from_header_requests();
         co_return std::unexpected(error::channel_stopped);
     }
 
