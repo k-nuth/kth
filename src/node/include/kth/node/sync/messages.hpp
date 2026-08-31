@@ -282,8 +282,15 @@ struct utxo_build_advanced {
     uint32_t built_height{0};
 };
 
+// One or more blocks were announced. Carries nothing: the hashes are held on
+// the node, registered before the wake that produced this, so a wake dropped
+// for a full channel loses none of them — whoever answers the queued one drains
+// everything registered by then (#706).
+struct blocks_announced_event {};
+
 using sync_coordinator_event = std::variant<
     stop_request,
+    blocks_announced_event,
     headers_validated,
     block_validated,
     chunk_validated,

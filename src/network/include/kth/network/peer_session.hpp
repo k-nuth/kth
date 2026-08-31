@@ -182,6 +182,42 @@ public:
     response_channel& addr_responses();
 
     // -------------------------------------------------------------------------
+    // Header request attribution
+    // -------------------------------------------------------------------------
+    //
+    // Nothing on the wire says whether an arriving `headers` answers our
+    // `getheaders` or is a spontaneous announcement: there is no correlation
+    // id, and the count does not help — a real answer can carry one header and
+    // an announcement can carry several. So attribution is decided by state
+    // only a request can set, in the one place every `headers` passes through.
+    //
+    // Set before `getheaders` leaves. Taken — atomically — by the read loop for
+    // the first `headers` that arrives, because one request is answered by one
+    // message; everything after that is an announcement. The requester and the
+    // read loop run on different executors, which is why this is an atomic and
+    // why taking it is an exchange rather than a read followed by a write.
+
+    /// Declare that a `getheaders` is outstanding on this session.
+    void expect_headers_response();
+
+    /// Claim the next `headers` as that response, once. Answers whether this
+    /// call was the one that claimed it.
+    [[nodiscard]]
+    bool claim_headers_response();
+
+    /// A request gave up without consuming a message, so one may still be in
+    /// flight with no way to recognise it. The session is retired from header
+    /// requests for the rest of its life — re-arming the mark would let that
+    /// late message be attributed to a request it never answered — AND it is
+    /// stopped, so the connection manager replaces it with a session that can
+    /// be asked. Retiring without ending it would leave the slot occupied by a
+    /// peer no header request may use.
+    void retire_from_header_requests();
+
+    [[nodiscard]]
+    bool retired_from_header_requests() const;
+
+    // -------------------------------------------------------------------------
     // Properties
     // -------------------------------------------------------------------------
 
@@ -372,6 +408,14 @@ private:
 
     // State
     std::atomic<bool> stopped_{false};
+
+    // See "Header request attribution" above.
+    std::atomic<bool> awaiting_headers_response_{false};
+    std::atomic<bool> retired_from_header_requests_{false};
+
+    /// Empty the per-request channels. Closing them is not enough: a closed
+    /// channel still hands out what it already holds.
+    void drain_response_channels();
     infrastructure::config::authority authority_;
 
     // Protocol settings

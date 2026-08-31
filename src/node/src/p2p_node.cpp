@@ -4,6 +4,10 @@
 
 #include <kth/node/p2p_node.hpp>
 
+#include <kth/node/detail/block_announcements.hpp>
+
+#include <algorithm>
+
 #include <kth/node/handlers/ping.hpp>
 #include <kth/node/handlers/pong.hpp>
 
@@ -30,6 +34,9 @@ p2p_node::p2p_node(settings const& settings)
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
     , peer_notification_channel_(std::make_unique<concurrent_channel<peer_notification>>(pool_.get_executor(), 100))
+    // One slot: this is a doorbell, and a second ring while the first is
+    // unanswered says nothing the first does not.
+    , block_announcement_channel_(std::make_unique<concurrent_channel<blocks_announced>>(pool_.get_executor(), 1))
 {
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
     // Register default message handlers using typed registration
@@ -213,6 +220,20 @@ void p2p_node::stop() {
     if (peer_notification_channel_) {
         peer_notification_channel_->cancel();
         peer_notification_channel_->close();
+    }
+
+    // Same for the announcement doorbell: the bridge that answers it waits on
+    // this and on nothing else, so a channel left open is a task join() waits
+    // for forever. The registered hashes go with it — a stopping node owes no
+    // follow-up to anybody.
+    if (block_announcement_channel_) {
+        block_announcement_channel_->cancel();
+        block_announcement_channel_->close();
+    }
+    {
+        std::lock_guard<std::mutex> const guard(announced_blocks_mutex_);
+        announced_blocks_.clear();
+        announced_blocks_overflowed_ = false;
     }
 
     // Stop acceptor - this causes run_inbound() to exit
@@ -514,6 +535,93 @@ bool p2p_node::remove(address const& addr) {
 
 peer_manager& p2p_node::peers() {
     return manager_;
+}
+
+void p2p_node::announce_blocks(hash_list const& hashes) {
+    if (hashes.empty()) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> const guard(announced_blocks_mutex_);
+        for (auto const& hash : hashes) {
+            // Coalesced here, where nothing can be lost, rather than by the
+            // channel. Eight peers announcing one block register it once, and
+            // the test is a hash lookup because peers decide how much arrives.
+            if (announced_blocks_.size() >= max_announced_blocks
+                && ! announced_blocks_.contains(hash)) {
+                // Refused, and said so. Dropping it silently is what would lose
+                // the one announcement that mattered; recorded, it still
+                // produces the single request any announcement produces.
+                announced_blocks_overflowed_ = true;
+                continue;
+            }
+            announced_blocks_.insert(hash);
+        }
+    }
+
+    // Registration first, doorbell second. A consumer that drains between the
+    // two already sees what was just registered, and the ring that follows is
+    // merely spurious; a ring dropped for a full channel is one whose queued
+    // predecessor will bring the consumer back to a set that now includes this.
+    // There is no ordering in which a registered hash goes undrained.
+    if ( ! block_announcement_channel_->try_send(std::error_code{}, blocks_announced{})) {
+        spdlog::trace("[p2p_node] Block announcement doorbell already ringing");
+    }
+}
+
+void p2p_node::announce_from_headers(peer_session& peer, raw_message const& raw) {
+    auto hashes = detail::announced_by_headers(raw.payload, peer.negotiated_version());
+    if (hashes.empty()) {
+        spdlog::debug("[p2p_node] Unparseable or empty headers announcement from [{}]",
+            peer.authority());
+        return;
+    }
+    spdlog::debug("[p2p_node] {} block(s) announced by headers from [{}]",
+        hashes.size(), peer.authority());
+    announce_blocks(std::move(hashes));
+}
+
+void p2p_node::announce_from_compact_block(peer_session& peer, raw_message const& raw) {
+    auto hashes = detail::announced_by_compact_block(raw.payload, peer.negotiated_version());
+    if (hashes.empty()) {
+        spdlog::debug("[p2p_node] Unparseable cmpctblock announcement from [{}]", peer.authority());
+        return;
+    }
+    spdlog::debug("[p2p_node] Block announced by cmpctblock from [{}]", peer.authority());
+    announce_blocks(std::move(hashes));
+}
+
+void p2p_node::announce_from_inventory(peer_session& peer, raw_message const& raw) {
+    auto hashes = detail::announced_by_inventory(raw.payload, peer.negotiated_version());
+    if (hashes.empty()) {
+        // Transactions, or nothing we act on. Said out loud rather than dropped
+        // in silence: this path knows what it is not handling.
+        spdlog::trace("[p2p_node] inv from [{}] announces no blocks", peer.authority());
+        return;
+    }
+    spdlog::debug("[p2p_node] {} block(s) announced by inv from [{}]",
+        hashes.size(), peer.authority());
+    announce_blocks(std::move(hashes));
+}
+
+p2p_node::announced_blocks p2p_node::take_announced_blocks() {
+    std::lock_guard<std::mutex> const guard(announced_blocks_mutex_);
+
+    announced_blocks taken;
+    taken.hashes.reserve(announced_blocks_.size());
+    for (auto const& hash : announced_blocks_) {
+        taken.hashes.push_back(hash);
+    }
+    taken.overflowed = announced_blocks_overflowed_;
+
+    announced_blocks_.clear();
+    announced_blocks_overflowed_ = false;
+    return taken;
+}
+
+concurrent_channel<blocks_announced>& p2p_node::block_announcements() {
+    return *block_announcement_channel_;
 }
 
 concurrent_channel<peer_notification>& p2p_node::peer_events() {
@@ -864,17 +972,53 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
         auto const& command = raw.heading.command();
 
-        // Route response messages to their dedicated channels
-        // These are consumed by request_headers, request_block, request_addresses
-        // Using try_send - if channel is full or no one is waiting, message is dropped
-        // (this is correct behavior: unsolicited responses are ignored)
+        // Route by command before the dispatcher sees it.
+        //
+        // `block` and `addr`/`addrv2` go to the per-request channel a waiting
+        // request is reading. `headers` is the one that has to be told apart
+        // first — see below — and is CONSUMED here either way, as a response or
+        // as an announcement. `cmpctblock` and `inv` are only OBSERVED: their
+        // hashes are registered as announcements and the message carries on to
+        // the dispatcher, so a handler registered for either still receives it.
         if (command == domain::message::headers::command) {
-            auto [send_ec] = co_await peer->headers_responses().async_send(
-                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
-            if (!send_ec) {
-                continue;  // Message delivered to response channel
+            // Nothing on the wire says which of the two this is, so the answer
+            // comes from state only a request can set, claimed once (see
+            // peer_session's "Header request attribution"). Claimed: this is
+            // the answer to our getheaders. Not claimed: nobody asked, so it is
+            // an announcement — and it does NOT go into the response channel,
+            // where it would wait to be handed to some later request as if it
+            // had answered it, and where a burst would suspend this loop.
+            if (peer->claim_headers_response()) {
+                auto [send_ec] = co_await peer->headers_responses().async_send(
+                    std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+                if (!send_ec) {
+                    continue;  // Message delivered to response channel
+                }
+                // Channel closed - fall through to dispatcher
+            } else {
+                announce_from_headers(*peer, raw);
+                continue;
             }
-            // Channel full or closed - fall through to dispatcher
+        } else if (command == domain::message::compact_block::command) {
+            // BIP152 announcement. Its first field is the block header, which
+            // is all this needs: the compact body is not reconstructed and no
+            // BIP152 support is implied. These arrive because we asked for them
+            // — `sendcmpct(true, 1)` goes out right after the handshake — and
+            // the wedged run received eight per new block and understood none
+            // of them (#706).
+            announce_from_compact_block(*peer, raw);
+            // Observed, not consumed: this reads the header out of it and lets
+            // the message carry on to the dispatcher, so a handler registered
+            // for `cmpctblock` still sees it. Only `headers` is taken here, and
+            // that one is consumed either as a response or as an announcement.
+        } else if (command == domain::message::inventory::command) {
+            // The oldest of the three announcement forms: hashes, no headers.
+            // Transaction entries are not this issue's business and are left
+            // alone.
+            announce_from_inventory(*peer, raw);
+            // Observed, not consumed — as above, and it also carries the
+            // transaction entries this path deliberately ignores, which a
+            // handler registered for `inv` may well want.
         } else if (command == domain::message::block::command) {
             auto [send_ec] = co_await peer->block_responses().async_send(
                 std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));

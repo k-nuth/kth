@@ -5,6 +5,10 @@
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
+#include <kth/node/detail/header_request_delivery.hpp>
+
+#include <algorithm>
+
 #include <kth/node/sync/reorg.hpp>
 
 #include <chrono>
@@ -592,6 +596,36 @@ static
         // Cancel timer before exiting to ensure clean shutdown of || operator internals
         check_timer.cancel();
         spdlog::info("[peer_bridge] Task ended");
+    });
+
+    // -------------------------------------------------------------------------
+    // Block announcement bridge
+    // -------------------------------------------------------------------------
+    //
+    // The node rings a doorbell when a block has been announced; the hashes stay
+    // registered on the node until the coordinator takes them. This forwards the
+    // ring, and the forward is AWAITED rather than try_send: the doorbell can
+    // afford to be coalesced because what it wakes drains everything, but a ring
+    // that never reaches the coordinator wakes nobody at all.
+    all_tasks.spawn("announcement_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::info("[announcement_bridge] Started");
+        while (true) {
+            auto [ec, ring] = co_await network.block_announcements().async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[announcement_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+
+            auto [send_ec] = co_await coordinator_events.async_send(
+                std::error_code{}, blocks_announced_event{},
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[announcement_bridge] Coordinator channel closed");
+                break;
+            }
+        }
+        spdlog::info("[announcement_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -1213,13 +1247,66 @@ static
         // Trigger parallel header sync (supervisor manages chunk coordination)
         auto from_hash = active_hash_at(organizer.index(), headers_synced_to);
 
+        // Whether a header request is outstanding, and whether a block was
+        // announced that no outstanding request can be expected to bring in.
+        //
+        // A block announced WHILE a request is in flight cannot simply be
+        // dropped: it may have been mined after that getheaders left, so its
+        // response cannot contain it, and with nothing polling anywhere that
+        // announcement was the only event able to reopen the walk. It is
+        // coalesced instead, and reconsidered when the walk settles — by which
+        // time the response may have brought it in, and then there is nothing
+        // to do (#706).
+        bool header_request_in_flight = false;
+
+        // Every announced hash still unknown when a walk was already running,
+        // not just the first of them. Peers set the rate here, so it is bounded
+        // and the overflow is remembered: with only one hash kept, a burst of
+        // different blocks would leave the last one asked about and the rest
+        // forgotten, and a walk that brought in the one we remembered would
+        // clear the debt for all of them.
+        static constexpr size_t max_announcement_pending = 64;
+        std::vector<hash_digest> announcement_pending;
+        bool announcement_pending_overflow = false;
+
+        auto remember_announcement = [&](hash_digest const& hash) {
+            if (std::find(announcement_pending.begin(), announcement_pending.end(), hash)
+                != announcement_pending.end()) {
+                return;
+            }
+            if (announcement_pending.size() >= max_announcement_pending) {
+                announcement_pending_overflow = true;
+                return;
+            }
+            announcement_pending.push_back(hash);
+        };
+
+        // Awaited, not try_send. A request dropped for want of room is a walk
+        // that never happens, and for an announcement it is worse: its hashes
+        // have already been taken off the node, so nothing is left to raise it
+        // again. In flight is recorded only once the request has been accepted,
+        // so a delivery that never happened cannot look like one that did.
+        auto ask_for_headers = [&](uint32_t from_height, hash_digest const& hash,
+                                   std::optional<uint64_t> spent, char const* why)
+            -> ::asio::awaitable<void> {
+            auto const delivered = co_await detail::deliver_header_request(
+                header_download_input,
+                header_request{
+                    .from_height = from_height,
+                    .from_hash = hash,
+                    .spent_peer = spent});
+
+            if ( ! delivered) {
+                // The channel is closed, which happens on shutdown and nowhere
+                // else. There is nobody left to ask.
+                spdlog::debug("[sync_coordinator] {} header_request abandoned; shutting down", why);
+                co_return;
+            }
+            header_request_in_flight = true;
+        };
+
         spdlog::debug("[sync_coordinator] Starting parallel header sync from height {}", headers_synced_to);
-        if (!header_download_input.try_send(std::error_code{}, header_request{
-            .from_height = headers_synced_to,
-            .from_hash = from_hash
-        })) {
-            spdlog::warn("[sync_coordinator] Channel full, initial header_request dropped");
-        }
+        co_await ask_for_headers(headers_synced_to, from_hash, std::nullopt, "initial");
 
 
         // One place, called from every event that can change the answer, so they
@@ -1238,8 +1325,54 @@ static
                 deps, range_log, trigger, blocks_synced_to, headers_synced_to, slow_sync_end));
         };
 
+        // Whether the chain already holds a hash. An announcement of something we
+        // have is nothing to act on, whether it arrived before the walk or was
+        // brought in by it.
+        auto already_held = [&](hash_digest const& hash) {
+            return organizer.index().find(hash) != blockchain::header_index::null_index;
+        };
+
+        // Consulted on the way back to the channel, so every path out of every
+        // handler passes through it once and none has to remember to.
+        auto settle_pending_announcement = [&]() -> ::asio::awaitable<void> {
+            if (header_request_in_flight) {
+                co_return;
+            }
+            if (announcement_pending.empty() && ! announcement_pending_overflow) {
+                co_return;
+            }
+
+            // Overflowed means some announcement was not kept, so "everything I
+            // remember is known" is not "nothing new was announced": ask.
+            bool still_unknown = announcement_pending_overflow;
+            for (auto const& hash : announcement_pending) {
+                if ( ! already_held(hash)) {
+                    still_unknown = true;
+                    break;
+                }
+            }
+
+            announcement_pending.clear();
+            announcement_pending_overflow = false;
+
+            if ( ! still_unknown) {
+                // The walk that was in flight brought them all in. Nothing owed.
+                spdlog::debug("[sync_coordinator] Announced block already in the index; "
+                    "no follow-up needed");
+                co_return;
+            }
+
+            spdlog::debug("[sync_coordinator] Announced block still unknown after the walk "
+                "settled; asking once from height {}", headers_synced_to);
+            co_await ask_for_headers(headers_synced_to,
+                active_hash_at(organizer.index(), headers_synced_to), std::nullopt,
+                "announcement follow-up");
+        };
+
         // Main loop: ONLY receives from unified channel (no || operator)
         while (true) {
+            co_await settle_pending_announcement();
+
             spdlog::debug("[sync_coordinator] Waiting for events...");
             auto [ec, event] = co_await coordinator_events.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
@@ -1252,10 +1385,86 @@ static
             // Process event based on variant type (FIFO order guaranteed)
             if (std::holds_alternative<stop_request>(event)) {
                 spdlog::debug("[sync_coordinator] Stop signal received");
+                // Nothing is owed to anybody once we are stopping: the walk is
+                // abandoned and a coalesced announcement has nowhere to go.
+                announcement_pending.clear();
+                announcement_pending_overflow = false;
+                header_request_in_flight = false;
                 break;
             }
 
+            if (std::holds_alternative<blocks_announced_event>(event)) {
+                // The doorbell. The hashes were registered on the node before it
+                // rang, so this takes ALL of them — a ring dropped because one
+                // was already queued announced nothing this drain will miss.
+                auto const announced = network.take_announced_blocks();
+
+                std::vector<hash_digest> unknown_hashes;
+                for (auto const& hash : announced.hashes) {
+                    if ( ! already_held(hash)) {
+                        unknown_hashes.push_back(hash);
+                    }
+                }
+
+                std::optional<hash_digest> unknown;
+                if ( ! unknown_hashes.empty()) {
+                    unknown = unknown_hashes.front();
+                }
+
+                if ( ! unknown && announced.overflowed) {
+                    // The registry refused hashes for want of room, so "all of
+                    // these are known" is not the same as "nothing new was
+                    // announced". Asking is the one action any announcement
+                    // produces, so ask; the walk starts from the tip and takes
+                    // whatever is above it, refused hashes included.
+                    spdlog::debug("[sync_coordinator] Announcement registry overflowed; "
+                        "asking rather than assuming");
+                    unknown = active_hash_at(organizer.index(), headers_synced_to);
+                }
+
+                if ( ! unknown) {
+                    spdlog::debug("[sync_coordinator] {} announced block(s), all already held",
+                        announced.hashes.size());
+                    continue;
+                }
+
+                if (header_request_in_flight) {
+                    // Coalesced, not dropped: this block may have been mined
+                    // after the outstanding getheaders left, so its response
+                    // cannot be relied on to contain it. Reconsidered when the
+                    // walk settles, and only asked for if it is still missing.
+                    spdlog::debug("[sync_coordinator] {} block(s) announced while a header "
+                        "request is in flight; coalescing until it settles",
+                        unknown_hashes.empty() ? 1u : unsigned(unknown_hashes.size()));
+
+                    if (announced.overflowed) {
+                        // The registry refused hashes, so what was remembered is
+                        // not the whole of what was announced — and that is true
+                        // whether or not some hashes were remembered too. Losing
+                        // the flag here would let a walk that brought in the
+                        // remembered ones settle the debt for the refused ones
+                        // as well.
+                        announcement_pending_overflow = true;
+                    }
+                    for (auto const& hash : unknown_hashes) {
+                        remember_announcement(hash);
+                    }
+                    continue;
+                }
+
+                spdlog::debug("[sync_coordinator] Block announced and unknown; asking from height {}",
+                    headers_synced_to);
+                co_await ask_for_headers(headers_synced_to,
+                    active_hash_at(organizer.index(), headers_synced_to), std::nullopt,
+                    "announcement");
+                continue;
+            }
+
             if (auto* result = std::get_if<headers_validated>(&event)) {
+                // The outcome of the request that was outstanding. Whatever the
+                // branches below decide, the request itself is over.
+                header_request_in_flight = false;
+
                 spdlog::debug("[sync_coordinator] Received: height={}, count={}, result={}",
                     result->height, result->count, result->result ? result->result.message() : "ok");
 
@@ -1413,13 +1622,8 @@ static
                         headers_synced_to,
                         result->source_peer ? result->source_peer->authority_with_agent() : "unknown");
 
-                    if ( ! header_download_input.try_send(std::error_code{}, header_request{
-                        .from_height = headers_synced_to,
-                        .from_hash = active_hash_at(organizer.index(), headers_synced_to),
-                        .spent_peer = spent
-                    })) {
-                        spdlog::warn("[sync_coordinator] Channel full, no-progress header_request dropped");
-                    }
+                    co_await ask_for_headers(headers_synced_to,
+                        active_hash_at(organizer.index(), headers_synced_to), spent, "no-progress");
                 } else if (result->result) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",
@@ -1447,12 +1651,7 @@ static
                     spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer, from_hash={}",
                         headers_synced_to, encode_hash(retry_hash));
 
-                    if (!header_download_input.try_send(std::error_code{}, header_request{
-                        .from_height = headers_synced_to,
-                        .from_hash = retry_hash
-                    })) {
-                        spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
-                    }
+                    co_await ask_for_headers(headers_synced_to, retry_hash, std::nullopt, "retry");
                 } else if (result->count > 0) {
                     // The tip has already moved above; what is left here is this
                     // branch's own policy — the progress log and asking the same
@@ -1475,12 +1674,7 @@ static
                     // sends its own, to a different peer, and the two are
                     // mutually exclusive.
                     auto const next_hash = active_hash_at(organizer.index(), headers_synced_to);
-                    if ( ! header_download_input.try_send(std::error_code{}, header_request{
-                        .from_height = headers_synced_to,
-                        .from_hash = next_hash
-                    })) {
-                        spdlog::warn("[sync_coordinator] Channel full, next batch header_request dropped");
-                    }
+                    co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "next batch");
                 } else if (result->count == 0 && !header_sync_complete) {
                     // All peers returned 0 headers - check if we've reached checkpoint
                     if (headers_synced_to < checkpoint_height) {
@@ -1497,12 +1691,7 @@ static
                         // Retry header sync
                         auto retry_hash = active_hash_at(organizer.index(), headers_synced_to);
 
-                        if (!header_download_input.try_send(std::error_code{}, header_request{
-                            .from_height = headers_synced_to,
-                            .from_hash = retry_hash
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, retry header_request dropped");
-                        }
+                        co_await ask_for_headers(headers_synced_to, retry_hash, std::nullopt, "retry");
                         continue;
                     }
 
@@ -1579,12 +1768,7 @@ static
 
                         auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
-                        if (!header_download_input.try_send(std::error_code{}, header_request{
-                            .from_height = headers_synced_to,
-                            .from_hash = next_hash
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, new cycle header_request dropped");
-                        }
+                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "new cycle");
                     }
                 }
                 continue;
@@ -1637,12 +1821,7 @@ static
 
                         auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
-                        if (!header_download_input.try_send(std::error_code{}, header_request{
-                            .from_height = headers_synced_to,
-                            .from_hash = next_hash
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
-                        }
+                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "restart");
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Block validation failed at {}: {}",
@@ -1732,12 +1911,7 @@ static
 
                         auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
 
-                        if (!header_download_input.try_send(std::error_code{}, header_request{
-                            .from_height = headers_synced_to,
-                            .from_hash = next_hash
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, restart header_request dropped");
-                        }
+                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "restart");
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Chunk validation failed at height {}: {}",

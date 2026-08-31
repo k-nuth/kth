@@ -9,6 +9,8 @@
 #include <chrono>
 #include <functional>
 #include <mutex>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -174,6 +176,12 @@ struct peer_notification {
     peer_event_type event;
 };
 
+/// Woken when at least one block has been announced. Carries nothing: the
+/// announcement itself is registered on the node before this is sent, so a wake
+/// that is dropped because one is already queued costs nothing — whoever
+/// answers the queued one drains everything registered by then.
+struct blocks_announced {};
+
 // =============================================================================
 // P2P Node (main networking class)
 // =============================================================================
@@ -288,6 +296,39 @@ public:
     /// Use this to subscribe to peer connection/disconnection events.
     [[nodiscard]]
     concurrent_channel<peer_notification>& peer_events();
+
+    // -------------------------------------------------------------------------
+    // Block announcements
+    // -------------------------------------------------------------------------
+    //
+    // Three wire messages mean the same thing — a block exists that you may not
+    // have — and they arrive as `headers` nobody asked for, as `cmpctblock`, or
+    // as an `inv` naming blocks. They collapse into one registration and one
+    // wake, because the action they produce does not depend on which of them
+    // arrived: ask for headers from the tip and take everything above it.
+    //
+    // The hashes are registered here, under a mutex, because they arrive on
+    // several peer strands at once. The channel is only a doorbell.
+
+    /// What was announced since the last take. `overflowed` says the registry
+    /// refused hashes for want of room, so the list is not the whole story and
+    /// something unaccounted for may be missing — a consumer that cannot verify
+    /// must assume it is.
+    struct announced_blocks {
+        hash_list hashes;
+        bool overflowed{false};
+    };
+
+    /// Register announced block hashes and ring the doorbell.
+    void announce_blocks(hash_list const& hashes);
+
+    /// Take everything registered since the last call.
+    [[nodiscard]]
+    announced_blocks take_announced_blocks();
+
+    /// The doorbell. Woken by announce_blocks(), never carries the hashes.
+    [[nodiscard]]
+    concurrent_channel<blocks_announced>& block_announcements();
 
     /// Get the thread pool
     [[nodiscard]]
@@ -548,6 +589,24 @@ private:
     // Channel for notifying sync layer of peer lifecycle events (CSP pattern)
     // Peers are sent here on connection (after handshake) and disconnection
     std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
+    std::unique_ptr<concurrent_channel<blocks_announced>> block_announcement_channel_;
+
+    /// The three forms an announcement arrives in, each turned into the same
+    /// registration. Every one of them states what it does with the message;
+    /// none accepts a message and discards it without saying so.
+    void announce_from_headers(peer_session& peer, raw_message const& raw);
+    void announce_from_compact_block(peer_session& peer, raw_message const& raw);
+    void announce_from_inventory(peer_session& peer, raw_message const& raw);
+
+    // Peers choose what goes in here, so it is bounded and its membership test
+    // is constant time. Beyond the bound new hashes are refused and the refusal
+    // is recorded: the coordinator asks once when it cannot tell, which is the
+    // same single request any announcement produces.
+    static constexpr size_t max_announced_blocks = 1024;
+
+    mutable std::mutex announced_blocks_mutex_;
+    boost::unordered_flat_set<hash_digest> announced_blocks_;
+    bool announced_blocks_overflowed_{false};
 };
 
 } // namespace kth::node

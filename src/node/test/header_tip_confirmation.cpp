@@ -171,32 +171,42 @@ TEST_CASE("header tip: every eligible peer answering without progress confirms t
     CHECK(answers_left(empty) == 1u);
 }
 
-TEST_CASE("header tip: connected peers that are excluded are not eligible ones",
+TEST_CASE("header tip: peers in the list that cannot be asked are not eligible ones",
           "[header_tip]") {
-    // Two peers connected, neither able to answer: one spent, one stopped. The
-    // log used to print the connected count and then refuse to select from it,
-    // in the same millisecond, which read as a contradiction and was two
-    // different sets sharing a word. The observable difference is that the task
-    // must reach a decision here rather than wait for a peer set that is
-    // already as good as it will get.
+    // Two peers in the task's list, neither able to answer: one spent for this
+    // walk, one retired — and retiring ends the session, so that one is not
+    // "connected" any more either, only still present in a list that has not
+    // been refreshed. That is exactly the state the log used to describe as a
+    // contradiction: it printed the size of the list and then refused to select
+    // from it, in the same millisecond, because those are two different sets
+    // sharing a word. The observable difference is that the task must reach a
+    // decision here rather than wait for a list that is already as good as it
+    // will get.
     ::asio::io_context ioc;
     network::settings config;
 
     auto spent = make_peer(ioc, config, 7201);
-    auto stopped = make_peer(ioc, config, 7202);
+    auto excluded = make_peer(ioc, config, 7202);
     claim_height(spent, 965489u);
-    claim_height(stopped, 965489u);
+    claim_height(excluded, 965489u);
 
     preload_two(spent, 2000);
-    preload_two(stopped, 1);
-    stopped->stop();
+    preload_two(excluded, 1);
+
+    // Excluded by retirement rather than by stopping. Both are exclusions of a
+    // connected peer, which is what this case is about, but stopping a session
+    // now empties its response channel — correctly, since nobody will ever read
+    // it (#706) — and that channel is this case's evidence that the peer was
+    // never asked. Stopped peers are excluded too, and the #692 controls cover
+    // that.
+    excluded->retire_from_header_requests();
 
     header_download_input_channel input(ioc, 16);
     header_download_output_channel output(ioc, 16);
 
     ::asio::co_spawn(ioc, header_download_task(input, output, 0), ::asio::detached);
 
-    REQUIRE(input.try_send(std::error_code{}, peers_updated{{spent, stopped}}));
+    REQUIRE(input.try_send(std::error_code{}, peers_updated{{spent, excluded}}));
     REQUIRE(input.try_send(std::error_code{}, header_request{965489u, null_hash, spent->nonce()}));
     drain(ioc);
 
@@ -209,8 +219,58 @@ TEST_CASE("header tip: connected peers that are excluded are not eligible ones",
 
     // Neither was asked: one was spent before the request, the other cannot be
     // selected. Both keep both answers.
+    // The spent peer was not asked and keeps both answers. The excluded one is
+    // excluded by having been ended — retiring a session ends it, so the slot
+    // is released and the manager replaces it (#706) — and a walk that selected
+    // it would have reported a failure rather than an answer, which is what
+    // makes this more than "nothing happened".
     CHECK(answers_left(spent) == 2u);
-    CHECK(answers_left(stopped) == 2u);
+    CHECK(excluded->stopped());
+    CHECK_FALSE(result.reported_failure);
+}
+
+TEST_CASE("header tip: a session retired after a timeout is not asked again",
+          "[header_tip]") {
+    // The other half of the retirement rule (#706). A session that gave up
+    // without consuming its answer may still have a `headers` in flight that
+    // nothing can recognise, so it stops being a header source: asking it again
+    // is what would let that message answer the next request.
+    ::asio::io_context ioc;
+    network::settings config;
+
+    auto retired = make_peer(ioc, config, 7901);
+    auto usable = make_peer(ioc, config, 7902);
+    claim_height(retired, 965489u);
+    claim_height(usable, 965489u);
+
+    preload_two(retired, 1);
+    preload_two(usable, 1);
+
+    // As request_headers does on timeout.
+    retired->retire_from_header_requests();
+
+    header_download_input_channel input(ioc, 16);
+    header_download_output_channel output(ioc, 16);
+
+    ::asio::co_spawn(ioc, header_download_task(input, output, 0), ::asio::detached);
+
+    REQUIRE(input.try_send(std::error_code{}, peers_updated{{retired, usable}}));
+    REQUIRE(input.try_send(std::error_code{}, header_request{965489u, null_hash, std::nullopt}));
+    drain(ioc);
+
+    auto const result = collect(output);
+    REQUIRE(result.produced_headers);
+
+    // The usable peer answered; the retired one was never selected, so it keeps
+    // both of its answers.
+    CHECK(result.source == usable);
+    CHECK(answers_left(usable) == 1u);
+
+    // The retired one was never selected. Its own channel cannot say so any
+    // more — retiring ends the session, which closes it — but a walk that had
+    // chosen it would have failed its send and reported that instead.
+    CHECK(retired->stopped());
+    CHECK_FALSE(result.reported_failure);
 }
 
 TEST_CASE("header tip: with nobody to ask, the tip is not confirmed",
@@ -247,7 +307,10 @@ TEST_CASE("header tip: peers that were never asked do not confirm the tip either
     auto gone = make_peer(ioc, config, 7601);
     claim_height(gone, 965489u);
     preload_two(gone, 0);
-    gone->stop();
+
+    // Retired rather than stopped, for the same reason as above: stopping now
+    // drains the channel this case reads as evidence.
+    gone->retire_from_header_requests();
 
     header_download_input_channel input(ioc, 16);
     header_download_output_channel output(ioc, 16);
@@ -259,7 +322,13 @@ TEST_CASE("header tip: peers that were never asked do not confirm the tip either
     drain(ioc);
 
     CHECK(header_batches(output).empty());
-    CHECK(answers_left(gone) == 2u);
+
+    // It was never selected: a stopped session fails its send at once, so a
+    // walk that had chosen it would have produced a failure report rather than
+    // silence.
+    CHECK(gone->stopped());
+    auto const result = collect(output);
+    CHECK_FALSE(result.reported_failure);
 }
 
 TEST_CASE("header tip: a confirmation waits for room rather than being dropped",
@@ -304,6 +373,46 @@ TEST_CASE("header tip: a confirmation waits for room rather than being dropped",
     // trace is a warning nobody acts on.
     auto const batches = header_batches(output);
     CHECK(batches == std::vector<size_t>{0u});
+}
+
+TEST_CASE("header tip: headers wait for room rather than being dropped",
+          "[header_tip]") {
+    // The third thing this task sends, and the last one that was still dropped
+    // on a full channel. A drop leaves the request parked with no event behind
+    // it, so the coordinator goes on believing a walk is running — and an
+    // announcement coalesced against that belief is never reconsidered.
+    // Draining this channel does not wake the task either: it reads from its
+    // input, and nothing turns a drop here into an inbound message.
+    ::asio::io_context ioc;
+    network::settings config;
+
+    auto peer = make_peer(ioc, config, 7851);
+    preload_two(peer, 3);
+
+    header_download_input_channel input(ioc, 16);
+    header_download_output_channel output(ioc, 1);
+    REQUIRE(output.try_send(std::error_code{}, downloaded_headers{
+        .headers = {}, .start_height = 1u, .source_peer = nullptr}));
+
+    ::asio::co_spawn(ioc, header_download_task(input, output, 0), ::asio::detached);
+
+    REQUIRE(input.try_send(std::error_code{}, peers_updated{{peer}}));
+    REQUIRE(input.try_send(std::error_code{}, header_request{965489u, null_hash, std::nullopt}));
+    drain(ioc);
+
+    // The peer was asked and answered, so the walk reached the delivery and is
+    // waiting there rather than having thrown the headers away.
+    CHECK(answers_left(peer) == 1u);
+
+    std::optional<header_download_output> occupant;
+    REQUIRE(output.try_receive([&](std::error_code, header_download_output value) {
+        occupant = std::move(value);
+    }));
+    drain(ioc);
+
+    // And they land. On try_send they never arrive, and the only trace is a
+    // warning nobody acts on.
+    CHECK(header_batches(output) == std::vector<size_t>{3u});
 }
 
 TEST_CASE("header tip: the max-height completion also waits for room",
