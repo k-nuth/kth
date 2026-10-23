@@ -105,6 +105,12 @@ struct byte_reader {
         if (dest.size() > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
+        // Nothing to read. An empty destination's data() may be null, and so
+        // may an empty buffer's, and memcpy is undefined for a null pointer
+        // even with a count of zero.
+        if (dest.empty()) {
+            return {};
+        }
         std::memcpy(dest.data(), buffer_.data() + position_, dest.size());
         position_ += dest.size();
         return {};
@@ -118,7 +124,11 @@ struct byte_reader {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         std::array<uint8_t, N> result;
-        std::memcpy(result.data(), buffer_.data() + position_, N);
+        // A zero-length std::array's data() may be null, and memcpy
+        // requires valid pointers even for zero bytes.
+        if constexpr (N > 0) {
+            std::memcpy(result.data(), buffer_.data() + position_, N);
+        }
         position_ += N;
         return result;
     }

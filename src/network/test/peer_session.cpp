@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <thread>
 
@@ -1164,6 +1165,8 @@ TEST_CASE("peer_session multiple stop calls from different threads", "[peer_sess
 // - Running many iterations to increase race condition probability
 
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/post.hpp>
 #include <asio/thread_pool.hpp>
 
 TEST_CASE("peer_session ASAN segfault replication - parallel_group cancellation",
@@ -1790,49 +1793,160 @@ TEST_CASE("peer_session slow shutdown with pending messages channel wait",
 // The previous test uses single-threaded io_context which may not reproduce
 // race conditions that occur in multi-threaded scenarios.
 
+namespace {
+
+// What the multi-threaded shutdown case runs on, owned in one place. The
+// members are declared in the order they must outlive each other, and the
+// teardown is the destructor body: it runs before any member is destroyed, so
+// every promise, socket and session a handler or a coroutine refers to is
+// still alive when the threads that run them are joined — on every way out of
+// the case, a failed REQUIRE included.
+struct multithread_session_fixture {
+    using clock = std::chrono::steady_clock;
+
+    // Hold the peer thread at a gate until the teardown opens it, so a handler
+    // posted after it is retained: the failure path, made to happen.
+    explicit multithread_session_fixture(bool hold_peer_thread) {
+        if (hold_peer_thread) {
+            ::asio::post(peer_ctx, [gate = gate]() { gate.wait(); });
+        }
+        peer_thread = std::thread([this]() {
+            peer_ctx.run();
+            peer_exited_promise.set_value();
+        });
+    }
+
+    ~multithread_session_fixture() {
+        using namespace std::chrono_literals;
+        open_gate();
+        // Stopped while the guard is still held: stop() posts the timers'
+        // cancellation to the session's strand, holding the session until it
+        // has run, so the peer thread has to be there to run it. Released
+        // first, the thread can run out of work and return, and what is posted
+        // after that is never run — the session it holds outlives the members
+        // it depends on and goes only with the context.
+        session->stop(error::service_stopped);
+        guard.reset();
+        if (after_guard_released) {
+            after_guard_released();
+        }
+        boost_code ignored;
+        client().close(ignored);
+
+        // The peer thread runs what is still queued — retained handlers
+        // included, with everything they touch alive — and returns on its own
+        // once the guard is gone and the session has stopped. Stopped outright
+        // only if it does not.
+        if (peer_exited.wait_for(5s) != std::future_status::ready) {
+            peer_ctx.stop();
+        }
+        peer_thread.join();
+
+        // The same for the pool: what runs there ends once the session has
+        // stopped.
+        if (protocol_spawned && protocol_completed.wait_for(5s) != std::future_status::ready) {
+            pool.stop();
+        }
+        pool.join();
+
+        // Both threads are gone, so the fixture's is the only reference left
+        // to the session — unless something queued on the peer context holds
+        // one: a handler posted that nothing ran, still owning the session.
+        if (observed) {
+            observed->session_owners_after_join = session.use_count();
+        }
+    }
+
+    multithread_session_fixture(multithread_session_fixture const&) = delete;
+    multithread_session_fixture& operator=(multithread_session_fixture const&) = delete;
+
+    ::asio::ip::tcp::socket& client() { return sockets.first; }
+
+    void open_gate() {
+        if ( ! gate_opened) {
+            gate_opened = true;
+            gate_promise.set_value();
+        }
+    }
+
+    // Use thread_pool like p2p_node does
+    ::asio::thread_pool pool{4};
+
+    // A separate io_context for the peer session (like in production)
+    ::asio::io_context peer_ctx;
+
+    network::settings settings = make_test_settings();
+    std::pair<::asio::ip::tcp::socket, ::asio::ip::tcp::socket> sockets = make_connected_sockets(peer_ctx);
+    std::shared_ptr<peer_session> session =
+        std::make_shared<peer_session>(std::move(sockets.second), settings);
+
+    std::promise<void> idle_promise;
+    std::shared_future<void> idle = idle_promise.get_future().share();
+    std::promise<void> run_started_promise;
+    std::shared_future<void> run_started = run_started_promise.get_future().share();
+    std::promise<void> run_completed_promise;
+    std::shared_future<void> run_completed = run_completed_promise.get_future().share();
+    std::promise<void> protocol_started_promise;
+    std::shared_future<void> protocol_started = protocol_started_promise.get_future().share();
+    std::promise<void> protocol_completed_promise;
+    std::shared_future<void> protocol_completed = protocol_completed_promise.get_future().share();
+    bool protocol_spawned{false};
+
+    std::promise<void> gate_promise;
+    std::shared_future<void> gate = gate_promise.get_future().share();
+    bool gate_opened{false};
+
+    // The peer context's life is explicit: its thread runs it for as long as
+    // the work guard is held — run() with nothing to do returns at once, and
+    // whatever is posted after that never runs — and the guard is released
+    // only by the teardown.
+    ::asio::executor_work_guard<::asio::io_context::executor_type> guard = ::asio::make_work_guard(peer_ctx);
+    std::promise<void> peer_exited_promise;
+    std::shared_future<void> peer_exited = peer_exited_promise.get_future().share();
+    std::thread peer_thread;
+
+    // For the case that checks the teardown itself: what it saw, and a point
+    // right after the guard is released at which the case can wait for the
+    // peer thread to have run out of work — the order the race allows, made
+    // to happen.
+    struct observation {
+        long session_owners_after_join{-1};    // after both joins
+    };
+    observation* observed{nullptr};
+    std::function<void()> after_guard_released;
+};
+
+} // namespace
+
 TEST_CASE("peer_session shutdown with multi-threaded executor",
           "[peer_session][shutdown][slow][multithread]") {
     using namespace std::chrono_literals;
     using namespace ::asio::experimental::awaitable_operators;
 
-    // Use thread_pool like p2p_node does
-    ::asio::thread_pool pool(4);
-    auto pool_executor = pool.get_executor();
+    multithread_session_fixture fx{false};
 
-    // Create a separate io_context for the peer session (like in production)
-    ::asio::io_context peer_ctx;
-
-    auto settings = make_test_settings();
-
-    auto [client, server] = make_connected_sockets(peer_ctx);
-    auto session = std::make_shared<peer_session>(std::move(server), settings);
-
-    std::atomic<bool> run_started{false};
-    std::atomic<bool> run_completed{false};
-    std::atomic<bool> protocol_started{false};
-    std::atomic<bool> protocol_completed{false};
-
-    // Start peer_ctx in its own thread (simulates the peer running independently)
-    std::thread peer_thread([&peer_ctx]() { peer_ctx.run(); });
+    // The order that used to break this case, made to happen rather than
+    // hoped against: the peer thread is already inside run(), has run
+    // everything posted so far and is idle — and only then is the session's
+    // run() posted. Held by the guard, the thread is still there to run it.
+    ::asio::post(fx.peer_ctx, [&fx]() { fx.idle_promise.set_value(); });
+    REQUIRE(fx.idle.wait_for(5s) == std::future_status::ready);
+    REQUIRE(fx.peer_exited.wait_for(200ms) == std::future_status::timeout);
 
     // Start the session's run() loop on peer_ctx
-    ::asio::co_spawn(peer_ctx, [&]() -> ::asio::awaitable<void> {
-        run_started = true;
-        co_await session->run();
-        run_completed = true;
+    ::asio::co_spawn(fx.peer_ctx, [&fx]() -> ::asio::awaitable<void> {
+        fx.run_started_promise.set_value();
+        co_await fx.session->run();
+        fx.run_completed_promise.set_value();
     }, ::asio::detached);
+    REQUIRE(fx.run_started.wait_for(5s) == std::future_status::ready);
 
     // Simulate run_peer_protocols() on the POOL executor (different from peer_ctx!)
     // This is key: in production, run_peer_protocols runs on pool_.get_executor(),
     // not on the peer's io_context.
-    ::asio::co_spawn(pool_executor, [&]() -> ::asio::awaitable<void> {
-        // Wait for run() to start first
-        while (!run_started.load()) {
-            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
-            co_await timer.async_wait(::asio::use_awaitable);
-        }
-
-        protocol_started = true;
+    fx.protocol_spawned = true;
+    ::asio::co_spawn(fx.pool.get_executor(), [&fx]() -> ::asio::awaitable<void> {
+        fx.protocol_started_promise.set_value();
 
         // Simulate the ping timer (30 seconds to make bug obvious if it exists)
         auto executor = co_await ::asio::this_coro::executor;
@@ -1845,65 +1959,110 @@ TEST_CASE("peer_session shutdown with multi-threaded executor",
         // - messages() channel operations go through peer_ctx
         // - ping_timer is on pool_executor
         // This cross-executor || operation may have issues.
-        auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->messages().async_receive(
+        auto receive_op = [&fx]() -> ::asio::awaitable<void> {
+            auto [ec, msg] = co_await fx.session->messages().async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
             co_return;
         };
 
-        auto timer_op = [&]() -> ::asio::awaitable<void> {
+        auto timer_op = [&ping_timer]() -> ::asio::awaitable<void> {
             co_await ping_timer.async_wait(::asio::use_awaitable);
         };
 
         co_await (receive_op() || timer_op());
 
-        protocol_completed = true;
+        fx.protocol_completed_promise.set_value();
     }, ::asio::detached);
-
-    // Wait for both to start
-    auto start_deadline = std::chrono::steady_clock::now() + 5s;
-    while ((!run_started.load() || !protocol_started.load()) &&
-           std::chrono::steady_clock::now() < start_deadline) {
-        std::this_thread::sleep_for(1ms);
-    }
-    REQUIRE(run_started);
-    REQUIRE(protocol_started);
+    REQUIRE(fx.protocol_started.wait_for(5s) == std::future_status::ready);
 
     // Give them time to settle into their co_await
     std::this_thread::sleep_for(50ms);
 
     // Now stop from THIS thread (simulates cleanup thread calling stop)
     auto stop_start = std::chrono::steady_clock::now();
-    session->stop(error::service_stopped);
+    fx.session->stop(error::service_stopped);
 
     // Close client socket
     boost_code ignored;
-    client.close(ignored);
+    fx.client().close(ignored);
 
-    // Wait for completion with timeout
-    auto deadline = std::chrono::steady_clock::now() + 10s;
-    while ((!run_completed.load() || !protocol_completed.load()) &&
-           std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(10ms);
-    }
+    // Both end, within the bound — or the case fails, and the fixture's
+    // teardown still joins everything.
+    bool const run_done = fx.run_completed.wait_for(10s) == std::future_status::ready;
+    bool const protocol_done = fx.protocol_completed.wait_for(10s) == std::future_status::ready;
 
     auto stop_duration = std::chrono::steady_clock::now() - stop_start;
     auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_duration).count();
 
-    // Cleanup
-    peer_ctx.stop();
-    pool.stop();
-    peer_thread.join();
-    pool.join();
-
     // Verify
-    INFO("run_completed: " << run_completed.load());
-    INFO("protocol_completed: " << protocol_completed.load());
+    INFO("run_completed: " << run_done);
+    INFO("protocol_completed: " << protocol_done);
     INFO("Shutdown took " << stop_ms << "ms");
 
-    REQUIRE(run_completed);
-    REQUIRE(protocol_completed);
+    REQUIRE(run_done);
+    REQUIRE(protocol_done);
     REQUIRE(stop_ms < 2000);  // Should be fast, not 30 seconds
+}
+
+TEST_CASE("peer_session multi-threaded fixture: a handler left behind by a failed wait runs on live state",
+          "[peer_session][shutdown][multithread]") {
+    // The path a failed REQUIRE takes: a handler that touches the fixture's
+    // state is posted, the wait for it fails because the peer thread has not
+    // got to it, and the case is left with the handler still queued. The
+    // teardown must let it run while what it touches is alive, and join — no
+    // use after free, no std::terminate.
+    using namespace std::chrono_literals;
+
+    std::promise<void> ran_promise;            // outlives the fixture
+    auto ran = ran_promise.get_future();
+    {
+        multithread_session_fixture fx{true};  // peer thread held at the gate
+
+        ::asio::post(fx.peer_ctx, [&fx, &ran_promise]() {
+            fx.idle_promise.set_value();
+            ran_promise.set_value();
+        });
+
+        // The wait the case would REQUIRE: it fails, and nothing has run.
+        CHECK(fx.idle.wait_for(0s) == std::future_status::timeout);
+        CHECK(ran.wait_for(0s) == std::future_status::timeout);
+    }   // leaving the scope as a failed REQUIRE would
+
+    // The retained handler ran during the teardown, on live state.
+    CHECK(ran.wait_for(0s) == std::future_status::ready);
+}
+
+TEST_CASE("peer_session multi-threaded fixture: a session stopped in the teardown is let go before its context",
+          "[peer_session][shutdown][multithread]") {
+    // Stopping a session posts the cancellation of its timers to its strand,
+    // holding the session until that has run. In the teardown that has to
+    // happen while the peer thread is still running the context: once the
+    // thread has run out of work and returned, what is posted is never run,
+    // and the session it holds outlives the members it depends on, to be
+    // destroyed only with the context. Right after the guard is released, the
+    // case waits for the peer thread to run out of work and return — the
+    // order the race allows, made to happen — and then looks at who still
+    // holds the session once the teardown is over.
+    using namespace std::chrono_literals;
+
+    multithread_session_fixture::observation seen;
+    bool thread_returned = false;
+    std::weak_ptr<peer_session> session;
+    {
+        multithread_session_fixture fx{true};   // the failure path: a held thread
+        fx.observed = &seen;
+        fx.after_guard_released = [&fx, &thread_returned]() {
+            thread_returned = fx.peer_exited.wait_for(5s) == std::future_status::ready;
+        };
+        session = fx.session;
+    }
+
+    // The thread did run out of work and return within the teardown.
+    REQUIRE(thread_returned);
+    // And nothing it left on the context holds the session: what the stop
+    // posted ran before it returned.
+    CHECK(seen.session_owners_after_join == 1);
+    CHECK(session.expired());
 }
 
 // =============================================================================

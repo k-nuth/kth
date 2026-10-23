@@ -110,11 +110,15 @@ void SHA1ProcessMessageBlock(SHA1CTX* context)
     uint32_t W[80];
     uint32_t A, B, C, D, E;
 
+    /* Each byte is widened to uint32_t before it is shifted. A uint8_t is
+       promoted to int, and shifting a byte of 0x80 or more left by 24 does not
+       fit in an int: undefined behavior, even though the bits it produces on
+       every target are the ones wanted here. */
     for (t = 0; t < 16; t++) {
-        W[t]  = context->block[t * 4 + 0] << 24;
-        W[t] |= context->block[t * 4 + 1] << 16;
-        W[t] |= context->block[t * 4 + 2] << 8;
-        W[t] |= context->block[t * 4 + 3] << 0;
+        W[t]  = (uint32_t)context->block[t * 4 + 0] << 24;
+        W[t] |= (uint32_t)context->block[t * 4 + 1] << 16;
+        W[t] |= (uint32_t)context->block[t * 4 + 2] << 8;
+        W[t] |= (uint32_t)context->block[t * 4 + 3] << 0;
     }
 
     for (t = 16; t < 80; t++) {

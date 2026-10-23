@@ -2,7 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <array>
 #include <limits>
+#include <span>
 
 #include <test_helpers.hpp>
 
@@ -409,6 +411,46 @@ TEST_CASE("byte_reader - read_array fails when not enough bytes", "[byte_reader 
     auto result = reader.read_array<5>();
     REQUIRE( ! result.has_value());
     REQUIRE(result.error() == error::read_past_end_of_buffer);
+}
+
+// Reading nothing: a default span's data() is null, and so is a zero-length
+// array's and an empty buffer's. It succeeds, moves nothing and touches
+// nothing; memcpy is undefined for a null pointer even with a count of zero.
+TEST_CASE("byte_reader - read_bytes_to a default span reads nothing", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03};
+    byte_reader reader(buffer);
+    REQUIRE(reader.read_byte().has_value());
+
+    std::span<uint8_t> const nothing{};
+    REQUIRE(nothing.data() == nullptr);
+    REQUIRE(reader.read_bytes_to(nothing).has_value());
+    REQUIRE(reader.position() == 1u);
+
+    // And at the end of the buffer, and from an empty one.
+    REQUIRE(reader.read_bytes(2u).has_value());
+    REQUIRE(reader.read_bytes_to(nothing).has_value());
+    REQUIRE(reader.position() == 3u);
+
+    data_chunk const empty{};
+    byte_reader from_nothing(empty);
+    REQUIRE(from_nothing.read_bytes_to(nothing).has_value());
+    REQUIRE(from_nothing.position() == 0u);
+}
+
+TEST_CASE("byte_reader - read_array of zero bytes reads nothing", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02};
+    byte_reader reader(buffer);
+    REQUIRE(reader.read_byte().has_value());
+
+    auto const result = reader.read_array<0>();
+    REQUIRE(result.has_value());
+    REQUIRE(result->empty());
+    REQUIRE(reader.position() == 1u);
+
+    data_chunk const empty{};
+    byte_reader from_nothing(empty);
+    REQUIRE(from_nothing.read_array<0>().has_value());
+    REQUIRE(from_nothing.position() == 0u);
 }
 
 // ---------------------------------------------------------------------------
