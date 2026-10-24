@@ -38,32 +38,11 @@ struct peers_updated {
 // Signal to stop processing
 struct stop_request {};
 
-struct header_request {
-    uint32_t from_height;
-    hash_digest from_hash;
-
-    // The peer whose answer produced this request and moved nothing. It is
-    // spent for this walk: a peer that returns headers the chain already holds
-    // has said exactly what one that returns none has, and asking it again
-    // reproduces its answer. Empty when the request does not follow such an
-    // answer.
-    //
-    // The download task cannot work this out for itself — whether headers were
-    // new is the organizer's verdict, two hops downstream — so the coordinator
-    // carries it back on the request it sends next.
-    std::optional<uint64_t> spent_peer;
-};
-
+// A batch of headers from the node's header ingest. Not an answer to anything:
+// see detail/header_walk.hpp.
 struct downloaded_headers {
     domain::message::header::list headers;  // Same type as add_headers() expects
-    uint32_t start_height;
     network::peer_session::ptr source_peer;
-};
-
-// Report peer failure to coordinator (for tracking peer health)
-struct peer_failure_report {
-    network::peer_session::ptr peer;
-    code error;
 };
 
 // Report peer error to peer_provider - it decides what action to take (ban, exclude, etc.)
@@ -86,15 +65,8 @@ struct header_performance {
     uint32_t download_time_ms;
 };
 
-// Header download task output (can be headers, failure report, or performance)
-using header_download_output = std::variant<downloaded_headers, peer_failure_report, header_performance>;
-
-// Header download task input - single channel with all message types (CSP pattern)
-// Messages are processed in FIFO order, no arbitrary priority
-using header_download_input = std::variant<stop_request, peers_updated, header_request>;
-
 // Header validation task input - single channel (CSP pattern)
-using header_validation_input = std::variant<stop_request, downloaded_headers, peer_failure_report>;
+using header_validation_input = std::variant<stop_request, downloaded_headers>;
 
 struct headers_validated {
     uint32_t height;
@@ -233,8 +205,6 @@ using peer_provider_input_channel = concurrent_channel<peer_provider_input>;
 using peer_channel = concurrent_channel<peers_updated>;
 
 // Header sync pipeline (CSP pattern - single input/output per task)
-using header_download_input_channel = concurrent_channel<header_download_input>;
-using header_download_output_channel = concurrent_channel<header_download_output>;
 using header_validation_input_channel = concurrent_channel<header_validation_input>;
 using header_validated_channel = concurrent_channel<headers_validated>;
 
@@ -288,9 +258,42 @@ struct utxo_build_advanced {
 // everything registered by then (#706).
 struct blocks_announced_event {};
 
+// The header ingest refused headers under local pressure. Nothing in flight
+// can be relied on to bring them, so a request from the tip is owed.
+struct headers_owed_event {};
+
+// Header stimulus `seq` was taken by its peer's outbound queue: a local fact,
+// not a write to the wire. `seq` is the walk's own number.
+struct header_stimulus_accepted {
+    uint64_t seq;
+};
+
+// Header stimulus `seq` could not be sent: its session is stopping.
+struct header_stimulus_failed {
+    uint64_t seq;
+};
+
+// The retry of the header walk's park `generation` is due. The generation is
+// the walk's own number.
+struct header_walk_retry {
+    uint64_t generation;
+};
+
+// The deadline of header stimulus `seq` expired. `seq` is the walk's own
+// number, never anything read off the wire.
+struct header_walk_timeout {
+    uint64_t seq;
+};
+
 using sync_coordinator_event = std::variant<
     stop_request,
+    peers_updated,
     blocks_announced_event,
+    headers_owed_event,
+    header_stimulus_accepted,
+    header_stimulus_failed,
+    header_walk_timeout,
+    header_walk_retry,
     headers_validated,
     block_validated,
     chunk_validated,

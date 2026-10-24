@@ -14,32 +14,13 @@
 namespace kth::node::sync {
 
 // =============================================================================
-// Header Download Task
-// =============================================================================
-//
-// Downloads headers from peers using CSP pattern.
-// - Input: single channel with variant (stop, peers_updated, header_request)
-// - Output: single channel with variant (downloaded_headers, peer_failure_report)
-// - Messages processed in FIFO order (no arbitrary priority)
-// - Uses sticky peer selection (same peer until failure)
-//
-// =============================================================================
-
-// max_header_height: the maximum height to sync headers to. When
-// from_height >= max_header_height, the tip is confirmed. 0 for unlimited.
-::asio::awaitable<void> header_download_task(
-    header_download_input_channel& input,
-    header_download_output_channel& output,
-    uint32_t max_header_height
-);
-
-// =============================================================================
 // Header Validation Task
 // =============================================================================
 //
 // Validates headers and writes to organizer.
-// - Input: single channel with variant (stop, downloaded_headers, peer_failure_report)
-// - Output: validation results to header_validated_channel
+// - Input: single channel with variant (stop, downloaded_headers)
+// - Output: validation results to header_validated_channel, awaited: a result
+//   dropped is a walk that never hears how its stimulus went
 // - Writes to header_organizer (SINGLE WRITER - no lock needed)
 //
 // =============================================================================

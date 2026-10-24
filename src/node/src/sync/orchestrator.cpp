@@ -5,7 +5,9 @@
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
-#include <kth/node/detail/header_request_delivery.hpp>
+#include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/header_walk.hpp>
+#include <kth/node/detail/header_walk_tasks.hpp>
 
 #include <algorithm>
 
@@ -479,6 +481,18 @@ static
     domain::config::network network_type,
     std::function<void(std::string const&)> on_fatal
 ) {
+    co_await sync_orchestrator(chain, organizer, network, network_type,
+        std::move(on_fatal), node_header_walk_timing);
+}
+
+::asio::awaitable<void> sync_orchestrator(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    kth::node::p2p_node& network,
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal,
+    header_walk_timing timing
+) {
     auto executor = co_await ::asio::this_coro::executor;
 
     // 2026-02-07: Log which executor is being used for debugging
@@ -492,26 +506,12 @@ static
     // =========================================================================
     // CHANNELS - The ONLY way tasks communicate
     // =========================================================================
-    //
-    // TODO(fernando): Refactor channel architecture. Currently header_download
-    // communicates with 3 entities (peer_provider, sync_coordinator, header_validation)
-    // via multiple channels. Channels should connect exactly 2 entities.
-    //
-    // Proposed architecture:
-    //   - header_download ↔ header_manager (single bidirectional channel)
-    //   - header_manager ↔ peer_provider (for peer issues)
-    //   - header_manager ↔ header_validation (for validation)
-    //   - header_manager ↔ sync_coordinator (for orchestration)
-    //
-    // This would make the data flow cleaner and avoid priority issues between
-    // multiple input channels.
-    // =========================================================================
 
-    // Header pipeline - single input channels (CSP pattern)
-    header_download_input_channel header_download_input(executor, 100);
-    header_download_output_channel header_download_output(executor, 1000);  // task output: headers + failure + performance
+    // Header pipeline - single input channels (CSP pattern). Headers come in
+    // through the node's header ingest, whoever sent them and for whatever reason.
     header_validation_input_channel header_validation_input(executor, 100);
     header_validated_channel validated_headers(executor, 100);
+
 
     // Block pipeline - single input channels (CSP pattern)
     block_download_input_channel block_download_input(executor, 100);
@@ -541,6 +541,21 @@ static
     // =========================================================================
 
     task_group all_tasks("orchestrator_tasks", executor);
+
+    // The header walk's operations, all owned by the coordinator: the stimulus
+    // being sent, the deadline of the stimulus that is out, and the retry of a
+    // parked walk. Each runs as a task of this group on a strand of its own,
+    // and is replaced or cancelled by the coordinator through that strand —
+    // nothing polls, and nothing is shared but through it.
+    auto spawn_walk_task = [&all_tasks](::asio::awaitable<void> task) {
+        all_tasks.spawn("header_walk_operation", std::move(task));
+    };
+    detail::stimulus_sender header_stimulus(executor, coordinator_events, spawn_walk_task);
+    detail::walk_timer header_deadline(executor, coordinator_events, spawn_walk_task);
+    detail::walk_timer header_retry(executor, coordinator_events, spawn_walk_task);
+
+    // From the ingest's owner to its forwarder: one batch, answering one pull.
+    detail::ingest_handoff_channel ingest_handoff(executor, 1);
 
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
@@ -633,7 +648,7 @@ static
     //
     // Responsibilities:
     // - Receive peer connect/disconnect events from network
-    // - Broadcast peer list to header_download and block_download tasks
+    // - Broadcast peer list to the coordinator (header walk) and block_download
     // - Report errors to network.report_misbehavior() (reputation system handles bans)
     // - Record performance to network.record_peer_performance() (persistent storage)
     // - Close channels on shutdown
@@ -648,8 +663,8 @@ static
         // Local peer list for broadcasting to sync tasks
         std::vector<network::peer_session::ptr> peers;
 
-        // Broadcast current peer list to download tasks
-        auto broadcast_peers = [&]() {
+        // Broadcast current peer list to the coordinator and block download
+        auto broadcast_peers = [&]() -> ::asio::awaitable<void> {
             // Remove stopped peers
             std::erase_if(peers, [](auto const& p) { return p->stopped(); });
 
@@ -675,9 +690,15 @@ static
                 spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
             }
 
-            // Headers: send all peers (headers are small, slow is less of an issue)
-            if (!header_download_input.try_send(std::error_code{}, peers_updated{peers})) {
-                spdlog::warn("[peer_provider] Channel full, peers_updated dropped for header_download");
+            // Headers: send all peers (headers are small, slow is less of an
+            // issue) to the coordinator, which owns the header walk. Awaited: a
+            // peer set dropped is a walk that never learns who it may ask. The
+            // coordinator never waits on this task, and closes its channel when
+            // it ends, so this cannot wait forever.
+            auto [send_ec] = co_await coordinator_events.async_send(std::error_code{},
+                peers_updated{peers}, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[peer_provider] Coordinator channel closed, peers_updated not delivered");
             }
             // Blocks: send only fast peers (slow peers degrade throughput significantly)
             if (!block_download_input.try_send(std::error_code{}, peers_updated{fast_peers})) {
@@ -709,13 +730,13 @@ static
                     spdlog::info("[peer_provider] New peer: {} (nonce={})",
                         np->peer->authority_with_agent(), np->peer->nonce());
                     peers.push_back(np->peer);
-                    broadcast_peers();
+                    co_await broadcast_peers();
 
                 } else if (auto* dp = std::get_if<peer_disconnected>(&msg)) {
                     spdlog::info("[peer_provider] Peer disconnected: {} (nonce={})",
                         dp->peer->authority_with_agent(), dp->peer->nonce());
                     std::erase_if(peers, [&](auto const& p) { return p->nonce() == dp->peer->nonce(); });
-                    broadcast_peers();
+                    co_await broadcast_peers();
 
                 } else if (auto* err = std::get_if<peer_error>(&msg)) {
                     spdlog::info("[peer_provider] Peer error: {} - {}",
@@ -728,7 +749,7 @@ static
                     if (banned) {
                         // Peer was banned - remove from local list
                         std::erase_if(peers, [&](auto const& p) { return p->nonce() == err->peer->nonce(); });
-                        broadcast_peers();
+                        co_await broadcast_peers();
                     }
 
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
@@ -765,10 +786,6 @@ static
         // Cancel and close all data channels to unblock pending operations
         // Note: cancel() wakes up pending async ops, close() alone does NOT!
         spdlog::info("[peer_provider:shutdown] Closing channels...");
-        header_download_input.cancel();
-        header_download_input.close();
-        header_download_output.cancel();
-        header_download_output.close();
         header_validation_input.cancel();
         header_validation_input.close();
         validated_headers.cancel();
@@ -796,58 +813,23 @@ static
     });
 
     // -------------------------------------------------------------------------
-    // 2. Header download task (1 input, 1 output)
-    //    Sequential header download with sticky peer selection
+    // 2. Header ingest task: the node's header ingest -> validation
+    //    Every header that arrives goes this way, asked for or not; the
+    //    coordinator's header walk only decides whom to stimulate next.
     // -------------------------------------------------------------------------
-    auto const max_header_height = 0u;  // 0 = unlimited, download all headers from peers
-
-    all_tasks.spawn("header_download_task", header_download_task(
-        header_download_input,
-        header_download_output,
-        max_header_height
+    all_tasks.spawn("header_ingest_task", detail::header_ingest_task(
+        network.header_ingest(),
+        ingest_handoff
     ));
-
-    // -------------------------------------------------------------------------
-    // 3. Header download output bridge (demultiplexes headers, failures, and performance)
-    //    - downloaded_headers → header_validation_input
-    //    - peer_failure_report → header_validation_input
-    //    - header_performance → peer_provider_input
-    // -------------------------------------------------------------------------
-    all_tasks.spawn("header_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[header_bridge] Started, demultiplexing download output");
-        try {
-            while (true) {
-                auto [ec, msg] = co_await header_download_output.async_receive(
-                    ::asio::as_tuple(::asio::use_awaitable));
-                if (ec) {
-                    spdlog::debug("[header_bridge] Download channel closed: {}", ec.message());
-                    break;
-                }
-
-                if (auto* hdrs = std::get_if<downloaded_headers>(&msg)) {
-                    // Forward to validation
-                    if (!header_validation_input.try_send(std::error_code{}, std::move(*hdrs))) {
-                        spdlog::warn("[header_bridge] Channel full, headers dropped");
-                        break;
-                    }
-                } else if (auto* failure = std::get_if<peer_failure_report>(&msg)) {
-                    // Forward failure report to validation (so it can forward to coordinator)
-                    if (!header_validation_input.try_send(std::error_code{}, std::move(*failure))) {
-                        spdlog::warn("[header_bridge] Channel full, failure report dropped");
-                        break;
-                    }
-                } else if (auto* perf = std::get_if<header_performance>(&msg)) {
-                    // Forward performance stats to peer_provider
-                    if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
-                        spdlog::debug("[header_bridge] Channel full, performance stats dropped");
-                    }
-                }
-            }
-        } catch (std::exception const& e) {
-            spdlog::error("[header_bridge] Exception: {}", e.what());
-        }
-        spdlog::info("[header_bridge] Task ended");
-    });
+    all_tasks.spawn("header_ingest_forwarder", detail::header_ingest_forwarder(
+        network.header_ingest(),
+        ingest_handoff,
+        header_validation_input
+    ));
+    all_tasks.spawn("header_debt_bridge", detail::header_debt_bridge(
+        network.header_ingest(),
+        coordinator_events
+    ));
 
     // -------------------------------------------------------------------------
     // 4. Header validation task (1 input, 1 output)
@@ -1184,8 +1166,13 @@ static
                 spdlog::debug("[coordinator:headers_bridge] Channel closed: {}", ec.message());
                 break;
             }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:headers_bridge] Channel full, headers_validated dropped");
+            // Awaited: a result dropped here is a walk that never hears how a
+            // stimulus went, and a tip that moved without the coordinator
+            // knowing.
+            auto [send_ec] = co_await coordinator_events.async_send(std::error_code{},
+                std::move(result), ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[coordinator:headers_bridge] Coordinator channel closed");
                 break;
             }
         }
@@ -1242,73 +1229,6 @@ static
         spdlog::info("[sync_coordinator] Initial state: blocks={}, headers={}",
             blocks_synced_to, headers_synced_to);
 
-        auto exec = co_await ::asio::this_coro::executor;
-
-        // Trigger parallel header sync (supervisor manages chunk coordination)
-        auto from_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-        // Whether a header request is outstanding, and whether a block was
-        // announced that no outstanding request can be expected to bring in.
-        //
-        // A block announced WHILE a request is in flight cannot simply be
-        // dropped: it may have been mined after that getheaders left, so its
-        // response cannot contain it, and with nothing polling anywhere that
-        // announcement was the only event able to reopen the walk. It is
-        // coalesced instead, and reconsidered when the walk settles — by which
-        // time the response may have brought it in, and then there is nothing
-        // to do (#706).
-        bool header_request_in_flight = false;
-
-        // Every announced hash still unknown when a walk was already running,
-        // not just the first of them. Peers set the rate here, so it is bounded
-        // and the overflow is remembered: with only one hash kept, a burst of
-        // different blocks would leave the last one asked about and the rest
-        // forgotten, and a walk that brought in the one we remembered would
-        // clear the debt for all of them.
-        static constexpr size_t max_announcement_pending = 64;
-        std::vector<hash_digest> announcement_pending;
-        bool announcement_pending_overflow = false;
-
-        auto remember_announcement = [&](hash_digest const& hash) {
-            if (std::find(announcement_pending.begin(), announcement_pending.end(), hash)
-                != announcement_pending.end()) {
-                return;
-            }
-            if (announcement_pending.size() >= max_announcement_pending) {
-                announcement_pending_overflow = true;
-                return;
-            }
-            announcement_pending.push_back(hash);
-        };
-
-        // Awaited, not try_send. A request dropped for want of room is a walk
-        // that never happens, and for an announcement it is worse: its hashes
-        // have already been taken off the node, so nothing is left to raise it
-        // again. In flight is recorded only once the request has been accepted,
-        // so a delivery that never happened cannot look like one that did.
-        auto ask_for_headers = [&](uint32_t from_height, hash_digest const& hash,
-                                   std::optional<uint64_t> spent, char const* why)
-            -> ::asio::awaitable<void> {
-            auto const delivered = co_await detail::deliver_header_request(
-                header_download_input,
-                header_request{
-                    .from_height = from_height,
-                    .from_hash = hash,
-                    .spent_peer = spent});
-
-            if ( ! delivered) {
-                // The channel is closed, which happens on shutdown and nowhere
-                // else. There is nobody left to ask.
-                spdlog::debug("[sync_coordinator] {} header_request abandoned; shutting down", why);
-                co_return;
-            }
-            header_request_in_flight = true;
-        };
-
-        spdlog::debug("[sync_coordinator] Starting parallel header sync from height {}", headers_synced_to);
-        co_await ask_for_headers(headers_synced_to, from_hash, std::nullopt, "initial");
-
-
         // One place, called from every event that can change the answer, so they
         // cannot drift apart — which is how two copies of this trigger once came
         // to be identical by hand.
@@ -1332,47 +1252,163 @@ static
             return organizer.index().find(hash) != blockchain::header_index::null_index;
         };
 
-        // Consulted on the way back to the channel, so every path out of every
-        // handler passes through it once and none has to remember to.
-        auto settle_pending_announcement = [&]() -> ::asio::awaitable<void> {
-            if (header_request_in_flight) {
-                co_return;
-            }
-            if (announcement_pending.empty() && ! announcement_pending_overflow) {
-                co_return;
-            }
+        // ---------------------------------------------------------------------
+        // The header walk (#710)
+        // ---------------------------------------------------------------------
+        //
+        // Who gets the next getheaders, when a stimulus is over, and when the
+        // tip is confirmed: all decided by `walk`, from what the organizer says
+        // about the headers that arrive — from anyone, asked or not. A
+        // `headers` is never matched to a request; see detail/header_walk.hpp.
+        detail::header_walk walk;
+        std::vector<network::peer_session::ptr> header_peers;
 
-            // Overflowed means some announcement was not kept, so "everything I
-            // remember is known" is not "nothing new was announced": ask.
-            bool still_unknown = announcement_pending_overflow;
-            for (auto const& hash : announcement_pending) {
-                if ( ! already_held(hash)) {
-                    still_unknown = true;
-                    break;
+
+        auto find_header_peer = [&](uint64_t nonce) -> network::peer_session::ptr {
+            for (auto const& peer : header_peers) {
+                if (peer->nonce() == nonce) {
+                    return peer;
                 }
             }
+            return nullptr;
+        };
 
-            announcement_pending.clear();
-            announcement_pending_overflow = false;
+        // The walk ran out of peers to ask, and every one that answered while
+        // being asked had nothing past our tip. What they claim in their
+        // version messages is not consulted. Provisional: progress or a debt
+        // starts a new walk.
+        auto on_tip_confirmed = [&]() -> ::asio::awaitable<void> {
+            spdlog::info("[sync_coordinator] No eligible peer left at height {} ({} connected, "
+                "best claimed {}): confirming the tip",
+                headers_synced_to, header_peers.size(), walk.best_known_height());
 
-            if ( ! still_unknown) {
-                // The walk that was in flight brought them all in. Nothing owed.
-                spdlog::debug("[sync_coordinator] Announced block already in the index; "
-                    "no follow-up needed");
+            if (header_sync_complete) {
+                // Confirmed again after a walk that moved the tip: the bodies
+                // already follow it through on_headers_advanced.
                 co_return;
             }
 
-            spdlog::debug("[sync_coordinator] Announced block still unknown after the walk "
-                "settled; asking once from height {}", headers_synced_to);
-            co_await ask_for_headers(headers_synced_to,
-                active_hash_at(organizer.index(), headers_synced_to), std::nullopt,
-                "announcement follow-up");
+            if (headers_synced_to < checkpoint_height) {
+                // Every peer we have is behind the checkpoint. Not complete, and
+                // nothing to retry on a timer: a peer claiming more starts the
+                // next walk when it connects, and progress from anyone does too.
+                spdlog::warn("[sync_coordinator] All peers at height {} but checkpoint is {} - "
+                    "waiting for a peer that has more", headers_synced_to, checkpoint_height);
+                co_return;
+            }
+
+            header_sync_complete = true;
+
+            auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
+            auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+            auto const total_headers = headers_synced_to - headers_at_start;
+            auto const rate = elapsed_secs > 0 ? total_headers / elapsed_secs : total_headers;
+
+            spdlog::info("[sync_coordinator] Header sync COMPLETE: {} headers in {}s ({}/s)",
+                total_headers, elapsed_secs, rate);
+
+            // Owned by the task group, not detached. It holds `chain` and the
+            // organizer's index BY REFERENCE and it suspends between chunks, so
+            // a detached one outlives the join below: the final drain would
+            // overlap a writer it believed had stopped, and the orchestrator
+            // could return and let the organizer be destroyed while this still
+            // held a reference into it.
+            //
+            // In the group, join() waits for it, which is what makes the drain
+            // after that join a quiescence barrier rather than a hope.
+            if (headers_synced_to > initial_header_height) {
+                all_tasks.spawn("header_persist",
+                    persist_headers_to_db(chain, organizer.index(),
+                        initial_header_height + 1, headers_synced_to));
+            }
+
+            if (headers_synced_to <= blocks_synced_to) {
+                // Nothing owed to the bodies. Nothing polls either: the next
+                // block reaches us as a header, a cmpctblock or an inv.
+                spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
+                co_return;
+            }
+
+            if (blocks_synced_to < checkpoint_height) {
+                // Fast sync stage: download up to the checkpoint. Merkle only,
+                // so the UTXO set is not consulted and there is nothing to wait
+                // for.
+                spdlog::info("[sync_coordinator] Starting FAST block sync: {} to "
+                    "{} ({} blocks)", blocks_synced_to + 1, checkpoint_height,
+                    checkpoint_height - blocks_synced_to);
+
+                // The result is not consulted: it answers false only when the
+                // node is winding down, and a node that is winding down owes no
+                // range.
+                co_await send_block_range(
+                    deps, blocks_synced_to + 1, checkpoint_height);
+            } else {
+                // Slow sync stage, through the same guarded admission as the
+                // other doors onto the post-checkpoint range (#663).
+                co_await try_start_slow_sync(
+                    body_range_trigger::header_sync_complete);
+            }
         };
+
+        // Carry out what the walk decided. A stimulus is sent by its own task,
+        // which waits for the peer's outbound queue to take it; its deadline
+        // runs from now, so a queue that never makes room ends it like a peer
+        // that never answers. A stimulus the walk moves past is withdrawn, and
+        // one still waiting for room is never sent afterwards. A peer already
+        // gone is a failed send, decided on the spot.
+        auto apply = [&](detail::walk_step step, char const* why) -> ::asio::awaitable<void> {
+            while (true) {
+                if (step.confirm_tip) {
+                    co_await on_tip_confirmed();
+                }
+                if ( ! step.stimulate) {
+                    // The deadline belongs to the active stimulus. With none,
+                    // nothing is due.
+                    if ( ! walk.active()) {
+                        header_deadline.cancel();
+                        header_stimulus.cancel();
+                    }
+                    if (step.retry) {
+                        // Parked with peers connected and nothing else bound
+                        // to happen: try again later, later each time nobody
+                        // answers. Replaces any retry for an earlier park.
+                        auto const delay = detail::walk_retry_delay(
+                            timing.retry_base, timing.retry_cap, step.retry->attempt);
+                        spdlog::info("[sync_coordinator] Header walk parked at height {} with {} "
+                            "peer(s) and none left to ask; retrying in {}ms (attempt {})",
+                            headers_synced_to, header_peers.size(), delay.count(),
+                            step.retry->attempt + 1);
+                        header_retry.arm(delay, header_walk_retry{.generation = step.retry->generation});
+                    } else if ( ! walk.parked()) {
+                        header_retry.cancel();
+                    }
+                    co_return;
+                }
+
+                auto const stimulus = *step.stimulate;
+                auto peer = find_header_peer(stimulus.peer);
+                if ( ! peer || peer->stopped()) {
+                    step = walk.send_failed(stimulus.seq, headers_synced_to);
+                    continue;
+                }
+
+                spdlog::debug("[sync_coordinator] Header stimulus {} ({}) to {} from height {}",
+                    stimulus.seq, why, peer->authority_with_agent(), headers_synced_to);
+                // Replaces — and withdraws — whatever stimulus was being sent.
+                header_stimulus.send(peer, active_hash_at(organizer.index(), headers_synced_to),
+                    stimulus.seq);
+                header_deadline.arm(timing.stimulus_timeout, header_walk_timeout{.seq = stimulus.seq});
+                // Walking again: whatever retry was armed is moot.
+                header_retry.cancel();
+                co_return;
+            }
+        };
+
+        spdlog::debug("[sync_coordinator] Starting header walk from height {}", headers_synced_to);
+        co_await apply(walk.restart(headers_synced_to), "initial");
 
         // Main loop: ONLY receives from unified channel (no || operator)
         while (true) {
-            co_await settle_pending_announcement();
-
             spdlog::debug("[sync_coordinator] Waiting for events...");
             auto [ec, event] = co_await coordinator_events.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
@@ -1385,12 +1421,54 @@ static
             // Process event based on variant type (FIFO order guaranteed)
             if (std::holds_alternative<stop_request>(event)) {
                 spdlog::debug("[sync_coordinator] Stop signal received");
-                // Nothing is owed to anybody once we are stopping: the walk is
-                // abandoned and a coalesced announcement has nowhere to go.
-                announcement_pending.clear();
-                announcement_pending_overflow = false;
-                header_request_in_flight = false;
                 break;
+            }
+
+            if (auto* update = std::get_if<peers_updated>(&event)) {
+                header_peers.clear();
+                std::vector<detail::walk_peer> walk_peers;
+                for (auto const& peer : update->peers) {
+                    if (peer->stopped()) continue;
+                    auto const version = peer->peer_version();
+                    header_peers.push_back(peer);
+                    walk_peers.push_back(detail::walk_peer{
+                        .nonce = peer->nonce(),
+                        .claimed_height = version ? version->start_height() : 0u});
+                }
+                spdlog::debug("[sync_coordinator] Header peers updated: {} connected",
+                    header_peers.size());
+                co_await apply(walk.peers_changed(std::move(walk_peers), headers_synced_to), "peers");
+                continue;
+            }
+
+            if (std::holds_alternative<headers_owed_event>(event)) {
+                spdlog::debug("[sync_coordinator] Headers were refused under local pressure; "
+                    "a follow-up from height {} is owed", headers_synced_to);
+                co_await apply(walk.owe(headers_synced_to), "ingest debt");
+                continue;
+            }
+
+            if (auto* accepted = std::get_if<header_stimulus_accepted>(&event)) {
+                // Taken by the peer's outbound queue: as far as the walk's debt
+                // is concerned, sent.
+                walk.delivered(accepted->seq);
+                continue;
+            }
+
+            if (auto* failed = std::get_if<header_stimulus_failed>(&event)) {
+                co_await apply(walk.send_failed(failed->seq, headers_synced_to), "send failed");
+                continue;
+            }
+
+            if (auto* due = std::get_if<header_walk_retry>(&event)) {
+                co_await apply(walk.retry_due(due->generation, headers_synced_to), "retry");
+                continue;
+            }
+
+            if (auto* expired = std::get_if<header_walk_timeout>(&event)) {
+                spdlog::debug("[sync_coordinator] Stimulus {} reached its deadline", expired->seq);
+                co_await apply(walk.timed_out(expired->seq, headers_synced_to), "deadline");
+                continue;
             }
 
             if (std::holds_alternative<blocks_announced_event>(event)) {
@@ -1406,65 +1484,28 @@ static
                     }
                 }
 
-                std::optional<hash_digest> unknown;
-                if ( ! unknown_hashes.empty()) {
-                    unknown = unknown_hashes.front();
-                }
-
-                if ( ! unknown && announced.overflowed) {
-                    // The registry refused hashes for want of room, so "all of
-                    // these are known" is not the same as "nothing new was
-                    // announced". Asking is the one action any announcement
-                    // produces, so ask; the walk starts from the tip and takes
-                    // whatever is above it, refused hashes included.
-                    spdlog::debug("[sync_coordinator] Announcement registry overflowed; "
-                        "asking rather than assuming");
-                    unknown = active_hash_at(organizer.index(), headers_synced_to);
-                }
-
-                if ( ! unknown) {
+                if (unknown_hashes.empty() && ! announced.overflowed) {
                     spdlog::debug("[sync_coordinator] {} announced block(s), all already held",
                         announced.hashes.size());
                     continue;
                 }
 
-                if (header_request_in_flight) {
-                    // Coalesced, not dropped: this block may have been mined
-                    // after the outstanding getheaders left, so its response
-                    // cannot be relied on to contain it. Reconsidered when the
-                    // walk settles, and only asked for if it is still missing.
-                    spdlog::debug("[sync_coordinator] {} block(s) announced while a header "
-                        "request is in flight; coalescing until it settles",
-                        unknown_hashes.empty() ? 1u : unsigned(unknown_hashes.size()));
-
-                    if (announced.overflowed) {
-                        // The registry refused hashes, so what was remembered is
-                        // not the whole of what was announced — and that is true
-                        // whether or not some hashes were remembered too. Losing
-                        // the flag here would let a walk that brought in the
-                        // remembered ones settle the debt for the refused ones
-                        // as well.
-                        announcement_pending_overflow = true;
-                    }
-                    for (auto const& hash : unknown_hashes) {
-                        remember_announcement(hash);
-                    }
-                    continue;
-                }
-
-                spdlog::debug("[sync_coordinator] Block announced and unknown; asking from height {}",
-                    headers_synced_to);
-                co_await ask_for_headers(headers_synced_to,
-                    active_hash_at(organizer.index(), headers_synced_to), std::nullopt,
-                    "announcement");
+                // Unknown, or unknowable because the registry refused some: a
+                // debt either way. Nothing already in flight can be relied on
+                // to bring it — it may have been mined after the last
+                // getheaders left — so only a stimulus sent after this settles
+                // it.
+                spdlog::debug("[sync_coordinator] {} announced block(s) unknown{}; "
+                    "a follow-up from height {} is owed", unknown_hashes.size(),
+                    announced.overflowed ? " (registry overflowed)" : "", headers_synced_to);
+                co_await apply(walk.owe(headers_synced_to), "announcement");
                 continue;
             }
 
             if (auto* result = std::get_if<headers_validated>(&event)) {
-                // The outcome of the request that was outstanding. Whatever the
-                // branches below decide, the request itself is over.
-                header_request_in_flight = false;
-
+                // A batch from the ingest, which may or may not answer the
+                // stimulus that is out. Only the walk interprets it, and only
+                // through who sent it and what the organizer made of it.
                 spdlog::debug("[sync_coordinator] Received: height={}, count={}, result={}",
                     result->height, result->count, result->result ? result->result.message() : "ok");
 
@@ -1558,6 +1599,15 @@ static
                     } else {
                         spdlog::error("[sync_coordinator] Reorg aborted; staying on the current chain");
                     }
+
+                    // A switch moved the tip as surely as a forward batch does,
+                    // so the walk adopts it and asks from the new tip. One that
+                    // did not leaves the walk where it was: the stimulus out, if
+                    // any, ends by its deadline.
+                    if (switched && result->source_peer) {
+                        co_await apply(walk.progress(result->source_peer->nonce(), headers_synced_to),
+                            "reorg");
+                    }
                     continue;
                 }
 
@@ -1600,63 +1650,44 @@ static
                     }
                 }
 
-                if (result->result.value() == error::stale_chain) {
-                    // Not a failure, and this is the distinction the node did not
-                    // make. `stale_chain` is the organizer saying the batch was
-                    // valid and added nothing — which is what a peer sends when
-                    // it is at the same tip we are, and answers our locator with
-                    // headers we already hold. The wire cannot tell that apart
-                    // from progress; only this verdict can.
-                    //
-                    // Treated as a peer failure it produced an identical request
-                    // to the same peer, eleven times in 1.43 s, and never let the
-                    // tip be confirmed (#705). The peer is spent for this walk
-                    // instead, and the download task asks the next eligible one.
-                    std::optional<uint64_t> spent;
-                    if (result->source_peer) {
-                        spent = result->source_peer->nonce();
-                    }
+                // Every batch comes from the ingest with the session it arrived
+                // on. Without one there is nobody for the walk to credit.
+                if ( ! result->source_peer) {
+                    continue;
+                }
+                auto const source = result->source_peer->nonce();
+                auto const source_name = result->source_peer->authority_with_agent();
 
-                    spdlog::debug("[sync_coordinator] No new headers at height {} from peer {}; "
-                        "asking the next eligible peer",
-                        headers_synced_to,
-                        result->source_peer ? result->source_peer->authority_with_agent() : "unknown");
+                bool const missing_parent = result->result.value() == error::store_block_missing_parent;
+                bool const stale = result->result.value() == error::stale_chain;
+                bool const rejected = result->result && ! missing_parent && ! stale;
 
-                    co_await ask_for_headers(headers_synced_to,
-                        active_hash_at(organizer.index(), headers_synced_to), spent, "no-progress");
-                } else if (result->result) {
+                // A rejection is reported on the path it always had, whatever
+                // else the batch did: a valid prefix ahead of the bad header
+                // does not excuse it.
+                if (rejected) {
                     // Header validation failed - normal network behavior (peer on wrong chain)
                     spdlog::debug("[sync_coordinator] Header validation failed: {} from peer {}",
-                        result->result.message(),
-                        result->source_peer ? result->source_peer->authority_with_agent() : "unknown");
-
-                    if (result->count > 0) {
-                        spdlog::debug("[sync_coordinator] Headers synced to {} before failure",
-                            headers_synced_to);
-                    }
+                        result->result.message(), source_name);
 
                     // Report error to peer_provider - it decides what to do (ban, exclude, etc.)
-                    if (result->source_peer) {
-                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
-                            .peer = result->source_peer,
-                            .error = result->result
-                        })) {
-                            spdlog::warn("[sync_coordinator] Channel full, peer_error dropped for header validation");
-                        }
+                    if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                        .peer = result->source_peer,
+                        .error = result->result
+                    })) {
+                        spdlog::warn("[sync_coordinator] Channel full, peer_error dropped for header validation");
                     }
+                }
 
-                    // Retry header sync with a different peer
-                    auto retry_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                    spdlog::info("[sync_coordinator] Retrying header sync from height {} with different peer, from_hash={}",
-                        headers_synced_to, encode_hash(retry_hash));
-
-                    co_await ask_for_headers(headers_synced_to, retry_hash, std::nullopt, "retry");
-                } else if (result->count > 0) {
-                    // The tip has already moved above; what is left here is this
-                    // branch's own policy — the progress log and asking the same
-                    // peer for the next batch.
-
+                // ONE progress point for the walk, ahead of the split on why
+                // the batch stopped — the same rule as the tip update above
+                // (#685). A batch that added a valid prefix moved the tip
+                // whoever sent it and however it ended, and the walk has to
+                // start over from there: left to the error branch, a prefix
+                // from a peer that was not being asked would move the tip and
+                // nothing else, and a parked walk would stay parked on a tip it
+                // no longer has.
+                if (result->count > 0) {
                     // Log progress when crossing 10000 boundaries (handles any batch size)
                     uint32_t prev_10k = prev_headers_synced / 10000;
                     uint32_t curr_10k = headers_synced_to / 10000;
@@ -1669,107 +1700,45 @@ static
                         spdlog::info("[header_sync] height {} ({}/s)", headers_synced_to, rate);
                     }
 
-                    // Sequential header sync: ask for the next batch. Exactly one
-                    // header_request leaves this handler — the error branch above
-                    // sends its own, to a different peer, and the two are
-                    // mutually exclusive.
-                    auto const next_hash = active_hash_at(organizer.index(), headers_synced_to);
-                    co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "next batch");
-                } else if (result->count == 0 && !header_sync_complete) {
-                    // All peers returned 0 headers - check if we've reached checkpoint
-                    if (headers_synced_to < checkpoint_height) {
-                        // Not at checkpoint yet - we need more headers but all peers are behind
-                        // Wait a bit and retry (peers might sync more)
-                        spdlog::warn("[sync_coordinator] All peers at height {} but checkpoint is {} - waiting and retrying",
-                            headers_synced_to, checkpoint_height);
-
-                        ::asio::steady_timer timer(exec);
-                        timer.expires_after(std::chrono::seconds(10));
-                        auto [timer_ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                        if (timer_ec || network.stopped()) break;
-
-                        // Retry header sync
-                        auto retry_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                        co_await ask_for_headers(headers_synced_to, retry_hash, std::nullopt, "retry");
-                        continue;
+                    if (rejected) {
+                        spdlog::debug("[sync_coordinator] Headers synced to {} before the failure "
+                            "from {}", headers_synced_to, source_name);
                     }
+                    // One walk input, so one stimulus at most: progress adopted,
+                    // and the source spent when the rest of its batch was bad.
+                    co_await apply(rejected
+                        ? walk.progress_then_failure(source, headers_synced_to)
+                        : walk.progress(source, headers_synced_to), "progress");
+                    continue;
+                }
 
-                    // At or past checkpoint - header sync complete
-                    header_sync_complete = true;
-
-                    auto const elapsed = std::chrono::steady_clock::now() - header_sync_start;
-                    auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
-                    auto const total_headers = headers_synced_to - headers_at_start;
-                    auto const rate = elapsed_secs > 0 ? total_headers / elapsed_secs : total_headers;
-
-                    spdlog::info("[sync_coordinator] Header sync COMPLETE: {} headers in {}s ({}/s)",
-                        total_headers, elapsed_secs, rate);
-
-                    // Owned by the task group, not detached. It holds `chain` and
-                    // the organizer's index BY REFERENCE and it suspends between
-                    // chunks, so a detached one outlives the join below: the final
-                    // drain would overlap a writer it believed had stopped, and
-                    // the orchestrator could return and let the organizer be
-                    // destroyed while this still held a reference into it.
-                    //
-                    // In the group, join() waits for it, which is what makes the
-                    // drain after that join a quiescence barrier rather than a
-                    // hope.
-                    if (headers_synced_to > initial_header_height) {
-                        all_tasks.spawn("header_persist",
-                            persist_headers_to_db(chain, organizer.index(),
-                                initial_header_height + 1, headers_synced_to));
-                    }
-
-                    // Trigger block download if we have headers ahead of blocks
-                    if (headers_synced_to > blocks_synced_to) {
-                        if (blocks_synced_to < checkpoint_height) {
-                            // Fast sync stage: download up to the checkpoint. Merkle
-                            // only, so the UTXO set is not consulted and there is
-                            // nothing to wait for.
-                            //
-                            // NOTE: We should only reach here if headers_synced_to >= checkpoint_height
-                            // because header_sync should not complete until we have checkpoint headers
-                            spdlog::info("[sync_coordinator] Starting FAST block sync: {} to "
-                                "{} ({} blocks)", blocks_synced_to + 1, checkpoint_height,
-                                checkpoint_height - blocks_synced_to);
-
-                            // The result is not consulted, and that is correct
-                            // again now that the send is unbounded: it answers
-                            // false only when the node is winding down, and a
-                            // node that is winding down owes no range.
-                            co_await send_block_range(
-                                deps, blocks_synced_to + 1, checkpoint_height);
-                        } else {
-                            // Slow sync stage. THIS is the third door onto the
-                            // post-checkpoint range, and it used to send directly:
-                            // its own comment said "requires UTXO" and nothing
-                            // checked that the set had it. It also left
-                            // no range recorded, so the block and chunk paths
-                            // could send the same range again.
-                            //
-                            // Same guarded admission as the other two (#663).
-                            co_await try_start_slow_sync(
-                                body_range_trigger::header_sync_complete);
-                        }
-                    } else {
-                        // Already synced - wait and check for new blocks later
-                        spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
-                        ::asio::steady_timer timer(exec);
-                        timer.expires_after(std::chrono::seconds(10));
-                        auto [timer_ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                        if (timer_ec || network.stopped()) break;
-
-                        // Reset for new sync cycle - start parallel header sync again
-                        header_sync_complete = false;
-                        header_sync_start = std::chrono::steady_clock::now();
-                        headers_at_start = headers_synced_to;
-
-                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "new cycle");
-                    }
+                // Nothing moved. Why, decides what the walk hears.
+                if (missing_parent) {
+                    // Headers that do not connect to anything we hold. That is
+                    // missing information, not proof of an invalid chain: the
+                    // usual cause is a block announced on top of one we have not
+                    // heard about yet. No report against the peer; a request
+                    // from our tip is owed, and it is what fills the gap.
+                    spdlog::debug("[sync_coordinator] Headers from {} do not connect to the "
+                        "index; a follow-up from height {} is owed", source_name, headers_synced_to);
+                    co_await apply(walk.owe(headers_synced_to), "missing parent");
+                } else if (stale) {
+                    // Not a failure. `stale_chain` is the organizer saying the
+                    // batch was valid and added nothing — which is what a peer
+                    // at our tip sends when it answers our locator with headers
+                    // we already hold. The wire cannot tell that apart from
+                    // progress; only this verdict can (#705).
+                    spdlog::debug("[sync_coordinator] No new headers at height {} from {}",
+                        headers_synced_to, source_name);
+                    co_await apply(walk.no_progress(source, headers_synced_to), "no progress");
+                } else if (rejected) {
+                    co_await apply(walk.failure(source, headers_synced_to), "validation failed");
+                } else {
+                    // Nothing at all past our locator: the other way to say "no
+                    // progress".
+                    spdlog::debug("[sync_coordinator] Empty headers at height {} from {}",
+                        headers_synced_to, source_name);
+                    co_await apply(walk.no_progress(source, headers_synced_to), "empty");
                 }
                 continue;
             }
@@ -1819,9 +1788,7 @@ static
                         // What comes next is decided from the heights.
                         slow_sync_end.reset();
 
-                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "restart");
+                        co_await apply(walk.restart(headers_synced_to), "restart");
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Block validation failed at {}: {}",
@@ -1909,9 +1876,7 @@ static
                         headers_at_start = headers_synced_to;
                         slow_sync_end.reset();
 
-                        auto next_hash = active_hash_at(organizer.index(), headers_synced_to);
-
-                        co_await ask_for_headers(headers_synced_to, next_hash, std::nullopt, "restart");
+                        co_await apply(walk.restart(headers_synced_to), "restart");
                     }
                 } else {
                     spdlog::error("[sync_coordinator] Chunk validation failed at height {}: {}",
@@ -1937,6 +1902,16 @@ static
         } catch (...) {
             spdlog::error("[sync_coordinator] UNKNOWN EXCEPTION");
         }
+
+        // Nobody reads this channel from here on. Disarmed, so the clock has
+        // nothing to report; closed, so every task waiting to tell the
+        // coordinator something — a deadline, a peer set, a header result —
+        // gets an answer instead of waiting for room that never comes.
+        header_stimulus.cancel();
+        header_deadline.cancel();
+        header_retry.cancel();
+        coordinator_events.cancel();
+        coordinator_events.close();
         spdlog::info("[sync_coordinator] Task ended");
     });
 

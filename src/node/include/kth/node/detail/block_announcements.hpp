@@ -5,12 +5,15 @@
 #ifndef KTH_NODE_DETAIL_BLOCK_ANNOUNCEMENTS_HPP
 #define KTH_NODE_DETAIL_BLOCK_ANNOUNCEMENTS_HPP
 
-// Not installed. Reading a block announcement off the wire, and nothing else.
+// Not installed. Reading block headers and block announcements off the wire,
+// and nothing else.
 //
-// Three messages carry the same meaning — a block exists that you may not have
-// — and the node's read loop turns each into the same list of hashes. Kept as
-// pure functions so that what each of the three understands can be stated on
-// its own, without a peer, a socket or a node to say it through.
+// `headers` and `cmpctblock` carry headers, and both go to the node's header
+// ingest. `inv` carries only hashes, which are registered as announcements.
+// Kept as pure functions so that what each of the three understands can be
+// stated on its own, without a peer, a socket or a node to say it through.
+
+#include <optional>
 
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
@@ -19,15 +22,16 @@
 
 namespace kth::node::detail {
 
-/// The hashes announced by a `headers` message nobody asked for: every header
-/// in it. An unparseable message announces nothing.
+/// The headers a `headers` message carries, empty ones included: an empty
+/// `headers` is how a peer says it has nothing past our locator. Nothing for an
+/// unparseable message.
 [[nodiscard]]
-hash_list announced_by_headers(data_chunk const& payload, uint32_t version);
+std::optional<domain::message::header::list> headers_carried(data_chunk const& payload, uint32_t version);
 
-/// The hash announced by a `cmpctblock`: the block header it opens with. The
-/// compact body is not read and no BIP152 support is implied.
+/// The block header a `cmpctblock` opens with. The compact body is not read and
+/// no BIP152 support is implied. Nothing for an unparseable message.
 [[nodiscard]]
-hash_list announced_by_compact_block(data_chunk const& payload, uint32_t version);
+std::optional<domain::message::header> header_of_compact_block(data_chunk const& payload, uint32_t version);
 
 /// The block hashes named by an `inv`, both plain and compact-block entries.
 /// Transactions and everything else are not this path's business and are left
