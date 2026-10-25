@@ -176,6 +176,10 @@ struct peer_notification {
     peer_event_type event;
 };
 
+namespace detail {
+struct header_ingest_channels;
+} // namespace detail
+
 /// Woken when at least one block has been announced. Carries nothing: the
 /// announcement itself is registered on the node before this is sent, so a wake
 /// that is dropped because one is already queued costs nothing — whoever
@@ -298,17 +302,27 @@ public:
     concurrent_channel<peer_notification>& peer_events();
 
     // -------------------------------------------------------------------------
-    // Block announcements
+    // Block headers and announcements
     // -------------------------------------------------------------------------
     //
-    // Three wire messages mean the same thing — a block exists that you may not
-    // have — and they arrive as `headers` nobody asked for, as `cmpctblock`, or
-    // as an `inv` naming blocks. They collapse into one registration and one
-    // wake, because the action they produce does not depend on which of them
-    // arrived: ask for headers from the tip and take everything above it.
-    //
-    // The hashes are registered here, under a mutex, because they arrive on
-    // several peer strands at once. The channel is only a doorbell.
+    // Every block header that arrives — in a `headers`, or opening a
+    // `cmpctblock` — goes to one ingest, whether or not anything asked for it:
+    // the wire cannot tell an answer from an announcement, so neither is
+    // treated as an answer. An `inv` carries no header, only hashes, and those
+    // are registered as announcements instead, under a mutex, because they
+    // arrive on several peer strands at once. Its channel is only a doorbell.
+
+    /// What the read loop does with `headers`, `cmpctblock` and `inv` before
+    /// anything else sees them. Answers whether the message was consumed: only
+    /// `headers` is; the other two carry on to the dispatcher. Any other
+    /// command is left alone.
+    [[nodiscard]]
+    bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
+
+    /// The channels into the header ingest: what the read loops submit to, and
+    /// what the sync layer's ingest task owns and drains. Closed by stop().
+    [[nodiscard]]
+    detail::header_ingest_channels& header_ingest();
 
     /// What was announced since the last take. `overflowed` says the registry
     /// refused hashes for want of room, so the list is not the whole story and
@@ -591,11 +605,13 @@ private:
     std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
     std::unique_ptr<concurrent_channel<blocks_announced>> block_announcement_channel_;
 
-    /// The three forms an announcement arrives in, each turned into the same
-    /// registration. Every one of them states what it does with the message;
-    /// none accepts a message and discards it without saying so.
-    void announce_from_headers(peer_session& peer, raw_message const& raw);
-    void announce_from_compact_block(peer_session& peer, raw_message const& raw);
+    std::unique_ptr<detail::header_ingest_channels> header_ingest_;
+
+    /// Each form a header or an announcement arrives in. Every one of them
+    /// states what it does with the message; none accepts a message and
+    /// discards it without saying so.
+    void ingest_headers(peer_session::ptr const& peer, raw_message const& raw);
+    void ingest_compact_block(peer_session::ptr const& peer, raw_message const& raw);
     void announce_from_inventory(peer_session& peer, raw_message const& raw);
 
     // Peers choose what goes in here, so it is bounded and its membership test

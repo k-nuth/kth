@@ -15,6 +15,7 @@
 #include <kth/infrastructure.hpp>
 
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/post.hpp>
 
 namespace kth::network {
 
@@ -78,10 +79,9 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
 peer_session::peer_session(socket_type socket, settings const& settings, bool inbound)
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
-    , outbound_(strand_, 100)  // Buffer up to 100 outbound messages
+    , outbound_(strand_, outbound_capacity)
     , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
-    , headers_responses_(strand_, 10)  // Response channels for request/response patterns
-    , block_responses_(strand_, 20)
+    , block_responses_(strand_, 20)  // Response channels for request/response patterns
     , addr_responses_(strand_, 10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
@@ -114,13 +114,11 @@ peer_session::~peer_session() {
     // Cancel before close to ensure any pending async ops are woken up
     outbound_.cancel();
     inbound_.cancel();
-    headers_responses_.cancel();
     block_responses_.cancel();
     addr_responses_.cancel();
 
     outbound_.close();
     inbound_.close();
-    headers_responses_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -207,10 +205,20 @@ void peer_session::stop(code const& ec) {
     spdlog::debug("[peer_session] stop() checkpoint 5: canceling timers");
 
     // Cancel timers first - this is safe from any thread
-    inactivity_timer_.cancel();
-    spdlog::debug("[peer_session] stop() checkpoint 6: inactivity_timer canceled");
-    expiration_timer_.cancel();
-    spdlog::debug("[peer_session] stop() checkpoint 7: expiration_timer canceled");
+    // The timers are waited on by run()'s loops, on the strand, and a timer is
+    // not safe to cancel from another thread while it is being waited on —
+    // stop() is called from any thread. So their cancellation goes to the
+    // strand, where the waits are. Posted with a strong reference: the session
+    // stays alive until it has run. From the destructor the last reference is
+    // already gone: whoever ran run() held one, so nothing is waiting on these
+    // timers, and there is nothing to post.
+    if (auto self = weak_from_this().lock()) {
+        ::asio::post(strand_, [self] {
+            self->inactivity_timer_.cancel();
+            self->expiration_timer_.cancel();
+        });
+    }
+    spdlog::debug("[peer_session] stop() checkpoint 6-7: timer cancellation posted to the strand");
 
     // Cancel pending socket operations - this causes read_loop to exit with an error.
     // The || operator will then cancel write_loop and other awaitables.
@@ -226,7 +234,7 @@ void peer_session::stop(code const& ec) {
 
     // 2026-01-29: Close ALL channels to unblock any coroutines waiting on them.
     //
-    // This fixes slow shutdown: when protocols (request_headers, request_blocks, etc.)
+    // This fixes slow shutdown: when protocols (request_blocks, etc.)
     // are waiting on channels with long timeouts (30s for responses, 2min for ping timer),
     // closing the channels makes async_receive()/async_send() return immediately with error.
     //
@@ -242,24 +250,22 @@ void peer_session::stop(code const& ec) {
     // Channels:
     // - inbound_: Used by run_peer_protocols() waiting for messages
     // - outbound_: Used by write_loop() and send operations
-    // - headers_responses_, block_responses_, addr_responses_: Used by request protocols
+    // - block_responses_, addr_responses_: Used by request protocols
     spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
     inbound_.cancel();
     outbound_.cancel();
-    headers_responses_.cancel();
     block_responses_.cancel();
     addr_responses_.cancel();
     spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
     inbound_.close();
     outbound_.close();
-    headers_responses_.close();
     block_responses_.close();
     addr_responses_.close();
 
     // Closing does not discard what a channel already holds: a closed channel
     // still hands out its buffered values and only then reports closure. A
-    // response nobody will ever read — the one a read loop delivers after the
-    // requester timed out, retired the session and drained — would otherwise
+    // response nobody will ever read — one a read loop delivers after the
+    // requester has gone — would otherwise
     // sit there for as long as this object lives. Emptied here, where it is
     // certain nobody is coming for it.
     drain_response_channels();
@@ -272,7 +278,6 @@ void peer_session::drain_response_channels() {
         while (channel.try_receive([](std::error_code, raw_message) {})) {
         }
     };
-    drain(headers_responses_);
     drain(block_responses_);
     drain(addr_responses_);
 }
@@ -303,45 +308,6 @@ bool peer_session::stopped() const {
 
 peer_session::inbound_channel& peer_session::messages() {
     return inbound_;
-}
-
-void peer_session::expect_headers_response() {
-    // A retired session is never asked again, so nothing should be arming it.
-    // Refusing here rather than asserting keeps the rule true even if a caller
-    // forgets to check.
-    if (retired_from_header_requests_.load(std::memory_order_acquire)) {
-        return;
-    }
-    awaiting_headers_response_.store(true, std::memory_order_release);
-}
-
-bool peer_session::claim_headers_response() {
-    return awaiting_headers_response_.exchange(false, std::memory_order_acq_rel);
-}
-
-void peer_session::retire_from_header_requests() {
-    retired_from_header_requests_.store(true, std::memory_order_release);
-    awaiting_headers_response_.store(false, std::memory_order_release);
-
-    // And the session ends. Retiring without ending it would be a trap: the
-    // connection stays up, holds its slot, and the connection manager never
-    // falls below target and never dials a replacement — so with enough
-    // timeouts every slot is held by a session that cannot serve headers, and
-    // header sync has no eligible peer and no way to ever get one.
-    //
-    // Ending it means the manager notices, dials, and what answers is a new
-    // session with a new nonce: safe to ask again, because nothing of ours is
-    // outstanding on it. It is also what disposes of a response delivered after
-    // the requester gave up, since stop() drains the response channels.
-    stop();
-}
-
-bool peer_session::retired_from_header_requests() const {
-    return retired_from_header_requests_.load(std::memory_order_acquire);
-}
-
-peer_session::response_channel& peer_session::headers_responses() {
-    return headers_responses_;
 }
 
 peer_session::response_channel& peer_session::block_responses() {

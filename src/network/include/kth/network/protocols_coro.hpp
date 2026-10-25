@@ -264,7 +264,8 @@ KN_API ::asio::awaitable<code> send_addresses_auto(
 //
 // SYNC FLOW (Headers-First):
 // --------------------------
-// 1. request_headers() - Send getheaders, receive headers
+// 1. send_get_headers() - Send getheaders; the headers that follow arrive
+//    through the node's header ingest like any other `headers`
 // 2. Validate and store headers in blockchain
 // 3. request_blocks() - Send getdata for blocks we need
 // 4. Receive and validate blocks
@@ -281,26 +282,21 @@ KN_API ::asio::awaitable<code> send_addresses_auto(
 // Header Sync Protocol
 // -----------------------------------------------------------------------------
 
-/// Request headers from a peer using getheaders message
+/// Send a getheaders to a peer: suspends until the session's outbound queue
+/// takes it, and no longer. Only a stimulus: nothing on the wire ties a later
+/// `headers` to it, so no response is awaited or claimed — whatever the peer
+/// sends next reaches the node's header ingest like any other `headers`.
+/// Cancellable while it waits for the queue; once the queue has taken it, the
+/// session's write loop writes it.
 /// @param peer The peer session
 /// @param locator_hashes Block locator hashes (most recent first)
 /// @param stop_hash Hash to stop at (null_hash for no limit)
-/// @param timeout Maximum time to wait for response
-/// @return Headers message or error
+/// @return Error code of the send
 [[nodiscard]]
-KN_API awaitable_expected<domain::message::headers> request_headers(
+KN_API ::asio::awaitable<code> send_get_headers(
     peer_session& peer,
     hash_list const& locator_hashes,
-    hash_digest const& stop_hash,
-    std::chrono::seconds timeout);
-
-/// Request headers starting from a single known hash
-/// Convenience wrapper that creates a single-element locator
-[[nodiscard]]
-KN_API awaitable_expected<domain::message::headers> request_headers_from(
-    peer_session& peer,
-    hash_digest const& from_hash,
-    std::chrono::seconds timeout);
+    hash_digest const& stop_hash);
 
 // -----------------------------------------------------------------------------
 // Block Sync Protocol

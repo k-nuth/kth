@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_SYNC_ORCHESTRATOR_HPP
 #define KTH_NODE_SYNC_ORCHESTRATOR_HPP
 
+#include <chrono>
 #include <expected>
 #include <optional>
 #include <functional>
@@ -26,11 +27,13 @@ namespace kth::node::sync {
 //
 // Tasks spawned:
 // 1. peer_provider_task     - Watches network for new peers
-// 2. header_download_task   - Downloads headers from peers
+// 2. header_ingest_task     - Drains the node's header ingest into validation
 // 3. header_validation_task - Validates headers (single writer to organizer)
 // 4. block_download_supervisor - Spawns per-peer download tasks
 // 5. block_validation_task  - Validates blocks (single writer to chain)
-// 6. sync_coordinator_task  - Orchestrates the sync flow
+// 6. sync_coordinator_task  - Orchestrates the sync flow, and owns the header
+//                             walk: which peer gets the next getheaders, and
+//                             when the tip is confirmed
 //
 // Communication:
 // - All tasks communicate ONLY via channels
@@ -137,6 +140,36 @@ char const* to_string(slow_sync_admission admission);
     kth::node::p2p_node& network,
     domain::config::network network_type,
     std::function<void(std::string const&)> on_fatal
+);
+
+/// How long the header walk waits, in the two places it waits.
+struct header_walk_timing {
+    /// The stimulated peer's time to answer before the next one is asked.
+    std::chrono::milliseconds stimulus_timeout;
+
+    /// A walk parked with peers still connected — every one of them spent,
+    /// typically by answering nothing in time — tries again after `retry_base`,
+    /// doubled for each retry nobody answers, never more than `retry_cap`. Any
+    /// answer or progress starts the backoff over.
+    std::chrono::milliseconds retry_base;
+    std::chrono::milliseconds retry_cap;
+};
+
+/// What sync_orchestrator() runs with.
+inline constexpr header_walk_timing node_header_walk_timing{
+    std::chrono::milliseconds(10000),
+    std::chrono::milliseconds(10000),
+    std::chrono::milliseconds(600000)};
+
+/// sync_orchestrator(), with the header walk's waits given explicitly — for
+/// controls that cannot spend ten real seconds on each.
+::asio::awaitable<void> sync_orchestrator(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    kth::node::p2p_node& network,
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal,
+    header_walk_timing timing
 );
 
 } // namespace kth::node::sync

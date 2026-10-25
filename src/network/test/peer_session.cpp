@@ -1438,12 +1438,12 @@ TEST_CASE("peer_session interleaved stop cleanup pattern",
 //   - Shutdown completes at 00:00:00 (2 minutes total)
 //
 // The problem is that when stop() is called, coroutines waiting on response
-// channels with timers (like request_headers) don't get interrupted. They
+// channels with timers (like request_blocks) don't get interrupted. They
 // wait for the full timeout (30s) before returning.
 //
 // This test simulates the exact pattern:
 //   1. Start peer_session::run()
-//   2. Start a coroutine that waits on headers_responses()
+//   2. Start a coroutine that waits on block_responses()
 //   3. Call stop() while the coroutine is waiting
 //   4. Verify shutdown completes in < 2 seconds, not 30 seconds
 
@@ -1470,8 +1470,7 @@ TEST_CASE("peer_session slow shutdown with pending response channel wait",
         run_completed = true;
     }, ::asio::detached);
 
-    // Simulate a protocol waiting on headers_responses() with a long timeout
-    // This is exactly what request_headers() does in protocols_coro.cpp:534-537
+    // Simulate a protocol waiting on block_responses() with a long timeout
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         // Wait for run() to start first
         while (!run_started.load()) {
@@ -1481,7 +1480,7 @@ TEST_CASE("peer_session slow shutdown with pending response channel wait",
 
         protocol_started = true;
 
-        // Simulate waiting for headers with 30 second timeout
+        // Simulate waiting for a block with 30 second timeout
         // This is the pattern that causes slow shutdown:
         //   co_await (channel.async_receive(...) || timer.async_wait(...))
         // We wrap async_receive to return void to match timer signature
@@ -1490,7 +1489,7 @@ TEST_CASE("peer_session slow shutdown with pending response channel wait",
 
         // Use lambdas that return void to make || operator work
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->headers_responses().async_receive(
+            auto [ec, msg] = co_await session->block_responses().async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
             co_return;
         };
@@ -1565,37 +1564,13 @@ TEST_CASE("peer_session slow shutdown with multiple pending protocols",
     std::atomic<int> protocols_started{0};
     std::atomic<int> protocols_completed{0};
 
-    constexpr int num_protocols = 3;  // headers, blocks, addr
+    constexpr int num_protocols = 2;  // blocks, addr
 
     // Start the session's run() loop
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         run_started = true;
         co_await session->run();
         run_completed = true;
-    }, ::asio::detached);
-
-    // Spawn protocol waiting on headers_responses
-    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
-        while (!run_started.load()) {
-            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
-            co_await timer.async_wait(::asio::use_awaitable);
-        }
-        protocols_started.fetch_add(1);
-
-        auto executor = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer timer(executor, 30s);
-
-        auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->headers_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            co_return;
-        };
-        auto timer_op = [&]() -> ::asio::awaitable<void> {
-            co_await timer.async_wait(::asio::use_awaitable);
-        };
-
-        co_await (receive_op() || timer_op());
-        protocols_completed.fetch_add(1);
     }, ::asio::detached);
 
     // Spawn protocol waiting on block_responses
@@ -1695,7 +1670,7 @@ TEST_CASE("peer_session slow shutdown with multiple pending protocols",
 // The problem is that run_peer_protocols() in p2p_node.cpp waits on:
 //   co_await (peer->messages().async_receive() || ping_timer(2 minutes))
 //
-// When stop() is called, it closes response channels (headers_responses, etc.)
+// When stop() is called, it closes response channels (block_responses, etc.)
 // but does NOT close the inbound_ channel (messages()). So the coroutine
 // waits for the full 2-minute ping timer before exiting.
 //
@@ -2201,7 +2176,7 @@ TEST_CASE("peer_session all channels cancelled on stop",
     std::atomic<int> protocols_started{0};
     std::atomic<int> protocols_completed{0};
 
-    constexpr int num_protocols = 4;  // messages, headers, blocks, addr
+    constexpr int num_protocols = 3;  // messages, blocks, addr
 
     // Start the session's run() loop
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
@@ -2223,30 +2198,6 @@ TEST_CASE("peer_session all channels cancelled on stop",
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
             auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            co_return;
-        };
-        auto timer_op = [&]() -> ::asio::awaitable<void> {
-            co_await timer.async_wait(::asio::use_awaitable);
-        };
-
-        co_await (receive_op() || timer_op());
-        protocols_completed.fetch_add(1);
-    }, ::asio::detached);
-
-    // Spawn protocol waiting on headers_responses()
-    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
-        while (!run_started.load()) {
-            auto timer = ::asio::steady_timer(co_await ::asio::this_coro::executor, 1ms);
-            co_await timer.async_wait(::asio::use_awaitable);
-        }
-        protocols_started.fetch_add(1);
-
-        auto executor = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer timer(executor, 30s);
-
-        auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->headers_responses().async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
             co_return;
         };

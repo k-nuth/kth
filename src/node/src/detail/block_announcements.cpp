@@ -8,28 +8,22 @@
 
 namespace kth::node::detail {
 
-hash_list announced_by_headers(data_chunk const& payload, uint32_t version) {
+std::optional<domain::message::header::list> headers_carried(data_chunk const& payload, uint32_t version) {
     byte_reader reader(payload);
     auto parsed = domain::message::headers::from_data(reader, version);
     if ( ! parsed) {
-        return {};
+        return std::nullopt;
     }
-
-    hash_list hashes;
-    hashes.reserve(parsed->elements().size());
-    for (auto const& header : parsed->elements()) {
-        hashes.push_back(kth::domain::chain::hash(header));
-    }
-    return hashes;
+    return parsed->elements();
 }
 
-hash_list announced_by_compact_block(data_chunk const& payload, uint32_t version) {
+std::optional<domain::message::header> header_of_compact_block(data_chunk const& payload, uint32_t version) {
     byte_reader reader(payload);
     auto parsed = domain::message::compact_block::from_data(reader, version);
     if ( ! parsed) {
-        return {};
+        return std::nullopt;
     }
-    return {kth::domain::chain::hash(parsed->header())};
+    return parsed->header();
 }
 
 hash_list announced_by_inventory(data_chunk const& payload, uint32_t version) {
