@@ -10,6 +10,9 @@
 #include <iostream>
 #include <string_view>
 #include <thread>
+#include <filesystem>
+#include <kth/database/data_base.hpp>
+#include <kth/database/databases/utxoz_database.hpp>
 
 #include <kth/node.hpp>
 #include <kth/infrastructure/display_mode.hpp>
@@ -26,6 +29,54 @@
 KTH_USE_MAIN
 
 static auto const application_name = "kth";
+
+#if ! defined(KTH_DB_READONLY)
+// Offline process boundary: UTXO-Z holds its normal exclusive database claim.
+// No runtime, peer service or mempool is opened by this maintenance command.
+bool compact_utxo_offline(kth::node::configuration const& config) {
+    auto const started = std::chrono::steady_clock::now();
+    auto const& directory = config.database.directory;
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(directory / "internal_db" / "data.mdb", error)
+        || error || !std::filesystem::is_regular_file(directory / "utxoz" / "utxoz_config.dat", error) || error) {
+        spdlog::error("[maintenance] --compact-utxo requires an existing database at {}", directory.string());
+        return false;
+    }
+    kth::database::data_base metadata(config.database);
+    if (!metadata.open()) {
+        spdlog::error("[maintenance] Could not open chain metadata; refusing compaction");
+        return false;
+    }
+    if (metadata.internal_db().read_transition_record().status != kth::database::transition_status::clean) {
+        spdlog::error("[maintenance] Unfinished or unreadable chain transition; refusing to open UTXO-Z for compaction");
+        return false;
+    }
+    kth::database::utxoz_database utxo;
+    // This claims UTXO-Z exclusively; an active node makes open fail, not wait.
+    if (!utxo.open(directory / "utxoz")) return false;
+    // Recheck only after the exclusive claim: no live writer may race this check.
+    if (metadata.internal_db().read_transition_record().status != kth::database::transition_status::clean) {
+        spdlog::error("[maintenance] Unfinished or unreadable chain transition; refusing compaction. Recovery/reindex is required");
+        return false;
+    }
+    spdlog::info("[maintenance] Compacting UTXO set at {} (P2P/RPC disabled)", directory.string());
+    auto const result = utxo.compact_utxo();
+    utxo.close();
+    auto const closed = metadata.close();
+    if (!result) {
+        spdlog::error("[maintenance] UTXO compaction failed ({}); do not treat this run as successful",
+            kth::database::result_code_name(result.error()));
+        return false;
+    }
+    if (!closed) {
+        spdlog::error("[maintenance] Chain metadata close failed");
+        return false;
+    }
+    auto const elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+    spdlog::info("[maintenance] UTXO compaction complete in {:.3f}s; database closed", elapsed);
+    return true;
+}
+#endif
 
 std::string version() {
     return std::format("Knuth v{}", kth::version);
@@ -199,6 +250,7 @@ bool menu(kth::node::parser& metadata, kth::node::executor& host, std::ostream& 
     }
 
 #if ! defined(KTH_DB_READONLY)
+    if (config.compact_utxo) return compact_utxo_offline(config);
     if (config.init_and_run) {
         auto const present = host.probe_directory();
         if ( ! present) return false;               // already reported, with the reason

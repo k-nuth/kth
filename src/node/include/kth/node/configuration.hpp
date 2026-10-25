@@ -42,6 +42,7 @@ struct KND_API configuration {
 #if ! defined(KTH_DB_READONLY)
     bool initchain;
     bool init_and_run;
+    bool compact_utxo;
 #endif
 
     bool settings;

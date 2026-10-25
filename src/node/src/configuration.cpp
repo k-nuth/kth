@@ -19,6 +19,7 @@ configuration::configuration(domain::config::network net)
 #if ! defined(KTH_DB_READONLY)
     , initchain(false)
     , init_and_run(false)
+    , compact_utxo(false)
 #endif
     , settings(false)
     , version(false)

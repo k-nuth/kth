@@ -203,6 +203,7 @@ private:
 
     // Background task coroutines (for structured concurrency)
     ::asio::awaitable<void> run_blockchain_subscriber();
+    ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
 #endif
