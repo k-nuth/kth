@@ -4,8 +4,33 @@
 
 #include <test_helpers.hpp>
 #include <kth/node.hpp>
+#include <sstream>
 
 using namespace kth;
+
+TEST_CASE("parser retains explicit settings after network defaults are rebuilt", "[configuration tests][parser]") {
+    node::parser parser(domain::config::network::regtest);
+    char const* argv[]{"kth", "--network", "regtest", "--db.directory", "selected-database",
+        "--rpc.enabled=true", "--net.outbound_connections", "0"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(8, argv, error));
+    CHECK(parser.configured.database.directory == path{"selected-database"});
+    CHECK(parser.configured.rpc.enabled);
+    CHECK(parser.configured.network.outbound_connections == 0);
+}
+
+#if !defined(KTH_DB_READONLY)
+TEST_CASE("offline compaction flag survives network selection and excludes initialization", "[configuration tests][parser]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--compact-utxo"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(4, argv, error));
+    CHECK(parser.configured.compact_utxo);
+    node::parser conflicting(domain::config::network::mainnet);
+    char const* invalid[]{"kth", "--compact-utxo", "--init_run"};
+    CHECK_FALSE(conflicting.parse(3, invalid, error));
+}
+#endif
 
 // Start Test Suite: configuration tests
 

@@ -134,8 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_);
-        ::asio::co_spawn(rpc_executor, rpc_server_->run(rpc_executor), ::asio::detached);
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor);
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -182,11 +181,15 @@ full_node::~full_node() {
     // This blocks until ALL tasks complete (i.e., until stop() is called).
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
-    co_await (
-        run_blockchain_subscriber() &&
-        network_.run() &&
-        run_sync()
-    );
+    auto core = [this]() -> ::asio::awaitable<void> {
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+#if defined(KTH_WITH_RPC)
+        // Embedders may stop P2P directly. RPC must not keep run() pending
+        // after every core task has finished, even without full_node::stop().
+        if (rpc_server_) rpc_server_->stop();
+#endif
+    };
+    co_await (core() && run_rpc());
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -194,6 +197,13 @@ full_node::~full_node() {
 #endif
 
     co_return error::success;
+}
+
+::asio::awaitable<void> full_node::run_rpc() {
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_server_) co_await rpc_server_->run();
+#endif
+    co_return;
 }
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
@@ -318,6 +328,9 @@ void full_node::notify_fatal(std::string const& reason) {
 }
 
 void full_node::stop() {
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_server_) rpc_server_->stop();
+#endif
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because

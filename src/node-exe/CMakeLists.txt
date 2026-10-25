@@ -112,6 +112,22 @@ endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES FOLDER "node" OUTPUT_NAME kth)
 
+# Exercise the real executable, including an accept-error path whose lifetime
+# defect is only visible under instrumentation. Keep each run's evidence, and
+# allow repeated ctest invocations without reusing a previous database.
+if(ENABLE_TEST AND KTH_WITH_RPC AND UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    set(rpc_shutdown_modes rpc-off rpc-cli-off rpc-idle rpc-partial-http rpc-full-admission)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(APPEND rpc_shutdown_modes rpc-accept-recovery)
+    endif()
+    add_test(NAME rpc_shutdown_executable
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../node/test/rpc_shutdown.py
+            $<TARGET_FILE:node-exe> ${CMAKE_CURRENT_BINARY_DIR}/rpc-shutdown-evidence
+            --unique-evidence --modes ${rpc_shutdown_modes})
+    set_tests_properties(rpc_shutdown_executable PROPERTIES TIMEOUT 240)
+endif()
+
 
 # Install
 # ------------------------------------------------------------------------------

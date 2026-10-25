@@ -8,8 +8,15 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <future>
 #include <string>
 #include <thread>
+
+#if defined(KTH_WITH_RPC)
+#include <asio/ip/tcp.hpp>
+#include <spdlog/sinks/callback_sink.h>
+#include <spdlog/spdlog.h>
+#endif
 
 #include "child_process_harness.hpp"
 
@@ -172,3 +179,67 @@ TEST_CASE("a node that stops on its own ends the process", "[executor][lifecycle
 TEST_CASE("a signal still ends the process", "[executor][lifecycle]") {
     require_clean_child(run_child("executor child: an ordinary signal still ends the process"));
 }
+
+#if defined(KTH_WITH_RPC)
+TEST_CASE("executor child: stopping the network also joins RPC", "[.executor-child]") {
+    watchdog guard(full_start_limit, "network-only stop joins RPC");
+    auto const base = claimed_dir("kth_exec_network_rpc_end");
+    auto cfg = make_config(base);
+    ::asio::io_context reservation_context;
+    ::asio::ip::tcp::acceptor reservation(reservation_context,
+        {::asio::ip::make_address("127.0.0.1"), 0});
+    cfg.rpc.port = reservation.local_endpoint().port();
+    cfg.rpc.bind = "127.0.0.1";
+    cfg.rpc.enabled = true;
+    cfg.rpc.user = "test";
+    cfg.rpc.password = "test";
+    reservation.close();
+    make_startable_database(cfg);
+
+    // A readiness event, not a delay: stop only after the real RPC listener has
+    // bound. The fixture's future is observation across the executor boundary.
+    std::promise<void> listening;
+    auto ready = listening.get_future();
+    auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>(
+        [&](spdlog::details::log_msg const& message) {
+            std::string_view text(message.payload.data(), message.payload.size());
+            if (text.find("JSON-RPC server listening") != std::string_view::npos)
+                listening.set_value();
+        });
+    struct restore_logging {
+        std::shared_ptr<spdlog::logger> previous = spdlog::default_logger();
+        ~restore_logging() {
+            spdlog::drop("rpc-network-stop-control");
+            spdlog::set_default_logger(std::move(previous));
+        }
+    } restore;
+    {
+        node::executor host(cfg, false);
+        // The executor constructor installs its own logger; observe after that.
+        spdlog::set_default_logger(std::make_shared<spdlog::logger>("rpc-network-stop-control", sink));
+        REQUIRE(host.start() == error::success);
+        auto const node = host.node();
+        REQUIRE(node);
+        bool const became_ready = ready.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+        bool completed = false;
+        if (became_ready) {
+            node->network().stop(); // Deliberately not full_node::stop().
+            // Normal network shutdown itself takes about five seconds. The
+            // failure bound must leave room for that measured path to finish.
+            completed = host.wait_for_run_completion(std::chrono::seconds(15));
+        }
+        // Cleanup cannot change the observation above. Even RED joins all owned
+        // work before the child returns, rather than stranding executor threads.
+        host.stop();
+        CHECK(became_ready);
+        CHECK(completed);
+    }
+    announce_completion();
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST_CASE("stopping the network also joins RPC", "[executor][lifecycle][rpc]") {
+    require_clean_child(run_child("executor child: stopping the network also joins RPC"));
+}
+#endif

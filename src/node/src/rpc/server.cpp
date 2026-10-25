@@ -5,6 +5,7 @@
 #include <kth/node/rpc/server.hpp>
 
 #include <array>
+#include <chrono>
 #include <cctype>
 #include <cstdint>
 #include <fstream>
@@ -12,13 +13,21 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <exception>
+#include <memory>
+#include <unordered_set>
 
 #include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/ip/address.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
+#include <asio/experimental/channel.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
+#include <asio/this_coro.hpp>
+#include <asio/cancellation_state.hpp>
 
 #include <llhttp.h>
 #include <spdlog/spdlog.h>
@@ -159,10 +168,13 @@ std::string random_token() {
 
 } // namespace
 
-server::server(rpc_settings const& settings, blockchain::block_chain& chain)
+server::server(rpc_settings const& settings, blockchain::block_chain& chain,
+    ::asio::any_io_executor executor)
     : settings_(settings)
     , chain_(chain)
-    , jobs_(settings.gbt_cache_size, settings.gbt_store_time) {
+    , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
+    , owner_(::asio::make_strand(std::move(executor)))
+    , stop_requests_(owner_, 1) {
     register_builtin_methods(dispatcher_);
 
     if ( ! settings_.user.empty() || ! settings_.password.empty()) {
@@ -190,7 +202,7 @@ bool server::authorized(std::string_view authorization_header) const {
     return got == expected_credentials_;
 }
 
-::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket socket) {
+::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket& socket) {
     std::array<char, 8192> buffer;
     for (;;) {
         parse_ctx ctx;
@@ -235,8 +247,17 @@ bool server::authorized(std::string_view authorization_header) const {
     }
 }
 
-::asio::awaitable<void> server::run(::asio::any_io_executor executor) {
+void server::stop() {
+    (void)stop_requests_.try_send(std::error_code{}, 1);
+}
+
+::asio::awaitable<void> server::run() {
+    co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
+}
+
+::asio::awaitable<void> server::run_owned() {
     using ::asio::ip::tcp;
+    using namespace ::asio::experimental::awaitable_operators;
 
     std::error_code ec;
     auto const address = ::asio::ip::make_address(settings_.bind, ec);
@@ -246,7 +267,7 @@ bool server::authorized(std::string_view authorization_header) const {
     }
 
     tcp::endpoint const endpoint(address, settings_.port);
-    tcp::acceptor acceptor(executor);
+    tcp::acceptor acceptor(owner_);
     acceptor.open(endpoint.protocol(), ec);
     if (ec) {
         spdlog::error("[rpc] failed to open acceptor: {}", ec.message());
@@ -267,17 +288,98 @@ bool server::authorized(std::string_view authorization_header) const {
 
     spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, settings_.port);
 
-    for (;;) {
-        auto [aec, socket] = co_await acceptor.async_accept(
-            ::asio::as_tuple(::asio::use_awaitable));
-        if (aec) {
-            if (aec == ::asio::error::operation_aborted) {
-                co_return;
-            }
-            continue;
+    // All mutable listener/connection state has one owner. At most 64 children
+    // are admitted, and every completion is consumed before this scope exits.
+    constexpr std::size_t capacity = 64;
+    ::asio::experimental::channel<void(std::error_code, std::exception_ptr)> ended(owner_, capacity);
+    std::unordered_set<std::shared_ptr<tcp::socket>> connections;
+    std::size_t pending = 0;
+    bool stopping = false;
+    ::asio::steady_timer accept_retry(owner_);
+    std::exception_ptr failure;
+    auto close_owned = [&] {
+        stopping = true;
+        std::error_code ignored;
+        acceptor.close(ignored);
+        try {
+            accept_retry.cancel();
+        } catch (...) {
+            // A timer-service error must not bypass closing or joining children.
+            if (!failure) failure = std::current_exception();
         }
-        ::asio::co_spawn(executor, serve_connection(std::move(socket)), ::asio::detached);
-    }
+        for (auto const& socket : connections) {
+            socket->close(ignored);
+        }
+    };
+    auto reap = [&]() -> ::asio::awaitable<void> {
+        auto error = co_await ended.async_receive(::asio::use_awaitable);
+        --pending;
+        if (error && !failure) failure = error;
+    };
+    auto accept_connections = [&]() -> ::asio::awaitable<void> {
+        try {
+            while (!stopping) {
+                if (pending == capacity) {
+                    co_await reap();
+                    continue;
+                }
+                tcp::socket socket(owner_);
+                auto [aec] = co_await acceptor.async_accept(socket,
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (aec) {
+                    if (stopping || aec == ::asio::error::operation_aborted) break;
+                    spdlog::warn("[rpc] accept failed: {}; retrying", aec.message());
+                    // A resource shortage is not the end of the service. This
+                    // owner-local deadline avoids a busy loop and is cancelled
+                    // by the same stop event that closes the listener.
+                    accept_retry.expires_after(std::chrono::milliseconds(100));
+                    (void)co_await accept_retry.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                    continue;
+                }
+                if (stopping) {
+                    std::error_code ignored;
+                    socket.close(ignored);
+                    break;
+                }
+                auto child = std::make_shared<tcp::socket>(std::move(socket));
+                connections.insert(child);
+                ++pending;
+                // co_spawn's completion adapter only publishes an owned result.
+                // It runs on the same strand; its captures cannot outlive the
+                // drain below, even for partial HTTP reads or handler errors.
+                try {
+                    ::asio::co_spawn(owner_, serve_connection(*child),
+                        [&, child](std::exception_ptr error) {
+                            connections.erase(child);
+                            (void)ended.try_send(std::error_code{}, error);
+                        });
+                } catch (...) {
+                    --pending;
+                    connections.erase(child);
+                    throw;
+                }
+            }
+        } catch (...) {
+            failure = std::current_exception();
+        }
+        close_owned();
+        stop();
+        co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
+        while (pending != 0) co_await reap();
+    };
+    auto receive_stop = [&]() -> ::asio::awaitable<void> {
+        try {
+            (void)co_await stop_requests_.async_receive(::asio::use_awaitable);
+        } catch (...) {
+            close_owned();
+            throw;
+        }
+        spdlog::info("[rpc] Stop received; closing listener and {} connections", connections.size());
+        close_owned();
+    };
+    co_await (accept_connections() && receive_stop());
+    spdlog::info("[rpc] Listener stopped; all connections joined");
+    if (failure) std::rethrow_exception(failure);
 }
 
 } // namespace kth::node::rpc

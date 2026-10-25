@@ -2679,22 +2679,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     }
 
 
-    // Final compaction
-    spdlog::info("[utxo_build] Running final compaction...");
-    if (auto const compacted = chain.compact_utxo(); ! compacted) {
-        if (database::needs_recovery(compacted.error())) {
-            // NOT the benign case. The store has latched: it will refuse every
-            // operation from here, and the set is not "intact either way". The
-            // old bool could not tell these apart and this branch is why the
-            // signature changed.
-            spdlog::critical("[utxo_build] Final compaction latched the UTXO store ({}); it will "
-                "refuse every further operation until the node restarts",
-                database::result_code_name(compacted.error()));
-        } else {
-            spdlog::error("[utxo_build] final compaction failed ({}); the UTXO set is intact "
-                "but was not compacted", database::result_code_name(compacted.error()));
-        }
-    }
+    // Compaction is maintenance, not a durability barrier. Rewriting the whole
+    // UTXO set here makes even an idle node take minutes to stop. The batch sync
+    // barriers above and the normal database close still persist owned state.
+    spdlog::info("[utxo_build] Closing without a full UTXO compaction");
     // Reports, and a latched store simply has none to give. Each says so rather
     // than returning silently, which is what the old void signatures did.
     for (auto const& [name, report] : std::initializer_list<

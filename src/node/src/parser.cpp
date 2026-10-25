@@ -138,6 +138,9 @@ void add_command_options(CLI::App& app, configuration& cfg) {
 
     app.add_flag("--init_run,-r", cfg.init_and_run,
         "Initialize blockchain in the configured directory, then start the node.");
+    app.add_flag("--compact-utxo", cfg.compact_utxo,
+        "Compact an existing UTXO set offline and exit; P2P and RPC are not started.")
+        ->excludes("--initchain")->excludes("--init_run");
 #endif
 
     app.add_flag("--" KTH_SETTINGS_VARIABLE ",-s", cfg.settings,
@@ -357,6 +360,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
 #if ! defined(KTH_DB_READONLY)
         merged.initchain = configured.initchain;
         merged.init_and_run = configured.init_and_run;
+        merged.compact_utxo = configured.compact_utxo;
 #endif
         configured = std::move(merged);
         set_default_configuration();
@@ -378,11 +382,9 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
 
             try {
                 set_flat_config(app2, config_path);
-                // Parse with a program-name-only argv: CLI11 dereferences
-                // argv[0], so a null argv segfaults. The config file loads via
-                // set_config regardless of command-line args.
-                char const* const app2_argv[] = {"kth"};
-                app2.parse(1, app2_argv);
+                // Reapply explicit CLI settings after rebuilding network defaults.
+                // CLI11 keeps explicit arguments above values from the file.
+                app2.parse(argc, argv);
             } catch (CLI::ParseError const& e) {
                 error << "Error: " << e.what() << std::endl;
                 return e.get_exit_code() == 0;
@@ -391,6 +393,16 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             // No config file used — clear the field so downstream code can
             // detect "used defaults".
             configured.file.clear();
+            CLI::App app2{"kth node"};
+            app2.allow_config_extras();
+            add_command_options(app2, configured);
+            add_settings(app2, configured);
+            try {
+                app2.parse(argc, argv);
+            } catch (CLI::ParseError const& e) {
+                error << "Error: " << e.what() << std::endl;
+                return e.get_exit_code() == 0;
+            }
         }
 
 #if ! defined(__EMSCRIPTEN__)

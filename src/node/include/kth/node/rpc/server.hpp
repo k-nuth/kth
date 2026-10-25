@@ -11,6 +11,8 @@
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/ip/tcp.hpp>
+#include <asio/strand.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 #include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/mining/job_store.hpp>
@@ -27,14 +29,20 @@ namespace kth::node::rpc {
 // and routes them through the dispatcher. Started only when rpc.enabled is true
 // and the build defines KTH_WITH_RPC.
 struct server {
-    server(rpc_settings const& settings, blockchain::block_chain& chain);
+    server(rpc_settings const& settings, blockchain::block_chain& chain,
+        ::asio::any_io_executor executor);
 
     // Bind the listener and accept connections until the executor is stopped.
     // Intended to be co_spawned. Returns on a fatal bind error or shutdown.
-    ::asio::awaitable<void> run(::asio::any_io_executor executor);
+    ::asio::awaitable<void> run();
+
+    // A bounded stop message, including when run() has not started yet.
+    // Socket cancellation itself is performed only by the RPC owner strand.
+    void stop();
 
 private:
-    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket socket);
+    ::asio::awaitable<void> run_owned();
+    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
     [[nodiscard]] bool authorized(std::string_view authorization_header) const;
 
     rpc_settings const& settings_;
@@ -44,6 +52,8 @@ private:
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header
     // must decode to.
     std::string expected_credentials_;
+    ::asio::strand<::asio::any_io_executor> owner_;
+    ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
 };
 
 } // namespace kth::node::rpc
