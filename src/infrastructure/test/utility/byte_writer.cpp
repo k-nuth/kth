@@ -4,6 +4,9 @@
 
 #include <test_helpers.hpp>
 
+#include <array>
+#include <span>
+
 #include <kth/infrastructure.hpp>
 
 using namespace kth;
@@ -73,6 +76,51 @@ TEST_CASE("byte_writer - write_bytes past end returns error and does not partial
     REQUIRE( ! result.has_value());
     REQUIRE(result.error() == error::write_past_end_of_buffer);
     REQUIRE(writer.position() == 0u);
+}
+
+// An empty span carries nothing to copy, and its data() may be null — a
+// default-constructed span's is, and so may an empty vector's be. Writing it
+// succeeds, moves nothing and touches nothing, wherever the writer stands; it
+// must not hand a null pointer to memcpy, which is undefined even for zero
+// bytes.
+TEST_CASE("byte_writer - write_bytes of a default span writes nothing and succeeds", "[byte_writer tests]") {
+    data_chunk buffer{0xA1, 0xA2, 0xA3, 0xA4};
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_byte(0x55).has_value());
+
+    std::span<uint8_t const> const nothing{};
+    REQUIRE(nothing.data() == nullptr);
+    REQUIRE(writer.write_bytes(nothing).has_value());
+    REQUIRE(writer.position() == 1u);
+    REQUIRE(buffer == data_chunk{0x55, 0xA2, 0xA3, 0xA4});
+}
+
+TEST_CASE("byte_writer - write_bytes of an empty chunk writes nothing and succeeds", "[byte_writer tests]") {
+    data_chunk buffer{0xB1, 0xB2};
+    byte_writer writer(buffer);
+    data_chunk const empty{};
+    REQUIRE(writer.write_bytes(empty).has_value());
+    REQUIRE(writer.position() == 0u);
+    REQUIRE(buffer == data_chunk{0xB1, 0xB2});
+}
+
+TEST_CASE("byte_writer - write_bytes of nothing into an empty buffer succeeds", "[byte_writer tests]") {
+    // Both sides null: an empty destination and a default span.
+    data_chunk buffer{};
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_bytes(std::span<uint8_t const>{}).has_value());
+    REQUIRE(writer.position() == 0u);
+    REQUIRE(writer.is_exhausted());
+}
+
+TEST_CASE("byte_writer - write_bytes of nothing at the end of a full buffer succeeds", "[byte_writer tests]") {
+    data_chunk buffer(2u);
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_bytes(data_chunk{0x01, 0x02}).has_value());
+    REQUIRE(writer.is_exhausted());
+    REQUIRE(writer.write_bytes(std::span<uint8_t const>{}).has_value());
+    REQUIRE(writer.position() == 2u);
+    REQUIRE(buffer == data_chunk{0x01, 0x02});
 }
 
 TEST_CASE("byte_writer - write_little_endian uint32 produces canonical bytes", "[byte_writer tests]") {
@@ -267,6 +315,42 @@ TEST_CASE("byte_writer - write_string_fixed truncates over-length input", "[byte
     REQUIRE(buffer[0] == 'h');
     REQUIRE(buffer[1] == 'e');
     REQUIRE(buffer[2] == 'l');
+}
+
+// The rest of the zero-length family: nothing to copy, and a null pointer on
+// one side or the other — an empty buffer's data(), or a zero-length array's.
+TEST_CASE("byte_writer - write_string_fixed of size 0 into an empty buffer writes nothing", "[byte_writer tests]") {
+    data_chunk buffer{};
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_string_fixed("abc", 0u).has_value());
+    REQUIRE(writer.position() == 0u);
+    REQUIRE(writer.is_exhausted());
+}
+
+TEST_CASE("byte_writer - write_string_fixed of size 0 mid-buffer writes nothing", "[byte_writer tests]") {
+    data_chunk buffer{0xC1, 0xC2, 0xC3};
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_byte(0x55).has_value());
+    REQUIRE(writer.write_string_fixed("", 0u).has_value());
+    REQUIRE(writer.write_string_fixed("abc", 0u).has_value());
+    REQUIRE(writer.position() == 1u);
+    REQUIRE(buffer == data_chunk{0x55, 0xC2, 0xC3});
+}
+
+TEST_CASE("byte_writer - write_array of zero bytes writes nothing", "[byte_writer tests]") {
+    std::array<uint8_t, 0> const nothing{};
+
+    data_chunk buffer{0xD1, 0xD2};
+    byte_writer writer(buffer);
+    REQUIRE(writer.write_byte(0x66).has_value());
+    REQUIRE(writer.write_array(nothing).has_value());
+    REQUIRE(writer.position() == 1u);
+    REQUIRE(buffer == data_chunk{0x66, 0xD2});
+
+    data_chunk empty{};
+    byte_writer at_nothing(empty);
+    REQUIRE(at_nothing.write_array(nothing).has_value());
+    REQUIRE(at_nothing.position() == 0u);
 }
 
 TEST_CASE("byte_writer - reset returns position to start", "[byte_writer tests]") {

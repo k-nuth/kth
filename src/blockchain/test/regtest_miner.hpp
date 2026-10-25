@@ -106,6 +106,12 @@ inline domain::chain::transaction spend_p2pkh(
 
     domain::chain::transaction unsigned_tx(1, 0, std::move(inputs), std::move(outputs));
 
+    // The output being spent, where the signature hash reads it: the BIP143
+    // preimage takes its token data from there, and asserts it was provided.
+    // Validation supplies it the same way; a signer that leaves it out signs
+    // over an output that is not the one it spends.
+    unsigned_tx.inputs()[0].previous_output().validation.cache = prev_tx.outputs()[index];
+
     // BCH replay protection: the fork id must be in the sighash type, and the
     // prevout value is part of what is signed.
     auto const sighash_type = uint8_t(infrastructure::machine::sighash_algorithm::forkid_all);

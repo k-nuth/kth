@@ -83,6 +83,12 @@ struct byte_writer {
         if ( ! can_write(bytes.size())) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
+        // Nothing to copy. An empty span's data() may be null, and so may an
+        // empty buffer's, and memcpy is undefined for a null pointer even with
+        // a count of zero.
+        if (bytes.empty()) {
+            return {};
+        }
         std::memcpy(buffer_.data() + position_, bytes.data(), bytes.size());
         position_ += bytes.size();
         return {};
@@ -94,7 +100,11 @@ struct byte_writer {
         if ( ! can_write(N)) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
-        std::memcpy(buffer_.data() + position_, a.data(), N);
+        // A zero-length std::array's data() may be null, and memcpy
+        // requires valid pointers even for zero bytes.
+        if constexpr (N > 0) {
+            std::memcpy(buffer_.data() + position_, a.data(), N);
+        }
         position_ += N;
         return {};
     }
@@ -184,7 +194,12 @@ struct byte_writer {
             return std::unexpected(error::write_past_end_of_buffer);
         }
         auto const copy = std::min(value.size(), size);
-        std::memcpy(buffer_.data() + position_, value.data(), copy);
+        // Nothing to copy when the field is empty, and then the destination
+        // may be an empty buffer's null data(): memcpy is undefined for a null
+        // pointer even with a count of zero.
+        if (copy > 0) {
+            std::memcpy(buffer_.data() + position_, value.data(), copy);
+        }
         if (copy < size) {
             std::memset(buffer_.data() + position_ + copy, string_terminator, size - copy);
         }
