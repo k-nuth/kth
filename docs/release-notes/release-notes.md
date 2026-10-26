@@ -1,3 +1,114 @@
+# version 1.4.0
+
+You can install Knuth node version v1.4.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* blockchain: make the block-template coinbase reserve configurable by @fpelliccioni in https://github.com/k-nuth/kth/pull/530
+* blockchain: accept a coinbase reserve in fetch_mining_template by @fpelliccioni in https://github.com/k-nuth/kth/pull/531
+* node: move the mining job store out of the rpc layer by @fpelliccioni in https://github.com/k-nuth/kth/pull/532
+* node: extract block reassembly and submit from submitblocklight by @fpelliccioni in https://github.com/k-nuth/kth/pull/533
+* node: add Stratum V2 message framing by @fpelliccioni in https://github.com/k-nuth/kth/pull/534
+* node: add Stratum V2 variable-length primitives by @fpelliccioni in https://github.com/k-nuth/kth/pull/535
+* chore: review all source modules in coderabbit, not just infrastructure by @fpelliccioni in https://github.com/k-nuth/kth/pull/536
+* infrastructure: make to_data_chunk fail loud on a serialization error by @fpelliccioni in https://github.com/k-nuth/kth/pull/538
+* node: add the fixed-shape Stratum V2 TDP messages by @fpelliccioni in https://github.com/k-nuth/kth/pull/537
+* node: add the sequence-bearing Stratum V2 TDP messages by @fpelliccioni in https://github.com/k-nuth/kth/pull/539
+* node: add the Stratum V2 connection-setup messages by @fpelliccioni in https://github.com/k-nuth/kth/pull/540
+* node: enable the JSON-RPC server by default by @fpelliccioni in https://github.com/k-nuth/kth/pull/542
+* consensus: map verify_flags_minimal_if to SCRIPT_VERIFY_MINIMALIF by @fpelliccioni in https://github.com/k-nuth/kth/pull/545
+* consensus: add StackItem abstraction and hwaccel::IsAllZeros to the interpreter by @fpelliccioni in https://github.com/k-nuth/kth/pull/546
+* database, blockchain: fix full-mode UTXO-Z value serialization by @fpelliccioni in https://github.com/k-nuth/kth/pull/547
+* blockchain: always provide the BCH script-checker context in verify_script by @fpelliccioni in https://github.com/k-nuth/kth/pull/548
+* domain: activate BIP16 (P2SH) by height, matching BCHN by @fpelliccioni in https://github.com/k-nuth/kth/pull/549
+* node, blockchain: full validation of post-checkpoint blocks during IBD by @fpelliccioni in https://github.com/k-nuth/kth/pull/550
+* node, blockchain: align UTXO-build batches to the checkpoint boundary by @fpelliccioni in https://github.com/k-nuth/kth/pull/551
+* node: validate the tip's trailing blocks without waiting for a full batch by @fpelliccioni in https://github.com/k-nuth/kth/pull/552
+* database, node: resume UTXO build from the persisted height by @fpelliccioni in https://github.com/k-nuth/kth/pull/553
+* database: remove dead commented-out LMDB block/UTXO storage code by @fpelliccioni in https://github.com/k-nuth/kth/pull/555
+* blockchain: enforce the per-transaction and per-block SigChecks limits by @fpelliccioni in https://github.com/k-nuth/kth/pull/556
+* blockchain: build the signature-checker context once per transaction by @fpelliccioni in https://github.com/k-nuth/kth/pull/557
+* node: deliver the block_range_request reliably so download can't stall at startup by @fpelliccioni in https://github.com/k-nuth/kth/pull/558
+* c-api: expose the UTXO-Z mode and embedded-bloom build info by @fpelliccioni in https://github.com/k-nuth/kth/pull/559
+* node: retry instead of dropping in the block-supervisor input bridge by @fpelliccioni in https://github.com/k-nuth/kth/pull/560
+* node: let utxo_build_task exit on the node stop signal to unblock shutdown by @fpelliccioni in https://github.com/k-nuth/kth/pull/561
+* db: remove the unreferenced pre-v1 LMDB stores by @fpelliccioni in https://github.com/k-nuth/kth/pull/564
+* db: drop the deleted store .ipp files from the CMakeLists source list by @fpelliccioni in https://github.com/k-nuth/kth/pull/565
+* blockchain: track the finalized block (BCHN-style) by @fpelliccioni in https://github.com/k-nuth/kth/pull/567
+* blockchain: wire the finalized-block tracker into header sync by @fpelliccioni in https://github.com/k-nuth/kth/pull/568
+* chore: tune CodeRabbit config to cut review churn by @fpelliccioni in https://github.com/k-nuth/kth/pull/569
+* blockchain: enforce header finalization + detect reorg candidates by @fpelliccioni in https://github.com/k-nuth/kth/pull/570
+* blockchain: record undo data and disconnect blocks (reorg execution, part 1) by @fpelliccioni in https://github.com/k-nuth/kth/pull/571
+* blockchain: address blocks by height through the active chain by @fpelliccioni in https://github.com/k-nuth/kth/pull/572
+* node: switch the active chain onto a heavier branch (reorg execution, part 2) by @fpelliccioni in https://github.com/k-nuth/kth/pull/573
+* test: exercise the reorg undo round-trip against a real UTXO-Z database by @fpelliccioni in https://github.com/k-nuth/kth/pull/574
+* test: real-chain fixture for reorg integration testing by @fpelliccioni in https://github.com/k-nuth/kth/pull/575
+* node: drop block work downloaded for an abandoned branch by @fpelliccioni in https://github.com/k-nuth/kth/pull/576
+* test: reorganize a real chain end to end, and fix what that found by @fpelliccioni in https://github.com/k-nuth/kth/pull/578
+* blockchain: hold off on a branch that would rewind the chain deeply by @fpelliccioni in https://github.com/k-nuth/kth/pull/577
+* test: reorganize, restart, and refuse to write — the reorg paths that end a run by @fpelliccioni in https://github.com/k-nuth/kth/pull/579
+* node: tell the mempool when a block connects, and stop when the build cannot by @fpelliccioni in https://github.com/k-nuth/kth/pull/581
+* docs: write down how the UTXO set is synchronized, and what it costs by @fpelliccioni in https://github.com/k-nuth/kth/pull/585
+* blockchain: let first-seen pick a winner however the inputs are ordered by @fpelliccioni in https://github.com/k-nuth/kth/pull/586
+* docs: note that the mempool's conflict branch is a double-spend-proof seam by @fpelliccioni in https://github.com/k-nuth/kth/pull/588
+* docs: express stage 1 as windows, because a mutex cannot cross a suspension by @fpelliccioni in https://github.com/k-nuth/kth/pull/590
+* docs: state what the node needs from the UTXO store, and why by @fpelliccioni in https://github.com/k-nuth/kth/pull/591
+* docs: concurrent historical resolution is the ask, not absence from memory by @fpelliccioni in https://github.com/k-nuth/kth/pull/595
+* docs: make batch result counts explicit by @fpelliccioni in https://github.com/k-nuth/kth/pull/597
+* docs: say what the height on a delete means, and make it agree with a read by @fpelliccioni in https://github.com/k-nuth/kth/pull/598
+* docs: declare eligible uniqueness, which is what makes "the first one" correct by @fpelliccioni in https://github.com/k-nuth/kth/pull/599
+* docs: separate the one legitimate transient duplicate from the evidence of a bug by @fpelliccioni in https://github.com/k-nuth/kth/pull/601
+* database: give an undo record the identity that lets a restart find it again by @fpelliccioni in https://github.com/k-nuth/kth/pull/604
+* blockchain: make validating a transaction and admitting one two calls rather than one call and a flag by @fpelliccioni in https://github.com/k-nuth/kth/pull/607
+* blockchain: build the block template from a set the mempool was actually in by @fpelliccioni in https://github.com/k-nuth/kth/pull/614
+* ci: let the coverage step run, and make a report that was never produced say so by @fpelliccioni in https://github.com/k-nuth/kth/pull/610
+* fix(ci): make the Conan update check actionable by @fpelliccioni in https://github.com/k-nuth/kth/pull/613
+* ci: run github-script on Node.js 24 by @fpelliccioni in https://github.com/k-nuth/kth/pull/619
+* ci: make workflow checks easier to scan by @fpelliccioni in https://github.com/k-nuth/kth/pull/620
+* blockchain: publish the chain state, the tip it describes and their label as one thing by @fpelliccioni in https://github.com/k-nuth/kth/pull/615
+* blockchain: admit a template's capture or refuse it, rather than asking whether a transition is running by @fpelliccioni in https://github.com/k-nuth/kth/pull/622
+* domain: enforce integer signedness with concepts by @fpelliccioni in https://github.com/k-nuth/kth/pull/626
+* ci: make a slow run explain itself in the job summary by @fpelliccioni in https://github.com/k-nuth/kth/pull/627
+* fix: keep the stale cutoff in the timestamp domain by @fpelliccioni in https://github.com/k-nuth/kth/pull/628
+* ci: stop the cache budget from evicting the cache that matters by @fpelliccioni in https://github.com/k-nuth/kth/pull/629
+* ci: prune caches through the REST API instead of a tool the container lacks by @fpelliccioni in https://github.com/k-nuth/kth/pull/630
+* ci: prove the recipe has one revision on every platform, or say it does not by @fpelliccioni in https://github.com/k-nuth/kth/pull/637
+* chore: stop shipping an editor residue inside every package by @fpelliccioni in https://github.com/k-nuth/kth/pull/639
+* ci: reclaim the cache a merged pull request leaves behind by @fpelliccioni in https://github.com/k-nuth/kth/pull/640
+* deps: take the conan upgrades that resolve, and say why two do not by @fpelliccioni in https://github.com/k-nuth/kth/pull/643
+* ci: give the reusable workflows their own credential interface by @fpelliccioni in https://github.com/k-nuth/kth/pull/644
+* deps: move to UTXO-Z 0.9.1, and to the contracts it changed underneath by @fpelliccioni in https://github.com/k-nuth/kth/pull/645
+* node: make a half-applied UTXO batch impossible to continue past by @fpelliccioni in https://github.com/k-nuth/kth/pull/602
+* blockchain: give the UTXO store the exclusion window its deletions require by @fpelliccioni in https://github.com/k-nuth/kth/pull/651
+* sync: publish the connected tip where blocks are connected, not where they are stored by @fpelliccioni in https://github.com/k-nuth/kth/pull/654
+* ci: move recipe artifacts to Node 24 by @fpelliccioni in https://github.com/k-nuth/kth/pull/659
+* sync: keep the peers a new block range needs, and name the worker that owns each slot by @fpelliccioni in https://github.com/k-nuth/kth/pull/658
+* blockchain: remove the second UTXO builder, which no longer had a caller by @fpelliccioni in https://github.com/k-nuth/kth/pull/660
+* blockchain: close the UTXO store when an operation may have left it half-applied by @fpelliccioni in https://github.com/k-nuth/kth/pull/664
+* node: report a fatal connect failure after the UTXO window is released by @fpelliccioni in https://github.com/k-nuth/kth/pull/665
+* node: hold the post-checkpoint range until the UTXO set describes the block below it by @fpelliccioni in https://github.com/k-nuth/kth/pull/667
+* database: take the append cursor from what was written, not from what was allocated by @fpelliccioni in https://github.com/k-nuth/kth/pull/670
+* node: give the executor one synchronized rule for its own lifecycle by @fpelliccioni in https://github.com/k-nuth/kth/pull/672
+* node: follow the header tip when it moves past a drained body range by @fpelliccioni in https://github.com/k-nuth/kth/pull/685
+* node: let a stop end the heartbeat instead of waiting it out by @fpelliccioni in https://github.com/k-nuth/kth/pull/690
+* network: let a stop end the status wait instead of waiting it out by @fpelliccioni in https://github.com/k-nuth/kth/pull/691
+* node: ask the next peer instead of parking the request that chose it by @fpelliccioni in https://github.com/k-nuth/kth/pull/694
+* blockchain: make the BIP30 duplicate coinbases independent of the batch partition by @fpelliccioni in https://github.com/k-nuth/kth/pull/696
+* node: a batch's headers must be durable before it mutates, and the chain state must not come from the checkpoint by @fpelliccioni in https://github.com/k-nuth/kth/pull/699
+* node-exe: end the process when the node ends, not only when a signal arrives by @fpelliccioni in https://github.com/k-nuth/kth/pull/703
+* node: tell a peer with nothing new apart from a peer that failed, and confirm the tip where the peers run out by @fpelliccioni in https://github.com/k-nuth/kth/pull/707
+* node: observe the block announcements the node already receives by @fpelliccioni in https://github.com/k-nuth/kth/pull/709
+* Fix duplicate peer identities in concurrent manager tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/713
+* node: tell a datadir that is not there apart from one that cannot be queried by @fpelliccioni in https://github.com/k-nuth/kth/pull/704
+* node: unify header ingestion and coordinator-owned sync walk by @fpelliccioni in https://github.com/k-nuth/kth/pull/711
+* Fix sanitizer findings in serialization and test fixtures by @fpelliccioni in https://github.com/k-nuth/kth/pull/712
+* Fix RPC shutdown and make UTXO compaction explicit by @fpelliccioni in https://github.com/k-nuth/kth/pull/714
+* Integrate UTXO-Z 1.0.0 geometry 4 by @fpelliccioni in https://github.com/k-nuth/kth/pull/715
+* release: 1.4.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/716
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.3.0...v1.4.0
+
+
 # version 1.3.0
 
 You can install Knuth node version v1.3.0 [using these instructions](https://kth.cash/#download).
