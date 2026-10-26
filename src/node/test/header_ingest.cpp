@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <utility>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -684,17 +685,27 @@ TEST_CASE("walk timer: delivers once, after its delay, and only the last arming"
     started_tasks group{ioc, {}};
     walk_timer timer(ioc.get_executor(), events, group.spawn());
 
+    using clock = std::chrono::steady_clock;
+    auto receive = [&]() -> ::asio::awaitable<
+        std::pair<sync::sync_coordinator_event, clock::time_point>> {
+        auto event = co_await events.async_receive(::asio::use_awaitable);
+        co_return std::pair{std::move(event), clock::now()};
+    };
+    auto received = ::asio::co_spawn(ioc, receive(), ::asio::use_future);
+
     timer.arm(30ms, sync::header_walk_timeout{.seq = 5});
+    auto const armed_at = clock::now();
     timer.arm(30ms, sync::header_walk_timeout{.seq = 6});      // replaces 5
 
-    ioc.run_for(10ms);
-    CHECK_FALSE(next_event<sync::header_walk_timeout>(events).has_value());
-
-    ioc.restart();
-    ioc.run_for(200ms);
-    auto const fired = next_event<sync::header_walk_timeout>(events);
-    REQUIRE(fired.has_value());
+    // A loaded runner may resume after the deadline even during run_for(10ms).
+    // Observe delivery once and check its lower bound, without consuming the
+    // event in an early probe or imposing an upper bound on scheduler latency.
+    ioc.run();
+    auto const [event, delivered_at] = received.get();
+    auto const* fired = std::get_if<sync::header_walk_timeout>(&event);
+    REQUIRE(fired != nullptr);
     CHECK(fired->seq == 6u);
+    CHECK(delivered_at - armed_at >= 30ms);
     CHECK_FALSE(next_event<sync::header_walk_timeout>(events).has_value());
     CHECK(group.futures.size() == 2u);
     CHECK(group.all_ended());

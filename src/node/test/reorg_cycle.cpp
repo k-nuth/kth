@@ -93,6 +93,9 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
         auto const built = chain.get_utxo_built_height();
         REQUIRE(built);
         REQUIRE(*built == trunk_len);
+        auto const count = chain.utxo_count();
+        REQUIRE(count);
+        CHECK(*count == trunk_len);
     }
 
     // -------------------------------------------------------------------------
@@ -123,6 +126,9 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
         auto const built = chain.get_utxo_built_height();
         REQUIRE(built);
         REQUIRE(*built == 101);
+        auto const count = chain.utxo_count();
+        REQUIRE(count);
+        CHECK(*count == trunk_len + 1u);
     }
 
     // The spend really happened: the coinbase it consumed is gone from the set and
@@ -208,6 +214,11 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     CHECK_FALSE(utxo_present(chain, a101.transactions().front().hash(), 0, trunk_len));
     CHECK_FALSE(utxo_present(chain, spend_txid, 0, trunk_len));
     CHECK(utxo_present(chain, matured_txid, 0, trunk_len));
+    {
+        auto const count = chain.utxo_count();
+        REQUIRE(count);
+        CHECK(*count == trunk_len);
+    }
 
     // The by-height header table names B's blocks already — rewritten by the
     // switch itself, while the writers were still parked. Nothing else would do
@@ -250,6 +261,9 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
         auto const built = chain.get_utxo_built_height();
         REQUIRE(built);
         CHECK(*built == 103);
+        auto const count = chain.utxo_count();
+        REQUIRE(count);
+        CHECK(*count == trunk_len + branch_b.size());
     }
 
     // Heights now name B's blocks.
@@ -273,6 +287,12 @@ TEST_CASE("the node reorganizes onto a heavier branch and back to a consistent s
     CHECK_FALSE(utxo_present(chain, a101.transactions().front().hash(), 0, 103));
     CHECK_FALSE(utxo_present(chain, spend_txid, 0, 103));
     CHECK(utxo_present(chain, matured_txid, 0, 103));
+
+    // Every expected output is present. Together with the exact count above,
+    // this excludes unrelated entries left behind by the abandoned branch.
+    for (auto const& blk : trunk) {
+        CHECK(utxo_present(chain, blk.transactions().front().hash(), 0, 103));
+    }
 
     // -------------------------------------------------------------------------
     // Sync continues. A header extending the new tip is a plain extension — if the
