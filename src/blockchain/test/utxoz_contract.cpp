@@ -523,6 +523,12 @@ TEST_CASE("utxoz behaviour: a negative file number fails in reference mode only"
     // Full mode stores the whole output; the file number is never read, so the
     // block is buildable and refusing it would be inventing a failure.
     REQUIRE(negative.has_value());
+    // The default output carries an empty span with a null data pointer.
+    // Keep its metadata even though there are no payload bytes to copy.
+    REQUIRE(negative->inserts.size() == 1);
+    auto const& stored = negative->inserts.begin()->second;
+    CHECK(stored.height == 500u);
+    CHECK(stored.data == std::vector<uint8_t>{0xf4, 0x01, 0, 0, 10, 0, 0, 0, 0});
 #endif
 
     // The control that keeps the above from passing by always failing: a valid

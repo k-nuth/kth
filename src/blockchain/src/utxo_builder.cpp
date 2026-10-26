@@ -170,7 +170,11 @@ std::vector<uint8_t> serialize_utxo_raw_value(
     auto* p = result.data();
 
     // raw output bytes (value + varint + script)
-    std::memcpy(p, raw_output.data(), raw_output.size());
+    // An empty span may have a null data pointer; memcpy still requires a
+    // non-null source when its byte count is zero.
+    if (!raw_output.empty()) {
+        std::memcpy(p, raw_output.data(), raw_output.size());
+    }
     p += raw_output.size();
 
     // height (4 bytes LE)

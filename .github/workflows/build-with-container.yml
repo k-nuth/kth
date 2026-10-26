@@ -578,7 +578,13 @@ jobs:
         working-directory: build/build/Release
         run: |
           rc=0
-          timeout --kill-after=30 300 ./src/node/kth_node_test --reporter compact || rc=$?
+          # The complete instrumented node suite takes about five minutes
+          # even locally; leave runner overhead within a bounded failure limit.
+          node_test_timeout=300
+          if [ "${{ inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan }}" = "true" ]; then
+            node_test_timeout=600
+          fi
+          timeout --kill-after=30 "$node_test_timeout" ./src/node/kth_node_test --reporter compact || rc=$?
           if [ "$rc" != 0 ]; then
             echo "::error::kth_node_test failed or timed out (exit=$rc)"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
