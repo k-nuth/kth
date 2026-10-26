@@ -111,6 +111,10 @@ jobs:
       - name: 🔐 Add Conan remote
         run: |
           conan remote add ${{ env.CONAN_REMOTE }} ${{ env.CONAN_REMOTE_URL }} --force
+
+      - name: 🔐 Conan login
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
           conan remote login ${{ env.CONAN_REMOTE }} ${{ secrets.CONAN_LOGIN_USERNAME }} -p ${{ secrets.CONAN_3_PASSWORD }}
 
       - name: 📋 Calculate dependency build order
@@ -135,6 +139,8 @@ jobs:
           cat build_order.json
 
       - name: 🏗️ Build and upload dependencies
+        env:
+          READ_ONLY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           # Parse build order and build each dependency
           # Extract references and their context (build or host)
@@ -177,8 +183,10 @@ jobs:
               else
                 conan install --requires="$ref" -l build/conan.lock --build=missing -pr ems5
               fi
+              if [ "$READ_ONLY" = "true" ]; then
+                echo "Keeping fork PR dependency local: $ref"
               # Skip uploading emsdk (too large for remote) and ninja (build tool)
-              if echo "$ref" | grep -qE "^(emsdk|ninja)/"; then
+              elif echo "$ref" | grep -qE "^(emsdk|ninja)/"; then
                 echo "Skipping upload for build tool: $ref"
               else
                 echo "Uploading dependency: $ref"

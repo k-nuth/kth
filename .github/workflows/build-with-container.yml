@@ -87,7 +87,7 @@ jobs:
           echo "inputs.compiler:           ${{ inputs.compiler }}"
           echo "inputs.compiler-version:   ${{ inputs.compiler-version }}"
 
-          echo "inputs.version-file:       ${{ inputs.version-file }}"
+          echo "inputs.build-version:      ${{ inputs.build-version }}"
           echo "inputs.upload:             ${{ inputs.upload }}"
           # echo "github.event_name:         ${{ github.event_name }}"
 
@@ -115,7 +115,8 @@ jobs:
           # its clean counterpart and get restored into a later clean
           # build — the link then fails on undefined sanitizer-runtime
           # references. The split matches the sibling ccache key.
-          key: ${{ runner.os }}-conan2-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('**/conan.lock') }}
+          # Fork PRs cannot restore a Conan home carrying trusted login state.
+          key: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'anonymous-' || '' }}${{ runner.os }}-conan2-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}-${{ hashFiles('**/conan.lock') }}
       # - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
       #   with:
       #     path: ~/.cache/pip
@@ -279,6 +280,11 @@ jobs:
           fi
 
           # Choose build strategy based on whether we need to upload
+          if [ "${{ inputs.upload }}" = "true" ] &&
+             [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}" = "true" ]; then
+            echo "::error::Fork pull requests cannot request package publishing"
+            exit 1
+          fi
           if [ "${{ inputs.upload }}" = "true" ]; then
             echo "🚀 Release build - using conan create (includes package validation)"
             conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
@@ -682,7 +688,7 @@ jobs:
 
       - name: 📦 Upload
         # if: github.event_name == 'push' && needs.check.outputs.permitted == 'true'
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         run: |
           conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
           conan upload ${{ inputs.recipe-name }}/${{ inputs.build-version }}@ -r ${{ inputs.conan-remote }} # --all

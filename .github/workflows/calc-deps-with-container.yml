@@ -44,7 +44,8 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.conan2
-          key: alpine-conan2-${{ hashFiles('**/conan.lock') }}
+          # Keep cached Conan authentication state out of fork PRs.
+          key: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'anonymous-' || '' }}alpine-conan2-${{ hashFiles('**/conan.lock') }}
 
 
       # - if: ${{ inputs.compiler != 'GCC' }}
@@ -57,6 +58,7 @@ jobs:
       - name: 🔧 Setup kthbuild
         uses: ./ci_utils/.github/actions/setup-kthbuild
       - name: 🔐 Conan login
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
 
       - name: 📋 Calculate build order
