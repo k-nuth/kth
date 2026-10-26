@@ -81,6 +81,16 @@ code enforce_sigcheck_limits(
     std::vector<sigcheck_entry> const& entries,
     std::vector<uint64_t> const& block_limits,
     uint64_t tx_limit) {
+    return enforce_sigcheck_limits(entries, block_limits,
+        std::vector<uint64_t>(block_limits.size(), tx_limit));
+}
+
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    std::vector<uint64_t> const& tx_limits) {
+
+    KTH_CONTRACT(tx_limits.size() == block_limits.size());
 
     std::vector<uint64_t> block_sigchecks(block_limits.size(), 0);
     size_t cur_tx = std::numeric_limits<size_t>::max();
@@ -95,7 +105,7 @@ code enforce_sigcheck_limits(
             tx_sigchecks = 0;
         }
         tx_sigchecks += e.sigchecks;
-        if (tx_sigchecks > tx_limit) {
+        if (tx_sigchecks > tx_limits[e.block_index]) {
             return error::transaction_sigchecks_limit;
         }
 
@@ -118,10 +128,16 @@ code validate_block_batch(
         return error::success;
     }
 
-    // Per-height consensus flags: build the chain_state for the first block from
-    // the header_index (same construction header validation uses) and advance it
-    // one block at a time with from_pool_ptr. Using a fixed all-forks flag set
+    // Per-height consensus flags: build every block's chain_state from the
+    // header_index, the same construction header validation uses, so each block
+    // is judged by the rules of its own height. Using a fixed all-forks flag set
     // would misvalidate historical blocks (e.g. strict-DER before BIP66).
+    //
+    // Not derived block to block with from_pool_ptr: that transition promotes a
+    // POOL state to the block state at the same height — its contract for
+    // populate_chain_state — so chained over a batch it kept every block at the
+    // first block's height, and a batch that began below an activation validated
+    // the blocks above it with the old rules (test/batch_activation_boundary.cpp).
     validate_header const header_validator(settings, network);
     auto const& header_index = chain.headers();
 
@@ -129,6 +145,10 @@ code validate_block_batch(
     std::vector<domain::script_flags_t> block_flags(blocks.size());
     // Per-block dynamic SigChecks limit (consensus), one per block in the batch.
     std::vector<uint64_t> block_sigcheck_limit(blocks.size());
+    // Per-block limit on one transaction's SigChecks: 3000 once the May 2020
+    // rules are active at that block's height, 20000 before (see
+    // max_tx_sigchecks_before_activation).
+    std::vector<uint64_t> block_tx_sigcheck_limit(blocks.size());
 
     boost::unordered_flat_map<bv_outpoint, created_output, bv_outpoint_hasher> created;
     boost::unordered_flat_set<bv_outpoint, bv_outpoint_hasher> spent;
@@ -169,22 +189,18 @@ code validate_block_batch(
         auto const height = start_height + i;
         auto const& block = *blocks[i];
 
-        if (i == 0) {
-            auto const parent_idx = header_index.find(block.header().previous_block_hash());
-            if (parent_idx == header_index::null_index) {
-                // Parent header not in the index: cannot build chain_state (the
-                // KTH_ASSERT downstream is a no-op in Release, so guard here).
-                return error::not_found;
-            }
-            auto cs = header_validator.chain_state_at(
-                block.header(), block.hash(), height, parent_idx, header_index);
-            if ( ! cs) {
-                return cs.error();
-            }
-            state = std::move(*cs);
-        } else {
-            state = domain::chain::chain_state::from_pool_ptr(*state, block);
+        auto const parent_idx = header_index.find(block.header().previous_block_hash());
+        if (parent_idx == header_index::null_index) {
+            // Parent header not in the index: cannot build chain_state (the
+            // KTH_ASSERT downstream is a no-op in Release, so guard here).
+            return error::not_found;
         }
+        auto cs = header_validator.chain_state_at(
+            block.header(), block.hash(), height, parent_idx, header_index);
+        if ( ! cs) {
+            return cs.error();
+        }
+        state = std::move(*cs);
         if ( ! state) {
             return error::operation_failed;
         }
@@ -194,6 +210,10 @@ code validate_block_batch(
         // GetMaxBlockSigChecksCount(nMaxBlockSize).
         block_sigcheck_limit[i] =
             state->dynamic_max_block_size() / block_maxbytes_maxsigchecks_ratio;
+        block_tx_sigcheck_limit[i] =
+            script::is_enabled(block_flags[i], domain::machine::script_flags::bch_enforce_sigchecks)
+                ? max_tx_sigchecks
+                : max_tx_sigchecks_before_activation;
 
         for (auto const& tx : block.transactions()) {
             if (tx.is_coinbase()) {
@@ -455,8 +475,9 @@ code validate_block_batch(
 
     // -----------------------------------------------------------------------
     // Phase 3 (serial): enforce the SigChecks consensus limits from the per-tx
-    // totals — max_tx_sigchecks per transaction and the dynamic ABLA limit per
-    // block. Each task is one transaction, so there is one entry per task.
+    // totals — the per-transaction limit of the block each transaction is in
+    // and the dynamic ABLA limit per block. Each task is one transaction, so
+    // there is one entry per task.
     // (BCHN stops as soon as a limiter is exceeded; validating the whole batch
     // first and checking the sums is equivalent for accept/reject, only less
     // DoS-optimal, which is acceptable on the IBD path.)
@@ -469,7 +490,7 @@ code validate_block_batch(
             t,   // one task is one transaction
             static_cast<uint64_t>(task_sigchecks[t])});
     }
-    return enforce_sigcheck_limits(entries, block_sigcheck_limit, max_tx_sigchecks);
+    return enforce_sigcheck_limits(entries, block_sigcheck_limit, block_tx_sigcheck_limit);
 }
 
 } // namespace kth::blockchain

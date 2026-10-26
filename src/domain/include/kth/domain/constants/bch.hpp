@@ -51,6 +51,14 @@ constexpr size_t max_token_commitment_length_leibniz = 128;    // 2026-May
 
 
 constexpr size_t max_tx_sigchecks = 3000;
+// Before the May 2020 upgrade the SigChecks limits were not consensus, and the
+// chain holds transactions far above 3000 SigChecks (mainnet block 364292,
+// 000000000000000003dd2fdbb484d6d9c349d644d8bbb3cbfa5e67f639a465fe, spends 5569
+// P2PKH outputs in one transaction). BCHN validates those blocks with the
+// per-transaction limiter set to 20000 instead of disabled
+// (TxSigCheckLimiter::getDisabled: no historical transaction exceeds 20000), and
+// keeps the per-block limiter as is. Same here.
+constexpr size_t max_tx_sigchecks_before_activation = 20000;
 constexpr size_t block_maxbytes_maxsigchecks_ratio = 141;
 
 constexpr size_t max_payload_size_scalenet = max_block_size::scalenet;

@@ -77,3 +77,28 @@ TEST_CASE("enforce_sigcheck_limits: tx limit is checked before block limit", "[s
     CHECK(enforce_sigcheck_limits({{0, tx1, 3001}}, {1'000'000}, 3000)
         == error::transaction_sigchecks_limit);
 }
+
+// -----------------------------------------------------------------------------
+// The per-transaction limit is the one of the transaction's own block
+// -----------------------------------------------------------------------------
+
+TEST_CASE("enforce_sigcheck_limits: the per-tx limit is taken from the transaction's block", "[sigchecks]") {
+    // A batch with a block below the activation (limit 20000) followed by one at
+    // or above it (limit 3000): a 3001-SigCheck transaction passes in the first
+    // and fails in the second. Reading the batch's last block, or its first, for
+    // every transaction would get one of these wrong.
+    std::vector<uint64_t> const block_limits{1'000'000, 1'000'000};
+    std::vector<uint64_t> const tx_limits{20000, 3000};
+
+    CHECK(enforce_sigcheck_limits({{0, 0, 3001}, {1, 1, 100}}, block_limits, tx_limits) == error::success);
+    CHECK(enforce_sigcheck_limits({{0, 0, 100}, {1, 1, 3001}}, block_limits, tx_limits)
+        == error::transaction_sigchecks_limit);
+    CHECK(enforce_sigcheck_limits({{0, 0, 20000}, {1, 1, 3000}}, block_limits, tx_limits) == error::success);
+    CHECK(enforce_sigcheck_limits({{0, 0, 20001}, {1, 1, 3000}}, block_limits, tx_limits)
+        == error::transaction_sigchecks_limit);
+
+    // The uniform form is the per-block form with one value everywhere.
+    CHECK(enforce_sigcheck_limits({{0, 0, 3001}}, {1'000'000}, 3000) == error::transaction_sigchecks_limit);
+    CHECK(enforce_sigcheck_limits({{0, 0, 3001}}, {1'000'000}, std::vector<uint64_t>{3000})
+        == error::transaction_sigchecks_limit);
+}

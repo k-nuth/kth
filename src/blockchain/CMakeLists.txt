@@ -320,6 +320,8 @@ if (ENABLE_TEST)
         test/utxo_gate_poison.cpp
         test/verify_script_context.cpp
         test/batch_sigchecks.cpp
+        test/batch_sigchecks_activation.cpp
+        test/batch_activation_boundary.cpp
         test/finalization.cpp
         test/parking.cpp
         test/block_undo.cpp
