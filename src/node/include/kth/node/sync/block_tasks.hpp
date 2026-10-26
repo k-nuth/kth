@@ -41,6 +41,25 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
 [[nodiscard]]
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale);
 
+/// How far the store holds bodies above the connected tip: the highest height H
+/// such that every block in (connected, H] on the active chain has its data on
+/// disk; `connected` itself when the block right above it is missing.
+///
+/// This is where the body download resumes FROM, and it is not the connected
+/// tip. The connected marker says how far the UTXO set reaches, and since #653
+/// nothing but the connect path moves it, so a node stopped partway through a
+/// sync comes back with bodies stored far above it. A download that resumed from
+/// the marker asked the network for all of them again and wrote every one a
+/// second time, re-pointing the index at the copy (see
+/// test/resume_stored_bodies.cpp).
+///
+/// The data bits consulted are the ones the flat-file scan sets at open — read
+/// back from the files, not persisted — so what this counts is what is actually
+/// on disk. It stops at the first gap: what lies above a gap is owed to the
+/// download, as it is today.
+[[nodiscard]]
+uint32_t stored_bodies_from(blockchain::header_index const& index, uint32_t connected);
+
 // =============================================================================
 // Pipeline Counters for debugging block loss
 // =============================================================================
