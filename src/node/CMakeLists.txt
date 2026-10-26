@@ -370,10 +370,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 QUIET)
   if(Catch2_FOUND)
     include(Catch)
-    catch_discover_tests(kth_node_test)
+    # Bound stalled coroutine tests on platforms that run plain CTest.
+    catch_discover_tests(kth_node_test PROPERTIES TIMEOUT 600)
   else()
     # Fallback to manual test registration
     add_test(NAME kth_node_test COMMAND kth_node_test)
+    set_tests_properties(kth_node_test PROPERTIES TIMEOUT 600)
   endif()
 
   # README C++ snippet checks disabled: v1.0 switched the public API
