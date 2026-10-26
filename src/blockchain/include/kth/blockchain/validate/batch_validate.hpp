@@ -76,6 +76,16 @@ code enforce_sigcheck_limits(
     std::vector<uint64_t> const& block_limits,
     uint64_t tx_limit);
 
+// The same, with the per-transaction limit taken from the block each
+// transaction belongs to (tx_limits is indexed like block_limits): blocks below
+// the May 2020 activation carry max_tx_sigchecks_before_activation, blocks at or
+// above it carry max_tx_sigchecks. A batch may hold both.
+[[nodiscard]] KB_API
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    std::vector<uint64_t> const& tx_limits);
+
 } // namespace kth::blockchain
 
 #endif // KTH_BLOCKCHAIN_VALIDATE_BATCH_VALIDATE_HPP
