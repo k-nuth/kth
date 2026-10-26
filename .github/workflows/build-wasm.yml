@@ -71,9 +71,13 @@ jobs:
 
       - name: 📦 Install build dependencies
         run: |
-          pip install conan==2.22.2
+          pip install conan==2.31.2
           pip install kthbuild --upgrade
           conan --version
+
+      # Temporary until CCI #31261 is published and the locks are refreshed.
+      - name: 🩹 Prepare verified LMDB source cache
+        run: python3 scripts/prepare_conan_source_cache.py --cache-dir "$RUNNER_TEMP/kth-conan-sources"
 
       - name: 🔧 Setup Conan profile
         run: |
@@ -95,6 +99,9 @@ jobs:
           ninja/[*]
 
           [conf]
+          # The OpenSSL 4 recipe requires an explicit target for Emscripten.
+          # Use the generic target inherited by the OpenSSL 3 recipe.
+          user.openssl:target=cc
           tools.build:exelinkflags+=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
           tools.build:sharedlinkflags+=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
           tools.cmake.cmaketoolchain:generator=Ninja
@@ -172,10 +179,14 @@ jobs:
           while IFS='|' read -r ref context; do
             if [ -n "$ref" ]; then
               echo "Building dependency: $ref (context: $context)"
+              source_cache_args=()
+              if [[ "$ref" == lmdb/1.0.2 || "$ref" == lmdb/1.0.2#* ]]; then
+                source_cache_args=(-cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources")
+              fi
               if [ "$context" = "build" ]; then
-                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr ems5
+                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr ems5 "${source_cache_args[@]}"
               else
-                conan install --requires="$ref" -l build/conan.lock --build=missing -pr ems5
+                conan install --requires="$ref" -l build/conan.lock --build=missing -pr ems5 "${source_cache_args[@]}"
               fi
               # Skip uploading emsdk (too large for remote) and ninja (build tool)
               if echo "$ref" | grep -qE "^(emsdk|ninja)/"; then
@@ -192,7 +203,7 @@ jobs:
           VERSION="${{ needs.setup.outputs.build-version }}"
           echo "Building main package version: ${VERSION}"
 
-          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr ems5 --build=missing -o tests=False
+          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr ems5 --build=missing -o tests=False -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources"
 
       - name: 📊 Build summary
         if: always()

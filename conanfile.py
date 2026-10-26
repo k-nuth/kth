@@ -176,14 +176,14 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
-        self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
+        self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
         self.requires("utxoz/1.0.0", transitive_headers=True, transitive_libs=True)
 
         # GMP is required for BigInt support in the native interpreter.
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
-            self.requires("openssl/3.6.3", transitive_headers=True, transitive_libs=True)
+            self.requires("openssl/4.0.3", transitive_headers=True, transitive_libs=True)
 
         self.requires("ctre/3.11.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
@@ -192,7 +192,7 @@ class KthRecipe(KnuthConanFileV2):
         # Emscripten (see src/CMakeLists.txt). Skip the dep there so Conan
         # doesn't complain that no component uses it.
         if self.settings.os != "Emscripten":
-            self.requires("ftxui/6.1.9", transitive_headers=True, transitive_libs=True)
+            self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
         # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
@@ -201,7 +201,7 @@ class KthRecipe(KnuthConanFileV2):
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
         if self.settings.os != "Emscripten":
-            self.requires("simdjson/4.2.2", transitive_headers=True, transitive_libs=True)
+            self.requires("simdjson/5.0.5", transitive_headers=True, transitive_libs=True)
 
         # llhttp (Node.js HTTP parser) backs the optional JSON-RPC server. It is a
         # sans-io codec driven by the node's existing standalone-asio I/O loop, so
@@ -210,14 +210,14 @@ class KthRecipe(KnuthConanFileV2):
             self.requires("llhttp/9.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
-            self.requires("libpng/1.6.58", transitive_headers=True, transitive_libs=True)
+            self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_jemalloc:
             # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
-            self.requires("jemalloc/5.3.1", transitive_headers=True, transitive_libs=True)
+            self.requires("jemalloc/5.4.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.asio_standalone:
             self.requires("asio/1.38.2", transitive_headers=True, transitive_libs=True)
@@ -226,7 +226,7 @@ class KthRecipe(KnuthConanFileV2):
     def build_requirements(self):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
-            self.test_requires("catch2/3.15.2")
+            self.test_requires("catch2/3.16.0")
             self.test_requires("nanobench/4.3.11")
 
     def config_options(self):

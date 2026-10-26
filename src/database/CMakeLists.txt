@@ -63,7 +63,7 @@ endif()
 # on the stored value layout.
 option(KTH_UTXOZ_REFERENCE_MODE "Use UTXO-Z reference storage mode" OFF)
 
-find_package(lmdb 0.9.29 REQUIRED)
+find_package(lmdb REQUIRED)
 find_package(utxoz REQUIRED)
 
 include(CheckCXXCompilerFlag)
