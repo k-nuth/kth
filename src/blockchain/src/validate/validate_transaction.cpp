@@ -69,7 +69,7 @@ void validate_transaction::stop()
 
 ::asio::awaitable<code> validate_transaction::check(transaction_const_ptr tx) const {
     // Run context free checks.
-    co_return tx->check(true, retarget_);
+    co_return tx->check(static_absolute_max_block_size(), true, retarget_);
 }
 
 // Accept sequence.
