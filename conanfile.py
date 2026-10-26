@@ -173,7 +173,7 @@ class KthRecipe(KnuthConanFileV2):
 
     def requirements(self):
         self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
-        self.requires("cli11/2.6.2", transitive_headers=True)
+        self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/0.9.32", transitive_headers=True, transitive_libs=True)
