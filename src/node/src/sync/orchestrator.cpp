@@ -945,6 +945,20 @@ static
         ? heights_result->block
         : 0;
 
+    // The bodies the store HOLDS, which is where their download resumes. The
+    // connected tip is where their validation resumes, and the two part company
+    // the moment the download outruns the build — on a node stopped partway
+    // through a sync, by hundreds of thousands of blocks. Resuming both from the
+    // connected tip asked the network for everything in between again and
+    // stored every block of it a second time. Read once, here, from the index
+    // the flat-file scan at open filled in; the tasks below are given the value.
+    uint32_t const initial_stored_height = stored_bodies_from(chain.headers(), initial_block_height);
+    if (initial_stored_height > initial_block_height) {
+        spdlog::info("[sync_orchestrator] Bodies stored to {} above the connected tip {}: "
+            "the download resumes above them, the validation from disk",
+            initial_stored_height, initial_block_height);
+    }
+
     // Get checkpoint height for fast IBD
     // max_checkpoint_height comes from the checkpoint list in parser.hpp
     uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
@@ -977,13 +991,16 @@ static
     // 7c. Block storage task (writes validated blocks to flat files)
     //     Receives from fast_validation_task, stores sequentially, notifies coordinator
     // -------------------------------------------------------------------------
-    auto contiguous_height = std::make_shared<std::atomic<uint32_t>>(initial_block_height + 1);
+    // Published from the stored height, so the UTXO build sees the bodies on
+    // disk as available from the start rather than after the first chunk the
+    // storage task happens to write.
+    auto contiguous_height = std::make_shared<std::atomic<uint32_t>>(initial_stored_height + 1);
 
     all_tasks.spawn("block_storage_task", block_storage_task(
         chain,
         block_storage_input,
         stored_chunks,
-        initial_block_height + 1,
+        initial_stored_height + 1,
         organizer,
         contiguous_height.get()
     ));
@@ -1202,7 +1219,10 @@ static
         spdlog::info("[sync_coordinator] Task started");
         try {
 
-        uint32_t blocks_synced_to = initial_block_height;
+        // The bodies held, not the bodies connected: the range this opens starts
+        // above what is on disk, and the admission holds it until the UTXO set
+        // has caught up with the disk.
+        uint32_t blocks_synced_to = initial_stored_height;
         uint32_t headers_synced_to = initial_header_height;
         bool header_sync_complete = false;
         // The END of the post-checkpoint range last sent, or nothing if none has

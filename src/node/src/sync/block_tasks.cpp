@@ -1454,8 +1454,15 @@ std::atomic<uint32_t> g_active_download_peers{0};
     spdlog::info("[fast_validation] Initial RSS: {:.0f} MB", initial_rss);
 
     while (true) {
-        auto [ec, msg] = co_await input.async_receive(
+        // The received tuple is a named variable, not a structured binding:
+        // GCC 16.1 at -O2/-O3 did not destroy a `auto [ec, msg] = co_await ...`
+        // at the end of the loop iteration, so every chunk kept its
+        // `source_peer` alive and a peer that had served blocks was never
+        // freed (test/resume_stored_bodies.cpp, the use count after the stop).
+        auto received = co_await input.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto const& ec = std::get<0>(received);
+        auto& msg = std::get<1>(received);
         if (ec) {
             spdlog::debug("[fast_validation] Input channel closed: {}", ec.message());
             break;
@@ -1617,8 +1624,12 @@ std::atomic<uint32_t> g_active_download_peers{0};
             continue;
         }
 
-        auto [ec, msg] = co_await input.async_receive(
+        // Named tuple rather than a structured binding, for the reason given
+        // in fast_validation_task.
+        auto received = co_await input.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto const& ec = std::get<0>(received);
+        auto& msg = std::get<1>(received);
         if (ec) {
             spdlog::debug("[block_storage] Input channel closed: {}", ec.message());
             break;
@@ -1852,6 +1863,21 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
         return *saved;
     }
     return start_height > 0 ? start_height - 1 : 0;
+}
+
+uint32_t stored_bodies_from(blockchain::header_index const& index, uint32_t connected) {
+    // By height through the active chain, as block_storage_task advances its own
+    // contiguous height: the index numbers entries in arrival order, so an
+    // entry's index is not its height once a side branch has been seen, and a
+    // side branch's body is not a body at that height.
+    uint32_t height = connected;
+    while (height < UINT32_MAX) {
+        auto const idx = index.active_at(static_cast<int32_t>(height + 1));
+        if (idx == blockchain::header_index::null_index) break;
+        if ( ! index.has_block_data(idx)) break;
+        ++height;
+    }
+    return height;
 }
 
 // What a fatal exit inside the UTXO write window has to say, once it is safe to
