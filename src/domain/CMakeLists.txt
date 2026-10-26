@@ -84,7 +84,7 @@ if (NOT GLOBAL_BUILD)
 endif()
 
 if (${CURRENCY} STREQUAL "LTC")
-  find_package(OpenSSL 1.0.1 REQUIRED)
+  find_package(OpenSSL REQUIRED)
 endif()
 
 if (WITH_ICU)

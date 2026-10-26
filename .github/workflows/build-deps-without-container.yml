@@ -76,15 +76,26 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: conan-lockfile-no-container
+      # Temporary until CCI #31261 is published and the locks are refreshed.
+      - name: 🩹 Prepare verified LMDB source cache
+        if: ${{ inputs.reference == 'lmdb/1.0.2' || startsWith(inputs.reference, 'lmdb/1.0.2#') }}
+        run: python3 scripts/prepare_conan_source_cache.py --cache-dir "$RUNNER_TEMP/kth-conan-sources"
       - name: 🏗️ Build dependencies
         if: ${{ inputs.reference != 'null' }}
+        shell: bash
+        env:
+          CONAN_REFERENCE: ${{ inputs.reference }}
         run: |
+          source_cache_args=()
+          if [[ "$CONAN_REFERENCE" == lmdb/1.0.2 || "$CONAN_REFERENCE" == lmdb/1.0.2#* ]]; then
+            source_cache_args=(-cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources")
+          fi
           if [ "${{ inputs.context }}" = "build" ]; then
             echo "Building tool requirement: ${{ inputs.reference }}"
-            conan install --tool-requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd
+            conan install --tool-requires="$CONAN_REFERENCE" -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd "${source_cache_args[@]}"
           else
             echo "Building host requirement: ${{ inputs.reference }}"
-            conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd
+            conan install --requires="$CONAN_REFERENCE" -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd "${source_cache_args[@]}"
           fi
       - name: 📦 Upload package
         if: ${{ inputs.reference != 'null' }}
