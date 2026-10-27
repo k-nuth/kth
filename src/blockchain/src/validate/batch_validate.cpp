@@ -150,11 +150,6 @@ code validate_block_batch(
     for (size_t i = 0; i < blocks.size(); ++i) {
         auto const height = start_height + i;
         for (auto const& tx : blocks[i]->transactions()) {
-#if defined(KTH_CURRENCY_BCH)
-            if (tx.serialized_size(true) > max_transaction_size) {
-                return error::transaction_size_limit;
-            }
-#endif
             auto const& outs = tx.outputs();
             auto const txid = tx.hash();
             bool const cb = tx.is_coinbase();

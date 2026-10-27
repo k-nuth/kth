@@ -4,9 +4,9 @@
 
 #include <test_helpers.hpp>
 #include <kth/blockchain.hpp>
-#include <kth/blockchain/validate/batch_validate.hpp>
 
 #include <memory>
+#include <optional>
 
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -21,13 +21,13 @@ using namespace kd::machine;
 
 namespace {
 
-transaction_const_ptr ordinary_transaction(size_t output_script_size = 25) {
+transaction_const_ptr ordinary_transaction() {
     hash_digest previous{};
     previous[0] = 1;
     return std::make_shared<domain::message::transaction>(transaction{
         1, 0,
         {input{output_point{previous, 0}, script{}, max_input_sequence}},
-        {output{1000, script{data_chunk(output_script_size, 0x51), false}}}
+        {output{1000, script{data_chunk(25, 0x51), false}, std::nullopt}}
     });
 }
 
@@ -71,23 +71,3 @@ TEST_CASE("mempool structural checks reject coinbase on non-retargeting networks
     CHECK(context_free_check(coinbase, domain::config::network::regtest, fixture.chain()) == error::coinbase_transaction);
     CHECK(context_free_check(coinbase, domain::config::network::mainnet, fixture.chain()) == error::coinbase_transaction);
 }
-
-#if defined(KTH_CURRENCY_BCH)
-TEST_CASE("batch validation rejects an oversized transaction before resolving its inputs",
-          "[validate transaction tests][transaction size]") {
-    test::chain_fixture fixture("batch_transaction_size_check");
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-
-    auto const oversized = ordinary_transaction(1'000'000);
-    REQUIRE(oversized->serialized_size(true) > 1'000'000u);
-    auto const block = std::make_shared<domain::message::block>(
-        header{}, transaction::list{*oversized});
-    settings const config(domain::config::network::regtest);
-
-    // The header/prevout are deliberately absent. Size is context free and must
-    // be rejected before header-chain or UTXO lookups can obscure that error.
-    CHECK(validate_block_batch(fixture.chain(), config, domain::config::network::regtest,
-                               {block}, 1) == error::transaction_size_limit);
-}
-#endif

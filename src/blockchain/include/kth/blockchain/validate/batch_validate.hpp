@@ -40,7 +40,7 @@ struct settings;
 //
 // This stage verifies: input scripts/signatures, in-batch double spends, coinbase
 // maturity, fees (inputs >= outputs), coinbase value (<= subsidy + fees) and the
-// per-transaction size / per-transaction and per-block SigChecks limits. It does NOT re-check block-level
+// per-transaction / per-block SigChecks limits. It does NOT re-check block-level
 // rules already covered by the fast path or applied elsewhere (merkle root, ABLA
 // block size, tx duplicate / BIP30, coinbase input shape). The batch is NOT
 // applied/persisted here — the caller applies the UTXO delta only after this

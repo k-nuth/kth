@@ -400,14 +400,7 @@ code transaction::check(size_t max_block_size, bool transaction_pool, bool retar
         return error::transaction_internal_double_spend;
     }
 
-    auto const size = serialized_size(true);
-#if defined(KTH_CURRENCY_BCH)
-    if (size > max_transaction_size) {
-        return error::transaction_size_limit;
-    }
-#endif
-
-    if (transaction_pool && size >= max_block_size) {
+    if (transaction_pool && serialized_size(true) >= max_block_size) {
         return error::transaction_size_limit;
     }
 
