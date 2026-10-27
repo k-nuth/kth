@@ -100,12 +100,13 @@ struct taken_ranges {
 
 taken_ranges taken_range(block_download_input_channel& channel) {
     taken_ranges out;
-    while (channel.try_receive([&out](std::error_code, block_download_input msg) {
-        if (auto* range = std::get_if<block_range_request>(&msg)) {
+    std::error_code ec;
+    while (auto msg = channel.try_receive(ec)) {
+        if (auto* range = std::get_if<block_range_request>(&*msg)) {
             out.last = *range;
             ++out.count;
         }
-    })) {}
+    }
     return out;
 }
 
@@ -148,7 +149,7 @@ TEST_CASE("body range - the seven bodies a moving tip left behind are asked for"
     REQUIRE(header_tip > connected_len);
 
     ::asio::io_context ctx;
-    block_download_input_channel block_input(ctx.get_executor(), 16);
+    block_download_input_channel block_input(16);
 
     // A checkpoint below the bodies: these heights are the post-checkpoint range's
     // to ask for, which is the case the defect was in.
@@ -257,7 +258,7 @@ TEST_CASE("body range - a valid prefix that ends in an error still owes the bodi
     node::p2p_node network(settings);
 
     ::asio::io_context ctx;
-    block_download_input_channel block_input(ctx.get_executor(), 16);
+    block_download_input_channel block_input(16);
     body_range_deps deps{chain, network, block_input, 1};
     body_range_log_memory memory;
 
@@ -330,7 +331,7 @@ TEST_CASE("body range - a batch that accepted nothing moves nothing and opens no
     node::p2p_node network(settings);
 
     ::asio::io_context ctx;
-    block_download_input_channel block_input(ctx.get_executor(), 16);
+    block_download_input_channel block_input(16);
     body_range_deps deps{chain, network, block_input, 1};
     body_range_log_memory memory;
 
@@ -399,7 +400,7 @@ TEST_CASE("body range - an advance held while a range is in flight is opened whe
     connect_bodies(fixture, {all.begin(), all.begin() + connected_len}, 1);
 
     ::asio::io_context ctx;
-    block_download_input_channel block_input(ctx.get_executor(), 16);
+    block_download_input_channel block_input(16);
 
     auto settings = make_quiet_settings(fixture.dir());
     node::p2p_node network(settings);

@@ -11,9 +11,12 @@
 
 #include <kth/network.hpp>
 
+#include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 
@@ -1492,8 +1495,11 @@ TEST_CASE("peer_session slow shutdown with pending response channel wait",
 
         // Use lambdas that return void to make || operator work
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->block_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto ex = co_await ::asio::this_coro::executor;
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(session->block_responses())
+            ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            (void)completion;
             co_return;
         };
 
@@ -1588,8 +1594,11 @@ TEST_CASE("peer_session slow shutdown with multiple pending protocols",
         ::asio::steady_timer timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->block_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto ex = co_await ::asio::this_coro::executor;
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(session->block_responses())
+            ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            (void)completion;
             co_return;
         };
         auto timer_op = [&]() -> ::asio::awaitable<void> {
@@ -1612,8 +1621,11 @@ TEST_CASE("peer_session slow shutdown with multiple pending protocols",
         ::asio::steady_timer timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->addr_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto ex = co_await ::asio::this_coro::executor;
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(session->addr_responses())
+            ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            (void)completion;
             co_return;
         };
         auto timer_op = [&]() -> ::asio::awaitable<void> {
@@ -2380,8 +2392,11 @@ TEST_CASE("peer_session all channels cancelled on stop",
         ::asio::steady_timer timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->block_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto ex = co_await ::asio::this_coro::executor;
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(session->block_responses())
+            ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            (void)completion;
             co_return;
         };
         auto timer_op = [&]() -> ::asio::awaitable<void> {
@@ -2404,8 +2419,11 @@ TEST_CASE("peer_session all channels cancelled on stop",
         ::asio::steady_timer timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->addr_responses().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto ex = co_await ::asio::this_coro::executor;
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(session->addr_responses())
+            ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            (void)completion;
             co_return;
         };
         auto timer_op = [&]() -> ::asio::awaitable<void> {
@@ -2610,8 +2628,11 @@ TEST_CASE("peer_session inbound block is rejected by request_blocks_batch withou
             if (ec) co_return;
             if (raw.heading.command() == domain::message::block::command) {
                 block_routed.store(true, std::memory_order_release);
-                co_await session->block_responses().async_send(
-                    std::error_code{}, raw, ::asio::use_awaitable);
+                auto ex = co_await ::asio::this_coro::executor;
+                auto handed = co_await ::asio::experimental::make_select(
+                    ::asio::experimental::send(session->block_responses(), std::move(raw))
+                ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+                (void)handed;
             }
         }
     }, ::asio::detached);

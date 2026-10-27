@@ -122,8 +122,8 @@ struct recording_launcher {
             launches.push_back(launch_record{peer->nonce(), task_id, epoch, coordinator, peer});
             if (end_from_inside) {
                 auto& l = launches.back();
-                REQUIRE(out.try_send(std::error_code{},
-                    download_task_ended{l.nonce, l.task_id, l.epoch}));
+                REQUIRE(out.try_send(block_download_task_output{
+                    download_task_ended{l.nonce, l.task_id, l.epoch}}));
                 l.peer.reset();
             }
         };
@@ -135,8 +135,8 @@ struct recording_launcher {
         REQUIRE(index < launches.size());
         REQUIRE(output != nullptr);
         auto& l = launches[index];
-        REQUIRE(output->try_send(std::error_code{},
-            download_task_ended{l.nonce, l.task_id, l.epoch}));
+        REQUIRE(output->try_send(block_download_task_output{
+            download_task_ended{l.nonce, l.task_id, l.epoch}}));
         // The worker is over, so the reference it was holding goes with it —
         // the coroutine frame is destroyed at the same point in production.
         l.peer.reset();
@@ -153,7 +153,7 @@ struct recording_launcher {
 // behind would poison the next case in this binary.
 struct supervisor_fixture {
     ::asio::io_context ctx;
-    block_download_input_channel input{ctx.get_executor(), 64};
+    block_download_input_channel input{64};
     block_download_channel output{ctx.get_executor(), 256};
     test::chain_fixture chain{"download_supervisor"};
     recording_launcher launcher;
@@ -180,7 +180,7 @@ struct supervisor_fixture {
     }
 
     void send(block_download_input msg) {
-        REQUIRE(input.try_send(std::error_code{}, std::move(msg)));
+        REQUIRE(input.try_send(std::move(msg)));
         pump();
     }
 
@@ -191,13 +191,14 @@ struct supervisor_fixture {
         if ( ! running) return;
         running = false;
 
-        (void)input.try_send(std::error_code{}, stop_request{});
+        (void)input.try_send(block_download_input{stop_request{}});
         pump();
         ctx.restart();
         ctx.run_for(std::chrono::seconds(5));
 
         bool leftover = false;
-        while (input.try_receive([&](std::error_code, block_download_input) { leftover = true; })) {}
+        std::error_code drain_ec;
+        while (input.try_receive(drain_ec)) { leftover = true; }
         CHECK_FALSE(leftover);            // no input the supervisor never read
         CHECK(ctx.stopped());             // the coroutine finished
     }

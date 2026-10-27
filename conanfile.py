@@ -220,7 +220,12 @@ class KthRecipe(KnuthConanFileV2):
             self.requires("jemalloc/5.4.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.asio_standalone:
-            self.requires("asio/1.38.2", transitive_headers=True, transitive_libs=True)
+            # Knuth fork of standalone Asio with independent heterogeneous channel
+            # selection (select_channel / make_select / make_selector). Pinned to the
+            # reviewed recipe revision; see docs/asio-select-sync.md. The target stays
+            # asio::asio and ASIO_VERSION stays 103802.
+            self.requires("asio/1.38.3-kth.1#350bc1a8f6021cd9973a02957d9972c4",
+                          transitive_headers=True, transitive_libs=True)
 
 
     def build_requirements(self):

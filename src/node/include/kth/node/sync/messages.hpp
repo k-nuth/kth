@@ -162,17 +162,11 @@ using block_download_input = std::variant<stop_request, peers_updated, block_ran
 // Block download task output - single channel with blocks, lifecycle, and performance
 using block_download_task_output = std::variant<downloaded_light_block, download_task_ended, peer_performance>;
 
-// Block download supervisor unified event (combines all input sources to avoid || operator)
-// This prevents message loss that occurs when async_receive is cancelled by ||
-using block_supervisor_event = std::variant<
-    stop_request,
-    peers_updated,
-    block_range_request,
-    downloaded_light_block,
-    download_task_ended,
-    supervisor_timeout,
-    peer_performance
->;
+// The supervisor waits on its input, its workers' output and its timeout tick
+// through ONE task-owned selector (see block_download_supervisor). There is no
+// unified event variant any more: the selection arbitrates between the two
+// channels and the timer without a bridge task per source, without an extra
+// queue, and without the || operator (a losing receive consumes nothing).
 
 // Block validation task input - single channel (CSP pattern)
 using block_validation_input = std::variant<stop_request, downloaded_light_block>;
@@ -198,8 +192,11 @@ using peer_provider_input = std::variant<new_peer, peer_disconnected, peer_error
 // Channel Type Aliases
 // =============================================================================
 
-// Peer provider (unified input)
-using peer_provider_input_channel = concurrent_channel<peer_provider_input>;
+// Peer provider (unified input). A select_channel: every producer uses
+// try_send (a dropped statistic is logged; a dropped peer event is logged too,
+// as before), and the one consumer waits on it with the network's stop token
+// instead of racing a receive against a timer.
+using peer_provider_input_channel = select_channel<peer_provider_input>;
 
 // Peer distribution (output)
 using peer_channel = concurrent_channel<peers_updated>;
@@ -209,9 +206,15 @@ using header_validation_input_channel = concurrent_channel<header_validation_inp
 using header_validated_channel = concurrent_channel<headers_validated>;
 
 // Block sync pipeline (CSP pattern - single input/output per task)
-using block_download_input_channel = concurrent_channel<block_download_input>;
-using block_download_task_output_channel = concurrent_channel<block_download_task_output>;
-using block_supervisor_event_channel = concurrent_channel<block_supervisor_event>;  // unified input
+//
+// The download supervisor's input and its workers' output are select_channels:
+// the supervisor selects over both (and its timer) from one loop, and a worker
+// hands its end-of-task report over with a suspended send that nobody can race
+// (see block_download_task). A select_channel has no executor and no
+// async_send/async_receive: producers use try_send(msg) or a selection, and
+// close() is the shutdown signal (there is no cancel()).
+using block_download_input_channel = select_channel<block_download_input>;
+using block_download_task_output_channel = select_channel<block_download_task_output>;
 // Supervisor output - carries blocks and performance stats
 using block_supervisor_output = std::variant<downloaded_light_block, peer_performance>;
 using block_download_channel = concurrent_channel<block_supervisor_output>;  // supervisor -> bridge
@@ -219,8 +222,16 @@ using block_validation_input_channel = concurrent_channel<block_validation_input
 using block_validated_channel = concurrent_channel<block_validated>;
 
 // Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
+//
+// The hot path of the IBD: every download worker sends its chunk here, and the
+// one validation task receives. A select_channel, so a worker whose chunk finds
+// the channel full SUSPENDS on the send with the chunk still its own (no copy
+// per attempt, no 100ms poll), and is resumed by the receive that frees the
+// slot, by close() at shutdown (broken_pipe, payload returned) or by its
+// coordinator's stop token (operation_aborted, payload returned). The in-flight
+// bound is explicit: the channel capacity plus one chunk per download worker.
 using fast_validation_input = std::variant<stop_request, downloaded_chunk>;
-using fast_validation_input_channel = concurrent_channel<fast_validation_input>;
+using fast_validation_input_channel = select_channel<fast_validation_input>;
 using chunk_validated_channel = concurrent_channel<chunk_validated>;
 
 // Block storage pipeline (writes validated chunks to flat files)

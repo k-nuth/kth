@@ -36,6 +36,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <stop_token>
 #include <vector>
 
 #include <kth/blockchain/header_index.hpp>
@@ -126,6 +127,13 @@ struct chunk_coordinator {
     /// Stop the coordinator (all claim_chunk() will return nullopt)
     void stop();
 
+    /// A token that is stopped by stop(). Workers wait on it instead of polling
+    /// is_stopped() while suspended on a channel: a selection armed with this
+    /// token completes with operation_aborted the moment the coordinator is
+    /// stopped, whether by a replacing range or by shutdown.
+    [[nodiscard]]
+    std::stop_token stop_token() const { return stop_source_.get_token(); }
+
     /// Progress information
     struct progress {
         uint32_t total_chunks;
@@ -175,6 +183,7 @@ private:
 
     // Status
     std::atomic<bool> stopped_{false};
+    std::stop_source stop_source_;   // Requested by stop(); see stop_token()
     std::atomic<uint32_t> chunks_completed_{0};
 };
 
