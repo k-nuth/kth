@@ -231,7 +231,7 @@ class KthRecipe(KnuthConanFileV2):
     def build_requirements(self):
         self.tool_requires("secp256k1-precompute/1.0.0")
         if self.options.tests:
-            self.test_requires("catch2/3.16.0")
+            self.test_requires("catch2/3.16.1")
             self.test_requires("nanobench/4.3.11")
 
     def config_options(self):
