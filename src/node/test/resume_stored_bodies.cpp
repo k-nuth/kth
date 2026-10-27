@@ -379,7 +379,7 @@ struct quiet_peer {
         raw.heading = domain::message::heading(0xdab5bffa, domain::message::block::command,
             uint32_t(payload.size()), 0);
         raw.payload = std::move(payload);
-        return session->block_responses().try_send(std::error_code{}, std::move(raw));
+        return session->block_responses().try_send(std::move(raw));
     }
 };
 

@@ -301,7 +301,21 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
     // The height is READ, not held. get_utxo_built_height() may take a read lease
     // of its own internally; what matters is that it returns a VALUE, so nothing
     // is alive across the co_await in send_block_range below.
-    auto const built = deps.chain.get_utxo_built_height();
+    auto built = deps.chain.get_utxo_built_height();
+
+    // An absent marker over an empty set is height 0: the rule the startup
+    // reconciliation already applies (blockchain::reconcile_tip). It is the state
+    // of every new store, and with the checkpoint at genesis it is also the state
+    // the first post-checkpoint range starts from — the only writer of the marker
+    // is a UTXO batch, which needs the bodies this range would fetch. Any other
+    // failure, or an absent marker over a populated set, stays unreadable.
+    if ( ! built && built.error() == database::result_code::key_not_found) {
+        auto const count = deps.chain.utxo_count();
+        if (count && *count == 0) {
+            built = 0u;
+        }
+    }
+
     auto const admission = may_start_slow_sync(range->start, built);
 
     if (admission != slow_sync_admission::start) {
