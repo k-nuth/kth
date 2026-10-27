@@ -81,8 +81,8 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , strand_(socket_.get_executor())
     , outbound_(strand_, outbound_capacity)
     , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
-    , block_responses_(strand_, 20)  // Response channels for request/response patterns
-    , addr_responses_(strand_, 10)
+    , block_responses_(20)  // Response channels for request/response patterns
+    , addr_responses_(10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(extract_authority(socket_))
@@ -114,11 +114,10 @@ peer_session::~peer_session() {
     // Cancel before close to ensure any pending async ops are woken up
     outbound_.cancel();
     inbound_.cancel();
-    block_responses_.cancel();
-    addr_responses_.cancel();
 
     outbound_.close();
     inbound_.close();
+    // select_channels: close() is the wake-up (eof / broken_pipe); no cancel().
     block_responses_.close();
     addr_responses_.close();
 
@@ -254,11 +253,11 @@ void peer_session::stop(code const& ec) {
     spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
     inbound_.cancel();
     outbound_.cancel();
-    block_responses_.cancel();
-    addr_responses_.cancel();
     spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
     inbound_.close();
     outbound_.close();
+    // The response channels are select_channels: close() completes a pending
+    // receive with eof and a pending send with broken_pipe, from any thread.
     block_responses_.close();
     addr_responses_.close();
 
@@ -275,7 +274,8 @@ void peer_session::stop(code const& ec) {
 
 void peer_session::drain_response_channels() {
     auto drain = [](response_channel& channel) {
-        while (channel.try_receive([](std::error_code, raw_message) {})) {
+        std::error_code ec;
+        while (channel.try_receive(ec)) {
         }
     };
     drain(block_responses_);

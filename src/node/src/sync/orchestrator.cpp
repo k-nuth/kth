@@ -19,11 +19,14 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
 
+#include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 
 #include <kth/infrastructure/utility/task_group.hpp>
 // #include <kth/blockchain/utxo_builder.hpp>
@@ -239,34 +242,35 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
 
 // Reliable delivery of a block_range_request: a dropped try_send would leave the
 // download coordinator uncreated and the node stalled with peers idle, so this
-// retries until the channel accepts it. Returns false only when we are shutting
-// down. (async_send is intentionally avoided here — it has its own issues on this
-// channel type.)
+// waits until the channel accepts it. Returns false only when we are shutting
+// down: the channel was closed (broken_pipe) or the network stopped
+// (operation_aborted, through its stop token).
+//
+// A suspended send. When the channel has room it commits at once, in this
+// frame; when it is full the coroutine suspends with the request still its
+// own, and is resumed by the supervisor's receive, by the close, or by the
+// stop. Nothing polls and nothing is rebuilt: a send that fails keeps its
+// payload, which is simply dropped with the shutdown.
 ::asio::awaitable<bool> send_block_range(body_range_deps deps, uint32_t start, uint32_t end) {
     auto exec = co_await ::asio::this_coro::executor;
-    block_range_request const req{.start_height = start, .end_height = end};
+    using input_message = block_download_input_channel::value_type;
 
-    size_t retries = 0;
-    while ( ! deps.block_download_input.try_send(std::error_code{}, req)) {
-        // Log the first stall and then periodically, so a genuinely wedged
-        // channel (no consumer draining) is visible rather than silent.
-        if (retries == 0 || retries % 50 == 0) {
-            spdlog::warn("[sync_coordinator] block_download_input full — retrying "
-                "block_range_request {}-{} (retry {})", start, end, retries);
-        }
-        ++retries;
-        ::asio::steady_timer timer(exec);
-        timer.expires_after(std::chrono::milliseconds(20));
-        auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-        if (tec || deps.network.stopped()) {
-            spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned (stopping) "
-                "after {} retries", start, end, retries);
-            co_return false;
-        }
+    // Named storage: the completion owns the request while it waits.
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(deps.block_download_input,
+            input_message{block_range_request{.start_height = start, .end_height = end}})
+    ).async_wait(exec, {}, deps.network.stop_token(), ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+
+    if ( ! ec && selected.index == 0) {
+        spdlog::info("[sync_coordinator] block_range_request {}-{} sent", start, end);
+        co_return true;
     }
-    spdlog::info("[sync_coordinator] block_range_request {}-{} sent ({} retries)",
-        start, end, retries);
-    co_return true;
+    // broken_pipe: the supervisor's input was closed; operation_aborted: the
+    // network stopped. Both are shutdown.
+    spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned ({})",
+        start, end, ec ? ec.message() : "not taken");
+    co_return false;
 }
 
 ::asio::awaitable<std::optional<uint32_t>> open_body_range_if_owed(
@@ -514,7 +518,9 @@ static
 
 
     // Block pipeline - single input channels (CSP pattern)
-    block_download_input_channel block_download_input(executor, 100);
+    // A select_channel: the supervisor selects over it together with its
+    // workers' output and its timer. No executor; close() is its stop signal.
+    block_download_input_channel block_download_input(100);
     block_download_channel downloaded_blocks(executor, 1000);  // Buffer for out-of-order blocks
     block_validation_input_channel block_validation_input(executor, 1000);
     block_validated_channel validated_blocks(executor, 100);
@@ -522,7 +528,9 @@ static
     // Fast validation pipeline (chunk-based, bypasses supervisor→bridge→validation)
     // Capacity 256: storage task is slower than validation (serial disk I/O),
     // so we need buffer to absorb the speed difference. 256×16=4096 blocks max buffered.
-    fast_validation_input_channel fast_val_input(executor, 256);
+    // A select_channel: download workers suspend on it when full, keeping their
+    // chunk; the validation task's receive resumes them (see block_tasks.cpp).
+    fast_validation_input_channel fast_val_input(256);
     chunk_validated_channel validated_chunks(executor, 32);
 
     // Block storage pipeline (writes validated chunks to flat files)
@@ -560,8 +568,10 @@ static
     // -------------------------------------------------------------------------
     // 1. Peer provider - receives connected peers from network and distributes
     // -------------------------------------------------------------------------
-    // Unified input channel for peer_provider (CSP pattern - single channel)
-    peer_provider_input_channel peer_provider_input(executor, 100);
+    // Unified input channel for peer_provider (CSP pattern - single channel).
+    // A select_channel: no executor; the consumer waits on it with the
+    // network's stop token.
+    peer_provider_input_channel peer_provider_input(100);
 
     // Bridge task: forwards from network.peer_events() to unified channel
     // 2026-02-07: Use simple timer polling instead of || operator to avoid potential issues
@@ -592,12 +602,14 @@ static
 
                 // Demultiplex based on event type
                 if (notification.event == kth::node::peer_event_type::connected) {
-                    if (!peer_provider_input.try_send(std::error_code{}, new_peer{notification.peer})) {
+                    if (!peer_provider_input.try_send(
+                            peer_provider_input_channel::value_type{new_peer{notification.peer}})) {
                         spdlog::warn("[peer_bridge] Channel full, new_peer dropped for {}",
                             notification.peer->authority_with_agent());
                     }
                 } else {
-                    if (!peer_provider_input.try_send(std::error_code{}, peer_disconnected{notification.peer})) {
+                    if (!peer_provider_input.try_send(
+                            peer_provider_input_channel::value_type{peer_disconnected{notification.peer}})) {
                         spdlog::warn("[peer_bridge] Channel full, peer_disconnected dropped for {}",
                             notification.peer->authority_with_agent());
                     }
@@ -701,29 +713,32 @@ static
                 spdlog::debug("[peer_provider] Coordinator channel closed, peers_updated not delivered");
             }
             // Blocks: send only fast peers (slow peers degrade throughput significantly)
-            if (!block_download_input.try_send(std::error_code{}, peers_updated{fast_peers})) {
+            if (!block_download_input.try_send(
+                    block_download_input_channel::value_type{peers_updated{fast_peers}})) {
                 spdlog::warn("[peer_provider] Channel full, peers_updated dropped for block_download");
             }
         };
 
         auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer check_timer(exec);
+
+        // One task-owned selector for the whole loop, armed with the network's
+        // stop token: the wait ends on a message, or with operation_aborted the
+        // moment the network stops. No timer re-reads stopped() any more.
+        auto inbox = ::asio::experimental::make_selector(exec,
+            ::asio::experimental::channel_select_options{}, network.stop_token(),
+            ::asio::experimental::receive(peer_provider_input));
 
         try {
             while (!network.stopped()) {
-                check_timer.expires_after(std::chrono::milliseconds(500));
-                auto event = co_await (
-                    peer_provider_input.async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                    check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-                );
-
-                if (event.index() == 1) continue;  // Timer - check network.stopped()
-
-                auto [ec, msg] = std::get<0>(event);
+                auto [ec, index] = co_await inbox.wait(::asio::as_tuple(::asio::deferred));
                 if (ec) {
-                    spdlog::debug("[peer_provider] Input channel closed: {}", ec.message());
+                    spdlog::debug("[peer_provider] Input wait ended: {}", ec.message());
                     break;
                 }
+                (void)index;  // One case.
+                // Lives in the selector's storage until the next wait begins;
+                // nothing below waits on the selector.
+                auto& msg = *inbox.value<0>();
 
                 if (auto* np = std::get_if<new_peer>(&msg)) {
                     if (np->peer->stopped()) continue;
@@ -781,8 +796,6 @@ static
             spdlog::error("[peer_provider] UNKNOWN EXCEPTION");
         }
 
-        check_timer.cancel();
-
         // Cancel and close all data channels to unblock pending operations
         // Note: cancel() wakes up pending async ops, close() alone does NOT!
         spdlog::info("[peer_provider:shutdown] Closing channels...");
@@ -790,7 +803,8 @@ static
         header_validation_input.close();
         validated_headers.cancel();
         validated_headers.close();
-        block_download_input.cancel();
+        // select_channels have no cancel(): close() completes a pending receive
+        // with eof and a pending send with broken_pipe, which is the wake-up.
         block_download_input.close();
         downloaded_blocks.cancel();
         downloaded_blocks.close();
@@ -798,7 +812,6 @@ static
         block_validation_input.close();
         validated_blocks.cancel();
         validated_blocks.close();
-        fast_val_input.cancel();
         fast_val_input.close();
         validated_chunks.cancel();
         validated_chunks.close();
@@ -924,7 +937,7 @@ static
                     }
                 } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
                     // Forward performance stats to peer_provider (non-critical)
-                    if (!peer_provider_input.try_send(std::error_code{}, *perf)) {
+                    if (!peer_provider_input.try_send(peer_provider_input_channel::value_type{*perf})) {
                         spdlog::debug("[block_bridge] Channel full, performance stats dropped");
                     }
                 }
@@ -1115,61 +1128,33 @@ static
     all_tasks.spawn("coordinator_stop_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[coordinator:stop_bridge] Started");
         auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer check_timer(exec);
 
-        spdlog::debug("[coordinator:stop_bridge] Entering while loop, network.stopped()={}", network.stopped());
-        uint64_t loop_count = 0;
-
-        // 2026-02-07: Set to 1 to log every iteration for debugging, 100 for normal operation
-        constexpr uint64_t log_every_n = 1;
-
+        // The network's stop, as an event. A selection with nothing but a
+        // never-due `after` case waits for its stop token and nothing else:
+        // operation_aborted here means the network stopped. A network that was
+        // never started counts as stopped already, as before, and is not waited
+        // on. (This replaces a 100ms poll of network.stopped().)
         try {
-            // Simple timer-based polling - no || operator with channels
-            while (!network.stopped()) {
-                ++loop_count;
-                if (loop_count % log_every_n == 0) {
-                    spdlog::debug("[coordinator:stop_bridge] iter={} Setting timer", loop_count);
-                }
-
-                check_timer.expires_after(std::chrono::milliseconds(100));
-
-                if (loop_count % log_every_n == 0) {
-                    spdlog::debug("[coordinator:stop_bridge] iter={} Awaiting timer", loop_count);
-                }
-
-                auto [ec] = co_await check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-
-                if (loop_count % log_every_n == 0) {
-                    spdlog::debug("[coordinator:stop_bridge] iter={} Timer returned ec={}",
-                        loop_count, ec ? ec.message() : "ok");
-                }
-
-                if (ec) {
-                    spdlog::debug("[coordinator:stop_bridge] Timer cancelled: {}", ec.message());
-                    break;
-                }
-
-                if (loop_count % log_every_n == 0) {
-                    spdlog::debug("[coordinator:stop_bridge] iter={} Looping back", loop_count);
-                }
+            if ( ! network.stopped()) {
+                auto completion = co_await ::asio::experimental::make_select(
+                    ::asio::experimental::after(::asio::steady_timer::time_point::max())
+                ).async_wait(exec, {}, network.stop_token(), ::asio::as_tuple(::asio::deferred));
+                auto& [ec, selected] = completion;
+                (void)selected;
+                spdlog::info("[coordinator:stop_bridge] Woken ({}), network.stopped()={}",
+                    ec ? ec.message() : "no error", network.stopped());
             }
-            // 2026-02-07: If we exit the while loop, log why
-            spdlog::info("[coordinator:stop_bridge] Exited while loop - network.stopped()={}", network.stopped());
         } catch (std::exception const& e) {
             spdlog::error("[coordinator:stop_bridge] EXCEPTION: {}", e.what());
         } catch (...) {
             spdlog::error("[coordinator:stop_bridge] UNKNOWN EXCEPTION");
         }
 
-        spdlog::info("[coordinator:stop_bridge] Exited while loop after {} iterations, network.stopped()={}",
-            loop_count, network.stopped());
-
         // 2026-02-07: FIX - Always send stop_request when exiting
         if (!coordinator_events.try_send(std::error_code{}, stop_request{})) {
             spdlog::debug("[coordinator:stop_bridge] Channel full on exit, stop_request dropped (may be duplicate)");
         }
 
-        check_timer.cancel();
         spdlog::info("[coordinator:stop_bridge] Task ended");
     });
 
@@ -1691,10 +1676,10 @@ static
                         result->result.message(), source_name);
 
                     // Report error to peer_provider - it decides what to do (ban, exclude, etc.)
-                    if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                    if (!peer_provider_input.try_send(peer_provider_input_channel::value_type{peer_error{
                         .peer = result->source_peer,
                         .error = result->result
-                    })) {
+                    }})) {
                         spdlog::warn("[sync_coordinator] Channel full, peer_error dropped for header validation");
                     }
                 }
@@ -1817,10 +1802,10 @@ static
                     // Report error to peer_provider - it decides what to do
                     spdlog::debug("[sync_coordinator] Reporting error to peer_provider...");
                     if (result->source_peer) {
-                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                        if (!peer_provider_input.try_send(peer_provider_input_channel::value_type{peer_error{
                             .peer = result->source_peer,
                             .error = result->result
-                        })) {
+                        }})) {
                             spdlog::warn("[sync_coordinator] Channel full, peer_error dropped");
                         }
                     }
@@ -1903,10 +1888,10 @@ static
                         result->start_height, result->result.message());
 
                     if (result->source_peer) {
-                        if (!peer_provider_input.try_send(std::error_code{}, peer_error{
+                        if (!peer_provider_input.try_send(peer_provider_input_channel::value_type{peer_error{
                             .peer = result->source_peer,
                             .error = result->result
-                        })) {
+                        }})) {
                             spdlog::warn("[sync_coordinator] Channel full, peer_error dropped");
                         }
                     }

@@ -12,7 +12,10 @@
 #include <kth/node/handlers/ping.hpp>
 #include <kth/node/handlers/pong.hpp>
 
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/use_awaitable.hpp>
 #include <fmt/format.h>
 
@@ -193,6 +196,12 @@ void p2p_node::stop() {
     if (previous == lifecycle_state::stopped) {
         return;             // someone else already did all of this
     }
+
+    // The event form of what the exchange above just published. Before any
+    // channel is closed below, so a task woken by the token reads stopped() as
+    // true. std::stop_source is thread safe; a stop callback that is still
+    // running when this returns holds nothing of this object.
+    stop_source_.request_stop();
     if (previous == lifecycle_state::fresh) {
         // Nothing was ever running, so there is nothing to cancel, stop or save —
         // but the claim above stands, and it is what refuses a later start.
@@ -284,6 +293,10 @@ bool p2p_node::stopped() const {
     // and every loop condition means by it: `fresh` has not started and `stopped`
     // has finished.
     return lifecycle_.load(std::memory_order_acquire) != lifecycle_state::active;
+}
+
+std::stop_token p2p_node::stop_token() const {
+    return stop_source_.get_token();
 }
 
 size_t p2p_node::connection_count() const {
@@ -1031,20 +1044,31 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         // `addr`/`addrv2` go to the per-request channel a waiting request is
         // reading.
         if (command == domain::message::block::command) {
-            auto [send_ec] = co_await peer->block_responses().async_send(
-                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+            // A suspended send into the per-request channel: it waits while
+            // the channel is full (a requester is behind) and completes with
+            // broken_pipe once the session has closed it. A send that fails
+            // keeps its payload, which is taken back so the dispatcher below
+            // still sees the message as before.
+            auto handed = co_await ::asio::experimental::make_select(
+                ::asio::experimental::send(peer->block_responses(), std::move(raw))
+            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto& [send_ec, handed_case] = handed;
             if (!send_ec) {
                 continue;
             }
+            raw = std::move(*handed_case.value<0>());
         } else if (command == domain::message::address::command ||
                    command == domain::message::addrv2::command) {
             // Route both addr and addrv2 to the same channel
             // The receiver will check the command to know which parser to use
-            auto [send_ec] = co_await peer->addr_responses().async_send(
-                std::error_code{}, raw, ::asio::as_tuple(::asio::use_awaitable));
+            auto handed = co_await ::asio::experimental::make_select(
+                ::asio::experimental::send(peer->addr_responses(), std::move(raw))
+            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto& [send_ec, handed_case] = handed;
             if (!send_ec) {
                 continue;
             }
+            raw = std::move(*handed_case.value<0>());
         } else if (command == domain::message::get_address::command) {
             // Serve `getaddr`: reply with our known good peers (addrv2 when the
             // peer negotiated BIP-155, otherwise addr). Crawlers rely on this to

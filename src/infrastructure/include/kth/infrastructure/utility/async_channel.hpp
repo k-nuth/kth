@@ -11,6 +11,10 @@
 
 #include <kth/infrastructure/utility/asio_helper.hpp>
 
+#if defined(KTH_ASIO_STANDALONE)
+#include <asio/experimental/channel_select.hpp>
+#endif
+
 #if ! defined(KTH_ASIO_STANDALONE)
 #include <boost/system/error_code.hpp>
 #endif
@@ -44,6 +48,21 @@ namespace kth {
 
 #if defined(KTH_ASIO_STANDALONE)
 // Standalone Asio uses std::error_code
+
+// Independent channel selection (Knuth fork of standalone Asio, see
+// asio/experimental/channel_select.hpp). A select_channel is NOT an
+// experimental::channel: it has no executor, no async_send/async_receive and no
+// cancel(). It is used through try_send/try_receive, one-shot make_select(...)
+// selections and task-owned make_selector(...) loops, which can wait on several
+// channels of different types plus an after(time_point) branch, with these
+// guarantees the || operator does not give: a losing receive consumes nothing,
+// a losing or failed send keeps its payload, and close() is the shutdown signal
+// (pending sends complete with broken_pipe, empty receives with eof).
+//
+// Thread-safe for concurrent producers/consumers. Payload moves must be noexcept
+// and must not reenter the channel.
+template <typename T>
+using select_channel = ::asio::experimental::select_channel<T>;
 
 // NOT thread-safe - use with strand or single-threaded context
 template <typename T>

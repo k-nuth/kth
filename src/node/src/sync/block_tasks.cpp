@@ -26,6 +26,8 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/this_coro.hpp>
@@ -33,6 +35,7 @@
 #include <asio/thread_pool.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
@@ -52,6 +55,105 @@ uint32_t calculate_mtp(std::deque<uint32_t> const& timestamps) {
     std::vector<uint32_t> sorted(timestamps.begin(), timestamps.end());
     std::sort(sorted.begin(), sorted.end());
     return sorted[sorted.size() / 2];
+}
+
+// -----------------------------------------------------------------------------
+// Handing a downloaded chunk to fast validation
+// -----------------------------------------------------------------------------
+//
+// The worker owns ONE selector for its whole life: a send case on the fast
+// validation channel and an `after` case. Per chunk it emplaces the chunk as the
+// send payload and waits. The wait ends in exactly one of these ways, and the
+// chunk's owner is explicit in each:
+//
+//   * the send wins: the channel (or the validation task's pending receive) owns
+//     the chunk now; the selector's payload slot is empty;
+//   * the `after` case wins: the chunk is still in the selector's payload slot.
+//     The worker re-reads what could have changed while it waited — the
+//     coordinator stopped, or the chain switched under the chunk — and either
+//     keeps waiting or gives the chunk up and frees the slot;
+//   * the selection fails: `operation_aborted` from the coordinator's stop token
+//     or `broken_pipe` from the channel's close() at shutdown. The chunk is still
+//     in the payload slot (a failed send keeps its payload); the worker drops it.
+//
+// Nothing here copies the chunk, polls, or detaches a send. The in-flight bound
+// is the channel's capacity plus one chunk per worker, which is what a worker
+// holding its chunk between download and admission has always meant.
+using fast_chunk_selector = ::asio::experimental::channel_selector<
+    ::asio::experimental::channel_select_case<fast_validation_input, true>,
+    ::asio::experimental::channel_select_after>;
+
+enum class chunk_handover {
+    delivered,          ///< The channel took the chunk.
+    coordinator_stopped,///< Stopped (replaced range or shutdown) while waiting; chunk dropped.
+    stale_generation,   ///< The chain switched while waiting; chunk dropped (its heights moved).
+    channel_closed      ///< Fast validation is gone (shutdown); chunk dropped.
+};
+
+// How long a worker waits on a full channel before it says so and re-reads its
+// surroundings. A diagnostic cadence, not a deadline: the chunk is kept.
+constexpr auto fast_admission_report_interval = std::chrono::seconds(10);
+
+::asio::awaitable<chunk_handover> hand_over_chunk(
+    fast_chunk_selector& sender,
+    chunk_coordinator const& coordinator,
+    uint64_t request_generation,
+    uint32_t chunk_id,
+    std::string const& addr)
+{
+    auto const started = std::chrono::steady_clock::now();
+    size_t reports = 0;
+    while (true) {
+        sender.case_at<1>().time = std::chrono::steady_clock::now() + fast_admission_report_interval;
+        auto [ec, index] = co_await sender.wait(::asio::as_tuple(::asio::deferred));
+
+        if ( ! ec && index == 0) {
+            // Transferred: the payload slot is empty, by the selector's contract.
+            co_return chunk_handover::delivered;
+        }
+
+        if ( ! ec) {
+            // The report interval elapsed with the chunk still held. The payload
+            // slot still owns it; only this task can touch it.
+            if (coordinator.is_stopped()) {
+                sender.value<0>().reset();
+                co_return chunk_handover::coordinator_stopped;
+            }
+            if (coordinator.generation() != request_generation) {
+                // Storage would drop it anyway (its heights now name other
+                // blocks); freeing it here lets the range re-claim the chunk
+                // against the new chain instead of holding stale data.
+                sender.value<0>().reset();
+                co_return chunk_handover::stale_generation;
+            }
+            auto const waited_s = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - started).count();
+            if (reports == 0 || reports % 6 == 0) {
+                spdlog::warn("[block_download] Peer {} holding chunk {} for {}s: fast validation "
+                    "channel full (storage/validation slower than download)", addr, chunk_id, waited_s);
+            }
+            ++reports;
+            continue;
+        }
+
+        // operation_aborted: the coordinator's stop token. broken_pipe: the
+        // channel was closed. Either way the chunk is still ours and nobody is
+        // going to take it.
+        sender.value<0>().reset();
+        co_return ec == ::asio::error::broken_pipe
+            ? chunk_handover::channel_closed
+            : chunk_handover::coordinator_stopped;
+    }
+}
+
+char const* to_string(chunk_handover outcome) {
+    switch (outcome) {
+        case chunk_handover::delivered:           return "delivered";
+        case chunk_handover::coordinator_stopped: return "coordinator stopped";
+        case chunk_handover::stale_generation:    return "chain switched";
+        case chunk_handover::channel_closed:      return "channel closed";
+    }
+    return "unknown";
 }
 
 } // anonymous namespace
@@ -179,9 +281,29 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // Track current chunk for cleanup on exception
     std::optional<uint32_t> current_chunk_id;
 
-    try {
+    // Set when the fast validation channel has been closed: the one way out of
+    // the loop below that neither the peer nor the coordinator announces.
+    bool fast_path_closed = false;
 
     auto executor = co_await ::asio::this_coro::executor;
+
+    // The fast-path sender, owned by this worker for its whole life (see
+    // hand_over_chunk). Armed with the coordinator's stop token: a worker
+    // suspended on a full channel is woken the moment its range is replaced or
+    // the supervisor shuts down, instead of noticing between retries.
+    std::optional<fast_chunk_selector> fast_sender;
+    if (fast_val) {
+        fast_sender.emplace(executor, ::asio::experimental::channel_select_options{},
+            coordinator->stop_token(),
+            ::asio::experimental::send(*fast_val, fast_validation_input{}),
+            ::asio::experimental::after(::asio::steady_timer::time_point::max()));
+        // A send case takes part while it holds a payload, and the case was
+        // built around a default-constructed input (a stop_request). Emptied
+        // before any wait; each chunk is emplaced right before its hand-over.
+        fast_sender->value<0>().reset();
+    }
+
+    try {
 
     // Log initial state
     spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, thread_id={})",
@@ -299,27 +421,34 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 chunk_blocks.push_back(std::make_shared<domain::chain::light_block const>(std::move(blk.block)));
             }
 
-            // Backpressure: retry for up to 60 seconds (storage is slower than download)
-            bool sent = co_await try_send_with_retry(*fast_val,
-                downloaded_chunk{
-                    .start_height = chunk_start,
-                    .chunk_id = chunk_id,
-                    .blocks = std::move(chunk_blocks),
-                    .source_peer = peer,
-                    .generation = request_generation
-                },
-                600,   // 600 attempts
-                100ms  // 100ms between attempts = 60 seconds total max wait
-            );
+            // Backpressure: suspend on the send until validation makes room,
+            // keeping the chunk. No copy per attempt, no poll, no give-up that
+            // throws away blocks already downloaded; see hand_over_chunk for
+            // the three ways out and who owns the chunk in each.
+            fast_sender->value<0>().emplace(downloaded_chunk{
+                .start_height = chunk_start,
+                .chunk_id = chunk_id,
+                .blocks = std::move(chunk_blocks),
+                .source_peer = peer,
+                .generation = request_generation
+            });
+            auto const outcome = co_await hand_over_chunk(
+                *fast_sender, *coordinator, request_generation, chunk_id, addr);
 
-            if (!sent) {
-                spdlog::error("[block_download] Fast validation channel full after 60s for chunk {} - storage bottleneck!",
-                    chunk_id);
+            if (outcome != chunk_handover::delivered) {
+                spdlog::info("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
+                    addr, chunk_id, to_string(outcome));
                 coordinator->chunk_failed(chunk_id);
                 send_error = true;
+                if (outcome == chunk_handover::channel_closed) {
+                    // Fast validation is gone, which only shutdown does. Nothing
+                    // will ever take a chunk again: claiming the next one would
+                    // download it only to give it up, forever. Leave.
+                    fast_path_closed = true;
+                }
+            } else {
+                g_blocks_sent_by_tasks.fetch_add(expected_count, std::memory_order_relaxed);
             }
-
-            g_blocks_sent_by_tasks.fetch_add(expected_count, std::memory_order_relaxed);
         } else {
             // Old path: send each block individually to supervisor
             auto const current_peers = active_peers.load(std::memory_order_relaxed);
@@ -339,24 +468,32 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 auto sent_to_supervisor_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
 
-                bool sent = co_await try_send_with_retry(output,
-                    downloaded_light_block{
-                        .height = height,
-                        .block = std::make_shared<domain::chain::light_block const>(std::move(blk.block)),
-                        .source_peer = peer,
-                        .active_peers = current_peers,
-                        .deserialize_us = blk.deserialize_us,
-                        .network_wait_us = blk.network_wait_us,
-                        .received_from_net_us = blk.received_at_us,
-                        .sent_to_supervisor_us = static_cast<uint64_t>(sent_to_supervisor_us)
-                    },
-                    50,  // 50 attempts
-                    20ms  // 20ms between attempts = 1 second total max wait
-                );
+                // One second of backpressure per block, as before, but as a
+                // suspended send racing an `after` case: the block is handed
+                // over the instant the supervisor makes room, and a stop of the
+                // coordinator ends the wait at once. A send that loses keeps its
+                // payload, which is dropped here with the chunk failed.
+                auto completion = co_await ::asio::experimental::make_select(
+                    ::asio::experimental::send(output, block_download_task_output{
+                        downloaded_light_block{
+                            .height = height,
+                            .block = std::make_shared<domain::chain::light_block const>(std::move(blk.block)),
+                            .source_peer = peer,
+                            .active_peers = current_peers,
+                            .deserialize_us = blk.deserialize_us,
+                            .network_wait_us = blk.network_wait_us,
+                            .received_from_net_us = blk.received_at_us,
+                            .sent_to_supervisor_us = static_cast<uint64_t>(sent_to_supervisor_us)
+                        }}),
+                    ::asio::experimental::after(std::chrono::steady_clock::now() + 1s)
+                ).async_wait(executor, {}, coordinator->stop_token(),
+                    ::asio::as_tuple(::asio::deferred));
+                auto& [send_ec, selected] = completion;
+                bool const sent = ! send_ec && selected.index == 0;
 
                 if (!sent) {
-                    spdlog::error("[block_download] Channel full after 50 retries for block {} - consumer may be stuck!",
-                        height);
+                    spdlog::error("[block_download] Could not hand block {} to the supervisor ({}) - consumer may be stuck!",
+                        height, send_ec ? send_ec.message() : "no room for 1s");
                     coordinator->chunk_failed(chunk_id);
                     send_error = true;
                     break;
@@ -367,8 +504,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         // If send failed, DON'T exit - try another chunk
-        // Only exit if peer/coordinator stopped
-        if (send_error && (peer->stopped() || coordinator->is_stopped())) {
+        // Only exit if peer/coordinator stopped, or the consumer is gone
+        if (send_error && (peer->stopped() || coordinator->is_stopped() || fast_path_closed)) {
             break;
         }
         if (send_error) {
@@ -385,12 +522,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
         current_chunk_id.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
 
-        // Report performance to peer_provider (via supervisor)
-        if (!output.try_send(std::error_code{}, peer_performance{
+        // Report performance to peer_provider (via supervisor). Best effort:
+        // a statistic is not worth suspending the download for.
+        if (!output.try_send(block_download_task_output{peer_performance{
             .peer_nonce = peer_nonce,
             .blocks_downloaded = expected_count,
             .download_time_ms = static_cast<uint32_t>(download_ms)
-        })) {
+        }})) {
             spdlog::debug("[block_download] Channel full, peer_performance dropped");
         }
     }
@@ -417,15 +555,30 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
     }
 
-    // Notify supervisor that this task is ending (CSP: communicate via channel)
-    // Use retry to ensure this critical message is delivered
+    // Notify supervisor that this task is ending (CSP: communicate via channel).
+    //
+    // Critical: the supervisor frees this peer's slot on it, so it is a
+    // suspended send with no deadline and no stop token — a full channel is
+    // waited out, not retried a few times and dropped. The only way it does not
+    // arrive is the supervisor having closed the channel, which means it is
+    // past needing it.
     spdlog::debug("[block_download:shutdown] Peer {} - sending task_ended notification...", addr);
     // The identity this instance was started with, repeated verbatim: the
     // supervisor matches on all three, so a report from a worker that has already
     // been replaced changes nothing (#652).
-    if (!co_await try_send_with_retry(output,
-            download_task_ended{peer_nonce, task_id, coordinator_epoch})) {
-        spdlog::warn("[block_download:shutdown] Failed to send task_ended after retries for peer {}", addr);
+    {
+        auto report = co_await ::asio::experimental::make_select(
+            ::asio::experimental::send(output, block_download_task_output{
+                download_task_ended{peer_nonce, task_id, coordinator_epoch}})
+        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto& [report_ec, report_selected] = report;
+        if (report_ec == ::asio::error::broken_pipe) {
+            spdlog::debug("[block_download:shutdown] Supervisor gone; task_ended for peer {} not delivered", addr);
+        } else if (report_ec) {
+            spdlog::warn("[block_download:shutdown] Failed to send task_ended for peer {}: {}",
+                addr, report_ec.message());
+        }
+        (void)report_selected;
     }
 
     spdlog::info("[block_download:shutdown] Peer {} task exiting cleanly (downloaded {} chunks)", addr, chunks_downloaded);
@@ -470,12 +623,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // of it, so a nonce that is absent has been withdrawn.
     boost::unordered_flat_map<uint64_t, network::peer_session::ptr> known_peers;
 
-    // Internal channel for tasks output (blocks + task_ended)
-    block_download_task_output_channel task_output(executor, 256);
-
-    // UNIFIED EVENT CHANNEL - combines all input sources
-    // This avoids the || operator between multiple channels which causes message loss
-    block_supervisor_event_channel events(executor, 512);
+    // Internal channel for tasks output (blocks + task_ended). Closed by this
+    // coroutine on its way out, which is what releases a worker suspended on its
+    // task_ended send.
+    block_download_task_output_channel task_output(256);
 
     // Stats
     uint64_t blocks_forwarded = 0;
@@ -484,9 +635,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
     uint64_t last_bytes_downloaded = 0;
     auto last_stats_time = std::chrono::steady_clock::now();
 
-    // Timer for periodic timeout checks (created here so we can cancel it on shutdown)
-    ::asio::steady_timer timeout_timer(executor);
-    std::atomic<bool> timer_running{true};
+    // Periodic timeout check cadence (stalled chunk detection).
+    constexpr auto timeout_tick = std::chrono::seconds(10);
+    auto next_tick = std::chrono::steady_clock::now() + timeout_tick;
 
     // Helper to spawn download task for a peer (returns true if spawned)
     // Returns false ONLY for conditions checked before the start: no coordinator,
@@ -550,140 +701,263 @@ std::atomic<uint32_t> g_active_download_peers{0};
     };
 
     // -------------------------------------------------------------------------
-    // Timer task: sends supervisor_timeout to unified events channel
-    // Uses external timeout_timer that can be cancelled on shutdown
+    // Handlers. Each is called from the one loop below, between two waits of
+    // the same selector; the message it is given lives in the selector's
+    // storage until the next wait begins.
     // -------------------------------------------------------------------------
-    tasks.spawn("block_supervisor_timer", [&, &timer = timeout_timer]() -> ::asio::awaitable<void> {
-        spdlog::debug("[block_supervisor:timer] Started");
-        while (timer_running.load(std::memory_order_relaxed)) {
-            timer.expires_after(std::chrono::seconds(10));
-            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (ec || !timer_running.load(std::memory_order_relaxed)) break;
-            // Send timeout message to unified channel
-            if (!events.try_send(std::error_code{}, supervisor_timeout{})) {
-                spdlog::debug("[block_supervisor:timer] Channel full, timeout dropped");
-                break;
+
+    // Old path only (fast_val == nullptr): a block from a worker, forwarded to
+    // validation through `output`. Returns false when the output refused it
+    // for long enough that carrying on would lose the pipeline anyway.
+    auto forward_block = [&](downloaded_light_block& block) -> ::asio::awaitable<bool> {
+        auto const height = block.height;
+
+        // Log first few blocks and periodically after that
+        if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
+            spdlog::debug("[block_supervisor] Forwarding block {} (total forwarded: {})", height, blocks_forwarded);
+        }
+
+        // Capture size before moving
+        auto const block_size = block.block->serialized_size();
+
+        // Forward block to validation with retry
+        bool sent = co_await try_send_with_retry(output, std::move(block), 20, std::chrono::milliseconds(10));
+        if (!sent) {
+            spdlog::error("[block_supervisor] Output channel full after retries for block {} (forwarded so far: {})",
+                height, blocks_forwarded);
+            co_return false;
+        }
+        // Track successful forward for pipeline debugging
+        g_blocks_forwarded_by_supervisor.fetch_add(1, std::memory_order_relaxed);
+        ++blocks_forwarded;
+        bytes_downloaded += block_size;
+
+        // Log stats periodically
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_stats_time >= 2s) {
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_stats_time).count();
+            auto blocks_delta = blocks_forwarded - last_blocks_forwarded;
+            auto bytes_delta = bytes_downloaded - last_bytes_downloaded;
+            auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0;
+            double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
+            spdlog::info("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
+                blocks_forwarded, blk_rate, mb_rate, ownership.worker_count());
+            last_stats_time = now;
+            last_blocks_forwarded = blocks_forwarded;
+            last_bytes_downloaded = bytes_downloaded;
+        }
+        co_return true;
+    };
+
+    auto on_task_ended = [&](download_task_ended const& ended) {
+        // The exact instance decides, before anything else is considered: a
+        // report that does not name the live slot belongs to a worker that
+        // was already replaced, and must not retire the one that replaced it.
+        //
+        // Only then the handoff. A worker of an earlier range has just freed
+        // the only slot its peer has, and this is the moment that peer can be
+        // given to the current coordinator — which is what replaces the
+        // accidental peer event this defect depended on.
+        auto const wants_workers = coordinator && ! coordinator->is_stopped() &&
+            ! coordinator->is_complete();
+        auto const handoff = ownership.ended(
+            ended.peer_nonce, ended.task_id, ended.coordinator_epoch, wants_workers);
+
+        g_active_download_peers.store(
+            static_cast<uint32_t>(ownership.worker_count()), std::memory_order_relaxed);
+        spdlog::info("[block_supervisor:task_ended] nonce={} task={} epoch={}, remaining downloading={}",
+            ended.peer_nonce, ended.task_id, ended.coordinator_epoch,
+            ownership.worker_count());
+
+        if (handoff) {
+            if (spawn_known(*handoff)) {
+                spdlog::info("[block_supervisor:task_ended] peer {} handed to the current range "
+                    "(epoch {})", *handoff, ownership.epoch());
+            } else {
+                // A refusal here is the state this whole change is about: the
+                // range has one consumer fewer and nothing else will say so.
+                spdlog::warn("[block_supervisor:task_ended] peer {} could not be handed to the "
+                    "current range (epoch {}); it is no longer eligible or could not start",
+                    *handoff, ownership.epoch());
             }
         }
-        spdlog::debug("[block_supervisor:timer] Ended");
-    });
+    };
 
-    // -------------------------------------------------------------------------
-    // Bridge: input channel -> unified events channel
-    // -------------------------------------------------------------------------
-    tasks.spawn("block_supervisor_input_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[block_supervisor:input_bridge] Started");
+    auto on_range_request = [&](block_range_request const& request) {
+        spdlog::info("[block_supervisor] New range request: {} to {} ({} blocks)",
+            request.start_height, request.end_height,
+            request.end_height - request.start_height + 1);
 
-        // Forward a message to the unified events channel, retrying while the
-        // channel is full instead of dropping it and breaking the bridge — a
-        // dropped peers_updated / block_range_request there would silently kill
-        // all forwarding and stall the download. Returns false when the channel is
-        // closed or the wait is cancelled (both mean shutdown: the supervisor
-        // cancels + closes `events` before joining), so the caller exits cleanly
-        // and tasks.join() never blocks on a wedged retry.
-        auto forward = [&](auto const& m) -> ::asio::awaitable<bool> {
-            size_t retries = 0;
-            while ( ! events.try_send(std::error_code{}, m)) {
-                if ( ! events.is_open()) {
-                    co_return false;  // shutting down
-                }
-                if (retries == 0 || retries % 50 == 0) {
-                    spdlog::warn("[block_supervisor:input_bridge] events channel full — retrying forward (retry {})", retries);
-                }
-                ++retries;
-                ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
-                timer.expires_after(std::chrono::milliseconds(20));
-                auto [tec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-                if (tec) {
-                    co_return false;
-                }
-            }
-            if (retries > 0) {
-                spdlog::info("[block_supervisor:input_bridge] forward succeeded after {} retries", retries);
-            }
-            co_return true;
-        };
+        // Stop old coordinator if one exists - this signals running tasks to exit gracefully
+        // Tasks hold shared_ptr so old coordinator stays alive until they finish
+        if (coordinator) {
+            spdlog::debug("[block_supervisor] Stopping old coordinator before creating new one");
+            coordinator->stop();
+        }
 
-        while (true) {
-            auto [ec, msg] = co_await input.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[block_supervisor:input_bridge] Channel closed: {}", ec.message());
-                // Notify main loop to exit by sending stop_request
-                if (!events.try_send(std::error_code{}, stop_request{})) {
-                    spdlog::warn("[block_supervisor:input_bridge] Channel full, stop_request on close dropped");
-                }
-                break;
-            }
-            // Forward to unified channel
-            if (std::holds_alternative<stop_request>(msg)) {
-                if (!events.try_send(std::error_code{}, stop_request{})) {
-                    spdlog::warn("[block_supervisor:input_bridge] Channel full, stop_request dropped");
-                }
-                break;  // Exit after forwarding stop signal
-            } else if (auto* peers = std::get_if<peers_updated>(&msg)) {
-                if ( ! co_await forward(*peers)) break;
-            } else if (auto* range = std::get_if<block_range_request>(&msg)) {
-                if ( ! co_await forward(*range)) break;
+        // Create new coordinator for this range
+        coordinator = std::make_shared<chunk_coordinator>(
+            organizer.index(),
+            request.start_height,
+            request.end_height
+        );
+
+        // The coordinator is installed FIRST, then the epoch moves, and only
+        // then are workers started — so nothing is ever started against a
+        // coordinator that is no longer current.
+        //
+        // begin_range() answers with the known peers that have no live slot.
+        // A peer whose previous worker is still finishing is deliberately not
+        // among them: it is handed over when that worker reports, which is
+        // the one moment its slot is free.
+        auto const to_start = ownership.begin_range();
+        size_t started = 0;
+        for (auto const nonce : to_start) {
+            if (spawn_known(nonce)) {
+                ++started;
             }
         }
-        spdlog::debug("[block_supervisor:input_bridge] Ended");
-    });
+        spdlog::info("[block_supervisor] Range {}-{} (epoch {}): started {} of {} known peers, "
+            "{} still finishing the previous range",
+            request.start_height, request.end_height, ownership.epoch(),
+            started, to_start.size(),
+            ownership.worker_count() - started);
+    };
 
-    // -------------------------------------------------------------------------
-    // Bridge: task_output channel -> unified events channel
-    // -------------------------------------------------------------------------
-    tasks.spawn("block_supervisor_task_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[block_supervisor:task_bridge] Started");
-        uint64_t blocks_forwarded = 0;
-        while (true) {
-            auto [ec, msg] = co_await task_output.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[block_supervisor:task_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            // Forward to unified channel
-            if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
-                g_blocks_received_by_supervisor.fetch_add(1, std::memory_order_relaxed);
-                // Use try_send_with_retry for blocks
-                bool sent = co_await try_send_with_retry(events, std::move(*block), 20, std::chrono::milliseconds(10));
-                if (!sent) {
-                    spdlog::error("[block_supervisor:task_bridge] Events channel full after retries! blocks_forwarded={}", blocks_forwarded);
-                    break;
-                }
-                ++blocks_forwarded;
-            } else if (auto* ended = std::get_if<download_task_ended>(&msg)) {
-                // task_ended critical - use retry
-                bool sent = co_await try_send_with_retry(events, *ended, 20, std::chrono::milliseconds(10));
-                if (!sent) {
-                    spdlog::error("[block_supervisor:task_bridge] Events channel full for task_ended!");
-                    break;
-                }
-            } else if (auto* perf = std::get_if<peer_performance>(&msg)) {
-                if (!events.try_send(std::error_code{}, *perf)) {
-                    spdlog::debug("[block_supervisor:task_bridge] Channel full, peer_performance dropped");
-                }
-            }
+    auto on_peers_updated = [&](peers_updated const& peers_msg) {
+        // A SNAPSHOT: the provider keeps one cumulative list, prunes stopped
+        // peers and broadcasts all of it, so a nonce that is absent has been
+        // withdrawn and must not be started again. (The block channel gets
+        // the fast-peer subset, so this set means "eligible to download".)
+        known_peers.clear();
+        std::vector<uint64_t> nonces;
+        nonces.reserve(peers_msg.peers.size());
+        for (auto const& peer : peers_msg.peers) {
+            if ( ! peer || peer->stopped()) continue;
+            known_peers.emplace(peer->nonce(), peer);
+            nonces.push_back(peer->nonce());
         }
-        spdlog::info("[block_supervisor:task_bridge] Ended, forwarded {} blocks", blocks_forwarded);
-    });
+        ownership.set_known(nonces);
+
+        spdlog::info("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
+            "(coordinator={})", peers_msg.peers.size(), known_peers.size(),
+            ownership.worker_count(), coordinator ? "yes" : "no");
+
+        if ( ! coordinator) {
+            // Nothing to attach them to yet. They are remembered rather than
+            // buffered: the next range starts from what is known, so this no
+            // longer has to be the only chance they get.
+            return;
+        }
+
+        size_t spawned = 0;
+        for (auto const nonce : nonces) {
+            if (spawn_known(nonce)) ++spawned;
+        }
+        spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}",
+            spawned, ownership.worker_count() - spawned);
+    };
 
     // -------------------------------------------------------------------------
-    // Main loop: ONLY receives from unified channel (no || operator at all)
+    // Main loop: ONE selection over the input, the workers' output and the
+    // timeout tick.
+    //
+    // This replaces a timer task and two bridge tasks feeding a unified event
+    // queue. What those preserved, this preserves directly:
+    //
+    //   * per-source FIFO — each select_channel is FIFO, and the selector takes
+    //     one message per wait;
+    //   * stop and task_ended are never dropped — there is no intermediate queue
+    //     to be full. A worker's task_ended is a suspended send on task_output,
+    //     and this loop is its only consumer;
+    //   * the 10s timeout cadence — an `after` case that is re-armed after each
+    //     tick, instead of a timer task whose try_send could be refused by a
+    //     full queue (which also ended that task for good);
+    //   * one coroutine touches the coordinator and the ownership bookkeeping,
+    //     and nothing runs between a start and its record (#652).
+    //
+    // What it does NOT preserve is the cross-source interleaving of the old
+    // queue, which was an artefact of bridge scheduling and retry delays, not a
+    // contract: no handler depends on a block arriving before or after a peer
+    // snapshot. The arbitration is BIASED, in this order: input (stop, range,
+    // peers) first, the tick second, the workers' output last. Control before
+    // data, so a stop or a new range is attended within one wait however full
+    // task_output is. Sustained control traffic may delay worker reports; this
+    // priority policy does not provide a general starvation bound.
     // -------------------------------------------------------------------------
+    ::asio::experimental::channel_select_options arbitration;
+    arbitration.biased = true;
+    auto events = ::asio::experimental::make_selector(executor, arbitration, std::stop_token{},
+        ::asio::experimental::receive(input),
+        ::asio::experimental::after(next_tick),
+        ::asio::experimental::receive(task_output));
+    constexpr size_t input_case = 0;
+    constexpr size_t tick_case = 1;
+    constexpr size_t task_case = 2;
+
     spdlog::info("[block_supervisor] Entering main event loop");
     uint64_t events_processed = 0;
     while (true) {
-        auto [ec, msg] = co_await events.async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
+        events.case_at<tick_case>().time = next_tick;
+        auto [ec, index] = co_await events.wait(::asio::as_tuple(::asio::deferred));
+
         if (ec) {
-            spdlog::debug("[block_supervisor] Events channel closed");
+            // eof on the input: the orchestrator closed it, which is how it says
+            // stop. Anything else cannot happen without a stop token or a
+            // deadline, and is reported rather than looped on.
+            if (ec == ::asio::error::eof && index == input_case) {
+                spdlog::info("[block_supervisor] Input channel closed");
+            } else {
+                spdlog::error("[block_supervisor] Selection failed ({}, case {}); stopping",
+                    ec.message(), index);
+            }
+            if (coordinator) {
+                coordinator->stop();
+            }
             break;
         }
         ++events_processed;
 
-        // Process message based on variant type (FIFO order guaranteed)
+        if (index == tick_case) {
+            // Periodic timeout - check for stalled chunks
+            if (coordinator && !coordinator->is_stopped()) {
+                coordinator->check_timeouts();
+            }
+            next_tick = std::chrono::steady_clock::now() + timeout_tick;
+            continue;
+        }
+
+        if (index == task_case) {
+            // From a worker. The value lives in the selector's storage until the
+            // next wait begins; nothing below waits on the selector.
+            auto& msg = *events.value<task_case>();
+
+            if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
+                g_blocks_received_by_supervisor.fetch_add(1, std::memory_order_relaxed);
+                if ( ! co_await forward_block(*block)) {
+                    break;
+                }
+                continue;
+            }
+
+            if (auto* ended = std::get_if<download_task_ended>(&msg)) {
+                on_task_ended(*ended);
+                continue;
+            }
+
+            if (auto* perf = std::get_if<peer_performance>(&msg)) {
+                // Forward performance stats through output (bridge will route to peer_provider)
+                if (!output.try_send(std::error_code{}, *perf)) {
+                    spdlog::debug("[block_supervisor] Channel full, peer_performance dropped");
+                }
+                continue;
+            }
+            continue;
+        }
+
+        // index == input_case
+        auto& msg = *events.value<input_case>();
+
         if (std::holds_alternative<stop_request>(msg)) {
             spdlog::info("[block_supervisor] Stop signal received");
             if (coordinator) {
@@ -693,207 +967,45 @@ std::atomic<uint32_t> g_active_download_peers{0};
             break;
         }
 
-        if (auto* block = std::get_if<downloaded_light_block>(&msg)) {
-            auto const height = block->height;
-
-            // Log first few blocks and periodically after that
-            if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
-                spdlog::debug("[block_supervisor] Forwarding block {} (total forwarded: {})", height, blocks_forwarded);
-            }
-
-            // Capture size before moving
-            auto const block_size = block->block->serialized_size();
-
-            // Forward block to validation with retry
-            bool sent = co_await try_send_with_retry(output, std::move(*block), 20, std::chrono::milliseconds(10));
-            if (!sent) {
-                spdlog::error("[block_supervisor] Output channel full after retries for block {} (forwarded so far: {})",
-                    height, blocks_forwarded);
-                break;
-            }
-            // Track successful forward for pipeline debugging
-            g_blocks_forwarded_by_supervisor.fetch_add(1, std::memory_order_relaxed);
-            ++blocks_forwarded;
-            bytes_downloaded += block_size;
-
-            // Log stats periodically
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_stats_time >= 2s) {
-                auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_stats_time).count();
-                auto blocks_delta = blocks_forwarded - last_blocks_forwarded;
-                auto bytes_delta = bytes_downloaded - last_bytes_downloaded;
-                auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0;
-                double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
-                spdlog::info("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
-                    blocks_forwarded, blk_rate, mb_rate, ownership.worker_count());
-                last_stats_time = now;
-                last_blocks_forwarded = blocks_forwarded;
-                last_bytes_downloaded = bytes_downloaded;
-            }
-            continue;
-        }
-
-        if (auto* ended = std::get_if<download_task_ended>(&msg)) {
-            // The exact instance decides, before anything else is considered: a
-            // report that does not name the live slot belongs to a worker that
-            // was already replaced, and must not retire the one that replaced it.
-            //
-            // Only then the handoff. A worker of an earlier range has just freed
-            // the only slot its peer has, and this is the moment that peer can be
-            // given to the current coordinator — which is what replaces the
-            // accidental peer event this defect depended on.
-            auto const wants_workers = coordinator && ! coordinator->is_stopped() &&
-                ! coordinator->is_complete();
-            auto const handoff = ownership.ended(
-                ended->peer_nonce, ended->task_id, ended->coordinator_epoch, wants_workers);
-
-            g_active_download_peers.store(
-                static_cast<uint32_t>(ownership.worker_count()), std::memory_order_relaxed);
-            spdlog::info("[block_supervisor:task_ended] nonce={} task={} epoch={}, remaining downloading={}",
-                ended->peer_nonce, ended->task_id, ended->coordinator_epoch,
-                ownership.worker_count());
-
-            if (handoff) {
-                if (spawn_known(*handoff)) {
-                    spdlog::info("[block_supervisor:task_ended] peer {} handed to the current range "
-                        "(epoch {})", *handoff, ownership.epoch());
-                } else {
-                    // A refusal here is the state this whole change is about: the
-                    // range has one consumer fewer and nothing else will say so.
-                    spdlog::warn("[block_supervisor:task_ended] peer {} could not be handed to the "
-                        "current range (epoch {}); it is no longer eligible or could not start",
-                        *handoff, ownership.epoch());
-                }
-            }
-            continue;
-        }
-
         if (auto* request = std::get_if<block_range_request>(&msg)) {
-            spdlog::info("[block_supervisor] New range request: {} to {} ({} blocks)",
-                request->start_height, request->end_height,
-                request->end_height - request->start_height + 1);
-
-            // Stop old coordinator if one exists - this signals running tasks to exit gracefully
-            // Tasks hold shared_ptr so old coordinator stays alive until they finish
-            if (coordinator) {
-                spdlog::debug("[block_supervisor] Stopping old coordinator before creating new one");
-                coordinator->stop();
-            }
-
-            // Create new coordinator for this range
-            coordinator = std::make_shared<chunk_coordinator>(
-                organizer.index(),
-                request->start_height,
-                request->end_height
-            );
-
-            // The coordinator is installed FIRST, then the epoch moves, and only
-            // then are workers started — so nothing is ever started against a
-            // coordinator that is no longer current.
-            //
-            // begin_range() answers with the known peers that have no live slot.
-            // A peer whose previous worker is still finishing is deliberately not
-            // among them: it is handed over when that worker reports, which is
-            // the one moment its slot is free.
-            auto const to_start = ownership.begin_range();
-            size_t started = 0;
-            for (auto const nonce : to_start) {
-                if (spawn_known(nonce)) {
-                    ++started;
-                }
-            }
-            spdlog::info("[block_supervisor] Range {}-{} (epoch {}): started {} of {} known peers, "
-                "{} still finishing the previous range",
-                request->start_height, request->end_height, ownership.epoch(),
-                started, to_start.size(),
-                ownership.worker_count() - started);
+            on_range_request(*request);
             continue;
         }
 
         if (auto* peers_msg = std::get_if<peers_updated>(&msg)) {
-            // A SNAPSHOT: the provider keeps one cumulative list, prunes stopped
-            // peers and broadcasts all of it, so a nonce that is absent has been
-            // withdrawn and must not be started again. (The block channel gets
-            // the fast-peer subset, so this set means "eligible to download".)
-            known_peers.clear();
-            std::vector<uint64_t> nonces;
-            nonces.reserve(peers_msg->peers.size());
-            for (auto const& peer : peers_msg->peers) {
-                if ( ! peer || peer->stopped()) continue;
-                known_peers.emplace(peer->nonce(), peer);
-                nonces.push_back(peer->nonce());
-            }
-            ownership.set_known(nonces);
-
-            spdlog::info("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
-                "(coordinator={})", peers_msg->peers.size(), known_peers.size(),
-                ownership.worker_count(), coordinator ? "yes" : "no");
-
-            if ( ! coordinator) {
-                // Nothing to attach them to yet. They are remembered rather than
-                // buffered: the next range starts from what is known, so this no
-                // longer has to be the only chance they get.
-                continue;
-            }
-
-            size_t spawned = 0;
-            for (auto const nonce : nonces) {
-                if (spawn_known(nonce)) ++spawned;
-            }
-            spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}",
-                spawned, ownership.worker_count() - spawned);
-            continue;
-        }
-
-        if (std::holds_alternative<supervisor_timeout>(msg)) {
-            // Periodic timeout - check for stalled chunks
-            if (coordinator && !coordinator->is_stopped()) {
-                coordinator->check_timeouts();
-            }
-            continue;
-        }
-
-        if (auto* perf = std::get_if<peer_performance>(&msg)) {
-            // Forward performance stats through output (bridge will route to peer_provider)
-            if (!output.try_send(std::error_code{}, *perf)) {
-                spdlog::debug("[block_supervisor] Channel full, peer_performance dropped");
-            }
+            on_peers_updated(*peers_msg);
             continue;
         }
     }
 
-    // Stop timer task - set flag AND cancel timer to wake it immediately
-    spdlog::info("[block_supervisor:shutdown] Step 1/5: Stopping timer task...");
-    timer_running.store(false, std::memory_order_relaxed);
-    timeout_timer.cancel();  // Wake up timer immediately instead of waiting 10s
-
-    // IMPORTANT: Stop coordinator FIRST to signal all tasks to exit
+    // Stop coordinator FIRST to signal all tasks to exit: their chunk claims
+    // return nothing and their selections armed with its token are aborted.
+    spdlog::info("[block_supervisor:shutdown] Step 1/3: Stopping coordinator...");
     if (coordinator) {
-        spdlog::info("[block_supervisor:shutdown] Step 2/5: Stopping coordinator...");
         coordinator->stop();
     }
 
-    // Cancel and close internal channels BEFORE waiting - this unblocks any download tasks and bridges
+    // Close the workers' output BEFORE waiting: a worker suspended on its
+    // task_ended send completes with broken_pipe and exits. Nobody receives
+    // from it any more; what it still buffers is dropped with it.
     // NOTE: Don't close `output` - it's owned by sync_orchestrator, peer_provider closes it
-    // NOTE: cancel() wakes up pending async ops, close() alone does NOT!
-    spdlog::info("[block_supervisor:shutdown] Step 3/5: Closing internal channels...");
-    task_output.cancel();
+    spdlog::info("[block_supervisor:shutdown] Step 2/3: Closing the workers' output...");
     task_output.close();
-    events.cancel();
-    events.close();
 
-    // NOW wait for all tasks (download tasks + bridges) to finish
+    // NOW wait for all download tasks to finish
     auto const active = tasks.active_count();
-    spdlog::info("[block_supervisor:shutdown] Step 4/5: Waiting for {} tasks to complete...", active);
+    spdlog::info("[block_supervisor:shutdown] Step 3/3: Waiting for {} tasks to complete...", active);
     co_await tasks.join();
-    spdlog::info("[block_supervisor:shutdown] Step 5/5: All tasks completed");
+    spdlog::info("[block_supervisor:shutdown] All tasks completed");
 
-    // NOW it's safe to destroy the coordinator
+    // NOW it's safe to destroy the coordinator. The selector is destroyed with
+    // this frame, after its last wait, as its contract requires.
     spdlog::info("[block_supervisor] Destroying coordinator...");
     coordinator.reset();
 
     spdlog::info("[block_supervisor] Task ended cleanly");
 }
+
 
 // =============================================================================
 // Block Validation Task
@@ -1453,20 +1565,30 @@ std::atomic<uint32_t> g_active_download_peers{0};
     auto initial_rss = get_rss_mb();
     spdlog::info("[fast_validation] Initial RSS: {:.0f} MB", initial_rss);
 
+    // The one consumer of the fast path. A task-owned selector with a single
+    // receive case: each wait takes the oldest chunk, or ends with eof once the
+    // orchestrator has closed the channel and the buffered chunks are drained.
+    // Receiving is what resumes a worker suspended on a full channel, so every
+    // chunk taken here is a slot freed there — no polling on either side.
+    auto executor = co_await ::asio::this_coro::executor;
+    auto inbox = ::asio::experimental::make_selector(executor,
+        ::asio::experimental::channel_select_options{}, std::stop_token{},
+        ::asio::experimental::receive(input));
+
     while (true) {
-        // The received tuple is a named variable, not a structured binding:
-        // GCC 16.1 at -O2/-O3 did not destroy a `auto [ec, msg] = co_await ...`
-        // at the end of the loop iteration, so every chunk kept its
-        // `source_peer` alive and a peer that had served blocks was never
-        // freed (test/resume_stored_bodies.cpp, the use count after the stop).
-        auto received = co_await input.async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
-        auto const& ec = std::get<0>(received);
-        auto& msg = std::get<1>(received);
+        // Keep the coroutine completion in a named tuple (GCC 16.1 lifetime
+        // workaround). The payload stays in the selector, rather than in the
+        // completion, and is released by its next wait or destruction.
+        auto completion = co_await inbox.wait(::asio::as_tuple(::asio::deferred));
+        auto const& [ec, index] = completion;
         if (ec) {
             spdlog::debug("[fast_validation] Input channel closed: {}", ec.message());
             break;
         }
+        (void)index;  // One case.
+
+        // Lives in the selector's storage until the next wait begins.
+        auto& msg = *inbox.value<0>();
 
         if (std::holds_alternative<stop_request>(msg)) {
             spdlog::debug("[fast_validation] Stop signal received");

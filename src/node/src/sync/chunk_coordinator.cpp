@@ -203,6 +203,9 @@ bool chunk_coordinator::is_stopped() const {
 
 void chunk_coordinator::stop() {
     stopped_.store(true, std::memory_order_release);
+    // After the flag, so a worker woken by the token observes is_stopped().
+    // std::stop_source is thread safe and idempotent.
+    stop_source_.request_stop();
 }
 
 chunk_coordinator::progress chunk_coordinator::get_progress() const {

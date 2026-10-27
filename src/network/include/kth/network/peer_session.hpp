@@ -169,8 +169,17 @@ public:
     // `headers` has no channel here: nothing on the wire says whether a
     // `headers` answers our `getheaders` or announces something, so every one
     // goes to the node's single header ingest instead of to a requester.
+    //
+    // These are select_channels (see async_channel.hpp): a requester waits on
+    // one together with its deadline in ONE selection, so a deadline that fires
+    // while a response is ready commits exactly one of the two — a losing
+    // receive consumes nothing, and the response stays here for the next
+    // request. The dispatcher hands responses in with a suspended send (no
+    // executor, no async_send), and stop() closes them: a pending receive ends
+    // with eof, a pending send with broken_pipe, and what is still buffered is
+    // drained (see drain_response_channels).
 
-    using response_channel = concurrent_channel<raw_message>;
+    using response_channel = select_channel<raw_message>;
 
     /// Get the channel for block responses
     /// The dispatcher should route 'block' messages here when someone is waiting

@@ -6,6 +6,7 @@
 #define KTH_NETWORK_P2P_NODE_HPP
 
 #include <atomic>
+#include <stop_token>
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -243,6 +244,13 @@ public:
 
     [[nodiscard]]
     bool stopped() const;
+
+    /// A token that is stopped by stop(). What stopped() reports by polling,
+    /// this reports as an event: a selection armed with it completes with
+    /// operation_aborted the moment the node is stopped, from any thread. The
+    /// sync layer waits on it instead of re-reading stopped() on a timer.
+    [[nodiscard]]
+    std::stop_token stop_token() const;
 
     [[nodiscard]]
     size_t connection_count() const;
@@ -500,6 +508,9 @@ private:
     /// stop being lost in the transition itself.
     enum class lifecycle_state : uint8_t { fresh, active, stopped };
     std::atomic<lifecycle_state> lifecycle_{lifecycle_state::fresh};
+
+    /// Requested by stop(), once, whatever state it found; see stop_token().
+    std::stop_source stop_source_;
 
     /// Whether run() has already spawned the network tasks.
     ///

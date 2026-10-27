@@ -323,6 +323,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_cycle.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
+          test/select_sync.cpp
           test/configuration.cpp
           test/header_list.cpp
           test/header_walk.cpp

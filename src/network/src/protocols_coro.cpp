@@ -10,8 +10,11 @@
 
 #include <boost/unordered/unordered_flat_map.hpp>
 
+#include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 
 namespace kth::network {
 
@@ -498,23 +501,26 @@ awaitable_expected<domain::message::address> request_addresses(
         co_return std::unexpected(ec);
     }
 
-    // Wait for addr/addrv2 response on the dedicated channel
+    // Wait for addr/addrv2 response on the dedicated channel, or the deadline:
+    // one selection, so exactly one of the two commits. A deadline that wins
+    // leaves a response that arrived at the same instant in the channel.
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(peer.addr_responses()),
+        ::asio::experimental::after(std::chrono::steady_clock::now() + timeout)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [recv_ec, selected] = completion;
 
-    auto result = co_await (
-        peer.addr_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-
-    if (result.index() == 1) {
+    if (recv_ec) {
+        // eof: the session closed the channel (stop). Anything else is the
+        // operation itself being cancelled; neither is an answer.
+        co_return std::unexpected(error::channel_stopped);
+    }
+    if (selected.index == 1) {
         co_return std::unexpected(error::channel_timeout);
     }
 
-    auto& [recv_ec, raw] = std::get<0>(result);
-    if (recv_ec) {
-        co_return std::unexpected(error::channel_stopped);
-    }
+    auto raw = std::move(*selected.value<0>());
 
     auto const& command = raw.heading.command();
     byte_reader reader(raw.payload);
@@ -766,9 +772,18 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
         co_return std::unexpected(ec);
     }
 
-    // Receive blocks as they arrive
+    // Receive blocks as they arrive, or hit the deadline. ONE task-owned
+    // selector for the whole batch: a receive case on the per-request channel
+    // and an `after` case at the batch deadline. Each wait commits exactly one
+    // of the two; a block already buffered is taken in this frame without
+    // suspending, and a deadline that fires with a block ready does not consume
+    // it. The selector is destroyed with this frame, after its last wait.
     auto executor = co_await ::asio::this_coro::executor;
-    auto deadline = std::chrono::steady_clock::now() + timeout;
+    auto const deadline = std::chrono::steady_clock::now() + timeout;
+    auto arrivals = ::asio::experimental::make_selector(executor,
+        ::asio::experimental::channel_select_options{}, std::stop_token{},
+        ::asio::experimental::receive(peer.block_responses()),
+        ::asio::experimental::after(deadline));
 
     std::vector<block_result<Mode>> received_blocks;
     received_blocks.reserve(blocks.size());
@@ -778,35 +793,24 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
     uint64_t total_deserialize_us = 0;
 
     while (received_blocks.size() < blocks.size()) {
-        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
-            deadline - std::chrono::steady_clock::now());
+        // Measure network wait time
+        auto network_start = std::chrono::steady_clock::now();
+        auto [recv_ec, index] = co_await arrivals.wait(::asio::as_tuple(::asio::deferred));
+        auto network_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - network_start).count();
 
-        if (remaining <= 0s) {
+        if (recv_ec) {
+            // eof: the session closed the channel (stop).
+            co_return std::unexpected(error::channel_stopped);
+        }
+        if (index == 1) {
             spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}] ({}/{} received)",
                 peer.authority(), received_blocks.size(), blocks.size());
             co_return std::unexpected(error::channel_timeout);
         }
 
-        ::asio::steady_timer timer(executor, remaining);
-
-        // Measure network wait time
-        auto network_start = std::chrono::steady_clock::now();
-        auto result = co_await (
-            peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
-        auto network_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - network_start).count();
-
-        if (result.index() == 1) {
-            spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}]", peer.authority());
-            co_return std::unexpected(error::channel_timeout);
-        }
-
-        auto& [recv_ec, raw] = std::get<0>(result);
-        if (recv_ec) {
-            co_return std::unexpected(error::channel_stopped);
-        }
+        // Ours now; the slot is cleared when the next wait begins.
+        auto raw = std::move(*arrivals.template value<0>());
 
         total_network_wait_us += network_wait_us;
 
