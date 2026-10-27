@@ -7,8 +7,8 @@
 #ifndef SECP256K1_MODULE_SCHNORR_MAIN
 #define SECP256K1_MODULE_SCHNORR_MAIN
 
-#include "include/secp256k1_schnorr.h"
-#include "modules/schnorr/schnorr_impl.h"
+#include "../../../include/secp256k1_schnorr.h"
+#include "schnorr_impl.h"
 
 int secp256k1_schnorr_verify(
     const secp256k1_context* ctx,
@@ -18,13 +18,14 @@ int secp256k1_schnorr_verify(
 ) {
     secp256k1_ge q;
     VERIFY_CHECK(ctx != NULL);
-    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
     ARG_CHECK(msg32 != NULL);
     ARG_CHECK(sig64 != NULL);
     ARG_CHECK(pubkey != NULL);
 
+    /* Verification no longer needs an ecmult context: secp256k1_ecmult is
+     * static in this base. */
     secp256k1_pubkey_load(ctx, &q, pubkey);
-    return secp256k1_schnorr_sig_verify(&ctx->ecmult_ctx, sig64, &q, msg32);
+    return secp256k1_schnorr_sig_verify(secp256k1_get_hash_context(ctx), sig64, &q, msg32);
 }
 
 int secp256k1_schnorr_sign(
@@ -51,7 +52,7 @@ int secp256k1_schnorr_sign(
 
     secp256k1_pubkey_load(ctx, &p, &pubkey);
     secp256k1_scalar_set_b32(&sec, seckey, NULL);
-    ret = secp256k1_schnorr_sig_sign(&ctx->ecmult_gen_ctx, sig64, msg32, &sec, &p, noncefp, ndata);
+    ret = secp256k1_schnorr_sig_sign(secp256k1_get_hash_context(ctx), &ctx->ecmult_gen_ctx, sig64, msg32, &sec, &p, noncefp, ndata);
     if (!ret) {
         memset(sig64, 0, 64);
     }

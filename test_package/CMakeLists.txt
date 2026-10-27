@@ -3,6 +3,9 @@ project(test_kth_package)
 
 find_package(kth REQUIRED)
 
+# Exercise the native installed export independently of Conan's include paths.
+add_subdirectory(native_export)
+
 # Test individual targets
 add_executable(test_individual test_individual.cpp)
 target_link_libraries(test_individual 

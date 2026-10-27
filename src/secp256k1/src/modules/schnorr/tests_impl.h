@@ -7,9 +7,9 @@
 #ifndef SECP256K1_MODULE_SCHNORR_TESTS
 #define SECP256K1_MODULE_SCHNORR_TESTS
 
-#include "include/secp256k1_schnorr.h"
+#include "../../../include/secp256k1_schnorr.h"
 
-void test_schnorr_end_to_end(void) {
+static void test_schnorr_end_to_end(void) {
     unsigned char privkey[32];
     unsigned char message[32];
     unsigned char schnorr_signature[64];
@@ -18,59 +18,57 @@ void test_schnorr_end_to_end(void) {
     /* Generate a random key and message. */
     {
         secp256k1_scalar key;
-        random_scalar_order_test(&key);
+        testutil_random_scalar_order_test(&key);
         secp256k1_scalar_get_b32(privkey, &key);
-        secp256k1_rand256_test(message);
+        testrand256_test(message);
     }
 
     /* Construct and verify corresponding public key. */
-    CHECK(secp256k1_ec_seckey_verify(ctx, privkey) == 1);
-    CHECK(secp256k1_ec_pubkey_create(ctx, &pubkey, privkey) == 1);
+    CHECK(secp256k1_ec_seckey_verify(CTX, privkey) == 1);
+    CHECK(secp256k1_ec_pubkey_create(CTX, &pubkey, privkey) == 1);
 
     /* Schnorr sign. */
-    CHECK(secp256k1_schnorr_sign(ctx, schnorr_signature, message, privkey, NULL, NULL) == 1);
-    CHECK(secp256k1_schnorr_verify(ctx, schnorr_signature, message, &pubkey) == 1);
+    CHECK(secp256k1_schnorr_sign(CTX, schnorr_signature, message, privkey, NULL, NULL) == 1);
+    CHECK(secp256k1_schnorr_verify(CTX, schnorr_signature, message, &pubkey) == 1);
     /* Destroy signature and verify again. */
-    schnorr_signature[secp256k1_rand_bits(6)] += 1 + secp256k1_rand_int(255);
-    CHECK(secp256k1_schnorr_verify(ctx, schnorr_signature, message, &pubkey) == 0);
+    schnorr_signature[testrand_bits(6)] += 1 + testrand_int(255);
+    CHECK(secp256k1_schnorr_verify(CTX, schnorr_signature, message, &pubkey) == 0);
 }
 
 #define SIG_COUNT 32
 
-void test_schnorr_sign_verify(void) {
+static void test_schnorr_sign_verify(void) {
     unsigned char msg32[32];
     unsigned char sig64[SIG_COUNT][64];
     unsigned char ndata[SIG_COUNT][32];
-    secp256k1_gej pubkeyj[SIG_COUNT];
     secp256k1_ge pubkey[SIG_COUNT];
     secp256k1_scalar key[SIG_COUNT];
     int i, j;
 
-    secp256k1_rand256_test(msg32);
+    testrand256_test(msg32);
 
     for (i = 0; i < SIG_COUNT; i++) {
-        random_scalar_order_test(&key[i]);
-        secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &pubkeyj[i], &key[i]);
-        secp256k1_ge_set_gej_var(&pubkey[i], &pubkeyj[i]);
+        testutil_random_scalar_order_test(&key[i]);
+        secp256k1_ecmult_gen_ge(&CTX->ecmult_gen_ctx, &pubkey[i], &key[i]);
         secp256k1_fe_normalize(&pubkey[i].x);
         secp256k1_fe_normalize(&pubkey[i].y);
 
         do {
-            secp256k1_rand256_test(ndata[i]);
-            if (secp256k1_schnorr_sig_sign(&ctx->ecmult_gen_ctx, sig64[i], msg32, &key[i], &pubkey[i], NULL, &ndata[i])) {
+            testrand256_test(ndata[i]);
+            if (secp256k1_schnorr_sig_sign(&CTX->hash_ctx, &CTX->ecmult_gen_ctx, sig64[i], msg32, &key[i], &pubkey[i], NULL, &ndata[i])) {
                 break;
             }
         } while(1);
 
-        CHECK(secp256k1_schnorr_sig_verify(&ctx->ecmult_ctx, sig64[i], &pubkey[i], msg32));
+        CHECK(secp256k1_schnorr_sig_verify(&CTX->hash_ctx, sig64[i], &pubkey[i], msg32));
 
         /* Apply several random modifications to the sig and check that it
          * doesn't verify anymore. */
-        for (j = 0; j < count; j++) {
-            int pos = secp256k1_rand_bits(6);
-            int mod = 1 + secp256k1_rand_int(255);
+        for (j = 0; j < COUNT; j++) {
+            int pos = testrand_bits(6);
+            int mod = 1 + testrand_int(255);
             sig64[i][pos] ^= mod;
-            CHECK(secp256k1_schnorr_sig_verify(&ctx->ecmult_ctx, sig64[i], &pubkey[i], msg32) == 0);
+            CHECK(secp256k1_schnorr_sig_verify(&CTX->hash_ctx, sig64[i], &pubkey[i], msg32) == 0);
             sig64[i][pos] ^= mod;
         }
     }
@@ -78,7 +76,7 @@ void test_schnorr_sign_verify(void) {
 
 #undef SIG_COUNT
 
-void run_schnorr_compact_test(void) {
+static void run_schnorr_compact_test(void) {
     {
         /* Test vector 1 */
         static const unsigned char pkbuf[33] = {
@@ -108,8 +106,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey));
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey));
     }
 
     {
@@ -141,8 +139,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey));
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey));
     }
 
     {
@@ -174,8 +172,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey));
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey));
     }
 
     {
@@ -207,8 +205,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey));
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey));
     }
 
     {
@@ -240,8 +238,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey));
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey));
     }
 
     {
@@ -273,8 +271,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -306,8 +304,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -339,8 +337,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -372,8 +370,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -405,8 +403,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -438,8 +436,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -471,8 +469,8 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 
     {
@@ -504,19 +502,73 @@ void run_schnorr_compact_test(void) {
         };
 
         secp256k1_pubkey pubkey;
-        CHECK(secp256k1_ec_pubkey_parse(ctx, &pubkey, pkbuf, 33));
-        CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pubkey) == 0);
+        CHECK(secp256k1_ec_pubkey_parse(CTX, &pubkey, pkbuf, 33));
+        CHECK(secp256k1_schnorr_verify(CTX, sig, msg, &pubkey) == 0);
     }
 }
 
-void run_schnorr_tests(void) {
+static void run_schnorr_end_to_end_tests(void) {
     int i;
-    for (i = 0; i < 32 * count; i++) {
+    for (i = 0; i < 32 * COUNT; i++) {
         test_schnorr_end_to_end();
     }
 
-    test_schnorr_sign_verify();
-    run_schnorr_compact_test();
 }
+
+/* Count calls while computing exactly the built-in SHA256 transform. */
+static size_t schnorr_bch_hash_calls;
+
+static void schnorr_bch_hash_transform(uint32_t *state, const unsigned char *blocks, size_t n) {
+    schnorr_bch_hash_calls += n;
+    secp256k1_sha256_transform(state, blocks, n);
+}
+
+/* A user nonce function has no context, unlike the built-in nonce path. */
+static int schnorr_bch_user_nonce(unsigned char *nonce32, const unsigned char *msg32,
+    const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+    return secp256k1_nonce_function_default(nonce32, msg32, key32, algo16, data, counter);
+}
+
+static void run_schnorr_bch_hash_context(void) {
+    secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    unsigned char key[32] = {0};
+    unsigned char msg[32] = {0};
+    unsigned char sig[64], reference[64];
+    secp256k1_pubkey pub;
+    size_t builtin_calls;
+    key[31] = 1;
+    CHECK(secp256k1_ec_pubkey_create(ctx, &pub, key));
+    CHECK(secp256k1_schnorr_sign(ctx, reference, msg, key, NULL, NULL));
+    secp256k1_context_set_sha256_compression(ctx, schnorr_bch_hash_transform);
+
+    schnorr_bch_hash_calls = 0;
+    CHECK(secp256k1_schnorr_sign(ctx, sig, msg, key, NULL, NULL));
+    builtin_calls = schnorr_bch_hash_calls;
+    CHECK(builtin_calls > 0);
+    CHECK(secp256k1_memcmp_var(sig, reference, sizeof(sig)) == 0);
+
+    schnorr_bch_hash_calls = 0;
+    CHECK(secp256k1_schnorr_sign(ctx, sig, msg, key, secp256k1_nonce_function_default, NULL));
+    CHECK(schnorr_bch_hash_calls == builtin_calls);
+    CHECK(secp256k1_memcmp_var(sig, reference, sizeof(sig)) == 0);
+
+    schnorr_bch_hash_calls = 0;
+    CHECK(secp256k1_schnorr_sign(ctx, sig, msg, key, schnorr_bch_user_nonce, NULL));
+    CHECK(schnorr_bch_hash_calls > 0);
+    CHECK(schnorr_bch_hash_calls < builtin_calls);
+    CHECK(secp256k1_memcmp_var(sig, reference, sizeof(sig)) == 0);
+
+    schnorr_bch_hash_calls = 0;
+    CHECK(secp256k1_schnorr_verify(ctx, sig, msg, &pub));
+    CHECK(schnorr_bch_hash_calls > 0);
+    secp256k1_context_destroy(ctx);
+}
+
+static const struct tf_test_entry tests_schnorr_bch[] = {
+    CASE1(run_schnorr_bch_hash_context),
+    CASE1(run_schnorr_end_to_end_tests),
+    CASE1(test_schnorr_sign_verify),
+    CASE1(run_schnorr_compact_test),
+};
 
 #endif
