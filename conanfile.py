@@ -196,7 +196,7 @@ class KthRecipe(KnuthConanFileV2):
 
         # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
         if self.settings.os != "Emscripten":
-            self.requires("simdutf/9.0.0", transitive_headers=True, transitive_libs=True)
+            self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
