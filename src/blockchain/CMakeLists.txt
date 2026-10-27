@@ -323,6 +323,14 @@ if (ENABLE_TEST)
         test/batch_sigchecks_activation.cpp
         test/batch_activation_boundary.cpp
         test/finalization.cpp
+        test/bchn_checkpoint_forks.cpp
+        test/bchn_dos_header_tree.cpp
+        test/bchn_finalization.cpp
+        test/bchn_parking_threshold.cpp
+        test/bchn_block_validation_more.cpp
+        test/bchn_min_tx_size_phase.cpp
+        test/bchn_csv_matrix.cpp
+        test/bchn_sigchecks_boundary.cpp
         test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
@@ -330,6 +338,11 @@ if (ENABLE_TEST)
         test/utxo_transition_record.cpp
         test/undo_barriers.cpp
         test/bip30_duplicate_coinbase.cpp
+        test/bchn_block_validation.cpp
+        test/bchn_mempool_structure.cpp
+        test/bchn_header_validation.cpp
+        test/bchn_network_params.cpp
+        test/bchn_token_consensus.cpp
         test/connected_tip.cpp
   test/transition_lifecycle.cpp
         test/reorg_e2e.cpp

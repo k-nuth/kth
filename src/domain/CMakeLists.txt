@@ -557,6 +557,27 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(kth_domain_test
         ${VM_AUTO_TEST_SOURCES}
         ${VMB_AUTO_TEST_SOURCES}
+        test/chain/abla_basic.cpp
+        test/chain/abla_vectors.cpp
+        test/chain/bchn_activation_heights.cpp
+        test/chain/bchn_activation_flags.cpp
+        test/chain/bchn_blockfail_2gb.cpp
+        test/chain/bchn_checkpoints.cpp
+        test/chain/bchn_block_sigchecks_limit.cpp
+        test/chain/bchn_consensus_checks.cpp
+        test/chain/bchn_ctor_order.cpp
+        test/chain/bchn_merkle.cpp
+        test/chain/bchn_pow_asert.cpp
+        test/chain/bchn_pow_difficulty.cpp
+        test/chain/bchn_sequence_locks.cpp
+        test/chain/bchn_script_standard.cpp
+        test/chain/bchn_token_accept.cpp
+        test/chain/bchn_token_prefix.cpp
+        test/chain/bchn_token_vectors_manual.cpp
+        test/chain/bchn_activation_mtp.cpp
+        test/chain/bchn_compactsize.cpp
+        test/chain/bchn_compact_setcompact.cpp
+        test/chain/bchn_script_push_only.cpp
         test/chain/block.cpp
         test/chain/chain_state.cpp
         test/chain/compact.cpp
