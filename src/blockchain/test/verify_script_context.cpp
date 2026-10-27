@@ -76,3 +76,64 @@ TEST_CASE("validate_input verify_script legacy P2PKH via prevout cache", "[verif
         CHECK(sig_checks == 1u);
     }
 }
+
+// Parity control for the two script interpreters (the consensus library used
+// by block validation and the native one): the same BCH Schnorr and ECDSA
+// forkid P2PKH spends are accepted by both, and a one-bit change in the
+// signature is rejected by both. Signing goes through the library under test,
+// so this holds for any conforming secp256k1 regardless of nonce derivation.
+TEST_CASE("validate_input P2PKH schnorr and ecdsa agree across interpreters", "[verify_script][parity]") {
+    using domain::machine::script_flags;
+
+    constexpr auto secret = "8010b1bb119ad37d4b65a1022a314897b1b3614b345974332cb1b9582cf03536"_base16;
+    constexpr uint64_t value = 100000;
+    constexpr uint8_t sighash_all_forkid = 0x41;
+    static auto const previous = "dae852c88a00e95141cfe924ac6667a91af87431988d23eff268ea3509d6d83c"_hash;
+
+    kd::script_flags_t flags = script_flags::bip16_rule;
+    flags |= script_flags::bip65_rule;
+    flags |= script_flags::bip66_rule;
+    flags |= script_flags::bip112_rule;
+    flags |= kd::to_flags(kd::machine::upgrade::bch_mersenne);
+
+    ec_compressed point;
+    REQUIRE(secret_to_public(point, secret));
+    script const prevout_script(script::to_pay_public_key_hash_pattern(bitcoin_short_hash(point)));
+
+    auto const make_spend = [&](script const& unlocking) {
+        transaction tx(2, 0,
+            {input(output_point(previous, 0), unlocking, max_uint32)},
+            {output(value - 1000, prevout_script, std::nullopt)});
+        tx.inputs()[0].previous_output().validation.cache = output{value, prevout_script, std::nullopt};
+        return tx;
+    };
+
+    auto const unsigned_tx = make_spend(script{});
+
+    for (auto const type : {endorsement_type::ecdsa, endorsement_type::schnorr}) {
+        auto signature = script::create_endorsement(secret, prevout_script, unsigned_tx, 0,
+            sighash_all_forkid, flags, value, type);
+        REQUIRE(signature);
+        REQUIRE(signature->back() == sighash_all_forkid);
+        if (type == endorsement_type::schnorr) {
+            REQUIRE(signature->size() == schnorr_signature_size + 1);
+        }
+
+        auto const spend = [&](data_chunk const& endorsement) {
+            return make_spend(script(kd::machine::operation::list{
+                kd::machine::operation(endorsement),
+                kd::machine::operation(to_chunk(point))}));
+        };
+
+        auto const valid = spend(*signature);
+        auto const consensus_valid = validate_input::verify_script(valid, 0, flags);
+        CHECK(consensus_valid.first == error::success);
+        CHECK(consensus_valid.second == 1u);
+        CHECK(script::verify(valid, 0, flags) == error::success);
+
+        (*signature)[10] ^= 0x01;
+        auto const invalid = spend(*signature);
+        CHECK(validate_input::verify_script(invalid, 0, flags).first != error::success);
+        CHECK(script::verify(invalid, 0, flags) != error::success);
+    }
+}

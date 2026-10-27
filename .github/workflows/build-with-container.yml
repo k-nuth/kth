@@ -275,7 +275,7 @@ jobs:
           # is fine.
           EXTRA_CONAN_OPTS=""
           if [ "${{ inputs.enable-asan }}" = "true" ]; then
-            EXTRA_CONAN_OPTS="-o secp256k1_use_asm=False"
+            EXTRA_CONAN_OPTS="-o secp256k1_asm=off"
           fi
 
           # Choose build strategy based on whether we need to upload
@@ -530,15 +530,27 @@ jobs:
         working-directory: build/build/Release
         run: |
           rc=0
-          timeout --kill-after=30 300 ./src/secp256k1/secp256k1-tests || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::secp256k1-tests failed or timed out (exit=$rc)"
+          ./src/secp256k1/bin/tests --list_tests > secp256k1-tests.list || rc=$?
+          if [ "$rc" != 0 ] || ! grep -q '^Module: schnorr_bch ' secp256k1-tests.list; then
+            echo "::error::BCH Schnorr tests are missing from the secp256k1 test registry"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
           rc=0
-          timeout --kill-after=30 600 ./src/secp256k1/secp256k1-exhaustive_tests || rc=$?
+          timeout --kill-after=30 300 ./src/secp256k1/bin/tests || rc=$?
           if [ "$rc" != 0 ]; then
-            echo "::error::secp256k1-exhaustive_tests failed or timed out (exit=$rc)"
+            echo "::error::secp256k1 tests failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+          rc=0
+          timeout --kill-after=30 300 ./src/secp256k1/bin/noverify_tests || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::secp256k1 noverify_tests failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+          rc=0
+          timeout --kill-after=30 600 ./src/secp256k1/bin/exhaustive_tests || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::secp256k1 exhaustive_tests failed or timed out (exit=$rc)"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
 
