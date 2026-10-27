@@ -84,7 +84,7 @@ void run_vmb_test(vmb_test_case const& test) {
         "Input index " + std::to_string(idx) + " out of range for " + test.ident);
 
     // Structural checks (no context needed).
-    auto ec = tx.check(one_million_bytes_block, false /*transaction_pool*/);
+    auto ec = tx.check(one_million_bytes_block, false /*transaction_pool*/, true /*retarget*/);
 
     // Contextual checks (prevout cache is populated above).
     if (ec == error::success) {

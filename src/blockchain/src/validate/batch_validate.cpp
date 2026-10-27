@@ -215,6 +215,16 @@ code validate_block_batch(
                 ? max_tx_sigchecks
                 : max_tx_sigchecks_before_activation;
 
+#if defined(KTH_CURRENCY_BCH)
+        // Consensus per-transaction size cap, coinbase included and independent
+        // of the block size limit.
+        for (auto const& tx : block.transactions()) {
+            if (tx.serialized_size(true) > max_tx_size) {
+                return error::transaction_size_limit;
+            }
+        }
+#endif
+
         for (auto const& tx : block.transactions()) {
             if (tx.is_coinbase()) {
                 continue;

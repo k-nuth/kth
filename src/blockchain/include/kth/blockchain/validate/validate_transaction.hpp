@@ -42,6 +42,10 @@ struct KB_API validate_transaction {
     [[nodiscard]]
     ::asio::awaitable<code> accept(transaction_const_ptr tx) const;
 
+    /// Local Knuth policy, called only after consensus validation succeeds.
+    [[nodiscard]]
+    code check_standardness(transaction_const_ptr const& tx) const;
+
     // Runs script validation across all inputs; on success yields the tx's
     // total sigchecks (BCH), which the organizer caches in the mempool entry.
     [[nodiscard]]
@@ -60,6 +64,10 @@ private:
     // These are thread safe.
     std::atomic<bool> stopped_;
     bool const retarget_;
+    bool const require_standard_;
+#if defined(KTH_CURRENCY_BCH)
+    domain::policy::transaction_standardness_parameters standardness_;
+#endif
     block_chain const& chain_;
     executor_type executor_;
     size_t threads_;

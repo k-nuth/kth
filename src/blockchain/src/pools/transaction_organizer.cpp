@@ -109,10 +109,13 @@ bool transaction_organizer::stop() {
         co_return error::insufficient_fee;
     }
 
-    if (tx->is_dusty(settings_.minimum_output_satoshis)) {
+#if !defined(KTH_CURRENCY_BCH)
+    if ( ! settings_.accept_non_standard_transactions &&
+         tx->is_dusty(settings_.minimum_output_satoshis)) {
         chain_.transaction_validations().erase(tx->hash());
         co_return error::dusty_transaction;
     }
+#endif
 
     // Checks that include script validation.
     auto const connected = co_await validator_.connect(tx);
@@ -123,7 +126,8 @@ bool transaction_organizer::stop() {
         co_return error::service_stopped;
     }
 
-    co_return connected ? error::success : connected.error();
+    if (!connected) co_return connected.error();
+    co_return validator_.check_standardness(tx);
 }
 
 // DSProof Organize sequence.
@@ -209,11 +213,14 @@ bool transaction_organizer::stop() {
         co_return error::insufficient_fee;
     }
 
-    if (tx->is_dusty(settings_.minimum_output_satoshis)) {
+#if !defined(KTH_CURRENCY_BCH)
+    if ( ! settings_.accept_non_standard_transactions &&
+         tx->is_dusty(settings_.minimum_output_satoshis)) {
         erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return error::dusty_transaction;
     }
+#endif
 
     // Checks that include script validation; on success yields the tx sigchecks.
     auto const connected = co_await validator_.connect(tx);
@@ -228,6 +235,14 @@ bool transaction_organizer::stop() {
         erase_tx_validation();
         mutex_.unlock_low_priority();
         co_return connected.error();
+    }
+
+    // Only local Knuth policy can reject after consensus has succeeded.
+    ec = validator_.check_standardness(tx);
+    if (ec) {
+        erase_tx_validation();
+        mutex_.unlock_low_priority();
+        co_return ec;
     }
 
     // Validation is over and nothing below reads the entry, so drop it here

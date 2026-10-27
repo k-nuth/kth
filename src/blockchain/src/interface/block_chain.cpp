@@ -595,7 +595,7 @@ bool block_chain::stopped() const {
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
-    // Fast IBD: merkle validation + (later) store block data to flat files.
+    // Fast IBD: merkle and transaction-size validation; block storage is separate.
     //
     // Threading model:
     // - Work is posted to priority_pool_ (appears parallel)
@@ -612,10 +612,16 @@ bool block_chain::stopped() const {
 
     ::asio::post(priority_pool_.get_executor(), [this, block, height, channel]() {
         // Validate merkle root (ensures transactions match header)
-        // This is the only validation needed since header was already validated
+        // Header validation does not replace the per-transaction size bound.
         if ( ! block->is_valid_merkle_root()) {
             spdlog::error("[blockchain] Merkle mismatch at height {}", height);
             channel->try_send(std::error_code{}, error::merkle_mismatch);
+            return;
+        }
+
+        if (auto const size_ec = block->check_transaction_sizes(); size_ec) {
+            spdlog::error("[blockchain] Oversized transaction at height {}", height);
+            channel->try_send(std::error_code{}, size_ec);
             return;
         }
 
@@ -745,6 +751,12 @@ static constexpr bool chunk_serial_validation = true;
                     if ( ! first_error) {
                         first_error = error::merkle_mismatch;
                     }
+                } else if (auto const size_ec = blocks[i]->check_transaction_sizes(); size_ec) {
+                    spdlog::error("[validate_chunk:serial] oversized transaction height {} thread {}",
+                        start_height + i, tid);
+                    if ( ! first_error) {
+                        first_error = size_ec;
+                    }
                 }
             }
 
@@ -785,6 +797,11 @@ static constexpr bool chunk_serial_validation = true;
                 if ( ! valid) {
                     spdlog::error("[validate_chunk:parallel] Merkle MISMATCH height {} thread {} ({}us)", height, tid, elapsed_us);
                     parallel_channel->try_send(std::error_code{}, error::merkle_mismatch);
+                    return;
+                }
+                if (auto const size_ec = block->check_transaction_sizes(); size_ec) {
+                    spdlog::error("[validate_chunk:parallel] oversized transaction height {} thread {}", height, tid);
+                    parallel_channel->try_send(std::error_code{}, size_ec);
                     return;
                 }
                 spdlog::trace("[validate_chunk:parallel] height {} thread {} ({}us)", height, tid, elapsed_us);

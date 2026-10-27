@@ -28,7 +28,16 @@ struct KB_API settings {
     bool priority = true;
     float byte_fee_satoshis = 0.1f;
     float sigop_fee_satoshis= 100.0f;
+#if defined(KTH_CURRENCY_BCH)
+    uint64_t minimum_output_satoshis = 0;
+    domain::policy::transaction_standardness_parameters standardness;
+#else
     uint64_t minimum_output_satoshis = 500;
+#endif
+    // General Knuth policy switch, with -acceptnonstdtxn polarity. It is
+    // available on every network and never bypasses consensus validation.
+    // BCHN compatibility checks remain independent diagnostics.
+    bool accept_non_standard_transactions = false;
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
     // Finalization (BCHN parity). A block is finalized once it is `max_reorg_depth`

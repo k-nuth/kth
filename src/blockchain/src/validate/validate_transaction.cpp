@@ -42,12 +42,20 @@ using kd::script_flags_t;
 validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings)
   : stopped_(true),
     retarget_(settings.retarget),
+    require_standard_( ! settings.accept_non_standard_transactions),
+#if defined(KTH_CURRENCY_BCH)
+    standardness_(settings.standardness),
+#endif
     executor_(std::move(executor)),
     threads_(threads),
 
     transaction_populator_(executor_, threads_, chain),
     chain_(chain)
 {
+#if defined(KTH_CURRENCY_BCH)
+    standardness_.minimum_output_value = std::max(standardness_.minimum_output_value,
+                                                 settings.minimum_output_satoshis);
+#endif
 }
 
 // Start/stop sequences.
@@ -68,8 +76,20 @@ void validate_transaction::stop()
 // These checks are context free.
 
 ::asio::awaitable<code> validate_transaction::check(transaction_const_ptr tx) const {
-    // Run context free checks.
-    co_return tx->check(true, retarget_);
+#if defined(KTH_CURRENCY_BCH)
+    co_return tx->check(max_tx_size, true, retarget_);
+#else
+    co_return tx->check(static_absolute_max_block_size(), true, retarget_);
+#endif
+}
+
+code validate_transaction::check_standardness(transaction_const_ptr const& tx) const {
+#if defined(KTH_CURRENCY_BCH)
+    if (require_standard_) {
+        return domain::policy::check_transaction_standardness(*tx, standardness_);
+    }
+#endif
+    return error::success;
 }
 
 // Accept sequence.

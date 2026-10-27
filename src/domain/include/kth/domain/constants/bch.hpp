@@ -42,6 +42,11 @@ constexpr size_t chipnet = max_block_size::chipnet / max_sigops_factor;
 constexpr size_t min_transaction_size_euclid = 100;     // in bytes, from 2018-Nov-15
 constexpr size_t min_transaction_size_descartes = 65;   // in bytes, from 2023-May-15
 
+// Consensus maximum serialized size of any transaction, coinbase included
+// (BCHN: MAX_TX_SIZE, enforced by CheckTransactionCommon). A transaction of
+// exactly this size is valid. Independent of the block size limit (ABLA).
+constexpr size_t max_tx_size = 1'000'000;
+
 constexpr uint32_t transaction_version_min = 1;
 constexpr uint32_t transaction_version_max = 2;
 

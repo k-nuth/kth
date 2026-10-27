@@ -4,8 +4,10 @@
 
 #include <test_helpers.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <kth/infrastructure/utility/timer.hpp>
@@ -128,7 +130,7 @@ script unlocking_script(spend_kind kind, endorsement const& endorsement) {
 // A transaction that spends `prev`'s output `index` into `count` outputs of
 // funded_value each, locked as `kind`, signed by the miner.
 transaction fan_out(transaction const& prev, uint32_t index, uint32_t count, spend_kind kind,
-                    domain::script_flags_t flags) {
+                    domain::script_flags_t flags, uint64_t each = funded_value) {
     // Hashed once: the funding transaction can carry thousands of outputs, and
     // its hash is not cached across calls.
     auto const prev_hash = prev.hash();
@@ -137,7 +139,7 @@ transaction fan_out(transaction const& prev, uint32_t index, uint32_t count, spe
     output::list outputs;
     outputs.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
-        outputs.emplace_back(funded_value, locking_script(kind), domain::chain::token_data_opt{});
+        outputs.emplace_back(each, locking_script(kind), domain::chain::token_data_opt{});
     }
     transaction unsigned_tx(1, 0, std::move(inputs), std::move(outputs));
     unsigned_tx.inputs()[0].previous_output().validation.cache = prev.outputs()[index];
@@ -153,32 +155,46 @@ transaction fan_out(transaction const& prev, uint32_t index, uint32_t count, spe
     return transaction(1, 0, std::move(signed_inputs), output::list(unsigned_tx.outputs()));
 }
 
-// A transaction that spends outputs [first, first + count) of `prev` — one
-// signature per input — into a single output.
-transaction fan_in(transaction const& prev, uint32_t first, uint32_t count, spend_kind kind,
+// The funded outputs, spread over as many funding transactions as the
+// per-transaction size cap (1,000,000 bytes) requires. Output `n` is output
+// `n % per_tx` of funding transaction `n / per_tx`.
+struct funded_outputs {
+    std::vector<transaction> txs;
+    std::vector<hash_digest> hashes;
+    uint32_t per_tx;
+};
+
+// A transaction that spends outputs [first, first + count) of the funded
+// outputs — one signature per input — into a single output.
+transaction fan_in(funded_outputs const& funded, uint32_t first, uint32_t count, spend_kind kind,
                    domain::script_flags_t flags) {
-    auto const prev_hash = prev.hash();
+    auto const source = [&](uint32_t n) {
+        return std::pair<size_t, uint32_t>{n / funded.per_tx, n % funded.per_tx};
+    };
     input::list inputs;
     inputs.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
-        inputs.emplace_back(output_point{prev_hash, first + i}, script{}, 0xffffffff);
+        auto const [tx, index] = source(first + i);
+        inputs.emplace_back(output_point{funded.hashes[tx], index}, script{}, 0xffffffff);
     }
     output::list outputs;
     outputs.emplace_back(uint64_t(count) * funded_value - 1000, miner_script(),
         domain::chain::token_data_opt{});
     transaction unsigned_tx(1, 0, std::move(inputs), std::move(outputs));
     for (uint32_t i = 0; i < count; ++i) {
-        unsigned_tx.inputs()[i].previous_output().validation.cache = prev.outputs()[first + i];
+        auto const [tx, index] = source(first + i);
+        unsigned_tx.inputs()[i].previous_output().validation.cache = funded.txs[tx].outputs()[index];
     }
 
     auto const sighash_type = uint8_t(infrastructure::machine::sighash_algorithm::forkid_all);
     input::list signed_inputs;
     signed_inputs.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
+        auto const [tx, index] = source(first + i);
         auto endorsement = script::create_endorsement(miner_secret(), locking_script(kind), unsigned_tx, i,
             sighash_type, flags, funded_value);
         REQUIRE(endorsement);
-        signed_inputs.emplace_back(output_point{prev_hash, first + i},
+        signed_inputs.emplace_back(output_point{funded.hashes[tx], index},
             unlocking_script(kind, *endorsement), 0xffffffff);
     }
     return transaction(1, 0, std::move(signed_inputs), output::list(unsigned_tx.outputs()));
@@ -203,20 +219,41 @@ std::vector<domain::message::block::const_ptr> chain_with_spends(
     std::vector<domain::message::block::const_ptr> blocks;
     blocks.reserve(len);
 
+    // 1000 bare 1-of-20 multisig outputs are ~700 KB: under the 1,000,000-byte
+    // consensus cap on one transaction. More than that is funded by several
+    // transactions, each paid by one output of a splitting transaction.
+    constexpr uint32_t outputs_per_funding = 1000;
+
     auto prev = block::genesis_regtest().hash();
-    transaction funding;
+    funded_outputs funded{{}, {}, outputs_per_funding};
     for (uint32_t h = 1; h <= len; ++h) {
         std::vector<transaction> txs;
         uint64_t fees = 0;
         if (h == 101) {
             auto const& coinbase_one = blocks.front()->transactions().front();
-            funding = fan_out(coinbase_one, 0, outputs, kind, flags);
+            auto const fundings = (outputs + outputs_per_funding - 1) / outputs_per_funding;
+            if (fundings == 1) {
+                funded.txs.push_back(fan_out(coinbase_one, 0, outputs, kind, flags));
+            } else {
+                // Each splitter output pays one funding transaction's outputs and
+                // its fee; the unused remainder of the last one becomes fee.
+                auto const each = uint64_t(outputs_per_funding) * funded_value + 1000;
+                auto const splitter = fan_out(coinbase_one, 0, fundings, spend_kind::p2pkh, flags, each);
+                txs.push_back(splitter);
+                for (uint32_t f = 0; f < fundings; ++f) {
+                    auto const count = std::min(outputs_per_funding, outputs - f * outputs_per_funding);
+                    funded.txs.push_back(fan_out(splitter, f, count, kind, flags));
+                }
+            }
+            for (auto const& tx : funded.txs) {
+                funded.hashes.push_back(tx.hash());
+                txs.push_back(tx);
+            }
             fees = coinbase_one.outputs()[0].value() - uint64_t(outputs) * funded_value;
-            txs.push_back(funding);
         } else if (h == 102) {
             uint32_t first = 0;
             for (auto const n : spends) {
-                txs.push_back(fan_in(funding, first, n, kind, flags));
+                txs.push_back(fan_in(funded, first, n, kind, flags));
                 first += n;
                 fees += 1000;
             }
