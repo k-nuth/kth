@@ -15,6 +15,10 @@
 
 namespace kth::blockchain {
 
+/// Relay policy maximum serialized size of a mempool transaction (BCHN:
+/// MAX_STANDARD_TX_SIZE). A transaction of exactly this size is accepted.
+constexpr size_t max_standard_tx_size = 100'000;
+
 /// Common blockchain configuration settings, properties not thread safe.
 struct KB_API settings {
     settings() = default;
@@ -29,6 +33,16 @@ struct KB_API settings {
     float byte_fee_satoshis = 0.1f;
     float sigop_fee_satoshis= 100.0f;
     uint64_t minimum_output_satoshis = 500;
+    // Mempool/relay policy switch, with BCHN's -acceptnonstdtxn polarity and
+    // defaults: standardness is required unless this is set, and it is set by
+    // default only on testnet3 and scalenet. The main network refuses to start
+    // with it set (see node::parser). It never relaxes consensus: block and
+    // mempool consensus rules, including the per-transaction size cap, apply
+    // either way.
+    // This is the general control, but only the 100,000-byte transaction size
+    // rule is gated by it so far; script templates, dust, AreInputsStandard and
+    // the other standardness rules are not yet connected to it.
+    bool accept_non_standard_transactions = false;
     uint32_t notify_limit_hours = 24;
     uint32_t reorganization_limit = 256;
     // Finalization (BCHN parity). A block is finalized once it is `max_reorg_depth`

@@ -375,7 +375,7 @@ bool transaction::is_overspent() const {
 // Validation.
 //-----------------------------------------------------------------------------
 
-code transaction::check(size_t max_block_size, bool transaction_pool, bool retarget) const {
+code transaction::check([[maybe_unused]] size_t max_block_size, bool transaction_pool, bool retarget) const {
     if (inputs_.empty() || outputs_.empty()) {
         return error::empty_transaction;
     }
@@ -400,9 +400,18 @@ code transaction::check(size_t max_block_size, bool transaction_pool, bool retar
         return error::transaction_internal_double_spend;
     }
 
+#if defined(KTH_CURRENCY_BCH)
+    // Consensus, for coinbase and regular transactions alike, in blocks and in
+    // the pool: independent of `max_block_size` (which ABLA moves) and of
+    // `transaction_pool`.
+    if (serialized_size(true) > max_tx_size) {
+        return error::transaction_size_limit;
+    }
+#else
     if (transaction_pool && serialized_size(true) >= max_block_size) {
         return error::transaction_size_limit;
     }
+#endif
 
     return error::success;
 }

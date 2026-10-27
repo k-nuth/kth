@@ -745,6 +745,12 @@ static constexpr bool chunk_serial_validation = true;
                     if ( ! first_error) {
                         first_error = error::merkle_mismatch;
                     }
+                } else if (auto const size_ec = blocks[i]->check_transaction_sizes(); size_ec) {
+                    spdlog::error("[validate_chunk:serial] oversized transaction height {} thread {}",
+                        start_height + i, tid);
+                    if ( ! first_error) {
+                        first_error = size_ec;
+                    }
                 }
             }
 
@@ -785,6 +791,11 @@ static constexpr bool chunk_serial_validation = true;
                 if ( ! valid) {
                     spdlog::error("[validate_chunk:parallel] Merkle MISMATCH height {} thread {} ({}us)", height, tid, elapsed_us);
                     parallel_channel->try_send(std::error_code{}, error::merkle_mismatch);
+                    return;
+                }
+                if (auto const size_ec = block->check_transaction_sizes(); size_ec) {
+                    spdlog::error("[validate_chunk:parallel] oversized transaction height {} thread {}", height, tid);
+                    parallel_channel->try_send(std::error_code{}, size_ec);
                     return;
                 }
                 spdlog::trace("[validate_chunk:parallel] height {} thread {} ({}us)", height, tid, elapsed_us);

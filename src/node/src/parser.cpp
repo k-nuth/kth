@@ -248,6 +248,18 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
     app.add_option("--node.sigop_fee_satoshis",    cfg.chain.sigop_fee_satoshis);
     app.add_option("--node.minimum_output_satoshis", cfg.chain.minimum_output_satoshis);
+    // BCHN -acceptnonstdtxn: general mempool/relay standardness switch, never
+    // consensus. Refused on mainnet (see check_standardness_policy). Only the
+    // transaction size rule is connected to it so far.
+    app.add_option("--node.acceptnonstdtxn,--acceptnonstdtxn", cfg.chain.accept_non_standard_transactions,
+        "Accept non-standard transactions into the mempool (test networks only).");
+    // Superseded by the general switch above; refuse it rather than ignore it
+    // (the parser tolerates unknown options) so it can never silently do nothing.
+    app.add_option_function<std::string>("--node.require_standard_size",
+        [](std::string const&) {
+            throw CLI::ValidationError("--node.require_standard_size",
+                "removed; use --node.acceptnonstdtxn (general standardness switch)");
+        }, "Removed; use --node.acceptnonstdtxn.");
 #if ! defined(__EMSCRIPTEN__)
     app.add_option("--node.relay_transactions", cfg.network.relay_transactions);
 #endif
@@ -300,6 +312,18 @@ void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
     // section splitting is effectively turned off.
     app.get_config_formatter_base()->parentSeparator('\x1f');
     app.set_config("--config_file_loader", config_path.string());
+}
+
+// BCHN refuses to start with standardness disabled on a non-test chain
+// (init.cpp: `!IsTestChain && !fRequireStandard`); of Knuth's networks only
+// mainnet is not a test chain.
+bool check_standardness_policy(configuration const& cfg, std::ostream& error) {
+    if (cfg.net == domain::config::network::mainnet && cfg.chain.accept_non_standard_transactions) {
+        error << "Error: acceptnonstdtxn is not allowed on mainnet; "
+                 "standardness policy cannot be disabled on the main network." << std::endl;
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -405,6 +429,10 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
+        if ( ! check_standardness_policy(configured, error)) {
+            return false;
+        }
+
 #if ! defined(__EMSCRIPTEN__)
         if (configured.chain.fix_checkpoints) {
             domain::config::fix_checkpoints(configured.network.identifier,
@@ -459,6 +487,10 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
     } catch (CLI::ParseError const& e) {
         error << "Error: " << e.what() << std::endl;
         return e.get_exit_code() == 0;
+    }
+
+    if ( ! check_standardness_policy(configured, error)) {
+        return false;
     }
 
 #if ! defined(__EMSCRIPTEN__)

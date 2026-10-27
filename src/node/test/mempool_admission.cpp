@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <chrono>
 #include <future>
@@ -15,6 +16,8 @@
 #include <kth/blockchain/pools/mempool.hpp>
 
 #include "sync_harness.hpp"
+#include "../../blockchain/test/transaction_size_fixture.hpp"
+#include <kth/blockchain/validate/batch_validate.hpp>
 
 using namespace kth;
 using namespace kth::test;
@@ -62,10 +65,11 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
-    explicit admission_chain(char const* tag, uint32_t trunk_len)
+    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard_size = true)
         : fixture(tag)
     {
         REQUIRE(fixture.created());
+        fixture.settings().accept_non_standard_transactions = ! require_standard_size;
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -101,6 +105,26 @@ struct admission_chain {
         auto const& coinbase = trunk.front().transactions().front();
         return test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
                                  chain().chain_settings().enabled_flags());
+    }
+    domain::chain::transaction p2sh_funding() {
+        using namespace domain::chain;
+        using domain::machine::operation;
+        using domain::machine::opcode;
+        // Re-sign after replacing the funding output.
+        auto const redeem = data_chunk{0x51};
+        auto const locking = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(redeem)));
+        auto const& cb = trunk.front().transactions().front();
+        input::list ins{input{output_point{cb.hash(), 0}, script{}, 0xffffffff}};
+        output::list outs{output{cb.outputs()[0].value() - 1000, locking, std::nullopt}};
+        transaction unsigned_tx{1, 0, std::move(ins), std::move(outs)};
+        unsigned_tx.inputs()[0].previous_output().validation.cache = cb.outputs()[0];
+        auto sig = script::create_endorsement(miner_secret(), miner_script(), unsigned_tx, 0,
+            uint8_t(infrastructure::machine::sighash_algorithm::forkid_all),
+            chain().chain_settings().enabled_flags(), cb.outputs()[0].value());
+        REQUIRE(sig);
+        input::list signed_ins{input{output_point{cb.hash(), 0},
+            script(script::to_pay_public_key_hash_pattern_unlocking(*sig, miner_public())), 0xffffffff}};
+        return transaction{1, 0, std::move(signed_ins), output::list(unsigned_tx.outputs())};
     }
 };
 
@@ -138,4 +162,181 @@ TEST_CASE("organizing a valid transaction admits it to the mempool", "[mempool][
     CHECK(ec == error::success);
     CHECK(chain.mempool_ref().size() == 1);
     CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+namespace {
+
+// What admission must answer for a serialized size: the consensus cap is
+// unconditional, the 100,000-byte policy only while the setting is on.
+code expected_admission(uint32_t size, bool require_standard_size) {
+    if (size > 1000000) return error::transaction_size_limit;
+    if (require_standard_size && size > 100000) return error::non_standard;
+    return error::success;
+}
+
+// True when the transaction was published to relay subscribers. The channel is
+// the node's own announcement path; try_receive only observes what organize has
+// already published, it does not wait.
+bool announced(blockchain::block_chain::transaction_channel_ptr const& channel,
+               hash_digest const& hash) {
+    bool seen = false;
+    while (channel->try_receive([&](std::error_code, transaction_const_ptr tx) {
+        seen = seen || tx->hash() == hash;
+    })) {}
+    return seen;
+}
+
+template <typename Make>
+size_t run_count_on_chain(blockchain::block_chain& chain, Make make) {
+    return ::asio::co_spawn(chain.executor(),
+        [make = std::move(make)]() -> ::asio::awaitable<size_t> { co_return co_await make(); },
+        ::asio::use_future).get();
+}
+
+} // namespace
+
+// Funding is P2SH OP_TRUE. No signature length or script resource limit can
+// mask the serialized-size boundary, and every spendable output is P2PKH.
+TEST_CASE("transaction size policy through real mempool admission", "[tx_size][admission]") {
+    auto const require_standard_size = GENERATE(true, false);
+    CAPTURE(require_standard_size);
+    admission_chain built("size_admission", trunk_len, require_standard_size);
+    auto& chain = built.chain();
+    using namespace domain::chain;
+    auto const funding = built.p2sh_funding();
+    auto const funding_ptr = std::make_shared<domain::message::transaction>(funding);
+    REQUIRE(run_on_chain(chain, [&] { return chain.organize(funding_ptr); }) == error::success);
+
+    auto const channel = chain.subscribe_transaction();
+    REQUIRE(channel);
+
+    for (auto size : {99999u, 100000u, 100001u, 999999u, 1000000u, 1000001u}) {
+        auto tx = sized_transaction(size, false, output_point{funding.hash(), 0});
+        REQUIRE(tx.serialized_size(true) == size);
+        auto ptr = std::make_shared<domain::message::transaction>(tx);
+        CAPTURE(size);
+        auto const expected = expected_admission(size, require_standard_size);
+
+        // Validation only: same verdict, nothing admitted.
+        CHECK(run_on_chain(chain, [&] { return chain.transaction_validate(ptr); }) == expected);
+        CHECK_FALSE(chain.mempool_ref().contains(ptr->hash()));
+        CHECK_FALSE(announced(channel, ptr->hash()));
+    }
+
+    // Refused sizes through the entry incoming relay uses: not pooled, not announced.
+    for (auto size : {100001u, 1000001u}) {
+        auto tx = sized_transaction(size, false, output_point{funding.hash(), 0});
+        auto ptr = std::make_shared<domain::message::transaction>(tx);
+        CAPTURE(size);
+        auto const expected = expected_admission(size, require_standard_size);
+        if (expected == error::success) continue;
+        CHECK(run_on_chain(chain, [&] { return chain.organize(ptr); }) == expected);
+        CHECK_FALSE(chain.mempool_ref().contains(ptr->hash()));
+        CHECK_FALSE(announced(channel, ptr->hash()));
+    }
+
+    // Accepted: admitted and announced.
+    auto const accepted_size = require_standard_size ? 100000u : 1000000u;
+    auto tx = sized_transaction(accepted_size, false, output_point{funding.hash(), 0});
+    auto ptr = std::make_shared<domain::message::transaction>(tx);
+    CAPTURE(accepted_size);
+    CHECK(run_on_chain(chain, [&] { return chain.organize(ptr); }) == error::success);
+    CHECK(chain.mempool_ref().contains(ptr->hash()));
+    CHECK(announced(channel, ptr->hash()));
+    chain.unsubscribe_transaction(channel);
+}
+
+// A persisted mempool is re-admitted through the same checks, so a file written
+// under a looser policy (or a different node) cannot smuggle in a transaction
+// the current rules refuse.
+TEST_CASE("mempool.dat revalidation applies the transaction size rules", "[tx_size][admission]") {
+    auto const require_standard_size = GENERATE(true, false);
+    auto const size = GENERATE(100000u, 100001u, 1000001u);
+    CAPTURE(require_standard_size, size);
+    admission_chain built("size_persisted", trunk_len, require_standard_size);
+    auto& chain = built.chain();
+    using namespace domain::chain;
+    auto const funding = built.p2sh_funding();
+    auto const sized = sized_transaction(size, false, output_point{funding.hash(), 0});
+
+    auto const now = uint32_t(zulu_time());
+    std::vector<database::mempool_stored_tx> stored{
+        {std::make_shared<domain::message::transaction>(funding), now},
+        {std::make_shared<domain::message::transaction>(sized), now + 1}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+
+    auto const admitted = run_count_on_chain(chain, [&] { return chain.load_mempool_from_disk(); });
+    auto const sized_ok = expected_admission(size, require_standard_size) == error::success;
+    CHECK(admitted == (sized_ok ? 2u : 1u));
+    CHECK(chain.mempool_ref().contains(funding.hash()));
+    CHECK(chain.mempool_ref().contains(sized.hash()) == sized_ok);
+}
+
+TEST_CASE("fast block validation enforces the consensus transaction size cap", "[tx_size][blocks]") {
+    chain_fixture fixture("size_fast");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    using namespace domain::chain;
+    for (auto const size : {999999u, 1000000u, 1000001u}) {
+        for (bool cb : {false, true}) {
+            auto tx = sized_transaction(size, cb);
+            auto normal_cb = coinbase_tx(1, 0, block::subsidy(1, false));
+            block blk{header{}, cb ? transaction::list{tx} : transaction::list{normal_cb, tx}};
+            blk = block{header{1, null_hash, blk.generate_merkle_root(), 0, 0, 0},
+                        transaction::list(blk.transactions())};
+            std::vector<std::shared_ptr<light_block const>> light{to_light(blk)};
+            CAPTURE(size, cb);
+            // validate_chunk reports success as a default (system category) code.
+            auto const result = run_on_chain(chain, [&] { return chain.validate_chunk(light, 1); });
+            if (size > 1000000) {
+                CHECK(result == error::transaction_size_limit);
+            } else {
+                CHECK_FALSE(result);
+            }
+        }
+    }
+}
+
+TEST_CASE("full block validation applies consensus size to otherwise valid transactions", "[tx_size][blocks]") {
+    auto const size = GENERATE(999999u, 1000000u, 1000001u);
+    auto const cb = GENERATE(false, true);
+    admission_chain built("size_batch", trunk_len);
+    auto& fixture = built.fixture;
+    auto& chain = built.chain();
+    auto const funding = built.p2sh_funding();
+    auto funding_block = mine_block(built.trunk.back().hash(), 101,
+        built.trunk.back().header().timestamp() + block_spacing, 0, {funding}, 1000);
+    REQUIRE(fixture.organizer().add_headers({funding_block.header()}).headers_added == 1);
+    persist_headers(fixture, {funding_block}, 101);
+    connect_bodies(fixture, {funding_block}, 101);
+
+    // A coinbase must carry the height-102 script to be otherwise valid.
+    std::optional<domain::chain::script> cb_script;
+    if (cb) cb_script = coinbase_script(102, 0);
+    auto tx = sized_transaction(size, cb, domain::chain::output_point{funding.hash(), 0}, cb_script);
+    auto const fees = cb ? 0 : funding.outputs()[0].value() - tx.total_output_value();
+    auto blk = mine_block(funding_block.hash(), 102,
+        funding_block.header().timestamp() + block_spacing, 0, cb ? std::vector<domain::chain::transaction>{}
+                                                               : std::vector<domain::chain::transaction>{tx}, fees);
+    if (cb) {
+        // Re-mine with the large coinbase and its actual merkle root. Its value
+        // is below the subsidy and its input script has a valid length.
+        domain::chain::block candidate{blk.header(), {tx}};
+        auto const merkle = candidate.generate_merkle_root();
+        for (uint32_t nonce = 0; ; ++nonce) {
+            domain::chain::header hdr{0x20000000, funding_block.hash(), merkle,
+                blk.header().timestamp(), regtest_bits, nonce};
+            if (hdr.is_valid_proof_of_work(domain::chain::hash(hdr), false)) {
+                blk = domain::chain::block{hdr, {tx}};
+                break;
+            }
+        }
+    }
+    REQUIRE(fixture.organizer().add_headers({blk.header()}).headers_added == 1);
+    std::vector<block_const_ptr> blocks{std::make_shared<domain::message::block>(blk)};
+    CAPTURE(size, cb);
+    auto const expected = size > 1000000 ? code(error::transaction_size_limit) : code(error::success);
+    CHECK(blockchain::validate_block_batch(chain, chain.chain_settings(),
+        domain::config::network::regtest, blocks, 102) == expected);
 }

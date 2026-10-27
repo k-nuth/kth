@@ -60,6 +60,7 @@ private:
     // These are thread safe.
     std::atomic<bool> stopped_;
     bool const retarget_;
+    bool const require_standard_;
     block_chain const& chain_;
     executor_type executor_;
     size_t threads_;

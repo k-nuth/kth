@@ -42,6 +42,7 @@ using kd::script_flags_t;
 validate_transaction::validate_transaction(executor_type executor, size_t threads, block_chain const& chain, settings const& settings)
   : stopped_(true),
     retarget_(settings.retarget),
+    require_standard_( ! settings.accept_non_standard_transactions),
     executor_(std::move(executor)),
     threads_(threads),
 
@@ -68,8 +69,21 @@ void validate_transaction::stop()
 // These checks are context free.
 
 ::asio::awaitable<code> validate_transaction::check(transaction_const_ptr tx) const {
-    // Run context free checks.
-    co_return tx->check(true, retarget_);
+    // Run context free checks. Consensus first: the per-transaction size cap
+    // applies whatever the policy setting is.
+    auto const ec = tx->check(static_absolute_max_block_size(), true, retarget_);
+    if (ec) {
+        co_return ec;
+    }
+
+#if defined(KTH_CURRENCY_BCH)
+    // Standardness policy, after consensus as in BCHN. Only the transaction
+    // size rule is connected to the general switch so far.
+    if (require_standard_ && tx->serialized_size(true) > max_standard_tx_size) {
+        co_return error::non_standard;
+    }
+#endif
+    co_return error::success;
 }
 
 // Accept sequence.

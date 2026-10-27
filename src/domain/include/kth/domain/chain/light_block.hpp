@@ -104,6 +104,11 @@ struct light_block {
     // Validation.
     //-------------------------------------------------------------------------
 
+    /// Consensus per-transaction size cap, coinbase included, from the raw
+    /// transaction lengths (no deserialization). Same rule as transaction::check.
+    [[nodiscard]]
+    code check_transaction_sizes() const;
+
     /// Generate merkle root by hashing raw transaction bytes.
     /// Uses Bitcoin Core's optimized SHA256D64 (SIMD accelerated).
     [[nodiscard]]

@@ -4,6 +4,7 @@
 
 #include <kth/domain/chain/light_block.hpp>
 
+#include <kth/domain/constants.hpp>
 #include <kth/domain/constants/functions.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
@@ -145,6 +146,17 @@ uint32_t light_block::tx_length(size_t index) const {
 
 byte_span light_block::tx_bytes(size_t index) const {
     return byte_span(raw_data_.data() + tx_offsets_[index], tx_length(index));
+}
+
+code light_block::check_transaction_sizes() const {
+#if defined(KTH_CURRENCY_BCH)
+    for (size_t i = 0; i < tx_offsets_.size(); ++i) {
+        if (tx_length(i) > max_tx_size) {
+            return error::transaction_size_limit;
+        }
+    }
+#endif
+    return error::success;
 }
 
 hash_digest light_block::generate_merkle_root() const {
