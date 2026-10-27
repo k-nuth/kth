@@ -303,6 +303,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/chunk_coordinator.cpp
           test/fatal_shutdown.cpp
           test/mempool_admission.cpp
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_feature_block_reorg.cpp>
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_feature_block_chunk.cpp>
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_mempool_admission.cpp>
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_standardness_controls.cpp>
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_standardness_phases.cpp>
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_standardness_organize.cpp>
+          test/standardness_profiles.cpp
+          $<$<STREQUAL:${CURRENCY},BCH>:test/bchn_block_bip30.cpp>
           test/mempool_connect_wiring.cpp
           test/download_supervisor.cpp
           test/download_ownership.cpp

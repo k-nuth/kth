@@ -600,11 +600,17 @@ jobs:
           if [ "${{ inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan }}" = "true" ]; then
             node_test_timeout=600
           fi
-          timeout --kill-after=30 "$node_test_timeout" ./src/node/kth_node_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_node_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
+          # Reference scenarios add real chain setup and reorganization work.
+          # Run complementary selections with separate bounded budgets so their
+          # cumulative duration does not exhaust the existing node-suite limit.
+          for test_filter in '~[bchn_non_vm]' '[bchn_non_vm]'; do
+            rc=0
+            timeout --kill-after=30 "$node_test_timeout" ./src/node/kth_node_test "$test_filter" --reporter compact || rc=$?
+            if [ "$rc" != 0 ]; then
+              echo "::error::kth_node_test $test_filter failed or timed out (exit=$rc)"
+              echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+            fi
+          done
 
       - name: 🧪 kth_capi_test
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}

@@ -1,0 +1,9 @@
+{
+  "upstream": "Bitcoin Cash Node",
+  "upstreamCommit": "07576013c91ff4a3a74acd85f189c69121cdad1b",
+  "upstreamTree": "2f9788a0d86c7206fe35c7760aebe983638e33d7",
+  "upstreamPath": "src/test/data/abla_test_vectors/*.json",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2023 The Bitcoin developers (src/test/data/generate_abla_test_vectors.py header of the upstream commit)",
+  "files": "verbatim copies in data/"
+}
