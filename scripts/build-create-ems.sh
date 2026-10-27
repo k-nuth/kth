@@ -12,9 +12,9 @@ echo "Building version: ${VERSION}"
 rm -rf build
 rm -rf conan-wasm.lock
 
-conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --update -pr ems5 -o consensus=False -o tests=False
+conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --update -pr:h ./ci_utils/conan/profiles/ems6 -o consensus=False -o tests=False
 
-conan lock create conanfile.py --version "${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr ems5 -o consensus=False -o tests=False
-conan create conanfile.py --version "${VERSION}" --lockfile=build/conan.lock --build=missing  -pr ems5 -o consensus=False -o tests=False
+conan lock create conanfile.py --version "${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 -o consensus=False -o tests=False
+conan create conanfile.py --version "${VERSION}" --lockfile=build/conan.lock --build=missing  -pr:h ./ci_utils/conan/profiles/ems6 -o consensus=False -o tests=False
 
 

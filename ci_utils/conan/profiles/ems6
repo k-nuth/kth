@@ -1,0 +1,20 @@
+[settings]
+arch=wasm
+build_type=Release
+compiler=emcc
+compiler.cppstd=23
+compiler.libcxx=libc++
+compiler.version=6.0.13
+os=Emscripten
+
+[tool_requires]
+emsdk/6.0.13
+ninja/[*]
+
+[conf]
+# The OpenSSL 4 recipe requires an explicit target for Emscripten.
+# Use the generic target inherited by the OpenSSL 3 recipe.
+user.openssl:target=cc
+tools.build:exelinkflags+=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
+tools.build:sharedlinkflags+=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
+tools.cmake.cmaketoolchain:generator=Ninja
