@@ -11,7 +11,7 @@
 extern "C" {
 
 kth_ec_compressed_list_t kth_wallet_ec_compressed_list_construct_default() {
-    return kth::leak_list<ec_compressed_cpp_t>();
+    return kth::make_owned_list<ec_compressed_cpp_t>();
 }
 
 void kth_wallet_ec_compressed_list_push_back(kth_ec_compressed_list_t l, kth_ec_compressed_t e) {

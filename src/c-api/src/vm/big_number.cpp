@@ -22,17 +22,17 @@ extern "C" {
 // Constructors
 
 kth_big_number_mut_t kth_vm_big_number_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_big_number_mut_t kth_vm_big_number_construct_from_value(int64_t value) {
-    return kth::leak<cpp_t>(value);
+    return kth::make_owned<cpp_t>(value);
 }
 
 kth_big_number_mut_t kth_vm_big_number_construct_from_decimal_str(char const* decimal_str) {
     KTH_PRECONDITION(decimal_str != nullptr);
     auto const decimal_str_cpp = std::string_view(decimal_str);
-    return kth::leak<cpp_t>(decimal_str_cpp);
+    return kth::make_owned<cpp_t>(decimal_str_cpp);
 }
 
 
@@ -41,7 +41,7 @@ kth_big_number_mut_t kth_vm_big_number_construct_from_decimal_str(char const* de
 kth_big_number_mut_t kth_vm_big_number_from_hex(char const* hex_str) {
     KTH_PRECONDITION(hex_str != nullptr);
     auto const hex_str_cpp = std::string_view(hex_str);
-    return kth::leak(cpp_t::from_hex(hex_str_cpp));
+    return kth::to_owned(cpp_t::from_hex(hex_str_cpp));
 }
 
 
@@ -107,7 +107,7 @@ kth_size_t kth_vm_big_number_byte_count(kth_big_number_const_t self) {
 
 kth_big_number_mut_t kth_vm_big_number_abs(kth_big_number_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).abs());
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).abs());
 }
 
 uint8_t* kth_vm_big_number_data(kth_big_number_const_t self, kth_size_t* out_size) {
@@ -184,21 +184,21 @@ kth_big_number_mut_t kth_vm_big_number_add(kth_big_number_const_t self, kth_big_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(other_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator+(other_cpp));
 }
 
 kth_big_number_mut_t kth_vm_big_number_subtract(kth_big_number_const_t self, kth_big_number_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(other_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator-(other_cpp));
 }
 
 kth_big_number_mut_t kth_vm_big_number_multiply(kth_big_number_const_t self, kth_big_number_const_t other) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(other != nullptr);
     auto const& other_cpp = kth::cpp_ref<cpp_t>(other);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator*(other_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator*(other_cpp));
 }
 
 void kth_vm_big_number_negate(kth_big_number_mut_t self) {
@@ -210,7 +210,7 @@ kth_big_number_mut_t kth_vm_big_number_pow(kth_big_number_const_t self, kth_big_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(exp != nullptr);
     auto const& exp_cpp = kth::cpp_ref<cpp_t>(exp);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).pow(exp_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).pow(exp_cpp));
 }
 
 kth_big_number_mut_t kth_vm_big_number_pow_mod(kth_big_number_const_t self, kth_big_number_const_t exp, kth_big_number_const_t mod) {
@@ -219,14 +219,14 @@ kth_big_number_mut_t kth_vm_big_number_pow_mod(kth_big_number_const_t self, kth_
     KTH_PRECONDITION(mod != nullptr);
     auto const& exp_cpp = kth::cpp_ref<cpp_t>(exp);
     auto const& mod_cpp = kth::cpp_ref<cpp_t>(mod);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).pow_mod(exp_cpp, mod_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).pow_mod(exp_cpp, mod_cpp));
 }
 
 kth_big_number_mut_t kth_vm_big_number_math_modulo(kth_big_number_const_t self, kth_big_number_const_t mod) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(mod != nullptr);
     auto const& mod_cpp = kth::cpp_ref<cpp_t>(mod);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).math_modulo(mod_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).math_modulo(mod_cpp));
 }
 
 } // extern "C"

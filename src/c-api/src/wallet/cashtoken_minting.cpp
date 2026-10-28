@@ -95,7 +95,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_ft_output(
     KTH_PRECONDITION(category_id != nullptr);
     auto const& dest_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
     auto const cat_cpp = kth::hash_to_cpp(category_id);
-    return kth::leak(ct::create_ft_output(dest_cpp, cat_cpp, ft_amount, satoshis));
+    return kth::to_owned(ct::create_ft_output(dest_cpp, cat_cpp, ft_amount, satoshis));
 }
 
 kth_output_mut_t kth_wallet_cashtoken_create_nft_output(
@@ -111,7 +111,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_nft_output(
     auto const& dest_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
     auto const cat_cpp = kth::hash_to_cpp(category_id);
     auto const cap_cpp = static_cast<kth::domain::chain::capability_t>(capability);
-    return kth::leak(ct::create_nft_output(
+    return kth::to_owned(ct::create_nft_output(
         dest_cpp, cat_cpp, cap_cpp,
         commitment_from(commitment, commitment_n),
         satoshis));
@@ -131,7 +131,7 @@ kth_output_mut_t kth_wallet_cashtoken_create_combined_token_output(
     auto const& dest_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination);
     auto const cat_cpp = kth::hash_to_cpp(category_id);
     auto const cap_cpp = static_cast<kth::domain::chain::capability_t>(capability);
-    return kth::leak(ct::create_combined_token_output(
+    return kth::to_owned(ct::create_combined_token_output(
         dest_cpp, cat_cpp, ft_amount, cap_cpp,
         commitment_from(commitment, commitment_n),
         satoshis));
@@ -147,7 +147,7 @@ kth_cashtoken_nft_spec_mut_t kth_wallet_cashtoken_nft_spec_construct(
     uint8_t const* commitment,
     kth_size_t commitment_n
 ) {
-    return kth::leak(ct::nft_spec{
+    return kth::to_owned(ct::nft_spec{
         .capability = static_cast<kth::domain::chain::capability_t>(capability),
         .commitment = commitment_from(commitment, commitment_n),
     });
@@ -170,7 +170,7 @@ kth_cashtoken_nft_mint_request_mut_t kth_wallet_cashtoken_nft_mint_request_const
     uint64_t satoshis
 ) {
     KTH_PRECONDITION(destination != nullptr);
-    return kth::leak(ct::nft_mint_request{
+    return kth::to_owned(ct::nft_mint_request{
         .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
         .commitment = commitment_from(commitment, commitment_n),
         .capability = static_cast<kth::domain::chain::capability_t>(capability),
@@ -186,7 +186,7 @@ void kth_wallet_cashtoken_nft_mint_request_destruct(
 
 kth_cashtoken_nft_mint_request_list_mut_t
 kth_wallet_cashtoken_nft_mint_request_list_construct_default(void) {
-    return kth::leak<std::vector<ct::nft_mint_request>>();
+    return kth::make_owned<std::vector<ct::nft_mint_request>>();
 }
 
 void kth_wallet_cashtoken_nft_mint_request_list_push_back(
@@ -231,7 +231,7 @@ kth_cashtoken_nft_collection_item_mut_t kth_wallet_cashtoken_nft_collection_item
     kth_size_t commitment_n,
     kth_payment_address_const_t destination
 ) {
-    return kth::leak(ct::nft_collection_item{
+    return kth::to_owned(ct::nft_collection_item{
         .commitment = commitment_from(commitment, commitment_n),
         .destination = optional_addr(destination),
     });
@@ -245,7 +245,7 @@ void kth_wallet_cashtoken_nft_collection_item_destruct(
 
 kth_cashtoken_nft_collection_item_list_mut_t
 kth_wallet_cashtoken_nft_collection_item_list_construct_default(void) {
-    return kth::leak<std::vector<ct::nft_collection_item>>();
+    return kth::make_owned<std::vector<ct::nft_collection_item>>();
 }
 
 void kth_wallet_cashtoken_nft_collection_item_list_push_back(
@@ -304,7 +304,7 @@ kth_error_code_t kth_wallet_cashtoken_prepare_genesis_utxo(
         .change_address = optional_addr(change_address),
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -369,7 +369,7 @@ kth_error_code_t kth_wallet_cashtoken_create_token_genesis(
         .script_flags = script_flags,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -446,7 +446,7 @@ kth_error_code_t kth_wallet_cashtoken_create_token_mint(
         .script_flags = script_flags,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -526,7 +526,7 @@ kth_error_code_t kth_wallet_cashtoken_create_token_transfer(
         .satoshis = satoshis,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -562,7 +562,7 @@ kth_error_code_t kth_wallet_cashtoken_create_token_burn(
         .satoshis = satoshis,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -630,7 +630,7 @@ kth_error_code_t kth_wallet_cashtoken_create_ft(
         .script_flags = script_flags,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 
@@ -669,7 +669,7 @@ kth_error_code_t kth_wallet_cashtoken_create_nft_collection(
         .script_flags = script_flags,
     });
     if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::leak(std::move(*r));
+    *out = kth::to_owned(std::move(*r));
     return kth_ec_success;
 }
 

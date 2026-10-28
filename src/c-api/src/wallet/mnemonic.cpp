@@ -19,7 +19,7 @@ kth_string_list_mut_t kth_wallet_mnemonic_create_mnemonic(uint8_t const* entropy
     auto const entropy_cpp = kth::byte_span(entropy, kth::sz(n));
     auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
     auto const cpp_result = kth::domain::wallet::create_mnemonic(entropy_cpp, lexicon_cpp);
-    return kth::leak_list<std::string>(cpp_result.begin(), cpp_result.end());
+    return kth::make_owned_list<std::string>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_bool_t kth_wallet_mnemonic_validate_mnemonic_dictionary(kth_string_list_const_t words, kth_dictionary_const_t lexicon) {

@@ -30,7 +30,7 @@ kth_error_code_t kth_wallet_stealth_address_construct_from_data(uint8_t const* d
     auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
     auto result = cpp_t::from_data(decoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -41,7 +41,7 @@ kth_error_code_t kth_wallet_stealth_address_parse_from(char const* encoded, KTH_
     auto const encoded_cpp = std::string_view(encoded);
     auto result = cpp_t::parse_from(encoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -56,7 +56,7 @@ kth_error_code_t kth_wallet_stealth_address_from_components(kth_binary_const_t f
     auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
     auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -71,7 +71,7 @@ kth_error_code_t kth_wallet_stealth_address_from_components_unsafe(kth_binary_co
     auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
     auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

@@ -18,7 +18,7 @@ using cpp_t = kth::domain::chain::history_compact;
 extern "C" {
 
 kth_history_compact_list_mut_t kth_domain_chain_history_compact_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_domain_chain_history_compact_list_push_back(kth_history_compact_list_mut_t list, kth_history_compact_const_t elem) {

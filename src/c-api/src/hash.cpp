@@ -9,6 +9,7 @@
 #include <kth/infrastructure/hash_define.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/infrastructure.hpp>
 #include <kth/capi/hash.h>
 
 

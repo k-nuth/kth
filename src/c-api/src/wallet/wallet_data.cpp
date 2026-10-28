@@ -39,7 +39,7 @@ kth_wallet_data_mut_t kth_wallet_wallet_data_copy(kth_wallet_data_const_t self) 
 kth_string_list_mut_t kth_wallet_wallet_data_mnemonics(kth_wallet_data_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const cpp_result = kth::cpp_ref<cpp_t>(self).mnemonics;
-    return kth::leak_list<std::string>(cpp_result.begin(), cpp_result.end());
+    return kth::make_owned_list<std::string>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_hd_public_const_t kth_wallet_wallet_data_xpub(kth_wallet_data_const_t self) {
@@ -99,7 +99,7 @@ kth_error_code_t kth_wallet_create(char const* password, char const* normalized_
     auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
     auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp, lexicon_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -112,7 +112,7 @@ kth_error_code_t kth_wallet_create_simple(char const* password, char const* norm
     auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
     auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

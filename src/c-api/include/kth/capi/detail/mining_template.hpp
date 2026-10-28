@@ -43,7 +43,7 @@ inline void fill_mining_template(
     for (auto const& tx : tmpl.selection.txs) {
         txs.push_back(*tx); // slice message::transaction -> chain::transaction
     }
-    out_txs = kth::leak(std::move(txs));
+    out_txs = kth::to_owned(std::move(txs));
 }
 
 } // namespace kth::capi

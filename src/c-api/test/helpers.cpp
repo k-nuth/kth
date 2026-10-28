@@ -7,9 +7,15 @@
 // which has no C surface. Kept here because that header lives alongside
 // the C-API and the tests guard it against regressions.
 
+#include <array>
+#include <cstddef>
+#include <initializer_list>
 #include <memory>
+#include <new>
+#include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -24,46 +30,46 @@ struct plain_val { int n = 0; };
 } // namespace
 
 // ---------------------------------------------------------------------------
-// kth::leak overload selection — compile-time checks
+// kth::to_owned overload selection — compile-time checks
 // ---------------------------------------------------------------------------
 
 // For a plain value the forwarding-reference overload wins and returns
 // a heap copy of the value itself.
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<plain_val>())),
+    decltype(kth::to_owned(std::declval<plain_val>())),
     plain_val*>);
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<plain_val&>())),
+    decltype(kth::to_owned(std::declval<plain_val&>())),
     plain_val*>);
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<plain_val const&>())),
+    decltype(kth::to_owned(std::declval<plain_val const&>())),
     plain_val*>);
 
 // For a std::shared_ptr the forwarding-reference overload must step
-// aside so the dedicated `leak(std::shared_ptr<T> const&)` wins and
+// aside so the dedicated `to_owned(std::shared_ptr<T> const&)` wins and
 // leaks the POINTED-TO object (return type `T*`), not a heap-allocated
 // shared_ptr (`std::shared_ptr<T>*`). The two are catastrophically
 // different from a C consumer's perspective, so we pin the contract
 // with a static_assert that breaks the build if the constraint on the
 // forwarding-reference overload ever regresses.
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<std::shared_ptr<plain_val>>())),
+    decltype(kth::to_owned(std::declval<std::shared_ptr<plain_val>>())),
     plain_val*>);
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<std::shared_ptr<plain_val>&>())),
+    decltype(kth::to_owned(std::declval<std::shared_ptr<plain_val>&>())),
     plain_val*>);
 static_assert(std::is_same_v<
-    decltype(kth::leak(std::declval<std::shared_ptr<plain_val> const&>())),
+    decltype(kth::to_owned(std::declval<std::shared_ptr<plain_val> const&>())),
     plain_val*>);
 
 // ---------------------------------------------------------------------------
-// kth::leak overload selection — runtime behaviour
+// kth::to_owned overload selection — runtime behaviour
 // ---------------------------------------------------------------------------
 
-TEST_CASE("kth::leak unwraps shared_ptr and copies the pointed-to value",
+TEST_CASE("kth::to_owned unwraps shared_ptr and copies the pointed-to value",
           "[capi helpers]") {
     auto ptr = std::make_shared<plain_val>(plain_val{42});
-    auto* leaked = kth::leak(ptr);
+    auto* leaked = kth::to_owned(ptr);
 
     // Must be a fresh heap allocation: distinct address from the shared_ptr's
     // managed object, yet carrying the same value.
@@ -73,10 +79,10 @@ TEST_CASE("kth::leak unwraps shared_ptr and copies the pointed-to value",
     delete leaked;
 }
 
-TEST_CASE("kth::leak copies a plain lvalue onto the heap",
+TEST_CASE("kth::to_owned copies a plain lvalue onto the heap",
           "[capi helpers]") {
     plain_val src{7};
-    auto* leaked = kth::leak(src);
+    auto* leaked = kth::to_owned(src);
 
     REQUIRE(leaked != &src);
     REQUIRE(leaked->n == 7);
@@ -84,9 +90,9 @@ TEST_CASE("kth::leak copies a plain lvalue onto the heap",
     delete leaked;
 }
 
-TEST_CASE("kth::leak moves from an rvalue onto the heap",
+TEST_CASE("kth::to_owned moves from an rvalue onto the heap",
           "[capi helpers]") {
-    auto* leaked = kth::leak(plain_val{99});
+    auto* leaked = kth::to_owned(plain_val{99});
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 99);
@@ -94,10 +100,10 @@ TEST_CASE("kth::leak moves from an rvalue onto the heap",
     delete leaked;
 }
 
-TEST_CASE("kth::leak returns nullptr for an empty shared_ptr",
+TEST_CASE("kth::to_owned returns nullptr for an empty shared_ptr",
           "[capi helpers]") {
     std::shared_ptr<plain_val> empty;
-    auto* leaked = kth::leak(empty);
+    auto* leaked = kth::to_owned(empty);
 
     REQUIRE(leaked == nullptr);
 }
@@ -126,10 +132,10 @@ struct move_tracker {
 
 } // namespace
 
-TEST_CASE("kth::leak on an rvalue shared_ptr moves the pointed-to value",
+TEST_CASE("kth::to_owned on an rvalue shared_ptr moves the pointed-to value",
           "[capi helpers]") {
     auto ptr = std::make_shared<move_tracker>(5);
-    auto* leaked = kth::leak(std::move(ptr));
+    auto* leaked = kth::to_owned(std::move(ptr));
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 5);
@@ -140,10 +146,10 @@ TEST_CASE("kth::leak on an rvalue shared_ptr moves the pointed-to value",
     delete leaked;
 }
 
-TEST_CASE("kth::leak on an lvalue shared_ptr copies the pointed-to value",
+TEST_CASE("kth::to_owned on an lvalue shared_ptr copies the pointed-to value",
           "[capi helpers]") {
     auto ptr = std::make_shared<move_tracker>(9);
-    auto* leaked = kth::leak(ptr);
+    auto* leaked = kth::to_owned(ptr);
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 9);
@@ -153,11 +159,11 @@ TEST_CASE("kth::leak on an lvalue shared_ptr copies the pointed-to value",
     delete leaked;
 }
 
-TEST_CASE("kth::leak_if_success moves from a non-shared_ptr rvalue",
+TEST_CASE("kth::to_owned_if_success moves from a non-shared_ptr rvalue",
           "[capi helpers]") {
     move_tracker src(11);
     std::error_code const ok = kth::error::success;
-    auto* leaked = kth::leak_if_success(std::move(src), ok);
+    auto* leaked = kth::to_owned_if_success(std::move(src), ok);
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 11);
@@ -166,22 +172,22 @@ TEST_CASE("kth::leak_if_success moves from a non-shared_ptr rvalue",
     delete leaked;
 }
 
-TEST_CASE("kth::leak_if_success returns nullptr on error without touching input",
+TEST_CASE("kth::to_owned_if_success returns nullptr on error without touching input",
           "[capi helpers]") {
     move_tracker src(13);
     std::error_code const bad = kth::error::not_found;
-    auto* leaked = kth::leak_if_success(std::move(src), bad);
+    auto* leaked = kth::to_owned_if_success(std::move(src), bad);
 
     REQUIRE(leaked == nullptr);
     // On error we never construct the heap copy, so the move never runs.
     REQUIRE(src.moved_from == false);
 }
 
-TEST_CASE("kth::leak_if_success moves from an rvalue shared_ptr on success",
+TEST_CASE("kth::to_owned_if_success moves from an rvalue shared_ptr on success",
           "[capi helpers]") {
     auto ptr = std::make_shared<move_tracker>(21);
     std::error_code const ok = kth::error::success;
-    auto* leaked = kth::leak_if_success(std::move(ptr), ok);
+    auto* leaked = kth::to_owned_if_success(std::move(ptr), ok);
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 21);
@@ -190,11 +196,11 @@ TEST_CASE("kth::leak_if_success moves from an rvalue shared_ptr on success",
     delete leaked;
 }
 
-TEST_CASE("kth::leak_if_success copies from an lvalue shared_ptr on success",
+TEST_CASE("kth::to_owned_if_success copies from an lvalue shared_ptr on success",
           "[capi helpers]") {
     auto ptr = std::make_shared<move_tracker>(23);
     std::error_code const ok = kth::error::success;
-    auto* leaked = kth::leak_if_success(ptr, ok);
+    auto* leaked = kth::to_owned_if_success(ptr, ok);
 
     REQUIRE(leaked != nullptr);
     REQUIRE(leaked->n == 23);
@@ -204,17 +210,277 @@ TEST_CASE("kth::leak_if_success copies from an lvalue shared_ptr on success",
     delete leaked;
 }
 
-TEST_CASE("kth::leak_if_success on error leaves a shared_ptr untouched",
+TEST_CASE("kth::to_owned_if_success on error leaves a shared_ptr untouched",
           "[capi helpers]") {
     auto lv = std::make_shared<move_tracker>(29);
     auto rv = std::make_shared<move_tracker>(31);
     std::error_code const bad = kth::error::not_found;
 
-    REQUIRE(kth::leak_if_success(lv, bad) == nullptr);
-    REQUIRE(kth::leak_if_success(std::move(rv), bad) == nullptr);
+    REQUIRE(kth::to_owned_if_success(lv, bad) == nullptr);
+    REQUIRE(kth::to_owned_if_success(std::move(rv), bad) == nullptr);
 
     // Neither overload should have constructed a copy (and therefore
     // neither should have moved from `*rv`) when ec != success.
     REQUIRE(lv->moved_from == false);
     REQUIRE(rv->moved_from == false);
+}
+
+// ---------------------------------------------------------------------------
+// kth::to_owned / kth::make_owned when the constructor throws after `new`
+// ---------------------------------------------------------------------------
+// The class-specific operator new/delete only count and forward to the
+// global ones, so the real helpers run unmodified. The constructors
+// throw AFTER the allocation succeeded; the counters prove the new-expression
+// released the memory. (Destructor calls are not evidence: the destructor of
+// an incompletely constructed object never runs.)
+
+namespace {
+
+struct ctor_failure {};
+
+struct throwing_val {
+    struct in_place_tag {};
+
+    static inline int allocations = 0;
+    static inline int deallocations = 0;
+    static inline int copy_attempts = 0;
+    static inline int move_attempts = 0;
+
+    static void reset() { allocations = deallocations = copy_attempts = move_attempts = 0; }
+
+    explicit throwing_val(int x) : n(x) {}
+    throwing_val(throwing_val const&) { ++copy_attempts; throw ctor_failure{}; }
+    throwing_val(throwing_val&&) { ++move_attempts; throw ctor_failure{}; }
+    // Variadic-overload entry points: delegate to the failing copy/move.
+    throwing_val(in_place_tag, throwing_val const& o) : throwing_val(o) {}
+    throwing_val(in_place_tag, throwing_val&& o) : throwing_val(std::move(o)) {}
+
+    static void* operator new(std::size_t size) { ++allocations; return ::operator new(size); }
+    static void operator delete(void* p) noexcept { ++deallocations; ::operator delete(p); }
+
+    int n;
+};
+
+} // namespace
+
+TEST_CASE("kth::to_owned and kth::make_owned free the allocation when the constructor throws",
+          "[capi helpers]") {
+    throwing_val::reset();
+    throwing_val src(1);
+    throwing_val* out = nullptr;
+
+    SECTION("deduced overload, copy") {
+        REQUIRE_THROWS_AS(out = kth::to_owned(src), ctor_failure);
+        REQUIRE(throwing_val::copy_attempts == 1);
+        REQUIRE(throwing_val::move_attempts == 0);
+    }
+    SECTION("deduced overload, move") {
+        REQUIRE_THROWS_AS(out = kth::to_owned(std::move(src)), ctor_failure);
+        REQUIRE(throwing_val::copy_attempts == 0);
+        REQUIRE(throwing_val::move_attempts == 1);
+    }
+    SECTION("explicit variadic overload, copy") {
+        REQUIRE_THROWS_AS(out = kth::make_owned<throwing_val>(throwing_val::in_place_tag{}, src), ctor_failure);
+        REQUIRE(throwing_val::copy_attempts == 1);
+        REQUIRE(throwing_val::move_attempts == 0);
+    }
+    SECTION("explicit variadic overload, move") {
+        REQUIRE_THROWS_AS(out = kth::make_owned<throwing_val>(throwing_val::in_place_tag{}, std::move(src)), ctor_failure);
+        REQUIRE(throwing_val::copy_attempts == 0);
+        REQUIRE(throwing_val::move_attempts == 1);
+    }
+
+    REQUIRE(out == nullptr);
+    REQUIRE(throwing_val::allocations == 1);
+    REQUIRE(throwing_val::deallocations == 1);
+}
+
+// ---------------------------------------------------------------------------
+// kth::to_owned(shared_ptr) — cv/ref matrix
+// ---------------------------------------------------------------------------
+// Copy/move constructor counters prove exactly one constructor runs per call
+// and that the pointee is moved only for a non-const rvalue shared_ptr.
+
+namespace {
+
+struct counted {
+    static inline int copies = 0;
+    static inline int moves = 0;
+    static void reset() { copies = moves = 0; }
+
+    int n;
+    bool moved_from = false;
+
+    explicit counted(int n_) : n(n_) {}
+    counted(counted const& o) : n(o.n) { ++copies; }
+    counted(counted&& o) noexcept : n(o.n) { ++moves; o.moved_from = true; }
+};
+
+struct move_only {
+    std::unique_ptr<int> p;
+    explicit move_only(int v) : p(std::make_unique<int>(v)) {}
+    move_only(move_only&&) = default;
+};
+
+// Calls `to_owned(std::forward<Ptr>(ptr))` and checks the pointee was copied
+// (`moved == false`) or moved (`moved == true`) with exactly one constructor
+// call, and that the wrapper is untouched.
+template <typename Ptr>
+void check_shared_to_owned(Ptr&& ptr, bool moved) {
+    auto const* before = ptr.get();
+    auto const uses = ptr.use_count();
+    counted::reset();
+
+    counted* out = kth::to_owned(std::forward<Ptr>(ptr));
+
+    REQUIRE(out != nullptr);
+    REQUIRE(out != before);
+    REQUIRE(out->n == 11);
+    REQUIRE(counted::copies == (moved ? 0 : 1));
+    REQUIRE(counted::moves == (moved ? 1 : 0));
+    REQUIRE(before->moved_from == moved);
+    REQUIRE(ptr.get() == before);
+    REQUIRE(ptr.use_count() == uses);
+    delete out;
+}
+
+template <typename Ptr>
+void check_empty_shared_to_owned(Ptr&& ptr) {
+    counted::reset();
+    REQUIRE(kth::to_owned(std::forward<Ptr>(ptr)) == nullptr);
+    REQUIRE(counted::copies == 0);
+    REQUIRE(counted::moves == 0);
+    REQUIRE(ptr.use_count() == 0);
+}
+
+} // namespace
+
+#define KTH_TO_OWNED_TYPE(PTR) decltype(kth::to_owned(std::declval<PTR>()))
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted>), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted>&), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted> const&), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted> const), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted const>), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted const>&), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted const> const&), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<counted const> const), counted*>);
+static_assert(std::is_same_v<KTH_TO_OWNED_TYPE(std::shared_ptr<move_only>), move_only*>);
+#undef KTH_TO_OWNED_TYPE
+static_assert( ! kth::not_shared_ptr<std::shared_ptr<counted> const&>);
+static_assert(kth::not_shared_ptr<counted>);
+
+TEST_CASE("kth::to_owned(shared_ptr) copies for every category except a non-const rvalue",
+          "[capi helpers]") {
+    auto ptr = std::make_shared<counted>(11);
+    std::shared_ptr<counted> const cptr = std::make_shared<counted>(11);
+
+    check_shared_to_owned(ptr, false);              // lvalue
+    check_shared_to_owned(cptr, false);             // const lvalue
+    check_shared_to_owned(std::move(cptr), false);  // const rvalue: still a copy
+    check_shared_to_owned(std::move(ptr), true);    // non-const rvalue: move
+}
+
+TEST_CASE("kth::to_owned(shared_ptr<const T>) drops constness from the result",
+          "[capi helpers]") {
+    auto ptr = std::make_shared<counted const>(11);
+    std::shared_ptr<counted const> const cptr = ptr;
+
+    // `std::move(*ptr)` is `const T&&`, which selects the copy constructor.
+    check_shared_to_owned(ptr, false);
+    check_shared_to_owned(cptr, false);
+    check_shared_to_owned(std::move(cptr), false);
+    check_shared_to_owned(std::move(ptr), false);
+}
+
+TEST_CASE("kth::to_owned(shared_ptr) returns nullptr for an empty pointer of any category",
+          "[capi helpers]") {
+    std::shared_ptr<counted> empty;
+    std::shared_ptr<counted> const cempty;
+    std::shared_ptr<counted const> empty_const_pointee;
+
+    check_empty_shared_to_owned(empty);
+    check_empty_shared_to_owned(cempty);
+    check_empty_shared_to_owned(std::move(empty));
+    check_empty_shared_to_owned(std::move(cempty));
+    check_empty_shared_to_owned(empty_const_pointee);
+    check_empty_shared_to_owned(std::move(empty_const_pointee));
+}
+
+TEST_CASE("kth::to_owned moves a move-only pointee out of a non-const rvalue shared_ptr",
+          "[capi helpers]") {
+    auto ptr = std::make_shared<move_only>(7);
+    auto* out = kth::to_owned(std::move(ptr));
+
+    REQUIRE(out != nullptr);
+    REQUIRE(*out->p == 7);
+    // The wrapper is neither reset nor re-counted; only the pointee was moved.
+    REQUIRE(ptr != nullptr);
+    REQUIRE(ptr.use_count() == 1);
+    REQUIRE(ptr->p == nullptr);
+    delete out;
+}
+
+// ---------------------------------------------------------------------------
+// kth::to_owned_if_valid / kth::make_owned_list
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct maybe_valid {
+    bool ok;
+    int n;
+    bool valid() const { return ok; }
+};
+
+} // namespace
+
+TEST_CASE("kth::to_owned_if_valid promotes valid values and rejects invalid ones",
+          "[capi helpers]") {
+    maybe_valid good{true, 3};
+    maybe_valid bad{false, 4};
+
+    auto* a = kth::to_owned_if_valid(good);
+    REQUIRE(a != nullptr);
+    REQUIRE(a != &good);
+    REQUIRE(a->n == 3);
+    delete a;
+
+    REQUIRE(kth::to_owned_if_valid(bad) == nullptr);
+
+    auto* b = kth::to_owned_if_valid(maybe_valid{true, 5});
+    REQUIRE(b != nullptr);
+    REQUIRE(b->n == 5);
+    delete b;
+}
+
+TEST_CASE("kth::to_owned_if_valid does not touch the heap for invalid input",
+          "[capi helpers]") {
+    throwing_val::reset();
+    // Not valid -> must return before constructing: the copy ctor that would
+    // throw never runs.
+    struct invalid_throwing : throwing_val {
+        using throwing_val::throwing_val;
+        bool valid() const { return false; }
+    };
+    invalid_throwing src(1);
+    REQUIRE(kth::to_owned_if_valid(src) == nullptr);
+    REQUIRE(throwing_val::copy_attempts == 0);
+    REQUIRE(throwing_val::allocations == 0);
+}
+
+TEST_CASE("kth::make_owned_list forwards every vector constructor shape",
+          "[capi helpers]") {
+    std::vector<int> const src{4, 5, 6};
+
+    std::unique_ptr<std::vector<int>> empty(kth::make_owned_list<int>());
+    std::unique_ptr<std::vector<int>> sized(kth::make_owned_list<int>(3));
+    std::unique_ptr<std::vector<int>> filled(kth::make_owned_list<int>(2, 9));
+    std::unique_ptr<std::vector<int>> listed(kth::make_owned_list<int>(std::initializer_list<int>{1, 2}));
+    std::unique_ptr<std::vector<int>> ranged(kth::make_owned_list<int>(src.begin(), src.end()));
+
+    REQUIRE(empty->empty());
+    REQUIRE(sized->size() == 3);
+    REQUIRE(*filled == std::vector<int>{9, 9});
+    REQUIRE(*listed == std::vector<int>{1, 2});
+    REQUIRE(*ranged == src);
 }

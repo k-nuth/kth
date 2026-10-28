@@ -32,7 +32,7 @@ kth_error_code_t kth_wallet_stealth_sender_from_stealth_address(kth_stealth_addr
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
     auto result = cpp_t::from_stealth_address(address_cpp, seed_cpp, filter_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -50,7 +50,7 @@ kth_error_code_t kth_wallet_stealth_sender_from_ephemeral(kth_hash_t const* ephe
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
     auto result = cpp_t::from_ephemeral(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -68,7 +68,7 @@ kth_error_code_t kth_wallet_stealth_sender_from_ephemeral_unsafe(uint8_t const* 
     auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
     auto result = cpp_t::from_ephemeral(ephemeral_private_cpp, address_cpp, seed_cpp, filter_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

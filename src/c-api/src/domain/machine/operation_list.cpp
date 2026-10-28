@@ -18,7 +18,7 @@ using cpp_t = kth::domain::machine::operation;
 extern "C" {
 
 kth_operation_list_mut_t kth_domain_machine_operation_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_domain_machine_operation_list_push_back(kth_operation_list_mut_t list, kth_operation_const_t elem) {

@@ -6,6 +6,7 @@
 
 #include <kth/capi/config/helpers.hpp>
 #include <kth/capi/config/network_helpers.hpp>
+#include <kth/capi/conversions/config.hpp>
 #include <kth/network/settings.hpp>
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/chain/chain_sync.h>
+#include <array>
 #include <cstdio>
 #include <future>
 #include <memory>
@@ -77,7 +78,7 @@ kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_si
     auto result = sync_wait(bc, bc.fetch_block_header(height));
     if (result) {
         auto const& [header, h] = *result;
-        *out_header = kth::leak_if_success(header, std::error_code{});
+        *out_header = kth::to_owned_if_success(header, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -88,11 +89,11 @@ kth_error_code_t kth_chain_sync_block_header_by_height(kth_chain_t chain, kth_si
 
 kth_error_code_t kth_chain_sync_block_header_by_hash(kth_chain_t chain, kth_hash_t hash, kth_header_mut_t* out_header, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_block_header(hash_cpp));
     if (result) {
         auto const& [header, h] = *result;
-        *out_header = kth::leak_if_success(header, std::error_code{});
+        *out_header = kth::to_owned_if_success(header, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -106,7 +107,7 @@ kth_error_code_t kth_chain_sync_block_by_height(kth_chain_t chain, kth_size_t he
     auto result = sync_wait(bc, bc.fetch_block(height));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -117,11 +118,11 @@ kth_error_code_t kth_chain_sync_block_by_height(kth_chain_t chain, kth_size_t he
 
 kth_error_code_t kth_chain_sync_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_block_mut_t* out_block, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_block(hash_cpp));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -132,13 +133,13 @@ kth_error_code_t kth_chain_sync_block_by_hash(kth_chain_t chain, kth_hash_t hash
 
 kth_error_code_t kth_chain_sync_block_header_byhash_txs_size(kth_chain_t chain, kth_hash_t hash, kth_header_mut_t* out_header, uint64_t* out_block_height, kth_hash_list_mut_t* out_tx_hashes, uint64_t* out_serialized_size) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_block_header_txs_size(hash_cpp));
     if (result) {
         auto const& [header, block_height, tx_hashes, block_serialized_size] = *result;
-        *out_header = kth::leak_if_success(header, std::error_code{});
+        *out_header = kth::to_owned_if_success(header, std::error_code{});
         *out_block_height = block_height;
-        *out_tx_hashes = kth::leak_if_success(tx_hashes, std::error_code{});
+        *out_tx_hashes = kth::to_owned_if_success(tx_hashes, std::error_code{});
         *out_serialized_size = block_serialized_size;
         return kth::to_c_err(std::error_code{});
     }
@@ -154,7 +155,7 @@ kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_si
     auto result = sync_wait(bc, bc.fetch_merkle_block(height));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -165,11 +166,11 @@ kth_error_code_t kth_chain_sync_merkle_block_by_height(kth_chain_t chain, kth_si
 
 kth_error_code_t kth_chain_sync_merkle_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_merkle_block_mut_t* out_block, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_merkle_block(hash_cpp));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -183,7 +184,7 @@ kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_s
     auto result = sync_wait(bc, bc.fetch_compact_block(height));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -194,11 +195,11 @@ kth_error_code_t kth_chain_sync_compact_block_by_height(kth_chain_t chain, kth_s
 
 kth_error_code_t kth_chain_sync_compact_block_by_hash(kth_chain_t chain, kth_hash_t hash, kth_compact_block_mut_t* out_block, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_compact_block(hash_cpp));
     if (result) {
         auto const& [block, h] = *result;
-        *out_block = kth::leak_if_success(block, std::error_code{});
+        *out_block = kth::to_owned_if_success(block, std::error_code{});
         *out_height = h;
         return kth::to_c_err(std::error_code{});
     }
@@ -234,11 +235,11 @@ kth_error_code_t kth_chain_sync_block_hash(kth_chain_t chain, kth_size_t height,
 
 kth_error_code_t kth_chain_sync_transaction(kth_chain_t chain, kth_hash_t hash, int require_confirmed, kth_transaction_mut_t* out_transaction, kth_size_t* out_height, kth_size_t* out_index) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_transaction(hash_cpp, kth::int_to_bool(require_confirmed)));
     if (result) {
         auto const& [transaction, i, h] = *result;
-        *out_transaction = kth::leak_if_success(transaction, std::error_code{});
+        *out_transaction = kth::to_owned_if_success(transaction, std::error_code{});
         *out_height = h;
         *out_index = i;
         return kth::to_c_err(std::error_code{});
@@ -251,7 +252,7 @@ kth_error_code_t kth_chain_sync_transaction(kth_chain_t chain, kth_hash_t hash, 
 
 kth_error_code_t kth_chain_sync_transaction_position(kth_chain_t chain, kth_hash_t hash, int require_confirmed, kth_size_t* out_position, kth_size_t* out_height) {
     auto& bc = safe_chain(chain);
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto result = sync_wait(bc, bc.fetch_transaction_position(hash_cpp, kth::int_to_bool(require_confirmed)));
     if (result) {
         auto const& [position, height] = *result;
@@ -277,13 +278,13 @@ kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t c
     // legacy branch dropped along with `.valid()`.
     auto const& address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(address);
     auto txs = safe_chain(chain).get_mempool_transactions(address_cpp.encoded_cashaddr(false), kth::int_to_bool(use_testnet_rules));
-    return kth::leak(std::move(txs));
+    return kth::to_owned(std::move(txs));
 }
 
 kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules) {
     auto const& addresses_cpp = *static_cast<std::vector<kth::domain::wallet::payment_address> const*>(addresses);
     auto txs = safe_chain(chain).get_mempool_transactions_from_wallets(addresses_cpp, kth::int_to_bool(use_testnet_rules));
-    return kth::leak(std::move(txs));
+    return kth::to_owned(std::move(txs));
 }
 
 // Organizers.

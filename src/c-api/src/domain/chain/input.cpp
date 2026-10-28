@@ -30,7 +30,7 @@ kth_error_code_t kth_domain_chain_input_construct_from_data(uint8_t const* data,
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = cpp_t::from_data(data_cpp, wire_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -39,7 +39,7 @@ kth_input_mut_t kth_domain_chain_input_construct(kth_output_point_const_t previo
     KTH_PRECONDITION(script != nullptr);
     auto const& previous_output_cpp = kth::cpp_ref<kth::domain::chain::output_point>(previous_output);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak<cpp_t>(previous_output_cpp, script_cpp, sequence);
+    return kth::make_owned<cpp_t>(previous_output_cpp, script_cpp, sequence);
 }
 
 
@@ -109,12 +109,12 @@ uint32_t kth_domain_chain_input_sequence(kth_input_const_t self) {
 kth_payment_address_mut_t kth_domain_chain_input_address(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).address();
-    return result.has_value() ? kth::leak(std::move(*result)) : nullptr;
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
 }
 
 kth_payment_address_list_mut_t kth_domain_chain_input_addresses(kth_input_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses());
+    return kth::make_owned_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses());
 }
 
 kth_error_code_t kth_domain_chain_input_extract_embedded_script(kth_input_const_t self, KTH_OUT_OWNED kth_script_mut_t* out) {
@@ -123,7 +123,7 @@ kth_error_code_t kth_domain_chain_input_extract_embedded_script(kth_input_const_
     KTH_PRECONDITION(*out == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).extract_embedded_script();
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

@@ -4,6 +4,8 @@
 
 #include <kth/capi/hash_list.h>
 
+#include <array>
+
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
@@ -17,12 +19,12 @@ using cpp_t = kth::hash_digest;
 extern "C" {
 
 kth_hash_list_mut_t kth_core_hash_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_core_hash_list_push_back(kth_hash_list_mut_t list, kth_hash_t elem) {
     KTH_PRECONDITION(list != nullptr);
-    kth::list_ref<cpp_t>(list).push_back(kth::to_array(elem.hash));
+    kth::list_ref<cpp_t>(list).push_back(std::to_array(elem.hash));
 }
 
 void kth_core_hash_list_destruct(kth_hash_list_mut_t list) {
@@ -45,7 +47,7 @@ void kth_core_hash_list_assign_at(kth_hash_list_mut_t list, kth_size_t index, kt
     KTH_PRECONDITION(list != nullptr);
     auto& vec = kth::list_ref<cpp_t>(list);
     KTH_PRECONDITION(index < vec.size());
-    vec[index] = kth::to_array(elem.hash);
+    vec[index] = std::to_array(elem.hash);
 }
 
 void kth_core_hash_list_erase(kth_hash_list_mut_t list, kth_size_t index) {

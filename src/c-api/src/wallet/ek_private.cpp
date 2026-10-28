@@ -25,13 +25,13 @@ extern "C" {
 kth_ek_private_mut_t kth_wallet_ek_private_construct(kth_encrypted_private_t const* value) {
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::encrypted_private_to_cpp(value->data);
-    return kth::leak<cpp_t>(value_cpp);
+    return kth::make_owned<cpp_t>(value_cpp);
 }
 
 kth_ek_private_mut_t kth_wallet_ek_private_construct_unsafe(uint8_t const* value) {
     KTH_PRECONDITION(value != nullptr);
     auto const value_cpp = kth::encrypted_private_to_cpp(value);
-    return kth::leak<cpp_t>(value_cpp);
+    return kth::make_owned<cpp_t>(value_cpp);
 }
 
 kth_error_code_t kth_wallet_ek_private_parse_from(char const* encoded, KTH_OUT_OWNED kth_ek_private_mut_t* out) {
@@ -41,7 +41,7 @@ kth_error_code_t kth_wallet_ek_private_parse_from(char const* encoded, KTH_OUT_O
     auto const encoded_cpp = std::string_view(encoded);
     auto result = cpp_t::parse_from(encoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

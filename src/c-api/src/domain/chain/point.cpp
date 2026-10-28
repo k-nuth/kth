@@ -30,24 +30,24 @@ kth_error_code_t kth_domain_chain_point_construct_from_data(uint8_t const* data,
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = cpp_t::from_data(data_cpp, wire_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
 kth_point_mut_t kth_domain_chain_point_construct(kth_hash_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    return kth::leak<cpp_t>(hash_cpp, index);
+    return kth::make_owned<cpp_t>(hash_cpp, index);
 }
 
 kth_point_mut_t kth_domain_chain_point_construct_unsafe(uint8_t const* hash, uint32_t index) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::leak<cpp_t>(hash_cpp, index);
+    return kth::make_owned<cpp_t>(hash_cpp, index);
 }
 
 kth_point_mut_t kth_domain_chain_point_null(void) {
-    return kth::leak(cpp_t::null());
+    return kth::to_owned(cpp_t::null());
 }
 
 

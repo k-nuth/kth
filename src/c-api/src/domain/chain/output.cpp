@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_output_mut_t kth_domain_chain_output_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out) {
@@ -34,7 +34,7 @@ kth_error_code_t kth_domain_chain_output_construct_from_data(uint8_t const* data
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = cpp_t::from_data(data_cpp, wire_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -42,7 +42,7 @@ kth_output_mut_t kth_domain_chain_output_construct(uint64_t value, kth_script_co
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto const token_data_cpp = kth::optional_cpp_ref<kth::domain::chain::token_data_t>(token_data);
-    return kth::leak<cpp_t>(value, script_cpp, token_data_cpp);
+    return kth::make_owned<cpp_t>(value, script_cpp, token_data_cpp);
 }
 
 
@@ -151,18 +151,18 @@ kth_payment_address_mut_t kth_domain_chain_output_address_simple(kth_output_cons
     KTH_PRECONDITION(self != nullptr);
     auto const testnet_cpp = kth::int_to_bool(testnet);
     auto result = kth::cpp_ref<cpp_t>(self).address(testnet_cpp);
-    return result.has_value() ? kth::leak(std::move(*result)) : nullptr;
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
 }
 
 kth_payment_address_mut_t kth_domain_chain_output_address(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).address(p2kh_version, p2sh_version);
-    return result.has_value() ? kth::leak(std::move(*result)) : nullptr;
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
 }
 
 kth_payment_address_list_mut_t kth_domain_chain_output_addresses(kth_output_const_t self, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses(p2kh_version, p2sh_version));
+    return kth::make_owned_list<kth::domain::wallet::payment_address>(kth::cpp_ref<cpp_t>(self).addresses(p2kh_version, p2sh_version));
 }
 
 kth_size_t kth_domain_chain_output_signature_operations(kth_output_const_t self, kth_bool_t bip141) {

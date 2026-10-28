@@ -9,16 +9,25 @@
 // of per-type `kth_<ns>_<name>_{const,mut}_cpp` forward declarations;
 // those were retired in favour of the generic `kth::cpp_ref<T>(h)` /
 // `kth::optional_cpp_ref<T>(h)` helpers in `helpers.hpp`. What's left
-// here is an aggregate of the domain headers that binding TUs need so
-// callers keep getting the expected type declarations from a single
-// include point.
+// here is an aggregate of the generic helpers, the generated per-domain
+// conversions and the domain headers that binding TUs need, so callers keep
+// getting the expected declarations from a single include point.
 
 #include <array>
 #include <cstdint>
 #include <vector>
 
+#include <kth/capi/helpers.hpp>
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/primitives.h>
+
+// The concrete C <-> C++ conversions (generated; see conversions/).
+#include <kth/capi/conversions/chain.hpp>
+#include <kth/capi/conversions/config.hpp>
+#include <kth/capi/conversions/infrastructure.hpp>
+#include <kth/capi/conversions/machine.hpp>
+#include <kth/capi/conversions/node.hpp>
+#include <kth/capi/conversions/wallet.hpp>
 
 #include <kth/infrastructure/utility/binary.hpp>
 

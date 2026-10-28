@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_script_mut_t kth_domain_chain_script_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t prefix, KTH_OUT_OWNED kth_script_mut_t* out) {
@@ -34,21 +34,21 @@ kth_error_code_t kth_domain_chain_script_construct_from_data(uint8_t const* data
     auto const prefix_cpp = kth::int_to_bool(prefix);
     auto result = cpp_t::from_data(data_cpp, prefix_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
 kth_script_mut_t kth_domain_chain_script_construct_from_operations(kth_operation_list_const_t ops) {
     KTH_PRECONDITION(ops != nullptr);
     auto const& ops_cpp = kth::cpp_ref<kth::domain::machine::operation::list>(ops);
-    return kth::leak<cpp_t>(ops_cpp);
+    return kth::make_owned<cpp_t>(ops_cpp);
 }
 
 kth_script_mut_t kth_domain_chain_script_construct_from_encoded_prefix(uint8_t const* encoded, kth_size_t n, kth_bool_t prefix) {
     KTH_PRECONDITION(encoded != nullptr || n == 0);
     auto const encoded_cpp = n != 0 ? kth::data_chunk(encoded, encoded + n) : kth::data_chunk{};
     auto const prefix_cpp = kth::int_to_bool(prefix);
-    return kth::leak<cpp_t>(encoded_cpp, prefix_cpp);
+    return kth::make_owned<cpp_t>(encoded_cpp, prefix_cpp);
 }
 
 kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data, kth_size_t n, kth_size_t size, KTH_OUT_OWNED kth_script_mut_t* out) {
@@ -59,7 +59,7 @@ kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data
     auto const size_cpp = kth::sz(size);
     auto result = cpp_t::from_data_with_size(data_cpp, size_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -121,12 +121,12 @@ uint8_t* kth_domain_chain_script_bytes(kth_script_const_t self, kth_size_t* out_
 
 kth_operation_list_mut_t kth_domain_chain_script_operations(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::machine::operation>(kth::cpp_ref<cpp_t>(self).operations());
+    return kth::make_owned_list<kth::domain::machine::operation>(kth::cpp_ref<cpp_t>(self).operations());
 }
 
 kth_operation_mut_t kth_domain_chain_script_first_operation(kth_script_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).first_operation());
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).first_operation());
 }
 
 kth_script_pattern_t kth_domain_chain_script_pattern(kth_script_const_t self) {
@@ -379,7 +379,7 @@ kth_operation_list_mut_t kth_domain_chain_script_to_null_data_pattern(uint8_t co
     auto const data_cpp = kth::byte_span(data, kth::sz(n));
     auto cpp_result = cpp_t::to_null_data_pattern(data_cpp);
     if (cpp_result.empty()) return nullptr;
-    return kth::leak_list<kth::domain::machine::operation>(std::move(cpp_result));
+    return kth::make_owned_list<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n) {
@@ -387,19 +387,19 @@ kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_pattern(uint8
     auto const point_cpp = kth::byte_span(point, kth::sz(n));
     auto cpp_result = cpp_t::to_pay_public_key_pattern(point_cpp);
     if (cpp_result.empty()) return nullptr;
-    return kth::leak_list<kth::domain::machine::operation>(std::move(cpp_result));
+    return kth::make_owned_list<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern(kth_shorthash_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::short_hash_to_cpp(hash->hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unsafe(uint8_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::short_hash_to_cpp(hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unlocking(uint8_t const* end, kth_size_t n, kth_ec_public_const_t pubkey) {
@@ -409,55 +409,55 @@ kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_
     auto const& pubkey_cpp = kth::cpp_ref<kth::domain::wallet::ec_public>(pubkey);
     auto cpp_result = cpp_t::to_pay_public_key_hash_pattern_unlocking(end_cpp, pubkey_cpp);
     if (cpp_result.empty()) return nullptr;
-    return kth::leak_list<kth::domain::machine::operation>(std::move(cpp_result));
+    return kth::make_owned_list<kth::domain::machine::operation>(std::move(cpp_result));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unlocking_placeholder(kth_size_t endorsement_size, kth_size_t pubkey_size) {
     auto const endorsement_size_cpp = kth::sz(endorsement_size);
     auto const pubkey_size_cpp = kth::sz(pubkey_size);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern_unlocking_placeholder(endorsement_size_cpp, pubkey_size_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_public_key_hash_pattern_unlocking_placeholder(endorsement_size_cpp, pubkey_size_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern_unlocking_placeholder(kth_size_t script_size, kth_bool_t multisig) {
     auto const script_size_cpp = kth::sz(script_size);
     auto const multisig_cpp = kth::int_to_bool(multisig);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern_unlocking_placeholder(script_size_cpp, multisig_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern_unlocking_placeholder(script_size_cpp, multisig_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern(kth_shorthash_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::short_hash_to_cpp(hash->hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern_unsafe(uint8_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::short_hash_to_cpp(hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_32_pattern(kth_hash_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_32_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_32_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_32_pattern_unsafe(uint8_t const* hash) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_32_pattern(hash_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_script_hash_32_pattern(hash_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_multisig_pattern_ec_compressed_list(uint8_t signatures, kth_ec_compressed_list_const_t points) {
     KTH_PRECONDITION(points != nullptr);
     auto const& points_cpp = kth::cpp_ref<kth::point_list>(points);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_multisig_pattern(signatures, points_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_multisig_pattern(signatures, points_cpp));
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_multisig_pattern_data_stack(uint8_t signatures, kth_data_stack_const_t points) {
     KTH_PRECONDITION(points != nullptr);
     auto const& points_cpp = kth::cpp_ref<kth::data_stack>(points);
-    return kth::leak_list<kth::domain::machine::operation>(cpp_t::to_pay_multisig_pattern(signatures, points_cpp));
+    return kth::make_owned_list<kth::domain::machine::operation>(cpp_t::to_pay_multisig_pattern(signatures, points_cpp));
 }
 
 kth_error_code_t kth_domain_chain_script_verify(kth_transaction_const_t tx, uint32_t input_index, kth_script_flags_t flags, kth_script_const_t input_script, kth_script_const_t prevout_script, uint64_t value) {

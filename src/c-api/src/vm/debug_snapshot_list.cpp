@@ -18,7 +18,7 @@ using cpp_t = kth::domain::machine::debug_snapshot;
 extern "C" {
 
 kth_debug_snapshot_list_mut_t kth_vm_debug_snapshot_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_vm_debug_snapshot_list_push_back(kth_debug_snapshot_list_mut_t list, kth_debug_snapshot_const_t elem) {

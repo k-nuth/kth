@@ -469,6 +469,19 @@ set(kth_headers
     include/kth/capi/p2p/p2p.h
     include/kth/capi/node.h
     include/kth/capi/helpers.hpp
+    include/kth/capi/detail/buffers.hpp
+    include/kth/capi/detail/enum_cast.hpp
+    include/kth/capi/detail/errors.hpp
+    include/kth/capi/detail/handle_access.hpp
+    include/kth/capi/detail/ownership.hpp
+    include/kth/capi/detail/secure_scrub.hpp
+    include/kth/capi/detail/value_conversions.hpp
+    include/kth/capi/conversions/chain.hpp
+    include/kth/capi/conversions/config.hpp
+    include/kth/capi/conversions/infrastructure.hpp
+    include/kth/capi/conversions/machine.hpp
+    include/kth/capi/conversions/node.hpp
+    include/kth/capi/conversions/wallet.hpp
 
     # include/kth/capi/config/network_settings.h
     # include/kth/capi/config/network_helpers.hpp
@@ -568,6 +581,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     add_executable(kth_capi_test
         test/helpers.cpp
+        test/conversions.cpp
         test/binary.cpp
         test/chain/header.cpp
         test/chain/point.cpp

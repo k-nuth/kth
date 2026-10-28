@@ -20,14 +20,14 @@ extern "C" {
 // Constructors
 
 kth_utxo_mut_t kth_domain_chain_utxo_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_utxo_mut_t kth_domain_chain_utxo_construct(kth_output_point_const_t point, uint64_t amount, kth_token_data_const_t token_data) {
     KTH_PRECONDITION(point != nullptr);
     auto const& point_cpp = kth::cpp_ref<kth::domain::chain::output_point>(point);
     auto const token_data_cpp = kth::optional_cpp_ref<kth::domain::chain::token_data_t>(token_data);
-    return kth::leak<cpp_t>(point_cpp, amount, token_data_cpp);
+    return kth::make_owned<cpp_t>(point_cpp, amount, token_data_cpp);
 }
 
 

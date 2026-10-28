@@ -17,7 +17,7 @@ using cpp_t = std::string;
 extern "C" {
 
 kth_string_list_mut_t kth_core_string_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_core_string_list_push_back(kth_string_list_mut_t list, char const* elem) {
