@@ -75,10 +75,6 @@ jobs:
           pip install kthbuild --upgrade
           conan --version
 
-      # Temporary until CCI #31261 is published and the locks are refreshed.
-      - name: 🩹 Prepare verified LMDB source cache
-        run: python3 scripts/prepare_conan_source_cache.py --cache-dir "$RUNNER_TEMP/kth-conan-sources"
-
       - name: 🔧 Setup Conan profile
         run: |
           conan profile detect --force
@@ -154,14 +150,10 @@ jobs:
           while IFS='|' read -r ref context; do
             if [ -n "$ref" ]; then
               echo "Building dependency: $ref (context: $context)"
-              source_cache_args=()
-              if [[ "$ref" == lmdb/1.0.2 || "$ref" == lmdb/1.0.2#* ]]; then
-                source_cache_args=(-cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources")
-              fi
               if [ "$context" = "build" ]; then
-                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6 "${source_cache_args[@]}"
+                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6
               else
-                conan install --requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6 "${source_cache_args[@]}"
+                conan install --requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6
               fi
               # Skip uploading emsdk (too large for remote) and ninja (build tool)
               if echo "$ref" | grep -qE "^(emsdk|ninja)/"; then
@@ -178,7 +170,7 @@ jobs:
           VERSION="${{ needs.setup.outputs.build-version }}"
           echo "Building main package version: ${VERSION}"
 
-          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 --build=missing -o tests=False -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources"
+          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 --build=missing -o tests=False
 
       - name: 📊 Build summary
         if: always()

@@ -10,8 +10,6 @@ on:
       - 'conanfile.py'
       - 'scripts/check_conan_updates.py'
       - 'scripts/test_cmake_dependency_lookup.py'
-      - 'scripts/prepare_conan_source_cache.py'
-      - 'scripts/test_prepare_conan_source_cache.py'
       - 'src/database/CMakeLists.txt'
       - 'src/domain/CMakeLists.txt'
       - '.github/workflows/check-conan-updates.yml'
@@ -47,7 +45,7 @@ jobs:
         run: conan remote add kth https://packages.kth.cash/api/ --force
 
       - name: Test dependency checks
-        run: python -m unittest scripts/test_check_conan_updates.py scripts/test_cmake_dependency_lookup.py scripts/test_prepare_conan_source_cache.py
+        run: python -m unittest scripts/test_check_conan_updates.py scripts/test_cmake_dependency_lookup.py
 
       - name: Check for Conan package updates
         id: check
