@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_operation_mut_t kth_domain_machine_operation_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_machine_operation_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_operation_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_machine_operation_construct_from_data(uint8_t const*
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -41,12 +41,12 @@ kth_operation_mut_t kth_domain_machine_operation_construct_from_uncoded_minimal(
     KTH_PRECONDITION(uncoded != nullptr || n == 0);
     auto const uncoded_cpp = n != 0 ? kth::data_chunk(uncoded, uncoded + n) : kth::data_chunk{};
     auto const minimal_cpp = kth::int_to_bool(minimal);
-    return kth::leak<cpp_t>(uncoded_cpp, minimal_cpp);
+    return kth::make_owned<cpp_t>(uncoded_cpp, minimal_cpp);
 }
 
 kth_operation_mut_t kth_domain_machine_operation_construct_from_code(kth_opcode_t code) {
     auto const code_cpp = kth::opcode_to_cpp(code);
-    return kth::leak<cpp_t>(code_cpp);
+    return kth::make_owned<cpp_t>(code_cpp);
 }
 
 

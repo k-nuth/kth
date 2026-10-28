@@ -135,7 +135,7 @@ void kth_chain_subscribe_transaction(kth_node_t exec, kth_chain_t chain, void* c
                 break;
             }
 
-            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::leak(tx));
+            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned(tx));
             if (res == 0) {
                 bc.unsubscribe_transaction(channel);
                 break;
@@ -163,7 +163,7 @@ void kth_chain_subscribe_ds_proof(kth_node_t exec, kth_chain_t chain, void* ctx,
                 break;
             }
 
-            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::leak(dsp));
+            auto res = handler(exec, chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned(dsp));
             if (res == 0) {
                 bc.unsubscribe_ds_proof(channel);
                 break;

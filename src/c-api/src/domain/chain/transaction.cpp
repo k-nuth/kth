@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_transaction_mut_t kth_domain_chain_transaction_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_chain_transaction_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_transaction_mut_t* out) {
@@ -34,7 +34,7 @@ kth_error_code_t kth_domain_chain_transaction_construct_from_data(uint8_t const*
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = cpp_t::from_data(data_cpp, wire_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -43,11 +43,11 @@ kth_transaction_mut_t kth_domain_chain_transaction_construct(uint32_t version, u
     KTH_PRECONDITION(outputs != nullptr);
     auto const& inputs_cpp = kth::cpp_ref<kth::domain::chain::input::list>(inputs);
     auto const& outputs_cpp = kth::cpp_ref<kth::domain::chain::output::list>(outputs);
-    return kth::leak<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
+    return kth::make_owned<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
 }
 
 kth_transaction_mut_t kth_domain_chain_transaction_null(void) {
-    return kth::leak(cpp_t::null());
+    return kth::to_owned(cpp_t::null());
 }
 
 
@@ -151,17 +151,17 @@ uint64_t kth_domain_chain_transaction_fees(kth_transaction_const_t self) {
 
 kth_point_list_mut_t kth_domain_chain_transaction_previous_outputs(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::chain::point>(kth::cpp_ref<cpp_t>(self).previous_outputs());
+    return kth::make_owned_list<kth::domain::chain::point>(kth::cpp_ref<cpp_t>(self).previous_outputs());
 }
 
 kth_point_list_mut_t kth_domain_chain_transaction_missing_previous_outputs(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::chain::point>(kth::cpp_ref<cpp_t>(self).missing_previous_outputs());
+    return kth::make_owned_list<kth::domain::chain::point>(kth::cpp_ref<cpp_t>(self).missing_previous_outputs());
 }
 
 kth_hash_list_mut_t kth_domain_chain_transaction_missing_previous_transactions(kth_transaction_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).missing_previous_transactions());
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).missing_previous_transactions());
 }
 
 uint64_t kth_domain_chain_transaction_total_input_value(kth_transaction_const_t self) {

@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_merkle_block_mut_t kth_domain_message_merkle_block_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_message_merkle_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_merkle_block_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_message_merkle_block_construct_from_data(uint8_t con
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -45,13 +45,13 @@ kth_merkle_block_mut_t kth_domain_message_merkle_block_construct_from_header_tot
     auto const total_transactions_cpp = kth::sz(total_transactions);
     auto const& hashes_cpp = kth::cpp_ref<kth::hash_list>(hashes);
     auto const flags_cpp = n != 0 ? kth::data_chunk(flags, flags + n) : kth::data_chunk{};
-    return kth::leak<cpp_t>(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
+    return kth::make_owned<cpp_t>(header_cpp, total_transactions_cpp, hashes_cpp, flags_cpp);
 }
 
 kth_merkle_block_mut_t kth_domain_message_merkle_block_construct_from_block(kth_block_const_t block) {
     KTH_PRECONDITION(block != nullptr);
     auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
-    return kth::leak<cpp_t>(block_cpp);
+    return kth::make_owned<cpp_t>(block_cpp);
 }
 
 

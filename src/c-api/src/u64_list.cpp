@@ -17,7 +17,7 @@ using cpp_t = uint64_t;
 extern "C" {
 
 kth_u64_list_mut_t kth_core_u64_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_core_u64_list_push_back(kth_u64_list_mut_t list, uint64_t elem) {

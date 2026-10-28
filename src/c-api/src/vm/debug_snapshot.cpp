@@ -20,13 +20,13 @@ extern "C" {
 // Constructors
 
 kth_debug_snapshot_mut_t kth_vm_debug_snapshot_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_debug_snapshot_mut_t kth_vm_debug_snapshot_construct(kth_program_const_t p) {
     KTH_PRECONDITION(p != nullptr);
     auto const& p_cpp = kth::cpp_ref<kth::domain::machine::program>(p);
-    return kth::leak<cpp_t>(p_cpp);
+    return kth::make_owned<cpp_t>(p_cpp);
 }
 
 
@@ -75,7 +75,7 @@ kth_bool_list_const_t kth_vm_debug_snapshot_control_stack(kth_debug_snapshot_con
 kth_u64_list_mut_t kth_vm_debug_snapshot_loop_stack(kth_debug_snapshot_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const cpp_result = kth::cpp_ref<cpp_t>(self).loop_stack;
-    return kth::leak_list<uint64_t>(cpp_result.begin(), cpp_result.end());
+    return kth::make_owned_list<uint64_t>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_function_table_const_t kth_vm_debug_snapshot_function_table(kth_debug_snapshot_const_t self) {

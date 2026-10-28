@@ -23,19 +23,19 @@ extern "C" {
 // Constructors
 
 kth_binary_mut_t kth_core_binary_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_number(kth_size_t size, uint32_t number) {
     auto const size_cpp = kth::sz(size);
-    return kth::leak<cpp_t>(size_cpp, number);
+    return kth::make_owned<cpp_t>(size_cpp, number);
 }
 
 kth_binary_mut_t kth_core_binary_construct_from_size_blocks(kth_size_t size, uint8_t const* blocks, kth_size_t n) {
     KTH_PRECONDITION(blocks != nullptr || n == 0);
     auto const size_cpp = kth::sz(size);
     auto const blocks_cpp = kth::byte_span(blocks, kth::sz(n));
-    return kth::leak<cpp_t>(size_cpp, blocks_cpp);
+    return kth::make_owned<cpp_t>(size_cpp, blocks_cpp);
 }
 
 kth_error_code_t kth_core_binary_parse_from(char const* bit_string, KTH_OUT_OWNED kth_binary_mut_t* out) {
@@ -45,7 +45,7 @@ kth_error_code_t kth_core_binary_parse_from(char const* bit_string, KTH_OUT_OWNE
     auto const bit_string_cpp = std::string_view(bit_string);
     auto result = cpp_t::parse_from(bit_string_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -195,7 +195,7 @@ kth_binary_mut_t kth_core_binary_substring(kth_binary_const_t self, kth_size_t s
     KTH_PRECONDITION(self != nullptr);
     auto const start_cpp = kth::sz(start);
     auto const length_cpp = kth::sz(length);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).substring(start_cpp, length_cpp));
 }
 
 

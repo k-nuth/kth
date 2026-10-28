@@ -17,7 +17,7 @@ using cpp_t = uint32_t;
 extern "C" {
 
 kth_u32_list_mut_t kth_core_u32_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_core_u32_list_push_back(kth_u32_list_mut_t list, uint32_t elem) {

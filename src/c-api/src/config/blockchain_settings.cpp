@@ -6,6 +6,7 @@
 
 #include <kth/blockchain/settings.hpp>
 #include <kth/capi/config/blockchain_helpers.hpp>
+#include <kth/capi/conversions/config.hpp>
 
 // ---------------------------------------------------------------------------
 extern "C" {

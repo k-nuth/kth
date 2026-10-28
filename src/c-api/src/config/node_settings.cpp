@@ -7,6 +7,7 @@
 #include <kth/capi/config/helpers.hpp>
 #include <kth/capi/config/node_helpers.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/config.hpp>
 #include <kth/node/settings.hpp>
 
 #include <iostream>

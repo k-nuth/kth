@@ -23,13 +23,13 @@ extern "C" {
 // Constructors
 
 kth_program_mut_t kth_vm_program_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_program_mut_t kth_vm_program_construct_from_script(kth_script_const_t script) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak<cpp_t>(script_cpp);
+    return kth::make_owned<cpp_t>(script_cpp);
 }
 
 kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_flags_value(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, kth_script_flags_t flags, uint64_t value) {
@@ -37,7 +37,7 @@ kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_f
     KTH_PRECONDITION(transaction != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto const& transaction_cpp = kth::cpp_ref<kth::domain::chain::transaction>(transaction);
-    return kth::leak<cpp_t>(script_cpp, transaction_cpp, input_index, flags, value);
+    return kth::make_owned<cpp_t>(script_cpp, transaction_cpp, input_index, flags, value);
 }
 
 kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_flags_stack_value(kth_script_const_t script, kth_transaction_const_t transaction, uint32_t input_index, kth_script_flags_t flags, kth_data_stack_const_t stack, uint64_t value) {
@@ -47,7 +47,7 @@ kth_program_mut_t kth_vm_program_construct_from_script_transaction_input_index_f
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto const& transaction_cpp = kth::cpp_ref<kth::domain::chain::transaction>(transaction);
     auto stack_cpp = kth::cpp_ref<kth::data_stack>(stack);
-    return kth::leak<cpp_t>(script_cpp, transaction_cpp, input_index, flags, std::move(stack_cpp), value);
+    return kth::make_owned<cpp_t>(script_cpp, transaction_cpp, input_index, flags, std::move(stack_cpp), value);
 }
 
 kth_program_mut_t kth_vm_program_construct_from_script_program(kth_script_const_t script, kth_program_const_t x) {
@@ -55,7 +55,7 @@ kth_program_mut_t kth_vm_program_construct_from_script_program(kth_script_const_
     KTH_PRECONDITION(x != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    return kth::leak<cpp_t>(script_cpp, x_cpp);
+    return kth::make_owned<cpp_t>(script_cpp, x_cpp);
 }
 
 kth_program_mut_t kth_vm_program_construct_from_script_program_move(kth_script_const_t script, kth_program_const_t x, kth_bool_t move) {
@@ -64,7 +64,7 @@ kth_program_mut_t kth_vm_program_construct_from_script_program_move(kth_script_c
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto x_cpp = kth::cpp_ref<cpp_t>(x);
     auto const move_cpp = kth::int_to_bool(move);
-    return kth::leak<cpp_t>(script_cpp, std::move(x_cpp), move_cpp);
+    return kth::make_owned<cpp_t>(script_cpp, std::move(x_cpp), move_cpp);
 }
 
 
@@ -155,7 +155,7 @@ uint8_t* kth_vm_program_top(kth_program_const_t self, kth_size_t* out_size) {
 
 kth_operation_list_mut_t kth_vm_program_subscript(kth_program_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::domain::machine::operation>(kth::cpp_ref<cpp_t>(self).subscript());
+    return kth::make_owned_list<kth::domain::machine::operation>(kth::cpp_ref<cpp_t>(self).subscript());
 }
 
 kth_size_t kth_vm_program_size(kth_program_const_t self) {
@@ -307,7 +307,7 @@ kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t ma
     auto const maximum_size_cpp = kth::sz(maximum_size);
     auto result = kth::cpp_ref<cpp_t>(self).pop_number(maximum_size_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -319,8 +319,8 @@ kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED
     KTH_PRECONDITION(*out_second == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).pop_binary();
     if ( ! result) return kth::to_c_err(result.error());
-    *out_first = kth::leak(std::move(result->first));
-    *out_second = kth::leak(std::move(result->second));
+    *out_first = kth::to_owned(std::move(result->first));
+    *out_second = kth::to_owned(std::move(result->second));
     return kth_ec_success;
 }
 
@@ -334,9 +334,9 @@ kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNE
     KTH_PRECONDITION(*out_2 == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).pop_ternary();
     if ( ! result) return kth::to_c_err(result.error());
-    *out_0 = kth::leak(std::move(std::get<0>(*result)));
-    *out_1 = kth::leak(std::move(std::get<1>(*result)));
-    *out_2 = kth::leak(std::move(std::get<2>(*result)));
+    *out_0 = kth::to_owned(std::move(std::get<0>(*result)));
+    *out_1 = kth::to_owned(std::move(std::get<1>(*result)));
+    *out_2 = kth::to_owned(std::move(std::get<2>(*result)));
     return kth_ec_success;
 }
 
@@ -347,7 +347,7 @@ kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_
     auto const maximum_size_cpp = kth::sz(maximum_size);
     auto result = kth::cpp_ref<cpp_t>(self).pop_big_number(maximum_size_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -359,8 +359,8 @@ kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_O
     KTH_PRECONDITION(*out_second == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).pop_big_binary();
     if ( ! result) return kth::to_c_err(result.error());
-    *out_first = kth::leak(std::move(result->first));
-    *out_second = kth::leak(std::move(result->second));
+    *out_first = kth::to_owned(std::move(result->first));
+    *out_second = kth::to_owned(std::move(result->second));
     return kth_ec_success;
 }
 
@@ -374,9 +374,9 @@ kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_
     KTH_PRECONDITION(*out_2 == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).pop_big_ternary();
     if ( ! result) return kth::to_c_err(result.error());
-    *out_0 = kth::leak(std::move(std::get<0>(*result)));
-    *out_1 = kth::leak(std::move(std::get<1>(*result)));
-    *out_2 = kth::leak(std::move(std::get<2>(*result)));
+    *out_0 = kth::to_owned(std::move(std::get<0>(*result)));
+    *out_1 = kth::to_owned(std::move(std::get<1>(*result)));
+    *out_2 = kth::to_owned(std::move(std::get<2>(*result)));
     return kth_ec_success;
 }
 
@@ -396,7 +396,7 @@ kth_error_code_t kth_vm_program_pop(kth_program_mut_t self, kth_size_t count, KT
     auto const count_cpp = kth::sz(count);
     auto result = kth::cpp_ref<cpp_t>(self).pop(count_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak<kth::data_stack>(std::move(*result));
+    *out = kth::make_owned<kth::data_stack>(std::move(*result));
     return kth_ec_success;
 }
 
@@ -447,7 +447,7 @@ kth_error_code_t kth_vm_program_top_number(kth_program_const_t self, kth_size_t 
     auto const maximum_size_cpp = kth::sz(maximum_size);
     auto result = kth::cpp_ref<cpp_t>(self).top_number(maximum_size_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -458,7 +458,7 @@ kth_error_code_t kth_vm_program_top_big_number(kth_program_const_t self, kth_siz
     auto const maximum_size_cpp = kth::sz(maximum_size);
     auto result = kth::cpp_ref<cpp_t>(self).top_big_number(maximum_size_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

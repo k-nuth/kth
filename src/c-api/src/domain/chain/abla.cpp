@@ -26,7 +26,7 @@ void kth_domain_chain_abla_set_max(kth_abla_config_mut_t cfg) {
 
 kth_abla_config_mut_t kth_domain_chain_abla_default_config(uint64_t default_block_size, kth_bool_t fixed_size) {
     auto const fixed_size_cpp = kth::int_to_bool(fixed_size);
-    return kth::leak(kth::domain::chain::abla::default_config(default_block_size, fixed_size_cpp));
+    return kth::to_owned(kth::domain::chain::abla::default_config(default_block_size, fixed_size_cpp));
 }
 
 kth_abla_config_validity_t kth_domain_chain_abla_validate_config(kth_abla_config_const_t cfg) {
@@ -47,7 +47,7 @@ kth_abla_state_mut_t kth_domain_chain_abla_next(kth_abla_state_const_t st, kth_a
     auto const& st_cpp = kth::cpp_ref<kth::domain::chain::abla::state>(st);
     auto const& cfg_cpp = kth::cpp_ref<kth::domain::chain::abla::config>(cfg);
     auto result = kth::domain::chain::abla::next(st_cpp, cfg_cpp, next_block_size);
-    return result.has_value() ? kth::leak(std::move(*result)) : nullptr;
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
 }
 
 kth_abla_state_mut_t kth_domain_chain_abla_lookahead(kth_abla_state_const_t st, kth_abla_config_const_t cfg, kth_size_t count) {
@@ -57,7 +57,7 @@ kth_abla_state_mut_t kth_domain_chain_abla_lookahead(kth_abla_state_const_t st, 
     auto const& cfg_cpp = kth::cpp_ref<kth::domain::chain::abla::config>(cfg);
     auto const count_cpp = kth::sz(count);
     auto result = kth::domain::chain::abla::lookahead(st_cpp, cfg_cpp, count_cpp);
-    return result.has_value() ? kth::leak(std::move(*result)) : nullptr;
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
 }
 
 kth_abla_state_validity_t kth_domain_chain_abla_validate_state(kth_abla_state_const_t st, kth_abla_config_const_t cfg) {

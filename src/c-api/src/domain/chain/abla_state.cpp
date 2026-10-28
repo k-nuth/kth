@@ -20,13 +20,13 @@ extern "C" {
 // Constructors
 
 kth_abla_state_mut_t kth_domain_chain_abla_state_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_abla_state_mut_t kth_domain_chain_abla_state_construct(kth_abla_config_const_t cfg, uint64_t block_size) {
     KTH_PRECONDITION(cfg != nullptr);
     auto const& cfg_cpp = kth::cpp_ref<kth::domain::chain::abla::config>(cfg);
-    return kth::leak<cpp_t>(cfg_cpp, block_size);
+    return kth::make_owned<cpp_t>(cfg_cpp, block_size);
 }
 
 

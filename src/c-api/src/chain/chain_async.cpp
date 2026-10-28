@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/chain/chain_async.h>
+#include <array>
 #include <cstdio>
 #include <memory>
 #include <system_error>
@@ -86,7 +87,7 @@ void kth_chain_async_block_header_by_height(kth_chain_t chain, void* ctx, kth_si
         auto result = co_await bc.fetch_block_header(height);
         if (result) {
             auto const& [header, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(header, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(header, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -94,13 +95,13 @@ void kth_chain_async_block_header_by_height(kth_chain_t chain, void* ctx, kth_si
 }
 
 void kth_chain_async_block_header_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_header_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_block_header(hash_cpp);
         if (result) {
             auto const& [header, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(header, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(header, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -113,7 +114,7 @@ void kth_chain_async_block_by_height(kth_chain_t chain, void* ctx, kth_size_t he
         auto result = co_await bc.fetch_block(height);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -121,13 +122,13 @@ void kth_chain_async_block_by_height(kth_chain_t chain, void* ctx, kth_size_t he
 }
 
 void kth_chain_async_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_block(hash_cpp);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -135,16 +136,16 @@ void kth_chain_async_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash
 }
 
 void kth_chain_async_block_header_by_hash_txs_size(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_block_header_txs_size_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_block_header_txs_size(hash_cpp);
         if (result) {
             auto const& [header, block_height, tx_hashes, block_serialized_size] = *result;
             handler(chain, ctx, kth::to_c_err(std::error_code{}),
-                    kth::leak_if_success(header, std::error_code{}),
+                    kth::to_owned_if_success(header, std::error_code{}),
                     block_height,
-                    kth::leak_if_success(tx_hashes, std::error_code{}),
+                    kth::to_owned_if_success(tx_hashes, std::error_code{}),
                     block_serialized_size);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0, nullptr, 0);
@@ -158,7 +159,7 @@ void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_si
         auto result = co_await bc.fetch_merkle_block(height);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -166,13 +167,13 @@ void kth_chain_async_merkle_block_by_height(kth_chain_t chain, void* ctx, kth_si
 }
 
 void kth_chain_async_merkle_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_merkle_block_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_merkle_block(hash_cpp);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -185,7 +186,7 @@ void kth_chain_async_compact_block_by_height(kth_chain_t chain, void* ctx, kth_s
         auto result = co_await bc.fetch_compact_block(height);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -193,13 +194,13 @@ void kth_chain_async_compact_block_by_height(kth_chain_t chain, void* ctx, kth_s
 }
 
 void kth_chain_async_compact_block_by_hash(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_compact_block_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_compact_block(hash_cpp);
         if (result) {
             auto const& [block, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(block, std::error_code{}), h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(block, std::error_code{}), h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0);
         }
@@ -220,14 +221,14 @@ void kth_chain_async_block_by_height_timestamp(kth_chain_t chain, void* ctx, kth
 }
 
 void kth_chain_async_transaction(kth_chain_t chain, void* ctx, kth_hash_t hash, kth_bool_t require_confirmed, kth_transaction_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto const confirmed = kth::int_to_bool(require_confirmed);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, confirmed, chain, ctx, handler]() -> ::asio::awaitable<void> {
         auto result = co_await bc.fetch_transaction(hash_cpp, confirmed);
         if (result) {
             auto const& [transaction, i, h] = *result;
-            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::leak_if_success(transaction, std::error_code{}), i, h);
+            handler(chain, ctx, kth::to_c_err(std::error_code{}), kth::to_owned_if_success(transaction, std::error_code{}), i, h);
         } else {
             handler(chain, ctx, kth::to_c_err(result.error()), nullptr, 0, 0);
         }
@@ -235,7 +236,7 @@ void kth_chain_async_transaction(kth_chain_t chain, void* ctx, kth_hash_t hash, 
 }
 
 void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash_t hash, int require_confirmed, kth_transaction_index_fetch_handler_t handler) {
-    auto hash_cpp = kth::to_array(hash.hash);
+    auto hash_cpp = std::to_array(hash.hash);
     auto const confirmed = kth::int_to_bool(require_confirmed);
     auto& bc = safe_chain(chain);
     ::asio::co_spawn(bc.executor(), [&bc, hash_cpp, confirmed, chain, ctx, handler]() -> ::asio::awaitable<void> {

@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_compact_block_mut_t kth_domain_message_compact_block_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_message_compact_block_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_compact_block_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_message_compact_block_construct_from_data(uint8_t co
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -44,7 +44,7 @@ kth_compact_block_mut_t kth_domain_message_compact_block_construct(kth_header_co
     auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
     auto const& short_ids_cpp = kth::cpp_ref<std::vector<uint64_t>>(short_ids);
     auto const& transactions_cpp = kth::cpp_ref<kth::domain::message::prefilled_transaction::list>(transactions);
-    return kth::leak<cpp_t>(header_cpp, nonce, short_ids_cpp, transactions_cpp);
+    return kth::make_owned<cpp_t>(header_cpp, nonce, short_ids_cpp, transactions_cpp);
 }
 
 
@@ -107,7 +107,7 @@ uint64_t kth_domain_message_compact_block_nonce(kth_compact_block_const_t self) 
 kth_u64_list_mut_t kth_domain_message_compact_block_short_ids(kth_compact_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     auto const cpp_result = kth::cpp_ref<cpp_t>(self).short_ids();
-    return kth::leak_list<uint64_t>(cpp_result.begin(), cpp_result.end());
+    return kth::make_owned_list<uint64_t>(cpp_result.begin(), cpp_result.end());
 }
 
 kth_prefilled_transaction_list_const_t kth_domain_message_compact_block_transactions(kth_compact_block_const_t self) {

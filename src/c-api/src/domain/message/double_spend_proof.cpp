@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_double_spend_proof_mut_t kth_domain_message_double_spend_proof_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_message_double_spend_proof_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_double_spend_proof_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_message_double_spend_proof_construct_from_data(uint8
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -44,7 +44,7 @@ kth_double_spend_proof_mut_t kth_domain_message_double_spend_proof_construct(kth
     auto const& out_point_cpp = kth::cpp_ref<kth::domain::chain::output_point>(out_point);
     auto const& spender1_cpp = kth::cpp_ref<cpp_t::spender>(spender1);
     auto const& spender2_cpp = kth::cpp_ref<cpp_t::spender>(spender2);
-    return kth::leak<cpp_t>(out_point_cpp, spender1_cpp, spender2_cpp);
+    return kth::make_owned<cpp_t>(out_point_cpp, spender1_cpp, spender2_cpp);
 }
 
 

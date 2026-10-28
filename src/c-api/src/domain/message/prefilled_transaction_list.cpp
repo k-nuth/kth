@@ -18,7 +18,7 @@ using cpp_t = kth::domain::message::prefilled_transaction;
 extern "C" {
 
 kth_prefilled_transaction_list_mut_t kth_domain_message_prefilled_transaction_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_domain_message_prefilled_transaction_list_push_back(kth_prefilled_transaction_list_mut_t list, kth_prefilled_transaction_const_t elem) {

@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_get_headers_mut_t kth_domain_message_get_headers_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_message_get_headers_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_get_headers_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_message_get_headers_construct_from_data(uint8_t cons
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -42,7 +42,7 @@ kth_get_headers_mut_t kth_domain_message_get_headers_construct(kth_hash_list_con
     KTH_PRECONDITION(stop != nullptr);
     auto const& start_cpp = kth::cpp_ref<kth::hash_list>(start);
     auto const stop_cpp = kth::hash_to_cpp(stop->hash);
-    return kth::leak<cpp_t>(start_cpp, stop_cpp);
+    return kth::make_owned<cpp_t>(start_cpp, stop_cpp);
 }
 
 kth_get_headers_mut_t kth_domain_message_get_headers_construct_unsafe(kth_hash_list_const_t start, uint8_t const* stop) {
@@ -50,7 +50,7 @@ kth_get_headers_mut_t kth_domain_message_get_headers_construct_unsafe(kth_hash_l
     KTH_PRECONDITION(stop != nullptr);
     auto const& start_cpp = kth::cpp_ref<kth::hash_list>(start);
     auto const stop_cpp = kth::hash_to_cpp(stop);
-    return kth::leak<cpp_t>(start_cpp, stop_cpp);
+    return kth::make_owned<cpp_t>(start_cpp, stop_cpp);
 }
 
 

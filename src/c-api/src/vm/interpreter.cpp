@@ -36,20 +36,20 @@ kth_error_code_t kth_vm_interpreter_run(kth_operation_const_t op, kth_program_mu
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_begin(kth_program_const_t prog) {
     KTH_PRECONDITION(prog != nullptr);
     auto const& prog_cpp = kth::cpp_ref<kth::domain::machine::program>(prog);
-    return kth::leak(cpp_t::debug_begin(prog_cpp));
+    return kth::to_owned(cpp_t::debug_begin(prog_cpp));
 }
 
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step(kth_debug_snapshot_const_t snapshot) {
     KTH_PRECONDITION(snapshot != nullptr);
     auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
-    return kth::leak(cpp_t::debug_step(snapshot_cpp));
+    return kth::to_owned(cpp_t::debug_step(snapshot_cpp));
 }
 
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step_n(kth_debug_snapshot_const_t snapshot, kth_size_t n) {
     KTH_PRECONDITION(snapshot != nullptr);
     auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
     auto const n_cpp = kth::sz(n);
-    return kth::leak(cpp_t::debug_step_n(snapshot_cpp, n_cpp));
+    return kth::to_owned(cpp_t::debug_step_n(snapshot_cpp, n_cpp));
 }
 
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step_until(kth_debug_snapshot_const_t snapshot, kth_debug_step_predicate_t predicate, void* predicate_user_data) {
@@ -57,19 +57,19 @@ kth_debug_snapshot_mut_t kth_vm_interpreter_debug_step_until(kth_debug_snapshot_
     KTH_PRECONDITION(predicate != nullptr);
     auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
     auto const predicate_cpp = [predicate, predicate_user_data](kth::domain::machine::debug_snapshot const& snap) -> bool { return predicate(&snap, predicate_user_data) != 0; };
-    return kth::leak(cpp_t::debug_step_until(snapshot_cpp, predicate_cpp));
+    return kth::to_owned(cpp_t::debug_step_until(snapshot_cpp, predicate_cpp));
 }
 
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_run(kth_debug_snapshot_const_t snapshot) {
     KTH_PRECONDITION(snapshot != nullptr);
     auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
-    return kth::leak(cpp_t::debug_run(snapshot_cpp));
+    return kth::to_owned(cpp_t::debug_run(snapshot_cpp));
 }
 
 kth_debug_snapshot_list_mut_t kth_vm_interpreter_debug_run_traced(kth_debug_snapshot_const_t start) {
     KTH_PRECONDITION(start != nullptr);
     auto const& start_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(start);
-    return kth::leak_list<kth::domain::machine::debug_snapshot>(cpp_t::debug_run_traced(start_cpp));
+    return kth::make_owned_list<kth::domain::machine::debug_snapshot>(cpp_t::debug_run_traced(start_cpp));
 }
 
 kth_error_code_t kth_vm_interpreter_debug_finalize(kth_debug_snapshot_const_t snapshot) {

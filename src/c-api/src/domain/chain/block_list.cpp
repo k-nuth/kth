@@ -18,7 +18,7 @@ using cpp_t = kth::domain::chain::block;
 extern "C" {
 
 kth_block_list_mut_t kth_domain_chain_block_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_domain_chain_block_list_push_back(kth_block_list_mut_t list, kth_block_const_t elem) {

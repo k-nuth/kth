@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_number_mut_t kth_vm_number_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 
@@ -132,33 +132,33 @@ kth_bool_t kth_vm_number_less_or_equal(kth_number_const_t self, int64_t value) {
 
 kth_number_mut_t kth_vm_number_add_int64(kth_number_const_t self, int64_t value) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(value));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator+(value));
 }
 
 kth_number_mut_t kth_vm_number_subtract_int64(kth_number_const_t self, int64_t value) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(value));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator-(value));
 }
 
 kth_number_mut_t kth_vm_number_add_number(kth_number_const_t self, kth_number_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator+(x_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator+(x_cpp));
 }
 
 kth_number_mut_t kth_vm_number_subtract_number(kth_number_const_t self, kth_number_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator-(x_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator-(x_cpp));
 }
 
 kth_number_mut_t kth_vm_number_multiply(kth_number_const_t self, kth_number_const_t x) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(x != nullptr);
     auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    return kth::leak(kth::cpp_ref<cpp_t>(self).operator*(x_cpp));
+    return kth::to_owned(kth::cpp_ref<cpp_t>(self).operator*(x_cpp));
 }
 
 kth_bool_t kth_vm_number_safe_add_number(kth_number_mut_t self, kth_number_const_t x) {
@@ -205,7 +205,7 @@ kth_error_code_t kth_vm_number_from_int(int64_t value, KTH_OUT_OWNED kth_number_
     KTH_PRECONDITION(*out == nullptr);
     auto result = cpp_t::from_int(value);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -218,7 +218,7 @@ kth_error_code_t kth_vm_number_safe_add_number2(kth_number_const_t x, kth_number
     auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
     auto result = cpp_t::safe_add(x_cpp, y_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -231,7 +231,7 @@ kth_error_code_t kth_vm_number_safe_sub_number2(kth_number_const_t x, kth_number
     auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
     auto result = cpp_t::safe_sub(x_cpp, y_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -244,7 +244,7 @@ kth_error_code_t kth_vm_number_safe_mul_number2(kth_number_const_t x, kth_number
     auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
     auto result = cpp_t::safe_mul(x_cpp, y_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

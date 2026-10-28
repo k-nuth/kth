@@ -25,31 +25,31 @@ extern "C" {
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t const* short_hash, uint8_t version) {
     KTH_PRECONDITION(short_hash != nullptr);
     auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash->hash);
-    return kth::leak<cpp_t>(short_hash_cpp, version);
+    return kth::make_owned<cpp_t>(short_hash_cpp, version);
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version_unsafe(uint8_t const* short_hash, uint8_t version) {
     KTH_PRECONDITION(short_hash != nullptr);
     auto const short_hash_cpp = kth::short_hash_to_cpp(short_hash);
-    return kth::leak<cpp_t>(short_hash_cpp, version);
+    return kth::make_owned<cpp_t>(short_hash_cpp, version);
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t const* hash, uint8_t version) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    return kth::leak<cpp_t>(hash_cpp, version);
+    return kth::make_owned<cpp_t>(hash_cpp, version);
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version_unsafe(uint8_t const* hash, uint8_t version) {
     KTH_PRECONDITION(hash != nullptr);
     auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::leak<cpp_t>(hash_cpp, version);
+    return kth::make_owned<cpp_t>(hash_cpp, version);
 }
 
 kth_payment_address_mut_t kth_wallet_payment_address_from_script(kth_script_const_t script, uint8_t version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak(cpp_t::from_script(script_cpp, version));
+    return kth::to_owned(cpp_t::from_script(script_cpp, version));
 }
 
 kth_error_code_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_script_const_t script, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
@@ -59,7 +59,7 @@ kth_error_code_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
     auto result = cpp_t::from_pay_public_key_hash_script(script_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -70,7 +70,7 @@ kth_error_code_t kth_wallet_payment_address_parse_from_simple(char const* addres
     auto const address_cpp = std::string_view(address);
     auto result = cpp_t::parse_from(address_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -82,7 +82,7 @@ kth_error_code_t kth_wallet_payment_address_parse_from(char const* address, kth_
     auto const net_cpp = kth::network_to_cpp(net);
     auto result = cpp_t::parse_from(address_cpp, net_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -93,7 +93,7 @@ kth_error_code_t kth_wallet_payment_address_from_payment(kth_payment_t const* de
     auto const decoded_cpp = kth::payment_to_cpp(decoded->hash);
     auto result = cpp_t::from_payment(decoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -104,7 +104,7 @@ kth_error_code_t kth_wallet_payment_address_from_payment_unsafe(uint8_t const* d
     auto const decoded_cpp = kth::payment_to_cpp(decoded);
     auto result = cpp_t::from_payment(decoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -115,7 +115,7 @@ kth_error_code_t kth_wallet_payment_address_from_ec_private(kth_ec_private_const
     auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
     auto result = cpp_t::from_ec_private(secret_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -126,7 +126,7 @@ kth_error_code_t kth_wallet_payment_address_from_ec_public(kth_ec_public_const_t
     auto const& point_cpp = kth::cpp_ref<kth::domain::wallet::ec_public>(point);
     auto result = cpp_t::from_ec_public(point_cpp, version);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -258,19 +258,19 @@ char* kth_wallet_payment_address_cashaddr_prefix_for(kth_network_t net) {
 kth_payment_address_list_mut_t kth_wallet_payment_address_extract(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak_list<cpp_t>(cpp_t::extract(script_cpp, p2kh_version, p2sh_version));
+    return kth::make_owned_list<cpp_t>(cpp_t::extract(script_cpp, p2kh_version, p2sh_version));
 }
 
 kth_payment_address_list_mut_t kth_wallet_payment_address_extract_input(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak_list<cpp_t>(cpp_t::extract_input(script_cpp, p2kh_version, p2sh_version));
+    return kth::make_owned_list<cpp_t>(cpp_t::extract_input(script_cpp, p2kh_version, p2sh_version));
 }
 
 kth_payment_address_list_mut_t kth_wallet_payment_address_extract_output(kth_script_const_t script, uint8_t p2kh_version, uint8_t p2sh_version) {
     KTH_PRECONDITION(script != nullptr);
     auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    return kth::leak_list<cpp_t>(cpp_t::extract_output(script_cpp, p2kh_version, p2sh_version));
+    return kth::make_owned_list<cpp_t>(cpp_t::extract_output(script_cpp, p2kh_version, p2sh_version));
 }
 
 } // extern "C"

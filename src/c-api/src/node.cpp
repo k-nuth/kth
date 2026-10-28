@@ -34,7 +34,7 @@ extern "C" {
 
 kth_node_t kth_node_construct(kth_settings const* settings, kth_bool_t stdout_enabled) {
     auto cpp = kth::capi::helpers::settings_to_cpp(*settings);
-    return kth::leak<kth::node::executor>(cpp, stdout_enabled);
+    return kth::make_owned<kth::node::executor>(cpp, stdout_enabled);
 }
 
 void kth_node_destruct(kth_node_t node) {

@@ -21,7 +21,7 @@ extern "C" {
 
 kth_hash_list_mut_t kth_chain_get_mempool_txids(kth_chain_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_txids());
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_txids());
 }
 
 kth_mempool_totals_t kth_chain_get_mempool_info(kth_chain_t self) {
@@ -58,56 +58,56 @@ kth_hash_list_mut_t kth_chain_get_mempool_depends(kth_chain_t self, kth_hash_t c
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid->hash);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_depends(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_depends(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_depends_unsafe(kth_chain_t self, uint8_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_depends(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_depends(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_spentby(kth_chain_t self, kth_hash_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid->hash);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_spentby(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_spentby(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_spentby_unsafe(kth_chain_t self, uint8_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_spentby(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_spentby(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_ancestors(kth_chain_t self, kth_hash_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid->hash);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_ancestors(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_ancestors(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_ancestors_unsafe(kth_chain_t self, uint8_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_ancestors(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_ancestors(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_descendants(kth_chain_t self, kth_hash_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid->hash);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_descendants(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_descendants(txid_cpp));
 }
 
 kth_hash_list_mut_t kth_chain_get_mempool_descendants_unsafe(kth_chain_t self, uint8_t const* txid) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(txid != nullptr);
     auto const txid_cpp = kth::hash_to_cpp(txid);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_descendants(txid_cpp));
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).get_mempool_descendants(txid_cpp));
 }
 
 } // extern "C"

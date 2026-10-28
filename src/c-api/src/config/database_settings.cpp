@@ -7,6 +7,7 @@
 #include <kth/capi/config/helpers.hpp>
 #include <kth/capi/config/database_helpers.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/config.hpp>
 #include <kth/database/settings.hpp>
 
 // ---------------------------------------------------------------------------

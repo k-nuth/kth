@@ -11,6 +11,7 @@
 
 #include <kth/capi/config/helpers.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/infrastructure.hpp>
 
 #include <kth/infrastructure/config/checkpoint.hpp>
 

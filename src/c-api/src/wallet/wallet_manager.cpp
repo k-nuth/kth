@@ -5,6 +5,8 @@
 
 #include <kth/capi/wallet/wallet_manager.h>
 
+#include <array>
+
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
 
@@ -16,7 +18,7 @@ kth_error_code_t kth_wallet_decrypt_seed(
     kth_encrypted_seed_t const* encrypted_seed,
     kth_longhash_t** out_decrypted_seed) {
 
-    auto seed_cpp = kth::to_array(encrypted_seed->hash);
+    auto seed_cpp = std::to_array(encrypted_seed->hash);
 
     auto res = kth::domain::wallet::decrypt_seed(
         std::string(password),

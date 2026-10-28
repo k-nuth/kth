@@ -18,7 +18,7 @@ using cpp_t = kth::domain::wallet::payment_address;
 extern "C" {
 
 kth_payment_address_list_mut_t kth_wallet_payment_address_list_construct_default(void) {
-    return kth::leak_list<cpp_t>();
+    return kth::make_owned_list<cpp_t>();
 }
 
 void kth_wallet_payment_address_list_push_back(kth_payment_address_list_mut_t list, kth_payment_address_const_t elem) {

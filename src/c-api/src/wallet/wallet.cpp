@@ -5,6 +5,8 @@
 
 #include <kth/capi/wallet/wallet.h>
 
+#include <array>
+
 #include <kth/capi/primitives.h>
 #include <kth/capi/wallet/primitives.h>
 #include <kth/capi/wallet/conversions.hpp>
@@ -15,6 +17,7 @@
 
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/infrastructure.hpp>
 
 #include <kth/domain/wallet/mnemonic.hpp>  //Warning, put it after boost headers
 
@@ -61,7 +64,7 @@ kth_hd_private_t kth_wallet_hd_new(kth_longhash_t seed, uint32_t version /* = 76
     auto const prefixes = kth::domain::wallet::to_prefixes(version, 0);
     auto key = kth::domain::wallet::hd_private::from_seed(seed_cpp, prefixes);
     if ( ! key) return nullptr;
-    return kth::leak(std::move(*key));
+    return kth::to_owned(std::move(*key));
 
 //     if (seed.size() < minimum_seed_size)
 //     {
@@ -97,12 +100,12 @@ void kth_wallet_hd_private_to_ec_out(kth_hd_private_t key, kth_ec_secret_t* out_
 }
 
 kth_ec_public_t kth_wallet_ec_to_public(kth_ec_secret_t secret, kth_bool_t uncompressed) {
-    auto secret_cpp = kth::to_array(secret.hash);
+    auto secret_cpp = std::to_array(secret.hash);
     bool uncompressed_cpp = kth::int_to_bool(uncompressed);
 
     kth::ec_compressed point;
     kth::secret_to_public(point, secret_cpp);
-    return kth::leak(kth::domain::wallet::ec_public::from_verified_point(point, !uncompressed_cpp));
+    return kth::to_owned(kth::domain::wallet::ec_public::from_verified_point(point, !uncompressed_cpp));
 }
 
 kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint8_t version) {
@@ -111,7 +114,7 @@ kth_payment_address_t kth_wallet_ec_to_address(kth_ec_public_t point, uint8_t ve
     if ( ! result) {
         return nullptr;
     }
-    return kth::leak<kth::domain::wallet::payment_address>(std::move(*result));
+    return kth::make_owned<kth::domain::wallet::payment_address>(std::move(*result));
 }
 
 } // extern "C"

@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_block_mut_t kth_domain_chain_block_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_chain_block_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_block_mut_t* out) {
@@ -33,7 +33,7 @@ kth_error_code_t kth_domain_chain_block_construct_from_data(uint8_t const* data,
     auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
     auto result = cpp_t::from_data(data_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -42,31 +42,31 @@ kth_block_mut_t kth_domain_chain_block_construct(kth_header_const_t header, kth_
     KTH_PRECONDITION(transactions != nullptr);
     auto const& header_cpp = kth::cpp_ref<kth::domain::chain::header>(header);
     auto const& transactions_cpp = kth::cpp_ref<kth::domain::chain::transaction::list>(transactions);
-    return kth::leak<cpp_t>(header_cpp, transactions_cpp);
+    return kth::make_owned<cpp_t>(header_cpp, transactions_cpp);
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_mainnet(void) {
-    return kth::leak(cpp_t::genesis_mainnet());
+    return kth::to_owned(cpp_t::genesis_mainnet());
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_testnet(void) {
-    return kth::leak(cpp_t::genesis_testnet());
+    return kth::to_owned(cpp_t::genesis_testnet());
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_regtest(void) {
-    return kth::leak(cpp_t::genesis_regtest());
+    return kth::to_owned(cpp_t::genesis_regtest());
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_testnet4(void) {
-    return kth::leak(cpp_t::genesis_testnet4());
+    return kth::to_owned(cpp_t::genesis_testnet4());
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_scalenet(void) {
-    return kth::leak(cpp_t::genesis_scalenet());
+    return kth::to_owned(cpp_t::genesis_scalenet());
 }
 
 kth_block_mut_t kth_domain_chain_block_genesis_chipnet(void) {
-    return kth::leak(cpp_t::genesis_chipnet());
+    return kth::to_owned(cpp_t::genesis_chipnet());
 }
 
 
@@ -133,7 +133,7 @@ kth_hash_t kth_domain_chain_block_hash(kth_block_const_t self) {
 
 kth_hash_list_mut_t kth_domain_chain_block_to_hashes(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::leak_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).to_hashes());
+    return kth::make_owned_list<kth::hash_digest>(kth::cpp_ref<cpp_t>(self).to_hashes());
 }
 
 uint64_t kth_domain_chain_block_fees(kth_block_const_t self) {
@@ -265,7 +265,7 @@ kth_size_t kth_domain_chain_block_locator_size(kth_size_t top) {
 kth_u64_list_mut_t kth_domain_chain_block_locator_heights(kth_size_t top) {
     auto const top_cpp = kth::sz(top);
     auto const cpp_result = cpp_t::locator_heights(top_cpp);
-    return kth::leak_list<uint64_t>(cpp_result.begin(), cpp_result.end());
+    return kth::make_owned_list<uint64_t>(cpp_result.begin(), cpp_result.end());
 }
 
 uint64_t kth_domain_chain_block_subsidy(kth_size_t height, kth_bool_t retarget) {

@@ -20,7 +20,7 @@ using byte_vec = kth::data_chunk;
 extern "C" {
 
 kth_function_table_mut_t kth_vm_function_table_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 void kth_vm_function_table_destruct(kth_function_table_mut_t map) {

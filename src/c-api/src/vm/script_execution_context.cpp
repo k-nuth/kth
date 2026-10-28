@@ -22,7 +22,7 @@ extern "C" {
 kth_script_execution_context_mut_t kth_vm_script_execution_context_construct(uint32_t input_index, kth_transaction_const_t transaction) {
     KTH_PRECONDITION(transaction != nullptr);
     auto const& transaction_cpp = kth::cpp_ref<kth::domain::chain::transaction>(transaction);
-    return kth::leak<cpp_t>(input_index, transaction_cpp);
+    return kth::make_owned<cpp_t>(input_index, transaction_cpp);
 }
 
 

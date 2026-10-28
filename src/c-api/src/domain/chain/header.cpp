@@ -23,7 +23,7 @@ extern "C" {
 // Constructors
 
 kth_header_mut_t kth_domain_chain_header_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 kth_error_code_t kth_domain_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out) {
@@ -34,7 +34,7 @@ kth_error_code_t kth_domain_chain_header_construct_from_data(uint8_t const* data
     auto const wire_cpp = kth::int_to_bool(wire);
     auto result = cpp_t::from_data(data_cpp, wire_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -43,7 +43,7 @@ kth_header_mut_t kth_domain_chain_header_construct(uint32_t version, kth_hash_t 
     KTH_PRECONDITION(merkle != nullptr);
     auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash->hash);
     auto const merkle_cpp = kth::hash_to_cpp(merkle->hash);
-    return kth::leak<cpp_t>(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    return kth::make_owned<cpp_t>(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
 }
 
 kth_header_mut_t kth_domain_chain_header_construct_unsafe(uint32_t version, uint8_t const* previous_block_hash, uint8_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
@@ -51,7 +51,7 @@ kth_header_mut_t kth_domain_chain_header_construct_unsafe(uint32_t version, uint
     KTH_PRECONDITION(merkle != nullptr);
     auto const previous_block_hash_cpp = kth::hash_to_cpp(previous_block_hash);
     auto const merkle_cpp = kth::hash_to_cpp(merkle);
-    return kth::leak<cpp_t>(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
+    return kth::make_owned<cpp_t>(version, previous_block_hash_cpp, merkle_cpp, timestamp, bits, nonce);
 }
 
 

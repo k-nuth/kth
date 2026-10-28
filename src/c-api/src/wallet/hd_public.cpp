@@ -29,7 +29,7 @@ kth_error_code_t kth_wallet_hd_public_parse_from(char const* encoded, KTH_OUT_OW
     auto const encoded_cpp = std::string_view(encoded);
     auto result = cpp_t::parse_from(encoded_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -40,7 +40,7 @@ kth_error_code_t kth_wallet_hd_public_parse_from_with_prefix(char const* encoded
     auto const encoded_cpp = std::string_view(encoded);
     auto result = cpp_t::parse_from_with_prefix(encoded_cpp, prefix);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -51,7 +51,7 @@ kth_error_code_t kth_wallet_hd_public_from_hd_key(kth_hd_key_t const* key, KTH_O
     auto const key_cpp = kth::hd_key_to_cpp(key->data);
     auto result = cpp_t::from_hd_key(key_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -62,7 +62,7 @@ kth_error_code_t kth_wallet_hd_public_from_hd_key_unsafe(uint8_t const* key, KTH
     auto const key_cpp = kth::hd_key_to_cpp(key);
     auto result = cpp_t::from_hd_key(key_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -73,7 +73,7 @@ kth_error_code_t kth_wallet_hd_public_from_hd_key_with_prefix(kth_hd_key_t const
     auto const key_cpp = kth::hd_key_to_cpp(key->data);
     auto result = cpp_t::from_hd_key_with_prefix(key_cpp, prefix);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -84,7 +84,7 @@ kth_error_code_t kth_wallet_hd_public_from_hd_key_with_prefix_unsafe(uint8_t con
     auto const key_cpp = kth::hd_key_to_cpp(key);
     auto result = cpp_t::from_hd_key_with_prefix(key_cpp, prefix);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -99,7 +99,7 @@ kth_error_code_t kth_wallet_hd_public_from_secret(kth_hash_t const* secret, kth_
     auto const lineage_cpp = kth::from_c_struct<kth::domain::wallet::hd_lineage>(lineage);
     auto result = cpp_t::from_secret(secret_cpp, chain_code_cpp, lineage_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -114,7 +114,7 @@ kth_error_code_t kth_wallet_hd_public_from_secret_unsafe(uint8_t const* secret, 
     auto const lineage_cpp = kth::from_c_struct<kth::domain::wallet::hd_lineage>(lineage);
     auto result = cpp_t::from_secret(secret_cpp, chain_code_cpp, lineage_cpp);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 
@@ -124,7 +124,7 @@ kth_hd_public_mut_t kth_wallet_hd_public_from_verified_components(kth_ec_compres
     auto const point_cpp = kth::ec_compressed_to_cpp(point->data);
     auto const chain_code_cpp = kth::hash_to_cpp(chain_code->hash);
     auto const lineage_cpp = kth::from_c_struct<kth::domain::wallet::hd_lineage>(lineage);
-    return kth::leak(cpp_t::from_verified_components(point_cpp, chain_code_cpp, lineage_cpp));
+    return kth::to_owned(cpp_t::from_verified_components(point_cpp, chain_code_cpp, lineage_cpp));
 }
 
 kth_hd_public_mut_t kth_wallet_hd_public_from_verified_components_unsafe(uint8_t const* point, uint8_t const* chain_code, kth_hd_lineage_t lineage) {
@@ -133,7 +133,7 @@ kth_hd_public_mut_t kth_wallet_hd_public_from_verified_components_unsafe(uint8_t
     auto const point_cpp = kth::ec_compressed_to_cpp(point);
     auto const chain_code_cpp = kth::hash_to_cpp(chain_code);
     auto const lineage_cpp = kth::from_c_struct<kth::domain::wallet::hd_lineage>(lineage);
-    return kth::leak(cpp_t::from_verified_components(point_cpp, chain_code_cpp, lineage_cpp));
+    return kth::to_owned(cpp_t::from_verified_components(point_cpp, chain_code_cpp, lineage_cpp));
 }
 
 
@@ -236,7 +236,7 @@ kth_error_code_t kth_wallet_hd_public_derive_public(kth_hd_public_const_t self, 
     KTH_PRECONDITION(*out == nullptr);
     auto result = kth::cpp_ref<cpp_t>(self).derive_public(index);
     if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::leak(std::move(*result));
+    *out = kth::to_owned(std::move(*result));
     return kth_ec_success;
 }
 

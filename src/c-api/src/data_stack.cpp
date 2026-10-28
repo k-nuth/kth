@@ -18,7 +18,7 @@ using cpp_t = kth::data_stack;
 extern "C" {
 
 kth_data_stack_mut_t kth_core_data_stack_construct_default(void) {
-    return kth::leak<cpp_t>();
+    return kth::make_owned<cpp_t>();
 }
 
 void kth_core_data_stack_destruct(kth_data_stack_mut_t list) {
