@@ -107,9 +107,6 @@ jobs:
       - name: 🔧 Setup Conan
         uses: ./ci_utils/.github/actions/setup-conan
 
-      - name: 🩹 Prepare verified LMDB source cache
-        shell: bash
-        run: python3 scripts/prepare_conan_source_cache.py --cache-dir "$RUNNER_TEMP/kth-conan-sources"
       - name: 🔧 Setup kthbuild
         uses: ./ci_utils/.github/actions/setup-kthbuild
       - name: 🔧 Get CMake
@@ -240,7 +237,7 @@ jobs:
             echo "🚀 Release build - using conan create (includes package validation)"
             conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-            conan create -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources" conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False
+            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False
           else
             echo "🔨 Development build - direct compilation with tests"
             conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
@@ -248,7 +245,7 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources" conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"

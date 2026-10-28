@@ -56,9 +56,6 @@ jobs:
         if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-conan
 
-      - name: 🩹 Prepare verified LMDB source cache
-        shell: bash
-        run: python3 scripts/prepare_conan_source_cache.py --cache-dir "$RUNNER_TEMP/kth-conan-sources"
       - name: 🔧 Setup kthbuild
         if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-kthbuild
@@ -75,10 +72,10 @@ jobs:
         run: |
           if [ "${{ inputs.context }}" = "build" ]; then
             echo "Building tool requirement: ${{ inputs.reference }}"
-            conan install -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources" --tool-requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
+            conan install --tool-requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
           else
             echo "Building host requirement: ${{ inputs.reference }}"
-            conan install -cc "core.sources:download_cache=$RUNNER_TEMP/kth-conan-sources" --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
+            conan install --requires=${{ inputs.reference }} -l conan.lock -b missing -pr:b linux-ci-cd -pr:h linux-ci-cd
           fi
       - name: 📦 Upload package
         if: ${{ inputs.reference != 'null' }}
