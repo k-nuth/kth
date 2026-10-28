@@ -1054,8 +1054,6 @@ private:
     /// wants the tip and the generation that go with it, and reading them apart
     /// is what produced the combinations #605 was about. The one legitimate use
     /// is seeding a branch's state below.
-    [[nodiscard]]
-
     mutable capture_gate capture_gate_;
 
     // One swap publishes the whole triple; see published_chain_view.
