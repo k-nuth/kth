@@ -237,3 +237,48 @@ TEST_CASE("light_block inbound block message is rejected without hanging", "[cha
     REQUIRE( ! hung);
     REQUIRE(rejected.load(std::memory_order_relaxed));
 }
+
+TEST_CASE("full and light block parsers reject noncanonical CompactSize fields", "[chain light_block][compactsize]") {
+    auto const canonical = get_raw_block();
+    // Block count, then the first transaction's input count, scriptSig length,
+    // output count and scriptPubKey length in this fixed upstream fixture.
+    for (size_t const position : {80u, 85u, 122u, 134u, 143u}) {
+        CAPTURE(position);
+        auto bytes = canonical;
+        REQUIRE(bytes[position] < 0xfd);
+        auto const value = bytes[position];
+        bytes[position] = 0xfd;
+        bytes.insert(bytes.begin() + position + 1, {value, 0x00});
+        byte_reader full_reader(bytes);
+        auto const full = chain::block::from_data(full_reader);
+        CHECK_FALSE(full.has_value());
+        if (!full) CHECK(full.error() == error::invalid_size);
+        byte_reader light_reader(bytes);
+        auto const light = chain::light_block::from_data(light_reader, true);
+        CHECK_FALSE(light.has_value());
+        if (!light) CHECK(light.error() == error::invalid_size);
+    }
+}
+
+TEST_CASE("transaction parser rejects noncanonical CompactSize fields", "[chain light_block][compactsize]") {
+    auto const block_bytes = get_raw_block();
+    byte_reader reader(block_bytes);
+    auto const block = chain::light_block::from_data(reader, true);
+    REQUIRE(block.has_value());
+    auto const first = block->tx_bytes(0);
+    data_chunk const canonical(first.begin(), first.end());
+    byte_reader control_reader(canonical);
+    REQUIRE(chain::transaction::from_data(control_reader, true).has_value());
+    for (size_t const position : {4u, 41u, 53u, 62u}) {
+        CAPTURE(position);
+        auto bytes = canonical;
+        REQUIRE(bytes[position] < 0xfd);
+        auto const value = bytes[position];
+        bytes[position] = 0xfd;
+        bytes.insert(bytes.begin() + position + 1, {value, 0x00});
+        byte_reader tx_reader(bytes);
+        auto const tx = chain::transaction::from_data(tx_reader, true);
+        CHECK_FALSE(tx.has_value());
+        if (!tx) CHECK(tx.error() == error::invalid_size);
+    }
+}

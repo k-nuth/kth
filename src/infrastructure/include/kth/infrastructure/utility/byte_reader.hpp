@@ -190,13 +190,21 @@ struct byte_reader {
         }
         auto const value = *value_exp;
 
+        // CompactSize uses the shortest width that represents its value.
+        // Match BCHN ReadCompactSizeWithLimit before lengths reach any parser.
+        auto const read_canonical = [this]<typename T>(uint64_t minimum) -> expect<uint64_t> {
+            auto const decoded = read_little_endian<T>();
+            if (!decoded) return std::unexpected(decoded.error());
+            if (*decoded < minimum) return std::unexpected(error::invalid_size);
+            return *decoded;
+        };
         switch (value) {
             case varint_eight_bytes:
-                return read_little_endian<uint64_t>();
+                return read_canonical.template operator()<uint64_t>(0x100000000ULL);
             case varint_four_bytes:
-                return read_little_endian<uint32_t>();
+                return read_canonical.template operator()<uint32_t>(0x10000);
             case varint_two_bytes:
-                return read_little_endian<uint16_t>();
+                return read_canonical.template operator()<uint16_t>(0xfd);
             default:
                 return value;
         }
