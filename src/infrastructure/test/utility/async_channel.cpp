@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <string>
 #include <thread>
 #include <vector>
@@ -221,6 +222,8 @@ TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool
         std::atomic<int> sum{0};
         std::atomic<int> count{0};
         std::atomic<int> send_count{0};
+        std::atomic<int> producers_done{0};
+        std::atomic<int> producer_errors{0};
         std::atomic<bool> consumer_done{false};
 
         // 5 producer coroutines - spawned on strand for serialized access
@@ -233,7 +236,10 @@ TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool
                     if (!ec) {
                         ++send_count;
                     }
-                }, ::asio::detached);
+                }, [&producers_done, &producer_errors](std::exception_ptr error) {
+                    if (error) ++producer_errors;
+                    ++producers_done;
+                });
         }
 
         // Consumer coroutine - also on strand
@@ -250,8 +256,10 @@ TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool
                 consumer_done = true;
             }, ::asio::detached);
 
-        // Wait for consumer to complete
-        while (!consumer_done.load()) {
+        // Strand serialization does not imply the producer completions ran.
+        auto const deadline = std::chrono::steady_clock::now() + 10s;
+        while ((!consumer_done.load() || producers_done.load() != 5)
+               && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(1ms);
         }
 
@@ -262,6 +270,8 @@ TEST_CASE("async_channel with strand serialization", "[async_channel][threadpool
         INFO("count = " << count.load());
         INFO("sum = " << sum.load());
 
+        CHECK(producers_done.load() == 5);
+        CHECK(producer_errors.load() == 0);
         CHECK(send_count.load() == 5);
         CHECK(count.load() == 5);
         CHECK(sum.load() == 15);  // 1+2+3+4+5
@@ -287,6 +297,8 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
         std::atomic<int> sum{0};
         std::atomic<int> count{0};
         std::atomic<int> send_count{0};
+        std::atomic<int> producers_done{0};
+        std::atomic<int> producer_errors{0};
         std::atomic<bool> consumer_done{false};
 
         // 5 producer coroutines - can run on any thread safely
@@ -299,7 +311,10 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
                     if (!ec) {
                         ++send_count;
                     }
-                }, ::asio::detached);
+                }, [&producers_done, &producer_errors](std::exception_ptr error) {
+                    if (error) ++producer_errors;
+                    ++producers_done;
+                });
         }
 
         // Consumer coroutine - can run on any thread
@@ -316,8 +331,11 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
                 consumer_done = true;
             }, ::asio::detached);
 
-        // Wait for consumer to complete
-        while (!consumer_done.load()) {
+        // Receiving the final message does not imply its sender's completion
+        // has run. Join producer completions before stopping their executor.
+        auto const deadline = std::chrono::steady_clock::now() + 10s;
+        while ((!consumer_done.load() || producers_done.load() != 5)
+               && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(1ms);
         }
 
@@ -328,6 +346,8 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
         INFO("count = " << count.load());
         INFO("sum = " << sum.load());
 
+        CHECK(producers_done.load() == 5);
+        CHECK(producer_errors.load() == 0);
         CHECK(send_count.load() == 5);
         CHECK(count.load() == 5);
         CHECK(sum.load() == 15);  // 1+2+3+4+5
@@ -343,6 +363,8 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
 
         std::atomic<int> sum{0};
         std::atomic<int> send_count{0};
+        std::atomic<int> producers_done{0};
+        std::atomic<int> producer_errors{0};
         std::atomic<int> receive_count{0};
         std::atomic<bool> done{false};
 
@@ -359,7 +381,10 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
                             ++send_count;
                         }
                     }
-                }, ::asio::detached);
+                }, [&producers_done, &producer_errors](std::exception_ptr error) {
+                    if (error) ++producer_errors;
+                    ++producers_done;
+                });
         }
 
         // Single consumer receiving all items
@@ -376,8 +401,9 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
                 done = true;
             }, ::asio::detached);
 
-        // Wait for completion
-        while (!done.load()) {
+        auto const deadline = std::chrono::steady_clock::now() + 10s;
+        while ((!done.load() || producers_done.load() != num_producers)
+               && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(1ms);
         }
 
@@ -392,6 +418,8 @@ TEST_CASE("concurrent_channel without strand", "[concurrent_channel][threadpool]
         INFO("sum = " << sum.load());
         INFO("expected_sum = " << expected_sum);
 
+        CHECK(producers_done.load() == num_producers);
+        CHECK(producer_errors.load() == 0);
         CHECK(send_count.load() == total_items);
         CHECK(receive_count.load() == total_items);
         CHECK(sum.load() == expected_sum);
