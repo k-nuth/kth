@@ -662,6 +662,103 @@ TEST_CASE("mempool concurrent stress 32 threads", "[mempool][concurrent]") {
     run_concurrent(32);
 }
 
+TEST_CASE("mempool two removals of one tx never release a later claim", "[mempool][concurrent]") {
+    // A transaction can be removed twice at once — two blocks, or a block and a
+    // conflict eviction, both naming it. Each removal looks the transaction up,
+    // frees the outpoints it claimed, then drops it. If the second removal frees
+    // an outpoint after the first one already did, it can free the claim of a
+    // different transaction that was admitted into that gap: U is then in the
+    // pool but no longer recorded as the spender of its inputs, and V, which
+    // spends the same outpoint, is admitted beside it. That breaks first-seen.
+    //
+    // ASSERTION: whenever U is contained, a conflicting V is rejected. Every
+    // round uses its own outpoint and fresh transactions; the three threads
+    // start together with a small random stagger so that U's admission can land
+    // between the two removals' erases.
+    constexpr uint64_t rounds = 20'000;
+
+    struct round_data {
+        transaction t;
+        mempool_entry u;
+        mempool_entry v;
+        block t_block;
+    };
+
+    std::vector<round_data> data;
+    data.reserve(rounds);
+    for (uint64_t i = 0; i < rounds; ++i) {
+        auto const spent = op(9'000'000 + i, 0);
+        auto t = make_tx({spent}, 1, 3 * i + 1);
+        auto const u = make_tx({spent}, 1, 3 * i + 2);
+        auto const v = make_tx({spent}, 1, 3 * i + 3);
+        auto t_block = make_block({t});
+        data.push_back({std::move(t), entry_for(u, 3 * i + 2), entry_for(v, 3 * i + 3), std::move(t_block)});
+    }
+
+    mempool mp{0xA5A5A5A5u, 0x5A5A5A5Au};
+
+    std::atomic<uint64_t> started{0};
+    std::atomic<uint64_t> finished{0};
+    constexpr unsigned workers = 3;
+
+    auto const stagger = [](std::mt19937_64& rng) {
+        for (auto n = rng() % 64; n != 0; --n) {
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+        }
+    };
+
+    std::vector<std::thread> threads;
+    for (unsigned w = 0; w < workers; ++w) {
+        threads.emplace_back([&, w] {
+            std::mt19937_64 rng(0xFACADEu + w);
+            for (uint64_t i = 0; i < rounds; ++i) {
+                while (started.load(std::memory_order_acquire) <= i) {
+                    std::this_thread::yield();
+                }
+                stagger(rng);
+                if (w == 2) {
+                    (void)mp.add(data[i].u);
+                } else {
+                    mp.remove_for_block(data[i].t_block);
+                }
+                finished.fetch_add(1, std::memory_order_acq_rel);
+            }
+        });
+    }
+
+    uint64_t setup_failures = 0;
+    uint64_t conflict_checks = 0;
+    uint64_t violations = 0;
+    uint64_t first_violation = 0;
+    for (uint64_t i = 0; i < rounds; ++i) {
+        // Defer assertions until the workers have joined, including on failure.
+        if ( ! mp.add(entry_for(data[i].t, 3 * i + 1))) {
+            ++setup_failures;
+        }
+        started.store(i + 1, std::memory_order_release);
+        while (finished.load(std::memory_order_acquire) < (i + 1) * workers) {
+            std::this_thread::yield();
+        }
+        if (mp.contains(data[i].u.tx->hash())) {
+            ++conflict_checks;
+            if (mp.add(data[i].v)) {
+                if (violations++ == 0) {
+                    first_violation = i;
+                }
+            }
+        }
+    }
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    INFO("rounds=" << rounds << " conflict_checks=" << conflict_checks
+         << " first_violation_round=" << first_violation);
+    CHECK(setup_failures == 0u);
+    CHECK(conflict_checks > 0u);
+    CHECK(violations == 0u);
+}
+
 // =============================================================================
 // The leased view is a state the pool was in (#611)
 // =============================================================================

@@ -113,11 +113,22 @@ void mempool::remove_entry(hash_digest const& txid) {
         return;
     }
 
+    // The erase from the pool is what decides who removes the transaction: two
+    // removals of the same one can both have found it above, but only one erase
+    // succeeds, and only that one frees the claims. Freeing them before, or from
+    // both, lets the second removal erase a claim that another transaction took
+    // in the gap once the first one released it — that transaction would sit in
+    // the pool unrecorded as the spender of its inputs, and a conflicting one
+    // would then be admitted beside it. Until the winner releases them the keys
+    // stay claimed by this transaction, so no one can take them in the meantime.
+    if ( ! pool_.erase(txid)) {
+        return;
+    }
+
     for (auto const& in : tx->inputs()) {
         auto const& op = in.previous_output();
         spent_by_.erase(outpoint_key{op.hash(), op.index()});
     }
-    pool_.erase(txid);
     generation_.fetch_add(1, std::memory_order_relaxed);
 }
 
