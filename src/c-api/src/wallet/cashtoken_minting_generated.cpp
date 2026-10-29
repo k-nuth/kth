@@ -21,17 +21,19 @@
 
 extern "C" {
 
-kth_error_code_t kth_wallet_cashtoken_encode_nft_number(
-    int64_t value,
-    uint8_t** out_data,
-    kth_size_t* out_size
-) {
+kth_error_code_t kth_wallet_cashtoken_encode_nft_number(int64_t value, uint8_t** out_data, kth_size_t* out_size) {
     KTH_PRECONDITION(out_data != nullptr);
     KTH_PRECONDITION(out_size != nullptr);
-    auto r = ct::encode_nft_number(value);
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out_data = kth::create_c_array(*r, *out_size);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::encode_nft_number(value);
+        if ( ! result) return kth::to_c_err(result.error());
+        return kth::try_create_c_array(*result, out_data, out_size);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_prepare_genesis_utxo(
@@ -45,16 +47,23 @@ kth_error_code_t kth_wallet_cashtoken_prepare_genesis_utxo(
     KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::prepare_genesis_utxo(ct::prepare_genesis_params{
-        .utxo = kth::cpp_ref<kth::domain::chain::utxo>(utxo),
-        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
-        .satoshis = satoshis,
-        .change_address = optional_addr(change_address),
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::prepare_genesis_utxo(ct::prepare_genesis_params{
+            .utxo = kth::cpp_ref<kth::domain::chain::utxo>(utxo),
+            .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+            .satoshis = satoshis,
+            .change_address = optional_addr(change_address),
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_token_genesis(
@@ -72,20 +81,27 @@ kth_error_code_t kth_wallet_cashtoken_create_token_genesis(
     KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::create_token_genesis(ct::token_genesis_params{
-        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
-        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
-        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
-        .nft = optional_nft_spec(nft),
-        .satoshis = satoshis,
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .change_address = optional_addr(change_address),
-        .script_flags = script_flags,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_token_genesis(ct::token_genesis_params{
+            .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+            .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+            .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+            .nft = optional_nft_spec(nft),
+            .satoshis = satoshis,
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .change_address = optional_addr(change_address),
+            .script_flags = script_flags,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_token_mint(
@@ -103,23 +119,28 @@ kth_error_code_t kth_wallet_cashtoken_create_token_mint(
     KTH_PRECONDITION(nfts != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto const new_commit_opt = new_minting_commitment == nullptr
-        ? std::optional<kth::data_chunk>(std::nullopt)
-        : std::optional<kth::data_chunk>(commitment_from(new_minting_commitment, new_minting_commitment_n));
-
-    auto r = ct::create_token_mint(ct::token_mint_params{
-        .minting_utxo = kth::cpp_ref<kth::domain::chain::utxo>(minting_utxo),
-        .nfts = kth::cpp_ref<std::vector<ct::nft_mint_request>>(nfts),
-        .new_minting_commitment = new_commit_opt,
-        .minting_destination = optional_addr(minting_destination),
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .change_address = optional_addr(change_address),
-        .script_flags = script_flags,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_token_mint(ct::token_mint_params{
+            .minting_utxo = kth::cpp_ref<kth::domain::chain::utxo>(minting_utxo),
+            .nfts = kth::cpp_ref<std::vector<ct::nft_mint_request>>(nfts),
+            .new_minting_commitment = new_minting_commitment == nullptr
+                ? std::optional<kth::data_chunk>(std::nullopt)
+                : std::optional<kth::data_chunk>(commitment_from(new_minting_commitment, new_minting_commitment_n)),
+            .minting_destination = optional_addr(minting_destination),
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .change_address = optional_addr(change_address),
+            .script_flags = script_flags,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_token_transfer(
@@ -136,20 +157,27 @@ kth_error_code_t kth_wallet_cashtoken_create_token_transfer(
     KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::create_token_transfer(ct::token_transfer_params{
-        .token_utxos = copy_utxo_list(token_utxos),
-        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
-        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
-        .nft = optional_nft_spec(nft),
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .token_change_address = optional_addr(token_change_address),
-        .bch_change_address = optional_addr(bch_change_address),
-        .satoshis = satoshis,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_token_transfer(ct::token_transfer_params{
+            .token_utxos = copy_utxo_list(token_utxos),
+            .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+            .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+            .nft = optional_nft_spec(nft),
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .token_change_address = optional_addr(token_change_address),
+            .bch_change_address = optional_addr(bch_change_address),
+            .satoshis = satoshis,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_token_burn(
@@ -167,20 +195,27 @@ kth_error_code_t kth_wallet_cashtoken_create_token_burn(
     KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::create_token_burn(ct::token_burn_params{
-        .token_utxo = kth::cpp_ref<kth::domain::chain::utxo>(token_utxo),
-        .burn_ft_amount = kth::int_to_bool(has_burn_ft_amount) ? std::optional<uint64_t>(burn_ft_amount) : std::nullopt,
-        .burn_nft = kth::int_to_bool(burn_nft),
-        .message = message == nullptr ? std::optional<std::string>(std::nullopt) : std::optional<std::string>(message),
-        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .change_address = optional_addr(change_address),
-        .satoshis = satoshis,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_token_burn(ct::token_burn_params{
+            .token_utxo = kth::cpp_ref<kth::domain::chain::utxo>(token_utxo),
+            .burn_ft_amount = kth::int_to_bool(has_burn_ft_amount) ? std::optional<uint64_t>(burn_ft_amount) : std::nullopt,
+            .burn_nft = kth::int_to_bool(burn_nft),
+            .message = message == nullptr ? std::optional<std::string>(std::nullopt) : std::optional<std::string>(message),
+            .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .change_address = optional_addr(change_address),
+            .satoshis = satoshis,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_ft(
@@ -197,19 +232,26 @@ kth_error_code_t kth_wallet_cashtoken_create_ft(
     KTH_PRECONDITION(destination != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::create_ft(ct::ft_params{
-        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
-        .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
-        .total_supply = total_supply,
-        .with_minting_nft = kth::int_to_bool(with_minting_nft),
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .change_address = optional_addr(change_address),
-        .script_flags = script_flags,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_ft(ct::ft_params{
+            .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+            .destination = kth::cpp_ref<kth::domain::wallet::payment_address>(destination),
+            .total_supply = total_supply,
+            .with_minting_nft = kth::int_to_bool(with_minting_nft),
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .change_address = optional_addr(change_address),
+            .script_flags = script_flags,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_cashtoken_create_nft_collection(
@@ -229,21 +271,28 @@ kth_error_code_t kth_wallet_cashtoken_create_nft_collection(
     KTH_PRECONDITION(creator_address != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-
-    auto r = ct::create_nft_collection(ct::nft_collection_params{
-        .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
-        .nfts = kth::cpp_ref<std::vector<ct::nft_collection_item>>(nfts),
-        .creator_address = kth::cpp_ref<kth::domain::wallet::payment_address>(creator_address),
-        .keep_minting_token = kth::int_to_bool(keep_minting_token),
-        .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
-        .fee_utxos = copy_utxo_list(fee_utxos),
-        .change_address = optional_addr(change_address),
-        .batch_size = kth::sz(batch_size),
-        .script_flags = script_flags,
-    });
-    if ( ! r.has_value()) return kth::to_c_err(r.error());
-    *out = kth::to_owned(std::move(*r));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = ct::create_nft_collection(ct::nft_collection_params{
+            .genesis_utxo = kth::cpp_ref<kth::domain::chain::utxo>(genesis_utxo),
+            .nfts = kth::cpp_ref<std::vector<ct::nft_collection_item>>(nfts),
+            .creator_address = kth::cpp_ref<kth::domain::wallet::payment_address>(creator_address),
+            .keep_minting_token = kth::int_to_bool(keep_minting_token),
+            .ft_amount = kth::int_to_bool(has_ft_amount) ? std::optional<uint64_t>(ft_amount) : std::nullopt,
+            .fee_utxos = copy_utxo_list(fee_utxos),
+            .change_address = optional_addr(change_address),
+            .batch_size = kth::sz(batch_size),
+            .script_flags = script_flags,
+        });
+        if ( ! result) return kth::to_c_err(result.error());
+        auto* owned = kth::to_owned(std::move(*result));
+        *out = owned;
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"
