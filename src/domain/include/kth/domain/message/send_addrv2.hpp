@@ -33,7 +33,7 @@ struct KD_API send_addrv2 {
     }
 
     static
-    expect<send_addrv2> from_data(byte_reader& reader, uint32_t version);
+    expect<send_addrv2> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;

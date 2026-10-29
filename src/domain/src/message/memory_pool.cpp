@@ -15,7 +15,7 @@ uint32_t const memory_pool::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<memory_pool> memory_pool::from_data(byte_reader& reader, uint32_t version) {
+expect<memory_pool> memory_pool::from_data(byte_reader& reader, uint32_t version) noexcept {
     if (version < memory_pool::version_minimum) {
         return std::unexpected(error::unsupported_version);
     }

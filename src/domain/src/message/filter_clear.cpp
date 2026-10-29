@@ -16,7 +16,7 @@ uint32_t const filter_clear::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<filter_clear> filter_clear::from_data(byte_reader& reader, uint32_t version) {
+expect<filter_clear> filter_clear::from_data(byte_reader& reader, uint32_t version) noexcept {
     if (version < filter_clear::version_minimum) {
         return std::unexpected(error::version_too_low);
     }

@@ -17,7 +17,7 @@ constexpr auto store_point_size = std::tuple_size<point>::value;
 // Serialization.
 //-----------------------------------------------------------------------------
 
-expect<point> point::from_data(byte_reader& reader, bool wire) {
+expect<point> point::from_data(byte_reader& reader, bool wire) noexcept {
     auto const hash = read_hash(reader);
     if ( ! hash) {
         return std::unexpected(hash.error());

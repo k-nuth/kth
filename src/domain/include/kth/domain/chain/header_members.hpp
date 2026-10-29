@@ -52,7 +52,7 @@ public:
 
     constexpr header(uint32_t version, hash_digest const& previous_block_hash,
                      hash_digest const& merkle, uint32_t timestamp,
-                     uint32_t bits, uint32_t nonce)
+                     uint32_t bits, uint32_t nonce) noexcept
         : version_(version)
         , previous_block_hash_(previous_block_hash)
         , merkle_(merkle)
@@ -86,7 +86,7 @@ public:
     //-------------------------------------------------------------------------
 
     static
-    expect<header> from_data(byte_reader& reader, bool wire = true);
+    expect<header> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, bool wire) const {

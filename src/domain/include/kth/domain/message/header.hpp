@@ -34,7 +34,7 @@ struct KD_API header : chain::header {
 
     header() = default;
 
-    header(chain::header const& x)
+    header(chain::header const& x) noexcept
         : chain::header(x)
     {}
 
@@ -49,7 +49,7 @@ struct KD_API header : chain::header {
 
     // Deserialization from P2P wire (reads trailing zero byte).
     static
-    expect<header> from_data(byte_reader& reader, uint32_t version);
+    expect<header> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     // Serialization to P2P wire (writes trailing zero byte).
     [[nodiscard]]

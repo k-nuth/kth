@@ -21,7 +21,7 @@ public:
 };
 
 static
-error_category_impl const& get_error_category_instance() {
+error_category_impl const& get_error_category_instance() noexcept {
     static error_category_impl instance;
     return instance;
 }
@@ -303,7 +303,7 @@ std::error_condition error_category_impl::default_error_condition(int ev) const 
 namespace kth {
 namespace error {
 
-code make_error_code(error_code_t e) {
+code make_error_code(error_code_t e) noexcept {
     return {e, get_error_category_instance()};
 }
 

@@ -5,6 +5,8 @@
 #include <array>
 #include <limits>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -17,8 +19,12 @@ using namespace kth::infrastructure;
 
 // Start Test Suite: byte_reader tests
 
-// Construction and the non-allocating accessors cannot throw. The parsing
-// operations return `expect<T>` and are intentionally left unannotated.
+// Construction, the non-allocating accessors and the fixed-size primitives that
+// `from_data` factories build on cannot throw: they bounds-check against
+// remaining_size(), copy trivially copyable bytes and build the error through
+// `error::make_error_code`, which is itself noexcept. The operations that
+// allocate (`read_string`) or that are not needed by a noexcept parser keep
+// their potentially-throwing signature.
 static_assert(std::is_nothrow_constructible_v<byte_reader, byte_span>);
 static_assert(noexcept(byte_reader(std::declval<byte_span>())));
 static_assert(noexcept(std::declval<byte_reader const&>().buffer_size()));
@@ -26,9 +32,47 @@ static_assert(noexcept(std::declval<byte_reader const&>().buffer()));
 static_assert(noexcept(std::declval<byte_reader const&>().remaining_size()));
 static_assert(noexcept(std::declval<byte_reader const&>().position()));
 static_assert(noexcept(std::declval<byte_reader const&>().is_exhausted()));
+static_assert(noexcept(std::declval<byte_reader&>().unsafe_read_byte()));
+static_assert(noexcept(std::declval<byte_reader&>().read_byte()));
+static_assert(noexcept(std::declval<byte_reader&>().read_bytes(1)));
+static_assert(noexcept(std::declval<byte_reader&>().read_bytes_to(std::declval<std::span<uint8_t>>())));
+static_assert(noexcept(std::declval<byte_reader&>().skip_remaining()));
+static_assert(noexcept(std::declval<byte_reader&>().read_little_endian<uint8_t>()));
+static_assert(noexcept(std::declval<byte_reader&>().read_little_endian<uint16_t>()));
+static_assert(noexcept(std::declval<byte_reader&>().read_little_endian<uint32_t>()));
+static_assert(noexcept(std::declval<byte_reader&>().read_little_endian<uint64_t>()));
+static_assert(noexcept(std::declval<byte_reader&>().read_variable_little_endian()));
+static_assert(noexcept(error::make_error_code(error::read_past_end_of_buffer)));
+
+// `read_packed<T>` default constructs and moves a `T`, so it is only noexcept
+// when `T` is nothrow default constructible and nothrow move constructible.
+namespace {
+struct packed_nothrow { uint32_t a; uint32_t b; };
+struct packed_throwing_default {
+    packed_throwing_default() noexcept(false) {}
+    uint32_t a;
+};
+// Trivially copyable, yet `operator&` throws. `read_packed` must not use it.
+struct packed_throwing_address_of {
+    uint32_t a;
+    packed_throwing_address_of* operator&() noexcept(false) {
+        throw std::runtime_error("operator& must not be called");
+    }
+};
+} // namespace
+static_assert(noexcept(std::declval<byte_reader&>().read_packed<packed_throwing_address_of>()));
+static_assert(noexcept(std::declval<byte_reader&>().read_packed<packed_nothrow>()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_packed<packed_throwing_default>()));
+
+// Everything else is deliberately left potentially-throwing.
 static_assert( ! noexcept(std::declval<byte_reader&>().skip(1)));
-static_assert( ! noexcept(std::declval<byte_reader&>().read_byte()));
-static_assert( ! noexcept(std::declval<byte_reader&>().read_bytes(1)));
+static_assert( ! noexcept(std::declval<byte_reader&>().skip_byte()));
+static_assert( ! noexcept(std::declval<byte_reader const&>().peek_byte()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_array<4>()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_big_endian<uint16_t>()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_size_little_endian()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_string()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_string(1)));
 
 TEST_CASE("byte_reader - noexcept accessors report buffer state", "[byte_reader tests]") {
     data_chunk const buffer{0x01, 0x02, 0x03};
@@ -526,6 +570,112 @@ TEST_CASE("byte_reader - read_bytes rejects wrapping size", "[overflow-poc]") {
     REQUIRE( ! result.has_value());
     REQUIRE(result.error() == error::read_past_end_of_buffer);
     REQUIRE(reader.position() == 50);
+}
+
+TEST_CASE("byte_reader - noexcept error codes are the bitcoin category", "[byte_reader tests]") {
+    auto const ec = error::make_error_code(error::read_past_end_of_buffer);
+    REQUIRE(ec.value() == int(error::read_past_end_of_buffer));
+    REQUIRE(std::string(ec.category().name()) == "bitcoin");
+    REQUIRE(ec == error::read_past_end_of_buffer);
+    // The category instance is a single object across calls.
+    REQUIRE(&ec.category() == &error::make_error_code(error::skip_past_end_of_buffer).category());
+}
+
+TEST_CASE("byte_reader - noexcept primitives read values and report truncation", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09};
+    byte_reader reader(byte_span(buffer.data(), buffer.size()));
+
+    auto const byte_exp = reader.read_byte();
+    REQUIRE(byte_exp.has_value());
+    REQUIRE(*byte_exp == 0x01);
+
+    auto const u16 = reader.read_little_endian<uint16_t>();
+    REQUIRE(u16.has_value());
+    REQUIRE(*u16 == 0x0302);
+
+    auto const bytes = reader.read_bytes(2);
+    REQUIRE(bytes.has_value());
+    REQUIRE(bytes->size() == 2);
+    REQUIRE((*bytes)[0] == 0x04);
+    REQUIRE((*bytes)[1] == 0x05);
+
+    std::array<uint8_t, 2> dest{};
+    REQUIRE(reader.read_bytes_to(dest).has_value());
+    REQUIRE(dest[0] == 0x06);
+    REQUIRE(dest[1] == 0x07);
+
+    // Two bytes remain: a 4 byte read fails without moving the cursor.
+    auto const position = reader.position();
+    auto const u32 = reader.read_little_endian<uint32_t>();
+    REQUIRE( ! u32.has_value());
+    REQUIRE(u32.error() == error::read_past_end_of_buffer);
+    REQUIRE( ! reader.read_bytes(3).has_value());
+    std::array<uint8_t, 3> too_big{};
+    auto const to = reader.read_bytes_to(too_big);
+    REQUIRE( ! to.has_value());
+    REQUIRE(to.error() == error::read_past_end_of_buffer);
+    REQUIRE(reader.position() == position);
+
+    reader.skip_remaining();
+    REQUIRE(reader.is_exhausted());
+    auto const eof = reader.read_byte();
+    REQUIRE( ! eof.has_value());
+    REQUIRE(eof.error() == error::read_past_end_of_buffer);
+}
+
+TEST_CASE("byte_reader - noexcept read_variable_little_endian covers every prefix", "[byte_reader tests]") {
+    {
+        data_chunk const buffer{0xfc};
+        byte_reader reader(byte_span(buffer.data(), buffer.size()));
+        auto const v = reader.read_variable_little_endian();
+        REQUIRE(v.has_value());
+        REQUIRE(*v == 0xfc);
+    }
+    {
+        data_chunk const buffer{0xfd, 0x34, 0x12};
+        byte_reader reader(byte_span(buffer.data(), buffer.size()));
+        REQUIRE(*reader.read_variable_little_endian() == 0x1234);
+    }
+    {
+        data_chunk const buffer{0xfe, 0x78, 0x56, 0x34, 0x12};
+        byte_reader reader(byte_span(buffer.data(), buffer.size()));
+        REQUIRE(*reader.read_variable_little_endian() == 0x12345678);
+    }
+    {
+        data_chunk const buffer{0xff, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01};
+        byte_reader reader(byte_span(buffer.data(), buffer.size()));
+        REQUIRE(*reader.read_variable_little_endian() == 0x0123456789abcdef);
+    }
+    {
+        // Truncated body after a 4 byte marker.
+        data_chunk const buffer{0xfe, 0x78, 0x56};
+        byte_reader reader(byte_span(buffer.data(), buffer.size()));
+        auto const v = reader.read_variable_little_endian();
+        REQUIRE( ! v.has_value());
+        REQUIRE(v.error() == error::read_past_end_of_buffer);
+    }
+    {
+        byte_reader reader(byte_span(static_cast<uint8_t const*>(nullptr), 0));
+        REQUIRE( ! reader.read_variable_little_endian().has_value());
+    }
+}
+
+TEST_CASE("byte_reader - read_packed bypasses an overloaded throwing operator&", "[byte_reader tests]") {
+    data_chunk const buffer{0x78, 0x56, 0x34, 0x12};
+    byte_reader reader(byte_span(buffer.data(), buffer.size()));
+    auto const value = reader.read_packed<packed_throwing_address_of>();
+    REQUIRE(value.has_value());
+    REQUIRE(value->a == 0x12345678u);
+}
+
+TEST_CASE("byte_reader - noexcept read_packed reads a trivially copyable struct", "[byte_reader tests]") {
+    data_chunk const buffer{0x78, 0x56, 0x34, 0x12, 0x04, 0x03, 0x02, 0x01};
+    byte_reader reader(byte_span(buffer.data(), buffer.size()));
+    auto const value = reader.read_packed<packed_nothrow>();
+    REQUIRE(value.has_value());
+    REQUIRE(value->a == 0x12345678u);
+    REQUIRE(value->b == 0x01020304u);
+    REQUIRE( ! reader.read_packed<packed_nothrow>().has_value());
 }
 
 // End Test Suite

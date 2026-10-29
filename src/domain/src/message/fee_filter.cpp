@@ -16,7 +16,7 @@ uint32_t const fee_filter::version_maximum = version::level::bip133;
 //-----------------------------------------------------------------------------
 
 // static
-expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) {
+expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) noexcept {
     auto const minimum = reader.read_little_endian<uint64_t>();
     if ( ! minimum) {
         return std::unexpected(minimum.error());

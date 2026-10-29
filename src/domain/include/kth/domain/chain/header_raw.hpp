@@ -104,7 +104,7 @@ public:
     }
 
     // Construct from raw byte array.
-    explicit constexpr header(std::array<uint8_t, serialized_size_wire> const& raw_data)
+    explicit constexpr header(std::array<uint8_t, serialized_size_wire> const& raw_data) noexcept
         : data_{raw_data}
         // , median_time_past_{0}
     {}
@@ -236,7 +236,7 @@ public:
     //-------------------------------------------------------------------------
 
     static
-    expect<header> from_data(byte_reader& reader, bool wire = true);
+    expect<header> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, bool wire) const {

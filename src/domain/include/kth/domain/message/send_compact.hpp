@@ -25,7 +25,7 @@ struct KD_API send_compact {
     size_t satoshi_fixed_size(uint32_t version);
 
     send_compact() = default;
-    send_compact(bool high_bandwidth_mode, uint64_t version);
+    send_compact(bool high_bandwidth_mode, uint64_t version) noexcept;
 
     [[nodiscard]]
     friend bool operator==(send_compact const&, send_compact const&) = default;
@@ -42,7 +42,7 @@ struct KD_API send_compact {
     void set_version(uint64_t version);
 
     static
-    expect<send_compact> from_data(byte_reader& reader, uint32_t version);
+    expect<send_compact> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;

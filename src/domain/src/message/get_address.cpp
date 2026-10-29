@@ -15,7 +15,7 @@ uint32_t const get_address::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<get_address> get_address::from_data(byte_reader& reader, uint32_t /*version*/) {
+expect<get_address> get_address::from_data(byte_reader& reader, uint32_t /*version*/) noexcept {
     return get_address();
 }
 

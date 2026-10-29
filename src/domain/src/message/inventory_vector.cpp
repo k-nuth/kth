@@ -40,7 +40,7 @@ inventory_vector::inventory_vector()
     : hash_(null_hash)
 {}
 
-inventory_vector::inventory_vector(type_id type, hash_digest const& hash)
+inventory_vector::inventory_vector(type_id type, hash_digest const& hash) noexcept
     : type_(type), hash_(hash)
 {}
 
@@ -48,7 +48,7 @@ inventory_vector::inventory_vector(type_id type, hash_digest const& hash)
 //-----------------------------------------------------------------------------
 
 // static
-expect<inventory_vector> inventory_vector::from_data(byte_reader& reader, uint32_t version) {
+expect<inventory_vector> inventory_vector::from_data(byte_reader& reader, uint32_t version) noexcept {
     auto const raw_type = reader.read_little_endian<uint32_t>();
     if ( ! raw_type) {
         return std::unexpected(raw_type.error());

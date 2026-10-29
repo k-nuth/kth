@@ -44,7 +44,7 @@ struct KD_API inventory_vector {
     size_t satoshi_fixed_size(uint32_t version);
 
     inventory_vector();
-    inventory_vector(type_id type, hash_digest const& hash);
+    inventory_vector(type_id type, hash_digest const& hash) noexcept;
     inventory_vector(inventory_vector const& x) = default;
     inventory_vector(inventory_vector&& x) = default;
 
@@ -78,7 +78,7 @@ struct KD_API inventory_vector {
     bool is_double_spend_proof_type() const;
 
     static
-    expect<inventory_vector> from_data(byte_reader& reader, uint32_t version);
+    expect<inventory_vector> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;

@@ -28,7 +28,7 @@ struct KD_API pong {
 
     pong() = default;
     constexpr
-    pong(uint64_t nonce)
+    pong(uint64_t nonce) noexcept
         : nonce_(nonce)
     {}
 
@@ -42,7 +42,7 @@ struct KD_API pong {
     }
 
     static
-    expect<pong> from_data(byte_reader& reader, uint32_t version);
+    expect<pong> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;

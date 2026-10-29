@@ -16,7 +16,7 @@ uint32_t const message::xversion::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<xversion> xversion::from_data(byte_reader& reader, uint32_t version) {
+expect<xversion> xversion::from_data(byte_reader& reader, uint32_t version) noexcept {
     //TODO(fernando): we are skiping the message for the moment.
     reader.skip_remaining();
     return xversion();

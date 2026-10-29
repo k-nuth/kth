@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <memory>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <kth/infrastructure/concepts.hpp>
@@ -68,12 +70,12 @@ struct byte_reader {
     }
 
     constexpr
-    byte unsafe_read_byte() {
+    byte unsafe_read_byte() noexcept {
         return buffer_[position_++];
     }
 
     [[nodiscard]] constexpr
-    expect<byte> read_byte() {
+    expect<byte> read_byte() noexcept {
         if (position_ >= buffer_.size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
@@ -89,7 +91,7 @@ struct byte_reader {
     }
 
     [[nodiscard]] constexpr
-    expect<byte_span> read_bytes(size_t size) {
+    expect<byte_span> read_bytes(size_t size) noexcept {
         if (size > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
@@ -101,7 +103,7 @@ struct byte_reader {
     // Read bytes directly into a destination buffer.
     // Size to read is determined by dest.size().
     [[nodiscard]]
-    expect<void> read_bytes_to(std::span<uint8_t> dest) {
+    expect<void> read_bytes_to(std::span<uint8_t> dest) noexcept {
         if (dest.size() > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
@@ -141,13 +143,13 @@ struct byte_reader {
     }
 
     constexpr
-    void skip_remaining() {
+    void skip_remaining() noexcept {
         position_ = buffer_.size();
     }
 
     template <std::integral I>
     [[nodiscard]]
-    expect<I> read_little_endian() {
+    expect<I> read_little_endian() noexcept {
         if (sizeof(I) > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
@@ -172,18 +174,22 @@ struct byte_reader {
 
     template <trivially_copyable T>
     [[nodiscard]]
-    expect<T> read_packed() {
+    expect<T> read_packed()
+        noexcept(std::is_nothrow_default_constructible_v<T> &&
+                 std::is_nothrow_move_constructible_v<T>)
+    {
         if (sizeof(T) > remaining_size()) {
             return std::unexpected(error::read_past_end_of_buffer);
         }
         T value;
-        std::memcpy(&value, buffer_.data() + position_, sizeof(T));
+        // `std::addressof`: a trivially copyable `T` may overload `operator&`.
+        std::memcpy(std::addressof(value), buffer_.data() + position_, sizeof(T));
         position_ += sizeof(T);
         return value;
     }
 
     [[nodiscard]]
-    expect<uint64_t> read_variable_little_endian() {
+    expect<uint64_t> read_variable_little_endian() noexcept {
         auto const value_exp = read_byte();
         if ( ! value_exp) {
             return value_exp;

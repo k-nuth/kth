@@ -27,7 +27,7 @@ struct KD_API fee_filter {
 
     fee_filter() = default;
     constexpr
-    fee_filter(uint64_t minimum)
+    fee_filter(uint64_t minimum) noexcept
         : minimum_fee_(minimum)
     {}
 
@@ -41,7 +41,7 @@ struct KD_API fee_filter {
     }
 
     static
-    expect<fee_filter> from_data(byte_reader& reader, uint32_t version);
+    expect<fee_filter> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
