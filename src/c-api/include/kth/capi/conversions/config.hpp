@@ -19,7 +19,7 @@
 namespace kth {
 
 // Out-of-range C values map to `mainnet`.
-inline constexpr kth::domain::config::network network_to_cpp(kth_network_t x) {
+inline constexpr kth::domain::config::network network_to_cpp(kth_network_t x) noexcept {
     switch (x) {
         case kth_network_testnet:
             return kth::domain::config::network::testnet;
@@ -39,7 +39,7 @@ inline constexpr kth::domain::config::network network_to_cpp(kth_network_t x) {
     }
 }
 
-inline constexpr kth_network_t network_to_c(kth::domain::config::network x) {
+inline constexpr kth_network_t network_to_c(kth::domain::config::network x) noexcept {
     switch (x) {
         case kth::domain::config::network::testnet:
             return kth_network_testnet;
@@ -60,7 +60,7 @@ inline constexpr kth_network_t network_to_c(kth::domain::config::network x) {
 }
 
 // Segregated witness is not available when building for BCH.
-inline bool witness(int x = 1) {
+inline bool witness(int x = 1) noexcept {
 #if defined(KTH_CURRENCY_BCH)
     return false;
 #else

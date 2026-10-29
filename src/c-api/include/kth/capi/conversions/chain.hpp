@@ -22,7 +22,7 @@
 namespace kth {
 
 // Out-of-range C values map to `output`.
-inline constexpr kth::domain::chain::point_kind point_kind_to_cpp(kth_point_kind_t x) {
+inline constexpr kth::domain::chain::point_kind point_kind_to_cpp(kth_point_kind_t x) noexcept {
     switch (x) {
         case kth_point_kind_spend:
             return kth::domain::chain::point_kind::spend;
@@ -32,12 +32,12 @@ inline constexpr kth::domain::chain::point_kind point_kind_to_cpp(kth_point_kind
     }
 }
 
-inline constexpr kth_point_kind_t point_kind_to_c(kth::domain::chain::point_kind x) {
+inline constexpr kth_point_kind_t point_kind_to_c(kth::domain::chain::point_kind x) noexcept {
     return ecast<kth_point_kind_t>(x);
 }
 
 // Out-of-range C values map to `none`.
-inline constexpr kth::domain::chain::capability_t token_capability_to_cpp(kth_token_capability_t x) {
+inline constexpr kth::domain::chain::capability_t token_capability_to_cpp(kth_token_capability_t x) noexcept {
     switch (x) {
         case kth_token_capability_mut:
             return kth::domain::chain::capability_t::mut;
@@ -49,12 +49,12 @@ inline constexpr kth::domain::chain::capability_t token_capability_to_cpp(kth_to
     }
 }
 
-inline constexpr kth_token_capability_t token_capability_to_c(kth::domain::chain::capability_t x) {
+inline constexpr kth_token_capability_t token_capability_to_c(kth::domain::chain::capability_t x) noexcept {
     return ecast<kth_token_capability_t>(x);
 }
 
 // Out-of-range C values map to `ecdsa`.
-inline constexpr kth::domain::chain::endorsement_type endorsement_type_to_cpp(kth_endorsement_type_t x) {
+inline constexpr kth::domain::chain::endorsement_type endorsement_type_to_cpp(kth_endorsement_type_t x) noexcept {
     switch (x) {
         case kth_endorsement_type_schnorr:
             return kth::domain::chain::endorsement_type::schnorr;
@@ -64,7 +64,7 @@ inline constexpr kth::domain::chain::endorsement_type endorsement_type_to_cpp(kt
     }
 }
 
-inline constexpr kth_endorsement_type_t endorsement_type_to_c(kth::domain::chain::endorsement_type x) {
+inline constexpr kth_endorsement_type_t endorsement_type_to_c(kth::domain::chain::endorsement_type x) noexcept {
     return ecast<kth_endorsement_type_t>(x);
 }
 

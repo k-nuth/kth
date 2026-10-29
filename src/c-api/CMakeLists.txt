@@ -591,6 +591,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     add_executable(kth_capi_test
         test/helpers.cpp
+        test/noexcept_contracts.cpp
         test/conversions.cpp
         test/binary.cpp
         test/chain/header.cpp

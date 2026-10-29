@@ -157,7 +157,7 @@ inline T* clone(void const* h) {
 // document that the passed handles are always consumed, including on error.
 // The caller must have checked `handle != nullptr && *handle != nullptr`.
 template <typename T>
-inline std::unique_ptr<T> take(void** handle) {
+inline std::unique_ptr<T> take(void** handle) noexcept {
     auto* object = static_cast<T*>(*handle);
     *handle = nullptr;
     return std::unique_ptr<T>(object);
