@@ -32,7 +32,7 @@ struct KD_API xverack {
     xverack() = default;
 
     static
-    expect<xverack> from_data(byte_reader& reader, uint32_t version);
+    expect<xverack> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;

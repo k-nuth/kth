@@ -30,7 +30,7 @@ struct KD_API ping {
 
     ping() = default;
     constexpr
-    ping(uint64_t nonce)
+    ping(uint64_t nonce) noexcept
         : nonce_(nonce)
     {}
 
@@ -44,7 +44,7 @@ struct KD_API ping {
     }
 
     static
-    expect<ping> from_data(byte_reader& reader, uint32_t version);
+    expect<ping> from_data(byte_reader& reader, uint32_t version) noexcept;
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, uint32_t version) const;
 

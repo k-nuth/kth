@@ -15,7 +15,7 @@ uint32_t const xverack::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<xverack> xverack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) {
+expect<xverack> xverack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) noexcept {
     return xverack();
 }
 

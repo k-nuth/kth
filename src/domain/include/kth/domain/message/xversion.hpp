@@ -33,7 +33,7 @@ struct KD_API xversion {
     friend bool operator==(xversion const&, xversion const&) = default;
 
     static
-    expect<xversion> from_data(byte_reader& reader, uint32_t version);
+    expect<xversion> from_data(byte_reader& reader, uint32_t version) noexcept;
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;

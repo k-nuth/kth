@@ -40,7 +40,7 @@ struct KD_API point {
     // Constructors.
     //-------------------------------------------------------------------------
 
-    constexpr point(hash_digest const& hash, uint32_t index)
+    constexpr point(hash_digest const& hash, uint32_t index) noexcept
         : index_(index), hash_(hash)
     {}
 
@@ -57,7 +57,7 @@ struct KD_API point {
     //-------------------------------------------------------------------------
 
     static
-    expect<point> from_data(byte_reader& reader, bool wire = true);
+    expect<point> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
     expect<void> to_data(byte_writer& writer, bool wire) const;

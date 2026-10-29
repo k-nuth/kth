@@ -15,7 +15,7 @@ uint32_t const send_addrv2::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<send_addrv2> send_addrv2::from_data(byte_reader& reader, uint32_t version) {
+expect<send_addrv2> send_addrv2::from_data(byte_reader& reader, uint32_t version) noexcept {
     if (version < send_addrv2::version_minimum) {
         return std::unexpected(error::version_too_low);
     }

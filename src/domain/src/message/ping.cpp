@@ -15,7 +15,7 @@ uint32_t const ping::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<ping> ping::from_data(byte_reader& reader, uint32_t version) {
+expect<ping> ping::from_data(byte_reader& reader, uint32_t version) noexcept {
     // Before BIP31 a ping carries no nonce; the wire size and layout are
     // driven by `version` in `to_data` / `satoshi_fixed_size`, so a zero nonce
     // is all that is needed here.

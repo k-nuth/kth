@@ -24,7 +24,7 @@ size_t header::satoshi_fixed_size(uint32_t version) {
 // Deserialization.
 //-----------------------------------------------------------------------------
 
-expect<header> header::from_data(byte_reader& reader, uint32_t version) {
+expect<header> header::from_data(byte_reader& reader, uint32_t version) noexcept {
     auto chain_header = chain::header::from_data(reader, true);  // wire=true
     if ( ! chain_header) {
         return std::unexpected(chain_header.error());

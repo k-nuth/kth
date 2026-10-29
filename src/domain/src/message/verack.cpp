@@ -15,7 +15,7 @@ uint32_t const verack::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<verack> verack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) {
+expect<verack> verack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) noexcept {
     return verack();
 }
 

@@ -466,7 +466,7 @@ bool is_valid_bitfield(uint8_t bitfield) {
 namespace detail {
 
 inline
-expect<void> from_data(byte_reader& reader, fungible& x, bool /*has_commitment*/) {
+expect<void> from_data(byte_reader& reader, fungible& x, bool /*has_commitment*/) noexcept {
     auto const amt = reader.read_variable_little_endian();
     if ( ! amt) {
         return std::unexpected(amt.error());

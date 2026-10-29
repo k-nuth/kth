@@ -17,7 +17,7 @@ size_t send_compact::satoshi_fixed_size(uint32_t /*version*/) {
     return 9;
 }
 
-send_compact::send_compact(bool high_bandwidth_mode, uint64_t version)
+send_compact::send_compact(bool high_bandwidth_mode, uint64_t version) noexcept
     : high_bandwidth_mode_(high_bandwidth_mode),
       version_(version) {
 }
@@ -26,7 +26,7 @@ send_compact::send_compact(bool high_bandwidth_mode, uint64_t version)
 //-----------------------------------------------------------------------------
 
 // static
-expect<send_compact> send_compact::from_data(byte_reader& reader, uint32_t version) {
+expect<send_compact> send_compact::from_data(byte_reader& reader, uint32_t version) noexcept {
     auto const mode = reader.read_byte();
     if ( ! mode) {
         return std::unexpected(mode.error());

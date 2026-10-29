@@ -43,7 +43,7 @@ concept is_hash_size = (N == hash_size ||
 
 template <size_t N>
     requires is_hash_size<N>
-expect<byte_array<N>> read_hash_generic(byte_reader& reader) {
+expect<byte_array<N>> read_hash_generic(byte_reader& reader) noexcept {
     auto const res = reader.read_bytes(N);
     if ( ! res) {
         return std::unexpected(res.error());
@@ -54,7 +54,7 @@ expect<byte_array<N>> read_hash_generic(byte_reader& reader) {
 }
 
 inline
-expect<hash_digest> read_hash(byte_reader& reader) {
+expect<hash_digest> read_hash(byte_reader& reader) noexcept {
     return read_hash_generic<hash_size>(reader);
 }
 

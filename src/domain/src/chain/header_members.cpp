@@ -48,7 +48,7 @@ using wall_clock = std::chrono::system_clock;
 // Deserialization.
 //-----------------------------------------------------------------------------
 
-expect<header> header::from_data(byte_reader& reader, bool /*wire*/) {
+expect<header> header::from_data(byte_reader& reader, bool /*wire*/) noexcept {
     auto const packed_exp = reader.read_packed<detail::header_members_packed>();
     if ( ! packed_exp) {
         return std::unexpected(packed_exp.error());

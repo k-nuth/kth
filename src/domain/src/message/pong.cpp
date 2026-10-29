@@ -15,7 +15,7 @@ uint32_t const pong::version_maximum = version::level::maximum;
 //-----------------------------------------------------------------------------
 
 // static
-expect<pong> pong::from_data(byte_reader& reader, uint32_t version) {
+expect<pong> pong::from_data(byte_reader& reader, uint32_t version) noexcept {
     auto const nonce = reader.read_little_endian<uint64_t>();
     if ( ! nonce) {
         return std::unexpected(nonce.error());
