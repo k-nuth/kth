@@ -15,6 +15,13 @@ target_link_libraries(test_individual
     kth::secp256k1
 )
 
+# Compile public headers using only the installed package's exported targets.
+# An object target also checks cross builds where test executables cannot run.
+if(TARGET kth::database)
+    add_library(test_installed_database_headers OBJECT test_installed_database_headers.cpp)
+    target_link_libraries(test_installed_database_headers PRIVATE kth::database)
+endif()
+
 # Test meta target
 add_executable(test_meta test_meta.cpp)
 target_link_libraries(test_meta 
