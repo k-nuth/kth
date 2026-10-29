@@ -529,3 +529,53 @@ TEST_CASE("byte_reader - read_bytes rejects wrapping size", "[overflow-poc]") {
 }
 
 // End Test Suite
+
+// BCHN serialize.h::ReadCompactSizeWithLimit at
+// 07576013c91ff4a3a74acd85f189c69121cdad1b: each marker has a minimum value.
+TEST_CASE("CompactSize canonical width boundaries", "[byte_reader tests][compactsize]") {
+    struct sample { data_chunk bytes; uint64_t value; };
+    for (auto const& s : std::vector<sample>{
+        {{0x00}, 0}, {{0xfc}, 252},
+        {{0xfd, 0xfd, 0x00}, 253}, {{0xfd, 0xff, 0xff}, 65535},
+        {{0xfe, 0x00, 0x00, 0x01, 0x00}, 65536},
+        {{0xfe, 0xff, 0xff, 0xff, 0xff}, 0xffffffffULL},
+        {{0xff, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00}, 0x100000000ULL},
+        {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, UINT64_MAX}}) {
+        byte_reader reader(s.bytes);
+        auto const result = reader.read_variable_little_endian();
+        REQUIRE(result.has_value());
+        CHECK(*result == s.value);
+        CHECK(reader.is_exhausted());
+    }
+}
+
+TEST_CASE("CompactSize rejects noncanonical widths", "[byte_reader tests][compactsize]") {
+    for (auto const& bytes : std::vector<data_chunk>{
+        {0xfd, 0x00, 0x00}, {0xfd, 0xfc, 0x00},
+        {0xfe, 0x00, 0x00, 0x00, 0x00}, {0xfe, 0xfd, 0x00, 0x00, 0x00},
+        {0xfe, 0xff, 0xff, 0x00, 0x00},
+        {0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+        {0xff, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00},
+        {0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00}}) {
+        byte_reader reader(bytes);
+        auto const result = reader.read_variable_little_endian();
+        CHECK_FALSE(result.has_value());
+        if (!result) CHECK(result.error() == error::invalid_size);
+        byte_reader size_reader(bytes);
+        CHECK_FALSE(size_reader.read_size_little_endian().has_value());
+    }
+}
+
+TEST_CASE("CompactSize truncated payload retains read error", "[byte_reader tests][compactsize]") {
+    for (auto const marker : {byte{0xfd}, byte{0xfe}, byte{0xff}}) {
+        size_t const width = marker == 0xfd ? 2 : marker == 0xfe ? 4 : 8;
+        for (size_t n = 0; n < width; ++n) {
+            data_chunk bytes(1 + n, 0xff);
+            bytes[0] = marker;
+            byte_reader reader(bytes);
+            auto const result = reader.read_variable_little_endian();
+            REQUIRE_FALSE(result.has_value());
+            CHECK(result.error() == error::read_past_end_of_buffer);
+        }
+    }
+}
