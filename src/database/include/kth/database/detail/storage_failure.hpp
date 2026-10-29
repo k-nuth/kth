@@ -2,12 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// INTERNAL. Not installed, not exported, no ABI.
-//
-// `kth/database/detail/` is excluded from the install rules, so nothing here is
-// part of the surface a consumer can reach. It exists so a decision that is
-// worth testing directly does not have to become a public symbol to be tested —
-// the tests in this tree include it by path, a downstream consumer cannot.
+// Implementation detail, not a supported standalone API. Installed because the
+// inline definitions in the public utxoz_database.hpp header depend on it.
 
 #ifndef KTH_DATABASE_DETAIL_STORAGE_FAILURE_HPP_
 #define KTH_DATABASE_DETAIL_STORAGE_FAILURE_HPP_

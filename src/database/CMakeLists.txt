@@ -358,11 +358,12 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-# `detail/` is internal: helpers the tests in this tree include by path so a
-# decision worth checking directly does not have to become an exported symbol to
-# be reachable. Excluded here so a consumer cannot come to depend on one.
+# Test-only implementation details remain uninstalled. Dependencies included by
+# public headers must accompany those headers, even when kept in detail/.
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         PATTERN "detail" EXCLUDE)
+install(FILES include/kth/database/detail/storage_failure.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kth/database/detail)
 
 # Generate and install a CMake package configuration file
 install(EXPORT ${PROJECT_NAME}-targets
