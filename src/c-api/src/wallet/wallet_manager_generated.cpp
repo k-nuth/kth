@@ -2,15 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-
 #include <kth/capi/wallet/wallet_manager.h>
 
 #include <array>
+#include <string>
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/domain/wallet/wallet_manager.hpp>
 
-// ---------------------------------------------------------------------------
 extern "C" {
 
 kth_error_code_t kth_wallet_decrypt_seed(

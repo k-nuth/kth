@@ -202,6 +202,7 @@ set(kth_sources
   src/wallet/bitcoin_uri.cpp
   src/wallet/cashaddr.cpp
   src/wallet/cashtoken_minting.cpp
+  src/wallet/cashtoken_minting_generated.cpp
   src/wallet/coin_selection.cpp
   src/wallet/coin_selection_result.cpp
   src/wallet/encrypted_keys.cpp
@@ -219,7 +220,7 @@ set(kth_sources
   src/wallet/wallet.cpp
   src/wallet/ec_compressed_list.cpp
   src/wallet/wallet_data.cpp
-  src/wallet/wallet_manager.cpp
+  src/wallet/wallet_manager_generated.cpp
 
   src/libconfig/libconfig.cpp
 
@@ -248,6 +249,7 @@ set(kth_sources
         src/hash_list.cpp
         src/binary.cpp
         src/node.cpp
+        src/node_generated.cpp
         src/platform.cpp
 
         src/domain/chain/block.cpp
@@ -256,6 +258,7 @@ set(kth_sources
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
+        src/chain/chain_sync_generated.cpp
         src/chain/chain_mempool.cpp
         src/chain/chain_mining.cpp
         src/chain/chain_query.cpp
@@ -307,6 +310,7 @@ set(kth_sources
         src/wallet/hd_private.cpp
 
         src/wallet/cashtoken_minting.cpp
+        src/wallet/cashtoken_minting_generated.cpp
         src/wallet/payment_address.cpp
         src/wallet/payment_address_list.cpp
         src/wallet/wallet.cpp
