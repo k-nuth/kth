@@ -6,7 +6,6 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <new>
 #include <kth/capi/detail/sync_wait.hpp>
 #include <system_error>
 #include <asio/co_spawn.hpp>

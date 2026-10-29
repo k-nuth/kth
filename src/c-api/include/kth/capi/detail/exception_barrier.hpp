@@ -22,6 +22,12 @@ namespace kth {
 // reflects what it can prove, so provably non-throwing operations compile
 // without any try/catch. Allocation failure maps to `kth_ec_out_of_memory`;
 // any other exception maps to `kth_ec_unhandled_exception`.
+// TODO(kth-tools#6): the `if constexpr` fast path below is not selected by the
+// generated bindings yet: their operation lambdas are conservatively
+// `noexcept(false)`. Enabling it needs a proof over the whole operation (the
+// argument conversions, result inspection, error mapping and output
+// publication), not just the C++ method's own exception specification.
+// https://github.com/k-nuth/kth-tools/issues/6
 template <typename Operation>
 inline kth_error_code_t capi_invoke(Operation& operation) noexcept {
     if constexpr (noexcept(operation())) {

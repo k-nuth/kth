@@ -9,7 +9,6 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <new>
 #include <memory>
 #include <kth/domain/machine/program.hpp>
 

@@ -9,7 +9,6 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
 

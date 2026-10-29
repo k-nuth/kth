@@ -8,7 +8,6 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <new>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
