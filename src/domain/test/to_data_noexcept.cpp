@@ -128,30 +128,39 @@ static_assert(noexcept(chain::token::encoding::to_data(std::declval<byte_writer&
 static_assert(noexcept(chain::token::encoding::to_data(std::declval<byte_writer&>(), std::declval<chain::both_kinds const&>())));
 
 // `token_data_t::data` is a public std::variant that can become valueless
-// (see the regression below), so `std::visit` may throw `bad_variant_access`.
-// The wrapper, and every serializer that reaches it, must stay potentially
-// throwing.
+// (see the regressions below). The wrapper guards that state before it
+// computes or writes anything and reports `error::illegal_value`, so it, and
+// every serializer that reaches it, is noexcept.
+static_assert(noexcept(chain::token::encoding::to_data(std::declval<byte_writer&>(), std::declval<chain::token_data_t const&>())));
+static_assert(to_data_noexcept<chain::output, bool>);
+static_assert(to_data_noexcept<chain::transaction, bool>);
+static_assert(noexcept(std::declval<chain::block const&>().to_data(std::declval<byte_writer&>())));
+static_assert(to_data_noexcept<message::transaction, uint32_t>);
+static_assert(to_data_noexcept<message::block, uint32_t>);
+static_assert(to_data_noexcept<message::prefilled_transaction, uint32_t>);
+static_assert(to_data_noexcept<message::compact_block, uint32_t>);
+static_assert(to_data_noexcept<message::block_transactions, uint32_t>);
+
+// Metadata helpers return scalars, not `expect`, so they have no way to report
+// a valueless variant: they stay potentially throwing for direct calls.
 static_assert( ! noexcept(chain::token::encoding::bitfield(std::declval<chain::token_data_t const&>())));
-static_assert( ! noexcept(chain::token::encoding::to_data(std::declval<byte_writer&>(), std::declval<chain::token_data_t const&>())));
-static_assert( ! to_data_noexcept<chain::output, bool>);        // token wrapper + safe_unsigned dereference
-static_assert( ! to_data_noexcept<chain::transaction, bool>);   // writes outputs
-static_assert( ! noexcept(std::declval<chain::block const&>().to_data(std::declval<byte_writer&>())));
-static_assert( ! to_data_noexcept<message::transaction, uint32_t>);
-static_assert( ! to_data_noexcept<message::block, uint32_t>);
-static_assert( ! to_data_noexcept<message::compact_block, uint32_t>);
-static_assert( ! to_data_noexcept<message::prefilled_transaction, uint32_t>);
-static_assert( ! to_data_noexcept<message::block_transactions, uint32_t>);
+static_assert( ! noexcept(chain::token::encoding::serialized_size(std::declval<chain::token_data_t const&>())));
+static_assert( ! noexcept(chain::token::encoding::serialized_size(std::declval<chain::token_data_opt const&>())));
+static_assert( ! noexcept(std::declval<chain::output const&>().serialized_size(true)));
+static_assert( ! noexcept(std::declval<chain::transaction const&>().serialized_size(true)));
+static_assert( ! noexcept(std::declval<chain::block const&>().serialized_size()));
 
 // Owning conveniences allocate: they must never be noexcept.
 static_assert( ! noexcept(to_data_chunk(std::declval<message::ping const&>(), uint32_t{})));
 static_assert( ! noexcept(std::declval<message::heading const&>().to_data()));
 static_assert( ! noexcept(std::declval<machine::operation const&>().to_data()));
 static_assert( ! noexcept(chain::token::encoding::to_data(std::declval<chain::fungible const&>())));
+static_assert( ! noexcept(chain::token::encoding::to_data(std::declval<chain::token_data_t const&>())));
 
 // Generic collection writer: noexcept follows the element's `to_data`, and the
 // element must return `expect<void>`.
 static_assert(noexcept(chain::detail::write(std::declval<byte_writer&>(), std::declval<std::vector<chain::input> const&>(), true)));
-static_assert( ! noexcept(chain::detail::write(std::declval<byte_writer&>(), std::declval<std::vector<chain::output> const&>(), true)));
+static_assert(noexcept(chain::detail::write(std::declval<byte_writer&>(), std::declval<std::vector<chain::output> const&>(), true)));
 static_assert(noexcept(chain::detail::write(std::declval<byte_writer&>(), std::declval<std::vector<nothrow_put> const&>(), true)));
 static_assert( ! noexcept(chain::detail::write(std::declval<byte_writer&>(), std::declval<std::vector<throwing_put> const&>(), true)));
 // Convertible result shapes stay accepted but conservatively throwing, even
@@ -369,42 +378,311 @@ TEST_CASE("to_data noexcept - token payloads", "[to_data_noexcept]") {
 }
 
 namespace {
+
 struct throwing_commitment {
     operator chain::commitment_t() const { throw std::length_error("commitment"); }
 };
-} // namespace
 
-TEST_CASE("to_data noexcept - token wrapper still throws on a valueless variant", "[to_data_noexcept]") {
+constexpr uint8_t sentinel = 0xee;
+
+// A genuinely valueless variant: a throwing conversion escapes `emplace`.
+chain::token_data_t valueless_token() {
     chain::token_data_t token{};
+    token.id = filled_hash(1);
     token.data = chain::fungible{chain::amount_t{1}};
     REQUIRE_THROWS_AS(token.data.emplace<chain::non_fungible>(chain::capability_t::none, throwing_commitment{}),
                       std::length_error);
     REQUIRE(token.data.valueless_by_exception());
-
-    data_chunk buffer(64, 0);
-    byte_writer writer(buffer);
-    REQUIRE_THROWS_AS(chain::token::encoding::bitfield(token), std::bad_variant_access);
-    REQUIRE_THROWS_AS(chain::token::encoding::to_data(writer, token), std::bad_variant_access);
+    return token;
 }
 
-TEST_CASE("to_data noexcept - output and transaction propagate the valueless token throw", "[to_data_noexcept]") {
-    chain::token_data_t token{};
-    token.data = chain::fungible{chain::amount_t{1}};
-    REQUIRE_THROWS_AS(token.data.emplace<chain::non_fungible>(chain::capability_t::none, throwing_commitment{}),
-                      std::length_error);
+chain::output valueless_output() {
+    return chain::output(1u, chain::script{}, chain::token_data_opt{valueless_token()});
+}
 
-    chain::output out(1u, chain::script{}, chain::token_data_opt{token});
-    data_chunk buffer(128, 0);
-    {
-        byte_writer writer(buffer);
-        REQUIRE_THROWS_AS(out.to_data(writer, true), std::bad_variant_access);
-    }
+chain::transaction tx_of(chain::output::list outs) {
+    return chain::transaction(1u, 0u, chain::input::list{}, std::move(outs));
+}
 
-    chain::transaction::outs outs;
-    outs.push_back(out);
-    chain::transaction const tx(1u, 0u, chain::transaction::ins{}, outs);
+// A non-empty script obtained by parsing real P2PKH bytes.
+chain::script parsed_script() {
+    data_chunk bytes{0x76, 0xa9, 0x14};
+    for (uint8_t i = 0; i < 20; ++i) bytes.push_back(uint8_t(0x30 + i));
+    bytes.push_back(0x88);
+    bytes.push_back(0xac);
+    byte_reader reader(bytes);
+    auto script = chain::script::from_data(reader, false);
+    REQUIRE(script.has_value());
+    REQUIRE(script->serialized_size(false) == bytes.size());
+    return *script;
+}
+
+chain::output plain_output() {
+    return chain::output(5u, parsed_script(), chain::token_data_opt{});
+}
+
+// One output of every token shape, plus a tokenless one.
+chain::transaction valid_transaction() {
+    auto const id = filled_hash(7);
+    chain::input::list ins;
+    ins.emplace_back(chain::output_point(filled_hash(2), 3u), parsed_script(), 7u);
+    return chain::transaction(2u, 9u, std::move(ins), chain::output::list{
+        plain_output(),
+        chain::output(1u, parsed_script(), chain::make_fungible(id, 5)),
+        chain::output(2u, parsed_script(), chain::make_non_fungible(id, chain::capability_t::mut, {1, 2, 3})),
+        chain::output(3u, parsed_script(), chain::make_both(id, 300, chain::capability_t::minting, {9})),
+        chain::output(4u, chain::script{}, chain::make_fungible(id, 6))});
+}
+
+message::prefilled_transaction prefilled(uint64_t index, chain::transaction const& tx) {
+    auto r = message::prefilled_transaction::create(index, tx);
+    REQUIRE(r.has_value());
+    return *r;
+}
+
+chain::header test_header() {
+    return chain::header{};
+}
+
+data_chunk token_bytes(chain::token_data_t const& token) {
+    data_chunk buffer(chain::token::encoding::serialized_size(token), sentinel);
     byte_writer writer(buffer);
-    REQUIRE_THROWS_AS(tx.to_data(writer, true), std::bad_variant_access);
+    REQUIRE(chain::token::encoding::to_data(writer, token).has_value());
+    REQUIRE(writer.position() == buffer.size());
+    return buffer;
+}
+
+data_chunk concat(hash_digest const& id, data_chunk tail) {
+    data_chunk out(id.begin(), id.end());
+    out.insert(out.end(), tail.begin(), tail.end());
+    return out;
+}
+
+// Runs `obj.to_data(writer, args...)` and expects the exact serialized size to
+// fit, and every shorter buffer length to report write_past_end_of_buffer.
+template <typename T, typename... Args>
+void check_canonical_and_truncated(T const& obj, size_t size, Args... args) {
+    {
+        data_chunk buffer(size, sentinel);
+        byte_writer writer(buffer);
+        REQUIRE(obj.to_data(writer, args...).has_value());
+        REQUIRE(writer.position() == size);
+    }
+    for (size_t length = 0; length < size; ++length) {
+        data_chunk buffer(length, sentinel);
+        byte_writer writer(buffer);
+        auto const r = obj.to_data(writer, args...);
+        REQUIRE( ! r.has_value());
+        REQUIRE(r.error() == error::write_past_end_of_buffer);
+        REQUIRE(writer.position() <= length);
+    }
+}
+
+// Runs `obj.to_data` over a sentinel buffer and expects `illegal_value`
+// without throwing; returns how many bytes were written before the error.
+template <typename T, typename... Args>
+size_t check_illegal_value(T const& obj, Args... args) {
+    data_chunk buffer(512, sentinel);
+    byte_writer writer(buffer);
+    expect<void> r;
+    REQUIRE_NOTHROW(r = obj.to_data(writer, args...));
+    REQUIRE( ! r.has_value());
+    REQUIRE(r.error() == error::illegal_value);
+    return writer.position();
+}
+
+} // namespace
+
+TEST_CASE("to_data noexcept - token wrapper reports illegal_value on a valueless variant", "[to_data_noexcept]") {
+    auto const token = valueless_token();
+
+    // Nothing is written, not even the id, and the position does not move.
+    data_chunk buffer(64, sentinel);
+    byte_writer writer(buffer);
+    expect<void> r;
+    REQUIRE_NOTHROW(r = chain::token::encoding::to_data(writer, token));
+    REQUIRE( ! r.has_value());
+    REQUIRE(r.error() == error::illegal_value);
+    REQUIRE(writer.position() == 0u);
+    REQUIRE(std::all_of(buffer.begin(), buffer.end(), [](uint8_t b) { return b == sentinel; }));
+
+    // Same on a zero length buffer: the variant check wins over short-buffer.
+    data_chunk empty;
+    byte_writer empty_writer(empty);
+    auto const r2 = chain::token::encoding::to_data(empty_writer, token);
+    REQUIRE( ! r2.has_value());
+    REQUIRE(r2.error() == error::illegal_value);
+}
+
+TEST_CASE("to_data noexcept - metadata helpers keep throwing on a valueless variant", "[to_data_noexcept]") {
+    auto const token = valueless_token();
+    REQUIRE_THROWS_AS(chain::token::encoding::bitfield(token), std::bad_variant_access);
+    REQUIRE_THROWS_AS(chain::token::encoding::serialized_size(token), std::bad_variant_access);
+    REQUIRE_THROWS_AS(chain::token::encoding::serialized_size(chain::token_data_opt{token}), std::bad_variant_access);
+    // The allocating convenience sizes its buffer first, so it throws too.
+    REQUIRE_THROWS_AS(chain::token::encoding::to_data(token), std::bad_variant_access);
+    // As do the size queries of the containers that embed the token.
+    auto const out = valueless_output();
+    REQUIRE_THROWS_AS(out.serialized_size(true), std::bad_variant_access);
+    REQUIRE_THROWS_AS(tx_of({out}).serialized_size(true), std::bad_variant_access);
+}
+
+TEST_CASE("to_data noexcept - output reports illegal_value before any write", "[to_data_noexcept]") {
+    auto const out = valueless_output();
+    for (bool wire : {true, false}) {
+        data_chunk buffer(128, sentinel);
+        byte_writer writer(buffer);
+        expect<void> r;
+        REQUIRE_NOTHROW(r = out.to_data(writer, wire));
+        REQUIRE( ! r.has_value());
+        REQUIRE(r.error() == error::illegal_value);
+        // The store layout would otherwise start with a height prefix.
+        REQUIRE(writer.position() == 0u);
+        REQUIRE(std::all_of(buffer.begin(), buffer.end(), [](uint8_t b) { return b == sentinel; }));
+    }
+}
+
+TEST_CASE("to_data noexcept - output reports write_past_end at every truncated length", "[to_data_noexcept]") {
+    auto const id = filled_hash(8);
+    std::vector<chain::output> const outputs{
+        plain_output(),
+        chain::output(1u, parsed_script(), chain::make_fungible(id, 5)),
+        chain::output(2u, parsed_script(), chain::make_non_fungible(id, chain::capability_t::mut, {1, 2, 3})),
+        chain::output(3u, parsed_script(), chain::make_both(id, 300, chain::capability_t::minting, {9}))};
+
+    for (auto const& out : outputs) {
+        for (bool wire : {true, false}) {
+            auto const size = out.serialized_size(wire);
+            for (size_t length = 0; length < size; ++length) {
+                data_chunk buffer(length, sentinel);
+                byte_writer writer(buffer);
+                auto const r = out.to_data(writer, wire);
+                REQUIRE( ! r.has_value());
+                REQUIRE(r.error() == error::write_past_end_of_buffer);
+                REQUIRE(writer.position() <= length);
+            }
+            data_chunk buffer(size, sentinel);
+            byte_writer writer(buffer);
+            REQUIRE(out.to_data(writer, wire).has_value());
+            REQUIRE(writer.position() == size);
+        }
+    }
+}
+
+TEST_CASE("to_data noexcept - transaction and block propagate illegal_value", "[to_data_noexcept]") {
+    auto const tx = tx_of({plain_output(), valueless_output()});
+    auto const first_output = plain_output().serialized_size(true);
+
+    // Normal stream behavior: the prefix written before the bad output stays.
+    //   wire:  version(4) + 0 inputs(1) + 2 outputs(1) + first output.
+    //   store: 2 outputs(1) + first output (store layout, with height).
+    REQUIRE(check_illegal_value(tx, true) == 6u + first_output);
+    REQUIRE(check_illegal_value(tx, false) == 1u + plain_output().serialized_size(false));
+
+    chain::block const block(test_header(), chain::transaction::list{tx});
+    REQUIRE(check_illegal_value(block) == chain::header::satoshi_fixed_size() + 1u + 6u + first_output);
+
+    // Messages: the nested result must not be swallowed.
+    REQUIRE(check_illegal_value(message::transaction(tx), latest) == 6u + first_output);
+    REQUIRE(check_illegal_value(message::block(block), latest) == chain::header::satoshi_fixed_size() + 1u + 6u + first_output);
+    REQUIRE(check_illegal_value(prefilled(3, tx), latest) == 1u + 6u + first_output);
+
+    hash_digest const hash = filled_hash(3);
+    chain::transaction::list const good_then_bad{tx_of({}), tx};
+    // hash(32) + count(1) + empty tx (4+1+1+4) + bad tx prefix.
+    REQUIRE(check_illegal_value(message::block_transactions(hash, good_then_bad), latest) == 32u + 1u + 10u + 6u + first_output);
+
+    message::compact_block const compact(test_header(), 1, {}, {prefilled(0, tx)});
+    // header + nonce(8) + short ids(1) + prefilled count(1) + index(1) + bad tx prefix.
+    REQUIRE(check_illegal_value(compact, latest) == chain::header::satoshi_fixed_size() + 8u + 1u + 1u + 1u + 6u + first_output);
+}
+
+TEST_CASE("to_data noexcept - wrappers propagate short buffers", "[to_data_noexcept]") {
+    auto const tx = valid_transaction();
+    auto const size = tx.serialized_size(true);
+    check_canonical_and_truncated(tx, size, true);
+    check_canonical_and_truncated(tx, tx.serialized_size(false), false);
+    check_canonical_and_truncated(message::transaction(tx), message::transaction(tx).serialized_size(latest), latest);
+
+    chain::block const block(test_header(), chain::transaction::list{tx, tx});
+    check_canonical_and_truncated(block, block.serialized_size());
+    message::block const wire_block(block);
+    check_canonical_and_truncated(wire_block, wire_block.serialized_size(latest), latest);
+
+    auto const prefilled_tx = prefilled(4, tx);
+    check_canonical_and_truncated(prefilled_tx, prefilled_tx.serialized_size(latest), latest);
+
+    message::block_transactions const block_txs(filled_hash(3), chain::transaction::list{tx, tx});
+    check_canonical_and_truncated(block_txs, block_txs.serialized_size(latest), latest);
+
+    message::compact_block const compact(test_header(), 1, {1, 2}, {prefilled_tx, prefilled(5, tx)});
+    check_canonical_and_truncated(compact, compact.serialized_size(latest), latest);
+}
+
+TEST_CASE("to_data noexcept - valid token bytes are unchanged and round trip", "[to_data_noexcept]") {
+    auto const id = filled_hash(4);
+
+    auto const fungible = chain::make_fungible(id, 5);
+    auto const nft = chain::make_non_fungible(id, chain::capability_t::none, {1, 2, 3});
+    auto const minting = chain::make_non_fungible(id, chain::capability_t::minting, {});
+    auto const both = chain::make_both(id, 300, chain::capability_t::mut, {9});
+
+    REQUIRE(token_bytes(fungible) == concat(id, {0x10, 0x05}));
+    REQUIRE(token_bytes(nft) == concat(id, {0x60, 3, 1, 2, 3}));
+    REQUIRE(token_bytes(minting) == concat(id, {0x22}));
+    // NFT part first, then the amount.
+    REQUIRE(token_bytes(both) == concat(id, {0x71, 0x01, 0x09, 0xfd, 0x2c, 0x01}));
+
+    for (auto const& token : {fungible, nft, minting, both}) {
+        auto bytes = token_bytes(token);
+        byte_reader reader(bytes);
+        auto const parsed = chain::token::encoding::from_data(reader);
+        REQUIRE(parsed.has_value());
+        REQUIRE(*parsed == token);
+
+        // The allocating convenience yields the same bytes.
+        REQUIRE(chain::token::encoding::to_data(token) == bytes);
+
+        // Embedded in an output, wire layout: value, varint(wrapper), 0xef, token.
+        chain::output const out(7u, chain::script{}, chain::token_data_opt{token});
+        data_chunk expected;
+        for (int i = 0; i < 8; ++i) expected.push_back(i == 0 ? 7 : 0);
+        expected.push_back(uint8_t(1 + bytes.size()));
+        expected.push_back(chain::encoding::PREFIX_BYTE);
+        expected.insert(expected.end(), bytes.begin(), bytes.end());
+
+        data_chunk buffer(out.serialized_size(true), sentinel);
+        byte_writer writer(buffer);
+        REQUIRE(out.to_data(writer, true).has_value());
+        REQUIRE(writer.position() == buffer.size());
+        REQUIRE(buffer == expected);
+
+        byte_reader out_reader(buffer);
+        auto const out_parsed = chain::output::from_data(out_reader, true);
+        REQUIRE(out_parsed.has_value());
+        REQUIRE(out_parsed->token_data() == chain::token_data_opt{token});
+        REQUIRE(out_parsed->value() == 7u);
+
+        check_canonical_and_truncated(out, buffer.size(), true);
+        check_canonical_and_truncated(out, out.serialized_size(false), false);
+    }
+}
+
+TEST_CASE("to_data noexcept - transaction with every token kind round trips", "[to_data_noexcept]") {
+    auto const tx = valid_transaction();
+    data_chunk buffer(tx.serialized_size(true), sentinel);
+    byte_writer writer(buffer);
+    REQUIRE(tx.to_data(writer, true).has_value());
+    REQUIRE(writer.position() == buffer.size());
+
+    byte_reader reader(buffer);
+    auto const parsed = chain::transaction::from_data(reader, true);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->outputs().size() == tx.outputs().size());
+    for (size_t i = 0; i < tx.outputs().size(); ++i) {
+        REQUIRE(parsed->outputs()[i].token_data() == tx.outputs()[i].token_data());
+        REQUIRE(parsed->outputs()[i].value() == tx.outputs()[i].value());
+    }
 }
 
 TEST_CASE("to_data noexcept - write_packed ignores overloaded operator&", "[to_data_noexcept]") {

@@ -97,9 +97,8 @@ hash_digest hash(block const& block, uint64_t nonce) {
     return sha256_hash(buf);
 }
 
-expect<void> block::to_data(byte_writer& writer, uint32_t version) const {
-        chain::block::to_data(writer);
-        return {};
+expect<void> block::to_data(byte_writer& writer, uint32_t version) const noexcept {
+        return chain::block::to_data(writer);
 }
 
 } // namespace kth::domain::message

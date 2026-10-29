@@ -59,7 +59,7 @@ struct KD_API block {
     expect<block> from_data(byte_reader& reader);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer) const;
+    expect<void> to_data(byte_writer& writer) const noexcept;
 
     [[nodiscard]]
     size_t serialized_size() const;

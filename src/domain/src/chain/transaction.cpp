@@ -129,7 +129,7 @@ expect<transaction> transaction::from_data(byte_reader& reader, bool wire /*= tr
     };
 }
 
-expect<void> transaction::to_data(byte_writer& writer, bool wire) const {
+expect<void> transaction::to_data(byte_writer& writer, bool wire) const noexcept {
     if (wire) {
         if (auto r = writer.write_little_endian<uint32_t>(version_); ! r) return r;
         if (auto r = detail::write(writer, inputs_, wire); ! r) return r;

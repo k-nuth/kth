@@ -67,7 +67,7 @@ struct KD_API output {
     expect<output> from_data(byte_reader& reader, bool wire = true);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool wire) const;
+    expect<void> to_data(byte_writer& writer, bool wire) const noexcept;
 
     [[nodiscard]]
     size_t serialized_size(bool wire = true) const;

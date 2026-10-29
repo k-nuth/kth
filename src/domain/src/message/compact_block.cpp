@@ -171,7 +171,7 @@ hash_digest hash(compact_block const& block) {
     return sha256_hash(buf);
 }
 
-expect<void> compact_block::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> compact_block::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = header_.to_data(writer, true); ! r) return r;
         if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(short_ids_.size()); ! r) return r;

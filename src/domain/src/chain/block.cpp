@@ -198,7 +198,7 @@ expect<block> block::from_data(byte_reader& reader) {
     return block(*hdr, std::move(*txs));
 }
 
-expect<void> block::to_data(byte_writer& writer) const {
+expect<void> block::to_data(byte_writer& writer) const noexcept {
     if (auto r = header_.to_data(writer, true); ! r) return r;
     if (auto r = writer.write_size_little_endian(transactions_.size()); ! r) return r;
     for (auto const& tx : transactions_) {

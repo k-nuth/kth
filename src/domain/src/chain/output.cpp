@@ -108,7 +108,15 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
     return result;
 }
 
-expect<void> output::to_data(byte_writer& writer, bool wire) const {
+// A valueless token variant cannot be encoded: it is rejected before anything
+// is sized or written (including the store-format height prefix). Past the
+// guard the variant is engaged, so the token size/bitfield visits cannot throw
+// `bad_variant_access`, and the remaining calls neither allocate nor throw.
+expect<void> output::to_data(byte_writer& writer, bool wire) const noexcept {
+    if (token_data_.has_value() && token_data_->data.valueless_by_exception()) {
+        return std::unexpected(error::illegal_value);
+    }
+
     auto const start = writer.position();
     if ( ! wire) {
         auto const height32 = *safe_unsigned<uint32_t>(validation.spender_height);
@@ -122,9 +130,13 @@ expect<void> output::to_data(byte_writer& writer, bool wire) const {
     }
 
     if ( ! token_data_.has_value()) {
-        auto const r = script_.to_data(writer, true);
+        // A short buffer leaves the script partially written: report that
+        // error instead of asserting the full-size invariant.
+        if (auto r = script_.to_data(writer, true); ! r) {
+            return r;
+        }
         KTH_CONTRACT(writer.position() - start == serialized_size(wire));
-        return r;
+        return {};
     }
 
     auto const size = token::encoding::serialized_size(token_data_) + script_.serialized_size(false) + 1;
@@ -138,9 +150,11 @@ expect<void> output::to_data(byte_writer& writer, bool wire) const {
     if (auto r = token::encoding::to_data(writer, token_data_.value()); ! r) {
         return r;
     }
-    auto const r = script_.to_data(writer, false);
+    if (auto r = script_.to_data(writer, false); ! r) {
+        return r;
+    }
     KTH_CONTRACT(writer.position() - start == serialized_size(wire));
-    return r;
+    return {};
 }
 
 // Size.
