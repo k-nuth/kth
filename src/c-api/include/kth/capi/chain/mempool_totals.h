@@ -5,6 +5,7 @@
 #ifndef KTH_CAPI_CHAIN_MEMPOOL_TOTALS_H_
 #define KTH_CAPI_CHAIN_MEMPOOL_TOTALS_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct kth_mempool_totals {

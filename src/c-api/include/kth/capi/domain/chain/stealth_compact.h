@@ -23,7 +23,7 @@ void kth_domain_chain_stealth_compact_destruct(kth_stealth_compact_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_stealth_compact_mut_t`. Caller must release with `kth_chain_stealth_compact_destruct`. */
+/** @return Owned `kth_stealth_compact_mut_t`. Caller must release with `kth_domain_chain_stealth_compact_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_stealth_compact_mut_t kth_domain_chain_stealth_compact_copy(kth_stealth_compact_const_t self);
 

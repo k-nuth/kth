@@ -24,7 +24,7 @@ void kth_domain_chain_abla_set_max(kth_abla_config_mut_t cfg);
 
 // Static utilities
 
-/** @return Owned `kth_abla_config_mut_t`. Caller must release with `kth_chain_abla_config_destruct`. */
+/** @return Owned `kth_abla_config_mut_t`. Caller must release with `kth_domain_chain_abla_config_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_config_mut_t kth_domain_chain_abla_default_config(uint64_t default_block_size, kth_bool_t fixed_size);
 
@@ -34,11 +34,11 @@ kth_abla_config_validity_t kth_domain_chain_abla_validate_config(kth_abla_config
 KTH_EXPORT
 uint64_t kth_domain_chain_abla_block_size_limit(kth_abla_state_const_t st);
 
-/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_chain_abla_state_destruct`. */
+/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_state_mut_t kth_domain_chain_abla_next(kth_abla_state_const_t st, kth_abla_config_const_t cfg, uint64_t next_block_size);
 
-/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_chain_abla_state_destruct`. */
+/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_state_mut_t kth_domain_chain_abla_lookahead(kth_abla_state_const_t st, kth_abla_config_const_t cfg, kth_size_t count);
 

@@ -16,16 +16,16 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_chain_double_spend_proof_destruct`. */
+/** @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_domain_message_double_spend_proof_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_double_spend_proof_mut_t kth_domain_message_double_spend_proof_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_double_spend_proof_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_double_spend_proof_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_double_spend_proof_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_message_double_spend_proof_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_message_double_spend_proof_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_double_spend_proof_mut_t* out);
 
 /**
- * @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_chain_double_spend_proof_destruct`.
+ * @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_domain_message_double_spend_proof_destruct`.
  * @param out_point Borrowed input. Copied by value into the resulting object; ownership of `out_point` stays with the caller.
  * @param spender1 Borrowed input. Copied by value into the resulting object; ownership of `spender1` stays with the caller.
  * @param spender2 Borrowed input. Copied by value into the resulting object; ownership of `spender2` stays with the caller.
@@ -43,7 +43,7 @@ void kth_domain_message_double_spend_proof_destruct(kth_double_spend_proof_mut_t
 
 // Copy
 
-/** @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_chain_double_spend_proof_destruct`. */
+/** @return Owned `kth_double_spend_proof_mut_t`. Caller must release with `kth_domain_message_double_spend_proof_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_double_spend_proof_mut_t kth_domain_message_double_spend_proof_copy(kth_double_spend_proof_const_t self);
 

@@ -16,11 +16,11 @@ extern "C" {
 
 // Constructors
 
-/** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_prefilled_transaction_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_message_prefilled_transaction_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_message_prefilled_transaction_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_prefilled_transaction_mut_t* out);
 
-/** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_prefilled_transaction_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_prefilled_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_message_prefilled_transaction_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_message_prefilled_transaction_create(uint64_t index, kth_transaction_const_t tx, KTH_OUT_OWNED kth_prefilled_transaction_mut_t* out);
 
@@ -34,7 +34,7 @@ void kth_domain_message_prefilled_transaction_destruct(kth_prefilled_transaction
 
 // Copy
 
-/** @return Owned `kth_prefilled_transaction_mut_t`. Caller must release with `kth_chain_prefilled_transaction_destruct`. */
+/** @return Owned `kth_prefilled_transaction_mut_t`. Caller must release with `kth_domain_message_prefilled_transaction_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_prefilled_transaction_mut_t kth_domain_message_prefilled_transaction_copy(kth_prefilled_transaction_const_t self);
 

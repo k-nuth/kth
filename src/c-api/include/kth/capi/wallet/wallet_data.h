@@ -15,6 +15,17 @@
 extern "C" {
 #endif
 
+// Constructors
+
+/** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
+
+
 // Destructor
 
 /** No-op if `self` is null. */
@@ -60,17 +71,6 @@ void kth_wallet_wallet_data_set_encrypted_seed(kth_wallet_data_mut_t self, kth_e
 /** @warning `value` MUST point to a buffer of at least 96 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_encrypted_seed_t`. */
 KTH_EXPORT
 void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self, uint8_t const* value);
-
-
-// Static utilities
-
-/** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
-
-/** @param[out] out Must point to a null `kth_wallet_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_wallet_data_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

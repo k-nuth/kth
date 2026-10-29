@@ -23,7 +23,7 @@ void kth_domain_chain_abla_config_destruct(kth_abla_config_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_abla_config_mut_t`. Caller must release with `kth_chain_abla_config_destruct`. */
+/** @return Owned `kth_abla_config_mut_t`. Caller must release with `kth_domain_chain_abla_config_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_config_mut_t kth_domain_chain_abla_config_copy(kth_abla_config_const_t self);
 

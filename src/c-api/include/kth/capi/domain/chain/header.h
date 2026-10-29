@@ -16,16 +16,16 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
+/** @return Owned `kth_header_mut_t`. Caller must release with `kth_domain_chain_header_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_header_mut_t kth_domain_chain_header_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_header_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_header_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_header_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_header_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_header_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_header_mut_t* out);
 
 /**
- * @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`.
+ * @return Owned `kth_header_mut_t`. Caller must release with `kth_domain_chain_header_destruct`.
  * @param previous_block_hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `previous_block_hash` stays with the caller.
  * @param merkle Borrowed input; must be non-null. Copied into the resulting object; ownership of `merkle` stays with the caller.
  */
@@ -33,7 +33,7 @@ KTH_EXPORT KTH_OWNED
 kth_header_mut_t kth_domain_chain_header_construct(uint32_t version, kth_hash_t const* previous_block_hash, kth_hash_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce);
 
 /**
- * @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`.
+ * @return Owned `kth_header_mut_t`. Caller must release with `kth_domain_chain_header_destruct`.
  * @warning `previous_block_hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  * @warning `merkle` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
@@ -50,7 +50,7 @@ void kth_domain_chain_header_destruct(kth_header_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_header_mut_t`. Caller must release with `kth_chain_header_destruct`. */
+/** @return Owned `kth_header_mut_t`. Caller must release with `kth_domain_chain_header_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_header_mut_t kth_domain_chain_header_copy(kth_header_const_t self);
 
