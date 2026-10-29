@@ -17,23 +17,31 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_domain_chain_transaction_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_domain_chain_transaction_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_transaction_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_transaction_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_transaction_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_transaction_mut_t* out);
 
 /**
- * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`.
+ * @return Owned `kth_transaction_mut_t`. Caller must release with `kth_domain_chain_transaction_destruct`.
  * @param inputs Borrowed input. Copied by value into the resulting object; ownership of `inputs` stays with the caller.
  * @param outputs Borrowed input. Copied by value into the resulting object; ownership of `outputs` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_domain_chain_transaction_construct(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs);
 
-/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+/**
+ * @param inputs Pointer to an owned mutable handle. The object is consumed and `*inputs` is set to NULL, including when construction returns an error.
+ * @param outputs Pointer to an owned mutable handle. The object is consumed and `*outputs` is set to NULL, including when construction returns an error.
+ * @param[out] out Must point to a null `kth_transaction_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_transaction_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_transaction_construct_move(uint32_t version, uint32_t locktime, kth_input_list_mut_t* inputs, kth_output_list_mut_t* outputs, KTH_OUT_OWNED kth_transaction_mut_t* out);
+
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_domain_chain_transaction_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_domain_chain_transaction_null(void);
 
@@ -47,7 +55,7 @@ void kth_domain_chain_transaction_destruct(kth_transaction_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_chain_transaction_destruct`. */
+/** @return Owned `kth_transaction_mut_t`. Caller must release with `kth_domain_chain_transaction_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_transaction_mut_t kth_domain_chain_transaction_copy(kth_transaction_const_t self);
 
@@ -105,11 +113,11 @@ kth_hash_t kth_domain_chain_transaction_utxos_hash(kth_transaction_const_t self)
 KTH_EXPORT
 uint64_t kth_domain_chain_transaction_fees(kth_transaction_const_t self);
 
-/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_chain_point_list_destruct`. */
+/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_domain_chain_point_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_point_list_mut_t kth_domain_chain_transaction_previous_outputs(kth_transaction_const_t self);
 
-/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_chain_point_list_destruct`. */
+/** @return Owned `kth_point_list_mut_t`. Caller must release with `kth_domain_chain_point_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_point_list_mut_t kth_domain_chain_transaction_missing_previous_outputs(kth_transaction_const_t self);
 

@@ -19,26 +19,26 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`. */
+/** @return Owned `kth_script_mut_t`. Caller must release with `kth_domain_chain_script_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_domain_chain_script_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_script_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_script_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_script_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t prefix, KTH_OUT_OWNED kth_script_mut_t* out);
 
 /**
- * @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`.
+ * @return Owned `kth_script_mut_t`. Caller must release with `kth_domain_chain_script_destruct`.
  * @param ops Borrowed input. Copied by value into the resulting object; ownership of `ops` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_domain_chain_script_construct_from_operations(kth_operation_list_const_t ops);
 
-/** @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`. */
+/** @return Owned `kth_script_mut_t`. Caller must release with `kth_domain_chain_script_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_domain_chain_script_construct_from_encoded_prefix(uint8_t const* encoded, kth_size_t n, kth_bool_t prefix);
 
-/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_script_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_script_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data, kth_size_t n, kth_size_t size, KTH_OUT_OWNED kth_script_mut_t* out);
 
@@ -52,7 +52,7 @@ void kth_domain_chain_script_destruct(kth_script_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_script_mut_t`. Caller must release with `kth_chain_script_destruct`. */
+/** @return Owned `kth_script_mut_t`. Caller must release with `kth_domain_chain_script_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_script_mut_t kth_domain_chain_script_copy(kth_script_const_t self);
 
@@ -82,11 +82,11 @@ kth_size_t kth_domain_chain_script_serialized_size(kth_script_const_t self, kth_
 KTH_EXPORT KTH_OWNED
 uint8_t* kth_domain_chain_script_bytes(kth_script_const_t self, kth_size_t* out_size);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_operations(kth_script_const_t self);
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_domain_machine_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_domain_chain_script_first_operation(kth_script_const_t self);
 
@@ -203,73 +203,73 @@ kth_error_code_t kth_domain_chain_script_create_endorsement(kth_hash_t const* se
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_script_create_endorsement_unsafe(uint8_t const* secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size);
 
-/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n);
 
-/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_pattern(uint8_t const* point, kth_size_t n);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern(kth_shorthash_t const* hash);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unsafe(uint8_t const* hash);
 
-/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unlocking(uint8_t const* end, kth_size_t n, kth_ec_public_const_t pubkey);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_public_key_hash_pattern_unlocking_placeholder(kth_size_t endorsement_size, kth_size_t pubkey_size);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern_unlocking_placeholder(kth_size_t script_size, kth_bool_t multisig);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern(kth_shorthash_t const* hash);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_pattern_unsafe(uint8_t const* hash);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_32_pattern(kth_hash_t const* hash);
 
 /**
- * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`.
+ * @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`.
  * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_script_hash_32_pattern_unsafe(uint8_t const* hash);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_multisig_pattern_ec_compressed_list(uint8_t signatures, kth_ec_compressed_list_const_t points);
 
-/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_chain_operation_list_destruct`. */
+/** @return Owned `kth_operation_list_mut_t`. Caller must release with `kth_domain_machine_operation_list_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_list_mut_t kth_domain_chain_script_to_pay_multisig_pattern_data_stack(uint8_t signatures, kth_data_stack_const_t points);
 

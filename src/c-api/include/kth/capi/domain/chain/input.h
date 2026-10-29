@@ -16,12 +16,12 @@ extern "C" {
 
 // Constructors
 
-/** @param[out] out Must point to a null `kth_input_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_input_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_input_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_input_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_input_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_input_mut_t* out);
 
 /**
- * @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`.
+ * @return Owned `kth_input_mut_t`. Caller must release with `kth_domain_chain_input_destruct`.
  * @param previous_output Borrowed input. Copied by value into the resulting object; ownership of `previous_output` stays with the caller.
  * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
  */
@@ -38,7 +38,7 @@ void kth_domain_chain_input_destruct(kth_input_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_input_mut_t`. Caller must release with `kth_chain_input_destruct`. */
+/** @return Owned `kth_input_mut_t`. Caller must release with `kth_domain_chain_input_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_input_mut_t kth_domain_chain_input_copy(kth_input_const_t self);
 
@@ -83,7 +83,7 @@ kth_payment_address_mut_t kth_domain_chain_input_address(kth_input_const_t self)
 KTH_EXPORT KTH_OWNED
 kth_payment_address_list_mut_t kth_domain_chain_input_addresses(kth_input_const_t self);
 
-/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_script_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_script_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_input_extract_embedded_script(kth_input_const_t self, KTH_OUT_OWNED kth_script_mut_t* out);
 

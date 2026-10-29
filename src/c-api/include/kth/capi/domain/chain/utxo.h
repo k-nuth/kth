@@ -16,12 +16,12 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_utxo_mut_t`. Caller must release with `kth_chain_utxo_destruct`. */
+/** @return Owned `kth_utxo_mut_t`. Caller must release with `kth_domain_chain_utxo_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_utxo_mut_t kth_domain_chain_utxo_construct_default(void);
 
 /**
- * @return Owned `kth_utxo_mut_t`. Caller must release with `kth_chain_utxo_destruct`.
+ * @return Owned `kth_utxo_mut_t`. Caller must release with `kth_domain_chain_utxo_destruct`.
  * @param point Borrowed input. Copied by value into the resulting object; ownership of `point` stays with the caller.
  * @param token_data Borrowed input. Copied by value into the resulting object; ownership of `token_data` stays with the caller.
  */
@@ -38,7 +38,7 @@ void kth_domain_chain_utxo_destruct(kth_utxo_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_utxo_mut_t`. Caller must release with `kth_chain_utxo_destruct`. */
+/** @return Owned `kth_utxo_mut_t`. Caller must release with `kth_domain_chain_utxo_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_utxo_mut_t kth_domain_chain_utxo_copy(kth_utxo_const_t self);
 

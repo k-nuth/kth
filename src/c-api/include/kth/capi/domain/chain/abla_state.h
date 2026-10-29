@@ -16,12 +16,12 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_chain_abla_state_destruct`. */
+/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_state_mut_t kth_domain_chain_abla_state_construct_default(void);
 
 /**
- * @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_chain_abla_state_destruct`.
+ * @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`.
  * @param cfg Borrowed input. Copied by value into the resulting object; ownership of `cfg` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
@@ -37,7 +37,7 @@ void kth_domain_chain_abla_state_destruct(kth_abla_state_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_chain_abla_state_destruct`. */
+/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_abla_state_mut_t kth_domain_chain_abla_state_copy(kth_abla_state_const_t self);
 

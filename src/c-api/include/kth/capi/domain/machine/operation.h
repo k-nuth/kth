@@ -18,19 +18,19 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_domain_machine_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_domain_machine_operation_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_operation_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_operation_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_operation_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_machine_operation_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_machine_operation_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_operation_mut_t* out);
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_domain_machine_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_domain_machine_operation_construct_from_uncoded_minimal(uint8_t const* uncoded, kth_size_t n, kth_bool_t minimal);
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_domain_machine_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_domain_machine_operation_construct_from_code(kth_opcode_t code);
 
@@ -44,7 +44,7 @@ void kth_domain_machine_operation_destruct(kth_operation_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_chain_operation_destruct`. */
+/** @return Owned `kth_operation_mut_t`. Caller must release with `kth_domain_machine_operation_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_operation_mut_t kth_domain_machine_operation_copy(kth_operation_const_t self);
 

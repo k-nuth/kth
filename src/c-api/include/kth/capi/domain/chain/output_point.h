@@ -16,36 +16,36 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
+/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_output_point_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_output_point_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_output_point_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_output_point_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_output_point_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_point_mut_t* out);
 
 /**
- * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`.
  * @param hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `hash` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_construct_from_hash_index(kth_hash_t const* hash, uint32_t index);
 
 /**
- * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`.
  * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_construct_from_hash_index_unsafe(uint8_t const* hash, uint32_t index);
 
 /**
- * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`.
+ * @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`.
  * @param x Borrowed input. Copied by value into the resulting object; ownership of `x` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_construct_from_point(kth_point_const_t x);
 
-/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
+/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_null(void);
 
@@ -59,7 +59,7 @@ void kth_domain_chain_output_point_destruct(kth_output_point_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_chain_output_point_destruct`. */
+/** @return Owned `kth_output_point_mut_t`. Caller must release with `kth_domain_chain_output_point_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_point_mut_t kth_domain_chain_output_point_copy(kth_output_point_const_t self);
 

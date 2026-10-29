@@ -16,16 +16,16 @@ extern "C" {
 
 // Constructors
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/** @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_domain_chain_output_construct_default(void);
 
-/** @param[out] out Must point to a null `kth_output_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_output_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_output_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_output_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_output_construct_from_data(uint8_t const* data, kth_size_t n, kth_bool_t wire, KTH_OUT_OWNED kth_output_mut_t* out);
 
 /**
- * @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`.
+ * @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`.
  * @param script Borrowed input. Copied by value into the resulting object; ownership of `script` stays with the caller.
  * @param token_data Borrowed input. Copied by value into the resulting object; ownership of `token_data` stays with the caller.
  */
@@ -42,7 +42,7 @@ void kth_domain_chain_output_destruct(kth_output_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_output_mut_t`. Caller must release with `kth_chain_output_destruct`. */
+/** @return Owned `kth_output_mut_t`. Caller must release with `kth_domain_chain_output_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_output_mut_t kth_domain_chain_output_copy(kth_output_const_t self);
 

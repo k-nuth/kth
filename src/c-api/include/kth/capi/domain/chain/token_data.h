@@ -18,47 +18,47 @@ extern "C" {
 
 // Constructors
 
-/** @param[out] out Must point to a null `kth_token_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_token_data_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_token_data_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_token_data_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_token_construct_from_data(uint8_t const* data, kth_size_t n, KTH_OUT_OWNED kth_token_data_mut_t* out);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_make_fungible(kth_hash_t const* id, uint64_t amount);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_make_fungible_unsafe(uint8_t const* id, uint64_t amount);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_make_non_fungible(kth_hash_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_make_non_fungible_unsafe(uint8_t const* id, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @param id Borrowed input; must be non-null. Read during the call; ownership of `id` stays with the caller.
  */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_make_both(kth_hash_t const* id, uint64_t amount, kth_token_capability_t capability, uint8_t const* commitment, kth_size_t n);
 
 /**
- * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_chain_token_data_destruct`.
+ * @return Owned `kth_token_data_mut_t`, or NULL if construction/parsing fails. Caller must release non-NULL results with `kth_domain_chain_token_data_destruct`.
  * @warning `id` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
  */
 KTH_EXPORT KTH_OWNED
@@ -74,7 +74,7 @@ void kth_domain_chain_token_data_destruct(kth_token_data_mut_t self);
 
 // Copy
 
-/** @return Owned `kth_token_data_mut_t`. Caller must release with `kth_chain_token_data_destruct`. */
+/** @return Owned `kth_token_data_mut_t`. Caller must release with `kth_domain_chain_token_data_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_token_data_mut_t kth_domain_chain_token_data_copy(kth_token_data_const_t self);
 

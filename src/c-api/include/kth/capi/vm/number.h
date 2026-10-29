@@ -20,6 +20,22 @@ extern "C" {
 KTH_EXPORT KTH_OWNED
 kth_number_mut_t kth_vm_number_construct_default(void);
 
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_number_from_int(int64_t value, KTH_OUT_OWNED kth_number_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_number_safe_add_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_number_safe_sub_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
+
+/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_vm_number_safe_mul_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
+
 
 // Destructor
 
@@ -129,22 +145,6 @@ kth_bool_t kth_vm_number_safe_mul_int64(kth_number_mut_t self, int64_t x);
 
 
 // Static utilities
-
-/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_vm_number_from_int(int64_t value, KTH_OUT_OWNED kth_number_mut_t* out);
-
-/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_vm_number_safe_add_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
-
-/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_vm_number_safe_sub_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
-
-/** @param[out] out Must point to a null `kth_number_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_vm_number_destruct`. Untouched on error. */
-KTH_EXPORT
-kth_error_code_t kth_vm_number_safe_mul_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out);
 
 KTH_EXPORT
 kth_size_t kth_vm_number_minimally_encode(uint8_t* data, kth_size_t n);

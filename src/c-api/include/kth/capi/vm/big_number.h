@@ -28,9 +28,6 @@ kth_big_number_mut_t kth_vm_big_number_construct_from_value(int64_t value);
 KTH_EXPORT KTH_OWNED
 kth_big_number_mut_t kth_vm_big_number_construct_from_decimal_str(char const* decimal_str);
 
-
-// Static factories
-
 /** @return Owned `kth_big_number_mut_t`. Caller must release with `kth_vm_big_number_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_big_number_mut_t kth_vm_big_number_from_hex(char const* hex_str);

@@ -16,7 +16,7 @@ extern "C" {
 
 // Constructors
 
-/** @param[out] out Must point to a null `kth_double_spend_proof_spender_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_chain_double_spend_proof_spender_destruct`. Untouched on error. */
+/** @param[out] out Must point to a null `kth_double_spend_proof_spender_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_message_double_spend_proof_spender_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_domain_message_double_spend_proof_spender_construct_from_data(uint8_t const* data, kth_size_t n, uint32_t version, KTH_OUT_OWNED kth_double_spend_proof_spender_mut_t* out);
 
@@ -30,7 +30,7 @@ void kth_domain_message_double_spend_proof_spender_destruct(kth_double_spend_pro
 
 // Copy
 
-/** @return Owned `kth_double_spend_proof_spender_mut_t`. Caller must release with `kth_chain_double_spend_proof_spender_destruct`. */
+/** @return Owned `kth_double_spend_proof_spender_mut_t`. Caller must release with `kth_domain_message_double_spend_proof_spender_destruct`. */
 KTH_EXPORT KTH_OWNED
 kth_double_spend_proof_spender_mut_t kth_domain_message_double_spend_proof_spender_copy(kth_double_spend_proof_spender_const_t self);
 
