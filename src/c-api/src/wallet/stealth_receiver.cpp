@@ -36,7 +36,7 @@ kth_error_code_t kth_wallet_stealth_receiver_from_secrets(kth_hash_t const* scan
         auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
         auto result = cpp_t::from_secrets(scan_private_cpp, spend_private_cpp, filter_cpp, version);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -60,7 +60,7 @@ kth_error_code_t kth_wallet_stealth_receiver_from_secrets_unsafe(uint8_t const* 
         auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
         auto result = cpp_t::from_secrets(scan_private_cpp, spend_private_cpp, filter_cpp, version);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -105,7 +105,7 @@ kth_error_code_t kth_wallet_stealth_receiver_derive_address(kth_stealth_receiver
         auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public->data);
         auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::payment_address>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -124,7 +124,7 @@ kth_error_code_t kth_wallet_stealth_receiver_derive_address_unsafe(kth_stealth_r
         auto const ephemeral_public_cpp = kth::ec_compressed_to_cpp(ephemeral_public);
         auto result = kth::cpp_ref<cpp_t>(self).derive_address(ephemeral_public_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::payment_address>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

@@ -30,7 +30,7 @@ kth_error_code_t kth_wallet_hd_private_parse_from(char const* encoded, KTH_OUT_O
         auto const encoded_cpp = std::string_view(encoded);
         auto result = cpp_t::parse_from(encoded_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -48,7 +48,7 @@ kth_error_code_t kth_wallet_hd_private_parse_from_with_public_prefix(char const*
         auto const encoded_cpp = std::string_view(encoded);
         auto result = cpp_t::parse_from_with_public_prefix(encoded_cpp, public_prefix);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -66,7 +66,7 @@ kth_error_code_t kth_wallet_hd_private_parse_from_with_prefixes(char const* enco
         auto const encoded_cpp = std::string_view(encoded);
         auto result = cpp_t::parse_from_with_prefixes(encoded_cpp, prefixes);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -84,7 +84,7 @@ kth_error_code_t kth_wallet_hd_private_from_seed(uint8_t const* seed, kth_size_t
         auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
         auto result = cpp_t::from_seed(seed_cpp, prefixes);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -103,7 +103,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key(kth_hd_key_t const* private_k
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key(private_key_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -122,7 +122,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_unsafe(uint8_t const* private
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key(private_key_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -141,7 +141,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_public_prefix(kth_hd_key
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key_with_public_prefix(private_key_cpp, public_prefix);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -160,7 +160,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_public_prefix_unsafe(uin
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key_with_public_prefix(private_key_cpp, public_prefix);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -179,7 +179,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes(kth_hd_key_t co
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key_with_prefixes(private_key_cpp, prefixes);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -198,7 +198,7 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes_unsafe(uint8_t 
         kth::secure_scrub private_key_cpp_scrub{&private_key_cpp, sizeof(private_key_cpp)};
         auto result = cpp_t::from_hd_key_with_prefixes(private_key_cpp, prefixes);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -319,7 +319,7 @@ kth_error_code_t kth_wallet_hd_private_derive_private(kth_hd_private_const_t sel
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).derive_private(index);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -336,7 +336,7 @@ kth_error_code_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).derive_public(index);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::hd_public>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

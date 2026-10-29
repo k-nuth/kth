@@ -33,7 +33,7 @@ kth_error_code_t kth_wallet_create(char const* password, char const* normalized_
         auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
         auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp, lexicon_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -53,7 +53,7 @@ kth_error_code_t kth_wallet_create_simple(char const* password, char const* norm
         auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
         auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

@@ -337,7 +337,7 @@ kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t ma
         auto const maximum_size_cpp = kth::sz(maximum_size);
         auto result = kth::cpp_ref<cpp_t>(self).pop_number(maximum_size_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::infrastructure::machine::number>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -403,7 +403,7 @@ kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_
         auto const maximum_size_cpp = kth::sz(maximum_size);
         auto result = kth::cpp_ref<cpp_t>(self).pop_big_number(maximum_size_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::infrastructure::machine::big_number_gmp>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -485,7 +485,7 @@ kth_error_code_t kth_vm_program_pop(kth_program_mut_t self, kth_size_t count, KT
         auto const count_cpp = kth::sz(count);
         auto result = kth::cpp_ref<cpp_t>(self).pop(count_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::data_stack>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -543,7 +543,7 @@ kth_error_code_t kth_vm_program_top_number(kth_program_const_t self, kth_size_t 
         auto const maximum_size_cpp = kth::sz(maximum_size);
         auto result = kth::cpp_ref<cpp_t>(self).top_number(maximum_size_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::infrastructure::machine::number>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -561,7 +561,7 @@ kth_error_code_t kth_vm_program_top_big_number(kth_program_const_t self, kth_siz
         auto const maximum_size_cpp = kth::sz(maximum_size);
         auto result = kth::cpp_ref<cpp_t>(self).top_big_number(maximum_size_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::infrastructure::machine::big_number_gmp>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

@@ -46,7 +46,7 @@ kth_error_code_t kth_core_binary_parse_from(char const* bit_string, KTH_OUT_OWNE
         auto const bit_string_cpp = std::string_view(bit_string);
         auto result = cpp_t::parse_from(bit_string_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

@@ -42,7 +42,7 @@ kth_error_code_t kth_wallet_ek_public_parse_from(char const* encoded, KTH_OUT_OW
         auto const encoded_cpp = std::string_view(encoded);
         auto result = cpp_t::parse_from(encoded_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

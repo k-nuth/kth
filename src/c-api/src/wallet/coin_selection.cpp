@@ -29,7 +29,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos(kth_utxo_list_const_t av
         auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
         auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -51,7 +51,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_unsafe(kth_utxo_list_con
         auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
         auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -72,7 +72,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all(kth_utxo_list_c
         auto const category_cpp = kth::hash_to_cpp(category->hash);
         auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -93,7 +93,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all_unsafe(kth_utxo
         auto const category_cpp = kth::hash_to_cpp(category);
         auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -115,7 +115,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_both(kth_utxo_list_const
         auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
         auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -137,7 +137,7 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_both_unsafe(kth_utxo_lis
         auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
         auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<kth::domain::wallet::coin_selection_result>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

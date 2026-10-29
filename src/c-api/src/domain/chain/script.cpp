@@ -35,7 +35,7 @@ kth_error_code_t kth_domain_chain_script_construct_from_data(uint8_t const* data
         auto const prefix_cpp = kth::int_to_bool(prefix);
         auto result = cpp_t::from_data(data_cpp, prefix_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
@@ -67,7 +67,7 @@ kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data
         auto const size_cpp = kth::sz(size);
         auto result = cpp_t::from_data_with_size(data_cpp, size_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

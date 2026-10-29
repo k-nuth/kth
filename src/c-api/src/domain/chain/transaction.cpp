@@ -36,7 +36,7 @@ kth_error_code_t kth_domain_chain_transaction_construct_from_data(uint8_t const*
         auto const wire_cpp = kth::int_to_bool(wire);
         auto result = cpp_t::from_data(data_cpp, wire_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        *out = kth::make_owned<cpp_t>(std::move(*result));
+        *out = kth::to_owned(std::move(*result));
         return kth_ec_success;
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
