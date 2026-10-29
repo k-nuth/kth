@@ -5,6 +5,8 @@
 #include <array>
 #include <limits>
 #include <span>
+#include <type_traits>
+#include <utility>
 
 #include <test_helpers.hpp>
 
@@ -14,6 +16,38 @@ using namespace kth;
 using namespace kth::infrastructure;
 
 // Start Test Suite: byte_reader tests
+
+// Construction and the non-allocating accessors cannot throw. The parsing
+// operations return `expect<T>` and are intentionally left unannotated.
+static_assert(std::is_nothrow_constructible_v<byte_reader, byte_span>);
+static_assert(noexcept(byte_reader(std::declval<byte_span>())));
+static_assert(noexcept(std::declval<byte_reader const&>().buffer_size()));
+static_assert(noexcept(std::declval<byte_reader const&>().buffer()));
+static_assert(noexcept(std::declval<byte_reader const&>().remaining_size()));
+static_assert(noexcept(std::declval<byte_reader const&>().position()));
+static_assert(noexcept(std::declval<byte_reader const&>().is_exhausted()));
+static_assert( ! noexcept(std::declval<byte_reader&>().skip(1)));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_byte()));
+static_assert( ! noexcept(std::declval<byte_reader&>().read_bytes(1)));
+
+TEST_CASE("byte_reader - noexcept accessors report buffer state", "[byte_reader tests]") {
+    data_chunk const buffer{0x01, 0x02, 0x03};
+    byte_reader reader(byte_span(buffer.data(), buffer.size()));
+    REQUIRE(reader.buffer_size() == 3);
+    REQUIRE(reader.buffer().data() == buffer.data());
+    REQUIRE(reader.remaining_size() == 3);
+    REQUIRE(reader.position() == 0);
+    REQUIRE( ! reader.is_exhausted());
+    REQUIRE(reader.read_byte().has_value());
+    REQUIRE(reader.remaining_size() == 2);
+    REQUIRE(reader.position() == 1);
+}
+
+TEST_CASE("byte_reader - noexcept construction over a null empty span", "[byte_reader tests]") {
+    byte_reader reader(byte_span(static_cast<uint8_t const*>(nullptr), 0));
+    REQUIRE(reader.buffer_size() == 0);
+    REQUIRE(reader.is_exhausted());
+}
 
 TEST_CASE("byte_reader - is_exhausted on empty buffer returns true", "[byte_reader tests]") {
     data_chunk const buffer{};
