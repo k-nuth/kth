@@ -14,6 +14,8 @@
 #include <kth/capi/helpers.hpp>
 #include <kth/capi/version.h>
 
+#include "node_private.hpp"
+
 #include <kth/node/executor/executor.hpp>
 #include <kth/domain/wallet/mnemonic.hpp>  //Warning, put it after boost headers
 
@@ -74,11 +76,6 @@ void kth_node_init_run(kth_node_t node, void* ctx, kth_start_modules_t mods, kth
             handler(node, ctx, kth::to_c_err(ec));
         }
     });
-}
-
-kth_error_code_t kth_node_init_run_sync(kth_node_t node, kth_start_modules_t mods) {
-    auto ec = kth_node_cpp(node).start();
-    return kth::to_c_err(ec);
 }
 
 #endif // ! defined(KTH_DB_READONLY)
