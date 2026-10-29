@@ -41,7 +41,7 @@ expect<point> point::from_data(byte_reader& reader, bool wire) noexcept {
     return point {*hash, *index};
 }
 
-expect<void> point::to_data(byte_writer& writer, bool wire) const {
+expect<void> point::to_data(byte_writer& writer, bool wire) const noexcept {
     if (auto r = writer.write_hash(hash_); ! r) {
         return r;
     }

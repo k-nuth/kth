@@ -49,7 +49,7 @@ struct KD_API inventory {
     expect<inventory> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
 
     /// Drop the vectors matching `pred`. Safe where a mutable accessor is not:
     /// removing entries cannot exceed a maximum.

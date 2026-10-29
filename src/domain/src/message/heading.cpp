@@ -86,7 +86,7 @@ data_chunk heading::to_data() const {
     return kth::to_data_chunk(*this);
 }
 
-expect<void> heading::to_data(byte_writer& writer) const {
+expect<void> heading::to_data(byte_writer& writer) const noexcept {
     if (auto r = writer.write_little_endian<uint32_t>(magic_); ! r) return r;
     if (auto r = writer.write_string_fixed(command_, command_size); ! r) return r;
     if (auto r = writer.write_little_endian<uint32_t>(payload_size_); ! r) return r;

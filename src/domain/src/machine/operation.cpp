@@ -180,7 +180,7 @@ data_chunk operation::to_data() const {
     return kth::to_data_chunk(*this);
 }
 
-expect<void> operation::to_data(byte_writer& writer) const {
+expect<void> operation::to_data(byte_writer& writer) const noexcept {
     if (auto r = writer.write_byte(uint8_t(code_)); ! r) return r;
 
     // For explicit-size push opcodes, the size prefix (1/2/4 bytes LE)

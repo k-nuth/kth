@@ -70,7 +70,7 @@ struct KD_API operation {
     data_chunk to_data() const;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer) const;
+    expect<void> to_data(byte_writer& writer) const noexcept;
 
     [[nodiscard]]
     std::string to_string(script_flags_t active_flags) const;

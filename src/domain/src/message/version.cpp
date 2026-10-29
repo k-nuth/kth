@@ -203,7 +203,7 @@ void version::set_relay(bool relay) {
     relay_ = relay;
 }
 
-expect<void> version::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> version::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_little_endian<uint32_t>(value_); ! r) return r;
         auto const effective_version = std::min(version, value_);
         if (auto r = writer.write_little_endian<uint64_t>(services_); ! r) return r;

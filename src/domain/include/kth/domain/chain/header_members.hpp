@@ -89,7 +89,7 @@ public:
     expect<header> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool wire) const {
+    expect<void> to_data(byte_writer& writer, bool wire) const noexcept {
         (void)wire;
         if (auto r = writer.write_little_endian<uint32_t>(version_); ! r) return r;
         if (auto r = writer.write_hash(previous_block_hash_); ! r) return r;

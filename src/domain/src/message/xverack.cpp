@@ -19,7 +19,7 @@ expect<xverack> xverack::from_data(byte_reader& /*reader*/, uint32_t /*version*/
     return xverack();
 }
 
-expect<void> xverack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+expect<void> xverack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const noexcept {
     return {};
 }
 

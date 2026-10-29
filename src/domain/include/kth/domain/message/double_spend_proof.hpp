@@ -45,7 +45,7 @@ struct KD_API double_spend_proof {
         }
 
         [[nodiscard]]
-        expect<void> to_data(byte_writer& writer) const {
+        expect<void> to_data(byte_writer& writer) const noexcept {
             if (auto r = writer.write_little_endian<uint32_t>(version); ! r) return r;
             if (auto r = writer.write_little_endian<uint32_t>(out_sequence); ! r) return r;
             if (auto r = writer.write_little_endian<uint32_t>(locktime); ! r) return r;
@@ -78,7 +78,7 @@ struct KD_API double_spend_proof {
     expect<double_spend_proof> from_data(byte_reader& reader, uint32_t /*version*/);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t /*version*/) const;
+    expect<void> to_data(byte_writer& writer, uint32_t /*version*/) const noexcept;
 
     [[nodiscard]]
     size_t serialized_size(uint32_t /*version*/) const {

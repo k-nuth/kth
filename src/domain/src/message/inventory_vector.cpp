@@ -110,7 +110,7 @@ void inventory_vector::set_hash(hash_digest const& value) {
     hash_ = value;
 }
 
-expect<void> inventory_vector::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> inventory_vector::to_data(byte_writer& writer, uint32_t version) const noexcept {
         auto const raw_type = inventory_vector::to_number(type_);
         if (auto r = writer.write_little_endian<uint32_t>(raw_type); ! r) return r;
         if (auto r = writer.write_hash(hash_); ! r) return r;

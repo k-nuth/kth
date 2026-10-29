@@ -286,7 +286,7 @@ void alert_payload::set_reserved(std::string&& value) {
     reserved_ = std::move(value);
 }
 
-expect<void> alert_payload::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> alert_payload::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_little_endian<uint32_t>(this->version_); ! r) return r;
         if (auto r = writer.write_little_endian<uint64_t>(relay_until_); ! r) return r;
         if (auto r = writer.write_little_endian<uint64_t>(expiration_); ! r) return r;

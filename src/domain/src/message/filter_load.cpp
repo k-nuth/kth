@@ -93,7 +93,7 @@ uint8_t filter_load::flags() const {
     return flags_;
 }
 
-expect<void> filter_load::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> filter_load::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(filter_.size()); ! r) return r;
         if (auto r = writer.write_bytes(filter_); ! r) return r;
         if (auto r = writer.write_little_endian<uint32_t>(hash_functions_); ! r) return r;

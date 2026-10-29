@@ -61,7 +61,7 @@ struct KI_API network_address {
     expect<network_address> from_data(byte_reader& reader, uint32_t version, bool with_timestamp);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t version, bool with_timestamp) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version, bool with_timestamp) const noexcept;
 
     bool is_valid() const;
     bool is_routable() const;

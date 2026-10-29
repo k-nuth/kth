@@ -569,6 +569,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/output_point.cpp
         test/chain/point.cpp
         test/from_data_noexcept.cpp
+        test/to_data_noexcept.cpp
         test/chain/point_iterator.cpp
         test/chain/point_value.cpp
         test/chain/points_value.cpp

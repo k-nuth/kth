@@ -22,7 +22,7 @@ expect<send_headers> send_headers::from_data(byte_reader& reader, uint32_t versi
     return send_headers();
 }
 
-expect<void> send_headers::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+expect<void> send_headers::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const noexcept {
     return {};
 }
 

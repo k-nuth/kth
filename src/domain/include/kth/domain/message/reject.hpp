@@ -96,7 +96,7 @@ struct KD_API reject {
     expect<reject> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
@@ -117,7 +117,7 @@ private:
     reason_code reason_from_byte(uint8_t byte);
 
     static
-    uint8_t reason_to_byte(reason_code value);
+    uint8_t reason_to_byte(reason_code value) noexcept;
 
     reason_code code_{reason_code::undefined};
     std::string message_;

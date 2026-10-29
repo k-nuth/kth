@@ -41,23 +41,23 @@ expect<addrv2_entry> addrv2_entry::create(uint32_t time, uint64_t services,
     return addrv2_entry(time, services, network, std::move(addr), port);
 }
 
-uint32_t addrv2_entry::time() const {
+uint32_t addrv2_entry::time() const noexcept {
     return time_;
 }
 
-uint64_t addrv2_entry::services() const {
+uint64_t addrv2_entry::services() const noexcept {
     return services_;
 }
 
-bip155_network addrv2_entry::network() const {
+bip155_network addrv2_entry::network() const noexcept {
     return network_;
 }
 
-data_chunk const& addrv2_entry::addr() const {
+data_chunk const& addrv2_entry::addr() const noexcept {
     return addr_;
 }
 
-uint16_t addrv2_entry::port() const {
+uint16_t addrv2_entry::port() const noexcept {
     return port_;
 }
 
@@ -261,7 +261,7 @@ size_t addrv2::serialized_size(uint32_t /*version*/) const {
     return size;
 }
 
-expect<void> addrv2::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> addrv2::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(addresses_.size()); ! r) return r;
 
         for (auto const& entry : addresses_) {

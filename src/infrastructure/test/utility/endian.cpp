@@ -165,4 +165,14 @@ TEST_CASE("endian constexpr to big endian", "[endian tests]") {
     REQUIRE(bytes[0] == 0x01);
 }
 
+// The conversions are pure functions of fixed-size integers and spans.
+static_assert(noexcept(to_little_endian(uint16_t{})));
+static_assert(noexcept(to_little_endian(uint64_t{})));
+static_assert(noexcept(to_big_endian(uint32_t{})));
+static_assert(noexcept(to_endian<std::endian::little>(uint32_t{})));
+static_assert(noexcept(from_little_endian<uint32_t>(std::declval<std::span<uint8_t const, 4>>())));
+static_assert(noexcept(from_big_endian<uint16_t>(std::declval<std::span<uint8_t const, 2>>())));
+static_assert(noexcept(from_little_endian_unsafe<uint32_t>(std::declval<byte_span>())));
+static_assert(noexcept(from_big_endian_unsafe<uint32_t>(std::declval<byte_span>())));
+
 // End Test Suite

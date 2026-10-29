@@ -57,7 +57,7 @@ private:
     static constexpr std::array<uint8_t, serialized_size_wire>
     make_data(uint32_t version, hash_digest const& previous_block_hash,
               hash_digest const& merkle, uint32_t timestamp,
-              uint32_t bits, uint32_t nonce) {
+              uint32_t bits, uint32_t nonce) noexcept {
         std::array<uint8_t, serialized_size_wire> data{};
 
         // Version (little-endian)
@@ -119,7 +119,7 @@ public:
     // Construct from individual fields.
     constexpr header(uint32_t version, hash_digest const& previous_block_hash,
                      hash_digest const& merkle, uint32_t timestamp,
-                     uint32_t bits, uint32_t nonce)
+                     uint32_t bits, uint32_t nonce) noexcept
         : data_{make_data(version, previous_block_hash, merkle, timestamp, bits, nonce)}
         // , median_time_past_{0}
     {}
@@ -239,7 +239,7 @@ public:
     expect<header> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool wire) const {
+    expect<void> to_data(byte_writer& writer, bool wire) const noexcept {
         (void)wire;
         // Write raw bytes directly - already in little-endian wire format.
         return writer.write_bytes(std::span<uint8_t const>{data_.data(), serialized_size_wire});

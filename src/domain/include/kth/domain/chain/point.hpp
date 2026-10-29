@@ -60,7 +60,7 @@ struct KD_API point {
     expect<point> from_data(byte_reader& reader, bool wire = true) noexcept;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool wire) const;
+    expect<void> to_data(byte_writer& writer, bool wire) const noexcept;
 
     [[nodiscard]]
     static constexpr size_t satoshi_fixed_size() {

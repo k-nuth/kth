@@ -31,7 +31,7 @@ expect<fee_filter> fee_filter::from_data(byte_reader& reader, uint32_t version) 
 //-----------------------------------------------------------------------------
 
 // This is again a default instance so is invalid.
-expect<void> fee_filter::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> fee_filter::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_little_endian<uint64_t>(minimum_fee_); ! r) return r;
         return {};
 }

@@ -53,7 +53,7 @@ struct KD_API header : chain::header {
 
     // Serialization to P2P wire (writes trailing zero byte).
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
 
     size_t serialized_size(uint32_t version) const;
 };

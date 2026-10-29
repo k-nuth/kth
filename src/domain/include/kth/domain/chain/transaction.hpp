@@ -6,12 +6,14 @@
 #define KTH_DOMAIN_CHAIN_TRANSACTION_HPP
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <istream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <kth/domain/chain/chain_state.hpp>
@@ -38,9 +40,22 @@ namespace kth::domain::chain {
 
 namespace detail {
 
-// Write a length-prefixed collection of inputs or outputs to the writer.
+// True when `Put::to_data` has exactly the `expect<void>` shape and cannot throw.
 template <class Put>
-expect<void> write(byte_writer& writer, std::vector<Put> const& puts, bool wire) {
+inline constexpr bool nothrow_put_to_data_v =
+    std::same_as<decltype(std::declval<Put const&>().to_data(std::declval<byte_writer&>(), true)), expect<void>>
+    && noexcept(std::declval<Put const&>().to_data(std::declval<byte_writer&>(), true));
+
+// Write a length-prefixed collection of inputs or outputs to the writer.
+// Any `Put::to_data` result that converts to `expect<void>` is accepted, as
+// before. The function is noexcept only for the exact `expect<void>` shape
+// with a noexcept `to_data` (the writer primitives and vector iteration cannot
+// throw); every other shape is conservatively potentially throwing, since
+// copying, testing or converting its result is not known to be nothrow.
+template <class Put>
+expect<void> write(byte_writer& writer, std::vector<Put> const& puts, bool wire)
+    noexcept(nothrow_put_to_data_v<Put>)
+{
     if (auto r = writer.write_variable_little_endian(puts.size()); ! r) {
         return r;
     }

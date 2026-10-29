@@ -183,7 +183,7 @@ expect<network_address> network_address::from_data(byte_reader& reader, uint32_t
     return network_address(timestamp, *services, ip_addr, *port);
 }
 
-expect<void> network_address::to_data(byte_writer& writer, uint32_t /*version*/, bool with_timestamp) const {
+expect<void> network_address::to_data(byte_writer& writer, uint32_t /*version*/, bool with_timestamp) const noexcept {
     if (with_timestamp) {
         if (auto r = writer.write_little_endian<uint32_t>(timestamp_); ! r) return r;
     }

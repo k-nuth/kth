@@ -70,7 +70,7 @@ void send_compact::set_version(uint64_t version) {
     version_ = version;
 }
 
-expect<void> send_compact::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> send_compact::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_byte(uint8_t(high_bandwidth_mode_)); ! r) return r;
         if (auto r = writer.write_little_endian<uint64_t>(this->version_); ! r) return r;
         return {};
