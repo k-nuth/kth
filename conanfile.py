@@ -152,7 +152,7 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
-            self.requires("openssl/4.0.3", transitive_headers=True, transitive_libs=True)
+            self.requires("openssl/4.1.0", transitive_headers=True, transitive_libs=True)
 
         self.requires("ctre/3.11.0", transitive_headers=True, transitive_libs=True)
         self.requires("tiny-aes-c/1.0.0", transitive_headers=True, transitive_libs=True)
