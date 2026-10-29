@@ -96,7 +96,7 @@ public:
     constexpr header() = default;
 
     // Construct from raw bytes (must be exactly 80 bytes).
-    explicit constexpr header(std::span<uint8_t const, serialized_size_wire> raw_data)
+    explicit constexpr header(std::span<uint8_t const, serialized_size_wire> raw_data) noexcept
         : data_{}
         // , median_time_past_{0}
     {

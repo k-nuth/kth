@@ -36,7 +36,7 @@ std::string inventory_vector::to_string(type_id type) {
     }
 }
 
-inventory_vector::inventory_vector()
+inventory_vector::inventory_vector() noexcept
     : hash_(null_hash)
 {}
 

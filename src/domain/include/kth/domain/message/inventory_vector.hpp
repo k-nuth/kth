@@ -43,14 +43,14 @@ struct KD_API inventory_vector {
     static
     size_t satoshi_fixed_size(uint32_t version);
 
-    inventory_vector();
+    inventory_vector() noexcept;
     inventory_vector(type_id type, hash_digest const& hash) noexcept;
-    inventory_vector(inventory_vector const& x) = default;
-    inventory_vector(inventory_vector&& x) = default;
+    inventory_vector(inventory_vector const& x) noexcept = default;
+    inventory_vector(inventory_vector&& x) noexcept = default;
 
     // This class is move assignable but not copy assignable.
-    inventory_vector& operator=(inventory_vector&& x) = default;
-    inventory_vector& operator=(inventory_vector const& x) = default;
+    inventory_vector& operator=(inventory_vector&& x) noexcept = default;
+    inventory_vector& operator=(inventory_vector const& x) noexcept = default;
 
     [[nodiscard]]
     friend bool operator==(inventory_vector const&, inventory_vector const&) = default;

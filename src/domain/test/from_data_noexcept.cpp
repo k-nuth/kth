@@ -89,6 +89,44 @@ static_assert(std::is_nothrow_constructible_v<message::fee_filter, uint64_t>);
 static_assert(std::is_nothrow_constructible_v<message::send_compact, bool, uint64_t>);
 static_assert(std::is_nothrow_constructible_v<message::inventory_vector, message::inventory_vector::type_id, hash_digest const&>);
 
+// inventory_vector holds an enum and a std::array hash, so every special
+// member is nothrow: the user-provided default constructor is annotated and
+// the defaulted ones state the guarantee explicitly.
+static_assert(std::is_nothrow_default_constructible_v<message::inventory_vector>);
+static_assert(std::is_nothrow_copy_constructible_v<message::inventory_vector>);
+static_assert(std::is_nothrow_move_constructible_v<message::inventory_vector>);
+static_assert(std::is_nothrow_copy_assignable_v<message::inventory_vector>);
+static_assert(std::is_nothrow_move_assignable_v<message::inventory_vector>);
+static_assert(std::is_same_v<std::underlying_type_t<message::inventory_vector::type_id>, uint32_t>);
+
+// The other audited parser classes only hold fixed-size members, so their
+// implicit special members are already nothrow. They are left unannotated and
+// pinned here so a future allocating member is caught.
+static_assert(std::is_nothrow_default_constructible_v<message::header>);
+static_assert(std::is_nothrow_copy_constructible_v<message::header>);
+static_assert(std::is_nothrow_move_constructible_v<message::header>);
+static_assert(std::is_nothrow_default_constructible_v<message::ping>);
+static_assert(std::is_nothrow_default_constructible_v<message::pong>);
+static_assert(std::is_nothrow_default_constructible_v<message::fee_filter>);
+static_assert(std::is_nothrow_default_constructible_v<message::send_compact>);
+static_assert(std::is_nothrow_default_constructible_v<message::verack>);
+static_assert(std::is_nothrow_default_constructible_v<message::xverack>);
+static_assert(std::is_nothrow_default_constructible_v<message::xversion>);
+static_assert(std::is_nothrow_default_constructible_v<message::get_address>);
+static_assert(std::is_nothrow_default_constructible_v<message::memory_pool>);
+static_assert(std::is_nothrow_default_constructible_v<message::send_headers>);
+static_assert(std::is_nothrow_default_constructible_v<message::send_addrv2>);
+static_assert(std::is_nothrow_default_constructible_v<message::filter_clear>);
+static_assert(std::is_nothrow_default_constructible_v<chain::header>);
+static_assert(std::is_nothrow_copy_constructible_v<chain::header>);
+static_assert(std::is_nothrow_move_constructible_v<chain::header>);
+static_assert(std::is_nothrow_copy_constructible_v<chain::point>);
+static_assert(std::is_nothrow_move_constructible_v<chain::point>);
+#if ! defined(KTH_USE_HEADER_MEMBERS)
+static_assert(std::is_nothrow_constructible_v<chain::header,
+    std::span<uint8_t const, chain::header::serialized_size_wire>>);
+#endif
+
 // Parsers that can throw stay unannotated: each allocates (vector, string,
 // data_chunk, reserve/push_back/resize) or reaches a call that can throw.
 // ----------------------------------------------------------------------------
@@ -249,6 +287,23 @@ TEST_CASE("from_data noexcept - inventory_vector", "[from_data_noexcept]") {
     REQUIRE( ! bad.has_value());
     REQUIRE(bad.error() == error::read_past_end_of_buffer);
     REQUIRE( ! from_data_chunk<message::inventory_vector>(data_chunk(3, 0), latest).has_value());
+}
+
+TEST_CASE("from_data noexcept - inventory_vector constructors", "[from_data_noexcept]") {
+    message::inventory_vector const empty;
+    REQUIRE(empty.type() == message::inventory_vector::type_id::error);
+    REQUIRE(empty.hash() == null_hash);
+
+    message::inventory_vector const full(message::inventory_vector::type_id::compact_block, filled_hash(7));
+    message::inventory_vector copy(full);
+    REQUIRE(copy == full);
+    message::inventory_vector moved(std::move(copy));
+    REQUIRE(moved == full);
+    message::inventory_vector assigned;
+    assigned = full;
+    REQUIRE(assigned == full);
+    assigned = message::inventory_vector{};
+    REQUIRE(assigned == empty);
 }
 
 TEST_CASE("from_data noexcept - point wire and store formats", "[from_data_noexcept]") {
