@@ -3,10 +3,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/domain/wallet/hd_private.hpp>
+#include <kth/domain/wallet/derivation_path.hpp>
 
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <kth/domain/deserialization.hpp>
@@ -225,6 +227,54 @@ expect<hd_private> hd_private::derive_private(uint32_t index) const {
     };
 
     return from_verified_secret(child, intermediate.right, child_lineage);
+}
+
+namespace {
+class scoped_private_key_wipe {
+public:
+    explicit scoped_private_key_wipe(hd_private& key) noexcept : key_(key) {}
+    ~scoped_private_key_wipe() noexcept {
+        key_.wipe();
+        // Preserve the final wipe even when the optimizer knows that the local copy is dead.
+        static_assert(std::is_trivially_copyable_v<hd_private>);
+        auto* bytes = reinterpret_cast<volatile unsigned char*>(&key_);
+        for (size_t i = 0; i < sizeof(key_); ++i) bytes[i] = 0;
+    }
+    scoped_private_key_wipe(scoped_private_key_wipe const&) = delete;
+    scoped_private_key_wipe& operator=(scoped_private_key_wipe const&) = delete;
+private:
+    hd_private& key_;
+};
+
+expect<hd_private> derive_private_indexes(hd_private const& key, std::vector<uint32_t> const& indexes) {
+    if (indexes.size() > 255u - key.lineage().depth) return std::unexpected(kth::error::illegal_value);
+    auto current = key;
+    scoped_private_key_wipe const wipe_current{current};
+    for (uint32_t const index : indexes) {
+        auto next = current.derive_private(index);
+        current.wipe();
+        if ( ! next) return std::unexpected(next.error());
+        scoped_private_key_wipe const wipe_next{*next};
+        current = *next;
+    }
+    return current;
+}
+} // namespace
+
+expect<hd_private> hd_private::derive_path(std::string_view path) const {
+    auto const indexes = parse_derivation_path(path);
+    if ( ! indexes) return std::unexpected(indexes.error());
+    if (path.starts_with("m") && lineage().depth != 0) return std::unexpected(kth::error::illegal_value);
+    return derive_private_indexes(*this, *indexes);
+}
+
+expect<hd_private> hd_private::from_seed_and_path(data_chunk const& seed, std::string_view path, uint64_t prefixes) {
+    auto const indexes = parse_derivation_path(path);
+    if ( ! indexes) return std::unexpected(indexes.error());
+    auto master = from_seed(seed, prefixes);
+    if ( ! master) return std::unexpected(master.error());
+    scoped_private_key_wipe const wipe_master{*master};
+    return derive_private_indexes(*master, *indexes);
 }
 
 expect<hd_public> hd_private::derive_public(uint32_t index) const {

@@ -132,6 +132,15 @@ struct KD_API hd_private {
     [[nodiscard]]
     expect<hd_private> derive_private(uint32_t index) const;
 
+    /// Derive all components atomically. A rooted path requires a depth-zero key.
+    [[nodiscard]]
+    expect<hd_private> derive_path(std::string_view path) const;
+
+    /// Validate the complete path before constructing the master key, then derive the account.
+    [[nodiscard]] static
+    expect<hd_private> from_seed_and_path(data_chunk const& seed, std::string_view path, uint64_t prefixes = mainnet);
+
+
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
 

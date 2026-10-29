@@ -278,6 +278,7 @@ set(kth_sources_just_legacy
         src/wallet/stealth_address.cpp
         src/wallet/stealth_receiver.cpp
         src/wallet/stealth_sender.cpp
+        src/wallet/derivation_path.cpp
         src/wallet/hd_private.cpp
         src/wallet/hd_public.cpp
         src/wallet/mnemonic.cpp
@@ -625,6 +626,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
         test/wallet/bitcoin_uri.cpp
         test/wallet/ec_private.cpp
+        test/wallet/derivation_path.cpp
         test/wallet/hd_private.cpp
         test/wallet/hd_public.cpp
         test/wallet/mnemonic.cpp

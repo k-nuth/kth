@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/domain/wallet/hd_public.hpp>
+#include <kth/domain/wallet/derivation_path.hpp>
 
 #include <cstdint>
 #include <string>
@@ -186,6 +187,23 @@ void hd_public::wipe() noexcept {
 uint32_t hd_public::fingerprint() const {
     auto const message_digest = bitcoin_short_hash(point_);
     return from_big_endian_unsafe<uint32_t>(message_digest);
+}
+
+expect<hd_public> hd_public::derive_path(std::string_view path) const {
+    auto const indexes = parse_derivation_path(path);
+    if ( ! indexes) return std::unexpected(indexes.error());
+    if (path.starts_with("m") && lineage().depth != 0) return std::unexpected(kth::error::illegal_value);
+    if (indexes->size() > 255u - lineage().depth) return std::unexpected(kth::error::illegal_value);
+    for (uint32_t const index : *indexes) {
+        if (index >= hd_first_hardened_key) return std::unexpected(kth::error::illegal_value);
+    }
+    auto current = *this;
+    for (uint32_t const index : *indexes) {
+        auto next = current.derive_public(index);
+        if ( ! next) return std::unexpected(next.error());
+        current = *next;
+    }
+    return current;
 }
 
 } // namespace kth::domain::wallet
