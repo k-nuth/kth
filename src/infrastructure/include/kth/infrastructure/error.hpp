@@ -316,6 +316,18 @@ enum error_code_t {
     node_behind,              ///< Connected chain has not reached the headers it holds.
     node_stale,               ///< Caught up, but the tip is older than the configured limit.
 
+    // Local transaction policy failures. Kept distinct from consensus failures.
+    standardness_version,
+    standardness_transaction_size,
+    standardness_scriptsig_size,
+    standardness_scriptsig_not_push_only,
+    standardness_tokens_before_activation,
+    standardness_scriptpubkey,
+    standardness_bare_multisig,
+    standardness_dust,
+    standardness_datacarrier_size,
+    standardness_inputs,
+
     // Last error code.
     last_error_code
 };

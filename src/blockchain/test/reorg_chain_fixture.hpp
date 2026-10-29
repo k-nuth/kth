@@ -69,6 +69,10 @@ struct chain_fixture {
 
     [[nodiscard]] bool created() const { return created_; }
 
+    // The settings the chain is started with. Adjust before start(): the
+    // validators copy what they need when the chain is constructed.
+    [[nodiscard]] blockchain::settings& settings() { return chain_settings_; }
+
     // Construct and start the chain. Separate from the constructor so a test can
     // assert on creation failure without the chain half-built.
     [[nodiscard]] bool start() {

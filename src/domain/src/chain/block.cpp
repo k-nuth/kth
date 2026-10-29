@@ -571,7 +571,7 @@ code block::check_transactions() const {
     constexpr size_t max_block_size = static_absolute_max_block_size();
     code ec;
     for (auto const& tx : transactions_) {
-        if ((ec = tx.check(max_block_size, false))) {
+        if ((ec = tx.check(max_block_size, false, true))) {
             return ec;
         }
     }

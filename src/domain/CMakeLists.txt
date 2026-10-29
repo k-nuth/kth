@@ -190,6 +190,7 @@ set(kth_sources_just_legacy
         src/chain/point_iterator.cpp
         src/chain/script.cpp
         src/chain/transaction.cpp
+        src/policy/standardness.cpp
         src/chain/utxo.cpp
 
         src/machine/interpreter.cpp
@@ -450,6 +451,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 if (NOT ENABLE_SHARED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC -DKD_STATIC)
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE -DKD_DLL)
 endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})

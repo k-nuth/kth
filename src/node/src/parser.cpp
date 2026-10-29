@@ -248,6 +248,27 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
     app.add_option("--node.sigop_fee_satoshis",    cfg.chain.sigop_fee_satoshis);
     app.add_option("--node.minimum_output_satoshis", cfg.chain.minimum_output_satoshis);
+    // General Knuth standardness control. BCHN diagnostics never gate admission.
+    app.add_option("--node.acceptnonstdtxn,--acceptnonstdtxn", cfg.chain.accept_non_standard_transactions,
+        "Accept transactions failing local Knuth standardness. Consensus is always required.");
+#if defined(KTH_CURRENCY_BCH)
+    auto& policy = cfg.chain.standardness;
+    app.add_option("--node.standardness.maximum_transaction_size", policy.maximum_transaction_size);
+    app.add_option("--node.standardness.maximum_scriptsig_size", policy.maximum_scriptsig_size);
+    app.add_option("--node.standardness.maximum_output_script_size", policy.maximum_output_script_size);
+    app.add_option("--node.standardness.minimum_version", policy.minimum_version);
+    app.add_option("--node.standardness.maximum_version", policy.maximum_version);
+    app.add_option("--node.standardness.minimum_output_value", policy.minimum_output_value);
+    app.add_option("--node.standardness.maximum_datacarrier_bytes", policy.maximum_datacarrier_bytes);
+    app.add_option("--node.standardness.require_push_only", policy.require_push_only);
+#endif
+    // Superseded by the general switch above; refuse it rather than ignore it
+    // (the parser tolerates unknown options) so it can never silently do nothing.
+    app.add_option_function<std::string>("--node.require_standard_size",
+        [](std::string const&) {
+            throw CLI::ValidationError("--node.require_standard_size",
+                "removed; use --node.acceptnonstdtxn (general standardness switch)");
+        }, "Removed; use --node.acceptnonstdtxn.");
 #if ! defined(__EMSCRIPTEN__)
     app.add_option("--node.relay_transactions", cfg.network.relay_transactions);
 #endif
@@ -300,6 +321,19 @@ void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
     // section splitting is effectively turned off.
     app.get_config_formatter_base()->parentSeparator('\x1f');
     app.set_config("--config_file_loader", config_path.string());
+}
+
+// Preserve the historical non-BCH configuration restriction. BCH uses the
+// independent Knuth policy and can disable it without relaxing consensus.
+bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if !defined(KTH_CURRENCY_BCH)
+    if (cfg.net == domain::config::network::mainnet && cfg.chain.accept_non_standard_transactions) {
+        error << "Error: acceptnonstdtxn is not allowed on mainnet; "
+                 "standardness policy cannot be disabled on the main network." << std::endl;
+        return false;
+    }
+#endif
+    return true;
 }
 
 } // namespace
@@ -405,6 +439,10 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
+        if ( ! check_standardness_policy(configured, error)) {
+            return false;
+        }
+
 #if ! defined(__EMSCRIPTEN__)
         if (configured.chain.fix_checkpoints) {
             domain::config::fix_checkpoints(configured.network.identifier,
@@ -459,6 +497,10 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
     } catch (CLI::ParseError const& e) {
         error << "Error: " << e.what() << std::endl;
         return e.get_exit_code() == 0;
+    }
+
+    if ( ! check_standardness_policy(configured, error)) {
+        return false;
     }
 
 #if ! defined(__EMSCRIPTEN__)

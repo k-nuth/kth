@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <kth/domain/chain/header.hpp>
+#include <kth/domain/define.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
@@ -103,6 +104,11 @@ struct light_block {
 
     // Validation.
     //-------------------------------------------------------------------------
+
+    /// Consensus per-transaction size cap, coinbase included, from the raw
+    /// transaction lengths (no deserialization). Same rule as transaction::check.
+    [[nodiscard]]
+    KD_API code check_transaction_sizes() const;
 
     /// Generate merkle root by hashing raw transaction bytes.
     /// Uses Bitcoin Core's optimized SHA256D64 (SIMD accelerated).

@@ -212,7 +212,7 @@ struct KD_API transaction {
     /// Structural validation — no context needed, no prevout cache needed.
     /// Can be called immediately after deserialization for fast rejection.
     [[nodiscard]]
-    code check(size_t max_block_size, bool transaction_pool, bool retarget = true) const;
+    code check(size_t max_block_size, bool transaction_pool, bool retarget) const;
 
     [[nodiscard]]
     size_t min_tx_size(script_flags_t flags) const;
