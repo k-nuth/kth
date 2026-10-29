@@ -26,22 +26,22 @@ using expect = std::expected<T, code>;
 
 struct byte_reader {
     constexpr explicit
-    byte_reader(byte_span buffer)
+    byte_reader(byte_span buffer) noexcept
         : buffer_(buffer)
         , position_(0)
     {}
 
     [[nodiscard]] constexpr
-    size_t buffer_size() const { return buffer_.size(); }
+    size_t buffer_size() const noexcept { return buffer_.size(); }
 
     [[nodiscard]] constexpr
-    byte_span buffer() const { return buffer_; }
+    byte_span buffer() const noexcept { return buffer_; }
 
     [[nodiscard]] constexpr
-    size_t remaining_size() const { return buffer_.size() - position_; }
+    size_t remaining_size() const noexcept { return buffer_.size() - position_; }
 
     [[nodiscard]] constexpr
-    size_t position() const { return position_; }
+    size_t position() const noexcept { return position_; }
 
     [[nodiscard]] constexpr
     expect<void> skip(size_t count) {
@@ -245,7 +245,7 @@ struct byte_reader {
     }
 
     [[nodiscard]] constexpr
-    bool is_exhausted() const {
+    bool is_exhausted() const noexcept {
         return position_ >= buffer_.size();
     }
 
