@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/machine/number.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -24,6 +25,82 @@ extern "C" {
 
 kth_number_mut_t kth_vm_number_construct_default(void) {
     return kth::make_owned<cpp_t>();
+}
+
+kth_error_code_t kth_vm_number_from_int(int64_t value, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = cpp_t::from_int(value);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_vm_number_safe_add_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(x != nullptr);
+    KTH_PRECONDITION(y != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+        auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
+        auto result = cpp_t::safe_add(x_cpp, y_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_vm_number_safe_sub_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(x != nullptr);
+    KTH_PRECONDITION(y != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+        auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
+        auto result = cpp_t::safe_sub(x_cpp, y_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_vm_number_safe_mul_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
+    KTH_PRECONDITION(x != nullptr);
+    KTH_PRECONDITION(y != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
+        auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
+        auto result = cpp_t::safe_mul(x_cpp, y_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 
@@ -199,54 +276,6 @@ kth_bool_t kth_vm_number_safe_mul_int64(kth_number_mut_t self, int64_t x) {
 
 
 // Static utilities
-
-kth_error_code_t kth_vm_number_from_int(int64_t value, KTH_OUT_OWNED kth_number_mut_t* out) {
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto result = cpp_t::from_int(value);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_vm_number_safe_add_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
-    KTH_PRECONDITION(x != nullptr);
-    KTH_PRECONDITION(y != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
-    auto result = cpp_t::safe_add(x_cpp, y_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_vm_number_safe_sub_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
-    KTH_PRECONDITION(x != nullptr);
-    KTH_PRECONDITION(y != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
-    auto result = cpp_t::safe_sub(x_cpp, y_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_vm_number_safe_mul_number2(kth_number_const_t x, kth_number_const_t y, KTH_OUT_OWNED kth_number_mut_t* out) {
-    KTH_PRECONDITION(x != nullptr);
-    KTH_PRECONDITION(y != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const& x_cpp = kth::cpp_ref<cpp_t>(x);
-    auto const& y_cpp = kth::cpp_ref<cpp_t>(y);
-    auto result = cpp_t::safe_mul(x_cpp, y_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
-}
 
 kth_size_t kth_vm_number_minimally_encode(uint8_t* data, kth_size_t n) {
     KTH_PRECONDITION(data != nullptr || n == 0);

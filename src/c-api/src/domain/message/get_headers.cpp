@@ -8,6 +8,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/message/get_headers.hpp>
 
@@ -30,11 +31,18 @@ kth_error_code_t kth_domain_message_get_headers_construct_from_data(uint8_t cons
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto result = cpp_t::from_data(data_cpp, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto result = cpp_t::from_data(data_cpp, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_get_headers_mut_t kth_domain_message_get_headers_construct(kth_hash_list_const_t start, kth_hash_t const* stop) {

@@ -6,6 +6,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/domain/machine/interpreter.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -59,7 +60,14 @@ kth_size_t kth_vm_debug_snapshot_step(kth_debug_snapshot_const_t self) {
 
 kth_error_code_t kth_vm_debug_snapshot_last(kth_debug_snapshot_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).last.error);
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).last.error))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).last.error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_bool_t kth_vm_debug_snapshot_done(kth_debug_snapshot_const_t self) {

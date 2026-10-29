@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/domain/wallet/ek_private.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -38,11 +39,18 @@ kth_error_code_t kth_wallet_ek_private_parse_from(char const* encoded, KTH_OUT_O
     KTH_PRECONDITION(encoded != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const encoded_cpp = std::string_view(encoded);
+        auto result = cpp_t::parse_from(encoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

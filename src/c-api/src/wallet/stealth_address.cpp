@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/wallet/stealth_address.hpp>
 
@@ -27,22 +28,36 @@ kth_error_code_t kth_wallet_stealth_address_construct_from_data(uint8_t const* d
     KTH_PRECONDITION(decoded != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
-    auto result = cpp_t::from_data(decoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
+        auto result = cpp_t::from_data(decoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_stealth_address_parse_from(char const* encoded, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
     KTH_PRECONDITION(encoded != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const encoded_cpp = std::string_view(encoded);
-    auto result = cpp_t::parse_from(encoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const encoded_cpp = std::string_view(encoded);
+        auto result = cpp_t::parse_from(encoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_stealth_address_from_components(kth_binary_const_t filter, kth_ec_compressed_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
@@ -51,13 +66,20 @@ kth_error_code_t kth_wallet_stealth_address_from_components(kth_binary_const_t f
     KTH_PRECONDITION(spend_keys != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key->data);
-    auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
-    auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
+        auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key->data);
+        auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
+        auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_stealth_address_from_components_unsafe(kth_binary_const_t filter, uint8_t const* scan_key, kth_ec_compressed_list_const_t spend_keys, uint8_t signatures, uint8_t version, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
@@ -66,13 +88,20 @@ kth_error_code_t kth_wallet_stealth_address_from_components_unsafe(kth_binary_co
     KTH_PRECONDITION(spend_keys != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
-    auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key);
-    auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
-    auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& filter_cpp = kth::cpp_ref<kth::binary>(filter);
+        auto const scan_key_cpp = kth::ec_compressed_to_cpp(scan_key);
+        auto const& spend_keys_cpp = kth::cpp_ref<kth::point_list>(spend_keys);
+        auto result = cpp_t::from_components(filter_cpp, scan_key_cpp, spend_keys_cpp, signatures, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

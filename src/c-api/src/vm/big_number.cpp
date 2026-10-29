@@ -35,9 +35,6 @@ kth_big_number_mut_t kth_vm_big_number_construct_from_decimal_str(char const* de
     return kth::make_owned<cpp_t>(decimal_str_cpp);
 }
 
-
-// Static factories
-
 kth_big_number_mut_t kth_vm_big_number_from_hex(char const* hex_str) {
     KTH_PRECONDITION(hex_str != nullptr);
     auto const hex_str_cpp = std::string_view(hex_str);

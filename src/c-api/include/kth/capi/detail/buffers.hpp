@@ -17,6 +17,7 @@
 #include <span>
 #include <string>
 
+#include <kth/capi/error.h>
 #include <kth/infrastructure/utility/assert.hpp>
 // byte_writer.hpp uses `expect` without including its definition.
 #include <kth/infrastructure/utility/byte_reader.hpp>
@@ -97,6 +98,23 @@ uint8_t* create_c_array(kth::data_chunk const& arr, N& out_size) {
     out_size = n;
     std::copy_n(arr.begin(), n, ret);
     return ret;
+}
+
+// Status-returning variant of `create_c_array` for the exception-barrier
+// build. `*out` and `*out_size` are written only after the buffer is
+// allocated and filled, so allocation failure (`kth_ec_out_of_memory`)
+// leaves both untouched. An empty array still yields a non-NULL buffer;
+// release it with `kth_core_destruct_array`.
+template <typename N>
+inline
+kth_error_code_t try_create_c_array(kth::data_chunk const& arr, uint8_t** out, N* out_size) {
+    auto const n = arr.size();
+    auto* buffer = mnew<uint8_t>(n != 0 ? n : 1);
+    if (buffer == nullptr) return kth_ec_out_of_memory;
+    std::copy_n(arr.begin(), n, buffer);
+    *out = buffer;
+    *out_size = static_cast<N>(n);
+    return kth_ec_success;
 }
 
 // Fused variant of `to_data_chunk(obj, args...)` + `create_c_array(chunk, out_size)`.

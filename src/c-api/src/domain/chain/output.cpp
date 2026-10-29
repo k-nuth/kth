@@ -8,6 +8,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/output.hpp>
 
@@ -30,12 +31,19 @@ kth_error_code_t kth_domain_chain_output_construct_from_data(uint8_t const* data
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const wire_cpp = kth::int_to_bool(wire);
+        auto result = cpp_t::from_data(data_cpp, wire_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_output_mut_t kth_domain_chain_output_construct(uint64_t value, kth_script_const_t script, kth_token_data_const_t token_data) {

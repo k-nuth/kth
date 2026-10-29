@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/wallet/ec_public.hpp>
 
@@ -27,22 +28,36 @@ kth_error_code_t kth_wallet_ec_public_construct_from_data(uint8_t const* decoded
     KTH_PRECONDITION(decoded != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
-    auto result = cpp_t::from_data(decoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const decoded_cpp = n != 0 ? kth::data_chunk(decoded, decoded + n) : kth::data_chunk{};
+        auto result = cpp_t::from_data(decoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_public_parse_from(char const* base16, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
     KTH_PRECONDITION(base16 != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const base16_cpp = std::string_view(base16);
-    auto result = cpp_t::parse_from(base16_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const base16_cpp = std::string_view(base16);
+        auto result = cpp_t::parse_from(base16_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_ec_public_mut_t kth_wallet_ec_public_from_private(kth_ec_private_const_t secret) {
@@ -55,24 +70,38 @@ kth_error_code_t kth_wallet_ec_public_from_point(kth_ec_uncompressed_t const* po
     KTH_PRECONDITION(point != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const point_cpp = kth::ec_uncompressed_to_cpp(point->data);
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_point(point_cpp, compress_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const point_cpp = kth::ec_uncompressed_to_cpp(point->data);
+        auto const compress_cpp = kth::int_to_bool(compress);
+        auto result = cpp_t::from_point(point_cpp, compress_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_public_from_point_unsafe(uint8_t const* point, kth_bool_t compress, KTH_OUT_OWNED kth_ec_public_mut_t* out) {
     KTH_PRECONDITION(point != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const point_cpp = kth::ec_uncompressed_to_cpp(point);
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_point(point_cpp, compress_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const point_cpp = kth::ec_uncompressed_to_cpp(point);
+        auto const compress_cpp = kth::int_to_bool(compress);
+        auto result = cpp_t::from_point(point_cpp, compress_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_ec_public_mut_t kth_wallet_ec_public_from_verified_point(kth_ec_compressed_t const* point, kth_bool_t compress) {
@@ -198,10 +227,17 @@ kth_error_code_t kth_wallet_ec_public_to_payment_address(kth_ec_public_const_t s
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).to_payment_address(version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).to_payment_address(version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<kth::domain::wallet::payment_address>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"

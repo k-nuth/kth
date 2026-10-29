@@ -8,6 +8,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/domain/wallet/wallet_manager.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -18,6 +19,51 @@ using cpp_t = kth::domain::wallet::wallet_data;
 
 // ---------------------------------------------------------------------------
 extern "C" {
+
+// Constructors
+
+kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
+    KTH_PRECONDITION(password != nullptr);
+    KTH_PRECONDITION(normalized_passphrase != nullptr);
+    KTH_PRECONDITION(lexicon != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const password_cpp = std::string(password);
+        auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
+        auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
+        auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp, lexicon_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
+    KTH_PRECONDITION(password != nullptr);
+    KTH_PRECONDITION(normalized_passphrase != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const password_cpp = std::string(password);
+        auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
+        auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
 
 // Destructor
 
@@ -83,37 +129,6 @@ void kth_wallet_wallet_data_set_encrypted_seed_unsafe(kth_wallet_data_mut_t self
     auto value_cpp = kth::encrypted_seed_to_cpp(value);
     kth::secure_scrub value_cpp_scrub{&value_cpp, sizeof(value_cpp)};
     kth::cpp_ref<cpp_t>(self).encrypted_seed = value_cpp;
-}
-
-
-// Static utilities
-
-kth_error_code_t kth_wallet_create(char const* password, char const* normalized_passphrase, kth_dictionary_const_t lexicon, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
-    KTH_PRECONDITION(password != nullptr);
-    KTH_PRECONDITION(normalized_passphrase != nullptr);
-    KTH_PRECONDITION(lexicon != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const password_cpp = std::string(password);
-    auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
-    auto const& lexicon_cpp = kth::cpp_ref<std::array<const char *, 2048>>(lexicon);
-    auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp, lexicon_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
-}
-
-kth_error_code_t kth_wallet_create_simple(char const* password, char const* normalized_passphrase, KTH_OUT_OWNED kth_wallet_data_mut_t* out) {
-    KTH_PRECONDITION(password != nullptr);
-    KTH_PRECONDITION(normalized_passphrase != nullptr);
-    KTH_PRECONDITION(out != nullptr);
-    KTH_PRECONDITION(*out == nullptr);
-    auto const password_cpp = std::string(password);
-    auto const normalized_passphrase_cpp = std::string(normalized_passphrase);
-    auto result = kth::domain::wallet::create(password_cpp, normalized_passphrase_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
 }
 
 } // extern "C"

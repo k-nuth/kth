@@ -8,6 +8,8 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
+#include <memory>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/transaction.hpp>
 
@@ -30,12 +32,19 @@ kth_error_code_t kth_domain_chain_transaction_construct_from_data(uint8_t const*
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const wire_cpp = kth::int_to_bool(wire);
+        auto result = cpp_t::from_data(data_cpp, wire_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_transaction_mut_t kth_domain_chain_transaction_construct(uint32_t version, uint32_t locktime, kth_input_list_const_t inputs, kth_output_list_const_t outputs) {
@@ -44,6 +53,26 @@ kth_transaction_mut_t kth_domain_chain_transaction_construct(uint32_t version, u
     auto const& inputs_cpp = kth::cpp_ref<kth::domain::chain::input::list>(inputs);
     auto const& outputs_cpp = kth::cpp_ref<kth::domain::chain::output::list>(outputs);
     return kth::make_owned<cpp_t>(version, locktime, inputs_cpp, outputs_cpp);
+}
+
+kth_error_code_t kth_domain_chain_transaction_construct_move(uint32_t version, uint32_t locktime, kth_input_list_mut_t* inputs, kth_output_list_mut_t* outputs, KTH_OUT_OWNED kth_transaction_mut_t* out) {
+    KTH_PRECONDITION(inputs != nullptr);
+    KTH_PRECONDITION(*inputs != nullptr);
+    KTH_PRECONDITION(outputs != nullptr);
+    KTH_PRECONDITION(*outputs != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto inputs_owner = kth::take<kth::domain::chain::input::list>(inputs);
+        auto outputs_owner = kth::take<kth::domain::chain::output::list>(outputs);
+        *out = kth::make_owned<cpp_t>(version, locktime, std::move(*inputs_owner), std::move(*outputs_owner));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_transaction_mut_t kth_domain_chain_transaction_null(void) {
@@ -268,10 +297,17 @@ kth_size_t kth_domain_chain_transaction_signature_operations(kth_transaction_con
 
 kth_error_code_t kth_domain_chain_transaction_check(kth_transaction_const_t self, kth_size_t max_block_size, kth_bool_t transaction_pool, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
-    auto const max_block_size_cpp = kth::sz(max_block_size);
-    auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
-    auto const retarget_cpp = kth::int_to_bool(retarget);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(max_block_size_cpp, transaction_pool_cpp, retarget_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const max_block_size_cpp = kth::sz(max_block_size);
+        auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
+        auto const retarget_cpp = kth::int_to_bool(retarget);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(max_block_size_cpp, transaction_pool_cpp, retarget_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_size_t kth_domain_chain_transaction_min_tx_size(kth_transaction_const_t self, kth_script_flags_t flags) {
@@ -281,27 +317,48 @@ kth_size_t kth_domain_chain_transaction_min_tx_size(kth_transaction_const_t self
 
 kth_error_code_t kth_domain_chain_transaction_accept(kth_transaction_const_t self, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate) {
     KTH_PRECONDITION(self != nullptr);
-    auto const height_cpp = kth::sz(height);
-    auto const max_sigops_cpp = kth::sz(max_sigops);
-    auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
-    auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
-    auto const duplicate_cpp = kth::int_to_bool(duplicate);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp, duplicate_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const height_cpp = kth::sz(height);
+        auto const max_sigops_cpp = kth::sz(max_sigops);
+        auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
+        auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
+        auto const duplicate_cpp = kth::int_to_bool(duplicate);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp, duplicate_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_transaction_connect(kth_transaction_const_t self, kth_chain_state_const_t state) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect(state_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect(state_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_transaction_connect_input(kth_transaction_const_t self, kth_chain_state_const_t state, kth_size_t input_index) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    auto const input_index_cpp = kth::sz(input_index);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect_input(state_cpp, input_index_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+        auto const input_index_cpp = kth::sz(input_index);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect_input(state_cpp, input_index_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"

@@ -8,6 +8,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <new>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/domain/chain/script.hpp>
 
@@ -30,12 +31,19 @@ kth_error_code_t kth_domain_chain_script_construct_from_data(uint8_t const* data
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const prefix_cpp = kth::int_to_bool(prefix);
-    auto result = cpp_t::from_data(data_cpp, prefix_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const prefix_cpp = kth::int_to_bool(prefix);
+        auto result = cpp_t::from_data(data_cpp, prefix_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_script_mut_t kth_domain_chain_script_construct_from_operations(kth_operation_list_const_t ops) {
@@ -55,12 +63,19 @@ kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const size_cpp = kth::sz(size);
-    auto result = cpp_t::from_data_with_size(data_cpp, size_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const size_cpp = kth::sz(size);
+        auto result = cpp_t::from_data_with_size(data_cpp, size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::make_owned<cpp_t>(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 
@@ -345,6 +360,19 @@ kth_error_code_t kth_domain_chain_script_create_endorsement(kth_hash_t const* se
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
     KTH_PRECONDITION(out_size != nullptr);
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto secret_cpp = kth::hash_to_cpp(secret->hash);
+        kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+        auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
+        auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+        auto const type_cpp = kth::endorsement_type_to_cpp(type);
+        auto const result = cpp_t::create_endorsement(secret_cpp, prevout_script_cpp, tx_cpp, input_index, sighash_type, active_flags, value, type_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        return kth::try_create_c_array(*result, out, out_size);
+    };
+    return kth::capi_invoke(operation);
+#else
     auto secret_cpp = kth::hash_to_cpp(secret->hash);
     kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
     auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
@@ -354,6 +382,7 @@ kth_error_code_t kth_domain_chain_script_create_endorsement(kth_hash_t const* se
     if ( ! result) return kth::to_c_err(result.error());
     *out = kth::create_c_array(*result, *out_size);
     return kth_ec_success;
+#endif
 }
 
 kth_error_code_t kth_domain_chain_script_create_endorsement_unsafe(uint8_t const* secret, kth_script_const_t prevout_script, kth_transaction_const_t tx, uint32_t input_index, uint8_t sighash_type, kth_script_flags_t active_flags, uint64_t value, kth_endorsement_type_t type, KTH_OUT_OWNED uint8_t** out, kth_size_t* out_size) {
@@ -363,6 +392,19 @@ kth_error_code_t kth_domain_chain_script_create_endorsement_unsafe(uint8_t const
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
     KTH_PRECONDITION(out_size != nullptr);
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto secret_cpp = kth::hash_to_cpp(secret);
+        kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+        auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
+        auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+        auto const type_cpp = kth::endorsement_type_to_cpp(type);
+        auto const result = cpp_t::create_endorsement(secret_cpp, prevout_script_cpp, tx_cpp, input_index, sighash_type, active_flags, value, type_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        return kth::try_create_c_array(*result, out, out_size);
+    };
+    return kth::capi_invoke(operation);
+#else
     auto secret_cpp = kth::hash_to_cpp(secret);
     kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
     auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
@@ -372,6 +414,7 @@ kth_error_code_t kth_domain_chain_script_create_endorsement_unsafe(uint8_t const
     if ( ! result) return kth::to_c_err(result.error());
     *out = kth::create_c_array(*result, *out_size);
     return kth_ec_success;
+#endif
 }
 
 kth_operation_list_mut_t kth_domain_chain_script_to_null_data_pattern(uint8_t const* data, kth_size_t n) {
@@ -464,16 +507,30 @@ kth_error_code_t kth_domain_chain_script_verify(kth_transaction_const_t tx, uint
     KTH_PRECONDITION(tx != nullptr);
     KTH_PRECONDITION(input_script != nullptr);
     KTH_PRECONDITION(prevout_script != nullptr);
-    auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
-    auto const& input_script_cpp = kth::cpp_ref<cpp_t>(input_script);
-    auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
-    return kth::to_c_err(cpp_t::verify(tx_cpp, input_index, flags, input_script_cpp, prevout_script_cpp, value));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+        auto const& input_script_cpp = kth::cpp_ref<cpp_t>(input_script);
+        auto const& prevout_script_cpp = kth::cpp_ref<cpp_t>(prevout_script);
+        return kth::to_c_err(cpp_t::verify(tx_cpp, input_index, flags, input_script_cpp, prevout_script_cpp, value));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_script_verify_simple(kth_transaction_const_t tx, uint32_t input, kth_script_flags_t flags) {
     KTH_PRECONDITION(tx != nullptr);
-    auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
-    return kth::to_c_err(cpp_t::verify(tx_cpp, input, flags));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& tx_cpp = kth::cpp_ref<kth::domain::chain::transaction>(tx);
+        return kth::to_c_err(cpp_t::verify(tx_cpp, input, flags));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"
