@@ -98,6 +98,11 @@ struct KD_API hd_public {
     [[nodiscard]]
     expect<hd_public> derive_public(uint32_t index) const;
 
+    /// A rooted path requires a depth-zero key; hardened components are rejected.
+    [[nodiscard]]
+    expect<hd_public> derive_path(std::string_view path) const;
+
+
     /// Fingerprint of this key: leading 4 bytes of `HASH160(point)`.
     /// Used as `parent_fingerprint` when this key acts as a parent
     /// in BIP32 derivation.
