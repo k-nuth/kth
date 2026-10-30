@@ -25,6 +25,7 @@
 #include <utility>
 
 #include <kth/blockchain/pools/mempool_config.hpp>
+#include <kth/blockchain/pools/template_prevouts.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/database.hpp>
@@ -113,6 +114,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , database_(database_settings)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
+    , template_rebuild_gate_(priority_pool_.get_executor(), 1)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings)
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
     , utxoz_db_(utxo_gate_)
@@ -177,6 +179,8 @@ bool block_chain::check_last_transition() const {
 }
 
 bool block_chain::start(uint32_t disk_magic) {
+    template_rebuild_gate_.reset();
+    KTH_CONTRACT(template_rebuild_gate_.try_send(std::error_code{}));
     stopped_ = false;
 
     if ( ! database_.open()) {
@@ -546,6 +550,9 @@ bool block_chain::start(uint32_t disk_magic) {
 
 bool block_chain::stop() {
     stopped_ = true;
+    // concurrent_channel is the operation owner and supports thread-safe close.
+    // Wake suspended rebuild requests before the chain executor stops.
+    template_rebuild_gate_.close();
 
     validation_mutex_.lock_high_priority();
     auto result = transaction_organizer_.stop() && block_organizer_.stop();
@@ -983,6 +990,12 @@ database::result_code block_chain::set_heights(
 database::result_code block_chain::publish_transition(
     database::transition_heights const& heights) {
     return database_.internal_db().publish_transition(heights);
+}
+
+database::result_code block_chain::publish_transition(
+    database::transition_heights const& heights,
+    std::span<database::header_abla_record const> abla_records) {
+    return database_.internal_db().publish_transition(heights, abla_records);
 }
 
 database::result_code block_chain::env_sync() {
@@ -2893,6 +2906,21 @@ block_chain::fetch_template() const {
         co_return std::unexpected(ready.caught_up ? error::node_stale : error::node_behind);
     }
 
+    // A single owner issues UTXO-library reads on the chain executor. Other
+    // template requests suspend instead of filling workers with blocked reads.
+    auto [gate_error] = co_await template_rebuild_gate_.async_receive(
+        ::asio::as_tuple(::asio::use_awaitable));
+    if (gate_error) {
+        co_return std::unexpected(error::service_stopped);
+    }
+    struct return_token {
+        decltype(template_rebuild_gate_)& gate;
+        ~return_token() { (void)gate.try_send(std::error_code{}); }
+    } token{template_rebuild_gate_};
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+
     // Capture inside the gate, build outside it. Asking whether a transition is
     // running and then capturing are two moments; entry is what joins them.
     chain_view_ptr published;
@@ -2910,17 +2938,40 @@ block_chain::fetch_template() const {
         view = lease_pool_view(validation_mutex_, mempool_);
     }
 
+    auto refreshed = co_await refresh_template_prevouts(*this, std::move(view.entries), published);
+    if (!refreshed) {
+        co_return std::unexpected(refreshed.error());
+    }
+    {
+        // Check once under the existing transition admission gate. If the
+        // store switched during reads, a new request must capture a fresh view.
+        captured_lease const lease(capture_gate_);
+        auto const current = chain_view();
+        if (!lease || !current || current->generation != published->generation) {
+            co_return std::unexpected(error::transition_in_progress);
+        }
+    }
+    view.entries = std::move(*refreshed);
     auto const& state = published->state;
 
     co_return build_block_template(view.entries, block_template_context{
-        state->dynamic_max_block_size(),
-        state->dynamic_max_block_sigchecks(),
-        state->height(),
-        state->median_time_past()});
+        .max_block_size = state->dynamic_max_block_size(),
+        .max_block_sigchecks = state->dynamic_max_block_sigchecks(),
+        .height = state->height(),
+        .median_time_past = state->median_time_past(),
+#if defined(KTH_CURRENCY_BCH)
+        .ticks = state->ticks(),
+#endif
+        .sequence_locks = domain::chain::script::is_enabled(state->enabled_flags(), domain::machine::script_flags::bip68_rule)});
 }
 
 awaitable_expected<blockchain::mining_template>
 block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
+    co_return co_await fetch_mining_template(coinbase_reserve_size, std::nullopt);
+}
+
+awaitable_expected<blockchain::mining_template>
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -2934,19 +2985,17 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
     // That is a weaker requirement than building one: a template is a coherent
     // copy, so a request admitted before a transition may legitimately finish
     // with it. Nothing here may feed a rebuild — see the recapture below.
-    hash_digest served_previous;
+    chain_view_ptr served;
     {
         captured_lease const lease(capture_gate_);
         if ( ! lease) {
             co_return std::unexpected(error::transition_in_progress);
         }
 
-        auto const published = chain_view();
-        if ( ! published) {
+        served = chain_view();
+        if ( ! served) {
             co_return std::unexpected(error::not_found);
         }
-
-        served_previous = published->tip_hash;
     }
 
     // Only decides whether to rebuild, so it is read without the lease: a value
@@ -2954,7 +3003,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
     // exclusion on every cache hit would cost far more. The label stored with a
     // rebuilt template comes from inside the lease instead — see below.
     auto const generation = mempool_.generation();
-    auto now = static_cast<uint32_t>(zulu_time());
+    auto now = request_time.value_or(static_cast<uint32_t>(zulu_time()));
 
     // A snapshot is usable while the tip is unchanged and the mempool is either
     // unchanged or its last change is still within the refresh window; a new tip
@@ -2969,38 +3018,45 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
                 at - s->time < settings_.gbt_template_refresh_seconds);
     };
 
+    // Selection remains cached, but header time and time-sensitive work are
+    // evaluated for this request against the same immutable branch publication.
+    // Return a private copy so another request cannot change the cached value.
+    auto const refresh_header = [](mining_template value,
+                                   chain_view_ptr const& publication, uint32_t at) {
+        value.current_time = std::max(value.min_time, at);
+        value.bits = publication->state->get_next_work_required(value.current_time);
+        return value;
+    };
+
     // Lock-free read: rebuilds are expensive (full mempool scan + fee-rate
     // ordering), so serve the published snapshot when it is still usable.
     auto snapshot = template_cache_.load();
-    if (usable(snapshot, served_previous, generation, now)) {
-        co_return snapshot->value;
+    if (usable(snapshot, served->tip_hash, generation, now)) {
+        co_return refresh_header(snapshot->value, served, now);
     }
 
-    // Stale or cold. Coalesce rebuilds: exactly one thread rebuilds. If another
-    // thread already holds the rebuild lock, do not block on it — serve the
-    // previous (bounded-stale) snapshot if we have one. Only a cold start with no
-    // snapshot at all waits for the first build.
-    //
-    // NOTE: there is no co_await between here and co_return; the rebuild is fully
-    // synchronous, so holding this std::mutex across it is safe. Do not introduce
-    // a suspension point inside this section.
-    std::unique_lock<std::mutex> lock(template_rebuild_mutex_, std::try_to_lock);
-    if ( ! lock) {
-        // Another thread is rebuilding. If our stale snapshot is for the SAME tip
-        // (only the mempool moved on), it is still a valid template — serve it
-        // rather than block. Never serve a snapshot from a previous tip: a
-        // wrong-parent template would orphan the miner's block, so wait for the
-        // rebuild in that case (a cold start with no snapshot also waits).
-        // The same tip AND the same coinbase budget. A snapshot built for a
-        // different reserve leaves a different amount of room for the coinbase,
-        // so serving it here would answer this request with someone else's
-        // budget — and the caller asked for that number precisely because its
-        // coinbase does not fit the default. Wait for the rebuild instead.
-        if (snapshot && snapshot->previous == served_previous &&
-            snapshot->coinbase_reserve_size == coinbase_reserve_size) {
-            co_return snapshot->value;
-        }
-        lock.lock();
+    // A busy owner may serve the existing same-tip, same-budget snapshot.
+    // This single availability observation only chooses a valid immutable
+    // value; ownership itself is acquired by receiving the token below.
+    if (!template_rebuild_gate_.ready() && snapshot &&
+        snapshot->previous == served->tip_hash &&
+        snapshot->coinbase_reserve_size == coinbase_reserve_size) {
+        co_return refresh_header(snapshot->value, served, now);
+    }
+
+    // One coroutine owns a rebuild, including awaited prevout refresh. Other
+    // callers suspend here; no network worker blocks behind the current owner.
+    auto [gate_error] = co_await template_rebuild_gate_.async_receive(
+        ::asio::as_tuple(::asio::use_awaitable));
+    if (gate_error) {
+        co_return std::unexpected(error::service_stopped);
+    }
+    struct return_token {
+        decltype(template_rebuild_gate_)& gate;
+        ~return_token() { (void)gate.try_send(std::error_code{}); }
+    } token{template_rebuild_gate_};
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
     }
 
     // Everything a rebuild consumes is captured HERE, inside one lease: the
@@ -3011,10 +3067,9 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
     // parent and height with a post-transition pool. Each half is coherent with
     // the gate and the pair is coherent with nothing.
     //
-    // Lock order: template_rebuild_mutex_ (held above), then the capture gate,
-    // then the validation mutex. Nothing takes them the other way round — the
-    // organizers hold the validation mutex and know nothing about the template
-    // cache, and a transition drains the gate without taking either.
+    // The coroutine owns the channel token, then briefly enters the capture
+    // gate and validation exclusion for the synchronous pool copy. Neither
+    // thread-affine exclusion survives a suspension.
     chain_view_ptr published;
     blockchain::pool_view view;
     {
@@ -3029,19 +3084,33 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         }
 
         // Re-check against the publication just captured rather than the one
-        // the fast path used. The wait on the rebuild mutex may have spanned a
+        // the fast path used. The wait for the rebuild token may have spanned a
         // whole transition, in which case that earlier check decided nothing —
         // and asking before copying the pool keeps a hit from paying for a copy
         // it will discard.
-        now = static_cast<uint32_t>(zulu_time());
+        now = request_time.value_or(static_cast<uint32_t>(zulu_time()));
         snapshot = template_cache_.load();
         if (usable(snapshot, published->tip_hash, mempool_.generation(), now)) {
-            co_return snapshot->value;
+            co_return refresh_header(snapshot->value, published, now);
         }
 
         view = lease_pool_view(validation_mutex_, mempool_);
     }
 
+    auto refreshed = co_await refresh_template_prevouts(*this, std::move(view.entries), published);
+    if (!refreshed) {
+        co_return std::unexpected(refreshed.error());
+    }
+    {
+        // Check once under the existing transition admission gate. If the
+        // store switched during reads, a new request must capture a fresh view.
+        captured_lease const lease(capture_gate_);
+        auto const current = chain_view();
+        if (!lease || !current || current->generation != published->generation) {
+            co_return std::unexpected(error::transition_in_progress);
+        }
+    }
+    view.entries = std::move(*refreshed);
     auto const& state = published->state;
 
     // The parent comes from the same capture as the height and the state, not
@@ -3056,11 +3125,15 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
     // the graph, the ordering and the selection would make a transition wait on
     // work that cannot be affected by it.
     auto selection = build_block_template(view.entries, block_template_context{
-        state->dynamic_max_block_size(),
-        state->dynamic_max_block_sigchecks(),
-        height,
-        state->median_time_past(),
-        coinbase_reserve_size});
+        .max_block_size = state->dynamic_max_block_size(),
+        .max_block_sigchecks = state->dynamic_max_block_sigchecks(),
+        .height = height,
+        .median_time_past = state->median_time_past(),
+        .coinbase_reserve_size = coinbase_reserve_size,
+#if defined(KTH_CURRENCY_BCH)
+        .ticks = state->ticks(),
+#endif
+        .sequence_locks = domain::chain::script::is_enabled(state->enabled_flags(), domain::machine::script_flags::bip68_rule)});
 
     // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
     // and miners routinely override this, so it is only a sensible default.
@@ -3068,12 +3141,16 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         0x20000000U,
         previous,
         height,
-        state->work_required(),
+        state->get_next_work_required(std::max(state->median_time_past() + 1u, now)),
         state->median_time_past(),
         now,
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
-        std::move(selection));
+        std::move(selection)
+#if defined(KTH_CURRENCY_BCH)
+        , state->ticks()
+#endif
+        , settings_.retarget);
 
     auto next = boost::make_shared<template_snapshot>(
         template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});

@@ -6,12 +6,14 @@
 
 #include <algorithm>
 #include <expected>
+#include <optional>
 
 #include <spdlog/spdlog.h>
 
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
 
 namespace kth::blockchain {
 
@@ -257,7 +259,8 @@ std::expected<chain_state::ptr, code> validate_header::chain_state_at(
     hash_digest const& hash,
     size_t height,
     header_index::index_t parent_idx,
-    header_index const& index) const {
+    header_index const& index,
+    domain::chain::abla::state const* abla_state) const {
 
     auto data_result = build_chain_state_data(height, header, hash, parent_idx, index);
     if ( ! data_result) {
@@ -265,6 +268,11 @@ std::expected<chain_state::ptr, code> validate_header::chain_state_at(
     }
 
 #if defined(KTH_CURRENCY_BCH)
+    // The state of THIS block, from the pipeline; otherwise the placeholder
+    // build_chain_state_data left.
+    if (abla_state) {
+        data_result->abla_state = *abla_state;
+    }
     auto const anchor = get_asert_anchor_block();
     return std::make_shared<chain_state>(
         std::move(*data_result),
@@ -357,9 +365,31 @@ std::expected<chain_state::data, code> validate_header::build_chain_state_data(
 #endif
 
 #if defined(KTH_CURRENCY_BCH)
-    // ABLA state - we don't have block size during header validation
-    // Initialize with default values; actual block size validation happens during block sync
+    // ABLA state - the header index has none. A PLACEHOLDER at the initial
+    // values: header validation reads nothing from it, and a caller that needs
+    // the limit passes the state of the block to chain_state_at (abla_pipeline.hpp).
     data.abla_state = domain::chain::abla::state(settings_.abla_config, static_max_block_size(network_));
+
+    // CHIP-2025-03: where this branch reached the activation time. Read from
+    // the ancestors of THIS block, so two branches that diverge before the
+    // activation each get their own H_a.
+    if (chain_state::is_faster_blocks_activated(chain_state::median_time_past(data), cantor_t(settings_.cantor_activation_time))) {
+        auto const found = domain::chain::find_faster_blocks_activation_height(
+            height - 1, settings_.cantor_activation_time,
+            [&](size_t h) -> std::optional<uint32_t> {
+                auto const idx = index.get_ancestor(parent_idx, int32_t(h));
+                if (idx == header_index::null_index) {
+                    return std::nullopt;
+                }
+                return index.get_timestamp(idx);
+            });
+        if ( ! found) {
+            spdlog::warn("[validate_header] build_chain_state_data: could not locate the faster-blocks "
+                "activation height below {}", height);
+            return std::unexpected(error::operation_failed);
+        }
+        data.faster_blocks_activation_height = *found;
+    }
 #endif
 
     return data;

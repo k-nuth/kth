@@ -328,6 +328,10 @@ enum error_code_t {
     standardness_datacarrier_size,
     standardness_inputs,
 
+    // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
+    // Appended last so no existing code is renumbered.
+    coinbase_shape,
+
     // Last error code.
     last_error_code
 };

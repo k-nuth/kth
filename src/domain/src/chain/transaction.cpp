@@ -234,20 +234,33 @@ bool transaction::all_inputs_final() const {
 }
 
 bool transaction::is_final(size_t block_height, uint32_t block_time) const {
-    auto const max_locktime = [=, this]() {
-        return locktime_ < locktime_threshold ? *safe_unsigned<uint32_t>(block_height) : block_time;
-    };
+    return is_final(block_ticks{}, block_height, block_time);
+}
 
-    return locktime_ == 0 || locktime_ < max_locktime() || all_inputs_final();
+bool transaction::is_final(block_ticks const& ticks, size_t block_height, uint32_t block_time) const {
+    if (locktime_ == 0 || all_inputs_final()) {
+        return true;
+    }
+
+    // Height-mode: strict and absolute, in ticks. locktime_ < 5e8 so the
+    // product fits comfortably in 64 bits.
+    if (locktime_ < locktime_threshold) {
+        return ticks.height_to_tick(block_height) > uint64_t(locktime_) * base_block_interval;
+    }
+    return locktime_ < block_time;
 }
 
 bool transaction::is_locked(size_t block_height, uint32_t median_time_past) const {
+    return is_locked(block_ticks{}, block_height, median_time_past);
+}
+
+bool transaction::is_locked(block_ticks const& ticks, size_t block_height, uint32_t median_time_past) const {
     if (version_ < relative_locktime_min_version || is_coinbase()) {
         return false;
     }
 
-    auto const locked = [block_height, median_time_past](input const& input) {
-        return input.is_locked(block_height, median_time_past);
+    auto const locked = [&ticks, block_height, median_time_past](input const& input) {
+        return input.is_locked(ticks, block_height, median_time_past);
     };
 
     return std::any_of(inputs_.begin(), inputs_.end(), locked);
@@ -349,8 +362,12 @@ bool transaction::is_dusty(uint64_t minimum_output_value) const {
 }
 
 bool transaction::is_mature(size_t height) const {
-    auto const mature = [height](input const& input) {
-        return input.previous_output().is_mature(height);
+    return is_mature(block_ticks{}, height);
+}
+
+bool transaction::is_mature(block_ticks const& ticks, size_t height) const {
+    auto const mature = [&ticks, height](input const& input) {
+        return input.previous_output().is_mature(ticks, height);
     };
 
     return std::all_of(inputs_.begin(), inputs_.end(), mature);
@@ -440,6 +457,19 @@ code transaction::accept(
     bool transaction_pool,
     bool duplicate
 ) const {
+    return accept(block_ticks{}, flags, height, median_time_past, max_sigops, is_under_checkpoint, transaction_pool, duplicate);
+}
+
+code transaction::accept(
+    block_ticks const& ticks,
+    script_flags_t flags,
+    size_t height,
+    uint32_t median_time_past,
+    size_t max_sigops,
+    bool is_under_checkpoint,
+    bool transaction_pool,
+    bool duplicate
+) const {
     auto const is_enabled = [](script_flags_t active, auto flag) {
         return script::is_enabled(active, flag);
     };
@@ -466,7 +496,7 @@ code transaction::accept(
     }
 #endif
 
-    if (transaction_pool && ! is_final(height, median_time_past)) {
+    if (transaction_pool && ! is_final(ticks, height, median_time_past)) {
         return error::transaction_non_final;
     }
 
@@ -489,7 +519,7 @@ code transaction::accept(
         return error::double_spend;
     }
 
-    if ( ! is_mature(height)) {
+    if ( ! is_mature(ticks, height)) {
         return error::coinbase_maturity;
     }
 
@@ -497,7 +527,7 @@ code transaction::accept(
         return error::spend_exceeds_value;
     }
 
-    if (bip68 && is_locked(height, median_time_past)) {
+    if (bip68 && is_locked(ticks, height, median_time_past)) {
         return error::sequence_locked;
     }
 

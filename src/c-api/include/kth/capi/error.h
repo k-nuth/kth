@@ -285,9 +285,24 @@ typedef enum kth_error_code {
     kth_ec_node_behind,  // /< Connected chain has not reached the headers it holds.
     kth_ec_node_stale,  // /< Caught up, but the tip is older than the configured limit.
 
-    // C-API boundary errors
-    kth_ec_out_of_memory = 10000,  // Allocation failed inside the C-API
-    kth_ec_unhandled_exception = 10001,  // A C++ exception reached the C boundary
+    // Local transaction policy failures. Kept distinct from consensus failures.
+    kth_ec_standardness_version,
+    kth_ec_standardness_transaction_size,
+    kth_ec_standardness_scriptsig_size,
+    kth_ec_standardness_scriptsig_not_push_only,
+    kth_ec_standardness_tokens_before_activation,
+    kth_ec_standardness_scriptpubkey,
+    kth_ec_standardness_bare_multisig,
+    kth_ec_standardness_dust,
+    kth_ec_standardness_datacarrier_size,
+    kth_ec_standardness_inputs,
+
+    // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
+    // Appended last so no existing code is renumbered.
+    kth_ec_coinbase_shape,
+    // C-API boundary errors retain their reserved ABI values.
+    kth_ec_out_of_memory = 10000,
+    kth_ec_unhandled_exception = 10001,
 } kth_error_code_t;
 
 #ifdef __cplusplus

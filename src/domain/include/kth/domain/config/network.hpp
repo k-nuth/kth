@@ -25,6 +25,7 @@ enum class network {
     , testnet4
     , scalenet
     , chipnet
+    , tempnet
 #endif
 };
 
@@ -42,6 +43,8 @@ std::string_view name(network net) {
             return "Scalenet";
         case network::chipnet:
             return "Chipnet";
+        case network::tempnet:
+            return "Tempnet";
 #endif
         default:
         case network::mainnet:
@@ -67,6 +70,7 @@ std::expected<network, kth::code> parse_network(std::string_view text) {
     if (upper == "TESTNET4") return network::testnet4;
     if (upper == "SCALENET") return network::scalenet;
     if (upper == "CHIPNET")  return network::chipnet;
+    if (upper == "TEMPNET")  return network::tempnet;
 #endif
     return std::unexpected(kth::error::illegal_value);
 }

@@ -36,7 +36,8 @@ std::string bits_to_hex(std::uint32_t bits) {
 } // namespace
 
 std::string render_mining_template(
-    blockchain::mining_template const& tmpl, std::string_view job_id) {
+    blockchain::mining_template const& tmpl, std::string_view job_id,
+    std::optional<chain_progress> progress) {
 
     // Expand compact bits to the 256-bit target. from_compact only fails on an
     // overflowing encoding, which a chain-produced nBits never is.
@@ -50,6 +51,10 @@ std::string render_mining_template(
     w.field("version", static_cast<std::int64_t>(tmpl.version));
     w.field("previousblockhash", encode_hash(tmpl.previous_block_hash));
     w.field("height", static_cast<std::int64_t>(tmpl.height));
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+    }
     w.field("coinbasevalue", static_cast<std::uint64_t>(tmpl.coinbase_value));
     w.field("target", target_hex);
     w.field("bits", bits_to_hex(tmpl.bits));
@@ -66,11 +71,17 @@ std::string render_mining_template(
     return w.str();
 }
 
-std::string render_mining_info(blockchain::mining_info const& info) {
+std::string render_mining_info(blockchain::mining_info const& info,
+    std::optional<chain_progress> progress) {
     writer w;
     w.begin_object();
     w.field("blocks", static_cast<std::uint64_t>(info.blocks));
     w.field("difficulty", info.difficulty);
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+        w.field("next_target_time", progress->next_target_time);
+    }
     w.field("pooledtx", static_cast<std::uint64_t>(info.pooled_tx));
     w.field("chain", domain::config::name(info.chain));
     // Why mining work may be refused, reported apart. A transition is a

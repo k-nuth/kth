@@ -39,6 +39,7 @@
 
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
+#include <kth/blockchain/abla_pipeline.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/network/protocols_coro.hpp>
@@ -2267,6 +2268,85 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             spdlog::info("[utxo_build] Full validation OK for {}-{}", batch_start, batch_end);
         }
 
+        // Step 1a. The headers this batch will need, made durable BEFORE anything
+        // is opened or mutated.
+        //
+        // ABLA publication needs a durable row for each connected block; make
+        // those rows available before deriving and checking the batch state.
+        // This also preserves the restart invariant -- the height markers this
+        // batch is about to publish must never name a block the durable table cannot describe,
+        // because a start reconciles to those markers and builds a chain state
+        // for them. A run that got that wrong ended consistent and unopenable,
+        // both markers at 966112 over a table that stopped at 966107 (#697).
+        //
+        // Placed before the first mutation and not later: a failure here costs
+        // nothing -- no transition open, no delta applied, no marker moved, and
+        // the next batch simply not attempted -- while after the delta it would
+        // find the set already changed and the markers already published, which
+        // is the state there is no recovery for.
+        //
+        // Not a per-block flush: the range is coalesced and gap-only, so once
+        // header sync has caught up this is a marker read.
+        if ( ! ensure_headers_persisted(chain, chain.headers(), batch_end)) {
+            spdlog::critical("[utxo_build] The headers through height {} could not be made "
+                "durable; this batch is not applied", batch_end);
+            on_fatal("a batch's headers could not be persisted before it mutated the stores");
+            co_return;
+        }
+
+#if defined(KTH_CURRENCY_BCH)
+        // The ABLA state of every block of this batch, computed BEFORE anything
+        // is mutated and published with the heights below. Header sync writes
+        // every row with no state; this is the only place a connected block's
+        // state is produced, from the persisted state of the connected tip and
+        // the size of each block (abla_pipeline.hpp). It runs on the fast path
+        // below the checkpoint too: the state is cumulative, so skipping those
+        // blocks would hand the first fully validated one a stale parent.
+        std::vector<database::header_abla_record> abla_records;
+        {
+            std::vector<uint64_t> sizes(raw_result->size());
+            for (size_t i = 0; i < sizes.size(); ++i) {
+                sizes[i] = (*raw_result)[i].size();
+                // Validation sizes the PARSED block; the record sizes the stored
+                // bytes. They must be the same number or the limit validated
+                // against is not the state that gets persisted.
+                if (i < validated_blocks.size() && validated_blocks[i]->serialized_size(1) != sizes[i]) {
+                    spdlog::critical("[utxo_build] Stored size {} of the block at height {} differs "
+                        "from its parsed size {}", sizes[i], batch_start + i,
+                        validated_blocks[i]->serialized_size(1));
+                    on_fatal("a stored block does not re-serialize to the bytes that were stored");
+                    co_return;
+                }
+            }
+
+            auto const last_idx = chain.headers().active_at(static_cast<int32_t>(batch_end));
+            if (last_idx == blockchain::header_index::null_index) {
+                spdlog::critical("[utxo_build] Height {} is not on the active chain", batch_end);
+                on_fatal("a height being built is not on the active chain");
+                co_return;
+            }
+            auto states = blockchain::abla_states_for_batch(chain, chain.chain_settings(), network, batch_start, sizes, last_idx);
+            if ( ! states) {
+                spdlog::critical("[utxo_build] Cannot derive the ABLA state of batch {}-{}: {}",
+                    batch_start, batch_end, states.error().message());
+                on_fatal("the ABLA state of a connected batch could not be derived");
+                co_return;
+            }
+            abla_records = blockchain::abla_records_for(batch_start, *states);
+
+            // Every row must exist to hold its state. Checked now because the
+            // publication below runs after the UTXO delta is applied, where a
+            // missing row could only be reported, not avoided.
+            for (uint32_t h = batch_start; h <= batch_end; ++h) {
+                if ( ! chain.get_header_and_abla_state(h)) {
+                    spdlog::critical("[utxo_build] No stored header row at height {} to hold its ABLA state", h);
+                    on_fatal("a connected block has no stored header row");
+                    co_return;
+                }
+            }
+        }
+#endif
+
         // Parse and process UTXO delta
         blockchain::utxo_raw_delta delta;
         // Undo records for this batch, persisted only after the delta is applied.
@@ -2374,32 +2454,6 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 timestamp_window.pop_front();
             }
             timestamp_window.push_back(block_timestamp);
-        }
-
-        // Step 1a. The headers this batch will need, made durable BEFORE anything
-        // is opened or mutated.
-        //
-        // NOT because the chain state needs them: that reads the index now, and a
-        // batch can be described whether or not the table has caught up. This is
-        // the restart invariant instead -- the height markers this batch is about
-        // to publish must never name a block the durable table cannot describe,
-        // because a start reconciles to those markers and builds a chain state
-        // for them. A run that got that wrong ended consistent and unopenable,
-        // both markers at 966112 over a table that stopped at 966107 (#697).
-        //
-        // Placed before the first mutation and not later: a failure here costs
-        // nothing -- no transition open, no delta applied, no marker moved, and
-        // the next batch simply not attempted -- while after the delta it would
-        // find the set already changed and the markers already published, which
-        // is the state there is no recovery for.
-        //
-        // Not a per-block flush: the range is coalesced and gap-only, so once
-        // header sync has caught up this is a marker read.
-        if ( ! ensure_headers_persisted(chain, chain.headers(), batch_end)) {
-            spdlog::critical("[utxo_build] The headers through height {} could not be made "
-                "durable; this batch is not applied", batch_end);
-            on_fatal("a batch's headers could not be persisted before it mutated the stores");
-            co_return;
         }
 
         // Entry closes here, before the first mutation, and the captures already
@@ -2750,11 +2804,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // Published after step 9's barrier and inside the same transaction as the
         // record, so the marker cannot outrun the data it describes: either both
         // heights and the cleared record commit, or none of them do.
-        if (auto const published = chain.publish_transition(
+#if defined(KTH_CURRENCY_BCH)
+        auto const published = chain.publish_transition(
+                database::transition_heights{
+                    .last_block_height = utxo_built_height,
+                    .utxo_built_height = utxo_built_height},
+                abla_records);
+#else
+        auto const published = chain.publish_transition(
                 database::transition_heights{
                     .last_block_height = utxo_built_height,
                     .utxo_built_height = utxo_built_height});
-            published != database::result_code::success) {
+#endif
+        if (published != database::result_code::success) {
             spdlog::critical("[utxo_build] Could not publish batch {}-{} at built height {} ({}): "
                 "the UTXO set is ahead of what the next start will believe",
                 batch_start, batch_end, utxo_built_height,

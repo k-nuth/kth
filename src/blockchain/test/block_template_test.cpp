@@ -62,7 +62,7 @@ transaction make_tx(std::vector<output_point> const& prevouts,
                     uint32_t num_outputs,
                     uint64_t tag,
                     uint32_t locktime = 0u,
-                    uint32_t sequence = 0xffffffffu) {
+                    uint32_t sequence = 0xffffffffu, uint32_t version = 1u) {
     input::list ins;
     ins.reserve(prevouts.size());
     for (auto const& po : prevouts) {
@@ -78,7 +78,7 @@ transaction make_tx(std::vector<output_point> const& prevouts,
         outs.push_back(std::move(o));
     }
 
-    return transaction{1u, locktime, std::move(ins), std::move(outs)};
+    return transaction{version, locktime, std::move(ins), std::move(outs)};
 }
 
 transaction_const_ptr as_ptr(transaction const& tx) {
@@ -430,3 +430,105 @@ TEST_CASE("a coherent view keeps the child with its parent", "[block_template][c
     CHECK(selected.contains(parent->hash()));
     CHECK(selected.contains(child->hash()));
 }
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+void use_faster_template_context(block_template_context& ctx, size_t activation_height) {
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+    ctx.ticks = block_ticks::activated_at(activation_height);
+    ctx.sequence_locks = true;
+#else
+    // The base builder has no schedule or BIP68 context. Keep the same txs,
+    // candidate height and expected selection when exercising that boundary.
+    (void)ctx;
+    (void)activation_height;
+#endif
+}
+} // namespace
+
+TEST_CASE("block_template: a formerly mature coinbase spend is filtered under the shorter schedule", "[block_template][faster_blocks][template_context]") {
+    auto funding = op(900, 0);
+    funding.validation.coinbase = true;
+    funding.validation.height = 90;
+    auto const parent = as_ptr(make_tx({funding}, 1, 700));
+    auto const child = as_ptr(make_tx({output_point{parent->hash(), 0}}, 1, 701));
+    std::vector<mempool_entry> const entries{
+        make_entry(parent, 100, 250, 1), make_entry(child, 1000, 250, 1)};
+
+    auto ctx = unlimited_ctx();
+    ctx.height = 200;
+    auto const old_schedule = build_block_template(entries, ctx);
+    REQUIRE(old_schedule.txs.size() == 2);
+
+    // With H_a100, this candidate represents12000 ticks of coin age, not
+    // the60000 needed. The dependent child must be excluded with its parent.
+    use_faster_template_context(ctx, 100);
+    auto const early = build_block_template(entries, ctx);
+    CHECK(early.txs.empty());
+    CHECK(early.total_fees == 0);
+    CHECK(early.total_size == 0);
+
+    ctx.height = 1000; // T1000-T90 =114000-54000 =60000, exactly mature.
+    auto const mature = build_block_template(entries, ctx);
+    REQUIRE(mature.txs.size() == 2);
+    check_template_invariants(mature);
+}
+
+TEST_CASE("block_template: relative height locks use the candidate branch ticks", "[block_template][faster_blocks][template_context]") {
+    auto funding = op(901, 0);
+    funding.validation.height = 100;
+    auto tx = make_tx({funding}, 1, 702, 0, 2, 2); // version2, two600-tick units
+    std::vector<mempool_entry> const entries{make_entry(as_ptr(tx), 100, 250, 1)};
+    auto ctx = unlimited_ctx();
+    ctx.height = 102;
+    REQUIRE(build_block_template(entries, ctx).txs.size() == 1);
+
+    use_faster_template_context(ctx, 100);
+    CHECK(build_block_template(entries, ctx).txs.empty());
+    ctx.height = 119;
+    CHECK(build_block_template(entries, ctx).txs.empty());
+    ctx.height = 120; // T120-T100 =1200, exactly the encoded wait.
+    REQUIRE(build_block_template(entries, ctx).txs.size() == 1);
+}
+
+TEST_CASE("block_template: an unconfirmed parent's relative age stays zero as the tip advances", "[block_template][faster_blocks][template_context]") {
+    auto const parent = as_ptr(make_tx({op(902, 0)}, 1, 703));
+    auto funding = output_point{parent->hash(), 0};
+    // Cached admission metadata can be old. Membership in this immutable
+    // snapshot is what determines that the parent confirms in the candidate.
+    funding.validation.height = 1;
+    funding.validation.median_time_past = 1;
+    funding.validation.from_mempool = true;
+    auto child = make_tx({funding}, 1, 704, 0, 1, 2);
+    auto ctx = unlimited_ctx();
+    ctx.height = 200;
+    use_faster_template_context(ctx, 100);
+    std::vector<mempool_entry> entries{
+        make_entry(parent, 100, 250, 1), make_entry(as_ptr(child), 1000, 250, 1)};
+    auto const selected = build_block_template(entries, ctx);
+    CHECK(selected.txs.size() == 1);
+    if (selected.txs.size() == 1) {
+        CHECK(selected.txs.front()->hash() == parent->hash());
+    }
+
+    // Zero relative delay allows the same-block dependency, as before.
+    auto child_zero = make_tx({funding}, 1, 704, 0, 0, 2);
+    entries[1] = make_entry(as_ptr(child_zero), 1000, 250, 1);
+    REQUIRE(build_block_template(entries, ctx).txs.size() == 2);
+}
+
+TEST_CASE("block_template: relative MTP locks retain the512-second boundary", "[block_template][faster_blocks][template_context]") {
+    auto funding = op(903, 0);
+    funding.validation.height = 100;
+    funding.validation.median_time_past = 1'000'000;
+    auto tx = make_tx({funding}, 1, 705, 0, relative_locktime_time_locked | 1u, 2);
+    std::vector<mempool_entry> const entries{make_entry(as_ptr(tx), 100, 250, 1)};
+    auto ctx = unlimited_ctx();
+    ctx.height = 200;
+    use_faster_template_context(ctx, 100);
+    ctx.median_time_past = 1'000'511;
+    CHECK(build_block_template(entries, ctx).txs.empty());
+    ctx.median_time_past = 1'000'512;
+    CHECK(build_block_template(entries, ctx).txs.size() == 1);
+}
+#endif

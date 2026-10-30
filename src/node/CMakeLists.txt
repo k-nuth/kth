@@ -237,6 +237,7 @@ set(kth_headers
   include/kth/node/rpc/dispatch.hpp
   include/kth/node/rpc/mining.hpp
   include/kth/node/rpc/query.hpp
+  include/kth/node/rpc/chain_progress.hpp
   include/kth/node/rpc/server.hpp
 
   # CSP-based sync system
@@ -326,7 +327,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_stale_chunk_drop.cpp
           test/select_sync.cpp
           test/configuration.cpp
-    test/full_node_network.cpp
+        test/full_node_network.cpp
+          test/template_prevout_refresh.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
@@ -367,6 +369,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # the process it terminates. This is how those cases find the binary to re-run.
   target_compile_definitions(kth_node_test PRIVATE
     KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_node_test>")
+
+  # Compile the real refresh worker with a test-only entry observer and TSan.
+  # Keep the observer out of production, and keep this focused instrumentation
+  # separate from a full sanitizer build. The runner consumes Makefiles recipes.
+  string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=address" _kth_node_asan_flags)
+  if(ENABLE_TSAN_TESTS AND Python3_Interpreter_FOUND AND UNIX
+     AND CURRENCY STREQUAL "BCH" AND CMAKE_GENERATOR STREQUAL "Unix Makefiles"
+     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND _kth_node_asan_flags EQUAL -1)
+    add_test(NAME kth_template_cancellation_owner
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/check_template_cancellation.py ${CMAKE_BINARY_DIR})
+    set_tests_properties(kth_template_cancellation_owner PROPERTIES TIMEOUT 600)
+  endif()
 
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 

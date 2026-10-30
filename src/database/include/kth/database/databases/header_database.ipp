@@ -168,6 +168,41 @@ result_code internal_database_basis<Clock>::push_header_with_abla(domain::chain:
 }
 
 template <typename Clock>
+result_code internal_database_basis<Clock>::update_header_abla(header_abla_record const& record, KTH_DB_txn* db_txn) {
+    auto const height = record.height;
+    auto key = kth_db_make_value(sizeof(height), const_cast<uint32_t*>(&height));
+    KTH_DB_val current;
+
+    auto res = kth_db_get(db_txn, dbi_block_header_, &key, &current);
+    if (res == KTH_DB_NOTFOUND) {
+        return result_code::key_not_found;
+    }
+    if (res != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+
+    // Built from the row as it is stored, so the header bytes cannot drift from
+    // the by-hash index that points at this height.
+    auto reader = kth::database::db_reader(current);
+    auto parsed = get_header_and_abla_state_from_data(reader);
+    if ( ! parsed) {
+        return result_code::other;
+    }
+
+    auto valuearr = to_data_header_with_abla_state(
+        std::get<0>(*parsed), record.block_size, record.control_block_size, record.elastic_buffer_size);
+    auto value = kth_db_make_value(valuearr.size(), valuearr.data());
+
+    // No APPEND and no NOOVERWRITE: this row exists and is being replaced.
+    res = kth_db_put(db_txn, dbi_block_header_, &key, &value, 0);
+    if (res != KTH_DB_SUCCESS) {
+        spdlog::info("[database] Error updating header ABLA state [update_header_abla] {}", res);
+        return result_code::other;
+    }
+    return result_code::success;
+}
+
+template <typename Clock>
 result_code internal_database_basis<Clock>::push_header(domain::chain::header const& header, uint32_t height, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size) {
     KTH_DB_txn* db_txn;
     auto res = kth_db_txn_begin(env_, NULL, 0, &db_txn);

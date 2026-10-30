@@ -84,3 +84,34 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+#if defined(KTH_CURRENCY_BCH)
+#if __has_include(<kth/node/rpc/chain_progress.hpp>)
+#include <kth/node/rpc/chain_progress.hpp>
+#endif
+TEST_CASE("blockchain RPC exposes tick height and both boundary intervals", "[rpc query][faster_blocks]") {
+    // The old serializer has no chain-progress input. Retain the identical
+    // boundary observation on that API for the unmodified-base control.
+#if __has_include(<kth/node/rpc/chain_progress.hpp>)
+    auto const text = render_blockchain_info("Chipnet", 100, 100, "00ff", 1.0,
+        chain_progress{60000, 600, 60});
+#else
+    auto const text = render_blockchain_info("Chipnet", 100, 100, "00ff", 1.0);
+#endif
+    CHECK(text.find("\"ticks\":60000") != std::string::npos);
+    CHECK(text.find("\"target_time\":600") != std::string::npos);
+    CHECK(text.find("\"next_target_time\":60") != std::string::npos);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("header RPC distinguishes the boundary block from its successor", "[rpc query][faster_blocks]") {
+    domain::chain::header const header{4, null_hash, null_hash, 1000, 0x1d00ffff, 0};
+    auto const before = render_block_header(header, 100, null_hash, chain_progress{60000, 600, 60});
+    CHECK(before.find("\"ticks\":60000") != std::string::npos);
+    CHECK(before.find("\"target_time\":600") != std::string::npos);
+    CHECK(before.find("\"next_target_time\":60") != std::string::npos);
+    auto const after = render_block_header(header, 101, null_hash, chain_progress{60060, 60, 60});
+    CHECK(after.find("\"ticks\":60060") != std::string::npos);
+}
+#endif

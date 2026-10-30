@@ -492,6 +492,7 @@ domain::chain::block full_node::get_genesis_block(domain::config::network networ
             return domain::chain::block::genesis_testnet4();
         case domain::config::network::scalenet:
             return domain::chain::block::genesis_scalenet();
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet:
             return domain::chain::block::genesis_chipnet();
 #endif
