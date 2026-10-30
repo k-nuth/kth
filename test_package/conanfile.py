@@ -16,6 +16,7 @@ class TestPackageConan(ConanFile):
     def generate(self):
         toolchain = CMakeToolchain(self)
         toolchain.variables["KTH_PACKAGE_FOLDER"] = self.dependencies["kth"].package_folder
+        toolchain.variables["KTH_EXPECT_CONSENSUS"] = bool(self.dependencies["kth"].options.consensus)
         toolchain.generate()
 
     def build(self):
@@ -25,24 +26,6 @@ class TestPackageConan(ConanFile):
 
     def test(self):
         if can_run(self):
-            self.run(os.path.join(self.cpp.build.bindir, "test_exported_secp256k1"))
-            self.output.info("🧪 Testing KTH package integration...")
-            
-            # Test individual targets
-            test_individual = os.path.join(self.cpp.build.bindir, "test_individual")
-            if os.path.exists(test_individual):
-                self.output.info("Running individual targets test...")
-                self.run(test_individual)
-            else:
-                self.output.warn("test_individual executable not found")
-            
-            # Test meta target
-            test_meta = os.path.join(self.cpp.build.bindir, "test_meta")
-            if os.path.exists(test_meta):
-                self.output.info("Running meta target test...")
-                self.run(test_meta)
-            else:
-                self.output.warn("test_meta executable not found")
-            
-            self.output.info("✅ KTH package integration tests completed successfully!")
-            self.output.info("🎉 All KTH targets are properly linked and functional!")
+            for executable in ("test_exported_secp256k1", "test_big_number",
+                               "test_individual", "test_meta"):
+                self.run(os.path.join(self.cpp.build.bindir, executable), env="conanrun")

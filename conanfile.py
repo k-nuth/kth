@@ -93,7 +93,7 @@ class KthRecipe(KnuthConanFileV2):
         "currency": "BCH",
         "mempool_backend": "cfm",
         "verbose": False,
-        "consensus": True,
+        "consensus": False,
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
@@ -362,9 +362,10 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.with_jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines
-        # Infrastructure core dependencies: secp256k1, boost, fmt, ctre, spdlog, CLI11
+        # Infrastructure directly uses GMP for big_number, independently of consensus.
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
+            "gmp::gmp",
             "boost::boost",
             "cli11::cli11",
             "fmt::fmt",
