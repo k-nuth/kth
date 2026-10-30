@@ -58,7 +58,7 @@ jobs:
       - name: 📋 Build order
         working-directory: .
         run: |
-          conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd -s build_type=Release
+          conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd -s build_type=Release -o consensus=True
 
           # conan graph explain fails when no missing binaries, so it's commented out
           # conan graph explain conanfile.py --lockfile=build/conan.lock -s build_type=Release
@@ -67,7 +67,7 @@ jobs:
           # conan graph build-order conanfile.py --lockfile=build/conan.lock -f json > build_order.json
 
           # Conan 2.7 build order recipe
-          conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by recipe --build=missing --reduce -pr:b general-ci-cd -pr:h general-ci-cd -s build_type=Release > build_order.json
+          conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by recipe --build=missing --reduce -pr:b general-ci-cd -pr:h general-ci-cd -s build_type=Release -o consensus=True > build_order.json
           # Conan 2.7 build order configuration
           # conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by configuration --build=missing --reduce > build_order.json
 

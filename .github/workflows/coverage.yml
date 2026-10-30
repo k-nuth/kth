@@ -101,7 +101,7 @@ jobs:
           set +e
           conan install conanfile.py --version 0.0.0 -of build --build=missing \
             -pr:b linux-ci-cd -pr:h linux-ci-cd \
-            -o march_id=ZLm9Pjh -o tests=True
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=True
           rc=$?
           set -e
           "$METRICS" phase-end deps "$rc"

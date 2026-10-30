@@ -97,14 +97,14 @@ jobs:
           echo "Calculating dependency build order for version: ${VERSION}"
 
           # Create lock and get build order
-          conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6
+          conan lock create conanfile.py --version="${VERSION}" --lockfile=conan-wasm.lock --lockfile-out=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 -o consensus=True
 
           # Explain dependency graph (commented out - fails when no missing binaries)
           # conan graph explain conanfile.py --lockfile=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6
 
           # Get build order (may be empty if all packages exist)
           # If there are no missing binaries, create an empty build order
-          conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by recipe --build=missing --reduce -pr:h ./ci_utils/conan/profiles/ems6 > build_order.json || {
+          conan graph build-order conanfile.py --lockfile=build/conan.lock -f json --order-by recipe --build=missing --reduce -pr:h ./ci_utils/conan/profiles/ems6 -o consensus=True > build_order.json || {
             echo "No missing binaries to build, creating empty build order"
             echo '{"order":[]}' > build_order.json
           }
@@ -170,7 +170,11 @@ jobs:
           VERSION="${{ needs.setup.outputs.build-version }}"
           echo "Building main package version: ${VERSION}"
 
-          conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 --build=missing -o tests=False
+          # Cross-build and link the installed-package consumers for both configurations.
+          # test_package executes them only when Conan can_run() permits it.
+          for consensus in False True; do
+            conan create conanfile.py --version="${VERSION}" --lockfile=build/conan.lock -pr:h ./ci_utils/conan/profiles/ems6 --build=missing -o tests=False -o consensus="$consensus"
+          done
 
       - name: 📊 Build summary
         if: always()

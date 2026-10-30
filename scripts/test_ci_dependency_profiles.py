@@ -27,14 +27,14 @@ class DependencyProfiles(unittest.TestCase):
                         raise RuntimeError(result.stderr)
                     return result
                 # Both host and build contexts have compiled dependencies. No network or build needed.
-                for name in ("profile-host", "profile-tool"):
+                for name in ("profile-host", "profile-tool", "profile-consensus"):
                     recipe = root / name
                     recipe.mkdir()
                     (recipe / "conanfile.py").write_text('from conan import ConanFile\nclass Dep(ConanFile):\n name = "' + name + '"\n version = "1.0"\n settings = "os", "arch", "compiler", "build_type"\n')
                     run("conan", "export", str(recipe))
-                (root / "conanfile.py").write_text('from conan import ConanFile\nclass Consumer(ConanFile):\n settings = "os", "arch", "compiler", "build_type"\n requires = "profile-host/1.0"\n tool_requires = "profile-tool/1.0"\n')
+                (root / "conanfile.py").write_text('from conan import ConanFile\nclass Consumer(ConanFile):\n settings = "os", "arch", "compiler", "build_type"\n options = {"consensus": [True, False]}\n default_options = {"consensus": False}\n tool_requires = "profile-tool/1.0"\n def requirements(self):\n  self.requires("profile-host/1.0")\n  if self.options.consensus:\n   self.requires("profile-consensus/1.0")\n')
                 run("conan", "remote", "disable", "*")
-                run("conan", "lock", "create", "conanfile.py", "--lockfile-out=conan.lock", "--no-remote")
+                run("conan", "lock", "create", "conanfile.py", "--lockfile-out=conan.lock", "--no-remote", "-o", "consensus=True")
                 data = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())
                 job = next(iter(data["jobs"].values()))
                 block = next(s["run"] for s in job["steps"] if "conan graph build-order" in s.get("run", ""))
@@ -43,6 +43,12 @@ class DependencyProfiles(unittest.TestCase):
                 for command in commands:
                     run("sh", "-ec", command)
                 order = json.loads((root / "build_order.json").read_text())
+                # The planner must preserve the enabled-only dependencies even
+                # though the package defaults to consensus=False.
+                self.assertIn("profile-consensus/1.0", {
+                    recipe["ref"].split("#")[0]
+                    for group in order["order"] for recipe in group
+                })
                 packages = [pkg for group in order["order"] for recipe in group
                             for batch in recipe["packages"] for pkg in batch]
                 self.assertEqual({p["context"] for p in packages}, {"host", "build"})

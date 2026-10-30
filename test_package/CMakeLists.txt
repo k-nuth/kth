@@ -3,8 +3,19 @@ project(test_kth_package)
 
 find_package(kth REQUIRED)
 
+if(KTH_EXPECT_CONSENSUS AND NOT TARGET kth::consensus)
+    message(FATAL_ERROR "The installed package must export its enabled consensus component")
+elseif(NOT KTH_EXPECT_CONSENSUS AND TARGET kth::consensus)
+    message(FATAL_ERROR "The installed package unexpectedly exports disabled consensus")
+endif()
+
 # Exercise the native installed export independently of Conan's include paths.
 add_subdirectory(native_export)
+
+# Exercise GMP through the installed infrastructure target alone. Linking the
+# meta target here could hide an incomplete infrastructure dependency list.
+add_executable(test_big_number test_big_number.cpp)
+target_link_libraries(test_big_number PRIVATE kth::infrastructure)
 
 # Test individual targets
 add_executable(test_individual test_individual.cpp)

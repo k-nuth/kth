@@ -236,16 +236,19 @@ jobs:
           if [ "${{ inputs.upload }}" = "true" ]; then
             echo "🚀 Release build - using conan create (includes package validation)"
             conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
-            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
-            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False
+            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd -o consensus=True
+            # conan create runs test_package against each installed package before upload.
+            for consensus in False True; do
+              conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False -o consensus="$consensus"
+            done
           else
             echo "🔨 Development build - direct compilation with tests"
-            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd
+            conan lock create conanfile.py --version ${{ inputs.build-version }} --lockfile=conan.lock --lockfile-out=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd -o consensus=True
             METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True -o consensus=True
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"
@@ -489,6 +492,15 @@ jobs:
           echo "📦 Package ready for upload"
 
       # - uses: github/codeql-action/analyze@v2
+
+      - name: 📦 Validate installed package consumers
+        if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
+        run: |
+          # Exercise the package/test_package boundary on PRs without publishing.
+          # Configure, link and native execution failures must fail this job.
+          for consensus in False True; do
+            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False -o consensus="$consensus"
+          done
 
       - name: 📦 Upload
         # if: github.event_name == 'push' && needs.check.outputs.permitted == 'true'
