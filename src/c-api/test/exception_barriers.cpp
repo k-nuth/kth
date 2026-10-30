@@ -771,6 +771,29 @@ TEST_CASE("C-API exception barrier - program pop_ternary publishes all three out
     }
 }
 
+TEST_CASE("C-API exception barrier - program pop_big_binary publishes both outputs or neither",
+          "[C-API exception barrier][vm][multi-output]") {
+    for (auto const& fc : kFaultCases) {
+        sweep_allocation_failures([&](std::size_t skip) {
+            long const live_before = g_live_allocations.load();
+            attempt_result r;
+            {
+                program_fixture f;
+                kth_big_number_mut_t a = nullptr;
+                kth_big_number_mut_t b = nullptr;
+                r = judge(fc, skip,
+                    [&] { return kth_vm_program_pop_big_binary(f.program, &a, &b); },
+                    [&] { return a == nullptr && b == nullptr; },
+                    [&] { return a != nullptr && b != nullptr; });
+                kth_vm_big_number_destruct(b);
+                kth_vm_big_number_destruct(a);
+            }
+            r.leaked = g_live_allocations.load() - live_before;
+            return r;
+        });
+    }
+}
+
 TEST_CASE("C-API exception barrier - program pop_big_ternary publishes all three outputs or none",
           "[C-API exception barrier][vm][multi-output]") {
     for (auto const& fc : kFaultCases) {
