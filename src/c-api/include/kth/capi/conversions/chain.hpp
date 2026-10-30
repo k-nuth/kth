@@ -10,6 +10,7 @@
 #define KTH_CAPI_CONVERSIONS_CHAIN_HPP_
 
 #include <type_traits>
+#include <utility>
 
 #include <kth/capi/detail/enum_cast.hpp>
 
@@ -38,12 +39,12 @@ inline constexpr kth_point_kind_t point_kind_to_c(kth::domain::chain::point_kind
     return ecast<kth_point_kind_t>(x);
 }
 
-// Numeric ABI: every named enumerator converts to its counterpart, so the C and
-// C++ values cannot drift apart while the names keep matching.
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
 static_assert(sizeof(std::underlying_type_t<kth::domain::chain::point_kind>) <= sizeof(kth_point_kind_t));
-static_assert(point_kind_to_c(kth::domain::chain::point_kind::output) == kth_point_kind_output);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::point_kind>>(kth::domain::chain::point_kind::output), +kth_point_kind_output));
 static_assert(point_kind_to_cpp(kth_point_kind_output) == kth::domain::chain::point_kind::output);
-static_assert(point_kind_to_c(kth::domain::chain::point_kind::spend) == kth_point_kind_spend);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::point_kind>>(kth::domain::chain::point_kind::spend), +kth_point_kind_spend));
 static_assert(point_kind_to_cpp(kth_point_kind_spend) == kth::domain::chain::point_kind::spend);
 
 // Out-of-range C values map to `none`.
@@ -63,14 +64,14 @@ inline constexpr kth_token_capability_t token_capability_to_c(kth::domain::chain
     return ecast<kth_token_capability_t>(x);
 }
 
-// Numeric ABI: every named enumerator converts to its counterpart, so the C and
-// C++ values cannot drift apart while the names keep matching.
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
 static_assert(sizeof(std::underlying_type_t<kth::domain::chain::capability_t>) <= sizeof(kth_token_capability_t));
-static_assert(token_capability_to_c(kth::domain::chain::capability_t::none) == kth_token_capability_none);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::capability_t>>(kth::domain::chain::capability_t::none), +kth_token_capability_none));
 static_assert(token_capability_to_cpp(kth_token_capability_none) == kth::domain::chain::capability_t::none);
-static_assert(token_capability_to_c(kth::domain::chain::capability_t::mut) == kth_token_capability_mut);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::capability_t>>(kth::domain::chain::capability_t::mut), +kth_token_capability_mut));
 static_assert(token_capability_to_cpp(kth_token_capability_mut) == kth::domain::chain::capability_t::mut);
-static_assert(token_capability_to_c(kth::domain::chain::capability_t::minting) == kth_token_capability_minting);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::capability_t>>(kth::domain::chain::capability_t::minting), +kth_token_capability_minting));
 static_assert(token_capability_to_cpp(kth_token_capability_minting) == kth::domain::chain::capability_t::minting);
 
 // Out-of-range C values map to `ecdsa`.
@@ -88,12 +89,12 @@ inline constexpr kth_endorsement_type_t endorsement_type_to_c(kth::domain::chain
     return ecast<kth_endorsement_type_t>(x);
 }
 
-// Numeric ABI: every named enumerator converts to its counterpart, so the C and
-// C++ values cannot drift apart while the names keep matching.
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
 static_assert(sizeof(std::underlying_type_t<kth::domain::chain::endorsement_type>) <= sizeof(kth_endorsement_type_t));
-static_assert(endorsement_type_to_c(kth::domain::chain::endorsement_type::ecdsa) == kth_endorsement_type_ecdsa);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::endorsement_type>>(kth::domain::chain::endorsement_type::ecdsa), +kth_endorsement_type_ecdsa));
 static_assert(endorsement_type_to_cpp(kth_endorsement_type_ecdsa) == kth::domain::chain::endorsement_type::ecdsa);
-static_assert(endorsement_type_to_c(kth::domain::chain::endorsement_type::schnorr) == kth_endorsement_type_schnorr);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::chain::endorsement_type>>(kth::domain::chain::endorsement_type::schnorr), +kth_endorsement_type_schnorr));
 static_assert(endorsement_type_to_cpp(kth_endorsement_type_schnorr) == kth::domain::chain::endorsement_type::schnorr);
 
 } // namespace kth

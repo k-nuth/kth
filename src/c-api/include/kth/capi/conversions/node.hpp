@@ -10,6 +10,7 @@
 #define KTH_CAPI_CONVERSIONS_NODE_HPP_
 
 #include <type_traits>
+#include <utility>
 
 #include <kth/capi/detail/enum_cast.hpp>
 
@@ -36,14 +37,14 @@ inline constexpr kth_start_modules_t start_modules_to_c(kth::node::start_modules
     return ecast<kth_start_modules_t>(x);
 }
 
-// Numeric ABI: every named enumerator converts to its counterpart, so the C and
-// C++ values cannot drift apart while the names keep matching.
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
 static_assert(sizeof(std::underlying_type_t<kth::node::start_modules>) <= sizeof(kth_start_modules_t));
-static_assert(start_modules_to_c(kth::node::start_modules::all) == kth_start_modules_all);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::node::start_modules>>(kth::node::start_modules::all), +kth_start_modules_all));
 static_assert(start_modules_to_cpp(kth_start_modules_all) == kth::node::start_modules::all);
-static_assert(start_modules_to_c(kth::node::start_modules::just_chain) == kth_start_modules_just_chain);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::node::start_modules>>(kth::node::start_modules::just_chain), +kth_start_modules_just_chain));
 static_assert(start_modules_to_cpp(kth_start_modules_just_chain) == kth::node::start_modules::just_chain);
-static_assert(start_modules_to_c(kth::node::start_modules::just_p2p) == kth_start_modules_just_p2p);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::node::start_modules>>(kth::node::start_modules::just_p2p), +kth_start_modules_just_p2p));
 static_assert(start_modules_to_cpp(kth_start_modules_just_p2p) == kth::node::start_modules::just_p2p);
 
 } // namespace kth
