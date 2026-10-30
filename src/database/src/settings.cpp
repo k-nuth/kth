@@ -42,6 +42,11 @@ settings::settings(domain::config::network context)
         }
 
 #if defined(KTH_CURRENCY_BCH)
+        case domain::config::network::tempnet: {
+            directory = "blockchain-tempnet";
+            db_max_size = db_size_testnet4;
+            break;
+        }
         case domain::config::network::testnet4:
         case domain::config::network::scalenet:
         case domain::config::network::chipnet: {

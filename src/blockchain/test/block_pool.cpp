@@ -109,7 +109,7 @@ make_state_at_height(size_t height) {
         domain::chain::chain_state::assert_anchor_block_info_t{},
         0u,
         domain::chain::abla::config{},
-        kth::cantor_t(0)
+        kth::cantor_t{UINT64_MAX}
     );
 #else
     return std::make_shared<domain::chain::chain_state>(

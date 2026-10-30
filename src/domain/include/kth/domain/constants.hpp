@@ -34,7 +34,7 @@ constexpr inline
 size_t static_max_block_sigchecks(domain::config::network network) noexcept {
     if (network == domain::config::network::testnet4) return internal_max_block_sigchecks::testnet4;
     if (network == domain::config::network::scalenet) return internal_max_block_sigchecks::scalenet;
-    if (network == domain::config::network::chipnet) return internal_max_block_sigchecks::chipnet;
+    if (network == domain::config::network::chipnet || network == domain::config::network::tempnet) return internal_max_block_sigchecks::chipnet;
     return internal_max_block_sigchecks::mainnet;
 }
 

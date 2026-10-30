@@ -112,6 +112,7 @@ const infrastructure::config::checkpoint chipnet_bip34_active_checkpoint {
 // enum class lobachevski_t : uint64_t {};
 // enum class galois_t : uint64_t {};
 enum class leibniz_t : uint64_t {};
+// Cantor includes CHIP-2025-03 Faster Blocks.
 enum class cantor_t : uint64_t {};
 enum class unnamed_t : uint64_t {}; //TODO(fernando): rename it
 
@@ -130,7 +131,6 @@ enum class unnamed_t : uint64_t {}; //TODO(fernando): rename it
 // constexpr galois_t       bch_galois_activation_time{1747310400};      // 2025-May-15 HF
 constexpr leibniz_t      bch_leibniz_activation_time{1778846400};        // 2026-May-15 HF
 constexpr cantor_t       bch_cantor_activation_time{1810382400};         // 2027-May-15 HF
-
 
 // Block height at which CSV (BIP68, BIP112 and BIP113) becomes active
 constexpr size_t mainnet_csv_activation_height = 419329;

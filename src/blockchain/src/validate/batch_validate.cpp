@@ -15,11 +15,13 @@
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
+#include <kth/blockchain/abla_pipeline.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain/constants.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::blockchain {
@@ -143,12 +145,43 @@ code validate_block_batch(
 
     domain::chain::chain_state::ptr state;
     std::vector<domain::script_flags_t> block_flags(blocks.size());
+    // Per-block tick schedule and whether the CHIP-2025-03 coinbase shape rule
+    // governs the block. Each comes from that block's OWN branch-local state, so
+    // a batch that crosses the activation judges the blocks on either side by
+    // their own schedule.
+    std::vector<domain::chain::block_ticks> block_schedule(blocks.size());
+    std::vector<uint8_t> block_governed(blocks.size(), 0);
+    std::vector<uint32_t> block_mtp(blocks.size());
     // Per-block dynamic SigChecks limit (consensus), one per block in the batch.
     std::vector<uint64_t> block_sigcheck_limit(blocks.size());
     // Per-block limit on one transaction's SigChecks: 3000 once the May 2020
     // rules are active at that block's height, 20000 before (see
     // max_tx_sigchecks_before_activation).
     std::vector<uint64_t> block_tx_sigcheck_limit(blocks.size());
+
+#if defined(KTH_CURRENCY_BCH)
+    // The ABLA state OF every block in the batch (abla_pipeline.hpp): the
+    // persisted state of the connected tip advanced block by block through the
+    // sizes of the blocks being validated, at the intervals of their branch.
+    // Header validation has no such state, so a limit read from a chain_state
+    // built without it would be the floor.
+    std::vector<domain::chain::abla::state> abla_states;
+    {
+        std::vector<uint64_t> sizes(blocks.size());
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            sizes[i] = blocks[i]->serialized_size(1);
+        }
+        auto const last_idx = header_index.find(blocks.back()->hash());
+        if (last_idx == header_index::null_index) {
+            return error::not_found;
+        }
+        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, last_idx);
+        if ( ! states) {
+            return states.error();
+        }
+        abla_states = std::move(*states);
+    }
+#endif
 
     boost::unordered_flat_map<bv_outpoint, created_output, bv_outpoint_hasher> created;
     boost::unordered_flat_set<bv_outpoint, bv_outpoint_hasher> spent;
@@ -195,8 +228,13 @@ code validate_block_batch(
             // KTH_ASSERT downstream is a no-op in Release, so guard here).
             return error::not_found;
         }
+#if defined(KTH_CURRENCY_BCH)
+        auto cs = header_validator.chain_state_at(
+            block.header(), block.hash(), height, parent_idx, header_index, &abla_states[i]);
+#else
         auto cs = header_validator.chain_state_at(
             block.header(), block.hash(), height, parent_idx, header_index);
+#endif
         if ( ! cs) {
             return cs.error();
         }
@@ -205,6 +243,16 @@ code validate_block_batch(
             return error::operation_failed;
         }
         block_flags[i] = state->enabled_flags();
+#if defined(KTH_CURRENCY_BCH)
+        block_schedule[i] = state->ticks();
+#endif
+        block_mtp[i] = state->median_time_past();
+        if (block.serialized_size(0) > state->dynamic_max_block_size()) {
+            return error::block_size_limit;
+        }
+#if defined(KTH_CURRENCY_BCH)
+        block_governed[i] = state->is_faster_blocks_active() ? 1 : 0;
+#endif
         // Per-block dynamic SigChecks limit: the ABLA block-size limit at this
         // height divided by the fixed ratio, matching BCHN's
         // GetMaxBlockSigChecksCount(nMaxBlockSize).
@@ -226,6 +274,13 @@ code validate_block_batch(
 #endif
 
         for (auto const& tx : block.transactions()) {
+            auto const finality_time = script::is_enabled(block_flags[i], domain::machine::script_flags::bip113_rule)
+                ? block_mtp[i] : block.header().timestamp();
+            // Coinbase finality is covered too: a non-final input sequence
+            // makes its locktime binding like any other transaction's.
+            if (!tx.is_final(block_schedule[i], height, finality_time)) {
+                return error::block_non_final;
+            }
             if (tx.is_coinbase()) {
                 continue;
             }
@@ -325,6 +380,13 @@ code validate_block_batch(
         auto const height = start_height + i;
         uint64_t block_fees = 0;
         uint64_t coinbase_value = 0;
+        auto const& ticks = block_schedule[i];
+
+        // CHIP-2025-03: from the block built on H_a, a coinbase with version 1,
+        // locktime 0 and outputs of at least 25 BCH is invalid.
+        if (block_governed[i] != 0 && blocks[i]->has_forbidden_coinbase_shape()) {
+            return error::coinbase_shape;
+        }
 
         for (auto const& tx : blocks[i]->transactions()) {
             if (tx.is_coinbase()) {
@@ -377,17 +439,44 @@ code validate_block_batch(
                     return error::operation_failed;
                 }
 
-                if (prevout_coinbase && height < prevout_height + coinbase_maturity) {
+                // 100 ten-minute block-equivalents, in ticks.
+                if (prevout_coinbase &&
+                    ticks.height_to_tick(height) - ticks.height_to_tick(prevout_height) < coinbase_maturity * base_block_interval) {
                     return error::coinbase_maturity;
                 }
 
                 op.validation.cache = *out;
                 op.validation.coinbase = prevout_coinbase;
                 op.validation.height = prevout_height;
+                op.validation.median_time_past = 0;
+                auto const& in = inputs[ii];
+                if (script::is_enabled(block_flags[i], domain::machine::script_flags::bip68_rule)
+                    && tx.version() >= relative_locktime_min_version
+                    && !(in.sequence() & relative_locktime_disabled)
+                    && (in.sequence() & relative_locktime_time_locked)) {
+                    // BIP68 measures time from the funding block's parent MTP,
+                    // on the same branch as the block being validated. This
+                    // also handles CTOR parents created in the current block.
+                    auto const parent_idx = header_index.find(blocks[i]->header().previous_block_hash());
+                    auto const funding_parent = prevout_height == 0 ? 0 : prevout_height - 1;
+                    auto const funding_mtp = domain::chain::median_time_past_at(funding_parent,
+                        [&](size_t h) -> std::optional<uint32_t> {
+                            auto const idx = header_index.get_ancestor(parent_idx, int32_t(h));
+                            if (idx == header_index::null_index) return std::nullopt;
+                            return header_index.get_timestamp(idx);
+                        });
+                    if (!funding_mtp) return error::operation_failed;
+                    op.validation.median_time_past = *funding_mtp;
+                }
                 op.validation.spent = false;
                 op.validation.confirmed = true;
 
                 in_value += out->value();
+            }
+
+            if (script::is_enabled(block_flags[i], domain::machine::script_flags::bip68_rule)
+                && tx.is_locked(ticks, height, block_mtp[i])) {
+                return error::sequence_locked;
             }
 
             if (in_value < out_value) {
@@ -400,7 +489,7 @@ code validate_block_batch(
             tasks.push_back(verify_task{&tx, block_flags[i], height});
         }
 
-        auto const reward = block::subsidy(height, settings.retarget) + block_fees;
+        auto const reward = block::subsidy(ticks, height, settings.retarget) + block_fees;
         if (coinbase_value > reward) {
             return error::coinbase_value_limit;
         }

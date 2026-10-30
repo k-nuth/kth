@@ -119,6 +119,13 @@ struct KD_API block {
     static
     uint64_t subsidy(size_t height, bool retarget);
 
+    /// Subsidy of block `height` on a branch with the given tick schedule
+    /// (CHIP-2025-03): the halving count is keyed to the 600-tick chunk
+    /// ceil(tick / 600) containing the block's interval and the amount is
+    /// scaled by the block's interval, ((50 BCH) >> halvings) * tau / 600.
+    static
+    uint64_t subsidy(block_ticks const& ticks, size_t height, bool retarget);
+
     static
     uint256_t proof(uint32_t bits);
 
@@ -130,6 +137,9 @@ struct KD_API block {
 
     [[nodiscard]]
     uint64_t reward(size_t height) const;
+
+    [[nodiscard]]
+    uint64_t reward(block_ticks const& ticks, size_t height) const;
 
     [[nodiscard]]
     uint256_t proof() const;
@@ -150,10 +160,22 @@ struct KD_API block {
     bool is_final(size_t height, uint32_t block_time) const;
 
     [[nodiscard]]
+    bool is_final(block_ticks const& ticks, size_t height, uint32_t block_time) const;
+
+    [[nodiscard]]
     bool is_distinct_transaction_set() const;
 
     [[nodiscard]]
     bool is_valid_coinbase_claim(size_t height) const;
+
+    [[nodiscard]]
+    bool is_valid_coinbase_claim(block_ticks const& ticks, size_t height) const;
+
+    /// CHIP-2025-03: the coinbase shape version 1, locktime 0 and outputs of at
+    /// least 25 BCH, which is invalid from the block built on H_a onward. The
+    /// caller decides whether the block is governed; this only reads the shape.
+    [[nodiscard]]
+    bool has_forbidden_coinbase_shape() const;
 
     [[nodiscard]]
     bool is_valid_coinbase_script(size_t height) const;

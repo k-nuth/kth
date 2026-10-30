@@ -325,6 +325,74 @@ TEST_CASE("configuration construct2 chipnet context expected", "[configuration t
 // End Test Suite
 
 #if defined(KTH_CURRENCY_BCH)
+TEST_CASE("tempnet selection preserves its fork rules and isolated data directory", "[configuration tests][parser][tempnet]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "tempnet"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(3, argv, error));
+    auto const& cfg = parser.configured;
+    CHECK(domain::config::name(cfg.net) == "Tempnet");
+    CHECK(cfg.chain.cantor_activation_time == 1792065600ULL);
+    CHECK(cfg.network.identifier == 0xafdab7e2U);
+    CHECK(cfg.network.inbound_port == 48333);
+    CHECK(cfg.database.directory == path{"blockchain-tempnet"});
+    CHECK(cfg.chain.easy_blocks);
+    CHECK(cfg.chain.asert_half_life == 3600);
+    CHECK(cfg.chain.default_consensus_block_size == 2'000'000);
+    CHECK(cfg.chain.abla_config.epsilon_max > cfg.chain.abla_config.epsilon0);
+}
+
+TEST_CASE("tempnet selection retains an explicit database directory", "[configuration tests][parser][tempnet]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "tempnet", "--db.directory", "custom-tempnet"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(5, argv, error));
+    CHECK(parser.configured.database.directory == path{"custom-tempnet"});
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("tempnet isolation preserves other networks' default directories", "[configuration tests][tempnet][directories]") {
+    using domain::config::network;
+    CHECK(database::settings(network::tempnet).directory == path{"blockchain-tempnet"});
+    CHECK(database::settings(network::testnet4).directory == path{"blockchain"});
+    CHECK(database::settings(network::scalenet).directory == path{"blockchain"});
+    CHECK(database::settings(network::chipnet).directory == path{"blockchain"});
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("parser tempnet config rebuilds defaults and preserves command line priority", "[configuration tests][parser][file_network]") {
+    config_file file("selected_tempnet_network", "network=tempnet\nchain.cores=3\nnet.inbound_port=12345\nfork.asert_half_life=1234\n");
+    for (bool const override_network : {false, true}) {
+        CAPTURE(override_network);
+        node::parser parser(domain::config::network::mainnet);
+        std::ostringstream errors;
+        auto const path = file.path().string();
+        char const* argv[]{"kth", "--config", path.c_str(), "--chain.cores", "7",
+            "--network", "chipnet"};
+        REQUIRE(parser.parse(override_network ? 7 : 5, argv, errors));
+        auto const selected = override_network ? domain::config::network::chipnet
+            : domain::config::network::tempnet;
+        node::configuration const expected(selected);
+        auto const& actual = parser.configured;
+        CHECK(actual.net == selected);
+        CHECK(actual.network.context == selected);
+        CHECK(actual.network.identifier == expected.network.identifier);
+        CHECK(actual.network.hosts_file == expected.network.hosts_file);
+        CHECK(actual.database.directory == expected.database.directory);
+        CHECK(actual.chain.abla_config.epsilon0 == expected.chain.abla_config.epsilon0);
+        CHECK(actual.chain.abla_config.beta0 == expected.chain.abla_config.beta0);
+        CHECK(actual.chain.cantor_activation_time == expected.chain.cantor_activation_time);
+        CHECK(actual.chain.checkpoints == expected.chain.checkpoints);
+        CHECK(actual.chain.cores == 7);
+        CHECK(actual.network.inbound_port == 12345);
+        CHECK(actual.chain.asert_half_life == 1234);
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
 TEST_CASE("parser config network rebuilds defaults and preserves command line priority", "[configuration tests][parser][file_network]") {
     config_file file("selected_network", "network=chipnet\nchain.cores=3\nnet.inbound_port=12345\nfork.asert_half_life=1234\n");
     for (bool const override_network : {false, true}) {

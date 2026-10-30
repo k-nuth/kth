@@ -11,6 +11,7 @@
 #include <memory>
 
 #include <kth/domain/chain/abla.hpp>
+#include <kth/domain/chain/block_ticks.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/machine/opcode.hpp>
@@ -123,6 +124,13 @@ struct KD_API chain_state {
 
 #if defined(KTH_CURRENCY_BCH)
         abla::state abla_state;
+
+        /// CHIP-2025-03: height of the first block of this branch whose own
+        /// median time past reached the activation time (H_a), or max_size_t
+        /// when the branch has not reached it. Branch-local: populate derives
+        /// it from the branch being described. It is only read when the
+        /// parent's median time past has reached the activation time.
+        size_t faster_blocks_activation_height = max_size_t;
 #endif
     };
 
@@ -241,7 +249,40 @@ struct KD_API chain_state {
     [[nodiscard]]
     cantor_t cantor_activation_time() const;
 
+    static
+    bool is_faster_blocks_activated(uint32_t parent_median_time_past, cantor_t activation_time);
+
+    /// The tick schedule a state built from `values` will have, without building
+    /// it. Lets a caller scale a transition (ABLA) by an interval before the
+    /// state it feeds exists.
+    static
+    block_ticks branch_ticks(data const& values, cantor_t activation_time);
+
 #endif  //KTH_CURRENCY_BCH
+
+    /// CHIP-2025-03. True when the block this state describes is a 60-tick
+    /// block: its parent's median time past has reached the activation time,
+    /// so the parent is H_a or later on this branch.
+    [[nodiscard]]
+    bool is_faster_blocks_active() const;
+
+    /// The branch's tick schedule: empty (uniform 600) before activation,
+    /// {{H_a, 60}} from the block built on H_a.
+    [[nodiscard]]
+    block_ticks const& ticks() const;
+
+    /// Tick of the block this state describes, from the schedule (never the
+    /// parent's tick plus the parent's interval).
+    [[nodiscard]]
+    uint64_t tick() const;
+
+    /// Tick of the parent of the block this state describes.
+    [[nodiscard]]
+    uint64_t parent_tick() const;
+
+    /// Target interval (ticks) of the block this state describes.
+    [[nodiscard]]
+    uint64_t block_interval() const;
 
     /// The null state (zero height), reachable only if the chain size
     /// overflows size_t. A genuine chain state always has a non-zero height.
@@ -272,7 +313,7 @@ struct KD_API chain_state {
 
 #if defined(KTH_CURRENCY_BCH)
     static
-    bool is_mtp_activated(uint32_t median_time_past, uint32_t activation_time);
+    bool is_mtp_activated(uint32_t median_time_past, uint64_t activation_time);
 
     [[nodiscard]]
     bool is_pythagoras_enabled() const;
@@ -353,6 +394,7 @@ protected:
                             , cantor_t cantor_activation_time
                             , assert_anchor_block_info_t const& assert_anchor_block_info
                             , uint32_t asert_half_life
+                            , block_ticks const& ticks
 #endif
     );
 
@@ -462,7 +504,7 @@ private:
 
 #if defined(KTH_CURRENCY_BCH)
     static
-    uint32_t daa_aserti3_2d(data const& values, assert_anchor_block_info_t const& assert_anchor_block_info, uint32_t half_life);
+    uint32_t daa_aserti3_2d(data const& values, assert_anchor_block_info_t const& assert_anchor_block_info, uint32_t half_life, block_ticks const& ticks);
 
     static
     uint32_t daa_cw144(data const& values);
@@ -488,11 +530,12 @@ private:
                             , bool daa_asert_active
                             , assert_anchor_block_info_t const& assert_anchor_block_info
                             , uint32_t asert_half_life
+                            , block_ticks const& ticks
 #endif
     );
 
     static
-    uint32_t easy_time_limit(chain_state::data const& values);
+    uint32_t easy_time_limit(chain_state::data const& values, uint64_t block_interval);
 
     static
     size_t retarget_distance(size_t height);
@@ -513,6 +556,9 @@ private:
     // These are computed on construct from sample and checkpoints.
     activations const active_;
     uint32_t const median_time_past_;
+
+    // Declared before work_required_: difficulty reads the tick schedule.
+    block_ticks const ticks_;
     uint32_t const work_required_;
 
 //TODO(fernando): inherit BCH data and functions for a specific BCH class

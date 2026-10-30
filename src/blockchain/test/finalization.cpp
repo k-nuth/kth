@@ -7,6 +7,9 @@
 #include <vector>
 
 #include <kth/blockchain.hpp>
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+#include <kth/domain/chain/block_ticks.hpp>
+#endif
 
 using namespace kth;
 using namespace kth::blockchain;
@@ -172,3 +175,108 @@ TEST_CASE("finalization retreat_to moves the pointer back on disconnect", "[fina
     f.retreat_to(finalization::null_index);
     REQUIRE(f.finalized() == finalization::null_index);
 }
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+
+// The original API has no cadence context. Keep the same behavioral control
+// runnable on that base: there it exercises the old block-count implementation;
+// once the schedule API exists it supplies the identical chain's tick schedule.
+// Both variants assert the finalized block, never skip the observation.
+template <typename Advance>
+void check_short_interval_finalization(Advance advance) {
+    header_index index(200);
+    std::vector<header_index::index_t> chain;
+    hash_digest previous = null_hash;
+    for (uint32_t height = 0; height < 122; ++height) {
+        auto const timestamp = height <= 20 ? height * 600 : 20 * 600 + (height - 20) * 60;
+        domain::chain::header header{1, previous, make_hash(height + 100000), timestamp, 0x1d00ffff, height};
+        previous = domain::chain::hash(header);
+        auto result = index.add(previous, header);
+        REQUIRE(result.inserted);
+        index.set_received_time(result.index, 0);
+        chain.push_back(result.index);
+    }
+    finalization f(index, max_reorg_depth, delay, 0);
+
+    // Block 20 is the final 600-tick block; 21..119 represent 99 * 60
+    // ticks on top of it. It is still too shallow to finalize block 20.
+    advance(f, chain[119], 119, now);
+    REQUIRE(f.finalized_height() == 19);
+    REQUIRE_FALSE(f.is_finalized(chain[20]));
+
+    // The 100th new interval reaches exactly 6000 ticks, excluding the
+    // candidate block's own interval. Its child needs one more block.
+    advance(f, chain[120], 120, now);
+    REQUIRE(f.finalized_height() == 20);
+    REQUIRE(f.finalized() == chain[20]);
+    REQUIRE_FALSE(f.is_finalized(chain[21]));
+    advance(f, chain[121], 121, now);
+    REQUIRE(f.finalized_height() == 21);
+}
+
+} // namespace
+
+TEST_CASE("finalization preserves six thousand ticks across the interval change", "[finalization][faster_blocks]") {
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+    check_short_interval_finalization([](auto& f, auto tip, auto height, auto time) {
+        f.maybe_advance(tip, height, time, domain::chain::block_ticks::activated_at(20));
+    });
+#else
+    check_short_interval_finalization([](auto& f, auto tip, auto height, auto time) {
+        f.maybe_advance(tip, height, time);
+    });
+#endif
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH) && __has_include(<kth/domain/chain/block_ticks.hpp>)
+TEST_CASE("short interval finalization keeps validated depth separate from header progress and age", "[finalization][faster_blocks]") {
+    header_index index(200);
+    auto chain = build_chain(index, 151, null_hash, 0, uint32_t(now));
+    auto const schedule = domain::chain::block_ticks::activated_at(20);
+    finalization f(index, max_reorg_depth, delay, 0);
+
+    // Headers lead validation by 30 blocks. Only block 20 is old enough;
+    // the depth is exactly 6000 ticks from validated block 120.
+    index.set_received_time(chain[20], uint32_t(now - delay));
+    f.maybe_advance(chain.back(), 119, now, schedule);
+    CHECK(f.finalized() == finalization::null_index);
+    f.maybe_advance(chain.back(), 120, now, schedule);
+    REQUIRE(f.finalized() == chain[20]);
+
+    // Even on the new cadence a restart's two-hour grace period binds.
+    finalization restarted(index, max_reorg_depth, delay, now);
+    restarted.maybe_advance(chain.back(), 120, now + delay - 1, schedule);
+    CHECK(restarted.finalized() == finalization::null_index);
+    restarted.maybe_advance(chain.back(), 120, now + delay, schedule);
+    CHECK(restarted.finalized() == chain[20]);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("header organizer finalization uses the validated branch tick schedule", "[finalization][faster_blocks][header_organizer]") {
+    header_index index(200);
+    hash_digest previous = null_hash;
+    for (uint32_t height = 0; height < 151; ++height) {
+        auto const timestamp = height <= 20 ? height * 600 : 20 * 600 + (height - 20) * 60;
+        domain::chain::header header{1, previous, make_hash(height + 100000), timestamp, 0x207fffff, height};
+        previous = domain::chain::hash(header);
+        auto const result = index.add(previous, header);
+        REQUIRE(result.inserted);
+        index.set_received_time(result.index, 0);
+    }
+    settings configuration(domain::config::network::regtest);
+    configuration.finalization_delay_seconds = 0;
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+    // MTP(20) is timestamp(15), so 20 is the final old-interval block.
+    configuration.cantor_activation_time = 9000;
+#endif
+    header_organizer organizer(index, configuration, domain::config::network::regtest);
+    organizer.sync_tip();
+    organizer.note_block_validated(119);
+    CHECK(organizer.finalized_height() == 19);
+    organizer.note_block_validated(120);
+    CHECK(organizer.finalized_height() == 20);
+}
+#endif
