@@ -14,7 +14,7 @@
 namespace kth {
 
 inline
-kth_error_code_t to_c_err(std::error_code const& ec) {
+kth_error_code_t to_c_err(std::error_code const& ec) noexcept {
     return static_cast<kth_error_code_t>(ec.value());
 }
 
@@ -24,7 +24,7 @@ kth_error_code_t to_c_err(std::error_code const& ec) {
 // that is convertible to `kth_error_code_t`.
 template <typename E>
 inline
-kth_error_code_t to_c_err(E const& e) {
+kth_error_code_t to_c_err(E const& e) noexcept(noexcept(static_cast<kth_error_code_t>(e))) {
     return static_cast<kth_error_code_t>(e);
 }
 

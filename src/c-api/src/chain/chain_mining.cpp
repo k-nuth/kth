@@ -26,10 +26,17 @@ extern "C" {
 kth_error_code_t kth_chain_sync_mining_info(kth_chain_t self, kth_mining_info_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_mining_info());
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_c_struct<kth_mining_info_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_mining_info());
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_c_struct<kth_mining_info_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 void kth_chain_async_mining_info(kth_chain_t self, void* ctx, kth_mining_info_fetch_handler_t handler) {

@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <memory>
 #include <kth/domain/wallet/coin_selection.hpp>
 
 // ---------------------------------------------------------------------------
@@ -21,14 +22,21 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos(kth_utxo_list_const_t av
     KTH_PRECONDITION(category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const category_cpp = kth::hash_to_cpp(category->hash);
-    auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
-    auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const category_cpp = kth::hash_to_cpp(category->hash);
+        auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
+        auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_select_utxos_unsafe(kth_utxo_list_const_t available_utxos, uint64_t amount, kth_size_t outputs_size, uint8_t const* category, kth_coin_selection_strategy_t strategy, KTH_OUT_OWNED kth_coin_selection_result_mut_t* out) {
@@ -36,14 +44,21 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_unsafe(kth_utxo_list_con
     KTH_PRECONDITION(category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const category_cpp = kth::hash_to_cpp(category);
-    auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
-    auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const category_cpp = kth::hash_to_cpp(category);
+        auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
+        auto result = kth::domain::wallet::select_utxos(available_utxos_cpp, amount, outputs_size_cpp, category_cpp, strategy_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all(kth_utxo_list_const_t available_utxos, kth_size_t outputs_size, kth_hash_t const* category, KTH_OUT_OWNED kth_coin_selection_result_mut_t* out) {
@@ -51,13 +66,20 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all(kth_utxo_list_c
     KTH_PRECONDITION(category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const category_cpp = kth::hash_to_cpp(category->hash);
-    auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const category_cpp = kth::hash_to_cpp(category->hash);
+        auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all_unsafe(kth_utxo_list_const_t available_utxos, kth_size_t outputs_size, uint8_t const* category, KTH_OUT_OWNED kth_coin_selection_result_mut_t* out) {
@@ -65,13 +87,20 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_send_all_unsafe(kth_utxo
     KTH_PRECONDITION(category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const category_cpp = kth::hash_to_cpp(category);
-    auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const category_cpp = kth::hash_to_cpp(category);
+        auto result = kth::domain::wallet::select_utxos_send_all(available_utxos_cpp, outputs_size_cpp, category_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_select_utxos_both(kth_utxo_list_const_t available_utxos, uint64_t bch_amount, kth_hash_t const* token_category, uint64_t token_amount, kth_size_t outputs_size, kth_coin_selection_strategy_t strategy, KTH_OUT_OWNED kth_coin_selection_result_mut_t* out) {
@@ -79,14 +108,21 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_both(kth_utxo_list_const
     KTH_PRECONDITION(token_category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const token_category_cpp = kth::hash_to_cpp(token_category->hash);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
-    auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const token_category_cpp = kth::hash_to_cpp(token_category->hash);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
+        auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_select_utxos_both_unsafe(kth_utxo_list_const_t available_utxos, uint64_t bch_amount, uint8_t const* token_category, uint64_t token_amount, kth_size_t outputs_size, kth_coin_selection_strategy_t strategy, KTH_OUT_OWNED kth_coin_selection_result_mut_t* out) {
@@ -94,14 +130,21 @@ kth_error_code_t kth_wallet_coin_selection_select_utxos_both_unsafe(kth_utxo_lis
     KTH_PRECONDITION(token_category != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const token_category_cpp = kth::hash_to_cpp(token_category);
-    auto const outputs_size_cpp = kth::sz(outputs_size);
-    auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
-    auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const token_category_cpp = kth::hash_to_cpp(token_category);
+        auto const outputs_size_cpp = kth::sz(outputs_size);
+        auto const strategy_cpp = kth::coin_selection_strategy_to_cpp(strategy);
+        auto result = kth::domain::wallet::select_utxos_both(available_utxos_cpp, bch_amount, token_category_cpp, token_amount, outputs_size_cpp, strategy_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_create_token_split_tx_template(kth_output_point_list_const_t outpoints_to_split, kth_utxo_list_const_t available_utxos, kth_payment_address_const_t destination_address, KTH_OUT_OWNED kth_transaction_mut_t* out_tx, KTH_OUT_OWNED kth_payment_address_list_mut_t* out_addresses, KTH_OUT_OWNED kth_u64_list_mut_t* out_amounts) {
@@ -114,15 +157,25 @@ kth_error_code_t kth_wallet_coin_selection_create_token_split_tx_template(kth_ou
     KTH_PRECONDITION(*out_addresses == nullptr);
     KTH_PRECONDITION(out_amounts != nullptr);
     KTH_PRECONDITION(*out_amounts == nullptr);
-    auto const& outpoints_to_split_cpp = kth::cpp_ref<kth::domain::chain::output_point::list>(outpoints_to_split);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
-    auto result = kth::domain::wallet::create_token_split_tx_template(outpoints_to_split_cpp, available_utxos_cpp, destination_address_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_tx = kth::to_owned(std::move(std::get<0>(*result)));
-    *out_addresses = kth::make_owned<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<1>(*result)));
-    *out_amounts = kth::make_owned<std::vector<uint64_t>>(std::move(std::get<2>(*result)));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& outpoints_to_split_cpp = kth::cpp_ref<kth::domain::chain::output_point::list>(outpoints_to_split);
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
+        auto result = kth::domain::wallet::create_token_split_tx_template(outpoints_to_split_cpp, available_utxos_cpp, destination_address_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
+        auto staged_out_1 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<1>(*result)));
+        auto staged_out_2 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<2>(*result)));
+        *out_tx = staged_out_0.release();
+        *out_addresses = staged_out_1.release();
+        *out_amounts = staged_out_2.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_create_tx_template(kth_utxo_list_const_t available_utxos, uint64_t amount_to_send, kth_payment_address_const_t destination_address, kth_payment_address_list_const_t change_addresses, kth_double_list_const_t change_ratios, kth_coin_selection_algorithm_t selection_algo, KTH_OUT_OWNED kth_transaction_mut_t* out_tx, KTH_OUT_OWNED kth_u32_list_mut_t* out_indices, KTH_OUT_OWNED kth_payment_address_list_mut_t* out_addresses, KTH_OUT_OWNED kth_u64_list_mut_t* out_amounts) {
@@ -138,18 +191,29 @@ kth_error_code_t kth_wallet_coin_selection_create_tx_template(kth_utxo_list_cons
     KTH_PRECONDITION(*out_addresses == nullptr);
     KTH_PRECONDITION(out_amounts != nullptr);
     KTH_PRECONDITION(*out_amounts == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
-    auto const& change_addresses_cpp = kth::cpp_ref<std::vector<kth::domain::wallet::payment_address>>(change_addresses);
-    auto const& change_ratios_cpp = kth::cpp_ref<std::vector<double>>(change_ratios);
-    auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
-    auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, change_ratios_cpp, selection_algo_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_tx = kth::to_owned(std::move(std::get<0>(*result)));
-    *out_indices = kth::make_owned<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
-    *out_addresses = kth::make_owned<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
-    *out_amounts = kth::make_owned<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
+        auto const& change_addresses_cpp = kth::cpp_ref<std::vector<kth::domain::wallet::payment_address>>(change_addresses);
+        auto const& change_ratios_cpp = kth::cpp_ref<std::vector<double>>(change_ratios);
+        auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
+        auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, change_ratios_cpp, selection_algo_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
+        auto staged_out_1 = std::make_unique<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
+        auto staged_out_2 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
+        auto staged_out_3 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
+        *out_tx = staged_out_0.release();
+        *out_indices = staged_out_1.release();
+        *out_addresses = staged_out_2.release();
+        *out_amounts = staged_out_3.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_coin_selection_create_tx_template_default_ratios(kth_utxo_list_const_t available_utxos, uint64_t amount_to_send, kth_payment_address_const_t destination_address, kth_payment_address_list_const_t change_addresses, kth_coin_selection_algorithm_t selection_algo, KTH_OUT_OWNED kth_transaction_mut_t* out_tx, KTH_OUT_OWNED kth_u32_list_mut_t* out_indices, KTH_OUT_OWNED kth_payment_address_list_mut_t* out_addresses, KTH_OUT_OWNED kth_u64_list_mut_t* out_amounts) {
@@ -164,17 +228,28 @@ kth_error_code_t kth_wallet_coin_selection_create_tx_template_default_ratios(kth
     KTH_PRECONDITION(*out_addresses == nullptr);
     KTH_PRECONDITION(out_amounts != nullptr);
     KTH_PRECONDITION(*out_amounts == nullptr);
-    auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
-    auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
-    auto const& change_addresses_cpp = kth::cpp_ref<std::vector<kth::domain::wallet::payment_address>>(change_addresses);
-    auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
-    auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, selection_algo_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_tx = kth::to_owned(std::move(std::get<0>(*result)));
-    *out_indices = kth::make_owned<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
-    *out_addresses = kth::make_owned<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
-    *out_amounts = kth::make_owned<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& available_utxos_cpp = kth::cpp_ref<std::vector<kth::domain::chain::utxo>>(available_utxos);
+        auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
+        auto const& change_addresses_cpp = kth::cpp_ref<std::vector<kth::domain::wallet::payment_address>>(change_addresses);
+        auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
+        auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, selection_algo_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
+        auto staged_out_1 = std::make_unique<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
+        auto staged_out_2 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
+        auto staged_out_3 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
+        *out_tx = staged_out_0.release();
+        *out_indices = staged_out_1.release();
+        *out_addresses = staged_out_2.release();
+        *out_amounts = staged_out_3.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_double_list_mut_t kth_wallet_coin_selection_make_change_ratios(kth_size_t change_count) {

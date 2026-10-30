@@ -42,11 +42,18 @@ kth_error_code_t kth_core_binary_parse_from(char const* bit_string, KTH_OUT_OWNE
     KTH_PRECONDITION(bit_string != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const bit_string_cpp = std::string_view(bit_string);
-    auto result = cpp_t::parse_from(bit_string_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const bit_string_cpp = std::string_view(bit_string);
+        auto result = cpp_t::parse_from(bit_string_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

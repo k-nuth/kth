@@ -56,78 +56,127 @@ kth_error_code_t kth_wallet_payment_address_from_pay_public_key_hash_script(kth_
     KTH_PRECONDITION(script != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
-    auto result = cpp_t::from_pay_public_key_hash_script(script_cpp, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& script_cpp = kth::cpp_ref<kth::domain::chain::script>(script);
+        auto result = cpp_t::from_pay_public_key_hash_script(script_cpp, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_parse_from_simple(char const* address, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(address != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const address_cpp = std::string_view(address);
-    auto result = cpp_t::parse_from(address_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const address_cpp = std::string_view(address);
+        auto result = cpp_t::parse_from(address_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_parse_from(char const* address, kth_network_t net, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(address != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const address_cpp = std::string_view(address);
-    auto const net_cpp = kth::network_to_cpp(net);
-    auto result = cpp_t::parse_from(address_cpp, net_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const address_cpp = std::string_view(address);
+        auto const net_cpp = kth::network_to_cpp(net);
+        auto result = cpp_t::parse_from(address_cpp, net_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_from_payment(kth_payment_t const* decoded, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(decoded != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const decoded_cpp = kth::payment_to_cpp(decoded->hash);
-    auto result = cpp_t::from_payment(decoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const decoded_cpp = kth::payment_to_cpp(decoded->hash);
+        auto result = cpp_t::from_payment(decoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_from_payment_unsafe(uint8_t const* decoded, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(decoded != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const decoded_cpp = kth::payment_to_cpp(decoded);
-    auto result = cpp_t::from_payment(decoded_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const decoded_cpp = kth::payment_to_cpp(decoded);
+        auto result = cpp_t::from_payment(decoded_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_from_ec_private(kth_ec_private_const_t secret, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(secret != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
-    auto result = cpp_t::from_ec_private(secret_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& secret_cpp = kth::cpp_ref<kth::domain::wallet::ec_private>(secret);
+        auto result = cpp_t::from_ec_private(secret_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_payment_address_from_ec_public(kth_ec_public_const_t point, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out) {
     KTH_PRECONDITION(point != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const& point_cpp = kth::cpp_ref<kth::domain::wallet::ec_public>(point);
-    auto result = cpp_t::from_ec_public(point_cpp, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& point_cpp = kth::cpp_ref<kth::domain::wallet::ec_public>(point);
+        auto result = cpp_t::from_ec_public(point_cpp, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

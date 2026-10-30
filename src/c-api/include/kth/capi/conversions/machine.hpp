@@ -23,27 +23,27 @@ namespace kth {
 
 // Every byte 0..255 is a valid opcode value; there is no "out of range" the
 // way a discrete enum has.
-inline constexpr kth::domain::machine::opcode opcode_to_cpp(kth_opcode_t x) {
+inline constexpr kth::domain::machine::opcode opcode_to_cpp(kth_opcode_t x) noexcept {
     return ecast<kth::domain::machine::opcode>(x);
 }
 
-inline constexpr kth_opcode_t opcode_to_c(kth::domain::machine::opcode x) {
+inline constexpr kth_opcode_t opcode_to_c(kth::domain::machine::opcode x) noexcept {
     return ecast<kth_opcode_t>(x);
 }
 
 // `script_flags` is a bitfield: any bit pattern is a meaningful (if
 // possibly unknown) value and the interpreter ignores bits it does not
 // recognise, so validating against a fixed set of cases would be wrong.
-inline constexpr kth::domain::machine::script_flags script_flags_to_cpp(kth_script_flags_t x) {
+inline constexpr kth::domain::machine::script_flags script_flags_to_cpp(kth_script_flags_t x) noexcept {
     return ecast<kth::domain::machine::script_flags>(x);
 }
 
-inline constexpr kth_script_flags_t script_flags_to_c(kth::domain::machine::script_flags x) {
+inline constexpr kth_script_flags_t script_flags_to_c(kth::domain::machine::script_flags x) noexcept {
     return ecast<kth_script_flags_t>(x);
 }
 
 // Out-of-range C values map to `non_standard`.
-inline constexpr kth::domain::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t x) {
+inline constexpr kth::domain::machine::script_pattern script_pattern_to_cpp(kth_script_pattern_t x) noexcept {
     switch (x) {
         case kth_script_pattern_null_data:
             return kth::domain::machine::script_pattern::null_data;
@@ -75,7 +75,7 @@ inline constexpr kth::domain::machine::script_pattern script_pattern_to_cpp(kth_
     }
 }
 
-inline constexpr kth_script_pattern_t script_pattern_to_c(kth::domain::machine::script_pattern x) {
+inline constexpr kth_script_pattern_t script_pattern_to_c(kth::domain::machine::script_pattern x) noexcept {
     return ecast<kth_script_pattern_t>(x);
 }
 

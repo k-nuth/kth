@@ -30,11 +30,18 @@ kth_error_code_t kth_domain_chain_block_construct_from_data(uint8_t const* data,
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto result = cpp_t::from_data(data_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto result = cpp_t::from_data(data_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_block_mut_t kth_domain_chain_block_construct(kth_header_const_t header, kth_transaction_list_const_t transactions) {
@@ -153,17 +160,38 @@ kth_hash_t kth_domain_chain_block_generate_merkle_root(kth_block_const_t self) {
 
 kth_error_code_t kth_domain_chain_block_check(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).check()))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check());
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_block_check_body(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body());
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body()))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_body());
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_block_check_transactions(kth_block_const_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_transactions());
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_transactions()))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check_transactions());
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_size_t kth_domain_chain_block_non_coinbase_input_count(kth_block_const_t self) {

@@ -9,6 +9,7 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
+#include <memory>
 #include <kth/domain/machine/program.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -222,14 +223,28 @@ void kth_vm_program_reset_active_script(kth_program_mut_t self) {
 
 kth_error_code_t kth_vm_program_evaluate_simple(kth_program_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate().error);
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate().error))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate().error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_evaluate(kth_program_mut_t self, kth_operation_const_t op) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(op != nullptr);
-    auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate(op_cpp).error);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).evaluate(op_cpp).error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_bool_t kth_vm_program_increment_operation_count_operation(kth_program_mut_t self, kth_operation_const_t op) {
@@ -285,30 +300,51 @@ uint8_t* kth_vm_program_pop_simple(kth_program_mut_t self, kth_size_t* out_size)
 kth_error_code_t kth_vm_program_pop_int32(kth_program_mut_t self, int32_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const result = kth::cpp_ref<cpp_t>(self).pop_int32();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = static_cast<int32_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const result = kth::cpp_ref<cpp_t>(self).pop_int32();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<int32_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_int64(kth_program_mut_t self, int64_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const result = kth::cpp_ref<cpp_t>(self).pop_int64();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = static_cast<int64_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const result = kth::cpp_ref<cpp_t>(self).pop_int64();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<int64_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_number_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const maximum_size_cpp = kth::sz(maximum_size);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_number(maximum_size_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const maximum_size_cpp = kth::sz(maximum_size);
+        auto result = kth::cpp_ref<cpp_t>(self).pop_number(maximum_size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_first, KTH_OUT_OWNED kth_number_mut_t* out_second) {
@@ -317,11 +353,20 @@ kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED
     KTH_PRECONDITION(*out_first == nullptr);
     KTH_PRECONDITION(out_second != nullptr);
     KTH_PRECONDITION(*out_second == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_binary();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_first = kth::to_owned(std::move(result->first));
-    *out_second = kth::to_owned(std::move(result->second));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).pop_binary();
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_first = std::make_unique<kth::infrastructure::machine::number>(std::move(result->first));
+        auto staged_second = std::make_unique<kth::infrastructure::machine::number>(std::move(result->second));
+        *out_first = staged_first.release();
+        *out_second = staged_second.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_number_mut_t* out_0, KTH_OUT_OWNED kth_number_mut_t* out_1, KTH_OUT_OWNED kth_number_mut_t* out_2) {
@@ -332,23 +377,40 @@ kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNE
     KTH_PRECONDITION(*out_1 == nullptr);
     KTH_PRECONDITION(out_2 != nullptr);
     KTH_PRECONDITION(*out_2 == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_ternary();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_0 = kth::to_owned(std::move(std::get<0>(*result)));
-    *out_1 = kth::to_owned(std::move(std::get<1>(*result)));
-    *out_2 = kth::to_owned(std::move(std::get<2>(*result)));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).pop_ternary();
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_out_0 = std::make_unique<kth::infrastructure::machine::number>(std::move(std::get<0>(*result)));
+        auto staged_out_1 = std::make_unique<kth::infrastructure::machine::number>(std::move(std::get<1>(*result)));
+        auto staged_out_2 = std::make_unique<kth::infrastructure::machine::number>(std::move(std::get<2>(*result)));
+        *out_0 = staged_out_0.release();
+        *out_1 = staged_out_1.release();
+        *out_2 = staged_out_2.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_big_number(kth_program_mut_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const maximum_size_cpp = kth::sz(maximum_size);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_big_number(maximum_size_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const maximum_size_cpp = kth::sz(maximum_size);
+        auto result = kth::cpp_ref<cpp_t>(self).pop_big_number(maximum_size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_first, KTH_OUT_OWNED kth_big_number_mut_t* out_second) {
@@ -357,11 +419,20 @@ kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_O
     KTH_PRECONDITION(*out_first == nullptr);
     KTH_PRECONDITION(out_second != nullptr);
     KTH_PRECONDITION(*out_second == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_big_binary();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_first = kth::to_owned(std::move(result->first));
-    *out_second = kth::to_owned(std::move(result->second));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).pop_big_binary();
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_first = std::make_unique<kth::infrastructure::machine::big_number_gmp>(std::move(result->first));
+        auto staged_second = std::make_unique<kth::infrastructure::machine::big_number_gmp>(std::move(result->second));
+        *out_first = staged_first.release();
+        *out_second = staged_second.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_OWNED kth_big_number_mut_t* out_0, KTH_OUT_OWNED kth_big_number_mut_t* out_1, KTH_OUT_OWNED kth_big_number_mut_t* out_2) {
@@ -372,32 +443,56 @@ kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_
     KTH_PRECONDITION(*out_1 == nullptr);
     KTH_PRECONDITION(out_2 != nullptr);
     KTH_PRECONDITION(*out_2 == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).pop_big_ternary();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out_0 = kth::to_owned(std::move(std::get<0>(*result)));
-    *out_1 = kth::to_owned(std::move(std::get<1>(*result)));
-    *out_2 = kth::to_owned(std::move(std::get<2>(*result)));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).pop_big_ternary();
+        if ( ! result) return kth::to_c_err(result.error());
+        auto staged_out_0 = std::make_unique<kth::infrastructure::machine::big_number_gmp>(std::move(std::get<0>(*result)));
+        auto staged_out_1 = std::make_unique<kth::infrastructure::machine::big_number_gmp>(std::move(std::get<1>(*result)));
+        auto staged_out_2 = std::make_unique<kth::infrastructure::machine::big_number_gmp>(std::move(std::get<2>(*result)));
+        *out_0 = staged_out_0.release();
+        *out_1 = staged_out_1.release();
+        *out_2 = staged_out_2.release();
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop_index(kth_program_mut_t self, uint32_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const result = kth::cpp_ref<cpp_t>(self).pop_index();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = static_cast<uint32_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const result = kth::cpp_ref<cpp_t>(self).pop_index();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<uint32_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_pop(kth_program_mut_t self, kth_size_t count, KTH_OUT_OWNED kth_data_stack_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const count_cpp = kth::sz(count);
-    auto result = kth::cpp_ref<cpp_t>(self).pop(count_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::make_owned<kth::data_stack>(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const count_cpp = kth::sz(count);
+        auto result = kth::cpp_ref<cpp_t>(self).pop(count_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 void kth_vm_program_duplicate(kth_program_mut_t self, kth_size_t index) {
@@ -444,22 +539,36 @@ kth_error_code_t kth_vm_program_top_number(kth_program_const_t self, kth_size_t 
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const maximum_size_cpp = kth::sz(maximum_size);
-    auto result = kth::cpp_ref<cpp_t>(self).top_number(maximum_size_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const maximum_size_cpp = kth::sz(maximum_size);
+        auto result = kth::cpp_ref<cpp_t>(self).top_number(maximum_size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_program_top_big_number(kth_program_const_t self, kth_size_t maximum_size, KTH_OUT_OWNED kth_big_number_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const maximum_size_cpp = kth::sz(maximum_size);
-    auto result = kth::cpp_ref<cpp_t>(self).top_big_number(maximum_size_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const maximum_size_cpp = kth::sz(maximum_size);
+        auto result = kth::cpp_ref<cpp_t>(self).top_big_number(maximum_size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 void kth_vm_program_push_alternate(kth_program_mut_t self, uint8_t const* value, kth_size_t n) {

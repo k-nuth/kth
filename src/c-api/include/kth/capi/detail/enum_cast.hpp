@@ -14,7 +14,7 @@ namespace kth {
 // `static_cast`: it does not validate that the value names an enumerator.
 // Generated per-enum helpers provide validation and defaults where required.
 template <typename E, typename T>
-inline constexpr E ecast(T x) {
+inline constexpr E ecast(T x) noexcept(noexcept(static_cast<E>(x))) {
     return static_cast<E>(x);
 }
 

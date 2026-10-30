@@ -37,7 +37,7 @@ template <> struct forbids_struct_cast<kth_mining_info_t> : std::true_type {};
 template <>
 inline
 kth_mining_info_t to_c_struct<kth_mining_info_t, blockchain::mining_info>(
-    blockchain::mining_info const& cpp) {
+    blockchain::mining_info const& cpp) noexcept {
 
     // Zero-initialized, so a field added to the C struct before its assignment
     // is written here crosses as zero rather than as whatever was on the stack.

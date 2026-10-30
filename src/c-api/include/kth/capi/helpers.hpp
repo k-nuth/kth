@@ -12,6 +12,7 @@
 //   ownership.hpp          to_owned*, make_owned*, clone, del*
 //   buffers.hpp            C-owned buffer / string allocation and serialization
 //   errors.hpp             error-code mapping
+//   exception_barrier.hpp  exception policy at the C boundary (opt-in)
 //   value_conversions.hpp  generic array / POD struct conversion algorithms
 //   enum_cast.hpp          generic enum <-> integer cast
 //   secure_scrub.hpp       RAII wipe of sensitive stack copies
@@ -24,6 +25,7 @@
 #include <kth/capi/detail/buffers.hpp>
 #include <kth/capi/detail/enum_cast.hpp>
 #include <kth/capi/detail/errors.hpp>
+#include <kth/capi/detail/exception_barrier.hpp>
 #include <kth/capi/detail/handle_access.hpp>
 #include <kth/capi/detail/ownership.hpp>
 #include <kth/capi/detail/secure_scrub.hpp>

@@ -30,11 +30,18 @@ kth_error_code_t kth_domain_message_merkle_block_construct_from_data(uint8_t con
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto result = cpp_t::from_data(data_cpp, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto result = cpp_t::from_data(data_cpp, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_merkle_block_mut_t kth_domain_message_merkle_block_construct_from_header_total_transactions_hashes_flags(kth_header_const_t header, kth_size_t total_transactions, kth_hash_list_const_t hashes, uint8_t const* flags, kth_size_t n) {

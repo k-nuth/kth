@@ -17,6 +17,7 @@ option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE proper
 option(WITH_CONSOLE "Compile console application." ON)
 option(WITH_CONSOLE_CAPI "Compile console application." ON)
 option(DB_READONLY_MODE "Readonly DB mode enabled." OFF)
+option(KTH_CAPI_EXCEPTION_BARRIERS "Enable exception barriers in generated status-returning C-API wrappers." OFF)
 
 option(GLOBAL_BUILD "" ON)
 
@@ -476,6 +477,7 @@ set(kth_headers
     include/kth/capi/detail/buffers.hpp
     include/kth/capi/detail/enum_cast.hpp
     include/kth/capi/detail/errors.hpp
+    include/kth/capi/detail/exception_barrier.hpp
     include/kth/capi/detail/handle_access.hpp
     include/kth/capi/detail/ownership.hpp
     include/kth/capi/detail/secure_scrub.hpp
@@ -514,6 +516,10 @@ if (ENABLE_POSITION_INDEPENDENT_CODE)
 endif(ENABLE_POSITION_INDEPENDENT_CODE)
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DKTH_EXPORTS)
+
+if (KTH_CAPI_EXCEPTION_BARRIERS)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC -DKTH_CAPI_EXCEPTION_BARRIERS)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -585,6 +591,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     add_executable(kth_capi_test
         test/helpers.cpp
+        test/noexcept_contracts.cpp
         test/conversions.cpp
         test/binary.cpp
         test/chain/header.cpp
@@ -595,6 +602,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/output.cpp
         test/chain/input.cpp
         test/chain/transaction.cpp
+        test/chain/transaction_closure.cpp
         test/chain/block.cpp
         test/chain/compact_block.cpp
         test/chain/get_blocks.cpp
@@ -640,12 +648,39 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/data_stack.cpp
     )
 
+    # Baseline comparison builds skip the consuming Transaction constructor,
+    # which is available only in the regenerated C-API.
+    option(KTH_CAPI_TEST_NO_CONSTRUCT_MOVE "Skip tests of C-API functions added by regeneration." OFF)
+    if (KTH_CAPI_TEST_NO_CONSTRUCT_MOVE)
+        set_source_files_properties(test/chain/transaction_closure.cpp
+            PROPERTIES COMPILE_DEFINITIONS KTH_CAPI_TEST_NO_CONSTRUCT_MOVE)
+    endif()
+
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_capi_test PRIVATE Catch2::Catch2WithMain)
 
     include(CTest)
     include(Catch)
     catch_discover_tests(kth_capi_test)
+
+    # Real C++ exceptions through the generated wrappers. The executable
+    # replaces the global allocation functions to inject failures, so it is
+    # kept apart from kth_capi_test and built only with the barriers on.
+    if (KTH_CAPI_EXCEPTION_BARRIERS)
+        add_executable(kth_capi_exception_test test/exception_barriers.cpp)
+        target_link_libraries(kth_capi_exception_test PUBLIC ${PROJECT_NAME})
+        target_link_libraries(kth_capi_exception_test PRIVATE Catch2::Catch2WithMain)
+        # Real malloc exhaustion needs link-time interposition (GNU ld / lld),
+        # which only reaches the malloc calls linked into the executable. A
+        # shared C-API keeps its own malloc references, so the malloc-fault
+        # tests are enabled only when the C-API target is a static library.
+        get_target_property(_kth_capi_type ${PROJECT_NAME} TYPE)
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND _kth_capi_type STREQUAL "STATIC_LIBRARY")
+            target_compile_definitions(kth_capi_exception_test PRIVATE KTH_CAPI_TEST_MALLOC_WRAP)
+            target_link_options(kth_capi_exception_test PRIVATE -Wl,--wrap=malloc)
+        endif()
+        catch_discover_tests(kth_capi_exception_test)
+    endif()
 
     # README C snippet — compile-only check. Verbatim copy of the
     # README's "Using the C API" snippet. Builds, but is not

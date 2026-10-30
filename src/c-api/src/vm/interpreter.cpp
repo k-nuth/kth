@@ -21,16 +21,30 @@ extern "C" {
 
 kth_error_code_t kth_vm_interpreter_run_simple(kth_program_mut_t program) {
     KTH_PRECONDITION(program != nullptr);
-    auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
-    return kth::to_c_err(cpp_t::run(program_cpp).error);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+        return kth::to_c_err(cpp_t::run(program_cpp).error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_vm_interpreter_run(kth_operation_const_t op, kth_program_mut_t program) {
     KTH_PRECONDITION(op != nullptr);
     KTH_PRECONDITION(program != nullptr);
-    auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
-    auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
-    return kth::to_c_err(cpp_t::run(op_cpp, program_cpp).error);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& op_cpp = kth::cpp_ref<kth::domain::machine::operation>(op);
+        auto& program_cpp = kth::cpp_ref<kth::domain::machine::program>(program);
+        return kth::to_c_err(cpp_t::run(op_cpp, program_cpp).error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_debug_snapshot_mut_t kth_vm_interpreter_debug_begin(kth_program_const_t prog) {
@@ -74,8 +88,15 @@ kth_debug_snapshot_list_mut_t kth_vm_interpreter_debug_run_traced(kth_debug_snap
 
 kth_error_code_t kth_vm_interpreter_debug_finalize(kth_debug_snapshot_const_t snapshot) {
     KTH_PRECONDITION(snapshot != nullptr);
-    auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
-    return kth::to_c_err(cpp_t::debug_finalize(snapshot_cpp).error);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& snapshot_cpp = kth::cpp_ref<kth::domain::machine::debug_snapshot>(snapshot);
+        return kth::to_c_err(cpp_t::debug_finalize(snapshot_cpp).error);
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"

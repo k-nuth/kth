@@ -26,85 +26,134 @@ kth_error_code_t kth_wallet_ec_private_parse_from(char const* wif, uint8_t versi
     KTH_PRECONDITION(wif != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const wif_cpp = std::string_view(wif);
-    auto result = cpp_t::parse_from(wif_cpp, version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const wif_cpp = std::string_view(wif);
+        auto result = cpp_t::parse_from(wif_cpp, version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_compressed(kth_wif_compressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(wif != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto wif_cpp = kth::wif_compressed_to_cpp(wif->data);
-    kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
-    auto result = cpp_t::from_compressed(wif_cpp, address_version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto wif_cpp = kth::wif_compressed_to_cpp(wif->data);
+        kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
+        auto result = cpp_t::from_compressed(wif_cpp, address_version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_compressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(wif != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto wif_cpp = kth::wif_compressed_to_cpp(wif);
-    kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
-    auto result = cpp_t::from_compressed(wif_cpp, address_version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto wif_cpp = kth::wif_compressed_to_cpp(wif);
+        kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
+        auto result = cpp_t::from_compressed(wif_cpp, address_version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_uncompressed(kth_wif_uncompressed_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(wif != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto wif_cpp = kth::wif_uncompressed_to_cpp(wif->data);
-    kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
-    auto result = cpp_t::from_uncompressed(wif_cpp, address_version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto wif_cpp = kth::wif_uncompressed_to_cpp(wif->data);
+        kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
+        auto result = cpp_t::from_uncompressed(wif_cpp, address_version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_uncompressed_unsafe(uint8_t const* wif, uint8_t address_version, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(wif != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto wif_cpp = kth::wif_uncompressed_to_cpp(wif);
-    kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
-    auto result = cpp_t::from_uncompressed(wif_cpp, address_version);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto wif_cpp = kth::wif_uncompressed_to_cpp(wif);
+        kth::secure_scrub wif_cpp_scrub{&wif_cpp, sizeof(wif_cpp)};
+        auto result = cpp_t::from_uncompressed(wif_cpp, address_version);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_secret(kth_hash_t const* secret, uint16_t version, kth_bool_t compress, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(secret != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto secret_cpp = kth::hash_to_cpp(secret->hash);
-    kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_secret(secret_cpp, version, compress_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto secret_cpp = kth::hash_to_cpp(secret->hash);
+        kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+        auto const compress_cpp = kth::int_to_bool(compress);
+        auto result = cpp_t::from_secret(secret_cpp, version, compress_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_ec_private_from_secret_unsafe(uint8_t const* secret, uint16_t version, kth_bool_t compress, KTH_OUT_OWNED kth_ec_private_mut_t* out) {
     KTH_PRECONDITION(secret != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto secret_cpp = kth::hash_to_cpp(secret);
-    kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
-    auto const compress_cpp = kth::int_to_bool(compress);
-    auto result = cpp_t::from_secret(secret_cpp, version, compress_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto secret_cpp = kth::hash_to_cpp(secret);
+        kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+        auto const compress_cpp = kth::int_to_bool(compress);
+        auto result = cpp_t::from_secret(secret_cpp, version, compress_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_ec_private_mut_t kth_wallet_ec_private_from_verified_secret(kth_hash_t const* secret, uint16_t version, kth_bool_t compress) {
@@ -217,10 +266,17 @@ kth_error_code_t kth_wallet_ec_private_to_payment_address(kth_ec_private_const_t
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).to_payment_address();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).to_payment_address();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_hash_t kth_wallet_ec_private_value(kth_ec_private_const_t self) {

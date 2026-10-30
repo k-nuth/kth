@@ -30,12 +30,19 @@ kth_error_code_t kth_domain_chain_header_construct_from_data(uint8_t const* data
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const wire_cpp = kth::int_to_bool(wire);
+        auto result = cpp_t::from_data(data_cpp, wire_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_header_mut_t kth_domain_chain_header_construct(uint32_t version, kth_hash_t const* previous_block_hash, kth_hash_t const* merkle, uint32_t timestamp, uint32_t bits, uint32_t nonce) {
@@ -168,35 +175,63 @@ kth_bool_t kth_domain_chain_header_is_valid_proof_of_work_unsafe(kth_header_cons
 kth_error_code_t kth_domain_chain_header_check(kth_header_const_t self, kth_hash_t const* hash, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(hash != nullptr);
-    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    auto const retarget_cpp = kth::int_to_bool(retarget);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const hash_cpp = kth::hash_to_cpp(hash->hash);
+        auto const retarget_cpp = kth::int_to_bool(retarget);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_header_check_unsafe(kth_header_const_t self, uint8_t const* hash, kth_bool_t retarget) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(hash != nullptr);
-    auto const hash_cpp = kth::hash_to_cpp(hash);
-    auto const retarget_cpp = kth::int_to_bool(retarget);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const hash_cpp = kth::hash_to_cpp(hash);
+        auto const retarget_cpp = kth::int_to_bool(retarget);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).check(hash_cpp, retarget_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_header_accept(kth_header_const_t self, kth_chain_state_const_t state, kth_hash_t const* hash) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
     KTH_PRECONDITION(hash != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+        auto const hash_cpp = kth::hash_to_cpp(hash->hash);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_domain_chain_header_accept_unsafe(kth_header_const_t self, kth_chain_state_const_t state, uint8_t const* hash) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(state != nullptr);
     KTH_PRECONDITION(hash != nullptr);
-    auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
-    auto const hash_cpp = kth::hash_to_cpp(hash);
-    return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
+        auto const hash_cpp = kth::hash_to_cpp(hash);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(state_cpp, hash_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

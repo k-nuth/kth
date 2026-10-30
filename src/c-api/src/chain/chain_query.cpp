@@ -27,22 +27,36 @@ kth_error_code_t kth_chain_sync_block_height(kth_chain_t self, kth_hash_t const*
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(hash != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const hash_cpp = kth::hash_to_cpp(hash->hash);
-    auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_block_height(hash_cpp));
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = static_cast<kth_size_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const hash_cpp = kth::hash_to_cpp(hash->hash);
+        auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_block_height(hash_cpp));
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<kth_size_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_chain_sync_block_height_unsafe(kth_chain_t self, uint8_t const* hash, kth_size_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(hash != nullptr);
     KTH_PRECONDITION(out != nullptr);
-    auto const hash_cpp = kth::hash_to_cpp(hash);
-    auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_block_height(hash_cpp));
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = static_cast<kth_size_t>(*result);
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const hash_cpp = kth::hash_to_cpp(hash);
+        auto const result = kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).fetch_block_height(hash_cpp));
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<kth_size_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 void kth_chain_async_block_height(kth_chain_t self, void* ctx, kth_hash_t const* hash, kth_block_height_fetch_handler_t handler) {

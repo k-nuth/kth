@@ -7,11 +7,13 @@
 // which has no C surface. Kept here because that header lives alongside
 // the C-API and the tests guard it against regressions.
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -19,6 +21,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <kth/capi/error.h>
+#include <kth/capi/handles.h>
 #include <kth/capi/helpers.hpp>
 
 namespace {
@@ -223,6 +227,34 @@ TEST_CASE("kth::to_owned_if_success on error leaves a shared_ptr untouched",
     // neither should have moved from `*rv`) when ec != success.
     REQUIRE(lv->moved_from == false);
     REQUIRE(rv->moved_from == false);
+}
+
+// ---------------------------------------------------------------------------
+// kth::try_create_c_array — helper only (generated wrappers are covered by
+// the transaction closure tests and the exception-barrier executable)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("kth::try_create_c_array publishes buffer and length on success",
+          "[kth::try_create_c_array]") {
+    kth::data_chunk const data{9, 8, 7, 6};
+    uint8_t* out = nullptr;
+    kth_size_t out_size = 0;
+    REQUIRE(kth::try_create_c_array(data, &out, &out_size) == kth_ec_success);
+    REQUIRE(out != nullptr);
+    REQUIRE(out_size == data.size());
+    REQUIRE(std::equal(data.begin(), data.end(), out));
+    kth_core_destruct_array(out);
+}
+
+TEST_CASE("kth::try_create_c_array gives an empty array a non-null buffer",
+          "[kth::try_create_c_array]") {
+    kth::data_chunk const empty;
+    uint8_t* out = nullptr;
+    kth_size_t out_size = 0xdeadu;
+    REQUIRE(kth::try_create_c_array(empty, &out, &out_size) == kth_ec_success);
+    REQUIRE(out != nullptr);
+    REQUIRE(out_size == 0);
+    kth_core_destruct_array(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -484,3 +516,36 @@ TEST_CASE("kth::make_owned_list forwards every vector constructor shape",
     REQUIRE(*listed == std::vector<int>{1, 2});
     REQUIRE(*ranged == src);
 }
+
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+
+// ---------------------------------------------------------------------------
+// kth::capi_invoke — helper only
+// ---------------------------------------------------------------------------
+
+TEST_CASE("kth::capi_invoke passes through the result of a noexcept operation",
+          "[kth::capi_invoke]") {
+    auto success = [&]() noexcept -> kth_error_code_t { return kth_ec_success; };
+    auto failure = [&]() noexcept -> kth_error_code_t { return kth_ec_invalid_size; };
+    static_assert(noexcept(kth::capi_invoke(success)));
+    REQUIRE(kth::capi_invoke(success) == kth_ec_success);
+    REQUIRE(kth::capi_invoke(failure) == kth_ec_invalid_size);
+}
+
+TEST_CASE("kth::capi_invoke keeps the exact code of a returned domain error",
+          "[kth::capi_invoke]") {
+    auto failure = [&]() noexcept(false) -> kth_error_code_t { return kth_ec_invalid_size; };
+    REQUIRE(kth::capi_invoke(failure) == kth_ec_invalid_size);
+}
+
+TEST_CASE("kth::capi_invoke maps thrown exceptions to the boundary codes",
+          "[kth::capi_invoke]") {
+    auto oom = [&]() noexcept(false) -> kth_error_code_t { throw std::bad_alloc(); };
+    auto other = [&]() noexcept(false) -> kth_error_code_t { throw std::runtime_error("x"); };
+    auto custom = [&]() noexcept(false) -> kth_error_code_t { throw 42; };
+    REQUIRE(kth::capi_invoke(oom) == kth_ec_out_of_memory);
+    REQUIRE(kth::capi_invoke(other) == kth_ec_unhandled_exception);
+    REQUIRE(kth::capi_invoke(custom) == kth_ec_unhandled_exception);
+}
+
+#endif // KTH_CAPI_EXCEPTION_BARRIERS

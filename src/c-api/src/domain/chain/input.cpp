@@ -26,12 +26,19 @@ kth_error_code_t kth_domain_chain_input_construct_from_data(uint8_t const* data,
     KTH_PRECONDITION(data != nullptr || n == 0);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
-    auto const wire_cpp = kth::int_to_bool(wire);
-    auto result = cpp_t::from_data(data_cpp, wire_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const wire_cpp = kth::int_to_bool(wire);
+        auto result = cpp_t::from_data(data_cpp, wire_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_input_mut_t kth_domain_chain_input_construct(kth_output_point_const_t previous_output, kth_script_const_t script, uint32_t sequence) {
@@ -121,10 +128,17 @@ kth_error_code_t kth_domain_chain_input_extract_embedded_script(kth_input_const_
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).extract_embedded_script();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).extract_embedded_script();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

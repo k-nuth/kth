@@ -147,8 +147,32 @@ inline T* clone(void const* h) {
 }
 
 // ---------------------------------------------------------------------------
-// Releasing
+// Consuming and releasing
 // ---------------------------------------------------------------------------
+
+// Consume an owned mutable handle passed by address. The caller's slot is
+// nulled immediately and the returned `std::unique_ptr` owns the object, so
+// the handle is released whether the surrounding operation succeeds or
+// throws. Generated consuming constructors (`*_construct_move`) use this to
+// document that the passed handles are always consumed, including on error.
+// The caller must have checked `handle != nullptr && *handle != nullptr`.
+template <typename T>
+inline std::unique_ptr<T> take(void** handle) noexcept {
+    auto* object = static_cast<T*>(*handle);
+    *handle = nullptr;
+    return std::unique_ptr<T>(object);
+}
+
+// Hold a freshly promoted object (`to_owned` / `make_owned` result) in a
+// `std::unique_ptr` while a wrapper finishes converting its other outputs. A
+// wrapper that has to promote more than one object stages each of them with
+// this and publishes the handles (`release()`) only after the last conversion
+// that can throw, so an exception frees everything already staged and the
+// caller sees no output at all. Wrapping the raw pointer cannot throw.
+template <typename T>
+inline std::unique_ptr<T> stage_owned(T* object) noexcept {
+    return std::unique_ptr<T>(object);
+}
 
 // Inverse of `to_owned` / `make_owned` / `make_owned_list`: hands an opaque C
 // handle back to `delete`. Null-safe, so generated destructors can call this

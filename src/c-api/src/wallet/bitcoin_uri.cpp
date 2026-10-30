@@ -26,12 +26,19 @@ kth_error_code_t kth_wallet_bitcoin_uri_parse_from(char const* uri, kth_bool_t s
     KTH_PRECONDITION(uri != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto const uri_cpp = std::string_view(uri);
-    auto const strict_cpp = kth::int_to_bool(strict);
-    auto result = cpp_t::parse_from(uri_cpp, strict_cpp);
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const uri_cpp = std::string_view(uri);
+        auto const strict_cpp = kth::int_to_bool(strict);
+        auto result = cpp_t::parse_from(uri_cpp, strict_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 
@@ -100,20 +107,34 @@ kth_error_code_t kth_wallet_bitcoin_uri_payment(kth_bitcoin_uri_const_t self, KT
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).payment();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).payment();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 kth_error_code_t kth_wallet_bitcoin_uri_stealth(kth_bitcoin_uri_const_t self, KTH_OUT_OWNED kth_stealth_address_mut_t* out) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(out != nullptr);
     KTH_PRECONDITION(*out == nullptr);
-    auto result = kth::cpp_ref<cpp_t>(self).stealth();
-    if ( ! result) return kth::to_c_err(result.error());
-    *out = kth::to_owned(std::move(*result));
-    return kth_ec_success;
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto result = kth::cpp_ref<cpp_t>(self).stealth();
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 char* kth_wallet_bitcoin_uri_to_string(kth_bitcoin_uri_const_t self) {

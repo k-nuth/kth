@@ -18,7 +18,7 @@
 namespace kth {
 
 // Out-of-range C values map to `all`.
-inline constexpr kth::node::start_modules start_modules_to_cpp(kth_start_modules_t x) {
+inline constexpr kth::node::start_modules start_modules_to_cpp(kth_start_modules_t x) noexcept {
     switch (x) {
         case kth_start_modules_just_chain:
             return kth::node::start_modules::just_chain;
@@ -30,7 +30,7 @@ inline constexpr kth::node::start_modules start_modules_to_cpp(kth_start_modules
     }
 }
 
-inline constexpr kth_start_modules_t start_modules_to_c(kth::node::start_modules x) {
+inline constexpr kth_start_modules_t start_modules_to_c(kth::node::start_modules x) noexcept {
     return ecast<kth_start_modules_t>(x);
 }
 
