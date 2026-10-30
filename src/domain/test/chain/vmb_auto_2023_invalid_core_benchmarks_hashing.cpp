@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2023_invalid) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2023_invalid_4 {
 // Source: test/scripts/vmb_tests/bch_2023_invalid/core.benchmarks.hashing.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"f8q8qr", "Transaction validation benchmarks: OP_RIPEMD160 hash 1335 bytes (nonP2SH)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000045102370500000000010000000000000000016a00000000", "0110270000000000000280a6", 0, false},
     {"z83vh9", "Transaction validation benchmarks: OP_RIPEMD160 hash 1335 bytes (P2SH20)", "020000000101000000000000000000000000000000000000000000000000000000000000000000000007510237050280a600000000010000000000000000016a00000000", "01102700000000000017a91447ffba5fe8a1a597d2f7a542bd7b6f36b971ebc287", 0, false},
     {"9susd7", "Transaction validation benchmarks: OP_RIPEMD160 hash 1335 bytes (P2SH32)", "020000000101000000000000000000000000000000000000000000000000000000000000000000000007510237050280a600000000010000000000000000016a00000000", "01102700000000000023aa20e7c54320a9d2f1fba2c91e71e841815b9943d450fd9b056d359a6489f829bf8087", 0, false},
@@ -117,12 +116,7 @@ static vmb_entry const entries[] = {
     {"zsh52j", "Transaction validation benchmarks: OP_HASH256 hash 10000 bytes (P2SH20)", "020000000101000000000000000000000000000000000000000000000000000000000000000000000007510210270280aa00000000010000000000000000016a00000000", "01102700000000000017a9140809ed3e07e8593f4cd1edc1accaadd5ffd10f1587", 0, false},
     {"gpe444", "Transaction validation benchmarks: OP_HASH256 hash 10000 bytes (P2SH32)", "020000000101000000000000000000000000000000000000000000000000000000000000000000000007510210270280aa00000000010000000000000000016a00000000", "01102700000000000023aa20a39001da405327efca900eb9459788bd91cdbe235a50d8e689fe592a88920d0a87", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2023 invalid - core.benchmarks.hashing", "[vmb][2023][invalid]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, false, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2023_invalid/core.benchmarks.hashing.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, false
+};
+} // namespace kth::test::data_vmb_2023_invalid_4

@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2023_nonstandard) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2023_nonstandard_32 {
 // Source: test/scripts/vmb_tests/bch_2023_nonstandard/core.cashtokens.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"2erf2l", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment) (nonP2SH)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000000000000001e80300000000000029ef02000000000000000000000000000000000000000000000000000000000000006005010203ff005100000000", "0110270000000000000151", 0, false},
     {"hmk7xc", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment: P2SH20 dust, P2SH32 dust) (nonP2SH)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000000000000001930200000000000029ef02000000000000000000000000000000000000000000000000000000000000006005010203ff005100000000", "0110270000000000000151", 0, false},
     {"0cgg6z", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment: P2SH20 dust, P2SH32 dust) (P2SH20)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000020151000000000193020000000000003fef02000000000000000000000000000000000000000000000000000000000000006005010203ff00a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b8700000000", "01102700000000000017a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b87", 0, false},
@@ -358,12 +357,7 @@ static vmb_entry const entries[] = {
     {"pnre84", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 520, expect 520) (P2SH20)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000090800cd8202080287770000000001e803000000000000fd2d02ef020000000000000000000000000000000000000000000000000000000000000010fdfd006a4d0402000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0001020300000000", "01102700000000000017a914d8e2994b5605471b016d9c0e756c4cabfcab776e87", 0, false},
     {"z3sjs4", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 520, expect 520) (P2SH32)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000090800cd8202080287770000000001e803000000000000fd2d02ef020000000000000000000000000000000000000000000000000000000000000010fdfd006a4d0402000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0001020300000000", "01102700000000000023aa2052674f666a4220ec8a06bdc3656176a62367ff84d7c625c277c5f4f45d0bfe0987", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2023 nonstandard - core.cashtokens", "[vmb][2023][nonstandard]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, true, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2023_nonstandard/core.cashtokens.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, true
+};
+} // namespace kth::test::data_vmb_2023_nonstandard_32

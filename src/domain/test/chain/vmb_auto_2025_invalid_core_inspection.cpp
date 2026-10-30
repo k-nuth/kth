@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2025_invalid) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2025_invalid_40 {
 // Source: test/scripts/vmb_tests/bch_2025_invalid/core.inspection.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"9pgg0a", "Transaction inspection: OP_INPUTINDEX returns the index of the input currently being evaluated (1, expects 0) (P2S)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e785000000000100000000000000000000000000000000000000000000000000000000000000010000000100000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000002c087", 1, false},
     {"th5qa0", "Transaction inspection: OP_INPUTINDEX returns the index of the input currently being evaluated (1, expects 0) (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000040002c087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a914831f3ffbbc3ca255c066793fddd84dc36c531b4387", 1, false},
     {"ccexd6", "Transaction inspection: OP_INPUTINDEX returns the index of the input currently being evaluated (1, expects 0) (P2SH32)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000040002c087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa20d8d77f3a26f4d6ae8081d30f438fd56a432584cdabd9aaf74f572e59d983a4f087", 1, false},
@@ -175,12 +174,7 @@ static vmb_entry const entries[] = {
     {"0cvll8", "Transaction inspection: OP_OUTPUTBYTECODE (ignore result, output 2, greater than maximum output index) (P2SH20)", "02000000020100000000000000000000000000000000000000000000000000000000000000000000006441ce56245cfe9f8eb944ed10bd3529bd150a153ea98f907bfc030203caf46df4fb8cc7583c75ed20b0230bad60c763176d35e6e62b6381c94dcdd842f05f6e233fc32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e7850000000001000000000000000000000000000000000000000000000000000000000000000100000005510352cd750000000002102700000000000017a914b71b0e470dfe912afd84f6185097078a0ff7477787112700000000000017a914b71b0e470dfe912afd84f6185097078a0ff747778700000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a914b71b0e470dfe912afd84f6185097078a0ff7477787", 1, false},
     {"2vjl4a", "Transaction inspection: OP_OUTPUTBYTECODE (ignore result, output 2, greater than maximum output index) (P2SH32)", "02000000020100000000000000000000000000000000000000000000000000000000000000000000006441958b09b8be16b79776a49987ee69e1a98698626893d75459d8babf5c05dd70df1b70f3a4d374fc858152c6cc4fcbd5d027f28a00896fd6ad2a24cbdb5b515bd6c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e7850000000001000000000000000000000000000000000000000000000000000000000000000100000005510352cd750000000002102700000000000023aa205141187f3555acf1f9dee8c8c0622397076ff082669092dbb75e135ebb1931bd87112700000000000023aa205141187f3555acf1f9dee8c8c0622397076ff082669092dbb75e135ebb1931bd8700000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa205141187f3555acf1f9dee8c8c0622397076ff082669092dbb75e135ebb1931bd87", 1, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2025 invalid - core.inspection", "[vmb][2025][invalid]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, false, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2025_invalid/core.inspection.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, false
+};
+} // namespace kth::test::data_vmb_2025_invalid_40

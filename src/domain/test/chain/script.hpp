@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "bchn_vectors.hpp"
+
 
 /**
  * Structure representing a single script test case.
@@ -22,21 +24,7 @@ struct script_test {
     uint32_t version;
 };
 
-/**
- * Structure representing a single script test case for BCHN.
- * This includes additional fields for flags and expected error codes.
- */
-struct bchn_script_test {
-    std::string script_sig;         ///< The scriptSig (input script)
-    std::string script_pub_key;     ///< The scriptPubKey (output script)
-    kth::domain::script_flags_t flags;     ///< Active flag rules (OR of kth::domain::machine::script_flags values)
-    kth::error::error_code_t expected_error; ///< Expected error code
-    std::string comment;            ///< Test description/comment
-    uint64_t amount{0};             ///< Input amount in satoshis (for SIGHASH_FORKID tests)
-};
-
 using script_test_list = std::vector<script_test>;
-using bchn_script_test_list = std::vector<bchn_script_test>;
 
 // bip16
 //------------------------------------------------------------------------------

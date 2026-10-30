@@ -41,3 +41,11 @@
 *.bat   text eol=crlf
 *.cmd   text eol=crlf
 *.ps1   text eol=crlf
+
+# Imported vector tables are reproducible data. Collapse their generated diffs
+# so GitHub can display the runner, packing logic and inventory for review.
+# Files remain text, and their complete contents can still be opened or expanded.
+src/domain/test/chain/script_vm_auto_*.cpp linguist-generated=true
+src/domain/test/chain/vmb_auto_*.cpp linguist-generated=true
+src/domain/test/chain/imported_*_data.cpp linguist-generated=true
+src/domain/test/chain/imported_*_data_*.inc linguist-generated=true
