@@ -1,3 +1,44 @@
+# version 1.5.0
+
+You can install Knuth node version v1.5.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* Update CLI11 to 2.7.2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/718
+* Strengthen reorg state checks and stabilize timer coverage by @fpelliccioni in https://github.com/k-nuth/kth/pull/717
+* deps: update Conan dependencies to the latest Conan Center releases by @fpelliccioni in https://github.com/k-nuth/kth/pull/719
+* blockchain: apply the SigChecks per-transaction limit of each block's own rules by @fpelliccioni in https://github.com/k-nuth/kth/pull/720
+* node: resume the body download above the bodies the store already holds by @fpelliccioni in https://github.com/k-nuth/kth/pull/722
+* sync: use lossless Asio selection for block download and shutdown by @fpelliccioni in https://github.com/k-nuth/kth/pull/723
+* test: fix stored-body response sends after Asio channel migration by @fpelliccioni in https://github.com/k-nuth/kth/pull/730
+* node: admit the first body range on an empty genesis store by @fpelliccioni in https://github.com/k-nuth/kth/pull/726
+* infrastructure: update vendored secp256k1 to v0.8.0 with BCH Schnorr by @fpelliccioni in https://github.com/k-nuth/kth/pull/541
+* build: update local and CI Emscripten toolchains to 6.0.13 by @fpelliccioni in https://github.com/k-nuth/kth/pull/729
+* deps: update Catch2 to 3.16.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/727
+* deps: update simdutf to 9.3.2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/731
+* blockchain: remove stray nodiscard attribute from data member by @fpelliccioni in https://github.com/k-nuth/kth/pull/738
+* Refactor C API helpers and generate type conversions by @fpelliccioni in https://github.com/k-nuth/kth/pull/741
+* Update C API public headers by @fpelliccioni in https://github.com/k-nuth/kth/pull/742
+* test: wait for concurrent channel producers before executor shutdown by @fpelliccioni in https://github.com/k-nuth/kth/pull/737
+* deps: use published LMDB source mirrors by @fpelliccioni in https://github.com/k-nuth/kth/pull/740
+* Add native HD derivation path parsing and derivation by @fpelliccioni in https://github.com/k-nuth/kth/pull/743
+* Declare byte_reader construction and accessors noexcept by @fpelliccioni in https://github.com/k-nuth/kth/pull/744
+* mempool: preserve first-seen claims during concurrent removals by @fpelliccioni in https://github.com/k-nuth/kth/pull/736
+* Reject noncanonical CompactSize during deserialization by @fpelliccioni in https://github.com/k-nuth/kth/pull/735
+* Declare non-allocating domain from_data factories noexcept by @fpelliccioni in https://github.com/k-nuth/kth/pull/745
+* deps: update OpenSSL to 4.1.0 and B2 to 5.6.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/724
+* Install database detail header required by public headers by @fpelliccioni in https://github.com/k-nuth/kth/pull/746
+* Separate generated C-API adapters from hand-written sources by @fpelliccioni in https://github.com/k-nuth/kth/pull/749
+* Separate BCH transaction consensus limits from Knuth standardness by @fpelliccioni in https://github.com/k-nuth/kth/pull/728
+* Declare non-allocating domain serializers noexcept by @fpelliccioni in https://github.com/k-nuth/kth/pull/747
+* Return serialization errors for valueless token variants by @fpelliccioni in https://github.com/k-nuth/kth/pull/748
+* Complete exception barriers for C API status functions by @fpelliccioni in https://github.com/k-nuth/kth/pull/739
+* Reduce compilation cost of imported script vectors by @fpelliccioni in https://github.com/k-nuth/kth/pull/753
+* release: 1.5.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/750
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.4.0...v1.5.0
+
+
 # version 1.4.0
 
 You can install Knuth node version v1.4.0 [using these instructions](https://kth.cash/#download).
