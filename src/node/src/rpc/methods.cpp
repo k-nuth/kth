@@ -239,7 +239,8 @@ get_block(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
-// getblockheader <blockhash> -> the header fields (verbose).
+// getblockheader <blockhash> [verbose=true] -> the header fields, or with
+// verbose=false the 80-byte serialized header as hex.
 // C-API counterpart: kth_chain_sync_block_header_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_header(method_context& ctx, request const& req) {
@@ -252,10 +253,21 @@ get_block_header(method_context& ctx, request const& req) {
     if ( ! hash) {
         co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
     }
+    auto const verbose = params_bool(req.params, 1, /*fallback*/ true);
+    if ( ! verbose) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "verbose must be a boolean"));
+    }
     auto const result = co_await ctx.chain.fetch_block_header(*hash);
     if ( ! result) {
         co_return std::unexpected(from_code(result.error()));
     }
+    if ( ! *verbose) {
+        writer w;
+        w.value(header_to_hex(*std::get<0>(*result)));
+        co_return w.str();
+    }
+
     auto const& [header, height] = *result;
     co_return render_block_header(*header, height, *hash);
 }

@@ -73,7 +73,7 @@ counterpart.
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
-| `getblockheader` | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
+| `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |

@@ -137,6 +137,49 @@ std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size
     return std::nullopt;
 }
 
+std::optional<bool> params_bool(std::string_view params_json, std::size_t index, bool fallback) {
+    if (params_json.empty()) {
+        return fallback;
+    }
+
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params_json);
+
+    simdjson::ondemand::document doc;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
+        return fallback;
+    }
+
+    simdjson::ondemand::array arr;
+    if (doc.get_array().get(arr) != simdjson::SUCCESS) {
+        return fallback;
+    }
+
+    std::size_t i = 0;
+    for (auto element : arr) {
+        if (i != index) {
+            ++i;
+            continue;
+        }
+        simdjson::ondemand::value value;
+        simdjson::ondemand::json_type type;
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.type().get(type) != simdjson::SUCCESS) {
+            return std::nullopt;
+        }
+        if (type == simdjson::ondemand::json_type::null) {
+            return fallback;
+        }
+        bool out = false;
+        if (type == simdjson::ondemand::json_type::boolean &&
+            value.get_bool().get(out) == simdjson::SUCCESS) {
+            return out;
+        }
+        return std::nullopt;
+    }
+    return fallback;
+}
+
 std::string build_success(std::string_view id_raw, std::string_view result_raw) {
     writer w;
     w.begin_object();

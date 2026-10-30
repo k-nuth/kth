@@ -40,6 +40,11 @@ std::vector<std::string> params_strings(std::string_view params_json);
 // or not a non-negative integer.
 std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index);
 
+// The positional param at `index` as a boolean (e.g. getblockheader's
+// `verbose`). `fallback` when the param is absent or null; nullopt when it is
+// present but not a JSON boolean, so the handler can report invalid params.
+std::optional<bool> params_bool(std::string_view params_json, std::size_t index, bool fallback);
+
 // Build the response envelopes. `result_raw` / `id_raw` are already-serialized
 // JSON fragments and are emitted verbatim.
 std::string build_success(std::string_view id_raw, std::string_view result_raw);
