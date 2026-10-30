@@ -669,6 +669,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/pseudo_random.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
+    test/unicode/streambuf.cpp
     test/utility/byte_writer.cpp
     test/utility/thread.cpp
     test/utility/threadpool.cpp

@@ -4,6 +4,8 @@
 
 #include <kth/node/executor/executor.hpp>
 
+#include <type_traits>
+
 #include <kth/node/detail/scope_action.hpp>
 
 #include <csignal>
@@ -558,8 +560,8 @@ executor::admission executor::admit_start() {
     // already published and no guard yet in place to pay it — and a release then
     // waits for an outcome that will never come. They are built by the
     // constructor now, where a throw means there is no executor and nothing owed.
-    static_assert(noexcept(start_admitted_ = true));
-    static_assert(noexcept(state_ = state::starting));
+    static_assert(std::is_nothrow_assignable_v<decltype(start_admitted_)&, bool>);
+    static_assert(noexcept(state_.operator=(state::starting)));
 
     start_admitted_ = true;
     state_ = state::starting;

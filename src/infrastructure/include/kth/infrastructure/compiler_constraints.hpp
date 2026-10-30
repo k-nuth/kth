@@ -95,15 +95,6 @@
 #endif
 
 // -----------------------------------------------------------------------------
-// WebAssembly / Emscripten Constraints
-// -----------------------------------------------------------------------------
-
-#if defined(__EMSCRIPTEN__)
-    // Coroutines are not yet fully supported in Emscripten/WebAssembly
-    #warning "WebAssembly builds may have limited coroutine support."
-#endif
-
-// -----------------------------------------------------------------------------
 // Standard Library Headers (must be included before validation)
 // -----------------------------------------------------------------------------
 // Order matters: <compare> must come before <coroutine> on some implementations
@@ -142,6 +133,12 @@ struct test_coroutine_promise {
     };
     test_coro get_return_object() noexcept { return {}; }
 };
+
+// Compile an actual coroutine on every target, including Emscripten. Checking
+// feature macros alone would not exercise promise discovery and lowering.
+inline test_coroutine_promise::test_coro test_coroutine() {
+    co_return;
+}
 
 // Verify std::expected support at compile time
 static_assert(requires { std::expected<int, int>{42}.value(); },

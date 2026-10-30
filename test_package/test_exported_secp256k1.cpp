@@ -8,9 +8,15 @@
 #include <secp256k1_ellswift.h>
 #include <secp256k1_schnorr.h>
 
+struct context_deleter {
+    void operator()(secp256k1_context* context) const noexcept {
+        secp256k1_context_destroy(context);
+    }
+};
+
 int main() {
-    std::unique_ptr<secp256k1_context, decltype(&secp256k1_context_destroy)> context(
-        secp256k1_context_create(SECP256K1_CONTEXT_NONE), secp256k1_context_destroy);
+    std::unique_ptr<secp256k1_context, context_deleter> context(
+        secp256k1_context_create(SECP256K1_CONTEXT_NONE));
     unsigned char key[32] = {};
     unsigned char message[32] = {};
     unsigned char signature[64] = {};

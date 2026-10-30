@@ -52,6 +52,7 @@ install(TARGETS secp256k1
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
+    PUBLIC_HEADER DESTINATION include
 )
 install(FILES
     secp256k1/include/secp256k1.h
