@@ -1774,13 +1774,17 @@ TEST_CASE("kth::to_unique (helper only) leaves nothing allocated when the constr
         // Second promotion fails inside the copy constructor: the allocation
         // made for it is returned and the first staged object is released
         // during unwinding.
-        promoted_value::throw_on_copy = true;
         auto const staged_both = [&] {
             [[maybe_unused]] auto kept = kth::to_unique(source);
+            REQUIRE(g_live_allocations.load() == live_before + 2);
+            promoted_value::throw_on_copy = true;
             return kth::to_unique(source);
         };
         REQUIRE_THROWS_AS(staged_both(), std::runtime_error);
         promoted_value::throw_on_copy = false;
+        // Only the outer `first` and `kept` were copied successfully, so the
+        // failure really happened at the second construction.
+        REQUIRE(promoted_value::copies == 2);
         REQUIRE(g_live_allocations.load() == live_before + 1);
     }
     REQUIRE(g_live_allocations.load() == live_before);
