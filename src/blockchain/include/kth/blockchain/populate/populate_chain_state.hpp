@@ -50,6 +50,14 @@ private:
     bool populate_timestamps(data& data, map const& map, branch_ptr branch) const;
     bool populate_collision(data& data, map const& map, branch_ptr branch) const;
 
+#if defined(KTH_CURRENCY_BCH)
+    /// CHIP-2025-03: when the parent's median time past has reached the
+    /// activation time, find H_a on THIS branch (pool blocks first, then the
+    /// shared ancestors). Branch-local and recomputed from the branch; nothing
+    /// is remembered between calls.
+    bool populate_faster_blocks(data& data, branch_ptr branch) const;
+#endif
+
 #if ! defined(KTH_CURRENCY_BCH)
     bool populate_bip9_bit0(data& data, map const& map, branch_ptr branch) const;
     bool populate_bip9_bit1(data& data, map const& map, branch_ptr branch) const;

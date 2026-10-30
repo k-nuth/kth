@@ -28,7 +28,8 @@ std::string block_to_hex(domain::chain::block const& block) {
 
 std::string render_blockchain_info(
     std::string_view chain, std::size_t blocks, std::size_t headers,
-    std::string_view best_block_hash, double difficulty) {
+    std::string_view best_block_hash, double difficulty,
+    std::optional<chain_progress> progress) {
 
     writer w;
     w.begin_object();
@@ -37,6 +38,11 @@ std::string render_blockchain_info(
     w.field("headers", static_cast<std::uint64_t>(headers));
     w.field("bestblockhash", best_block_hash);
     w.field("difficulty", difficulty);
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+        w.field("next_target_time", progress->next_target_time);
+    }
     w.end_object();
     return w.str();
 }
@@ -96,11 +102,17 @@ std::string header_to_hex(domain::chain::header const& header) {
 }
 
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash) {
+                                std::size_t height, hash_digest const& hash,
+                                std::optional<chain_progress> progress) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
     w.field("height", static_cast<std::uint64_t>(height));
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+        w.field("next_target_time", progress->next_target_time);
+    }
     w.field("version", static_cast<std::int64_t>(header.version()));
     w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     w.field("merkleroot", encode_hash(header.merkle()));

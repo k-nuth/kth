@@ -104,6 +104,10 @@ if(ENABLE_TEST)
     message(STATUS "Knuth: Enabling CTest (ENABLE_TEST=${ENABLE_TEST})")
     enable_testing()
     find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME kth_header_capacity
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_header_capacity.py)
+    endif()
 endif()
 
 add_subdirectory(src)

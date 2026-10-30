@@ -10,6 +10,9 @@
 
 #include <kth/blockchain/define.hpp>
 #include <kth/database/header_index.hpp>
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/domain/chain/block_ticks.hpp>
+#endif
 
 namespace kth::blockchain {
 
@@ -17,8 +20,8 @@ namespace kth::blockchain {
 // (validation.cpp FindBlockToFinalize / IsBlockFinalized).
 //
 // The finalized block is the deepest block on the active chain that is both
-//   (a) at least `max_reorg_depth` blocks below the active block-validation tip
-//       (BCHN -maxreorgdepth, default 10), and
+//   (a) at least `max_reorg_depth` ten-minute units below the active
+//       block-validation tip (6000 ticks at the default 10), and
 //   (b) old enough: its header was received at least `finalization_delay`
 //       seconds ago (BCHN -finalizationdelay, default 2h). A reception time of 0
 //       means "loaded from the store at startup" and is always eligible.
@@ -44,6 +47,12 @@ struct KB_API finalization {
     // have been validated. `now` is wall-clock unix seconds. No-op if nothing new
     // is eligible; never moves the pointer backward.
     void maybe_advance(index_t active_tip_idx, int32_t block_valid_height, int64_t now);
+#if defined(KTH_CURRENCY_BCH)
+    // The owner supplies the validated branch's immutable interval schedule.
+    // This excludes headers ahead of block_valid_height from the depth gate.
+    void maybe_advance(index_t active_tip_idx, int32_t block_valid_height, int64_t now,
+                       domain::chain::block_ticks const& schedule);
+#endif
 
     // The finalized block, or null_index if nothing is finalized yet.
     [[nodiscard]] index_t finalized() const { return finalized_idx_.load(std::memory_order_acquire); }

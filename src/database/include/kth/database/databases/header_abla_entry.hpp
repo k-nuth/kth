@@ -12,6 +12,16 @@ namespace kth::database {
 
 using header_with_abla_state_t = std::tuple<domain::chain::header, uint64_t, uint64_t, uint64_t>;
 
+// The ABLA state OF the block at `height`: its own size and the control block
+// size and elastic buffer that govern it. The block interval is not stored; it
+// is a function of the branch schedule and is derived when the record is read.
+struct header_abla_record {
+    uint32_t height{};
+    uint64_t block_size{};
+    uint64_t control_block_size{};
+    uint64_t elastic_buffer_size{};
+};
+
 data_chunk to_data_with_abla_state(domain::chain::block const& block, domain::chain::abla::state const& abla_state);
 data_chunk to_data_header_only(domain::chain::header const& header);
 data_chunk to_data_header_with_abla_state(domain::chain::header const& header, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size);

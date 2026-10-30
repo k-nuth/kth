@@ -43,13 +43,20 @@ output_point& output_point::operator=(point const& x) {
 
 // For tx pool validation height is that of the candidate block.
 bool output_point::is_mature(size_t height) const {
+    return is_mature(block_ticks{}, height);
+}
+
+bool output_point::is_mature(block_ticks const& ticks, size_t height) const {
     // Coinbase (null) inputs and those with non-coinbase prevouts are mature.
     if ( ! validation.coinbase || is_null()) {
         return true;
     }
 
-    // The (non-coinbase) input refers to a coinbase output, so validate depth.
-    return floor_subtract(height, validation.height) >= coinbase_maturity;
+    // The (non-coinbase) input refers to a coinbase output, so validate depth
+    // in ticks: 100 ten-minute block-equivalents, whatever the cadence.
+    auto const spend_tick = ticks.height_to_tick(height);
+    auto const created_tick = ticks.height_to_tick(validation.height);
+    return floor_subtract(spend_tick, created_tick) >= coinbase_maturity * base_block_interval;
 }
 
 } // namespace kth::domain::chain

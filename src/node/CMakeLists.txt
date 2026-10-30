@@ -237,6 +237,7 @@ set(kth_headers
   include/kth/node/rpc/dispatch.hpp
   include/kth/node/rpc/mining.hpp
   include/kth/node/rpc/query.hpp
+  include/kth/node/rpc/chain_progress.hpp
   include/kth/node/rpc/server.hpp
 
   # CSP-based sync system
@@ -326,7 +327,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_stale_chunk_drop.cpp
           test/select_sync.cpp
           test/configuration.cpp
-    test/full_node_network.cpp
+        test/full_node_network.cpp
+          test/template_prevout_refresh.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp

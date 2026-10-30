@@ -167,6 +167,15 @@ settings::settings(domain::config::network context)
             break;
         }
 
+        case domain::config::network::tempnet: {
+            inbound_port = 48333;
+            identifier = netmagic::bch_chipnet;
+            seeds.emplace_back("tempnet.bitjson.com", 48333);
+            hosts_file = "hosts-tempnet.cache";
+            banlist_file = "banlist-tempnet.dat";
+            peers_file = "peers-tempnet.dat";
+            break;
+        }
         case domain::config::network::chipnet: {
             inbound_port = 48333;
             identifier = netmagic::bch_chipnet;
