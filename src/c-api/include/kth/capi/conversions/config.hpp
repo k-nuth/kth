@@ -9,6 +9,8 @@
 #ifndef KTH_CAPI_CONVERSIONS_CONFIG_HPP_
 #define KTH_CAPI_CONVERSIONS_CONFIG_HPP_
 
+#include <type_traits>
+
 #include <kth/capi/detail/enum_cast.hpp>
 #include <kth/capi/detail/handle_access.hpp>
 
@@ -58,6 +60,24 @@ inline constexpr kth_network_t network_to_c(kth::domain::config::network x) noex
             return kth_network_mainnet;
     }
 }
+
+// Numeric ABI: every named enumerator converts to its counterpart, so the C and
+// C++ values cannot drift apart while the names keep matching.
+static_assert(sizeof(std::underlying_type_t<kth::domain::config::network>) <= sizeof(kth_network_t));
+static_assert(network_to_c(kth::domain::config::network::mainnet) == kth_network_mainnet);
+static_assert(network_to_cpp(kth_network_mainnet) == kth::domain::config::network::mainnet);
+static_assert(network_to_c(kth::domain::config::network::testnet) == kth_network_testnet);
+static_assert(network_to_cpp(kth_network_testnet) == kth::domain::config::network::testnet);
+static_assert(network_to_c(kth::domain::config::network::regtest) == kth_network_regtest);
+static_assert(network_to_cpp(kth_network_regtest) == kth::domain::config::network::regtest);
+#if defined(KTH_CURRENCY_BCH)
+static_assert(network_to_c(kth::domain::config::network::testnet4) == kth_network_testnet4);
+static_assert(network_to_cpp(kth_network_testnet4) == kth::domain::config::network::testnet4);
+static_assert(network_to_c(kth::domain::config::network::scalenet) == kth_network_scalenet);
+static_assert(network_to_cpp(kth_network_scalenet) == kth::domain::config::network::scalenet);
+static_assert(network_to_c(kth::domain::config::network::chipnet) == kth_network_chipnet);
+static_assert(network_to_cpp(kth_network_chipnet) == kth::domain::config::network::chipnet);
+#endif
 
 // Segregated witness is not available when building for BCH.
 inline bool witness(int x = 1) noexcept {
