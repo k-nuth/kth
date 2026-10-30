@@ -9,7 +9,6 @@
 
 #include <kth/capi/conversions.hpp>
 #include <kth/capi/helpers.hpp>
-#include <memory>
 #include <kth/domain/machine/program.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -356,8 +355,8 @@ kth_error_code_t kth_vm_program_pop_binary(kth_program_mut_t self, KTH_OUT_OWNED
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).pop_binary();
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_first = kth::stage_owned(kth::to_owned(std::move(result->first)));
-        auto staged_second = kth::stage_owned(kth::to_owned(std::move(result->second)));
+        auto staged_first = kth::to_unique(std::move(result->first));
+        auto staged_second = kth::to_unique(std::move(result->second));
         *out_first = staged_first.release();
         *out_second = staged_second.release();
         return kth_ec_success;
@@ -380,9 +379,9 @@ kth_error_code_t kth_vm_program_pop_ternary(kth_program_mut_t self, KTH_OUT_OWNE
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).pop_ternary();
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_out_0 = kth::stage_owned(kth::to_owned(std::move(std::get<0>(*result))));
-        auto staged_out_1 = kth::stage_owned(kth::to_owned(std::move(std::get<1>(*result))));
-        auto staged_out_2 = kth::stage_owned(kth::to_owned(std::move(std::get<2>(*result))));
+        auto staged_out_0 = kth::to_unique(std::move(std::get<0>(*result)));
+        auto staged_out_1 = kth::to_unique(std::move(std::get<1>(*result)));
+        auto staged_out_2 = kth::to_unique(std::move(std::get<2>(*result)));
         *out_0 = staged_out_0.release();
         *out_1 = staged_out_1.release();
         *out_2 = staged_out_2.release();
@@ -422,8 +421,8 @@ kth_error_code_t kth_vm_program_pop_big_binary(kth_program_mut_t self, KTH_OUT_O
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).pop_big_binary();
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_first = kth::stage_owned(kth::to_owned(std::move(result->first)));
-        auto staged_second = kth::stage_owned(kth::to_owned(std::move(result->second)));
+        auto staged_first = kth::to_unique(std::move(result->first));
+        auto staged_second = kth::to_unique(std::move(result->second));
         *out_first = staged_first.release();
         *out_second = staged_second.release();
         return kth_ec_success;
@@ -446,9 +445,9 @@ kth_error_code_t kth_vm_program_pop_big_ternary(kth_program_mut_t self, KTH_OUT_
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto result = kth::cpp_ref<cpp_t>(self).pop_big_ternary();
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_out_0 = kth::stage_owned(kth::to_owned(std::move(std::get<0>(*result))));
-        auto staged_out_1 = kth::stage_owned(kth::to_owned(std::move(std::get<1>(*result))));
-        auto staged_out_2 = kth::stage_owned(kth::to_owned(std::move(std::get<2>(*result))));
+        auto staged_out_0 = kth::to_unique(std::move(std::get<0>(*result)));
+        auto staged_out_1 = kth::to_unique(std::move(std::get<1>(*result)));
+        auto staged_out_2 = kth::to_unique(std::move(std::get<2>(*result)));
         *out_0 = staged_out_0.release();
         *out_1 = staged_out_1.release();
         *out_2 = staged_out_2.release();

@@ -27,6 +27,7 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -1651,6 +1652,151 @@ TEST_CASE("kth::stage_owned (helper only) frees the first staged object when the
         auto hashes_owned = kth::stage_owned(kth::to_owned(hashes));
         published_header = header_owned.release();
         published_hashes = hashes_owned.release();
+        kth::del<kth::domain::chain::header>(published_header);
+        kth::del_list<kth::hash_digest>(published_hashes);
+    });
+}
+
+namespace {
+
+// Counts how a promoted value reaches the heap, and can make the copy fail.
+struct promoted_value {
+    static inline int copies = 0;
+    static inline int moves = 0;
+    static inline bool throw_on_copy = false;
+
+    static void reset() { copies = 0; moves = 0; throw_on_copy = false; }
+
+    explicit promoted_value(int v) : value(v) {}
+    promoted_value(promoted_value const& other) : value(other.value) {
+        if (throw_on_copy) throw std::runtime_error("injected copy failure");
+        ++copies;
+    }
+    promoted_value(promoted_value&& other) noexcept : value(other.value) {
+        other.value = -1;
+        ++moves;
+    }
+
+    int value;
+};
+
+} // namespace
+
+TEST_CASE("kth::to_unique (helper only) deduces a unique_ptr to the decayed type and is not noexcept",
+          "[C-API exception barrier][staging]") {
+    using kth::to_unique;
+    promoted_value lvalue(1);
+    promoted_value const clvalue(2);
+    auto const shared = std::make_shared<promoted_value const>(3);
+
+    static_assert(std::is_same_v<decltype(to_unique(lvalue)), std::unique_ptr<promoted_value>>);
+    static_assert(std::is_same_v<decltype(to_unique(clvalue)), std::unique_ptr<promoted_value>>);
+    static_assert(std::is_same_v<decltype(to_unique(std::move(lvalue))), std::unique_ptr<promoted_value>>);
+    static_assert(std::is_same_v<decltype(to_unique(shared)), std::unique_ptr<promoted_value>>);
+    static_assert(std::is_same_v<decltype(to_unique(std::make_shared<promoted_value>(4))),
+                                 std::unique_ptr<promoted_value>>);
+    // Promotion allocates and runs a constructor, so it must not claim otherwise.
+    static_assert( ! noexcept(to_unique(lvalue)));
+    static_assert( ! noexcept(to_unique(std::move(lvalue))));
+    static_assert( ! noexcept(to_unique(shared)));
+    REQUIRE(true);
+}
+
+TEST_CASE("kth::to_unique (helper only) copies an lvalue and moves an rvalue",
+          "[C-API exception barrier][staging]") {
+    promoted_value::reset();
+    long const live_before = g_live_allocations.load();
+    {
+        promoted_value source(7);
+        auto copied = kth::to_unique(source);
+        REQUIRE(copied != nullptr);
+        REQUIRE(copied.get() != &source);
+        REQUIRE(copied->value == 7);
+        REQUIRE(source.value == 7);
+        REQUIRE(promoted_value::copies == 1);
+        REQUIRE(promoted_value::moves == 0);
+
+        auto moved = kth::to_unique(std::move(source));
+        REQUIRE(moved->value == 7);
+        REQUIRE(source.value == -1);
+        REQUIRE(promoted_value::copies == 1);
+        REQUIRE(promoted_value::moves == 1);
+
+        REQUIRE(g_live_allocations.load() == live_before + 2);
+    }
+    // Both heap objects are released when the unique_ptrs leave scope.
+    REQUIRE(g_live_allocations.load() == live_before);
+}
+
+TEST_CASE("kth::to_unique (helper only) forwards shared_ptr arguments to the pointee-promoting overloads",
+          "[C-API exception barrier][staging]") {
+    promoted_value::reset();
+    long const live_before = g_live_allocations.load();
+    {
+        // Null shared_ptr: nothing is allocated, the result is empty.
+        std::shared_ptr<promoted_value> const null_shared;
+        auto none = kth::to_unique(null_shared);
+        REQUIRE(none == nullptr);
+        REQUIRE(g_live_allocations.load() == live_before);
+        REQUIRE(kth::to_unique(std::shared_ptr<promoted_value>{}) == nullptr);
+
+        // Const pointee: promoted as a non-const copy, the shared object is untouched.
+        auto const shared_const = std::make_shared<promoted_value const>(5);
+        long const live_with_shared = g_live_allocations.load();
+        auto copy = kth::to_unique(shared_const);
+        REQUIRE(copy != nullptr);
+        REQUIRE(copy.get() != shared_const.get());
+        REQUIRE(copy->value == 5);
+        REQUIRE(shared_const->value == 5);
+        REQUIRE(shared_const.use_count() == 1);
+        REQUIRE(promoted_value::copies == 1);
+        REQUIRE(g_live_allocations.load() == live_with_shared + 1);
+
+        // Rvalue shared_ptr: the pointee is moved into the heap object.
+        auto owner = std::make_shared<promoted_value>(6);
+        auto moved = kth::to_unique(std::move(owner));
+        REQUIRE(moved->value == 6);
+        REQUIRE(promoted_value::moves == 1);
+        REQUIRE(promoted_value::copies == 1);
+    }
+    REQUIRE(g_live_allocations.load() == live_before);
+}
+
+TEST_CASE("kth::to_unique (helper only) leaves nothing allocated when the constructor throws",
+          "[C-API exception barrier][staging]") {
+    promoted_value::reset();
+    long const live_before = g_live_allocations.load();
+    promoted_value source(9);
+    {
+        auto first = kth::to_unique(source);
+        REQUIRE(g_live_allocations.load() == live_before + 1);
+
+        // Second promotion fails inside the copy constructor: the allocation
+        // made for it is returned and the first staged object is released
+        // during unwinding.
+        promoted_value::throw_on_copy = true;
+        auto const staged_both = [&] {
+            [[maybe_unused]] auto kept = kth::to_unique(source);
+            return kth::to_unique(source);
+        };
+        REQUIRE_THROWS_AS(staged_both(), std::runtime_error);
+        promoted_value::throw_on_copy = false;
+        REQUIRE(g_live_allocations.load() == live_before + 1);
+    }
+    REQUIRE(g_live_allocations.load() == live_before);
+}
+
+TEST_CASE("kth::to_unique (helper only) frees every staged object when a later allocation throws",
+          "[C-API exception barrier][staging]") {
+    // The shape of the generated pair/tuple wrappers: stage every output, then
+    // publish. A fault at any allocation must leave nothing published.
+    auto const header = std::make_shared<kth::domain::chain::header const>();
+    auto const hashes = std::make_shared<std::vector<kth::hash_digest>>(3);
+    sweep_cpp_operation([&] {
+        auto header_staged = kth::to_unique(header);
+        auto hashes_staged = kth::to_unique(hashes);
+        auto* published_header = header_staged.release();
+        auto* published_hashes = hashes_staged.release();
         kth::del<kth::domain::chain::header>(published_header);
         kth::del_list<kth::hash_digest>(published_hashes);
     });
