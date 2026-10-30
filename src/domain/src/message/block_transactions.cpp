@@ -95,12 +95,12 @@ void block_transactions::set_transactions(chain::transaction::list&& x) {
 }
 
 
-expect<void> block_transactions::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> block_transactions::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_hash(block_hash_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(transactions_.size()); ! r) return r;
 
         for (auto const& element : transactions_) {
-            element.to_data(writer, /*wire*/ true);
+            if (auto r = element.to_data(writer, /*wire*/ true); ! r) return r;
         }
         return {};
 }

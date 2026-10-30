@@ -76,9 +76,8 @@ size_t transaction::serialized_size(uint32_t /*unused*/) const {
     return chain::transaction::serialized_size(true);
 }
 
-expect<void> transaction::to_data(byte_writer& writer, uint32_t version) const {
-        chain::transaction::to_data(writer, true);
-        return {};
+expect<void> transaction::to_data(byte_writer& writer, uint32_t version) const noexcept {
+        return chain::transaction::to_data(writer, true);
 }
 
 } // namespace kth::domain::message

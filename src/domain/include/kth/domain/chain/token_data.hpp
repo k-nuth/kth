@@ -429,17 +429,23 @@ expect<void> to_data(byte_writer& writer, both_kinds const& x) noexcept {
     return to_data(writer, x.fungible_part);
 }
 
+// A valueless `x.data` (left behind by a failed type-changing operation such
+// as `emplace`) cannot be encoded: it is rejected with `error::illegal_value`
+// before anything is written, so the position is untouched. The guard
+// establishes an engaged variant before the visits below; the concrete arms
+// serialize without allocating.
 inline
-expect<void> to_data(byte_writer& writer, token_data_t const& x) {
+expect<void> to_data(byte_writer& writer, token_data_t const& x) noexcept {
+    if (x.data.valueless_by_exception()) {
+        return std::unexpected(error::illegal_value);
+    }
     if (auto r = writer.write_hash(x.id); ! r) return r;
     if (auto r = writer.write_byte(bitfield(x)); ! r) return r;
 
-    expect<void> result;
-    auto const visitor = [&](auto&& arg) {
-        result = to_data(writer, arg);
+    auto const visitor = [&writer](auto const& arg) noexcept -> expect<void> {
+        return to_data(writer, arg);
     };
-    std::visit(visitor, x.data);
-    return result;
+    return std::visit(visitor, x.data);
 }
 
 inline constexpr

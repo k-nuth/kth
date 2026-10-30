@@ -62,10 +62,9 @@ chain::transaction const& prefilled_transaction::transaction() const {
     return transaction_;
 }
 
-expect<void> prefilled_transaction::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> prefilled_transaction::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(index_); ! r) return r;
-        transaction_.to_data(writer, true);
-        return {};
+        return transaction_.to_data(writer, true);
 }
 
 } // namespace kth::domain::message
