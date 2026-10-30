@@ -670,8 +670,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         add_executable(kth_capi_exception_test test/exception_barriers.cpp)
         target_link_libraries(kth_capi_exception_test PUBLIC ${PROJECT_NAME})
         target_link_libraries(kth_capi_exception_test PRIVATE Catch2::Catch2WithMain)
-        # Real malloc exhaustion needs link-time interposition (GNU ld / lld).
-        if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # Real malloc exhaustion needs link-time interposition (GNU ld / lld),
+        # which only reaches the malloc calls linked into the executable. A
+        # shared C-API keeps its own malloc references, so the malloc-fault
+        # tests are enabled only when the C-API target is a static library.
+        get_target_property(_kth_capi_type ${PROJECT_NAME} TYPE)
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND _kth_capi_type STREQUAL "STATIC_LIBRARY")
             target_compile_definitions(kth_capi_exception_test PRIVATE KTH_CAPI_TEST_MALLOC_WRAP)
             target_link_options(kth_capi_exception_test PRIVATE -Wl,--wrap=malloc)
         endif()
