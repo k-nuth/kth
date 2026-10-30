@@ -109,7 +109,7 @@ inventory_vector::list const& inventory::inventories() const {
     return inventories_;
 }
 
-expect<void> inventory::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> inventory::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(inventories_.size()); ! r) return r;
 
         for (auto const& inventory : inventories_) {

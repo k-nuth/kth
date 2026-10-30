@@ -19,7 +19,7 @@ expect<verack> verack::from_data(byte_reader& /*reader*/, uint32_t /*version*/) 
     return verack();
 }
 
-expect<void> verack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+expect<void> verack::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const noexcept {
     return {};
 }
 

@@ -116,7 +116,7 @@ data_chunk const& merkle_block::flags() const {
     return flags_;
 }
 
-expect<void> merkle_block::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> merkle_block::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = header_.to_data(writer, true); ! r) return r;
 
         auto const total32 = *safe_unsigned<uint32_t>(total_transactions_);

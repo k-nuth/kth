@@ -67,7 +67,7 @@ infrastructure::message::network_address::list const& address::addresses() const
     return addresses_;
 }
 
-expect<void> address::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> address::to_data(byte_writer& writer, uint32_t version) const noexcept {
     if (auto r = writer.write_variable_little_endian(addresses_.size()); ! r) return r;
     for (auto const& net_address : addresses_) {
         if (auto r = net_address.to_data(writer, version, true); ! r) return r;

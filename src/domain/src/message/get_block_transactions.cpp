@@ -83,7 +83,7 @@ std::vector<uint64_t> const& get_block_transactions::indexes() const {
     return indexes_;
 }
 
-expect<void> get_block_transactions::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> get_block_transactions::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_hash(block_hash_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(indexes_.size()); ! r) return r;
         for (auto const& element : indexes_) {

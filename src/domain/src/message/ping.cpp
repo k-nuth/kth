@@ -32,7 +32,7 @@ expect<ping> ping::from_data(byte_reader& reader, uint32_t version) noexcept {
 // Serialization.
 //-----------------------------------------------------------------------------
 
-expect<void> ping::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> ping::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (version >= version::level::bip31) {
             if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
         }

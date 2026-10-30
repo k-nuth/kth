@@ -54,7 +54,7 @@ size_t header::serialized_size(uint32_t version) const {
     return satoshi_fixed_size(version);
 }
 
-expect<void> header::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> header::to_data(byte_writer& writer, uint32_t version) const noexcept {
         chain::header::to_data(writer, true);  // wire=true
 
         if (version != version::level::canonical) {

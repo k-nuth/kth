@@ -66,7 +66,7 @@ data_chunk const& filter_add::data() const {
     return data_;
 }
 
-expect<void> filter_add::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> filter_add::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(data_.size()); ! r) return r;
         if (auto r = writer.write_bytes(data_); ! r) return r;
         return {};

@@ -664,6 +664,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/collection.cpp
     test/utility/data.cpp
     test/utility/endian.cpp
+    test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
     test/utility/serializer.cpp

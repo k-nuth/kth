@@ -195,10 +195,10 @@ bool script::is_valid_operations() const {
     return ops.empty() || ops.back().is_valid();
 }
 
-expect<void> script::to_data(byte_writer& writer, bool prefix) const {
+expect<void> script::to_data(byte_writer& writer, bool prefix) const noexcept {
     // TODO(legacy): optimize by always storing the prefixed serialization.
     if (prefix) {
-        if (auto r = writer.write_variable_little_endian(serialized_size(false)); ! r) {
+        if (auto r = writer.write_variable_little_endian(bytes_.size()); ! r) {
             return r;
         }
     }

@@ -95,7 +95,7 @@ void alert::set_signature(data_chunk&& value) {
     signature_ = std::move(value);
 }
 
-expect<void> alert::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> alert::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(payload_.size()); ! r) return r;
         if (auto r = writer.write_bytes(payload_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(signature_.size()); ! r) return r;

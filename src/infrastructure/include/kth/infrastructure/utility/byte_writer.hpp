@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <memory>
 #include <span>
 #include <string>
 
@@ -29,25 +30,25 @@ namespace kth {
 // silently overflow.
 struct byte_writer {
     constexpr explicit
-    byte_writer(std::span<uint8_t> buffer)
+    byte_writer(std::span<uint8_t> buffer) noexcept
         : buffer_(buffer)
         , position_(0)
     {}
 
     [[nodiscard]] constexpr
-    size_t buffer_size() const { return buffer_.size(); }
+    size_t buffer_size() const noexcept { return buffer_.size(); }
 
     [[nodiscard]] constexpr
-    std::span<uint8_t> buffer() const { return buffer_; }
+    std::span<uint8_t> buffer() const noexcept { return buffer_; }
 
     [[nodiscard]] constexpr
-    size_t remaining_size() const { return buffer_.size() - position_; }
+    size_t remaining_size() const noexcept { return buffer_.size() - position_; }
 
     [[nodiscard]] constexpr
-    size_t position() const { return position_; }
+    size_t position() const noexcept { return position_; }
 
     [[nodiscard]] constexpr
-    bool is_exhausted() const { return position_ >= buffer_.size(); }
+    bool is_exhausted() const noexcept { return position_ >= buffer_.size(); }
 
     // Bounds-check the next `count` bytes without risking arithmetic
     // overflow. The naive `position_ + count > buffer_.size()` wraps when
@@ -56,21 +57,21 @@ struct byte_writer {
     // Comparing `count` against `buffer_.size() - position_` keeps the
     // arithmetic bounded to values already known to fit in the buffer.
     [[nodiscard]] constexpr
-    bool can_write(size_t count) const {
+    bool can_write(size_t count) const noexcept {
         return position_ <= buffer_.size()
             && count <= buffer_.size() - position_;
     }
 
     constexpr
-    void reset() { position_ = 0; }
+    void reset() noexcept { position_ = 0; }
 
     constexpr
-    void unsafe_write_byte(uint8_t b) {
+    void unsafe_write_byte(uint8_t b) noexcept {
         buffer_[position_++] = b;
     }
 
     [[nodiscard]] constexpr
-    expect<void> write_byte(uint8_t b) {
+    expect<void> write_byte(uint8_t b) noexcept {
         if ( ! can_write(1)) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -79,7 +80,7 @@ struct byte_writer {
     }
 
     [[nodiscard]]
-    expect<void> write_bytes(std::span<uint8_t const> bytes) {
+    expect<void> write_bytes(std::span<uint8_t const> bytes) noexcept {
         if ( ! can_write(bytes.size())) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -96,7 +97,7 @@ struct byte_writer {
 
     template <size_t N>
     [[nodiscard]]
-    expect<void> write_array(std::array<uint8_t, N> const& a) {
+    expect<void> write_array(std::array<uint8_t, N> const& a) noexcept {
         if ( ! can_write(N)) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -111,7 +112,7 @@ struct byte_writer {
 
     template <std::integral I>
     [[nodiscard]]
-    expect<void> write_little_endian(I value) {
+    expect<void> write_little_endian(I value) noexcept {
         if ( ! can_write(sizeof(I))) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -127,7 +128,7 @@ struct byte_writer {
 
     template <std::integral I>
     [[nodiscard]] constexpr
-    expect<void> write_big_endian(I value) {
+    expect<void> write_big_endian(I value) noexcept {
         if ( ! can_write(sizeof(I))) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -139,17 +140,18 @@ struct byte_writer {
 
     template <trivially_copyable T>
     [[nodiscard]]
-    expect<void> write_packed(T const& value) {
+    expect<void> write_packed(T const& value) noexcept {
         if ( ! can_write(sizeof(T))) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
-        std::memcpy(buffer_.data() + position_, &value, sizeof(T));
+        // `std::addressof`: a trivially copyable T may still overload `operator&`.
+        std::memcpy(buffer_.data() + position_, std::addressof(value), sizeof(T));
         position_ += sizeof(T);
         return {};
     }
 
     [[nodiscard]]
-    expect<void> write_variable_little_endian(uint64_t value) {
+    expect<void> write_variable_little_endian(uint64_t value) noexcept {
         if (value < varint_two_bytes) {
             return write_byte(static_cast<uint8_t>(value));
         }
@@ -166,19 +168,19 @@ struct byte_writer {
     }
 
     [[nodiscard]]
-    expect<void> write_size_little_endian(size_t value) {
+    expect<void> write_size_little_endian(size_t value) noexcept {
         return write_variable_little_endian(static_cast<uint64_t>(value));
     }
 
     [[nodiscard]]
-    expect<void> write_hash(hash_digest const& hash) {
+    expect<void> write_hash(hash_digest const& hash) noexcept {
         return write_array(hash);
     }
 
     // Writes a variable-length-prefixed string (canonical encoding):
     //   size (varint) | bytes
     [[nodiscard]]
-    expect<void> write_string(std::string const& value) {
+    expect<void> write_string(std::string const& value) noexcept {
         if (auto r = write_size_little_endian(value.size()); ! r) return r;
         return write_bytes(std::span{
             reinterpret_cast<uint8_t const*>(value.data()), value.size()
@@ -189,7 +191,7 @@ struct byte_writer {
     // requested length. Truncates silently if `value` is longer than `size`.
     // Mirrors `byte_reader::read_string(size_t)`.
     [[nodiscard]]
-    expect<void> write_string_fixed(std::string const& value, size_t size) {
+    expect<void> write_string_fixed(std::string const& value, size_t size) noexcept {
         if ( ! can_write(size)) {
             return std::unexpected(error::write_past_end_of_buffer);
         }
@@ -216,7 +218,7 @@ private:
 // Mirrors what `byte_writer::write_variable_little_endian` produces. Used by
 // every `serialized_size(...)` that includes a length-prefixed field.
 inline constexpr
-size_t size_variable_integer(uint64_t value) {
+size_t size_variable_integer(uint64_t value) noexcept {
     if (value < varint_two_bytes) return 1;
     if (value <= max_uint16) return 3;
     if (value <= max_uint32) return 5;

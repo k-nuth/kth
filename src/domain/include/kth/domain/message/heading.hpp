@@ -108,7 +108,7 @@ struct KD_API heading {
     data_chunk to_data() const;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer) const;
+    expect<void> to_data(byte_writer& writer) const noexcept;
 
     // Instance-side wrapper so the type satisfies `kth::Serializable`
     // and can flow through `kth::to_data_chunk`. Headings are a fixed

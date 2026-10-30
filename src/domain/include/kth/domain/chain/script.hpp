@@ -96,7 +96,7 @@ struct KD_API script {
     bool is_valid_operations() const;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool prefix) const;
+    expect<void> to_data(byte_writer& writer, bool prefix) const noexcept;
 
     [[nodiscard]]
     std::string to_string(script_flags_t active_flags) const;

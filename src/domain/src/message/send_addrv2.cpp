@@ -22,7 +22,7 @@ expect<send_addrv2> send_addrv2::from_data(byte_reader& reader, uint32_t version
     return send_addrv2();
 }
 
-expect<void> send_addrv2::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+expect<void> send_addrv2::to_data(byte_writer& /*writer*/, uint32_t /*version*/) const noexcept {
     // Empty message - no payload
     return {};
 }

@@ -51,7 +51,7 @@ expect<input> input::from_data(byte_reader& reader, bool wire) {
     return input{std::move(*point), std::move(*script), *sequence};
 }
 
-expect<void> input::to_data(byte_writer& writer, bool wire) const {
+expect<void> input::to_data(byte_writer& writer, bool wire) const noexcept {
     if (auto r = previous_output_.to_data(writer, wire); ! r) {
         return r;
     }

@@ -97,7 +97,7 @@ void get_blocks::set_stop_hash(hash_digest const& value) {
     stop_hash_ = value;
 }
 
-expect<void> get_blocks::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> get_blocks::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_little_endian<uint32_t>(version); ! r) return r;
         if (auto r = writer.write_variable_little_endian(start_hashes_.size()); ! r) return r;
 

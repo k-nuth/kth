@@ -33,7 +33,7 @@ struct KD_API get_address {
     expect<get_address> from_data(byte_reader& reader, uint32_t /*version*/) noexcept;
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& /*writer*/, uint32_t /*version*/) const {
+    expect<void> to_data(byte_writer& /*writer*/, uint32_t /*version*/) const noexcept {
         //TODO(fernando): this function is empty!!!!!
         return {};
     }

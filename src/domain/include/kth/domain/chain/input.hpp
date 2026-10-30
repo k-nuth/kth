@@ -48,7 +48,7 @@ struct KD_API input {
     expect<input> from_data(byte_reader& reader, bool wire);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, bool wire) const;
+    expect<void> to_data(byte_writer& writer, bool wire) const noexcept;
 
     /// This accounts for wire, but does not read or write it.
     [[nodiscard]]

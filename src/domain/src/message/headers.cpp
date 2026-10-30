@@ -117,7 +117,7 @@ header::list const& headers::elements() const {
     return elements_;
 }
 
-expect<void> headers::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> headers::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_variable_little_endian(elements_.size()); ! r) return r;
 
         for (auto const& element : elements_) {

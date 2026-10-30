@@ -91,7 +91,7 @@ expect<double_spend_proof> double_spend_proof::from_data(byte_reader& reader, ui
 // Serialization.
 //-----------------------------------------------------------------------------
 
-expect<void> double_spend_proof::to_data(byte_writer& writer, uint32_t /*version*/) const {
+expect<void> double_spend_proof::to_data(byte_writer& writer, uint32_t /*version*/) const noexcept {
     if (auto r = out_point_.to_data(writer, true); ! r) return r;
     if (auto r = spender1_.to_data(writer); ! r) return r;
     return spender2_.to_data(writer);

@@ -39,11 +39,11 @@ struct KD_API addrv2_entry {
     [[nodiscard]]
     friend bool operator==(addrv2_entry const&, addrv2_entry const&) = default;
 
-    [[nodiscard]] uint32_t time() const;
-    [[nodiscard]] uint64_t services() const;
-    [[nodiscard]] bip155_network network() const;
-    [[nodiscard]] data_chunk const& addr() const;
-    [[nodiscard]] uint16_t port() const;
+    [[nodiscard]] uint32_t time() const noexcept;
+    [[nodiscard]] uint64_t services() const noexcept;
+    [[nodiscard]] bip155_network network() const noexcept;
+    [[nodiscard]] data_chunk const& addr() const noexcept;
+    [[nodiscard]] uint16_t port() const noexcept;
 
     /// The address length BIP155 fixes for a network id, or 0 if unknown.
     static
@@ -96,7 +96,7 @@ struct KD_API addrv2 {
     expect<addrv2> from_data(byte_reader& reader, uint32_t version);
 
     [[nodiscard]]
-    expect<void> to_data(byte_writer& writer, uint32_t version) const;
+    expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
 
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;

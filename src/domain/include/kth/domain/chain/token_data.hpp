@@ -410,19 +410,19 @@ uint8_t bitfield(token_data_t const& x) {
 }
 
 inline
-expect<void> to_data(byte_writer& writer, fungible const& x) {
+expect<void> to_data(byte_writer& writer, fungible const& x) noexcept {
     return writer.write_variable_little_endian(uint64_t(x.amount));
 }
 
 inline
-expect<void> to_data(byte_writer& writer, non_fungible const& x) {
+expect<void> to_data(byte_writer& writer, non_fungible const& x) noexcept {
     if (x.commitment.empty()) return {};
     if (auto r = writer.write_size_little_endian(x.commitment.size()); ! r) return r;
     return writer.write_bytes(x.commitment);
 }
 
 inline
-expect<void> to_data(byte_writer& writer, both_kinds const& x) {
+expect<void> to_data(byte_writer& writer, both_kinds const& x) noexcept {
     // CashTokens wire format writes the NFT portion first, then the
     // fungible amount — keep that order even with the named fields.
     if (auto r = to_data(writer, x.non_fungible_part); ! r) return r;

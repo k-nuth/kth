@@ -195,7 +195,7 @@ reject::reason_code reject::reason_from_byte(uint8_t byte) {
     }
 }
 
-uint8_t reject::reason_to_byte(reason_code value) {
+uint8_t reject::reason_to_byte(reason_code value) noexcept {
     switch (value) {
         case reason_code::malformed:
             return 0x01;
@@ -218,7 +218,7 @@ uint8_t reject::reason_to_byte(reason_code value) {
     }
 }
 
-expect<void> reject::to_data(byte_writer& writer, uint32_t version) const {
+expect<void> reject::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_string(message_); ! r) return r;
         if (auto r = writer.write_byte(reason_to_byte(code_)); ! r) return r;
         if (auto r = writer.write_string(reason_); ! r) return r;

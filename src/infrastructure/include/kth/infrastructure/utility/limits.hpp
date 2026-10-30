@@ -199,7 +199,7 @@ expected<To, code> safe_signed(From signed_value) {
 }
 
 template <std::unsigned_integral To, std::unsigned_integral From>
-expected<To, code> safe_unsigned(From unsigned_value) {
+expected<To, code> safe_unsigned(From unsigned_value) noexcept {
     static auto const unsigned_minimum = (std::numeric_limits<To>::min)();
     static auto const unsigned_maximum = (std::numeric_limits<To>::max)();
 
