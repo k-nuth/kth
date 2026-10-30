@@ -2,215 +2,116 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VM script tests - DO NOT EDIT
-// Generated from script_tests.json - chunk 1 (tests 100 to 199)
-
-#include <test_helpers.hpp>
-#include "script.hpp"
-
-using namespace kth;
-using namespace kd;
-using namespace kth::domain::chain;
-using namespace kth::domain::machine;
-
-extern void run_bchn_test(bchn_script_test const& test);
-
-TEST_CASE("VM-AUTO #100 [Should Pass]: 2147483647 | size 4 equal", "[vm][auto]") { run_bchn_test({"2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #101 [Should Pass]: 2147483648 | size 5 equal", "[vm][auto]") { run_bchn_test({"2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #102 [Should Pass]: 549755813887 | size 5 equal", "[vm][auto]") { run_bchn_test({"549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #103 [Should Pass]: 549755813888 | size 6 equal", "[vm][auto]") { run_bchn_test({"549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #104 [Should Pass]: 9223372036854775807 | size 8 equal", "[vm][auto]") { run_bchn_test({"9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #105 [Should Pass]: 0 | size 0 equal", "[vm][auto]") { run_bchn_test({"0", "size 0 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #106 [Should Pass]: 1 | size 1 equal", "[vm][auto]") { run_bchn_test({"1", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #107 [Should Pass]: 2 | size 1 equal", "[vm][auto]") { run_bchn_test({"2", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #108 [Should Pass]: 3 | size 1 equal", "[vm][auto]") { run_bchn_test({"3", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #109 [Should Pass]: 126 | size 1 equal", "[vm][auto]") { run_bchn_test({"126", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #110 [Should Pass]: 127 | size 1 equal", "[vm][auto]") { run_bchn_test({"127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #111 [Should Pass]: 128 | size 2 equal", "[vm][auto]") { run_bchn_test({"128", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #112 [Should Pass]: 129 | size 2 equal", "[vm][auto]") { run_bchn_test({"129", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #113 [Should Pass]: 130 | size 2 equal", "[vm][auto]") { run_bchn_test({"130", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #114 [Should Pass]: 255 | size 2 equal", "[vm][auto]") { run_bchn_test({"255", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #115 [Should Pass]: 32766 | size 2 equal", "[vm][auto]") { run_bchn_test({"32766", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #116 [Should Pass]: 32767 | size 2 equal", "[vm][auto]") { run_bchn_test({"32767", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #117 [Should Pass]: 32768 | size 3 equal", "[vm][auto]") { run_bchn_test({"32768", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #118 [Should Pass]: 32769 | size 3 equal", "[vm][auto]") { run_bchn_test({"32769", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #119 [Should Pass]: 32770 | size 3 equal", "[vm][auto]") { run_bchn_test({"32770", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #120 [Should Pass]: 65535 | size 3 equal", "[vm][auto]") { run_bchn_test({"65535", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #121 [Should Pass]: 8388606 | size 3 equal", "[vm][auto]") { run_bchn_test({"8388606", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #122 [Should Pass]: 8388607 | size 3 equal", "[vm][auto]") { run_bchn_test({"8388607", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #123 [Should Pass]: 8388608 | size 4 equal", "[vm][auto]") { run_bchn_test({"8388608", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #124 [Should Pass]: 8388609 | size 4 equal", "[vm][auto]") { run_bchn_test({"8388609", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #125 [Should Pass]: 8388610 | size 4 equal", "[vm][auto]") { run_bchn_test({"8388610", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #126 [Should Pass]: 16777215 | size 4 equal", "[vm][auto]") { run_bchn_test({"16777215", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #127 [Should Pass]: 2147483646 | size 4 equal", "[vm][auto]") { run_bchn_test({"2147483646", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #128 [Should Pass]: 2147483647 | size 4 equal", "[vm][auto]") { run_bchn_test({"2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #129 [Should Pass]: 2147483648 | size 5 equal", "[vm][auto]") { run_bchn_test({"2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #130 [Should Pass]: 2147483649 | size 5 equal", "[vm][auto]") { run_bchn_test({"2147483649", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #131 [Should Pass]: 549755813887 | size 5 equal", "[vm][auto]") { run_bchn_test({"549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #132 [Should Pass]: 549755813888 | size 6 equal", "[vm][auto]") { run_bchn_test({"549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #133 [Should Pass]: 140737488355327 | size 6 equal", "[vm][auto]") { run_bchn_test({"140737488355327", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #134 [Should Pass]: 140737488355328 | size 7 equal", "[vm][auto]") { run_bchn_test({"140737488355328", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #135 [Should Pass]: 36028797018963967 | size 7 equal", "[vm][auto]") { run_bchn_test({"36028797018963967", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #136 [Should Pass]: 36028797018963968 | size 8 equal", "[vm][auto]") { run_bchn_test({"36028797018963968", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #137 [Should Pass]: 9223372036854775807 | size 8 equal", "[vm][auto]") { run_bchn_test({"9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #138 [Should Pass]: -1 | size 1 equal", "[vm][auto]") { run_bchn_test({"-1", "size 1 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #139 [Should Pass]: -127 | size 1 equal", "[vm][auto]") { run_bchn_test({"-127", "size 1 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #140 [Should Pass]: -128 | size 2 equal", "[vm][auto]") { run_bchn_test({"-128", "size 2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #141 [Should Pass]: -32767 | size 2 equal", "[vm][auto]") { run_bchn_test({"-32767", "size 2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #142 [Should Pass]: -32768 | size 3 equal", "[vm][auto]") { run_bchn_test({"-32768", "size 3 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #143 [Should Pass]: -8388607 | size 3 equal", "[vm][auto]") { run_bchn_test({"-8388607", "size 3 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #144 [Should Pass]: -8388608 | size 4 equal", "[vm][auto]") { run_bchn_test({"-8388608", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #145 [Should Pass]: -2147483647 | size 4 equal", "[vm][auto]") { run_bchn_test({"-2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #146 [Should Pass]: -2147483648 | size 5 equal", "[vm][auto]") { run_bchn_test({"-2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #147 [Should Pass]: -549755813887 | size 5 equal", "[vm][auto]") { run_bchn_test({"-549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #148 [Should Pass]: -549755813888 | size 6 equal", "[vm][auto]") { run_bchn_test({"-549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #149 [Should Pass]: -9223372036854775807 | size 8 equal", "[vm][auto]") { run_bchn_test({"-9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #150 [Should Pass]: -1 | size 1 equal", "[vm][auto]") { run_bchn_test({"-1", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #151 [Should Pass]: -2 | size 1 equal", "[vm][auto]") { run_bchn_test({"-2", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #152 [Should Pass]: -127 | size 1 equal", "[vm][auto]") { run_bchn_test({"-127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #153 [Should Pass]: -125 | size 1 equal", "[vm][auto]") { run_bchn_test({"-125", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #154 [Should Pass]: -126 | size 1 equal", "[vm][auto]") { run_bchn_test({"-126", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #155 [Should Pass]: -127 | size 1 equal", "[vm][auto]") { run_bchn_test({"-127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #156 [Should Pass]: -128 | size 2 equal", "[vm][auto]") { run_bchn_test({"-128", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #157 [Should Pass]: -129 | size 2 equal", "[vm][auto]") { run_bchn_test({"-129", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #158 [Should Pass]: -255 | size 2 equal", "[vm][auto]") { run_bchn_test({"-255", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #159 [Should Pass]: -32765 | size 2 equal", "[vm][auto]") { run_bchn_test({"-32765", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #160 [Should Pass]: -32766 | size 2 equal", "[vm][auto]") { run_bchn_test({"-32766", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #161 [Should Pass]: -32767 | size 2 equal", "[vm][auto]") { run_bchn_test({"-32767", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #162 [Should Pass]: -32768 | size 3 equal", "[vm][auto]") { run_bchn_test({"-32768", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #163 [Should Pass]: -32769 | size 3 equal", "[vm][auto]") { run_bchn_test({"-32769", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #164 [Should Pass]: -65535 | size 3 equal", "[vm][auto]") { run_bchn_test({"-65535", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #165 [Should Pass]: -8388605 | size 3 equal", "[vm][auto]") { run_bchn_test({"-8388605", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #166 [Should Pass]: -8388606 | size 3 equal", "[vm][auto]") { run_bchn_test({"-8388606", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #167 [Should Pass]: -8388607 | size 3 equal", "[vm][auto]") { run_bchn_test({"-8388607", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #168 [Should Pass]: -8388608 | size 4 equal", "[vm][auto]") { run_bchn_test({"-8388608", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #169 [Should Pass]: -8388609 | size 4 equal", "[vm][auto]") { run_bchn_test({"-8388609", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #170 [Should Pass]: -2147483645 | size 4 equal", "[vm][auto]") { run_bchn_test({"-2147483645", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #171 [Should Pass]: -2147483646 | size 4 equal", "[vm][auto]") { run_bchn_test({"-2147483646", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #172 [Should Pass]: -2147483647 | size 4 equal", "[vm][auto]") { run_bchn_test({"-2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #173 [Should Pass]: -2147483648 | size 5 equal", "[vm][auto]") { run_bchn_test({"-2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #174 [Should Pass]: -549755813887 | size 5 equal", "[vm][auto]") { run_bchn_test({"-549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #175 [Should Pass]: -549755813888 | size 6 equal", "[vm][auto]") { run_bchn_test({"-549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #176 [Should Pass]: -140737488355327 | size 6 equal", "[vm][auto]") { run_bchn_test({"-140737488355327", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #177 [Should Pass]: -140737488355328 | size 7 equal", "[vm][auto]") { run_bchn_test({"-140737488355328", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #178 [Should Pass]: -36028797018963967 | size 7 equal", "[vm][auto]") { run_bchn_test({"-36028797018963967", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #179 [Should Pass]: -36028797018963968 | size 8 equal", "[vm][auto]") { run_bchn_test({"-36028797018963968", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #180 [Should Pass]: -9223372036854775806 | size 8 equal", "[vm][auto]") { run_bchn_test({"-9223372036854775806", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #181 [Should Pass]: -9223372036854775807 | size 8 equal", "[vm][auto]") { run_bchn_test({"-9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #182 [Should Pass]: 'abcdefghijklmnopqrstuvwxyz' | size 26 equal", "[vm][auto]") { run_bchn_test({"'abcdefghijklmnopqrstuvwxyz'", "size 26 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #183 [Should Pass]: SIZE does not consume argument", "[vm][auto]") { run_bchn_test({"42", "size 1 equalverify 42 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "SIZE does not consume argument"}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #184 [Should Pass]: 2 -2 add | 0 equal", "[vm][auto]") { run_bchn_test({"2 -2 add", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #185 [Should Pass]: 2147483647 -2147483647 add | 0 equal", "[vm][auto]") { run_bchn_test({"2147483647 -2147483647 add", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #186 [Should Pass]: 9223372036854775807 -9223372036854775807 add | 0 equal", "[vm][auto]") { run_bchn_test({"9223372036854775807 -9223372036854775807 add", "0 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC,64_BIT_INTEGERS, expected: OK
-
-TEST_CASE("VM-AUTO #187 [Should Pass]: -1 -1 add | -2 equal", "[vm][auto]") { run_bchn_test({"-1 -1 add", "-2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #188 [Should Pass]: 0 0 | equal", "[vm][auto]") { run_bchn_test({"0 0", "equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #189 [Should Pass]: 1 1 add | 2 equal", "[vm][auto]") { run_bchn_test({"1 1 add", "2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #190 [Should Pass]: 1 add1 | 2 equal", "[vm][auto]") { run_bchn_test({"1 add1", "2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #191 [Should Pass]: 111 sub1 | 110 equal", "[vm][auto]") { run_bchn_test({"111 sub1", "110 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #192 [Should Pass]: 111 1 add 12 sub | 100 equal", "[vm][auto]") { run_bchn_test({"111 1 add 12 sub", "100 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #193 [Should Pass]: 0 abs | 0 equal", "[vm][auto]") { run_bchn_test({"0 abs", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #194 [Should Pass]: 16 abs | 16 equal", "[vm][auto]") { run_bchn_test({"16 abs", "16 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #195 [Should Pass]: -16 abs | -16 negate equal", "[vm][auto]") { run_bchn_test({"-16 abs", "-16 negate equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #196 [Should Pass]: 0 not | nop", "[vm][auto]") { run_bchn_test({"0 not", "nop", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #197 [Should Pass]: 1 not | 0 equal", "[vm][auto]") { run_bchn_test({"1 not", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #198 [Should Pass]: 11 not | 0 equal", "[vm][auto]") { run_bchn_test({"11 not", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
-
-TEST_CASE("VM-AUTO #199 [Should Pass]: 0 0notequal | 0 equal", "[vm][auto]") { run_bchn_test({"0 0notequal", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""}); } // flags: P2SH,STRICTENC, expected: OK
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "bchn_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_bchn_bchn_1 {
+// Source: script_vm_auto_1.cpp
+static constexpr bchn_vector rows_0[] = {
+    {100, "2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {101, "2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {102, "549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {103, "549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {104, "9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {105, "0", "size 0 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {106, "1", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {107, "2", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {108, "3", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {109, "126", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {110, "127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {111, "128", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {112, "129", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {113, "130", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {114, "255", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {115, "32766", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {116, "32767", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {117, "32768", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {118, "32769", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {119, "32770", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {120, "65535", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {121, "8388606", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {122, "8388607", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {123, "8388608", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {124, "8388609", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {125, "8388610", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {126, "16777215", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {127, "2147483646", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {128, "2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {129, "2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {130, "2147483649", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {131, "549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {132, "549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {133, "140737488355327", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {134, "140737488355328", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {135, "36028797018963967", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {136, "36028797018963968", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {137, "9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {138, "-1", "size 1 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {139, "-127", "size 1 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {140, "-128", "size 2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {141, "-32767", "size 2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {142, "-32768", "size 3 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {143, "-8388607", "size 3 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {144, "-8388608", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {145, "-2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {146, "-2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {147, "-549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {148, "-549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {149, "-9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {150, "-1", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {151, "-2", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {152, "-127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {153, "-125", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {154, "-126", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {155, "-127", "size 1 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {156, "-128", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {157, "-129", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {158, "-255", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {159, "-32765", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {160, "-32766", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {161, "-32767", "size 2 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {162, "-32768", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {163, "-32769", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {164, "-65535", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {165, "-8388605", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {166, "-8388606", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {167, "-8388607", "size 3 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {168, "-8388608", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {169, "-8388609", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {170, "-2147483645", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {171, "-2147483646", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {172, "-2147483647", "size 4 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {173, "-2147483648", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {174, "-549755813887", "size 5 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {175, "-549755813888", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {176, "-140737488355327", "size 6 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {177, "-140737488355328", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {178, "-36028797018963967", "size 7 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {179, "-36028797018963968", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {180, "-9223372036854775806", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {181, "-9223372036854775807", "size 8 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {182, "'abcdefghijklmnopqrstuvwxyz'", "size 26 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {183, "42", "size 1 equalverify 42 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, "SIZE does not consume argument"},
+    {184, "2 -2 add", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {185, "2147483647 -2147483647 add", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {186, "9223372036854775807 -9223372036854775807 add", "0 equal", kth::domain::machine::script_flags::bch_64bit_integers | kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {187, "-1 -1 add", "-2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {188, "0 0", "equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {189, "1 1 add", "2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {190, "1 add1", "2 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {191, "111 sub1", "110 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {192, "111 1 add 12 sub", "100 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {193, "0 abs", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {194, "16 abs", "16 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {195, "-16 abs", "-16 negate equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {196, "0 not", "nop", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {197, "1 not", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {198, "11 not", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+    {199, "0 0notequal", "0 equal", kth::domain::machine::script_flags::bch_strictenc | kth::domain::machine::script_flags::bip16_rule, kth::error::success, ""},
+};
+static constexpr bchn_vector_group group = {
+    "script_vm_auto_1.cpp", rows_0
+};
+} // namespace kth::test::data_bchn_bchn_1

@@ -555,12 +555,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   enable_testing()
   find_package(Catch2 3 REQUIRED)
 
-  file(GLOB VM_AUTO_TEST_SOURCES test/chain/script_vm_auto_*.cpp)
-  file(GLOB VMB_AUTO_TEST_SOURCES test/chain/vmb_auto_*.cpp)
+  find_package(Python3 3.9 COMPONENTS Interpreter QUIET)
+  if(Python3_FOUND)
+    add_test(NAME imported_vector_inventory
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../test/scripts/test_imported_vectors.py)
+  endif()
+
+  # Original generated .cpp files are now data fragments. Each is included
+  # once by an aggregate below; do not compile those fragments individually.
+  file(GLOB IMPORTED_VECTOR_DATA_SOURCES CONFIGURE_DEPENDS test/chain/imported_*_data.cpp)
 
   add_executable(kth_domain_test
-        ${VM_AUTO_TEST_SOURCES}
-        ${VMB_AUTO_TEST_SOURCES}
+        ${IMPORTED_VECTOR_DATA_SOURCES}
+        test/chain/imported_vectors.cpp
+        test/chain/vmb_tests.cpp
         test/chain/block.cpp
         test/chain/chain_state.cpp
         test/chain/compact.cpp

@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2025_invalid) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2025_invalid_1 {
 // Source: test/scripts/vmb_tests/bch_2025_invalid/chip.bitwise.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"gu8tr6", "OP_INVERT: Empty item (0) (P2S)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e785000000000100000000000000000000000000000000000000000000000000000000000000010000000100000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000003830087", 1, false},
     {"lzvu9w", "OP_INVERT: Empty item (0) (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000050003830087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a9144d8068eddd7094bc5f93d67abfb51340f4b0f44787", 1, false},
     {"x0rm3f", "OP_INVERT: Empty item (0) (P2SH32)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000050003830087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa204fc2878bbfab96d51a012cf838056e27a9936c88209ad1abf004bf2f376b3c4487", 1, false},
@@ -444,12 +443,7 @@ static vmb_entry const entries[] = {
     {"jf60l0", "OP_RSHIFTBIN: excessive shifts clear value (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e785000000000100000000000000000000000000000000000000000000000000000000000000010000000b0212340120059902000087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a9143e81d2de0050ee7582fc1ccf084ad788a70561bb87", 1, false},
     {"a27yrz", "OP_RSHIFTBIN: excessive shifts clear value (P2SH32)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e785000000000100000000000000000000000000000000000000000000000000000000000000010000000b0212340120059902000087000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa20bd7d80e3b5b2c69ed9643e9a2c76965c6b64288133a820dbda9ced624741d9f187", 1, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2025 invalid - chip.bitwise", "[vmb][2025][invalid]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, false, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2025_invalid/chip.bitwise.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, false
+};
+} // namespace kth::test::data_vmb_2025_invalid_1

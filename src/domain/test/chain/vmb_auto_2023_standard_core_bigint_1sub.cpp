@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2023_standard) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2023_standard_16 {
 // Source: test/scripts/vmb_tests/bch_2023_standard/core.bigint.1sub.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"5yhtnl", "BigInt: OP_1SUB 1-byte number (all bits set) (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000080280800401ff8c87000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a9146bfcfb3bbc6ebd7effbb58471f6addd19051c18f87", 1, false},
     {"tu2cr9", "BigInt: OP_1SUB 1-byte number (all bits set) (P2SH32)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000080280800401ff8c87000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa205259e93765bf1b7918fbbcfe07d346f3fce2341c24905624bf7ba3a91d24428087", 1, false},
     {"dlwywd", "BigInt: OP_1SUB 1-byte number (alternating bits set) (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e785000000000100000000000000000000000000000000000000000000000000000000000000010000000701540401558c87000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a914189af8cd971b5038ddf121743f73294dd50c2f0987", 1, false},
@@ -24,12 +23,7 @@ static vmb_entry const entries[] = {
     {"kn9nkv", "BigInt: OP_1SUB 8-byte number (one bit set per byte) (P2SH20)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000150800010101010101010b0801010101010101018c87000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000017a914de1de97f8ac24323432b5704a58949155c2b736087", 1, false},
     {"runqsq", "BigInt: OP_1SUB 8-byte number (one bit set per byte) (P2SH32)", "020000000201000000000000000000000000000000000000000000000000000000000000000000000064417dfb529d352908ee0a88a0074c216b09793d6aa8c94c7640bb4ced51eaefc75d0aef61f7685d0307491e2628da3d4f91e86329265a4a58ca27a41ec0b8910779c32103a524f43d6166ad3567f18b0a5c769c6ab4dc02149f4d5095ccf4e8ffa293e78500000000010000000000000000000000000000000000000000000000000000000000000001000000150800010101010101010b0801010101010101018c87000000000100000000000000000a6a08766d625f7465737400000000", "0210270000000000001976a91460011c6bf3f1dd98cff576437b9d85de780f497488ac102700000000000023aa20f63854ce6e5f074cabcc12470d202792b073c964411837bb2a65fcf36b06bab187", 1, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2023 standard - core.bigint.1sub", "[vmb][2023][standard]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, true, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2023_standard/core.bigint.1sub.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, true
+};
+} // namespace kth::test::data_vmb_2023_standard_16

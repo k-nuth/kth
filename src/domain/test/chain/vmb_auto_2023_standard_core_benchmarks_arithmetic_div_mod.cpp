@@ -2,26 +2,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2023_standard) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2023_standard_1 {
 // Source: test/scripts/vmb_tests/bch_2023_standard/core.benchmarks.arithmetic.div-mod.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"mzgxue", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_DIV (P2SH20)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000d806ffffffffff7f0500ffffff7e4cc96e6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f9696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969200000000010000000000000000016a00000000", "01102700000000000017a9144f4d8daa5c42b95d1ae95ebb5e239e4fc979b5be87", 0, false},
     {"cps57g", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_DIV (P2SH32)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000d806ffffffffff7f0500ffffff7e4cc96e6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f9696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969696949696969694969200000000010000000000000000016a00000000", "01102700000000000023aa203553202008d2d9b44105700e2ad44a3c9c56c8786885a2e46a4087ad2d867f8387", 0, false},
     {"xyd798", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_MOD (P2SH20)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000d806ffffffffff7f0500ffffff7e4cc96e6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f9797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979200000000010000000000000000016a00000000", "01102700000000000017a914e7c242098d085eaeaa68f0c1ac093e218e83c03a87", 0, false},
     {"djc9j4", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_MOD (P2SH32)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000d806ffffffffff7f0500ffffff7e4cc96e6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f9797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979797949797979794979200000000010000000000000000016a00000000", "01102700000000000023aa20640f1d907a6752f753beb5e8e230d58a28b040a7e26b499b584a2877c552a4ef87", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2023 standard - core.benchmarks.arithmetic.div-mod", "[vmb][2023][standard]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, true, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2023_standard/core.benchmarks.arithmetic.div-mod.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, true
+};
+} // namespace kth::test::data_vmb_2023_standard_1

@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2025_invalid) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2025_invalid_37 {
 // Source: test/scripts/vmb_tests/bch_2025_invalid/core.cashtokens.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"sn55ut", "CHIP-2022-02-CashTokens: mint immutable NFT without authorization (pre-activation token forgery) (P2S)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000000000000001e80300000000000028ef02000000000000000000000000000000000000000000000000000000000000006004010203ff5100000000", "0110270000000000000151", 0, false},
     {"d5lu0l", "CHIP-2022-02-CashTokens: mint immutable NFT without authorization (pre-activation token forgery) (P2SH20)", "02000000010100000000000000000000000000000000000000000000000000000000000000000000000201510000000001e8030000000000003eef02000000000000000000000000000000000000000000000000000000000000006004010203ffa914da1745e9b549bd0bfa1a569971c77eba30cd5a4b8700000000", "01102700000000000017a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b87", 0, false},
     {"wh536v", "CHIP-2022-02-CashTokens: mint immutable NFT without authorization (pre-activation token forgery) (P2SH32)", "02000000010100000000000000000000000000000000000000000000000000000000000000000000000201510000000001e8030000000000004aef02000000000000000000000000000000000000000000000000000000000000006004010203ffaa20953ccfa596a6c6d39e5980194539124fdcff116a571455a212baed811f585ee08700000000", "01102700000000000023aa20953ccfa596a6c6d39e5980194539124fdcff116a571455a212baed811f585ee087", 0, false},
@@ -525,12 +524,7 @@ static vmb_entry const entries[] = {
     {"ngpce0", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 10, expect 11) (P2SH20)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000070600cd825b87770000000001e8030000000000002fef020000000000000000000000000000000000000000000000000000000000000010fdfd006a08766d625f7465737400000000", "01102700000000000017a914358b717cb5f335c98847601b4b6f5842aae5a48987", 0, false},
     {"nsfh4d", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 10, expect 11) (P2SH32)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000070600cd825b87770000000001e8030000000000002fef020000000000000000000000000000000000000000000000000000000000000010fdfd006a08766d625f7465737400000000", "01102700000000000023aa20e4f55e3a3331e0b8b93b9fcae9ef74cf7e97360198309ac4025b8676ec22550887", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2025 invalid - core.cashtokens", "[vmb][2025][invalid]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, false, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2025_invalid/core.cashtokens.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_galois) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, false
+};
+} // namespace kth::test::data_vmb_2025_invalid_37

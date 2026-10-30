@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2023_standard) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2023_standard_40 {
 // Source: test/scripts/vmb_tests/bch_2023_standard/core.cashtokens.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"9rvyxp", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment) (P2SH20)", "02000000010200000000000000000000000000000000000000000000000000000000000000000000000201510000000001e8030000000000003fef02000000000000000000000000000000000000000000000000000000000000006005010203ff00a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b8700000000", "01102700000000000017a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b87", 0, false},
     {"shjd2y", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment) (P2SH32)", "02000000010200000000000000000000000000000000000000000000000000000000000000000000000201510000000001e8030000000000004bef02000000000000000000000000000000000000000000000000000000000000006005010203ff00aa20953ccfa596a6c6d39e5980194539124fdcff116a571455a212baed811f585ee08700000000", "01102700000000000023aa20953ccfa596a6c6d39e5980194539124fdcff116a571455a212baed811f585ee087", 0, false},
     {"eyz85d", "CHIP-2022-02-CashTokens: mint immutable NFT (with genesis input, index 0, 5-byte commitment: P2SH20 non-dust minimum, P2SH32 dust) (P2SH20)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000020151000000000194020000000000003fef02000000000000000000000000000000000000000000000000000000000000006005010203ff00a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b8700000000", "01102700000000000017a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b87", 0, false},
@@ -629,12 +628,7 @@ static vmb_entry const entries[] = {
     {"tqlte2", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 10, expect 10) (P2SH20)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000070600cd825a87770000000001e8030000000000002fef020000000000000000000000000000000000000000000000000000000000000010fdfd006a08766d625f7465737400000000", "01102700000000000017a914d1c4e8ea5b57eb89581fedae71924eaf798a11b487", 0, false},
     {"908nvl", "CHIP-2022-02-CashTokens: OP_OUTPUTBYTECODE excludes token prefix after upgrade (length 10, expect 10) (P2SH32)", "0200000001020000000000000000000000000000000000000000000000000000000000000000000000070600cd825a87770000000001e8030000000000002fef020000000000000000000000000000000000000000000000000000000000000010fdfd006a08766d625f7465737400000000", "01102700000000000023aa20cfb25f138ce65065d1eb5580f43029008cbbd07d388a0aeb02ecf510b2a8932f87", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2023 standard - core.cashtokens", "[vmb][2023][standard]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, true, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2023_standard/core.cashtokens.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_descartes) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, true
+};
+} // namespace kth::test::data_vmb_2023_standard_40

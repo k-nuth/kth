@@ -2,15 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Auto-generated VMB tests (2026_invalid) - DO NOT EDIT
+// Packed imported vectors - DO NOT EDIT; see test/scripts/imported_vectors.md.
+
+#include "vmb_vectors.hpp"
+#include <kth/domain/machine/script_flags.hpp>
+
+namespace kth::test::data_vmb_2026_invalid_5 {
 // Source: test/scripts/vmb_tests/bch_2026_invalid/core.benchmarks.bitwise.vmb_tests.json
-
-#include "vmb_tests.hpp"
-
-namespace {
-static constexpr auto flags = kth::domain::to_flags(kth::domain::machine::upgrade::bch_leibniz) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule;
-struct vmb_entry { char const* ident; char const* description; char const* tx_hex; char const* utxos_hex; uint32_t input_num; bool script_only; };
-static vmb_entry const entries[] = {
+static constexpr vmb_vector rows_0[] = {
     {"vg22ge", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_XOR (P2S)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000045102080200000000010000000000000000016a00000000", "011027000000000000c980766e6f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866e8686868686", 0, false},
     {"jw8qrf", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_XOR (P2SH20)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000cf510208024cc980766e6f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866e868686868600000000010000000000000000016a00000000", "01102700000000000017a914875eb028c78cf0fcaa1fea7ed51dd38c906e6a5187", 0, false},
     {"exww8q", "Transaction validation benchmarks: Within BCH_2023_05 P2SH/standard, single-input limits, maximize OP_XOR (P2SH32)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000cf510208024cc980766e6f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866f8686866e868686868600000000010000000000000000016a00000000", "01102700000000000023aa201fc5fe0e5f9b6f12bee10850a23c1f8f86335c88f2d4774cbe950cf5cad0840a87", 0, false},
@@ -34,12 +33,7 @@ static vmb_entry const entries[] = {
     {"0axd8g", "Transaction validation benchmarks: Within BCH_2025_05 P2SH/standard, single-input limits, maximize OP_XOR (P2SH32)", "020000000101000000000000000000000000000000000000000000000000000000000000000000000008510210270380768600000000010000000000000000016a00000000", "01102700000000000023aa206dab817b0660cbb94e37713b62cce7b6f886c0bed820700dd8bd02d4c5906d4a87", 0, false},
     {"dr2ntt", "Transaction validation benchmarks: Within BCH_2023_05 P2S/nonstandard, single-input limits, maximize OP_EQUAL (P2S)", "0200000001010000000000000000000000000000000000000000000000000000000000000000000000045102080200000000010000000000000000046a02616100000000", "011027000000000000c880766e6f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888886f6f8888888887", 0, false},
 };
-} // anonymous namespace
-
-TEST_CASE("VMB 2026 invalid - core.benchmarks.bitwise", "[vmb][2026][invalid]") {
-    for (auto const& e : entries) {
-        DYNAMIC_SECTION("VMB " << e.ident << ": " << e.description) {
-            run_vmb_test({e.ident, e.description, e.tx_hex, e.utxos_hex, e.input_num, flags, false, e.script_only});
-        }
-    }
-}
+static constexpr vmb_vector_group group = {
+    "test/scripts/vmb_tests/bch_2026_invalid/core.benchmarks.bitwise.vmb_tests.json", rows_0, kth::domain::to_flags(kth::domain::machine::upgrade::bch_leibniz) | kth::domain::machine::script_flags::bip16_rule | kth::domain::machine::script_flags::bip65_rule | kth::domain::machine::script_flags::bip66_rule | kth::domain::machine::script_flags::bip68_rule | kth::domain::machine::script_flags::bip112_rule | kth::domain::machine::script_flags::bip113_rule, false
+};
+} // namespace kth::test::data_vmb_2026_invalid_5
