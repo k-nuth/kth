@@ -124,7 +124,7 @@ class KthRecipe(KnuthConanFileV2):
     # The bloom is consumed from `${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat`
     # when present (CI / git-checkout builds embed it); source-tarball
     # rebuilds gracefully fall back to no-embed (slower IBD, still correct).
-    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*"
+    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*", "scripts/check_parser_currencies.py"
 
 
     @property

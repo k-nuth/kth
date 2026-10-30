@@ -12,6 +12,7 @@
 
 #include <kth/capi/config/authority.h>
 #include <kth/capi/config/endpoint.h>
+#include <kth/capi/config/network.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +66,9 @@ typedef struct {
 
     size_t user_agent_blacklist_count;
     char** user_agent_blacklist;
+
+    // Explicit selected identity, independent of wire magic and a custom port.
+    kth_network_t context;
 } kth_network_settings;
 
 KTH_EXPORT
