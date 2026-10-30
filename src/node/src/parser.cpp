@@ -238,9 +238,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--fork.bip112",      cfg.chain.bip112);
     app.add_option("--fork.bip113",      cfg.chain.bip113);
 
+#if defined(KTH_CURRENCY_BCH)
     app.add_option("--fork.leibniz_activation_time", cfg.chain.leibniz_activation_time);
     app.add_option("--fork.cantor_activation_time",  cfg.chain.cantor_activation_time);
     app.add_option("--fork.asert_half_life",         cfg.chain.asert_half_life);
+#endif
 
     // [node]
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
@@ -386,20 +388,23 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
     if ( ! meta_flag_set) {
         // Rebuild the settings tree with the freshly-parsed network so the
         // subsequent config-file load overrides the network defaults.
-        configuration merged{configured.net};
-        merged.file = configured.file;
-        merged.help = configured.help;
-        merged.settings = configured.settings;
-        merged.version = configured.version;
+        auto rebuild_defaults = [&] {
+            configuration merged{configured.net};
+            merged.file = configured.file;
+            merged.help = configured.help;
+            merged.settings = configured.settings;
+            merged.version = configured.version;
 #if ! defined(KTH_DB_READONLY)
-        merged.initchain = configured.initchain;
-        merged.init_and_run = configured.init_and_run;
-        merged.compact_utxo = configured.compact_utxo;
+            merged.initchain = configured.initchain;
+            merged.init_and_run = configured.init_and_run;
+            merged.compact_utxo = configured.compact_utxo;
 #endif
-        configured = std::move(merged);
-        set_default_configuration();
+            configured = std::move(merged);
+            set_default_configuration();
+        };
+        rebuild_defaults();
 
-        auto const& config_path = configured.file;
+        auto const config_path = configured.file;
         if ( ! config_path.empty()) {
             std::error_code ec;
             if ( ! std::filesystem::exists(config_path, ec)) {
@@ -407,21 +412,31 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
                 return false;
             }
 
-            // Rebuild the app with the merged defaults and load the config file
-            // so its settings override the freshly-defaulted values.
-            CLI::App app2{"kth node"};
-            app2.allow_config_extras();
-            add_command_options(app2, configured);
-            add_settings(app2, configured);
-
-            try {
-                set_flat_config(app2, config_path);
-                // Reapply explicit CLI settings after rebuilding network defaults.
-                // CLI11 keeps explicit arguments above values from the file.
-                app2.parse(argc, argv);
-            } catch (CLI::ParseError const& e) {
-                error << "Error: " << e.what() << std::endl;
-                return e.get_exit_code() == 0;
+            // Parse CLI and file together: CLI11 selects the winning network
+            // and preserves command-line priority over file settings.
+            auto const initial_network = configured.net;
+            auto load = [&] {
+                CLI::App app2{"kth node"};
+                app2.allow_config_extras();
+                add_command_options(app2, configured);
+                add_settings(app2, configured);
+                try {
+                    set_flat_config(app2, config_path);
+                    app2.parse(argc, argv);
+                } catch (CLI::ParseError const& e) {
+                    error << "Error: " << e.what() << std::endl;
+                    return e.get_exit_code() == 0;
+                }
+                return true;
+            };
+            if ( ! load()) {
+                return false;
+            }
+            if (configured.net != initial_network) {
+                rebuild_defaults();
+                if ( ! load()) {
+                    return false;
+                }
             }
         } else {
             // No config file used — clear the field so downstream code can
@@ -445,9 +460,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
 
 #if ! defined(__EMSCRIPTEN__)
         if (configured.chain.fix_checkpoints) {
-            domain::config::fix_checkpoints(configured.network.identifier,
-                configured.chain.checkpoints,
-                configured.network.inbound_port == 48333);
+            domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
         }
 #endif
     }
@@ -485,18 +498,35 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
 
     configured.file = config_path;
 
-    CLI::App app{"kth node"};
-    app.allow_config_extras();
-    add_command_options(app, configured);
-    add_settings(app, configured);
+    auto const initial_network = configured.net;
+    auto load = [&]() {
+        CLI::App app{"kth node"};
+        app.allow_config_extras();
+        add_command_options(app, configured);
+        add_settings(app, configured);
 
-    try {
-        set_flat_config(app, config_path);
-        char const* const app_argv[] = {"kth"};
-        app.parse(1, app_argv);
-    } catch (CLI::ParseError const& e) {
-        error << "Error: " << e.what() << std::endl;
-        return e.get_exit_code() == 0;
+        try {
+            set_flat_config(app, config_path);
+            char const* const app_argv[] = {"kth"};
+            app.parse(1, app_argv);
+        } catch (CLI::ParseError const& e) {
+            error << "Error: " << e.what() << std::endl;
+            return e.get_exit_code() == 0;
+        }
+        return true;
+    };
+    if ( ! load()) {
+        return false;
+    }
+    if (configured.net != initial_network) {
+        // The first pass selects the file's network. Rebuild all derived
+        // defaults, then replay the same file so explicit settings still win.
+        configured = configuration{configured.net};
+        configured.file = config_path;
+        set_default_configuration();
+        if ( ! load()) {
+            return false;
+        }
     }
 
     if ( ! check_standardness_policy(configured, error)) {
@@ -505,9 +535,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
 
 #if ! defined(__EMSCRIPTEN__)
     if (configured.chain.fix_checkpoints) {
-        domain::config::fix_checkpoints(configured.network.identifier,
-            configured.chain.checkpoints,
-            configured.network.inbound_port == 48333);
+        domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
     }
 #endif
 

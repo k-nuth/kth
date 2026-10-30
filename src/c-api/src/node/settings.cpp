@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/node/settings.h>
+#include <kth/capi/conversions/config.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -31,10 +32,7 @@ kth_network_t kth_node_settings_get_network(kth_node_t exec) {
     auto const& node = *static_cast<kth::node::p2p_node*>(p2p_node);
 
     auto const& sett = node.network_settings();
-    auto id = sett.identifier;
-    bool is_chipnet = sett.inbound_port == 48333;
-
-    return static_cast<kth_network_t>(int(kth::get_network(id, is_chipnet)));
+    return kth::network_to_c(sett.context);
 }
 #endif
 
