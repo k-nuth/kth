@@ -12,6 +12,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/header_organizer.hpp>
+#include <kth/node/sync/messages.hpp>
 
 namespace kth::node::sync {
 
@@ -132,6 +133,26 @@ using header_persister = std::function<code(domain::chain::header::list const&, 
     uint32_t fork_height,
     std::function<bool()> abort,
     header_persister persist);
+
+// The sync coordinator borrows these pipeline endpoints for the switch. The
+// cursor reset is published while the barrier still holds every writer parked;
+// only storage publishes it during normal operation.
+struct reorg_pipeline {
+    block_storage_input_channel* storage_input;
+    std::atomic<uint32_t>* contiguous_height;
+};
+
+// A running storage participant must be told when pause is raised: checking a
+// flag before an empty receive cannot wake a receive already suspended. The
+// channel is borrowed for this operation; no data receive is cancelled.
+::asio::awaitable<reorg_outcome> execute_reorg(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    blockchain::header_index::index_t branch_head,
+    uint32_t fork_height,
+    std::function<bool()> abort,
+    header_persister persist,
+    reorg_pipeline pipeline);
 
 } // namespace kth::node::sync
 

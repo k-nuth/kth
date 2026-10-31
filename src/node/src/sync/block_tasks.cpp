@@ -1722,27 +1722,38 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
     auto initial_rss = get_rss_mb();
 
-    while (true) {
-        // Park BEFORE waiting for input. A paused pipeline delivers no chunk, so a
-        // check placed after the receive is never reached and the barrier would
-        // wait on a task that is itself waiting.
-        if (chain.reorg_pause_requested()) {
-            chain.enter_reorg_barrier();
-            while (chain.reorg_pause_requested() && ! chain.stopped()) {
-                ::asio::steady_timer pause_timer(co_await ::asio::this_coro::executor);
-                pause_timer.expires_after(std::chrono::milliseconds(50));
-                co_await pause_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            }
-            chain.leave_reorg_barrier();
+    // Compatibility boundary: retain the existing chain barrier and its pause
+    // protocol; the typed input wake supplies the missing owner notification.
+    // No receive is cancelled, so a received chunk remains owned across a pause.
+    auto park_for_reorg = [&]() -> ::asio::awaitable<void> {
+        // This scope also releases the parked count on cancellation or an
+        // exception, before the task's participation guard retires it.
+        struct parked_scope {
+            blockchain::block_chain& chain;
+            explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+            ~parked_scope() { chain.leave_reorg_barrier(); }
+        } const parked(chain);
+        while (chain.reorg_pause_requested() && ! chain.stopped()) {
+            ::asio::steady_timer pause_timer(co_await ::asio::this_coro::executor);
+            pause_timer.expires_after(std::chrono::milliseconds(50));
+            auto const [ec] = co_await pause_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) throw std::system_error(ec);
+        }
 
-            // The switch rewound the chain and reset the shared counter: re-derive
-            // the local cursors instead of carrying pre-switch values.
-            if (contiguous_out) {
-                contiguous_height = contiguous_out->load(std::memory_order_acquire);
-                max_stored_height = contiguous_height > 0 ? contiguous_height - 1 : 0;
-                spdlog::info("[block_storage] Resuming after reorg at contiguous height {}",
-                    contiguous_height);
-            }
+        // The switch rewound the chain and reset the shared counter: re-derive
+        // the local cursors instead of carrying pre-switch values.
+        if (contiguous_out) {
+            contiguous_height = contiguous_out->load(std::memory_order_acquire);
+            max_stored_height = contiguous_height > 0 ? contiguous_height - 1 : 0;
+            spdlog::info("[block_storage] Resuming after reorg at contiguous height {}",
+                contiguous_height);
+        }
+    };
+
+    while (true) {
+        if (chain.reorg_pause_requested()) {
+            co_await park_for_reorg();
+            if (chain.stopped()) break;
             continue;
         }
 
@@ -1760,6 +1771,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (std::holds_alternative<stop_request>(msg)) {
             spdlog::debug("[block_storage] Stop signal received");
             break;
+        }
+
+        if (std::holds_alternative<storage_reorg_wake>(msg)) {
+            continue;
+        }
+
+        // Pause may have been raised after the pre-receive check, including
+        // after a data completion was already queued. Keep that chunk in this
+        // frame until resume; the generation check below then drops old work.
+        if (chain.reorg_pause_requested()) {
+            co_await park_for_reorg();
+            if (chain.stopped()) break;
         }
 
         auto& chunk = std::get<downloaded_chunk>(msg);

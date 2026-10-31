@@ -311,11 +311,24 @@ namespace {
     uint32_t fork_height,
     std::function<bool()> abort,
     header_persister persist) {
+    co_return co_await execute_reorg(chain, organizer, branch_head, fork_height,
+        std::move(abort), std::move(persist), reorg_pipeline{nullptr, nullptr});
+}
+
+::asio::awaitable<reorg_outcome> execute_reorg(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    blockchain::header_index::index_t branch_head,
+    uint32_t fork_height,
+    std::function<bool()> abort,
+    header_persister persist,
+    reorg_pipeline pipeline) {
 
     // Before anything is touched: without somewhere to write the replaced range,
     // a switch has no way to become survivable, and finding that out after the
     // chain has already moved is finding out too late.
     KTH_CONTRACT(persist);
+    KTH_CONTRACT(bool(pipeline.storage_input) == bool(pipeline.contiguous_height));
 
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -330,6 +343,14 @@ namespace {
         pause_scope(pause_scope const&) = delete;
         pause_scope& operator=(pause_scope const&) = delete;
     } const pause(chain);
+
+    if (pipeline.storage_input) {
+        // The scope already owns pause if constructing or dispatching the wake
+        // throws. A full input has work that resumes the receiver, which checks
+        // pause before mutation even if its data completion was queued first.
+        // A closed input retires the participant through its normal exit path.
+        (void)pipeline.storage_input->try_send(std::error_code{}, storage_reorg_wake{});
+    }
 
     // Bounded: a registered writer that never parks is a bug, and waiting on it
     // forever would hold the pause open and stall sync with nothing in the log.
@@ -380,8 +401,15 @@ namespace {
     // on, and leave the gate shut on purpose: after a throw there is no coherent
     // state for a capture to be coherent with.
     try {
-        co_return co_await switch_publish_and_reopen(
+        auto outcome = co_await switch_publish_and_reopen(
             chain, organizer, branch_head, fork_height, persist);
+        if (pipeline.contiguous_height && outcome.result.validated_tip) {
+            // Before pause_scope can release the writers: a storage or UTXO
+            // task resuming on the new branch must never see the old cursor.
+            pipeline.contiguous_height->store(*outcome.result.validated_tip + 1,
+                std::memory_order_release);
+        }
+        co_return outcome;
     } catch (std::exception const& e) {
         spdlog::critical("[reorg] The switch threw after the transition began: {}. The chain may "
             "be part way onto the branch; capture stays closed and the node winds down", e.what());
