@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include <kth/capi/detail/enum_cast.hpp>
@@ -182,6 +183,18 @@ inline constexpr kth_coin_selection_algorithm_t coin_selection_algorithm_to_c(kt
     return ecast<kth_coin_selection_algorithm_t>(x);
 }
 
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
+static_assert(sizeof(std::underlying_type_t<kth::domain::wallet::coin_selection_algorithm>) <= sizeof(kth_coin_selection_algorithm_t));
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_algorithm>>(kth::domain::wallet::coin_selection_algorithm::smallest_first), +kth_coin_selection_algorithm_smallest_first));
+static_assert(coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_smallest_first) == kth::domain::wallet::coin_selection_algorithm::smallest_first);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_algorithm>>(kth::domain::wallet::coin_selection_algorithm::largest_first), +kth_coin_selection_algorithm_largest_first));
+static_assert(coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_largest_first) == kth::domain::wallet::coin_selection_algorithm::largest_first);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_algorithm>>(kth::domain::wallet::coin_selection_algorithm::manual), +kth_coin_selection_algorithm_manual));
+static_assert(coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_manual) == kth::domain::wallet::coin_selection_algorithm::manual);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_algorithm>>(kth::domain::wallet::coin_selection_algorithm::send_all), +kth_coin_selection_algorithm_send_all));
+static_assert(coin_selection_algorithm_to_cpp(kth_coin_selection_algorithm_send_all) == kth::domain::wallet::coin_selection_algorithm::send_all);
+
 // Out-of-range C values map to `clean`.
 inline constexpr kth::domain::wallet::coin_selection_strategy coin_selection_strategy_to_cpp(kth_coin_selection_strategy_t x) noexcept {
     switch (x) {
@@ -196,6 +209,14 @@ inline constexpr kth::domain::wallet::coin_selection_strategy coin_selection_str
 inline constexpr kth_coin_selection_strategy_t coin_selection_strategy_to_c(kth::domain::wallet::coin_selection_strategy x) noexcept {
     return ecast<kth_coin_selection_strategy_t>(x);
 }
+
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
+static_assert(sizeof(std::underlying_type_t<kth::domain::wallet::coin_selection_strategy>) <= sizeof(kth_coin_selection_strategy_t));
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_strategy>>(kth::domain::wallet::coin_selection_strategy::clean), +kth_coin_selection_strategy_clean));
+static_assert(coin_selection_strategy_to_cpp(kth_coin_selection_strategy_clean) == kth::domain::wallet::coin_selection_strategy::clean);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::wallet::coin_selection_strategy>>(kth::domain::wallet::coin_selection_strategy::mixed), +kth_coin_selection_strategy_mixed));
+static_assert(coin_selection_strategy_to_cpp(kth_coin_selection_strategy_mixed) == kth::domain::wallet::coin_selection_strategy::mixed);
 
 } // namespace kth
 

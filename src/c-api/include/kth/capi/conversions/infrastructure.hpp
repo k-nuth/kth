@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include <kth/capi/detail/enum_cast.hpp>
@@ -98,6 +99,16 @@ inline constexpr kth::infrastructure::machine::script_version script_version_to_
 inline constexpr kth_script_version_t script_version_to_c(kth::infrastructure::machine::script_version x) noexcept {
     return ecast<kth_script_version_t>(x);
 }
+
+// Numeric ABI: the C and C++ values of every named enumerator are the
+// same integer, checked without going through the conversions.
+static_assert(sizeof(std::underlying_type_t<kth::infrastructure::machine::script_version>) <= sizeof(kth_script_version_t));
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::infrastructure::machine::script_version>>(kth::infrastructure::machine::script_version::zero), +kth_script_version_zero));
+static_assert(script_version_to_cpp(kth_script_version_zero) == kth::infrastructure::machine::script_version::zero);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::infrastructure::machine::script_version>>(kth::infrastructure::machine::script_version::reserved), +kth_script_version_reserved));
+static_assert(script_version_to_cpp(kth_script_version_reserved) == kth::infrastructure::machine::script_version::reserved);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::infrastructure::machine::script_version>>(kth::infrastructure::machine::script_version::unversioned), +kth_script_version_unversioned));
+static_assert(script_version_to_cpp(kth_script_version_unversioned) == kth::infrastructure::machine::script_version::unversioned);
 #endif // ! defined(KTH_CURRENCY_BCH)
 
 } // namespace kth
