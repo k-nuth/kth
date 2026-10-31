@@ -45,6 +45,16 @@ struct block_template_context {
     uint32_t median_time_past;      // tip's MTP (BIP113 finality time)
     uint64_t coinbase_reserve_size = default_coinbase_reserve_size;
     uint64_t coinbase_reserve_sigchecks = default_coinbase_reserve_sigchecks;
+
+    // The branch's tick schedule (CHIP-2025-03), taken from the same chain state
+    // as `height`. Finality of height-mode locktimes is evaluated at T(height),
+    // which comes from the schedule: it is not the tip's tick plus the tip's
+    // interval. Uniform 600 when left default.
+    domain::chain::block_ticks ticks{};
+
+    // Whether BIP68 is active for the candidate, from the same state as ticks.
+    // Default false preserves callers that supplied only the legacy context.
+    bool sequence_locks = false;
 };
 
 // Assemble a block template from `entries`, mirroring BCHN's BlockAssembler
@@ -52,7 +62,12 @@ struct block_template_context {
 // all its in-mempool parents are in, so the result is dependency-complete under
 // CTOR without CPFP / ancestor-package scoring. Enforces the block size and
 // sigchecks limits (with a coinbase reserve) and per-tx finality at the
-// template height.
+// template height, coinbase maturity and (when enabled) relative sequence locks.
+// These are candidate filters, not complete mempool revalidation: the owner
+// must supply confirmed-prevout metadata refreshed for the captured branch.
+// A reorg can move a funding transaction to another height, and the immutable
+// snapshot alone cannot infer that change. The builder neither reads the UTXO
+// store nor changes validation metadata on the shared transactions.
 //
 // `entries` must be a coherent view of the pool: a set the pool actually held
 // at some instant. The dependency rule above is only meaningful on a set closed
@@ -86,11 +101,23 @@ struct mining_template {
 // Assemble a mining_template from the next-block parameters and the selection.
 // Pure (no chain access), so it is unit-tested directly: min_time = MTP + 1,
 // current_time = max(min_time, now), coinbase_value = subsidy(height) + fees.
+// Pass the network retarget setting for its subsidy interval (150 on regtest).
 KB_API
 mining_template make_mining_template(
     uint32_t version, hash_digest const& previous_block_hash, size_t height,
     uint32_t bits, uint32_t median_time_past, uint32_t now,
-    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection);
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection,
+    bool retarget = true);
+
+// The same, with the branch's tick schedule: the coinbase value uses the
+// tick-scaled subsidy of block `height` (halving keyed to the 600-tick chunk,
+// amount scaled by the block's interval).
+KB_API
+mining_template make_mining_template(
+    uint32_t version, hash_digest const& previous_block_hash, size_t height,
+    uint32_t bits, uint32_t median_time_past, uint32_t now,
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection,
+    domain::chain::block_ticks const& ticks, bool retarget = true);
 
 // A snapshot of mining-relevant chain state, for the getmininginfo RPC and its
 // C-API counterpart.

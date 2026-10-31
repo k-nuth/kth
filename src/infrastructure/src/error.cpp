@@ -49,6 +49,7 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::standardness_dust, "dust" },
         { error::standardness_datacarrier_size, "oversize-op-return" },
         { error::standardness_inputs, "bad-txns-nonstandard-inputs" },
+        { error::coinbase_shape, "bad-cb-shape" },
         { error::not_implemented, "feature not implemented" },
         { error::oversubscribed, "service oversubscribed" },
 

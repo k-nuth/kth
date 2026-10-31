@@ -32,14 +32,26 @@ def _get_target_year(compile_year: int) -> int:
     return _BASE_PERIOD_YEAR + (periods_since_base + 1) * _PERIOD_LENGTH_YEARS
 
 
-def _calculate_header_capacity(compile_year: int) -> int:
+def _calculate_header_capacity(compile_year: int, currency: str = "BCH") -> int:
     """Calculate header index capacity aligned to 2^16 for a given compilation year."""
     target_year = _get_target_year(compile_year)
     target_date = datetime(target_year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-    seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
-    blocks_exact = seconds_since_genesis / _SECONDS_PER_BLOCK
-    # Round up to nearest multiple of alignment
-    return ((int(blocks_exact) + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
+    if currency != "BCH":
+        seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
+        blocks_exact = seconds_since_genesis / _SECONDS_PER_BLOCK
+        return ((int(blocks_exact) + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
+
+    # Plan for the earliest supported one-minute chain, tempnet. The index
+    # retains its 600-second history, then grows ten times faster from Oct 15.
+    # This is an allocation estimate, not a consensus activation-height rule.
+    faster_blocks = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
+    historical_seconds = int((min(target_date, faster_blocks) - _GENESIS_TIMESTAMP).total_seconds())
+    faster_seconds = max(0, int((target_date - faster_blocks).total_seconds()))
+    # Express both portions over the legacy 600-second denominator and round
+    # up, so neither the partial final block nor the alignment loses capacity.
+    weighted_seconds = historical_seconds + faster_seconds * (_SECONDS_PER_BLOCK // 60)
+    blocks = (weighted_seconds + _SECONDS_PER_BLOCK - 1) // _SECONDS_PER_BLOCK
+    return ((blocks + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
 
 required_conan_version = ">=2.0"
 
@@ -124,7 +136,7 @@ class KthRecipe(KnuthConanFileV2):
     # The bloom is consumed from `${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat`
     # when present (CI / git-checkout builds embed it); source-tarball
     # rebuilds gracefully fall back to no-embed (slower IBD, still correct).
-    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*", "scripts/check_parser_currencies.py"
+    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*", "scripts/test_header_capacity.py", "scripts/check_parser_currencies.py", "conanfile.py"
 
 
     @property
@@ -283,7 +295,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
 
         # Header index capacity based on compilation year
-        header_capacity = _calculate_header_capacity(datetime.now().year)
+        header_capacity = _calculate_header_capacity(datetime.now().year, str(self.options.currency))
         tc.variables["KTH_HEADER_INDEX_CAPACITY"] = header_capacity
         self.output.info(f"Header index capacity: {header_capacity:,} headers")
 

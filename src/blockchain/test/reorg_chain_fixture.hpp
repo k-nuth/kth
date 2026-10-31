@@ -40,9 +40,11 @@ struct chain_fixture {
         chain_settings_.notify_limit_hours = notify_limit_hours;
     }
 
-    explicit chain_fixture(char const* tag)
+    explicit chain_fixture(char const* tag,
+                           domain::config::network network = domain::config::network::regtest)
         : dir_(make_dir(tag))
-        , chain_settings_(domain::config::network::regtest)
+        , network_(network)
+        , chain_settings_(network)
     {
         db_settings_.directory = dir_;
 
@@ -78,9 +80,9 @@ struct chain_fixture {
     [[nodiscard]] bool start() {
         if ( ! created_) return false;
         chain_ = std::make_unique<blockchain::block_chain>(
-            chain_settings_, db_settings_, domain::config::network::regtest,
+            chain_settings_, db_settings_, network_,
             /*relay_transactions*/ false);
-        if ( ! chain_->start(kth::get_disk_magic(domain::config::network::regtest))) {
+        if ( ! chain_->start(kth::get_disk_magic(network_))) {
             return false;
         }
 
@@ -90,7 +92,7 @@ struct chain_fixture {
         // sync_tip() runs, active_at() answers null_index for every height, so
         // fetch_blocks_raw and disconnect_block would find nothing.
         organizer_ = std::make_unique<blockchain::header_organizer>(
-            chain_->headers(), chain_settings_, domain::config::network::regtest);
+            chain_->headers(), chain_settings_, network_);
         if ( ! organizer_->start()) {
             return false;
         }
@@ -143,13 +145,23 @@ private:
         return p;
     }
 
-    static domain::chain::block genesis_block() {
-        // The regtest genesis, which the store is seeded with before any test
-        // chain is appended to it.
-        return domain::chain::block::genesis_regtest();
+    domain::chain::block genesis_block() const {
+        using domain::config::network;
+        switch (network_) {
+            case network::mainnet: return domain::chain::block::genesis_mainnet();
+            case network::testnet: return domain::chain::block::genesis_testnet();
+#if defined(KTH_CURRENCY_BCH)
+            case network::testnet4: return domain::chain::block::genesis_testnet4();
+            case network::scalenet: return domain::chain::block::genesis_scalenet();
+            case network::tempnet:
+            case network::chipnet: return domain::chain::block::genesis_chipnet();
+#endif
+            default: return domain::chain::block::genesis_regtest();
+        }
     }
 
     std::filesystem::path dir_;
+    domain::config::network network_;
     blockchain::settings chain_settings_;
     database::settings db_settings_;
     bool created_{false};

@@ -28,6 +28,7 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/unicode/unicode.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/timer.hpp>
 
 namespace kth::domain::chain {
@@ -38,6 +39,32 @@ using namespace boost::adaptors;
 
 // Constructors.
 //-----------------------------------------------------------------------------
+
+#if defined(KTH_CURRENCY_BCH)
+// The tick schedule of the branch a state describes. Uniform 600 until the
+// parent's median time past reaches the activation time; from then on the
+// schedule is {{H_a, 60}} with H_a the first block of the branch whose own MTP
+// reached it, as discovered by populate (branch-local, never shared).
+namespace {
+
+block_ticks make_ticks(chain_state::data const& values, uint32_t parent_median_time_past, cantor_t activation_time) {
+    if (values.height == 0 || ! chain_state::is_faster_blocks_activated(parent_median_time_past, activation_time)) {
+        return {};
+    }
+
+    // An activated context must carry the activation height discovered on
+    // this branch. Guessing the parent would silently change subsidy, locks
+    // and difficulty for every later block. Production population reports
+    // lookup failures before constructing a state; this contract covers
+    // malformed direct construction too, in Release as well as Debug.
+    auto const parent = size_t(values.height) - 1;
+    auto const found = values.faster_blocks_activation_height;
+    KTH_CONTRACT(found <= parent);
+    return block_ticks::activated_at(found);
+}
+
+} // namespace
+#endif  //KTH_CURRENCY_BCH
 
 // The allow_collisions network upgrade is always activated (not configurable).
 chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const& checkpoints
@@ -82,6 +109,11 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
 #endif  //KTH_CURRENCY_BCH
         ))
     , median_time_past_(median_time_past(data_))
+#if defined(KTH_CURRENCY_BCH)
+    , ticks_(make_ticks(data_, median_time_past_, cantor_activation_time))
+#else
+    , ticks_()
+#endif  //KTH_CURRENCY_BCH
     , work_required_(work_required(data_, network_, flags_
 #if defined(KTH_CURRENCY_BCH)
             // , euler_activation_time
@@ -93,6 +125,7 @@ chain_state::chain_state(data&& values, script_flags_t flags, checkpoints const&
             , cantor_activation_time
             , assert_anchor_block_info_
             , asert_half_life
+            , ticks_
 #endif
     ))
 #if defined(KTH_CURRENCY_BCH)
@@ -146,6 +179,7 @@ std::shared_ptr<chain_state> chain_state::from_pool_ptr(chain_state const& pool,
 
 // Inlines.
 //-----------------------------------------------------------------------------
+
 
 inline
 size_t version_sample_size(domain::config::network network) {
@@ -324,8 +358,13 @@ uint256_t chain_state::difficulty_adjustment_cash(uint256_t const& target) {
     return target + (target >> 2);
 }
 
-bool chain_state::is_mtp_activated(uint32_t median_time_past, uint32_t activation_time) {
+bool chain_state::is_mtp_activated(uint32_t median_time_past, uint64_t activation_time) {
     return (median_time_past >= activation_time);
+}
+
+// 64-bit comparison: the "never" sentinel does not fit the 32-bit timestamp.
+bool chain_state::is_faster_blocks_activated(uint32_t parent_median_time_past, cantor_t activation_time) {
+    return is_mtp_activated(parent_median_time_past, std::to_underlying(activation_time));
 }
 
 // 2018-May
@@ -537,8 +576,10 @@ chain_state::activations chain_state::activation(data const& values, script_flag
 
 #if defined(KTH_CURRENCY_BCH)
     if (is_csv_enabled(values.height, network)) {
-        // flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
-        result.flags |= (script_flags::bip112_rule & flags);
+        // CSV includes input sequence maturity and MTP-based finality as well
+        // as its script opcode. All three activate at the same BCH boundary.
+        auto const csv_rules = script_flags::bip68_rule | script_flags::bip112_rule | script_flags::bip113_rule;
+        result.flags |= (csv_rules & flags);
     }
 
     if (is_uahf_enabled(values.height, network)) {
@@ -987,7 +1028,7 @@ auto select_1_3_unstable(T&& a, U&& b, V&& c, R r) {
 #if defined(KTH_CURRENCY_BCH)
 
 // DAA/aserti3-2d: 2020-Nov-15 Hard fork
-uint32_t chain_state::daa_aserti3_2d(data const& values, assert_anchor_block_info_t const& assert_anchor_block_info, uint32_t half_life) {
+uint32_t chain_state::daa_aserti3_2d(data const& values, assert_anchor_block_info_t const& assert_anchor_block_info, uint32_t half_life, block_ticks const& ticks) {
     // Preconditions (checked in debug only; matches BCHN
     // GetNextASERTWorkRequired):
     //  - The ASERT anchor is an ancestor of the block being evaluated, so the
@@ -1004,13 +1045,20 @@ uint32_t chain_state::daa_aserti3_2d(data const& values, assert_anchor_block_inf
     static uint256_t const pow_limit(compact::from_compact(retarget_proof_of_work_limit).value());
 
     auto const time_diff = timestamp_high(values) - assert_anchor_block_info.ancestor_timestamp;
-    auto const height_diff = values.height - assert_anchor_block_info.height;
+
+    // The exponent is measured in ticks: T(prev) - T(anchor) plus the anchor's
+    // own interval (the legacy "+ 1" block). Read both from this branch's
+    // schedule: an explicit activation override may precede the fixed anchor.
+    // Before activation this is exactly 600 * (height - anchor.height).
+    auto const anchor_interval = ticks.block_interval(assert_anchor_block_info.height);
+    auto const anchor_tick = ticks.height_to_tick(assert_anchor_block_info.height);
+    auto const tick_term = int64_t(ticks.height_to_tick(values.height - 1u) - anchor_tick + anchor_interval);
 
     // The ASERT anchor bits come from a fixed consensus checkpoint, so the
     // compact is valid by definition and `.value()` cannot throw.
     uint256_t const anchor_target(compact::from_compact(assert_anchor_block_info.bits).value());
 
-    auto next_target = daa::aserti3_2d(anchor_target, target_spacing_seconds, time_diff, height_diff, pow_limit, half_life);
+    auto next_target = daa::aserti3_2d_ticks(anchor_target, time_diff, tick_term, anchor_interval, ticks.block_interval(values.height), pow_limit, half_life);
 
     // Postcondition (matches BCHN): `aserti3_2d` clamps the target to
     // [1, pow_limit] — a zero target is floored to 1 and anything above the
@@ -1084,6 +1132,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
                                     , cantor_t cantor_activation_time
                                     , assert_anchor_block_info_t const& assert_anchor_block_info
                                     , uint32_t asert_half_life
+                                    , block_ticks const& ticks
 #endif
 ) {
     // A zero height yields an empty map; the caller treats that as unusable.
@@ -1114,7 +1163,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
 
     if (script::is_enabled(flags, script_flags::easy_blocks)) {
 #if defined(KTH_CURRENCY_BCH)
-        return easy_work_required(values, daa_cw144_active, daa_asert_active, assert_anchor_block_info, asert_half_life);
+        return easy_work_required(values, daa_cw144_active, daa_asert_active, assert_anchor_block_info, asert_half_life, ticks);
 #else
         return easy_work_required(values);
 #endif
@@ -1122,7 +1171,7 @@ uint32_t chain_state::work_required(data const& values, config::network network,
 
 #if defined(KTH_CURRENCY_BCH)
     if (daa_asert_active) {
-        return daa_aserti3_2d(values, assert_anchor_block_info, asert_half_life);
+        return daa_aserti3_2d(values, assert_anchor_block_info, asert_half_life, ticks);
     }
 
     if (daa_cw144_active) {
@@ -1224,18 +1273,25 @@ uint32_t chain_state::easy_work_required(data const& values
                             , bool daa_asert_active
                             , assert_anchor_block_info_t const& assert_anchor_block_info
                             , uint32_t asert_half_life
+                            , block_ticks const& ticks
 #endif
 ) {
     KTH_ASSERT(values.height != 0);
 
-    // If the time limit has passed allow a minimum difficulty block.
-    if (values.timestamp.self > easy_time_limit(values)) {
+    // If the time limit has passed allow a minimum difficulty block. The
+    // threshold follows the schedule: 2 * the candidate's own interval.
+#if defined(KTH_CURRENCY_BCH)
+    uint64_t const candidate_interval = ticks.block_interval(values.height);
+#else
+    uint64_t const candidate_interval = target_spacing_seconds;
+#endif
+    if (values.timestamp.self > easy_time_limit(values, candidate_interval)) {
         return retarget_proof_of_work_limit;
     }
 
 #if defined(KTH_CURRENCY_BCH)
     if (daa_asert_active) {
-        return daa_aserti3_2d(values, assert_anchor_block_info, asert_half_life);
+        return daa_aserti3_2d(values, assert_anchor_block_info, asert_half_life, ticks);
     }
     if (daa_cw144_active) {
         return daa_cw144(values);
@@ -1259,9 +1315,9 @@ uint32_t chain_state::easy_work_required(data const& values
 }
 
 //static
-uint32_t chain_state::easy_time_limit(chain_state::data const& values) {
+uint32_t chain_state::easy_time_limit(chain_state::data const& values, uint64_t block_interval) {
     int64_t const high = timestamp_high(values);
-    int64_t const spacing = easy_spacing_seconds;
+    int64_t const spacing = int64_t(easy_spacing_factor) * int64_t(block_interval);
 
     //*************************************************************************
     // CONSENSUS: add unsigned 32 bit numbers in signed 64 bit space in
@@ -1442,12 +1498,18 @@ uint32_t chain_state::asert_half_life() const {
 }
 
 uint64_t chain_state::dynamic_max_block_size() const {
-    uint64_t const static_size = static_max_block_size(network());
+    // Both the dynamic limit and the chain-level floor are throughput
+    // quantities. Keeping the old floor here would undo the 60-tick scaling.
+    uint64_t const interval = block_interval();
+    uint64_t const static_size = static_max_block_size(network()) * interval / base_block_interval;
     if ( ! is_lobachevski_enabled()) {
-        return static_size;
+        return std::min<uint64_t>(static_size, static_absolute_max_block_size());
     }
-    uint64_t const dynamic_size = block_size_limit(data_.abla_state);
-    return std::max(static_size, dynamic_size);
+    auto const dynamic_size = abla::block_size_limit(data_.abla_state, interval);
+    // A valid bounded ABLA state at an interval <=600 always fits uint64.
+    // Never turn arithmetic failure into an invented consensus limit.
+    KTH_CONTRACT(dynamic_size.has_value());
+    return std::min<uint64_t>(std::max(static_size, *dynamic_size), static_absolute_max_block_size());
 }
 
 uint64_t chain_state::dynamic_max_block_sigops() const {
@@ -1508,6 +1570,37 @@ cantor_t chain_state::cantor_activation_time() const {
 
 #endif  //KTH_CURRENCY_BCH
 
+// Tick schedule.
+//-----------------------------------------------------------------------------
+
+#if defined(KTH_CURRENCY_BCH)
+// static
+block_ticks chain_state::branch_ticks(data const& values, cantor_t activation_time) {
+    return make_ticks(values, median_time_past(values), activation_time);
+}
+
+bool chain_state::is_faster_blocks_active() const {
+    return ! ticks_.schedule().empty();
+}
+
+block_ticks const& chain_state::ticks() const {
+    return ticks_;
+}
+
+uint64_t chain_state::tick() const {
+    return ticks_.height_to_tick(data_.height);
+}
+
+uint64_t chain_state::parent_tick() const {
+    return data_.height == 0 ? 0 : ticks_.height_to_tick(data_.height - 1u);
+}
+
+uint64_t chain_state::block_interval() const {
+    return ticks_.block_interval(data_.height);
+}
+#endif // KTH_CURRENCY_BCH
+
+
 // Forks.
 //-----------------------------------------------------------------------------
 
@@ -1541,6 +1634,7 @@ uint32_t chain_state::get_next_work_required(uint32_t time_now) {
                             , cantor_activation_time()
                             , assert_anchor_block_info_
                             , asert_half_life()
+                            , ticks_
 #endif
     );
 }

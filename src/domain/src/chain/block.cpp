@@ -344,8 +344,19 @@ uint256_t block::proof() const {
 
 // static
 uint64_t block::subsidy(size_t height, bool retarget) {
+    return subsidy(block_ticks{}, height, retarget);
+}
+
+// static
+uint64_t block::subsidy(block_ticks const& ticks, size_t height, bool retarget) {
     static auto const overflow = sizeof(uint64_t) * byte_bits;
-    auto const halvings = height / subsidy_interval(retarget);
+    // Exact integer arithmetic. The chunk is the 600-tick grid cell holding the
+    // block's interval, so halvings stay pinned to the original 600 * N grid
+    // however many blocks a chunk holds; on a uniform schedule chunk == height.
+    auto const tick = ticks.height_to_tick(height);
+    auto const tau = ticks.block_interval(height);
+    auto const chunk = (tick + (base_block_interval - 1)) / base_block_interval;
+    auto const halvings = chunk / subsidy_interval(retarget);
     // Past the 64th halving the shift `initial >> halvings` would be UB
     // (exponent ≥ type width). The previous guard `>>= (halvings >= 64 ?
     // 0 : halvings)` sidestepped the UB but ran `>>= 0` instead, which
@@ -355,7 +366,7 @@ uint64_t block::subsidy(size_t height, bool retarget) {
     if (halvings >= overflow) {
         return 0;
     }
-    return initial_block_subsidy_satoshi() >> halvings;
+    return ((initial_block_subsidy_satoshi() >> halvings) * tau) / base_block_interval;
 }
 
 // Returns max_size_t in case of overflow.
@@ -394,8 +405,12 @@ bool block::is_extra_coinbases() const {
 }
 
 bool block::is_final(size_t height, uint32_t block_time) const {
-    auto const value = [=](transaction const& tx) {
-        return tx.is_final(height, block_time);
+    return is_final(block_ticks{}, height, block_time);
+}
+
+bool block::is_final(block_ticks const& ticks, size_t height, uint32_t block_time) const {
+    auto const value = [&ticks, height, block_time](transaction const& tx) {
+        return tx.is_final(ticks, height, block_time);
     };
 
     auto const& txs = transactions_;
@@ -554,8 +569,26 @@ uint64_t block::reward(size_t height) const {
     return ceiling_add(fees(), subsidy(height, true));
 }
 
+uint64_t block::reward(block_ticks const& ticks, size_t height) const {
+    return ceiling_add(fees(), subsidy(ticks, height, true));
+}
+
 bool block::is_valid_coinbase_claim(size_t height) const {
     return claim() <= reward(height);
+}
+
+bool block::is_valid_coinbase_claim(block_ticks const& ticks, size_t height) const {
+    return claim() <= reward(ticks, height);
+}
+
+bool block::has_forbidden_coinbase_shape() const {
+    if (transactions_.empty()) {
+        return false;
+    }
+
+    // The cheap integer fields first.
+    auto const& cb = transactions_.front();
+    return cb.version() == 1 && cb.locktime() == 0 && cb.total_output_value() >= 25 * satoshi_per_bitcoin;
 }
 
 bool block::is_valid_coinbase_script(size_t height) const {
