@@ -136,20 +136,24 @@ void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) 
     bool keep_alive,
     std::string_view extra_headers = {}) {
 
+    // Pool software in the ckpool family reads a reply line by line: it takes
+    // the line after Content-Length as the end of the headers, and the body as
+    // one JSON line. So Content-Length comes last and the body ends in LF.
     std::string out;
     out.reserve(body.size() + 160);
     out += "HTTP/1.1 ";
     out += std::to_string(status);
     out += ' ';
     out += reason;
-    out += "\r\nContent-Type: application/json\r\nContent-Length: ";
-    out += std::to_string(body.size());
-    out += "\r\nConnection: ";
+    out += "\r\nContent-Type: application/json\r\nConnection: ";
     out += keep_alive ? "keep-alive" : "close";
     out += "\r\n";
     out += extra_headers;
-    out += "\r\n";
+    out += "Content-Length: ";
+    out += std::to_string(body.size() + 1);
+    out += "\r\n\r\n";
     out += body;
+    out += '\n';
 
     co_await ::asio::async_write(socket, ::asio::buffer(out),
         ::asio::as_tuple(::asio::use_awaitable));
