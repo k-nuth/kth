@@ -123,6 +123,12 @@ void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) 
     settings.on_body = on_body;
     settings.on_message_complete = on_message_complete;
     llhttp_init(&parser, HTTP_REQUEST, &settings);
+    // Mining pool software in the ckpool family ends its request lines with a
+    // bare LF instead of CRLF. llhttp takes the LF after the HTTP version for
+    // the CR and then needs the LF to be optional, so the request line needs
+    // both flags; header lines need only the first.
+    llhttp_set_lenient_optional_cr_before_lf(&parser, 1);
+    llhttp_set_lenient_optional_lf_after_cr(&parser, 1);
     parser.data = &ctx;
 }
 

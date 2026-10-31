@@ -127,3 +127,24 @@ TEST_CASE("rpc server answers every request pipelined on one connection", "[rpc 
     CHECK(answers[1].find(R"("id":2)") != std::string::npos);
     CHECK(answers[2].find(R"("id":3)") != std::string::npos);
 }
+
+TEST_CASE("rpc server accepts request lines that end in a bare LF", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_bare_lf", 28432);
+    REQUIRE(fixture.start());
+
+    // The request as ckpool-family pool software writes it: LF line endings.
+    std::string const body = R"({"id":0,"method": "getblockcount"})" "\n";
+    auto const reply = fixture.exchange(
+        "POST / HTTP/1.1\n"
+        "Authorization: Basic dGVzdDp0ZXN0\n"
+        "Host: 127.0.0.1:28432\n"
+        "Content-type: application/json\n"
+        "Connection: close\n"
+        "Content-Length: " + std::to_string(body.size()) + "\n"
+        "\n" + body);
+
+    REQUIRE(reply.starts_with("HTTP/1.1 200 OK\r\n"));
+    auto const answers = bodies(reply);
+    REQUIRE(answers.size() == 1);
+    CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+}
