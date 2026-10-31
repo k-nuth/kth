@@ -76,6 +76,24 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes(kth_hd_key_t co
 KTH_EXPORT
 kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes_unsafe(uint8_t const* private_key, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out);
 
+/**
+ * @return Owned `kth_hd_private_mut_t`. Caller must release with `kth_wallet_hd_private_destruct`.
+ * @param secret Borrowed input; must be non-null. Read during the call; ownership of `secret` stays with the caller.
+ */
+KTH_EXPORT KTH_OWNED
+kth_hd_private_mut_t kth_wallet_hd_private_from_verified_parts(kth_hd_public_const_t base, kth_hash_t const* secret);
+
+/**
+ * @return Owned `kth_hd_private_mut_t`. Caller must release with `kth_wallet_hd_private_destruct`.
+ * @warning `secret` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ */
+KTH_EXPORT KTH_OWNED
+kth_hd_private_mut_t kth_wallet_hd_private_from_verified_parts_unsafe(kth_hd_public_const_t base, uint8_t const* secret);
+
+/** @param[out] out Must point to a null `kth_hd_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_hd_private_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_hd_private_from_seed_and_path(uint8_t const* seed, kth_size_t n, char const* path, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out);
+
 
 // Destructor
 
@@ -157,6 +175,10 @@ kth_error_code_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self
 
 KTH_EXPORT
 void kth_wallet_hd_private_wipe(kth_hd_private_mut_t self);
+
+/** @param[out] out Must point to a null `kth_hd_private_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_hd_private_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_hd_private_derive_path(kth_hd_private_const_t self, char const* path, KTH_OUT_OWNED kth_hd_private_mut_t* out);
 
 
 // Static utilities
