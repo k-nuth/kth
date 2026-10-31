@@ -200,6 +200,7 @@ char const* to_string(body_range_trigger trigger) {
         case body_range_trigger::block_validated:      return "block_validated";
         case body_range_trigger::chunk_validated:      return "chunk_validated";
         case body_range_trigger::utxo_build_advanced:  return "utxo_build_advanced";
+        case body_range_trigger::admission_retry:      return "admission_retry";
         case body_range_trigger::reorg:                return "reorg";
     }
     return "unknown";
@@ -399,6 +400,22 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
             blocks_synced_to, moved_to, range_end)};
 }
 
+bool refresh_validated_tip(blockchain::block_chain const& chain,
+                           blockchain::header_organizer& organizer) {
+    auto const view = chain.chain_view();
+    if ( ! view || view->connected_tip_height > size_t(max_int32)) {
+        return false;
+    }
+    auto const height = static_cast<int32_t>(view->connected_tip_height);
+    auto const idx = organizer.index().active_at(height);
+    if (idx == blockchain::header_index::null_index ||
+        organizer.index().get_hash(idx) != view->tip_hash) {
+        return false;
+    }
+    organizer.note_block_validated(height);
+    return true;
+}
+
 utxo_progress_step utxo_progress_for_tick(
     std::optional<uint32_t> last_seen,
     std::expected<uint32_t, database::result_code> const& built) {
@@ -557,6 +574,7 @@ static
 
     // Sync coordinator unified event channel (created here so peer_provider can close it during shutdown)
     sync_coordinator_event_channel coordinator_events(executor, 100);
+    utxo_build_progress_channel utxo_progress(executor, 1);
 
     // =========================================================================
     // TASKS - All independent, communicate only via channels
@@ -575,6 +593,7 @@ static
     detail::stimulus_sender header_stimulus(executor, coordinator_events, spawn_walk_task);
     detail::walk_timer header_deadline(executor, coordinator_events, spawn_walk_task);
     detail::walk_timer header_retry(executor, coordinator_events, spawn_walk_task);
+    detail::walk_timer body_retry(executor, coordinator_events, spawn_walk_task);
 
     // From the ingest's owner to its forwarder: one batch, answering one pull.
     detail::ingest_handoff_channel ingest_handoff(executor, 1);
@@ -833,6 +852,8 @@ static
         block_storage_input.close();
         stored_chunks.cancel();
         stored_chunks.close();
+        utxo_progress.cancel();
+        utxo_progress.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1032,6 +1053,20 @@ static
         contiguous_height.get()
     ));
 
+    // The bridge is not a reorg participant. It can wait for coordinator room
+    // while the builder reaches the barrier; one pending channel wake coalesces
+    // later publications. Shutdown closes both channels before joining tasks.
+    all_tasks.spawn("coordinator_utxo_bridge", [&]() -> ::asio::awaitable<void> {
+        while (true) {
+            auto [ec, progress] = co_await utxo_progress.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) co_return;
+            auto [send_ec] = co_await coordinator_events.async_send(
+                std::error_code{}, progress, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) co_return;
+        }
+    });
+
     // 7d. Incremental UTXO build task (reads from disk as contiguous blocks become available)
     all_tasks.spawn("utxo_build_task", utxo_build_task(
         chain,
@@ -1039,7 +1074,8 @@ static
         initial_block_height + 1,
         network_type,
         [&network]() { return network.stopped(); },
-        on_fatal
+        on_fatal,
+        &utxo_progress
     ));
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
@@ -1060,58 +1096,9 @@ static
         spdlog::info("[coordinator:chunks_bridge] Task ended");
     });
 
-    // Bridge: stored_chunks -> coordinator_events (carries storage results: validated + stored)
-    // Bridge: the UTXO builder's published height -> coordinator_events (#663)
-    //
-    // The coordinator holds the post-checkpoint range until the set describes the
-    // state below it, and the builder has nothing to announce when it advances —
-    // it publishes a height and carries on. Without this the coordinator would sit
-    // on its receive point until some UNRELATED event arrived, which is how the
-    // range came to start on a peer connecting or a header batch landing. In the
-    // observed run it did not arrive for over ten minutes.
-    //
-    // A poll and not a signal, deliberately: the builder is in another task with
-    // its own window, and having it notify would mean either sending from under
-    // that window or threading a channel through it. One LMDB key read per second
-    // costs nothing next to what it unblocks, and it keeps the builder unaware of
-    // the coordinator entirely.
-    //
-    // Sends only on CHANGE, so a steady state is silent. A read that fails sends
-    // nothing: the coordinator asks the store itself when it evaluates, and
-    // fail-closed there is the decision — this task's job is to make it look
-    // again, not to decide anything.
-    all_tasks.spawn("coordinator_utxo_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:utxo_bridge] Started");
-        auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer poll(exec);
-
-        std::optional<uint32_t> last_seen;
-        while ( ! network.stopped()) {
-            poll.expires_after(std::chrono::seconds(1));
-            auto [timer_ec] = co_await poll.async_wait(::asio::as_tuple(::asio::use_awaitable));
-            if (timer_ec) {
-                break;
-            }
-
-            auto const step = utxo_progress_for_tick(last_seen,
-                chain.get_utxo_built_height());
-            last_seen = step.next_last_seen;
-            if ( ! step.announce) {
-                continue;
-            }
-
-            if ( ! coordinator_events.try_send(std::error_code{},
-                    utxo_build_advanced{*step.announce})) {
-                // Dropped, and not fatal: the next tick reports the height again
-                // because `last_seen` is only updated here, so a full channel
-                // delays the wake-up rather than losing it.
-                spdlog::debug("[coordinator:utxo_bridge] Channel full, utxo_build_advanced dropped");
-                last_seen.reset();
-            }
-        }
-        spdlog::info("[coordinator:utxo_bridge] Task ended");
-    });
-
+    // Storage results report body availability only. The builder delivers its
+    // own progress after publishing a complete connected state; no timer bridge
+    // or unrelated peer event is needed to wake the coordinator.
     all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:stored_bridge] Started");
         while (true) {
@@ -1215,6 +1202,7 @@ static
 
     // 2026-02-07: Added comprehensive exception handling for debugging
     all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
+        refresh_validated_tip(chain, organizer);
         spdlog::info("[sync_coordinator] Task started");
         try {
 
@@ -1236,6 +1224,9 @@ static
         // drive with real channels — see open_body_range_if_owed.
         body_range_deps deps{chain, network, block_download_input, checkpoint_height};
         body_range_log_memory range_log;
+        bool body_retry_armed = false;
+        uint64_t body_retry_generation = 0;
+        uint32_t body_retry_attempt = 0;
 
 
         // For ETA calculation
@@ -1256,6 +1247,26 @@ static
         auto record = [&](std::optional<uint32_t> opened) {
             if (opened) {
                 slow_sync_end = opened;
+            }
+            auto const owed = next_slow_sync_range(blocks_synced_to, headers_synced_to,
+                checkpoint_height, slow_sync_end);
+            if (owed && range_log.last_hold == slow_sync_admission::height_unavailable) {
+                if ( ! body_retry_armed) {
+                    // Only failed reads owe a deadline: ordinary builder lag is
+                    // driven by publication, and an idle store is never polled.
+                    auto const exponent = std::min(body_retry_attempt, uint32_t{5});
+                    body_retry_attempt = std::min(body_retry_attempt + 1, uint32_t{5});
+                    body_retry_armed = true;
+                    body_retry.arm(std::chrono::seconds(uint32_t{1} << exponent),
+                        body_range_retry{++body_retry_generation});
+                }
+            } else {
+                if (body_retry_armed) {
+                    body_retry.cancel();
+                    body_retry_armed = false;
+                    ++body_retry_generation;
+                }
+                body_retry_attempt = 0;
             }
         };
 
@@ -1836,19 +1847,20 @@ static
                 continue;
             }
 
-            if (auto* advanced = std::get_if<utxo_build_advanced>(&event)) {
-                // A WAKE-UP, not an authority on the height. The value it carries
-                // is logged and nothing else: the message can sit in the channel
-                // while a reorg, a startup reconciliation or a rebuild moves the
-                // height under it, and a decision made on the stale number would
-                // send the range against a set that no longer describes what the
-                // message claimed.
-                //
-                // The trigger names the door; the payload's height is not passed
-                // and cannot reach the decision. `try_start_slow_sync` reads the
-                // height itself, from the store, at the moment it evaluates.
-                spdlog::debug("[sync_coordinator] UTXO built height reported as {}; re-checking",
-                    advanced->built_height);
+            if (auto* retry = std::get_if<body_range_retry>(&event)) {
+                if ( ! body_retry_armed || retry->generation != body_retry_generation) {
+                    continue;
+                }
+                body_retry_armed = false;
+                co_await try_start_slow_sync(body_range_trigger::admission_retry);
+                continue;
+            }
+
+            if (std::holds_alternative<utxo_build_advanced>(event)) {
+                // A delayed wake-up may describe a branch since abandoned. Read
+                // the immutable publication now; storage and event payloads are
+                // not authority to advance validation or finalization.
+                refresh_validated_tip(chain, organizer);
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
@@ -1936,6 +1948,9 @@ static
         header_stimulus.cancel();
         header_deadline.cancel();
         header_retry.cancel();
+        body_retry.cancel();
+        utxo_progress.cancel();
+        utxo_progress.close();
         coordinator_events.cancel();
         coordinator_events.close();
         spdlog::info("[sync_coordinator] Task ended");
