@@ -163,8 +163,8 @@ kth_error_code_t kth_wallet_coin_selection_create_token_split_tx_template(kth_ou
         auto const& destination_address_cpp = kth::cpp_ref<kth::domain::wallet::payment_address>(destination_address);
         auto result = kth::domain::wallet::create_token_split_tx_template(outpoints_to_split_cpp, available_utxos_cpp, destination_address_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
-        auto staged_out_1 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<1>(*result)));
+        auto staged_out_0 = kth::to_unique(std::move(std::get<0>(*result)));
+        auto staged_out_1 = kth::to_unique(std::move(std::get<1>(*result)));
         auto staged_out_2 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<2>(*result)));
         *out_tx = staged_out_0.release();
         *out_addresses = staged_out_1.release();
@@ -199,9 +199,9 @@ kth_error_code_t kth_wallet_coin_selection_create_tx_template(kth_utxo_list_cons
         auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
         auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, change_ratios_cpp, selection_algo_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
+        auto staged_out_0 = kth::to_unique(std::move(std::get<0>(*result)));
         auto staged_out_1 = std::make_unique<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
-        auto staged_out_2 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
+        auto staged_out_2 = kth::to_unique(std::move(std::get<2>(*result)));
         auto staged_out_3 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
         *out_tx = staged_out_0.release();
         *out_indices = staged_out_1.release();
@@ -235,9 +235,9 @@ kth_error_code_t kth_wallet_coin_selection_create_tx_template_default_ratios(kth
         auto const selection_algo_cpp = kth::coin_selection_algorithm_to_cpp(selection_algo);
         auto result = kth::domain::wallet::create_tx_template(available_utxos_cpp, amount_to_send, destination_address_cpp, change_addresses_cpp, selection_algo_cpp);
         if ( ! result) return kth::to_c_err(result.error());
-        auto staged_out_0 = std::make_unique<kth::domain::chain::transaction>(std::move(std::get<0>(*result)));
+        auto staged_out_0 = kth::to_unique(std::move(std::get<0>(*result)));
         auto staged_out_1 = std::make_unique<std::vector<uint32_t>>(std::move(std::get<1>(*result)));
-        auto staged_out_2 = std::make_unique<std::vector<kth::domain::wallet::payment_address>>(std::move(std::get<2>(*result)));
+        auto staged_out_2 = kth::to_unique(std::move(std::get<2>(*result)));
         auto staged_out_3 = std::make_unique<std::vector<uint64_t>>(std::move(std::get<3>(*result)));
         *out_tx = staged_out_0.release();
         *out_indices = staged_out_1.release();

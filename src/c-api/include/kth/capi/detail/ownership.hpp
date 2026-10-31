@@ -174,6 +174,22 @@ inline std::unique_ptr<T> stage_owned(T* object) noexcept {
     return std::unique_ptr<T>(object);
 }
 
+// Promote a value to the heap exactly as `to_owned` would, but hand it back
+// owned by a `std::unique_ptr` instead of a raw pointer. The element type is
+// deduced from the argument (`std::decay_t<T>`, or the unwrapped pointee for a
+// `std::shared_ptr`), so a backend alias is never re-spelled. Lvalues are
+// copied and rvalues moved; a `std::shared_ptr` argument selects the matching
+// `to_owned` overload (null yields an empty `unique_ptr`, a const pointee is
+// promoted as non-const). Allocates once, like `to_owned`, so it may throw
+// (`std::bad_alloc` or whatever the copy/move constructor throws), and the
+// returned `unique_ptr` frees the object on unwinding. Not `noexcept`.
+// Defined after `stage_owned` so that it and every `to_owned` overload are
+// visible at the point of definition.
+template <typename T>
+inline auto to_unique(T&& value) {
+    return stage_owned(to_owned(std::forward<T>(value)));
+}
+
 // Inverse of `to_owned` / `make_owned` / `make_owned_list`: hands an opaque C
 // handle back to `delete`. Null-safe, so generated destructors can call this
 // unconditionally without a separate guard — passing `nullptr` is a
