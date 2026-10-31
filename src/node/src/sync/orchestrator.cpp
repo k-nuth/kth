@@ -1414,8 +1414,16 @@ static
                 spdlog::debug("[sync_coordinator] Header stimulus {} ({}) to {} from height {}",
                     stimulus.seq, why, peer->authority_with_agent(), headers_synced_to);
                 // Replaces — and withdraws — whatever stimulus was being sent.
-                header_stimulus.send(peer, active_hash_at(organizer.index(), headers_synced_to),
-                    stimulus.seq);
+                // A peer may not know our tip after a fork. Include recent
+                // ancestors, exponential backoff and genesis so it can find
+                // the shared branch instead of restarting at genesis forever.
+                auto const heights = domain::chain::block::locator_heights(headers_synced_to);
+                hash_list locator;
+                locator.reserve(heights.size());
+                for (auto const height : heights) {
+                    locator.push_back(active_hash_at(organizer.index(), static_cast<uint32_t>(height)));
+                }
+                header_stimulus.send(peer, std::move(locator), stimulus.seq);
                 header_deadline.arm(timing.stimulus_timeout, header_walk_timeout{.seq = stimulus.seq});
                 // Walking again: whatever retry was armed is moot.
                 header_retry.cancel();
