@@ -208,6 +208,44 @@ kth_error_code_t kth_wallet_hd_private_from_hd_key_with_prefixes_unsafe(uint8_t 
 #endif
 }
 
+kth_hd_private_mut_t kth_wallet_hd_private_from_verified_parts(kth_hd_public_const_t base, kth_hash_t const* secret) {
+    KTH_PRECONDITION(base != nullptr);
+    KTH_PRECONDITION(secret != nullptr);
+    auto const& base_cpp = kth::cpp_ref<kth::domain::wallet::hd_public>(base);
+    auto secret_cpp = kth::hash_to_cpp(secret->hash);
+    kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+    return kth::to_owned(cpp_t::from_verified_parts(base_cpp, secret_cpp));
+}
+
+kth_hd_private_mut_t kth_wallet_hd_private_from_verified_parts_unsafe(kth_hd_public_const_t base, uint8_t const* secret) {
+    KTH_PRECONDITION(base != nullptr);
+    KTH_PRECONDITION(secret != nullptr);
+    auto const& base_cpp = kth::cpp_ref<kth::domain::wallet::hd_public>(base);
+    auto secret_cpp = kth::hash_to_cpp(secret);
+    kth::secure_scrub secret_cpp_scrub{&secret_cpp, sizeof(secret_cpp)};
+    return kth::to_owned(cpp_t::from_verified_parts(base_cpp, secret_cpp));
+}
+
+kth_error_code_t kth_wallet_hd_private_from_seed_and_path(uint8_t const* seed, kth_size_t n, char const* path, uint64_t prefixes, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(seed != nullptr || n == 0);
+    KTH_PRECONDITION(path != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const seed_cpp = n != 0 ? kth::data_chunk(seed, seed + n) : kth::data_chunk{};
+        auto const path_cpp = std::string_view(path);
+        auto result = cpp_t::from_seed_and_path(seed_cpp, path_cpp, prefixes);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
 
 // Destructor
 
@@ -349,6 +387,25 @@ kth_error_code_t kth_wallet_hd_private_derive_public(kth_hd_private_const_t self
 void kth_wallet_hd_private_wipe(kth_hd_private_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
     kth::cpp_ref<cpp_t>(self).wipe();
+}
+
+kth_error_code_t kth_wallet_hd_private_derive_path(kth_hd_private_const_t self, char const* path, KTH_OUT_OWNED kth_hd_private_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(path != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const path_cpp = std::string_view(path);
+        auto result = kth::cpp_ref<cpp_t>(self).derive_path(path_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 

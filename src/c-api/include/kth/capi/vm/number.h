@@ -56,6 +56,9 @@ kth_number_mut_t kth_vm_number_copy(kth_number_const_t self);
 KTH_EXPORT
 kth_bool_t kth_vm_number_equals(kth_number_const_t self, kth_number_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_vm_number_not_equal(kth_number_const_t self, kth_number_const_t other);
+
 
 // Getters
 

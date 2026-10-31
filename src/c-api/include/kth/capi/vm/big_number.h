@@ -52,6 +52,9 @@ kth_big_number_mut_t kth_vm_big_number_copy(kth_big_number_const_t self);
 KTH_EXPORT
 kth_bool_t kth_vm_big_number_equals(kth_big_number_const_t self, kth_big_number_const_t other);
 
+KTH_EXPORT
+kth_bool_t kth_vm_big_number_not_equal(kth_big_number_const_t self, kth_big_number_const_t other);
+
 
 // Getters
 
