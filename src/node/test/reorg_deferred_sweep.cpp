@@ -460,8 +460,21 @@ reorg_scenario build_and_connect(chain_fixture& fixture) {
     s.tx_child = spend_p2pkh(s.tx_parent, 0,
         s.tx_parent.outputs()[0].value() - spend_fee, flags);
 
+    // Regtest already enforces CTOR. Parent-before-child insertion order is
+    // not necessarily numeric transaction-ID order, even for valid spends.
+    domain::chain::transaction::list transactions{s.tx_parent, s.tx_child};
+#if defined(KTH_CURRENCY_BCH)
+    std::sort(transactions.begin(), transactions.end(), [](auto const& a, auto const& b) {
+        auto const ah = a.hash();
+        auto const bh = b.hash();
+        return std::lexicographical_compare(ah.rbegin(), ah.rend(), bh.rbegin(), bh.rend());
+    });
+#endif
     s.branch_a.push_back(mine_block(s.trunk.back().hash(), 101,
-        base_time + 101 * block_spacing, 1, {s.tx_parent, s.tx_child}, 2 * spend_fee));
+        base_time + 101 * block_spacing, 1, std::move(transactions), 2 * spend_fee));
+#if defined(KTH_CURRENCY_BCH)
+    REQUIRE(s.branch_a.front().is_canonical_ordered());
+#endif
 
     s.tx_grand = spend_p2pkh(s.tx_child, 0,
         s.tx_child.outputs()[0].value() - spend_fee, flags);
