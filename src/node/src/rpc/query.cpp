@@ -91,6 +91,10 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     return w.str();
 }
 
+std::string header_to_hex(domain::chain::header const& header) {
+    return encode_base16(to_data_chunk(header, /*wire*/ true));
+}
+
 std::string render_block_header(domain::chain::header const& header,
                                 std::size_t height, hash_digest const& hash) {
     writer w;

@@ -29,6 +29,10 @@ namespace kth::node::rpc {
 std::string transaction_to_hex(domain::chain::transaction const& tx);
 std::string block_to_hex(domain::chain::block const& block);
 
+// The 80-byte wire-serialized block header as hex (getblockheader with
+// verbose=false).
+std::string header_to_hex(domain::chain::header const& header);
+
 // Serialize the getblockchaininfo result object.
 std::string render_blockchain_info(
     std::string_view chain, std::size_t blocks, std::size_t headers,

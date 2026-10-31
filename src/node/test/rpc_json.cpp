@@ -115,3 +115,20 @@ TEST_CASE("params_uint rejects missing or non-integer params", "[rpc json]") {
     REQUIRE_FALSE(params_uint("[1.5]", 0).has_value());
     REQUIRE_FALSE(params_uint("", 0).has_value());
 }
+
+TEST_CASE("params_bool reads a JSON boolean", "[rpc json]") {
+    REQUIRE(params_bool(R"(["00ff", false])", 1, true) == false);
+    REQUIRE(params_bool(R"(["00ff", true])", 1, false) == true);
+}
+
+TEST_CASE("params_bool falls back when the param is absent or null", "[rpc json]") {
+    REQUIRE(params_bool(R"(["00ff"])", 1, true) == true);
+    REQUIRE(params_bool(R"(["00ff", null])", 1, true) == true);
+    REQUIRE(params_bool("", 1, false) == false);
+}
+
+TEST_CASE("params_bool rejects a param that is not a boolean", "[rpc json]") {
+    REQUIRE_FALSE(params_bool(R"(["00ff", "false"])", 1, true).has_value());
+    REQUIRE_FALSE(params_bool(R"(["00ff", 0])", 1, true).has_value());
+    REQUIRE_FALSE(params_bool(R"(["00ff", {}])", 1, true).has_value());
+}

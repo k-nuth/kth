@@ -60,6 +60,22 @@ TEST_CASE("render_mempool_entry serializes fields plus depends/spentby", "[rpc q
         R"("],"spentby":[]})");
 }
 
+TEST_CASE("header_to_hex serializes the 80-byte wire header", "[rpc query]") {
+    domain::chain::header h{/*version*/ 2u, null_hash, null_hash,
+                           /*timestamp*/ 1000u, /*bits*/ 0x1d00ffffu, /*nonce*/ 42u};
+
+    auto const hex = header_to_hex(h);
+    REQUIRE(hex == std::string("02000000") + zeros + zeros + "e8030000" + "ffff001d" + "2a000000");
+
+    auto const bytes = decode_base16(hex);
+    REQUIRE(bytes.has_value());
+    REQUIRE(bytes->size() == 80u);
+    byte_reader reader(*bytes);
+    auto const decoded = domain::chain::header::from_data(reader);
+    REQUIRE(decoded.has_value());
+    REQUIRE(*decoded == h);
+}
+
 TEST_CASE("render_block_header serializes the verbose header fields", "[rpc query]") {
     domain::chain::header h{/*version*/ 2u, null_hash, null_hash,
                            /*timestamp*/ 1000u, /*bits*/ 0x1d00ffffu, /*nonce*/ 42u};
