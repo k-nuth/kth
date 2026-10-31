@@ -299,6 +299,7 @@ if (ENABLE_TEST)
     find_package(Catch2 3 REQUIRED)
 
     set(kth_blockchain_test_sources
+        test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
         test/block_entry.cpp
