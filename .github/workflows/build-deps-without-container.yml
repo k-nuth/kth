@@ -20,9 +20,9 @@ on:
         type: string
     secrets:
       conan_remote_username:
-        required: true
+        required: false
       conan_remote_password:
-        required: true
+        required: false
 jobs:
   reusable-build-deps-without-container:
     if: ${{ inputs.if }}
@@ -69,7 +69,7 @@ jobs:
         if: ${{ inputs.reference != 'null' }}
         uses: ./ci_utils/.github/actions/setup-kthbuild
       - name: 🔐 Conan login
-        if: ${{ inputs.reference != 'null' }}
+        if: ${{ inputs.reference != 'null' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         run: conan remote login -p "${{ secrets.conan_remote_password }}" "${{ inputs.conan-remote }}" "${{ secrets.conan_remote_username }}"
       - name: 📥 Download artifact
         if: ${{ inputs.reference != 'null' }}
@@ -90,6 +90,6 @@ jobs:
             conan install --requires="$CONAN_REFERENCE" -l conan.lock -b missing -pr:b general-ci-cd -pr:h general-ci-cd
           fi
       - name: 📦 Upload package
-        if: ${{ inputs.reference != 'null' }}
+        if: ${{ inputs.reference != 'null' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         run: conan upload ${{ inputs.reference }} -r ${{ inputs.conan-remote }} # --all
       - run: exit 0
