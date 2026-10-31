@@ -19,6 +19,7 @@ typedef enum {
     kth_network_testnet4 = 3,
     kth_network_scalenet = 4,
     kth_network_chipnet = 5,
+    kth_network_tempnet = 6,
 #endif
 } kth_network_t;
 

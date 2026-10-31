@@ -136,6 +136,10 @@ bool input::is_final() const {
 }
 
 bool input::is_locked(size_t block_height, uint32_t median_time_past) const {
+    return is_locked(block_ticks{}, block_height, median_time_past);
+}
+
+bool input::is_locked(block_ticks const& ticks, size_t block_height, uint32_t median_time_past) const {
     if ((sequence_ & relative_locktime_disabled) != 0) {
         return false;
     }
@@ -152,8 +156,8 @@ bool input::is_locked(size_t block_height, uint32_t median_time_past) const {
     }
 
     KTH_ASSERT(block_height >= prevout.height);
-    auto const age_blocks = block_height - prevout.height;
-    return age_blocks < minimum;
+    auto const age_ticks = ticks.height_to_tick(block_height) - ticks.height_to_tick(prevout.height);
+    return age_ticks < uint64_t(minimum) * base_block_interval;
 }
 
 // This requires that previous outputs have been populated.

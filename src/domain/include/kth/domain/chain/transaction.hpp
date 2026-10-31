@@ -201,6 +201,9 @@ struct KD_API transaction {
     bool is_mature(size_t height) const;
 
     [[nodiscard]]
+    bool is_mature(block_ticks const& ticks, size_t height) const;
+
+    [[nodiscard]]
     bool is_internal_double_spend() const;
 
     [[nodiscard]]
@@ -215,8 +218,15 @@ struct KD_API transaction {
     [[nodiscard]]
     bool is_final(size_t block_height, uint32_t block_time) const;
 
+    /// Height-mode locktime in ticks: final when T(block_height) > 600 * locktime.
+    [[nodiscard]]
+    bool is_final(block_ticks const& ticks, size_t block_height, uint32_t block_time) const;
+
     [[nodiscard]]
     bool is_locked(size_t block_height, uint32_t median_time_past) const;
+
+    [[nodiscard]]
+    bool is_locked(block_ticks const& ticks, size_t block_height, uint32_t median_time_past) const;
 
     [[nodiscard]]
     bool is_locktime_conflict() const;
@@ -236,6 +246,21 @@ struct KD_API transaction {
     /// Call after check() passes and prevout cache is filled.
     [[nodiscard]]
     code accept(
+        script_flags_t flags,
+        size_t height,
+        uint32_t median_time_past,
+        size_t max_sigops,
+        bool is_under_checkpoint,
+        bool transaction_pool,
+        bool duplicate
+    ) const;
+
+    /// As above, with the branch's tick schedule: finality, relative locks and
+    /// coinbase maturity are evaluated in ticks, and `height` is the candidate
+    /// block's height (its tick comes from the schedule).
+    [[nodiscard]]
+    code accept(
+        block_ticks const& ticks,
         script_flags_t flags,
         size_t height,
         uint32_t median_time_past,

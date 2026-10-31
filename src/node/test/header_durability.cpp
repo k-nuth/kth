@@ -165,6 +165,31 @@ TEST_CASE("header durability: a running node does not fall back to the table",
     std::vector<domain::chain::block> const table_only{orphan};
     persist_headers(fixture, table_only, 3);
     REQUIRE(chain.get_header(3).has_value());
+#if defined(KTH_CURRENCY_BCH)
+    // This test publishes a synthetic connected tip to isolate header source
+    // selection. Supply its actual derived ABLA state as a trusted fixture;
+    // header-only sync intentionally leaves these fields unknown.
+    auto const parent = chain.get_header_and_abla_state(2);
+    REQUIRE(parent);
+    domain::chain::abla::state parent_state(chain.chain_settings().abla_config, std::get<1>(*parent));
+    parent_state.control_block_size = std::get<2>(*parent);
+    parent_state.elastic_buffer_size = std::get<3>(*parent);
+    REQUIRE(chain.chain_state());
+    auto const& ticks = chain.chain_state()->ticks();
+    parent_state.block_interval = ticks.block_interval(2);
+    auto const state = domain::chain::abla::next(parent_state,
+        chain.chain_settings().abla_config, orphan.serialized_size(), ticks.block_interval(3));
+    REQUIRE(state);
+    database::header_abla_record const record{3, state->block_size,
+        state->control_block_size, state->elastic_buffer_size};
+    auto const heights = chain.get_last_heights();
+    auto const built = chain.get_utxo_built_height();
+    REQUIRE(heights);
+    REQUIRE(built);
+    REQUIRE(chain.publish_transition(database::transition_heights{
+        .last_block_height = uint32_t(heights->block), .utxo_built_height = *built},
+        std::span<database::header_abla_record const>(&record, 1)) == database::result_code::success);
+#endif
 
     // Still hydrating, and from this state the checkpoint answers: the call
     // succeeds even though the index has nothing at that height.
@@ -676,7 +701,7 @@ TEST_CASE("header durability: a batch whose barrier refuses mutates nothing at a
 // The exact shape D0 died in
 // -----------------------------------------------------------------------------
 
-TEST_CASE("header durability: a chain state builds for a height the table does not hold",
+TEST_CASE("header durability: an unconnected index height cannot fabricate ABLA state",
           "[node][headers][d0]") {
     chain_fixture fixture("hdr_d0_shape");
     REQUIRE(fixture.created());
@@ -714,20 +739,15 @@ TEST_CASE("header durability: a chain state builds for a height the table does n
     blockchain::detail::block_chain_internal::end_hydration(chain);
     REQUIRE_FALSE(chain.hydrating());
 
-    // This is the call that ended the run: publish_chain_view -> populate ->
-    // a header lookup that found nothing, pool_state_failed, and a node that
-    // could not be restarted because a start publishes the same way.
-    //
-    // It has to succeed. The header comes from the index, and the ABLA state
-    // that is still read from the table is READ OPTIONALLY: a missing row leaves
-    // it zero, which is what every row in that table holds anyway, and the
-    // populate below already treats zero as "use the static maximum".
-    CHECK_FALSE(chain.publish_chain_view(4));
+    // Headers alone cannot establish the ABLA state of a connected tip. The
+    // bodies have not been connected, so publishing height 4 must refuse rather
+    // than inventing a floor state. The real connect path persists the gap and
+    // derives every state before publication (the index-only batch test above).
+    CHECK(chain.publish_chain_view(4));
 
-    // And it is STILL absent. Without this the case could pass because something
-    // on the way wrote the row -- a publish that succeeded by persisting the
-    // header first is not a publish that worked from memory, and it is the
-    // second that is being claimed.
+    // Refusal does not fabricate durable records or advance the published tip.
+    REQUIRE(chain.chain_state());
+    CHECK(chain.chain_state()->height() == 3u);
     CHECK_FALSE(chain.get_header(4).has_value());
     CHECK_FALSE(chain.get_header_and_abla_state(4).has_value());
 }
@@ -816,7 +836,7 @@ TEST_CASE("header durability: a new chain over an existing datadir does not rewr
 // An absent ABLA row and a failed ABLA read are not the same thing
 // -----------------------------------------------------------------------------
 
-TEST_CASE("header durability: an absent ABLA row does not stop the chain state",
+TEST_CASE("header durability: an absent ABLA row refuses an unconnected chain state",
           "[node][headers][abla]") {
     chain_fixture fixture("hdr_abla_absent");
     REQUIRE(fixture.created());
@@ -841,9 +861,11 @@ TEST_CASE("header durability: an absent ABLA row does not stop the chain state",
 
     blockchain::detail::block_chain_internal::end_hydration(chain);
 
-    // It must not stop the publish. Zero is what every row in that table holds
-    // anyway, and the populate reads zero as "use the static maximum".
-    CHECK_FALSE(chain.publish_chain_view(3));
+    // A missing connected state is not evidence of the static floor. Refuse
+    // the synthetic tip; a real connection derives state before publishing it.
+    CHECK(chain.publish_chain_view(3));
+    REQUIRE(chain.chain_state());
+    CHECK(chain.chain_state()->height() == 3u);
 }
 
 TEST_CASE("header durability: a failed ABLA read stops the chain state",

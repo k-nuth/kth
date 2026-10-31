@@ -33,6 +33,8 @@ inline constexpr kth::domain::config::network network_to_cpp(kth_network_t x) no
             return kth::domain::config::network::testnet4;
         case kth_network_scalenet:
             return kth::domain::config::network::scalenet;
+        case kth_network_tempnet:
+            return kth::domain::config::network::tempnet;
         case kth_network_chipnet:
             return kth::domain::config::network::chipnet;
 #endif
@@ -53,6 +55,8 @@ inline constexpr kth_network_t network_to_c(kth::domain::config::network x) noex
             return kth_network_testnet4;
         case kth::domain::config::network::scalenet:
             return kth_network_scalenet;
+        case kth::domain::config::network::tempnet:
+            return kth_network_tempnet;
         case kth::domain::config::network::chipnet:
             return kth_network_chipnet;
 #endif

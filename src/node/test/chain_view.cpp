@@ -19,6 +19,7 @@
 #include <asio/detached.hpp>
 
 #include <kth/blockchain/pools/block_template.hpp>
+#include <kth/blockchain/abla_pipeline.hpp>
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
@@ -57,27 +58,47 @@ constexpr uint64_t pool_entries = 200000;
 // shorter thing to hit, and a smaller pool.
 constexpr uint64_t reserve_pool_entries = 60000;
 
-// A pooled transaction, synthetic. The template builder is a pure function of
-// the entry set — it resolves parents within that set and nothing against the
-// chain — so these need to be well-formed and distinct, not spendable.
-inline domain::chain::transaction pooled_tx(uint64_t tag) {
-    hash_digest prevout{};
-    for (int i = 0; i < 8; ++i) {
-        prevout[i] = uint8_t(tag >> (8 * i));
+// A closed pool graph rooted in a real mature coinbase. All other outputs
+// remain within the captured pool, so prevout refresh never invents funding.
+inline size_t seed_template_pool(blockchain::mempool& pool,
+                                domain::chain::transaction const& coinbase,
+                                uint64_t count, domain::script_flags_t flags) {
+    domain::machine::operation::list ops;
+    for (size_t i = 0; i < 40; ++i) ops.emplace_back(domain::machine::opcode::nop);
+    ops.emplace_back(domain::machine::opcode::push_positive_1);
+    domain::chain::script const target{std::move(ops)};
+    auto previous = coinbase.hash();
+    auto value = coinbase.outputs()[0].value();
+    size_t admitted = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+        uint64_t const fee = 1000u + i % 100u;
+        value -= fee;
+        domain::chain::input::list inputs;
+        inputs.emplace_back(domain::chain::output_point{previous, 0},
+                            domain::chain::script{}, 0xffffffffu);
+        domain::chain::output::list outputs;
+        outputs.emplace_back(value, target, domain::chain::token_data_opt{});
+        domain::chain::transaction tx{1u, 0u, std::move(inputs), std::move(outputs)};
+        if (i == 0) {
+            tx.inputs()[0].previous_output().validation.cache = coinbase.outputs()[0];
+            auto endorsement = domain::chain::script::create_endorsement(
+                miner_secret(), miner_script(), tx, 0,
+                uint8_t(infrastructure::machine::sighash_algorithm::forkid_all),
+                flags, coinbase.outputs()[0].value());
+            REQUIRE(endorsement.has_value());
+            domain::chain::input::list signed_inputs;
+            signed_inputs.emplace_back(domain::chain::output_point{previous, 0},
+                domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern_unlocking(
+                    *endorsement, miner_public())), 0xffffffffu);
+            tx = domain::chain::transaction{1u, 0u, std::move(signed_inputs),
+                                           domain::chain::output::list(tx.outputs())};
+        }
+        previous = tx.hash();
+        admitted += pool.add(blockchain::mempool_entry{
+            std::make_shared<domain::message::transaction>(tx), fee,
+            uint32_t(tx.serialized_size(true)), 1u, i});
     }
-
-    domain::chain::input::list ins;
-    ins.emplace_back(domain::chain::output_point{prevout, 0},
-                     domain::chain::script{}, 0xffffffffu);
-
-    domain::chain::output out;
-    out.set_value(1000u + tag);
-    out.set_script(domain::chain::script{});
-
-    domain::chain::output::list outs;
-    outs.push_back(std::move(out));
-
-    return domain::chain::transaction{1u, 0u, std::move(ins), std::move(outs)};
+    return admitted;
 }
 
 // A chain of `len` blocks, connected the way the node connects them.
@@ -714,12 +735,13 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
     // either half of it.
     //
     // The window is opened rather than waited for. Requests coalesce on the
-    // rebuild mutex, so a second request arriving while the first is still
+    // rebuild gate, so a second request arriving while the first is still
     // building blocks *between* the two reads — exactly where the transition
     // has to land. The transition is driven through the chain's own primitives
     // because here it is the fixture, not the subject: what is under test is
     // what the second request builds on when it wakes.
-    built_chain built("gate_recapture", trunk_len);
+    constexpr uint32_t chain_len = 140;
+    built_chain built("gate_recapture", chain_len);
     built.add_headers(built.trunk, 1);
     connect_bodies(built.fixture, built.trunk, 1);
 
@@ -728,16 +750,8 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
 
     // A pool large enough that one build is a window rather than an instant.
     auto& pool = chain.mempool_ref();
-    size_t admitted = 0;
-    for (uint64_t i = 0; i < pool_entries; ++i) {
-        auto const tx = pooled_tx(i);
-        admitted += pool.add(blockchain::mempool_entry{
-            std::make_shared<domain::message::transaction>(tx),
-            /*fee*/ 1000u + i,
-            /*size*/ uint32_t(tx.serialized_size(true)),
-            /*sigchecks*/ 1u,
-            /*time_seen*/ i});
-    }
+    auto const admitted = seed_template_pool(pool, built.trunk.front().transactions().front(),
+        pool_entries, chain.chain_view()->state->enabled_flags());
     REQUIRE(admitted == pool_entries);
     REQUIRE(pool.size() == pool_entries);
 
@@ -757,7 +771,7 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
             sample_entries, blockchain::block_template_context{
                 /*max_block_size*/ 32u * 1000u * 1000u,
                 /*max_block_sigchecks*/ 1u * 1000u * 1000u,
-                /*height*/ trunk_len + 1u,
+                /*height*/ chain_len + 1u,
                 /*median_time_past*/ 0u});
         REQUIRE_FALSE(selection.txs.empty());
         return std::chrono::steady_clock::now() - start;
@@ -765,8 +779,8 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
 
     // The block the transition connects. Built here so its hash is known to the
     // assertions below.
-    auto const extra = test::mine_block(built.trunk.back().hash(), trunk_len + 1u,
-        built.base_time + (trunk_len + 1u) * block_spacing, 0, {}, 0);
+    auto const extra = test::mine_block(built.trunk.back().hash(), chain_len + 1u,
+        built.base_time + (chain_len + 1u) * block_spacing, 0, {}, 0);
 
     using result = std::expected<blockchain::mining_template, code>;
     std::optional<result> first_out;
@@ -799,9 +813,30 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
 
     bool const began = chain.begin_transition();
     if (began) {
-        built.add_headers(std::vector<domain::chain::block>{extra}, trunk_len + 1u);
+        built.add_headers(std::vector<domain::chain::block>{extra}, chain_len + 1u);
     }
-    code const published = began ? chain.publish_chain_view(trunk_len + 1u) : code{};
+    // Model the completed connect's trusted ABLA publication inside the same
+    // owned transition. This gate fixture deliberately does not exercise body
+    // or undo writes and performs no further connect/restart afterward.
+    bool stored_state = true;
+#if defined(KTH_CURRENCY_BCH)
+    if (began) {
+        std::vector<uint64_t> sizes{extra.serialized_size()};
+        auto const states = blockchain::abla_states_for_batch(chain, built.fixture.settings(),
+            domain::config::network::regtest, chain_len + 1u, sizes,
+            chain.headers().find(extra.hash()));
+        if (states) {
+            auto const records = blockchain::abla_records_for(chain_len + 1u, *states);
+            stored_state = chain.publish_transition(database::transition_heights{
+                .last_block_height = chain_len + 1u, .utxo_built_height = chain_len + 1u},
+                records) == database::result_code::success;
+        } else {
+            stored_state = false;
+        }
+    }
+#endif
+    code const published = began && stored_state
+        ? chain.publish_chain_view(chain_len + 1u) : code{error::operation_failed};
 
     // Still open when the transition finished, which is what puts the transition
     // strictly between the parked request's two reads.
@@ -816,6 +851,7 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
 
     // The fixture held: without these the rest proves nothing.
     REQUIRE(began);
+    REQUIRE(stored_state);
     REQUIRE_FALSE(published);
     REQUIRE(window_open_before);
     REQUIRE(window_open_after);
@@ -824,9 +860,12 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
     // captured: the old tip. That is correct — a capture admitted before a
     // transition finishes with what it captured.
     REQUIRE(first_out);
-    REQUIRE(first_out->has_value());
-    CHECK((*first_out)->previous_block_hash == built.trunk.back().hash());
-    CHECK((*first_out)->height == trunk_len + 1u);
+    if (first_out->has_value()) {
+        CHECK((*first_out)->previous_block_hash == built.trunk.back().hash());
+        CHECK((*first_out)->height == chain_len + 1u);
+    } else {
+        CHECK(first_out->error() == error::transition_in_progress);
+    }
 
     // The second was queued behind it, so it finished second — the ordering the
     // whole construction depends on.
@@ -839,8 +878,10 @@ TEST_CASE("a queued rebuild recaptures the chain it builds on", "[chain_view][ga
     REQUIRE(second_out);
     REQUIRE(second_out->has_value());
     CHECK((*second_out)->previous_block_hash == extra.hash());
-    CHECK((*second_out)->height == trunk_len + 2u);
-    CHECK((*second_out)->previous_block_hash != (*first_out)->previous_block_hash);
+    CHECK((*second_out)->height == chain_len + 2u);
+    if (first_out->has_value()) {
+        CHECK((*second_out)->previous_block_hash != (*first_out)->previous_block_hash);
+    }
 }
 
 TEST_CASE("a queued request is not served another request's coinbase budget",
@@ -851,7 +892,8 @@ TEST_CASE("a queued request is not served another request's coinbase budget",
     // coinbase does not fit the default — serving it a snapshot built for a
     // different reserve answers it with someone else's budget, on the right
     // parent, which is the kind of wrong that looks right.
-    built_chain built("gate_reserve", trunk_len);
+    constexpr uint32_t chain_len = 140;
+    built_chain built("gate_reserve", chain_len);
     built.add_headers(built.trunk, 1);
     connect_bodies(built.fixture, built.trunk, 1);
 
@@ -859,16 +901,8 @@ TEST_CASE("a queued request is not served another request's coinbase budget",
     REQUIRE(chain.synchronization().synchronized());
 
     auto& pool = chain.mempool_ref();
-    size_t admitted = 0;
-    for (uint64_t i = 0; i < reserve_pool_entries; ++i) {
-        auto const tx = pooled_tx(i);
-        admitted += pool.add(blockchain::mempool_entry{
-            std::make_shared<domain::message::transaction>(tx),
-            /*fee*/ 1000u + i,
-            /*size*/ uint32_t(tx.serialized_size(true)),
-            /*sigchecks*/ 1u,
-            /*time_seen*/ i});
-    }
+    auto const admitted = seed_template_pool(pool, built.trunk.front().transactions().front(),
+        reserve_pool_entries, chain.chain_view()->state->enabled_flags());
     REQUIRE(admitted == reserve_pool_entries);
 
     auto const fetch = [&](uint64_t reserve) -> std::optional<blockchain::mining_template> {
@@ -897,7 +931,7 @@ TEST_CASE("a queued request is not served another request's coinbase budget",
             sample_entries, blockchain::block_template_context{
                 /*max_block_size*/ warm->size_limit,
                 /*max_block_sigchecks*/ warm->sigchecks_limit,
-                /*height*/ trunk_len + 1u,
+                /*height*/ chain_len + 1u,
                 /*median_time_past*/ 0u});
         REQUIRE_FALSE(selection.txs.empty());
         return std::chrono::steady_clock::now() - start;
@@ -932,7 +966,7 @@ TEST_CASE("a queued request is not served another request's coinbase budget",
     std::thread queued([&] { call(tight_reserve, queued_out, queued_seq); });
     std::this_thread::sleep_for(build_time / 8);
 
-    // Still building, so the second request is parked on the mutex rather than
+    // Still building, so the second request is parked on the gate rather than
     // past it — which is the only place the fallback is reachable.
     bool const still_holding = completed.load() == 0;
 

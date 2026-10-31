@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <kth/domain/chain/block_ticks.hpp>
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/chain/point.hpp>
 #include <kth/domain/chain/script.hpp>
@@ -91,6 +92,10 @@ public:
     /// True if cached previous output is mature enough to spend from height.
     [[nodiscard]]
     bool is_mature(size_t height) const;
+
+    /// Mature when T(height) - T(creation height) >= 60,000 ticks (CHIP-2025-03).
+    [[nodiscard]]
+    bool is_mature(block_ticks const& ticks, size_t height) const;
 
     // THIS IS FOR LIBRARY USE ONLY, DO NOT CREATE A DEPENDENCY ON IT.
     mutable validation_type validation;

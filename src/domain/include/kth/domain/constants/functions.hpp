@@ -20,7 +20,7 @@ size_t static_max_block_size(domain::config::network network) noexcept {
 #if defined(KTH_CURRENCY_BCH)
     if (network == domain::config::network::testnet4) return max_block_size::testnet4;
     if (network == domain::config::network::scalenet) return max_block_size::scalenet;
-    if (network == domain::config::network::chipnet) return max_block_size::chipnet;
+    if (network == domain::config::network::chipnet || network == domain::config::network::tempnet) return max_block_size::chipnet;
     return max_block_size::mainnet_new;
 #else
     return max_block_size;
@@ -58,7 +58,7 @@ size_t static_max_block_sigops(domain::config::network network) noexcept {
 #if defined(KTH_CURRENCY_BCH)
     if (network == domain::config::network::testnet4) return max_block_sigops::testnet4;
     if (network == domain::config::network::scalenet) return max_block_sigops::scalenet;
-    if (network == domain::config::network::chipnet) return max_block_sigops::chipnet;
+    if (network == domain::config::network::chipnet || network == domain::config::network::tempnet) return max_block_sigops::chipnet;
     return max_block_sigops::mainnet_new;
 #else
     return max_block_sigops;
@@ -117,6 +117,7 @@ size_t network_map(domain::config::network network, size_t mainnet, size_t testn
             return testnet4;
         case domain::config::network::scalenet:
             return scalenet;
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet:
             return chipnet;
 #endif
@@ -145,6 +146,7 @@ bool network_relation(domain::config::network network, R r, T const& value, T co
             return r(value, testnet4);
         case domain::config::network::scalenet:
             return r(value, scalenet);
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet:
             return r(value, chipnet);
 #endif
