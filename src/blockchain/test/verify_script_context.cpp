@@ -137,3 +137,63 @@ TEST_CASE("validate_input P2PKH schnorr and ecdsa agree across interpreters", "[
         CHECK(script::verify(invalid, 0, flags) != error::success);
     }
 }
+
+// Exercise the transaction entry point as well as per-input verification: a
+// successful native execution must report the sum, independent of the backend.
+TEST_CASE("validate_input transaction sums executed signature checks", "[verify_script][sigchecks]") {
+    using domain::machine::script_flags;
+    constexpr auto secret = "8010b1bb119ad37d4b65a1022a314897b1b3614b345974332cb1b9582cf03536"_base16;
+    constexpr uint64_t value = 100000;
+    static auto const previous = "dae852c88a00e95141cfe924ac6667a91af87431988d23eff268ea3509d6d83c"_hash;
+    ec_compressed point;
+    REQUIRE(secret_to_public(point, secret));
+    script const locking(script::to_pay_public_key_hash_pattern(bitcoin_short_hash(point)));
+    kd::script_flags_t flags = script_flags::bip16_rule;
+    flags |= script_flags::bip66_rule;
+    flags |= kd::to_flags(kd::machine::upgrade::bch_mersenne);
+    transaction tx(2, 0,
+        {input(output_point(previous, 0), script{}, max_uint32),
+         input(output_point(previous, 1), script{}, max_uint32)},
+        {output(2 * value - 1000, locking, std::nullopt)});
+    auto signed_inputs = tx.inputs();
+    for (uint32_t i = 0; i < signed_inputs.size(); ++i) {
+        signed_inputs[i].previous_output().validation.cache = output{value, locking, std::nullopt};
+        auto const signature = script::create_endorsement(secret, locking, tx, i,
+            0x41, flags, value, endorsement_type::ecdsa);
+        REQUIRE(signature);
+        signed_inputs[i].set_script(script(kd::machine::operation::list{
+            kd::machine::operation(*signature), kd::machine::operation(to_chunk(point))}));
+    }
+    tx = transaction(tx.version(), tx.locktime(), std::move(signed_inputs), tx.outputs());
+    for (uint32_t i = 0; i < tx.inputs().size(); ++i) {
+        auto const result = validate_input::verify_script(tx, i, flags);
+        CHECK(result.first == error::success);
+        CHECK(result.second == 1u);
+    }
+    auto const result = validate_input::verify_transaction(tx, flags);
+    CHECK(result.first == error::success);
+    CHECK(result.second == 2u);
+}
+
+TEST_CASE("validate_input counts the executed P2SH redeem script", "[verify_script][sigchecks]") {
+    using domain::machine::script_flags;
+    auto const original = make_tx();
+    auto const redeem = make_prevout().script();
+    auto const raw_redeem = to_data_chunk(redeem, false);
+    auto unlocking = original.inputs()[0].script().operations();
+    unlocking.emplace_back(raw_redeem);
+    auto inputs = original.inputs();
+    inputs[0].set_script(script(std::move(unlocking)));
+    inputs[0].previous_output().validation.cache = output{0u,
+        script(script::to_pay_script_hash_pattern(bitcoin_short_hash(raw_redeem))), std::nullopt};
+    transaction const tx(original.version(), original.locktime(), std::move(inputs), original.outputs());
+    kd::script_flags_t flags = script_flags::bip16_rule;
+    flags |= script_flags::bch_input_sigchecks;
+    auto const single = validate_input::verify_script(tx, 0, flags);
+    CHECK(single.first == error::success);
+    CHECK(single.second == 1u);
+    auto const total = validate_input::verify_transaction(tx, flags);
+    CHECK(total.first == error::success);
+    CHECK(total.second == 1u);
+    CHECK(script::verify(tx, 0, flags) == error::success);
+}

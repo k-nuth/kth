@@ -279,6 +279,11 @@ private:
     output::list outputs_;
 };
 
+// Script result and actual executed SigChecks from one native VM execution.
+// The count is meaningful on success; errors return zero.
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value);
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags);
+
 code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 code verify(transaction const& tx, uint32_t input, script_flags_t flags);
 

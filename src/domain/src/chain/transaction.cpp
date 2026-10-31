@@ -912,29 +912,29 @@ bool is_witness_program(data_chunk const& bytes) {
     return true;
 }
 
-code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
+std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
     using machine::program;
     code ec;
 
     // SIGPUSHONLY: scriptSig must contain only push operations.
     if (script::is_enabled(flags, machine::script_flags::bch_sigpushonly)) {
         if ( ! script::is_relaxed_push(input_script.operations())) {
-            return error::sig_pushonly;
+            return {error::sig_pushonly, 0};
         }
     }
 
     program input(input_script, tx, input_index, flags, value);
     if ((ec = input.evaluate().error)) {
-        return ec;
+        return {ec, 0};
     }
 
     program prevout(prevout_script, input);
     if ((ec = prevout.evaluate().error)) {
-        return ec;
+        return {ec, 0};
     }
 
     if ( ! prevout.stack_result(false)) {
-        return error::stack_false;
+        return {error::stack_false, 0};
     }
 
     bool const is_p2sh_20 = prevout_script.is_pay_to_script_hash(flags);
@@ -945,7 +945,7 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
 
     if (is_p2sh) {
         if ( ! script::is_relaxed_push(input_script.operations())) {
-            return error::sig_pushonly;
+            return {error::sig_pushonly, 0};
         }
 
         // Segwit recovery (BCHN): before P2SH evaluation, if the redeem script
@@ -956,29 +956,29 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
             ! script::is_enabled(flags, machine::script_flags::bch_disallow_segwit_recovery) &&
             input_script.operations().size() == 1 &&
             is_witness_program(input.top())) {
-            return error::success;
+            return {error::success, 0};
         }
 
         script embedded_script(input.pop(), false);
 
         program embedded(embedded_script, std::move(input), true);
         if ((ec = embedded.evaluate().error)) {
-            return ec;
+            return {ec, 0};
         }
 
         if ( ! embedded.stack_result(false)) {
-            return error::stack_false;
+            return {error::stack_false, 0};
         }
 
         if (script::is_enabled(flags, machine::script_flags::bch_cleanstack) && embedded.size() != 1) {
-            return error::cleanstack;
+            return {error::cleanstack, 0};
         }
 
         total_sig_checks = embedded.get_metrics().sig_checks();
     }
 
     if ( ! is_p2sh && script::is_enabled(flags, machine::script_flags::bch_cleanstack) && prevout.size() != 1) {
-        return error::cleanstack;
+        return {error::cleanstack, 0};
     }
 
     // INPUT_SIGCHECKS: density limit on signature checks per input.
@@ -988,21 +988,29 @@ code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, s
             int64_t(total_sig_checks) * sigchecks_input_density_factor
             - sigchecks_input_density_offset;
         if (sig_size < min_sig_size) {
-            return error::invalid_script;
+            return {error::invalid_script, 0};
         }
     }
 
-    return error::success;
+    return {error::success, total_sig_checks};
 }
 
-code verify(transaction const& tx, uint32_t input, script_flags_t flags) {
+std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags) {
     if (input >= tx.inputs().size()) {
-        return error::operation_failed;
+        return {error::operation_failed, 0};
     }
 
     auto const& in = tx.inputs()[input];
     auto const& prevout = in.previous_output().validation.cache;
-    return verify(tx, input, flags, in.script(), prevout.script(), prevout.value());
+    return verify_with_sigchecks(tx, input, flags, in.script(), prevout.script(), prevout.value());
+}
+
+code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
+    return verify_with_sigchecks(tx, input_index, flags, input_script, prevout_script, value).first;
+}
+
+code verify(transaction const& tx, uint32_t input, script_flags_t flags) {
+    return verify_with_sigchecks(tx, input, flags).first;
 }
 
 } // namespace kth::domain::chain
