@@ -1,3 +1,19 @@
+# version 1.5.1
+
+You can install Knuth node version v1.5.1 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* Fix GMP component requirements and validate installed Conan consumers by @fpelliccioni in https://github.com/k-nuth/kth/pull/757
+* Fix compiler diagnostics and preserve failed operation results by @fpelliccioni in https://github.com/k-nuth/kth/pull/754
+* Verify generated C-API enum conversion mappings by @fpelliccioni in https://github.com/k-nuth/kth/pull/751
+* Preserve the selected big-number backend when staging C-API outputs by @fpelliccioni in https://github.com/k-nuth/kth/pull/755
+* ci: build external pull requests without Conan credentials by @fpelliccioni in https://github.com/k-nuth/kth/pull/759
+* release: 1.5.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/760
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.5.0...v1.5.1
+
+
 # version 1.5.0
 
 You can install Knuth node version v1.5.0 [using these instructions](https://kth.cash/#download).
