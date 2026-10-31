@@ -327,17 +327,19 @@ std::pair<code, size_t> validate_input::verify_transaction(transaction const& tx
 // #error Not supported, build using -o consensus=True
 
 std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uint32_t input_index, script_flags_t flags) {
-    return {script::verify(tx, input_index, flags), 0};
+    return domain::chain::verify_with_sigchecks(tx, input_index, flags);
 }
 
 std::pair<code, size_t> validate_input::verify_transaction(transaction const& tx, script_flags_t flags) {
+    size_t total_sig_checks = 0;
     for (uint32_t i = 0; i < tx.inputs().size(); ++i) {
-        auto const c = script::verify(tx, i, flags);
-        if (c != error::success) {
-            return {c, 0};
+        auto const result = domain::chain::verify_with_sigchecks(tx, i, flags);
+        if (result.first != error::success) {
+            return {result.first, total_sig_checks};
         }
+        total_sig_checks += result.second;
     }
-    return {error::success, 0};
+    return {error::success, total_sig_checks};
 }
 
 #endif //WITH_CONSENSUS
