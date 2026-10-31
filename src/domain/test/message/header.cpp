@@ -292,3 +292,18 @@ TEST_CASE("message header operator boolean not equals 2 differs returns true", "
 }
 
 // End Test Suite
+
+TEST_CASE("message header to data propagates a short chain header write", "[message header]") {
+    auto const header = make_zero_header();
+    // Canonical headers have no trailing transaction count to mask a failure
+    // in the inherited chain-header serializer.
+    for (size_t size = 0; size < chain::header::satoshi_fixed_size(); ++size) {
+        data_chunk buffer(size);
+        byte_writer writer(buffer);
+        auto const result = header.to_data(writer, message::version::level::canonical);
+        INFO("buffer size: " << size);
+        REQUIRE_FALSE(result);
+        CHECK(result.error() == error::write_past_end_of_buffer);
+        CHECK(writer.position() <= buffer.size());
+    }
+}

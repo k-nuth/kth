@@ -466,7 +466,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     -fomit-frame-pointer    # Free up a register
     -flto                   # Link-time optimization
   )
-  target_link_options(kth_blockchain_benchmarks PRIVATE -flto)
+  # GCC's bare -flto serializes the LTRANS partitions. Let GCC choose its
+  # worker count; other compilers retain their existing LTO option.
+  target_link_options(kth_blockchain_benchmarks PRIVATE
+    "$<IF:$<CXX_COMPILER_ID:GNU>,-flto=auto,-flto>")
   target_compile_definitions(kth_blockchain_benchmarks PRIVATE BENCHMARK_BUILD=1)
   _group_sources(kth_blockchain_benchmarks "${CMAKE_CURRENT_LIST_DIR}/test/block_index_bench")
 

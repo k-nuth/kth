@@ -433,3 +433,14 @@ TEST_CASE("prefix to bytes two bytes leading null byte round trips", "[binary bl
 // End Test Suite
 
 // End Test Suite
+
+TEST_CASE("binary construction truncates, pads and masks every bit width", "[infrastructure][binary]") {
+    data_chunk const source{0xba, 0xad, 0xff, 0x0d};
+    std::string const bits = "10111010101011011111111100001101";
+    for (size_t width = 0; width <= 48; ++width) {
+        auto const expected = width <= bits.size()
+            ? bits.substr(0, width) : bits + std::string(width - bits.size(), '0');
+        CHECK(binary(width, source).to_string() == expected);
+        CHECK(binary(width, byte_span{}).to_string() == std::string(width, '0'));
+    }
+}

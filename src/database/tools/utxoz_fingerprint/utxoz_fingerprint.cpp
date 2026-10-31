@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
     // Scratch buffer for per-entry hash input: key(36) + height(4) + data(variable)
     std::vector<uint8_t> buf;
 
-    database.for_each_entry([&](utxoz::raw_outpoint const& key, uint32_t height, std::span<uint8_t const> data) {
+    auto const scan = database.for_each_entry([&](utxoz::raw_outpoint const& key, uint32_t height, std::span<uint8_t const> data) {
         // Build hash input: key || height_le || data
         size_t const needed = key.size() + sizeof(height) + data.size();
         if (buf.size() < needed) {
@@ -84,6 +84,11 @@ int main(int argc, char* argv[]) {
             std::printf("  ... %zu entries processed\n", count);
         }
     });
+
+    if ( ! scan) {
+        std::fprintf(stderr, "Error: failed to scan UTXO-Z database at: %s\n", argv[1]);
+        return 1;
+    }
 
     std::printf("\nEntries:      %zu\n", count);
     std::printf("Value bytes:  %zu (%.2f GB)\n", total_value_bytes, total_value_bytes / (1024.0 * 1024.0 * 1024.0));

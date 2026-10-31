@@ -74,13 +74,14 @@ struct KI_API binary {
         : binary(size, byte_span{to_little_endian(number)})
     {}
 
-    constexpr binary(size_type size, byte_span blocks) {
-        blocks_.resize(blocks.size());
-        if ( ! blocks_.empty()) {
-            std::copy_n(blocks.begin(), blocks.size(), blocks_.begin());
-            while (blocks_.size() * bits_per_block < size) {
-                blocks_.push_back(0x00);
-            }
+    constexpr binary(size_type size, byte_span blocks)
+        : blocks_(blocks_size(size), 0)
+    {
+        // Allocate the final number of blocks once. Copy only the prefix that
+        // belongs to the requested bit width; resize masks its final byte.
+        auto const count = std::min(blocks.size(), blocks_.size());
+        if (count != 0) {
+            std::copy_n(blocks.begin(), count, blocks_.begin());
         }
         resize(size);
     }

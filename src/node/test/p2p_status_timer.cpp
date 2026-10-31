@@ -78,6 +78,7 @@ TEST_CASE("p2p child: a stop ends an armed wait exactly once", "[.p2p-child]") {
     node::detail::p2p_node_test_seam::set_status_probe(network,
         [&armed, &woken, &reported](probe_point point) {
             switch (point) {
+                case probe_point::before_arm: break;
                 case probe_point::armed:    ++armed;    break;
                 case probe_point::woken:    ++woken;    break;
                 case probe_point::reported: ++reported; break;

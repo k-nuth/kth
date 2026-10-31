@@ -19,19 +19,11 @@
 namespace kth::node::rpc {
 
 std::string transaction_to_hex(domain::chain::transaction const& tx) {
-    auto const size = tx.serialized_size(/*wire*/ true);
-    data_chunk buffer(size);
-    byte_writer writer(std::span<uint8_t>{buffer.data(), size});
-    tx.to_data(writer, /*wire*/ true);
-    return encode_base16(buffer);
+    return encode_base16(to_data_chunk(tx, /*wire*/ true));
 }
 
 std::string block_to_hex(domain::chain::block const& block) {
-    auto const size = block.serialized_size();
-    data_chunk buffer(size);
-    byte_writer writer(std::span<uint8_t>{buffer.data(), size});
-    block.to_data(writer);
-    return encode_base16(buffer);
+    return encode_base16(to_data_chunk(block));
 }
 
 std::string render_blockchain_info(

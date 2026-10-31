@@ -55,7 +55,7 @@ size_t header::serialized_size(uint32_t version) const {
 }
 
 expect<void> header::to_data(byte_writer& writer, uint32_t version) const noexcept {
-        chain::header::to_data(writer, true);  // wire=true
+        if (auto r = chain::header::to_data(writer, true); ! r) return r;  // wire=true
 
         if (version != version::level::canonical) {
             if (auto r = writer.write_variable_little_endian(uint64_t{0}); ! r) return r;

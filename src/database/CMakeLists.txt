@@ -345,6 +345,17 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(utxoz-fingerprint
           tools/utxoz_fingerprint/utxoz_fingerprint.cpp)
   target_link_libraries(utxoz-fingerprint ${PROJECT_NAME})
+  if(ENABLE_TEST)
+    add_executable(utxoz-fingerprint-failed-scan
+        tools/utxoz_fingerprint/utxoz_fingerprint.cpp)
+    target_include_directories(utxoz-fingerprint-failed-scan BEFORE PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/failing_scan)
+    target_link_libraries(utxoz-fingerprint-failed-scan infrastructure::infrastructure)
+    add_test(NAME utxoz-fingerprint-failed-scan
+        COMMAND ${CMAKE_COMMAND}
+            -DTOOL=$<TARGET_FILE:utxoz-fingerprint-failed-scan>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test/fingerprint_failed_scan.cmake)
+  endif()
 endif()
 
 # Install

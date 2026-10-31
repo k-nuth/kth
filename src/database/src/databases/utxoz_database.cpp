@@ -25,18 +25,8 @@ bool utxoz_reference_mode() {
 #endif
 }
 
-// UTXO-Z 0.9.0 grew its error enum from five values to twenty-one. Logging the
-// integer, as this used to, turns a diagnosis into a lookup against whichever
-// header version the reader happens to open — and the numbers moved, so an old
-// note now names a different fault. Naming them here costs one switch and keeps
-// the log readable on its own.
-//
-// The switch lists every code and has no `default`. That asks for a -Wswitch
-// warning when UTXO-Z adds one, but this is a warning, not an error, and only
-// where it is enabled and promoted — when 0.9.1 added version_unreadable, this
-// file compiled clean and the new code would have printed "unrecognised". So the
-// trailing return is the defence, and adding a case is a manual step on every
-// UTXO-Z bump, not something the build will remind anyone about.
+// Keep the mapping exhaustive so new dependency error codes trigger -Wswitch.
+// Unknown underlying values still have the fallback below.
 KD_API char const* utxoz_error_name(utxoz::error_code code) {
     switch (code) {
         case utxoz::error_code::not_found:              return "not_found";
@@ -61,6 +51,19 @@ KD_API char const* utxoz_error_name(utxoz::error_code code) {
         case utxoz::error_code::recovery_required:      return "recovery_required";
         case utxoz::error_code::recovery_failed:        return "recovery_failed";
         case utxoz::error_code::metadata_write_failed:  return "metadata_write_failed";
+        case utxoz::error_code::format_unsupported: return "format_unsupported";
+        case utxoz::error_code::migration_required: return "migration_required";
+        case utxoz::error_code::geometry_mismatch: return "geometry_mismatch";
+        case utxoz::error_code::layout_mismatch: return "layout_mismatch";
+        case utxoz::error_code::hash_mismatch: return "hash_mismatch";
+        case utxoz::error_code::abi_mismatch: return "abi_mismatch";
+        case utxoz::error_code::database_identity_mismatch: return "database_identity_mismatch";
+        case utxoz::error_code::segment_stamp_missing: return "segment_stamp_missing";
+        case utxoz::error_code::segment_stamp_corrupt: return "segment_stamp_corrupt";
+        case utxoz::error_code::segment_misplaced: return "segment_misplaced";
+        case utxoz::error_code::inspection_only: return "inspection_only";
+        case utxoz::error_code::database_not_found: return "database_not_found";
+        case utxoz::error_code::entry_corrupt: return "entry_corrupt";
     }
     return "unrecognised";
 }

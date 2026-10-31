@@ -15,8 +15,8 @@
  * The scheme itself is unchanged.
  */
 
-#ifndef _SECP256K1_SCHNORR_IMPL_H_
-#define _SECP256K1_SCHNORR_IMPL_H_
+#ifndef SECP256K1_SCHNORR_IMPL_H
+#define SECP256K1_SCHNORR_IMPL_H
 
 #include <string.h>
 

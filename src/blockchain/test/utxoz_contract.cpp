@@ -701,3 +701,19 @@ TEST_CASE("utxoz behaviour: a delete on a closed store is not success",
     scoped_open_db const guard{db};
     REQUIRE(db.apply_inserts_raw(no_inserts) == result_code::success);
 }
+
+TEST_CASE("utxoz contract: persisted format failures retain their names", "[utxoz][contract]") {
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::format_unsupported)) == "format_unsupported");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::migration_required)) == "migration_required");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::geometry_mismatch)) == "geometry_mismatch");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::layout_mismatch)) == "layout_mismatch");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::hash_mismatch)) == "hash_mismatch");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::abi_mismatch)) == "abi_mismatch");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::database_identity_mismatch)) == "database_identity_mismatch");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::segment_stamp_missing)) == "segment_stamp_missing");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::segment_stamp_corrupt)) == "segment_stamp_corrupt");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::segment_misplaced)) == "segment_misplaced");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::inspection_only)) == "inspection_only");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::database_not_found)) == "database_not_found");
+    CHECK(std::string(database::utxoz_error_name(utxoz::error_code::entry_corrupt)) == "entry_corrupt");
+}

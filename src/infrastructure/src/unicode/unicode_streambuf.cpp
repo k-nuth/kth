@@ -7,7 +7,10 @@
 #include <cstddef>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <memory>
 #include <streambuf>
+#include <utility>
 
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/unicode/unicode.hpp>
@@ -18,14 +21,29 @@ namespace kth {
 // Local definition for max number of bytes in a utf8 character.
 constexpr size_t utf8_max_character_size = 4;
 
+namespace {
+
+size_t checked_narrow_size(size_t size) {
+    // Both arrays use narrow_size elements. Check their largest element type
+    // before multiplication or allocation, using the platform's size_t width.
+    if (size == 0 || size > std::numeric_limits<size_t>::max() / sizeof(wchar_t) / utf8_max_character_size) {
+        throw std::ios_base::failure("Invalid Unicode stream buffer size.");
+    }
+    return size * utf8_max_character_size;
+}
+
+} // namespace
+
 unicode_streambuf::unicode_streambuf(std::wstreambuf* wide_buffer, size_t size)
-    : wide_size_(size), narrow_size_(wide_size_ * utf8_max_character_size)
-    , narrow_(new char[narrow_size_]), wide_(new wchar_t[narrow_size_])
+    : wide_size_(size), narrow_size_(checked_narrow_size(size))
+    , wide_(nullptr), narrow_(nullptr)
     , wide_buffer_(wide_buffer)
 {
-    if (wide_size_ > (kth::max_uint64 / utf8_max_character_size)) {
-        throw std::ios_base::failure("Wide buffer must be no more than one fourth of max uint64.");
-    }
+    // Hold both allocations until construction can no longer fail.
+    auto wide = std::unique_ptr<wchar_t[]>(new wchar_t[narrow_size_]);
+    auto narrow = std::unique_ptr<char[]>(new char[narrow_size_]);
+    wide_ = wide.release();
+    narrow_ = narrow.release();
 
     // Input buffer is not yet populated, reflect zero length buffer here.
     setg(narrow_, narrow_, narrow_);
@@ -46,7 +64,7 @@ unicode_streambuf::~unicode_streambuf() {
 // initialized with a patched std::wcin when std::wcin is used.
 std::streambuf::int_type unicode_streambuf::underflow() {
     // streamsize is signed.
-    KTH_ASSERT(wide_size_ > 0 && wide_size_ <= kth::max_int64);
+    KTH_ASSERT(wide_size_ > 0 && std::in_range<std::streamsize>(wide_size_));
     auto const size = static_cast<std::streamsize>(wide_size_);
 
     // Read from the wide input buffer.

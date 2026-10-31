@@ -53,13 +53,15 @@ data_chunk mpz_to_scriptnum(mpz_t const& z) {
 
 // Deserialize CScriptNum format bytes into a GMP mpz_t.
 void scriptnum_to_mpz(mpz_t z, data_chunk const& data) {
-    if (data.empty()) {
+    data_chunk bytes = data;
+    if (bytes.empty()) {
         mpz_set_si(z, 0);
         return;
     }
 
+    // Check the buffer we access directly so its non-empty bound stays visible
+    // when GCC inlines the vector copy in coverage builds.
     // Check sign bit and strip it.
-    data_chunk bytes = data;
     bool const negative = (bytes.back() & 0x80) != 0;
     bytes.back() &= 0x7f;
 
