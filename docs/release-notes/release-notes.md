@@ -1,3 +1,16 @@
+# version 1.5.2
+
+You can install Knuth node version v1.5.2 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* rpc: return the raw header from getblockheader with verbose=false by @CyberAshven in https://github.com/k-nuth/kth/pull/758
+* Expose C API operations required by WASM bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/761
+* release: 1.5.2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/762
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.5.1...v1.5.2
+
+
 # version 1.5.1
 
 You can install Knuth node version v1.5.1 [using these instructions](https://kth.cash/#download).
