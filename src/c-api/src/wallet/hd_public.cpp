@@ -308,6 +308,25 @@ void kth_wallet_hd_public_wipe(kth_hd_public_mut_t self) {
     kth::cpp_ref<cpp_t>(self).wipe();
 }
 
+kth_error_code_t kth_wallet_hd_public_derive_path(kth_hd_public_const_t self, char const* path, KTH_OUT_OWNED kth_hd_public_mut_t* out) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(path != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const path_cpp = std::string_view(path);
+        auto result = kth::cpp_ref<cpp_t>(self).derive_path(path_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
 
 // Static utilities
 

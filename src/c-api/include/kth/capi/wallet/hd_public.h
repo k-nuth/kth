@@ -156,6 +156,10 @@ kth_error_code_t kth_wallet_hd_public_derive_public(kth_hd_public_const_t self, 
 KTH_EXPORT
 void kth_wallet_hd_public_wipe(kth_hd_public_mut_t self);
 
+/** @param[out] out Must point to a null `kth_hd_public_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_hd_public_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_hd_public_derive_path(kth_hd_public_const_t self, char const* path, KTH_OUT_OWNED kth_hd_public_mut_t* out);
+
 
 // Static utilities
 

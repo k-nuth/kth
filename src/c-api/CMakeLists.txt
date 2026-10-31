@@ -631,6 +631,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/wallet/ek_token.cpp
         test/wallet/hd_public.cpp
         test/wallet/hd_private.cpp
+        test/wallet/wasm_surface.cpp
         test/wallet/message.cpp
         test/wallet/mnemonic.cpp
         test/wallet/stealth_address.cpp

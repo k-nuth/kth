@@ -126,6 +126,12 @@ kth_bool_t kth_vm_number_equals(kth_number_const_t self, kth_number_const_t othe
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_vm_number_not_equal(kth_number_const_t self, kth_number_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Getters
 

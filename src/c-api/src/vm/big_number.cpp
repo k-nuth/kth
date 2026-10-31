@@ -65,6 +65,12 @@ kth_bool_t kth_vm_big_number_equals(kth_big_number_const_t self, kth_big_number_
     return kth::eq<cpp_t>(self, other);
 }
 
+kth_bool_t kth_vm_big_number_not_equal(kth_big_number_const_t self, kth_big_number_const_t other) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(other != nullptr);
+    return kth::ne<cpp_t>(self, other);
+}
+
 
 // Getters
 
