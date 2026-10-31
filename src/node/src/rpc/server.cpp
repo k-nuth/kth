@@ -110,7 +110,9 @@ int on_message_complete(llhttp_t* p) {
     c->complete = true;
     c->method = llhttp_get_method(p);
     c->keep_alive = llhttp_should_keep_alive(p) != 0;
-    return 0;
+    // Stop at the end of this request: bytes after it belong to the next
+    // request a client pipelined on the same connection.
+    return HPE_PAUSED;
 }
 
 void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) {
@@ -204,6 +206,9 @@ bool server::authorized(std::string_view authorization_header) const {
 
 ::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket& socket) {
     std::array<char, 8192> buffer;
+    // Bytes read past the end of the previous request: the start of the next
+    // one when a client pipelines requests on a keep-alive connection.
+    std::string pending;
     for (;;) {
         parse_ctx ctx;
         llhttp_t parser;
@@ -211,12 +216,22 @@ bool server::authorized(std::string_view authorization_header) const {
         init_parser(parser, settings, ctx);
 
         while ( ! ctx.complete) {
-            auto [ec, n] = co_await socket.async_read_some(
-                ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
-            if (ec || n == 0) {
-                co_return; // client closed or read error
+            std::string_view input = pending;
+            if (input.empty()) {
+                auto [ec, n] = co_await socket.async_read_some(
+                    ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
+                if (ec || n == 0) {
+                    co_return; // client closed or read error
+                }
+                input = std::string_view(buffer.data(), n);
             }
-            if (llhttp_execute(&parser, buffer.data(), n) != HPE_OK) {
+            auto const status = llhttp_execute(&parser, input.data(), input.size());
+            if (status == HPE_PAUSED) {
+                // on_message_complete paused right after this request.
+                pending = std::string(llhttp_get_error_pos(&parser), input.data() + input.size());
+            } else if (status == HPE_OK) {
+                pending.clear();
+            } else {
                 co_await write_response(socket, 400, "Bad Request",
                     R"({"result":null,"error":{"code":-32700,"message":"Parse error"},"id":null})",
                     false);

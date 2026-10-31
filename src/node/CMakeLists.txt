@@ -353,7 +353,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
-      test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp)
+      test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp
+      test/rpc_server.cpp)
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
