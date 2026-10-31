@@ -11,6 +11,7 @@
 #include <kth/capi/config/endpoint_helpers.hpp>
 #include <kth/capi/config/helpers.hpp>
 #include <kth/capi/helpers.hpp>
+#include <kth/capi/conversions/config.hpp>
 
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network/settings.hpp>
@@ -21,8 +22,7 @@ namespace kth::capi::helpers {
 namespace {
 
 template <typename Target, typename Source>
-Target network_settings_to_common(Source const& x) {
-    Target res;
+Target network_settings_to_common(Source const& x, Target res = Target{}) {
 
     res.threads = x.threads;
     res.protocol_maximum = x.protocol_maximum;
@@ -72,7 +72,8 @@ void string_list_delete(char** data, size_t n) {
 
 inline
 kth::network::settings network_settings_to_cpp(kth_network_settings const& x) {
-    auto res = network_settings_to_common<kth::network::settings>(x);
+    auto const context = kth::network_to_cpp(x.context);
+    auto res = network_settings_to_common(x, kth::network::settings(context));
     res.hosts_file = kth::path(x.hosts_file);
     res.debug_file = kth::path(x.debug_file);
     res.error_file = kth::path(x.error_file);
@@ -89,6 +90,7 @@ kth::network::settings network_settings_to_cpp(kth_network_settings const& x) {
 inline
 kth_network_settings network_settings_to_c(kth::network::settings const& x) {
     auto res = network_settings_to_common<kth_network_settings>(x);
+    res.context = kth::network_to_c(x.context);
     res.hosts_file = kth::capi::helpers::path_to_c(x.hosts_file);
     res.debug_file = kth::capi::helpers::path_to_c(x.debug_file);
     res.error_file = kth::capi::helpers::path_to_c(x.error_file);

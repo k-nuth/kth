@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/capi/config/settings.h>
+#include <kth/capi/conversions/config.hpp>
 
 #include <filesystem>
 #include <sstream>
@@ -35,8 +36,9 @@ kth_bool_t config_settings_get_from_file(CharT const* path, kth_settings** out_s
         return ok;
     }
 
-    *out_settings = new kth_settings;
+    *out_settings = new kth_settings{};
     auto const& config = metadata.configured;
+    (*out_settings)->network.context = kth::network_to_c(config.net);
     (*out_settings)->node = kth::capi::helpers::node_settings_to_c(config.node);
     (*out_settings)->chain = kth::capi::helpers::blockchain_settings_to_c(config.chain);
     (*out_settings)->database = kth::capi::helpers::database_settings_to_c(config.database);

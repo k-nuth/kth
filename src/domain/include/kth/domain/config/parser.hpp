@@ -20,13 +20,12 @@ using kth::operator""_hash;  // For checkpoint hash literals
 KD_API
 kth::infrastructure::config::checkpoint::list default_checkpoints(config::network network);
 
-/// Merge hardcoded checkpoints for `identifier` in front of `checkpoints`,
+/// Merge hardcoded checkpoints for `network` in front of `checkpoints`,
 /// dropping any user-supplied entry at or below the highest hardcoded height.
 inline
-void fix_checkpoints(uint32_t identifier,
-                     kth::infrastructure::config::checkpoint::list& checkpoints,
-                     bool is_chipnet) {
-    auto const def_checkpoints = default_checkpoints(get_network(identifier, is_chipnet));
+void fix_checkpoints(config::network network,
+                     kth::infrastructure::config::checkpoint::list& checkpoints) {
+    auto const def_checkpoints = default_checkpoints(network);
 
     auto const it = std::max_element(def_checkpoints.begin(), def_checkpoints.end(),
         [](auto const& x, auto const& y) { return x.height() < y.height(); });
@@ -42,6 +41,14 @@ void fix_checkpoints(uint32_t identifier,
         checkpoints.end());
     checkpoints.insert(checkpoints.begin(),
                        def_checkpoints.begin(), def_checkpoints.end());
+}
+
+// Compatibility for callers that only have the wire identity.
+inline
+void fix_checkpoints(uint32_t identifier,
+                     kth::infrastructure::config::checkpoint::list& checkpoints,
+                     bool is_chipnet) {
+    fix_checkpoints(get_network(identifier, is_chipnet), checkpoints);
 }
 
 } // namespace kth::domain::config

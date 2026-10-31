@@ -323,3 +323,33 @@ TEST_CASE("configuration construct2 chipnet context expected", "[configuration t
 #endif
 
 // End Test Suite
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("parser config network rebuilds defaults and preserves command line priority", "[configuration tests][parser][file_network]") {
+    config_file file("selected_network", "network=chipnet\nchain.cores=3\nnet.inbound_port=12345\nfork.asert_half_life=1234\n");
+    for (bool const override_network : {false, true}) {
+        CAPTURE(override_network);
+        node::parser parser(domain::config::network::mainnet);
+        std::ostringstream errors;
+        auto const path = file.path().string();
+        char const* argv[]{"kth", "--config", path.c_str(), "--chain.cores", "7",
+            "--network", "testnet4"};
+        REQUIRE(parser.parse(override_network ? 7 : 5, argv, errors));
+        auto const selected = override_network ? domain::config::network::testnet4
+            : domain::config::network::chipnet;
+        node::configuration const expected(selected);
+        auto const& actual = parser.configured;
+        CHECK(actual.net == selected);
+        CHECK(actual.network.identifier == expected.network.identifier);
+        CHECK(actual.network.hosts_file == expected.network.hosts_file);
+        CHECK(actual.database.directory == expected.database.directory);
+        CHECK(actual.chain.abla_config.epsilon0 == expected.chain.abla_config.epsilon0);
+        CHECK(actual.chain.abla_config.beta0 == expected.chain.abla_config.beta0);
+        CHECK(actual.chain.cantor_activation_time == expected.chain.cantor_activation_time);
+        CHECK(actual.chain.checkpoints == expected.chain.checkpoints);
+        CHECK(actual.chain.cores == 7);
+        CHECK(actual.network.inbound_port == 12345);
+        CHECK(actual.chain.asert_half_life == 1234);
+    }
+}
+#endif

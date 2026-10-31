@@ -17,8 +17,7 @@ namespace kth::capi::helpers {
 namespace {
 
 template <typename Target, typename Source>
-Target blockchain_settings_to_common(Source const& x) {
-    Target res;
+Target blockchain_settings_to_common(Source const& x, Target res = Target{}) {
 
     res.cores = x.cores;
     res.priority = x.priority;
@@ -76,8 +75,9 @@ Target blockchain_settings_to_common(Source const& x) {
 }
 
 inline
-kth::blockchain::settings blockchain_settings_to_cpp(kth_blockchain_settings const& x) {
-    auto res = blockchain_settings_to_common<kth::blockchain::settings>(x);
+kth::blockchain::settings blockchain_settings_to_cpp(kth_blockchain_settings const& x,
+    kth::domain::config::network net = kth::domain::config::network::mainnet) {
+    auto res = blockchain_settings_to_common(x, kth::blockchain::settings(net));
     res.checkpoints = kth::capi::helpers::checkpoint_list_to_cpp(x.checkpoints, x.checkpoint_count);
     return res;
 }

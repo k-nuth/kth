@@ -326,6 +326,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_stale_chunk_drop.cpp
           test/select_sync.cpp
           test/configuration.cpp
+    test/full_node_network.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp

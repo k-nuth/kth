@@ -21,6 +21,9 @@ struct KN_API settings {
     settings();
     settings(domain::config::network context);
 
+    /// Selected chain; the wire magic alone cannot distinguish chipnet forks.
+    domain::config::network context{domain::config::network::mainnet};
+
     /// Properties.
     uint32_t threads;
     uint32_t protocol_maximum;
