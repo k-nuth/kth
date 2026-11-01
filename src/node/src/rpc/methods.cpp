@@ -305,6 +305,17 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// estimatefee [nblocks] -> the fee per kB, in BCH, that the size part of this
+// node's transaction price asks for (chain.byte_fee_satoshis). The price also
+// charges per signature operation (chain.sigop_fee_satoshis), which a per-kB
+// rate cannot carry. kth has no fee estimator, so nblocks, which older clients
+// send, does not change the answer.
+// C-API counterpart: kth_blockchain_settings.byte_fee_satoshis.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+estimate_fee(method_context& ctx, request const& /*req*/) {
+    co_return render_estimate_fee(ctx.chain.chain_settings().byte_fee_satoshis);
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -389,6 +400,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("sendrawtransaction", send_raw_transaction);
     d.add("getrawmempool", get_raw_mempool);
     d.add("getmempoolinfo", get_mempool_info);
+    d.add("estimatefee", estimate_fee);
     d.add("getmempoolentry", get_mempool_entry);
     d.add("getmempoolancestors", get_mempool_ancestors);
     d.add("getmempooldescendants", get_mempool_descendants);

@@ -4,6 +4,8 @@
 
 #include <kth/node/rpc/query.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <span>
@@ -88,6 +90,14 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     w.key("spentby");
     write_hash_array(w, spentby);
     w.end_object();
+    return w.str();
+}
+
+std::string render_estimate_fee(float byte_fee_satoshis) {
+    constexpr double satoshis_per_bch = 100'000'000.0;
+    auto const per_kb = std::llround(static_cast<double>(byte_fee_satoshis) * 1000.0);
+    writer w;
+    w.value(static_cast<double>(std::max(per_kb, 0LL)) / satoshis_per_bch);
     return w.str();
 }
 

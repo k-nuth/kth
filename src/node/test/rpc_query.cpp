@@ -84,3 +84,12 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("render_estimate_fee converts the per-byte fee to BCH per kB", "[rpc query]") {
+    // The default 0.1 satoshi per byte is 100 satoshis per kB.
+    REQUIRE(render_estimate_fee(0.1f) == render_estimate_fee(0.1000001f));
+    REQUIRE(std::stod(render_estimate_fee(0.1f)) == 0.000001);
+    REQUIRE(std::stod(render_estimate_fee(1.0f)) == 0.00001);
+    REQUIRE(std::stod(render_estimate_fee(2.5f)) == 0.000025);
+    REQUIRE(std::stod(render_estimate_fee(0.0f)) == 0.0);
+}
