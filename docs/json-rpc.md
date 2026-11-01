@@ -78,6 +78,7 @@ counterpart.
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
+| `estimatefee` | `kth_blockchain_settings.byte_fee_satoshis` | `chain_settings().byte_fee_satoshis` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
@@ -102,6 +103,16 @@ help results are prepared during registration. Custom methods must be
 registered before the built-ins, which install `help` last. An omitted parameter
 or an empty string lists all methods. Parameters must be an array containing
 at most one string; other types or extra arguments return invalid params.
+
+## estimatefee
+
+`estimatefee` returns the fee per kB, in BCH, that the size part of the node's
+transaction price asks for: `node.byte_fee_satoshis` per byte, rounded to whole
+satoshis per kB (`0.000001` with the default `0.1`). The price also charges
+`node.sigop_fee_satoshis` per signature operation, which a per-kB rate cannot
+carry, so a transaction pays that on top. The node has no fee estimator: the
+target-blocks argument older clients send is accepted and does not change the
+answer.
 
 ## Mining: getblocktemplatelight
 
