@@ -38,6 +38,7 @@
 #include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/machine/script_pattern.hpp>
 
+#include <kth/domain/math/mmr.hpp>
 #include <kth/domain/math/stealth.hpp>
 
 #include <kth/domain/message/address.hpp>

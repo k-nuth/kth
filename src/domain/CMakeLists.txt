@@ -212,6 +212,8 @@ set(kth_sources_just_legacy
 
         src/multi_crypto_support.cpp
 
+        src/math/mmr.cpp
+        src/math/mmr_accumulator.cpp
         src/math/stealth.cpp
         src/math/external/scrypt.h
 
@@ -416,6 +418,7 @@ set(kth_headers
     include/kth/domain/machine/script_flags.hpp
     include/kth/domain/machine/script_pattern.hpp
     include/kth/domain/math/limits.hpp
+    include/kth/domain/math/mmr.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/impl/machine
     include/kth/domain/impl/machine/program.ipp
@@ -600,6 +603,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
         test/math/domain_limits_constraints.cpp
         test/math/limits.cpp
+        test/math/mmr.cpp
         test/math/stealth.cpp
 
         test/message/address.cpp
