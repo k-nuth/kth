@@ -55,6 +55,7 @@ struct KND_API configuration {
     /// Settings.
     node::settings node;
     node::rpc_settings rpc;
+    node::sv2_settings sv2;
     blockchain::settings chain;
     database::settings database;
 #if ! defined(__EMSCRIPTEN__)

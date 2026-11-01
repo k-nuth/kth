@@ -27,6 +27,8 @@
 #include <kth/blockchain/pools/mempool_config.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/validate/batch_validate.hpp>
+#include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/database.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
@@ -37,7 +39,9 @@
 
 #include <asio/co_spawn.hpp>
 #include <asio/awaitable.hpp>
+#include <asio/as_tuple.hpp>
 #include <asio/post.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
@@ -582,16 +586,160 @@ bool block_chain::stopped() const {
 // ORGANIZERS (Core blockchain operations)
 // =============================================================================
 
+namespace {
+
+// The block as the download path carries it: serialized the way a peer sends it
+// and parsed back, so storage and the UTXO build read what they read for a
+// block off the wire.
+std::shared_ptr<domain::chain::light_block const> to_light_block(domain::chain::block const& block) {
+    data_chunk raw(block.serialized_size());
+    byte_writer writer(raw);
+    if ( ! block.to_data(writer)) {
+        return nullptr;
+    }
+    byte_reader reader(raw);
+    auto light = domain::chain::light_block::from_data(reader, true);
+    if ( ! light) {
+        return nullptr;
+    }
+    return std::make_shared<domain::chain::light_block const>(std::move(*light));
+}
+
+// How often organize() looks for its block in the published view, and for how
+// long. A block that passed the checks below connects in milliseconds; the
+// limit is for a pipeline that stopped under it.
+constexpr auto connect_poll = std::chrono::milliseconds(20);
+constexpr auto connect_limit = std::chrono::seconds(60);
+
+} // namespace
+
 ::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
-    // Single-block acceptance was implemented on the pre-v1 LMDB storage
-    // (block_organizer -> populate_block over the LMDB utxo_pool, reorg pool).
-    // That storage is dead in the v1 node (flat files + UTXO-Z; IBD validates via
-    // validate_block_batch + utxo_build), so this path can no longer accept a
-    // block and is stubbed while the dead LMDB code is removed. Reimplementing it
-    // on the v1 model is tracked in issue #563.
-    (void)block;
-    (void)headers_pre_validated;
-    co_return error::not_implemented;
+    // Single-block acceptance on the v1 model (#563), at the connected tip.
+    //
+    // Everything that can be checked against the tip is checked here, before
+    // anything is stored: the UTXO build stops for good at a stored block it
+    // finds invalid. Nothing is written here either. Headers, block files and
+    // the UTXO set each have one writer in the node's sync pipeline, so a valid
+    // block is handed to it and connected the way every block is, mempool
+    // update and published view included.
+    auto const view = chain_view();
+    if ( ! block || ! view || ! view->state) {
+        co_return error::operation_failed;
+    }
+
+    auto const& header = block->header();
+    auto const hash = block->hash();
+    auto const height = view->connected_tip_height + 1;
+
+    if (header.previous_block_hash() != view->tip_hash) {
+        // Connected already, or built on something other than the tip.
+        auto const known = header_index_.find(hash);
+        if (known != header_index::null_index) {
+            auto const known_height = header_index_.get_height(known);
+            if (known_height <= int32_t(view->connected_tip_height) &&
+                header_index_.active_at(known_height) == known) {
+                co_return error::duplicate_block;
+            }
+        }
+        co_return error::orphan_block;
+    }
+
+    auto const network = view->state->network();
+    if ( ! headers_pre_validated) {
+        auto const parent = header_index_.find(view->tip_hash);
+        if (parent == header_index::null_index) {
+            co_return error::operation_failed;
+        }
+        validate_header const validator(settings_, network);
+        if (auto const ec = validator.check(header); ec) {
+            co_return ec;
+        }
+        if (auto const ec = validator.accept_full(header, hash, height, parent, header_index_); ec) {
+            co_return ec;
+        }
+    }
+
+    auto const light = to_light_block(*block);
+    if ( ! light) {
+        co_return error::operation_failed;
+    }
+
+    // The checks the download path runs before it stores a block, then the
+    // ones the UTXO build runs before it connects one: scripts, fees, spent
+    // and missing outputs. On the priority pool, as both of those run.
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+    auto checked = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+    ::asio::post(priority_pool_.get_executor(), [this, block, light, height, network, checked]() {
+        if ( ! light->is_valid_merkle_root()) {
+            checked->try_send(std::error_code{}, error::merkle_mismatch);
+        } else if (auto const size_ec = light->check_transaction_sizes(); size_ec) {
+            checked->try_send(std::error_code{}, size_ec);
+        } else {
+            checked->try_send(std::error_code{},
+                validate_block_batch(*this, settings_, network, {block}, height));
+        }
+    });
+    auto [check_ec, check_result] = co_await checked->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (check_ec) {
+        co_return error::operation_failed;
+    }
+    if (check_result) {
+        co_return check_result;
+    }
+
+    auto const submissions = [this] {
+        std::lock_guard<std::mutex> lock(block_submissions_mutex_);
+        return block_submissions_;
+    }();
+    if ( ! submissions) {
+        // Nothing in this process connects blocks: a library user without the
+        // node, or a node that is starting or stopping.
+        co_return error::service_stopped;
+    }
+    auto executor = co_await ::asio::this_coro::executor;
+    auto reply = std::make_shared<result_channel>(executor, 1);
+    if ( ! submissions->try_send(std::error_code{}, block_submission{block, light, height,
+            std::make_shared<block_submission_answer>(reply)})) {
+        if ( ! submissions->is_open()) {
+            co_return error::service_stopped;
+        }
+        spdlog::warn("[blockchain] Block {} not submitted: earlier submissions are still waiting",
+            encode_hash(hash));
+        co_return error::operation_failed;
+    }
+
+    auto [reply_ec, taken] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (reply_ec) {
+        co_return error::service_stopped;
+    }
+    if (taken) {
+        co_return taken;
+    }
+
+    // Taken: its header is in and its body on the way to storage. The UTXO
+    // build announces nothing when it connects, so the view is polled, as the
+    // sync coordinator polls the built height.
+    ::asio::steady_timer timer(executor);
+    for (auto waited = std::chrono::milliseconds(0); ; waited += connect_poll) {
+        auto const now = chain_view();
+        if (now && now->connected_tip_height >= height) {
+            auto const connected = now->connected_tip_height == height
+                ? std::expected<hash_digest, database::result_code>{now->tip_hash}
+                : get_block_hash(height);
+            // Another block at this height won.
+            co_return (connected && *connected == hash) ? error::success : error::stale_chain;
+        }
+        if (stopped() || waited >= connect_limit) {
+            co_return error::channel_timeout;
+        }
+        timer.expires_after(connect_poll);
+        co_await timer.async_wait(::asio::use_awaitable);
+    }
+}
+
+void block_chain::set_block_submissions(std::shared_ptr<block_submission_channel> submissions) {
+    std::lock_guard<std::mutex> lock(block_submissions_mutex_);
+    block_submissions_ = std::move(submissions);
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
@@ -1983,6 +2131,11 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
+    // Consumers may build mining work as soon as they receive this wake-up,
+    // so publishing it while capture is still closed would lose the update.
+    if (auto const view = chain_view()) {
+        block_organizer_.notify_tip(view->connected_tip_height);
+    }
 }
 
 bool block_chain::transition_in_progress() const {
@@ -2920,7 +3073,8 @@ block_chain::fetch_template() const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size,
+    uint64_t coinbase_reserve_sigchecks) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -2965,6 +3119,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         return s &&
                s->previous == tip &&
                s->coinbase_reserve_size == coinbase_reserve_size &&
+               s->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
                (s->generation == gen ||
                 at - s->time < settings_.gbt_template_refresh_seconds);
     };
@@ -2997,7 +3152,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         // budget — and the caller asked for that number precisely because its
         // coinbase does not fit the default. Wait for the rebuild instead.
         if (snapshot && snapshot->previous == served_previous &&
-            snapshot->coinbase_reserve_size == coinbase_reserve_size) {
+            snapshot->coinbase_reserve_size == coinbase_reserve_size &&
+            snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks) {
             co_return snapshot->value;
         }
         lock.lock();
@@ -3060,7 +3216,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         state->dynamic_max_block_sigchecks(),
         height,
         state->median_time_past(),
-        coinbase_reserve_size});
+        coinbase_reserve_size,
+        coinbase_reserve_sigchecks});
 
     // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
     // and miners routinely override this, so it is only a sensible default.
@@ -3076,7 +3233,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         std::move(selection));
 
     auto next = boost::make_shared<template_snapshot>(
-        template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});
+        template_snapshot{std::move(built), previous, view.generation, now,
+            coinbase_reserve_size, coinbase_reserve_sigchecks});
     template_cache_.store(next);
     co_return next->value;
 }
