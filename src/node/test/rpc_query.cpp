@@ -177,3 +177,19 @@ TEST_CASE("render_transaction lists each key of a bare multisig output", "[rpc q
     // The same transaction on mainnet: the network's own prefix.
     CHECK(contains(render_transaction(tx, domain::config::network::mainnet, flags), R"("bitcoincash:)"));
 }
+
+TEST_CASE("render_tx_out serializes the gettxout fields", "[rpc query]") {
+    // The token output of the transaction decoded above.
+    auto const tx = parse_tx(
+        "020000000122222222222222222222222222222222222222222222222222222222222222220000000000ffffffff02e80300"
+        "000000000041ef0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f207102aabbfde80376a91411"
+        "1111111111111111111111111111111111111188ac0000000000000000066a047465737400000000");
+    auto const json = render_tx_out(null_hash, 3, tx.outputs().front(), /*coinbase*/ false, regtest, flags);
+    CHECK(json.starts_with(std::string(R"({"bestblock":")") + zeros +
+        R"(","confirmations":3,"value":0.00001000,"scriptPubKey":{"asm":")"));
+    CHECK(json.ends_with(
+        R"("hex":"76a914111111111111111111111111111111111111111188ac","reqSigs":1,"type":"pubkeyhash",)"
+        R"("addresses":["bchreg:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zy8lyg7mcr"]},)"
+        R"("tokenData":{"category":"201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201",)"
+        R"("amount":"1000","nft":{"capability":"mutable","commitment":"aabb"}},"coinbase":false})"));
+}

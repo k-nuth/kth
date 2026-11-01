@@ -184,6 +184,41 @@ std::string_view capability_name(domain::chain::capability_t capability) {
     }
 }
 
+// A "scriptPubKey" object: asm, hex, and the kind with its addresses.
+void write_script_pubkey(writer& w, domain::chain::script const& script,
+                         domain::config::network net, domain::script_flags_t flags) {
+    auto const destination = describe_output_script(script, net);
+    w.key("scriptPubKey").begin_object();
+    w.field("asm", script.to_string(flags));
+    w.field("hex", encode_base16(script.bytes()));
+    if ( ! destination.addresses.empty()) {
+        w.field("reqSigs", static_cast<std::uint64_t>(destination.required));
+    }
+    w.field("type", destination.type);
+    if ( ! destination.addresses.empty()) {
+        w.key("addresses").begin_array();
+        for (auto const& address : destination.addresses) {
+            w.value(address);
+        }
+        w.end_array();
+    }
+    w.end_object();
+}
+
+// A "tokenData" object: category, fungible amount and the NFT, if any.
+void write_token_data(writer& w, domain::chain::token_data_t const& token) {
+    w.key("tokenData").begin_object();
+    w.field("category", encode_hash(token.id));
+    w.field("amount", std::to_string(domain::chain::get_amount(token)));
+    if (domain::chain::has_nft(token)) {
+        w.key("nft").begin_object();
+        w.field("capability", capability_name(domain::chain::get_nft_capability(token)));
+        w.field("commitment", encode_base16(domain::chain::get_nft_commitment(token)));
+        w.end_object();
+    }
+    w.end_object();
+}
+
 } // namespace
 
 std::string render_transaction(domain::chain::transaction const& tx,
@@ -220,37 +255,30 @@ std::string render_transaction(domain::chain::transaction const& tx,
         w.begin_object();
         w.field_raw("value", satoshis_to_bch(output.value()));
         w.field("n", n++);
-        auto const destination = describe_output_script(output.script(), net);
-        w.key("scriptPubKey").begin_object();
-        w.field("asm", output.script().to_string(flags));
-        w.field("hex", encode_base16(output.script().bytes()));
-        if ( ! destination.addresses.empty()) {
-            w.field("reqSigs", static_cast<std::uint64_t>(destination.required));
-        }
-        w.field("type", destination.type);
-        if ( ! destination.addresses.empty()) {
-            w.key("addresses").begin_array();
-            for (auto const& address : destination.addresses) {
-                w.value(address);
-            }
-            w.end_array();
-        }
-        w.end_object();
+        write_script_pubkey(w, output.script(), net, flags);
         if (auto const& token = output.token_data()) {
-            w.key("tokenData").begin_object();
-            w.field("category", encode_hash(token->id));
-            w.field("amount", std::to_string(domain::chain::get_amount(*token)));
-            if (domain::chain::has_nft(*token)) {
-                w.key("nft").begin_object();
-                w.field("capability", capability_name(domain::chain::get_nft_capability(*token)));
-                w.field("commitment", encode_base16(domain::chain::get_nft_commitment(*token)));
-                w.end_object();
-            }
-            w.end_object();
+            write_token_data(w, *token);
         }
         w.end_object();
     }
     w.end_array();
+    w.end_object();
+    return w.str();
+}
+
+std::string render_tx_out(hash_digest const& best_block, std::int64_t confirmations,
+                          domain::chain::output const& output, bool coinbase,
+                          domain::config::network net, domain::script_flags_t flags) {
+    writer w;
+    w.begin_object();
+    w.field("bestblock", encode_hash(best_block));
+    w.field("confirmations", confirmations);
+    w.field_raw("value", satoshis_to_bch(output.value()));
+    write_script_pubkey(w, output.script(), net, flags);
+    if (auto const& token = output.token_data()) {
+        write_token_data(w, *token);
+    }
+    w.field("coinbase", coinbase);
     w.end_object();
     return w.str();
 }
