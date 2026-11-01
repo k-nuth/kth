@@ -12,8 +12,9 @@
 #include <thread>
 #include <vector>
 
+#include <atomic>
+
 #include <asio/co_spawn.hpp>
-#include <asio/detached.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
@@ -27,13 +28,14 @@ using namespace kth;
 
 namespace {
 
-// The real JSON-RPC server on a loopback port, so a test can send the exact
-// bytes an HTTP client puts on the wire and read back what the server answers.
+// The real JSON-RPC server on a loopback port the system assigns, so a test
+// can send the exact bytes an HTTP client puts on the wire and read back what
+// the server answers.
 struct rpc_server_fixture {
-    rpc_server_fixture(char const* tag, uint16_t port)
+    explicit rpc_server_fixture(char const* tag)
         : chain(tag) {
         settings.bind = "127.0.0.1";
-        settings.port = port;
+        settings.port = 0;
         settings.user = "test";
         settings.password = "test";
     }
@@ -46,15 +48,17 @@ struct rpc_server_fixture {
     [[nodiscard]] bool start() {
         if ( ! chain.created() || ! chain.start()) return false;
         server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor());
-        ::asio::co_spawn(io, server->run(), ::asio::detached);
+        ::asio::co_spawn(io, server->run(), [this](std::exception_ptr) { ended = true; });
         runner = std::thread([this] { io.run(); });
-        // The listener binds on the server's own strand; wait until it accepts.
-        for (int attempt = 0; attempt < 200; ++attempt) {
-            ::asio::io_context probe;
-            ::asio::ip::tcp::socket socket(probe);
-            std::error_code ec;
-            socket.connect({::asio::ip::make_address("127.0.0.1"), settings.port}, ec);
-            if ( ! ec) return true;
+        // The listener binds on the server's own strand. Wait for the server to
+        // report the port it listens on, or for run() to end, as it does when
+        // the bind fails.
+        for (int attempt = 0; attempt < 500; ++attempt) {
+            if (auto const bound = server->listening_port(); bound != 0) {
+                port = bound;
+                return true;
+            }
+            if (ended) return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         return false;
@@ -64,8 +68,12 @@ struct rpc_server_fixture {
     [[nodiscard]] std::string exchange(std::string const& request) const {
         ::asio::io_context client;
         ::asio::ip::tcp::socket socket(client);
-        socket.connect({::asio::ip::make_address("127.0.0.1"), settings.port});
+        socket.connect({::asio::ip::make_address("127.0.0.1"), port});
         ::asio::write(socket, ::asio::buffer(request));
+        // Nothing more is sent. A server that lost a request then sees EOF and
+        // closes, so a missing response fails the count below instead of
+        // leaving this read waiting.
+        socket.shutdown(::asio::ip::tcp::socket::shutdown_send);
         std::string reply;
         std::error_code ec;
         ::asio::read(socket, ::asio::dynamic_buffer(reply), ec);
@@ -77,6 +85,8 @@ struct rpc_server_fixture {
     ::asio::io_context io;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
+    std::atomic<bool> ended{false};
+    uint16_t port = 0;
 };
 
 // A POST of getblockcount with Basic auth for test:test.
@@ -114,7 +124,7 @@ std::vector<std::string> bodies(std::string_view reply) {
 } // namespace
 
 TEST_CASE("rpc server answers every request pipelined on one connection", "[rpc server]") {
-    rpc_server_fixture fixture("rpc_server_pipelined", 28431);
+    rpc_server_fixture fixture("rpc_server_pipelined");
     REQUIRE(fixture.start());
 
     // Three requests in one write, the way keep-alive clients pipeline them.
