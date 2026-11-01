@@ -80,6 +80,7 @@ counterpart.
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
+| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` + `mempool_ref().entry()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
@@ -90,6 +91,20 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## Mining: getblocktemplate
+
+`getblocktemplate [template_request]` returns the next-block template with its
+transactions in full, as BIP22 describes, for pools that build the coinbase and
+submit the whole block: `capabilities`, `version`, `previousblockhash`,
+`transactions` (each with `data`, `txid`, `hash`, `depends` when it spends an
+earlier template transaction, and `fee` and `sigops`, the transaction's
+sigchecks, while its mempool entry is there), `coinbaseaux`, `coinbasevalue`,
+`longpollid`, `target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
+block's sigchecks limit), `sizelimit`, `curtime`, `bits` and `height`. It is the
+same template `getblocktemplatelight` serves, so the two agree on the selection.
+Only `template` mode is supported; long polling is not, and `longpollid` only
+changes with the tip or the mempool.
 
 ## Mining: getblocktemplatelight
 

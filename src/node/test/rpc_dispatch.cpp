@@ -59,3 +59,48 @@ TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[
         REQUIRE(request(invalid) == node::rpc::build_error("7", -32602, "verbose must be a boolean"));
     }
 }
+
+TEST_CASE("getblocktemplate dispatch serves the template with its transactions", "[rpc dispatch]") {
+    // A limit of zero keeps the genesis-only chain synchronized, so the node
+    // serves mining work.
+    test::chain_fixture fixture("rpc_block_template", /*notify_limit_hours*/ 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // One pooled transaction; the template builder takes the pool as given.
+    domain::chain::input::list ins;
+    hash_digest prevout{};
+    prevout[0] = 0x42;
+    ins.emplace_back(domain::chain::output_point{prevout, 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, domain::chain::script{}, domain::chain::token_data_opt{});
+    auto const tx = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 0u, std::move(ins), std::move(outs)});
+    REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
+        tx, 500u, uint32_t(tx->serialized_size(true)), 3u, 0u}));
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblocktemplate","params":)" + params + R"(,"id":11})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // The request ASICseer pool sends, and EloPool's without rules.
+    auto const reply = request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"],"rules":[]}])");
+    REQUIRE(reply.find(R"("txid":")" + encode_hash(tx->hash()) + R"(","hash":")") != std::string::npos);
+    REQUIRE(reply.find(R"("fee":500,"sigops":3})") != std::string::npos);
+    REQUIRE(reply.find(R"("previousblockhash":")" +
+        encode_hash(domain::chain::block::genesis_regtest().hash()) + '"') != std::string::npos);
+    REQUIRE(reply.find(R"("height":1})") != std::string::npos);
+    REQUIRE(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"]}])").find(R"("error":null)") !=
+        std::string::npos);
+    REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);
+    REQUIRE(request(R"([{"mode":"proposal","data":"00"}])") ==
+        node::rpc::build_error("11", -32602, "only template mode is supported"));
+}
