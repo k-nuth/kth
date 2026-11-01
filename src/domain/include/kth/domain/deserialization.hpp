@@ -81,7 +81,9 @@ expect<std::vector<T>> read_collection(byte_reader& reader, Args&&... args) {
         return std::unexpected(count_exp.error());
     }
     auto const count = *count_exp;
-    if (count > static_absolute_max_block_size()) {
+    // Every serialized domain record consumes at least one byte. Reject an
+    // impossible count before reserving memory from an untrusted size field.
+    if (count > static_absolute_max_block_size() || count > reader.remaining_size()) {
         return std::unexpected(error::invalid_size);
     }
 
