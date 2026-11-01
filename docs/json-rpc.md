@@ -108,7 +108,9 @@ view, so they always describe the same tip.
   `getmininginfo` reports as `caughtup` and `fresh`.
 - `chainwork` is the connected tip's cumulative work, as 64 hex digits. It is
   left out while the header index cannot name the tip.
-- `size_on_disk` counts the block and undo files.
+- `size_on_disk` is the size of the block and undo files as they are on disk,
+  including the space each file has preallocated for the blocks to come (block
+  files grow in 128 MiB chunks).
 - `pruned` is not reported.
 
 ## Mining: getblocktemplatelight
