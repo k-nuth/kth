@@ -33,7 +33,9 @@ namespace kth::node::rpc {
 namespace {
 
 // The bytes the regular files in `dir` take (getblockchaininfo's size_on_disk,
-// over the block and undo files).
+// over the block and undo files). That includes the space the files have
+// preallocated: block_store keeps the bytes written, but it is driven from
+// one thread and its bookkeeping is not for the RPC thread to read.
 std::uint64_t files_size(std::filesystem::path const& dir) {
     std::uint64_t total = 0;
     std::error_code ec;
