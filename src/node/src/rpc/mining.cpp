@@ -13,6 +13,7 @@
 #include <kth/domain/config/network.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 
+#include <kth/node/mining/block_submit.hpp>
 #include <kth/node/rpc/json.hpp>
 
 namespace kth::node::rpc {
@@ -62,6 +63,13 @@ std::string render_mining_template(
         .value("time").value("transactions").value("prevblock")
         .end_array();
     w.field("job_id", job_id);
+    // The coinbase's merkle branch, so a miner can compute the merkle root for
+    // its own coinbase while the transactions stay cached under job_id.
+    w.key("merkle").begin_array();
+    for (auto const& hash : mining::coinbase_merkle_branch(tmpl.selection.txs)) {
+        w.value(encode_hash(hash));
+    }
+    w.end_array();
     w.end_object();
     return w.str();
 }
