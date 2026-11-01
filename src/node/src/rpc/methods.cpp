@@ -2,11 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 
@@ -375,6 +378,32 @@ get_mempool_descendants(method_context& ctx, request const& req) {
     co_return render_hash_list(ctx.chain.get_mempool_descendants(*hash));
 }
 
+// help [command] -> the commands this server answers, one per line; with a
+// command, its name, or that it is unknown. There is no per-command help text
+// yet. `commands` is taken by value so the coroutine frame owns its copy.
+// C-API counterpart: none; it describes this server.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+help(std::vector<std::string> commands, request const& req) {
+    auto const args = params_strings(req.params);
+    std::string text;
+    if (args.empty() || args[0].empty()) {
+        for (auto const& command : commands) {
+            if ( ! text.empty()) {
+                text += '\n';
+            }
+            text += command;
+        }
+    } else if (std::ranges::binary_search(commands, args[0])) {
+        text = args[0];
+    } else {
+        text = "help: unknown command: " + args[0];
+    }
+
+    writer w;
+    w.value(text);
+    co_return w.str();
+}
+
 } // namespace
 
 void register_builtin_methods(dispatcher& d) {
@@ -395,6 +424,14 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
+
+    // Last, so the list it answers with holds every method above, and itself.
+    auto commands = d.methods();
+    commands.emplace_back("help");
+    std::ranges::sort(commands);
+    d.add("help", [commands = std::move(commands)](method_context&, request const& req) {
+        return help(commands, req);
+    });
 }
 
 } // namespace kth::node::rpc
