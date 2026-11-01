@@ -91,6 +91,35 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     return w.str();
 }
 
+std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listings) {
+    // Satoshis as an exact BCH amount, e.g. 219 -> 0.00000219.
+    auto const bch = [](std::uint64_t value) {
+        std::ostringstream os;
+        os << value / 100'000'000 << '.' << std::setfill('0') << std::setw(8) << value % 100'000'000;
+        return os.str();
+    };
+
+    writer w;
+    w.begin_object();
+    for (auto const& listing : listings) {
+        w.key(encode_hash(listing.txid)).begin_object();
+        auto const fee = bch(listing.fee);
+        w.key("fees").begin_object();
+        w.field_raw("base", fee);
+        w.field_raw("modified", fee);
+        w.end_object();
+        w.field("size", static_cast<std::uint64_t>(listing.size));
+        w.field("time", listing.time);
+        w.key("depends");
+        write_hash_array(w, listing.depends);
+        w.key("spentby");
+        write_hash_array(w, listing.spentby);
+        w.end_object();
+    }
+    w.end_object();
+    return w.str();
+}
+
 std::string header_to_hex(domain::chain::header const& header) {
     return encode_base16(to_data_chunk(header, /*wire*/ true));
 }
