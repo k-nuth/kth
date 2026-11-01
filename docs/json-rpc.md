@@ -135,3 +135,4 @@ other block; the call returns once it is connected. Returns the Bitcoin `submitb
 when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
 `"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
 or expired `job_id`) is a JSON-RPC `-32602` error instead.
+The accepted block is sent to connected peers once it is connected.

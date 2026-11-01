@@ -1104,8 +1104,16 @@ static
                 break;
             }
 
-            auto const step = utxo_progress_for_tick(last_seen,
-                chain.get_utxo_built_height());
+            auto const built = chain.get_utxo_built_height();
+            auto const view = chain.chain_view();
+            if (built && ( ! view || view->connected_tip_height < *built)) {
+                // The marker moves before the mempool and the view. Wait for
+                // both, or the only wake-up could arrive before a submitted
+                // block can be announced, with nothing left to wake it again.
+                last_seen.reset();
+                continue;
+            }
+            auto const step = utxo_progress_for_tick(last_seen, built);
             last_seen = step.next_last_seen;
             if ( ! step.announce) {
                 continue;
@@ -1249,6 +1257,12 @@ static
     // 2026-02-07: Added comprehensive exception handling for debugging
     all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[sync_coordinator] Task started");
+        struct submitted_block {
+            hash_digest hash;
+            size_t height;
+            block_const_ptr block;
+        };
+        std::vector<submitted_block> submitted_blocks;
         try {
 
         // The bodies held, not the bodies connected: the range this opens starts
@@ -1486,6 +1500,39 @@ static
             if (std::holds_alternative<stop_request>(event)) {
                 spdlog::debug("[sync_coordinator] Stop signal received");
                 break;
+            }
+
+            // Storage alone connects nothing. The published view includes the
+            // mempool update, and a wake-up's height may already be stale.
+            for (auto it = submitted_blocks.begin(); it != submitted_blocks.end();) {
+                auto const view = chain.chain_view();
+                if ( ! view || view->connected_tip_height < it->height) {
+                    ++it;
+                    continue;
+                }
+                auto const connected = view->connected_tip_height == it->height
+                    ? std::expected<hash_digest, database::result_code>{view->tip_hash}
+                    : chain.get_block_hash(it->height);
+                if ( ! connected) {
+                    ++it;
+                    continue;
+                }
+                if (*connected == it->hash) {
+                    // Peers cannot fetch blocks from us yet, so give them the
+                    // body too. The node adds peers only after their handshake.
+                    // A task of its own: a send waits while a peer's outbound
+                    // queue is full, and this loop must not wait on a slow peer.
+                    // Parameters, not captures: they live in the coroutine
+                    // frame, and the closure is gone once this line ends.
+                    all_tasks.spawn("submitted_block_announcement",
+                        [](kth::node::p2p_node& peers, block_const_ptr block) -> ::asio::awaitable<void> {
+                            auto const sent = co_await peers.broadcast(*block);
+                            spdlog::info("[sync_coordinator] Submitted block {} sent to {} peer(s)",
+                                encode_hash(block->hash()), sent);
+                        }(network, it->block));
+                }
+                // Announced once, or another block took this height.
+                it = submitted_blocks.erase(it);
             }
 
             if (auto* update = std::get_if<peers_updated>(&event)) {
@@ -1759,6 +1806,10 @@ static
                                 .source_peer = nullptr,
                                 .generation = chain.chain_generation()}},
                             ::asio::as_tuple(::asio::use_awaitable));
+                        if ( ! store_ec) {
+                            submitted_blocks.push_back(submitted_block{
+                                submitted.block->hash(), submitted.height, submitted.block});
+                        }
                         (*submitted.answer)(store_ec ? error::service_stopped : error::success);
                     } else {
                         // Refused by the organizer, or a peer's block took the
@@ -2024,6 +2075,7 @@ static
             spdlog::error("[sync_coordinator] UNKNOWN EXCEPTION");
         }
 
+        submitted_blocks.clear();
         // Nobody reads this channel from here on. Disarmed, so the clock has
         // nothing to report; closed, so every task waiting to tell the
         // coordinator something — a deadline, a peer set, a header result —
