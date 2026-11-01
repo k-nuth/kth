@@ -20,17 +20,25 @@ namespace kth::blockchain {
 class block_chain;
 } // namespace kth::blockchain
 
+namespace kth::node {
+class p2p_node;
+} // namespace kth::node
+
 namespace kth::node::mining {
 struct job_store;
 } // namespace kth::node::mining
 
 namespace kth::node::rpc {
 
-// Shared state a handler may reach: the chain and the getblocktemplatelight job
-// cache. Passed by reference; owned by the server for the connection's lifetime.
+// Shared state a handler may reach: the chain, the getblocktemplatelight job
+// cache and the P2P node. Passed by reference; owned by the server for the
+// connection's lifetime.
 struct method_context {
     blockchain::block_chain& chain;
     mining::job_store& jobs;
+    // Null when the server runs without one (tests); the network methods then
+    // report it as unavailable.
+    p2p_node const* network = nullptr;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or

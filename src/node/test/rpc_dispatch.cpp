@@ -59,3 +59,21 @@ TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[
         REQUIRE(request(invalid) == node::rpc::build_error("7", -32602, "verbose must be a boolean"));
     }
 }
+
+TEST_CASE("getnetworkinfo dispatch needs the P2P node", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_network_info");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    // No P2P node in this context, as when the server runs without one.
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getnetworkinfo","params":[],"id":8})"),
+        ::asio::use_future);
+    io.run();
+    REQUIRE(result.get() == node::rpc::build_error("8", -32603, "network unavailable"));
+}
