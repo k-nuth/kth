@@ -4,12 +4,16 @@
 
 #include <kth/node/rpc/mining.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/config/network.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/utility/data.hpp>
 
 #include <kth/node/mining/block_submit.hpp>
 #include <kth/node/rpc/json.hpp>
@@ -51,6 +55,74 @@ std::string render_mining_template(
         w.value(encode_hash(hash));
     }
     w.end_array();
+    w.end_object();
+    return w.str();
+}
+
+std::string render_block_template(
+    blockchain::mining_template const& tmpl,
+    std::vector<std::optional<template_tx_policy>> const& policy,
+    std::string_view longpollid) {
+
+    std::string target_hex(64, '0');
+    if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
+        target_hex = encode_hash(target->big());
+    }
+
+    auto const& txs = tmpl.selection.txs;
+    boost::unordered_flat_map<hash_digest, size_t> position;
+    position.reserve(txs.size());
+
+    writer w;
+    w.begin_object();
+    w.key("capabilities").begin_array().end_array();
+    w.field("version", int64_t(tmpl.version));
+    w.field("previousblockhash", encode_hash(tmpl.previous_block_hash));
+    w.key("transactions").begin_array();
+    for (size_t i = 0; i < txs.size(); ++i) {
+        domain::chain::transaction const& tx = *txs[i];
+        auto const txid = tx.hash();
+        w.begin_object();
+        w.field("data", encode_base16(to_data_chunk(tx, /*wire*/ true)));
+        w.field("txid", encode_hash(txid));
+        w.field("hash", encode_hash(txid));
+        // Parents that come earlier in the template, as BIP22 numbers them.
+        std::vector<uint64_t> depends;
+        for (auto const& input : tx.inputs()) {
+            auto const it = position.find(input.previous_output().hash());
+            if (it != position.end() && std::ranges::find(depends, it->second) == depends.end()) {
+                depends.push_back(it->second);
+            }
+        }
+        if ( ! depends.empty()) {
+            w.key("depends").begin_array();
+            for (auto const index : depends) {
+                w.value(index);
+            }
+            w.end_array();
+        }
+        if (i < policy.size() && policy[i]) {
+            w.field("fee", policy[i]->fee);
+            w.field("sigops", uint64_t(policy[i]->sigchecks));
+        }
+        w.end_object();
+        position.emplace(txid, i + 1);
+    }
+    w.end_array();
+    w.key("coinbaseaux").begin_object().field("flags", "").end_object();
+    w.field("coinbasevalue", uint64_t(tmpl.coinbase_value));
+    w.field("longpollid", longpollid);
+    w.field("target", target_hex);
+    w.field("mintime", int64_t(tmpl.min_time));
+    w.key("mutable").begin_array()
+        .value("time").value("transactions").value("prevblock")
+        .end_array();
+    w.field("noncerange", "00000000ffffffff");
+    w.field("sigoplimit", uint64_t(tmpl.sigchecks_limit));
+    w.field("sizelimit", uint64_t(tmpl.size_limit));
+    w.field("curtime", int64_t(tmpl.current_time));
+    w.field("bits", encode_base16(tmpl.bits));
+    w.field("height", int64_t(tmpl.height));
     w.end_object();
     return w.str();
 }
