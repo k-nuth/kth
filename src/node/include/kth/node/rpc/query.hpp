@@ -91,6 +91,22 @@ using chain_tip = blockchain::header_index::chain_tip;
 // Serialize the getchaintips result array, in the order given.
 std::string render_chain_tips(std::vector<chain_tip> const& tips);
 
+// The getnetworkinfo fields.
+struct network_info {
+    std::string_view version;        // kth::version, e.g. "1.5.2"
+    std::string_view subversion;     // the user agent this node sends its peers
+    std::uint32_t protocol_version;
+    std::uint64_t services;
+    bool relay;                      // relays transactions to its peers
+    std::size_t connections;
+    float byte_fee_satoshis;         // the size part of the transaction price
+};
+
+// Serialize the getnetworkinfo result object: `version` as one number,
+// major * 1000000 + minor * 10000 + patch * 100, the services as 16 hex digits
+// with their names, and `relayfee` in BCH per kB.
+std::string render_network_info(network_info const& info);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
