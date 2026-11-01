@@ -10,6 +10,10 @@ on:
       - 'conanfile.py'
       - 'scripts/check_conan_updates.py'
       - 'scripts/test_cmake_dependency_lookup.py'
+      - 'scripts/test_rpc_backend.py'
+      - 'cmake/KthRpcBackend.cmake'
+      - 'CMakeLists.txt'
+      - 'src/node/CMakeLists.txt'
       - 'scripts/test_ci_dependency_profiles.py'
       - 'scripts/test_fork_conan_ci.py'
       - '.github/workflows/calc-deps-with-container.yml'
@@ -52,7 +56,7 @@ jobs:
         run: conan remote add kth https://packages.kth.cash/api/ --force
 
       - name: Test dependency checks
-        run: python -m unittest scripts/test_check_conan_updates.py scripts/test_cmake_dependency_lookup.py scripts/test_ci_dependency_profiles.py scripts/test_fork_conan_ci.py
+        run: python -m unittest scripts/test_check_conan_updates.py scripts/test_cmake_dependency_lookup.py scripts/test_ci_dependency_profiles.py scripts/test_fork_conan_ci.py scripts/test_rpc_backend.py
 
       - name: Check for Conan package updates
         id: check

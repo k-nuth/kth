@@ -141,7 +141,7 @@ full_node::~full_node() {
 #elif ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         spdlog::warn("[node] rpc.enabled=true but this build has no JSON-RPC support "
-            "(compile with the with_rpc option).");
+            "(compile with Conan rpc=jsonrpc or CMake KTH_RPC_BACKEND=jsonrpc).");
     }
 #endif
 
