@@ -90,7 +90,7 @@ struct KB_API header_organizer {
 
     /// Notify the organizer that blocks are validated up to `block_valid_height`,
     /// advancing the finalized block per BCHN's depth + header-age rules. Called
-    /// by the block-download/validation path as it advances the validated tip,
+    /// by the sync coordinator from a published connected tip,
     /// and by the reorg execution once a switch rewinds it — deep-reorg parking
     /// measures against this height, so a value left over from the abandoned
     /// branch would park forks that sit above where the chain now reaches.
@@ -200,7 +200,7 @@ private:
     // first notification. Deep-reorg parking measures rewind depth against this,
     // not against the header tip.
     //
-    // Written by the block-storage path and by reorg execution, read from the
+    // Written by the sync coordinator and by its reorg execution, read from the
     // header path (parked, during add_headers). Those run on different threads,
     // so the field is atomic and every read takes a single snapshot.
     std::atomic<int32_t> block_valid_height_{-1};
