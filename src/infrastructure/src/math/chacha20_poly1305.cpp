@@ -139,6 +139,7 @@ struct poly1305_state {
         h[1] += carry;
     }
 
+    // The whole message, in one call: a short final block is padded here.
     void update(byte_span message) {
         auto const* m = message.data();
         auto remaining = message.size();
@@ -213,19 +214,24 @@ struct poly1305_state {
 };
 
 // The data the AEAD tag covers (RFC 8439 2.8): the AAD and the ciphertext,
-// each padded to 16 bytes, then both lengths as 64-bit little-endian numbers.
+// each padded with zeros to 16 bytes, then both lengths as 64-bit
+// little-endian numbers. Built whole, because Poly1305 pads only the end of
+// the message it is given.
 poly1305_tag aead_tag(poly1305_key const& key, byte_span aad, byte_span ciphertext) {
-    static constexpr std::array<uint8_t, 16> zeros{};
-    poly1305_state mac(key);
-    mac.update(aad);
-    mac.update(byte_span(zeros.data(), (16 - aad.size() % 16) % 16));
-    mac.update(ciphertext);
-    mac.update(byte_span(zeros.data(), (16 - ciphertext.size() % 16) % 16));
+    data_chunk data;
+    data.reserve(aad.size() + ciphertext.size() + 48);
+    auto const pad = [&data] {
+        data.resize(data.size() + (16 - data.size() % 16) % 16, 0);
+    };
+    data.insert(data.end(), aad.begin(), aad.end());
+    pad();
+    data.insert(data.end(), ciphertext.begin(), ciphertext.end());
+    pad();
     std::array<uint8_t, 16> lengths;
     store64(lengths.data(), aad.size());
     store64(lengths.data() + 8, ciphertext.size());
-    mac.update(lengths);
-    return mac.finish();
+    data.insert(data.end(), lengths.begin(), lengths.end());
+    return poly1305(key, data);
 }
 
 // RFC 8439 2.6: the first 32 bytes of the key stream block at counter 0.
