@@ -2177,6 +2177,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
     }
 
     mempool_.remove_for_block(*block);
+    expire_mempool();
     return error::success;
 }
 
@@ -2201,6 +2202,37 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
 
     validation_high_priority_lock const lock(validation_mutex_);
     mempool_.remove_for_block(block);
+    expire_mempool();
+}
+
+uint64_t block_chain::mempool_expiry_cutoff() const {
+    auto const hours = chain_settings().mempool_expiry_hours;
+    if (hours == 0) {
+        return 0;
+    }
+    auto const now = transaction_organizer_.now();
+    auto const age = uint64_t(hours) * 60 * 60;
+    return now > age ? now - age : 0;
+}
+
+void block_chain::expire_mempool() {
+    auto const cutoff = mempool_expiry_cutoff();
+    if (cutoff == 0) {
+        return;
+    }
+    auto const expired = mempool_.expire(cutoff);
+    if (expired > 0) {
+        spdlog::info("[blockchain] {} mempool transactions expired, unconfirmed for {} hours",
+            expired, chain_settings().mempool_expiry_hours);
+    }
+}
+
+uint64_t block_chain::fee_filter() const {
+    return transaction_organizer_.fee_filter();
+}
+
+void block_chain::set_policy_clock(std::function<uint64_t()> clock) {
+    transaction_organizer_.set_clock(std::move(clock));
 }
 
 blockchain::mempool& block_chain::mempool_ref() {
@@ -3179,11 +3211,20 @@ bool block_chain::dump_mempool_to_disk() const {
 ::asio::awaitable<size_t> block_chain::load_mempool_from_disk() {
     auto const persisted = database::load_mempool(mempool_dat_path());
 
+    // A transaction keeps the age it had when saved, so a restart does not
+    // reset its expiry; one already past it is not admitted again.
+    auto const cutoff = mempool_expiry_cutoff();
+    auto const now = transaction_organizer_.now();
+
     size_t admitted = 0;
     for (auto const& p : persisted) {
+        if (p.time_seen < cutoff) {
+            continue;
+        }
         // Re-validate against the current tip and admit (recomputes fee/size/
         // sigchecks, enforces first-seen). Now-invalid txs are simply dropped.
-        auto const ec = co_await organize(p.tx);
+        auto const ec = co_await transaction_organizer_.organize(p.tx,
+            std::min(p.time_seen, now));
         if ( ! ec) {
             ++admitted;
         }
