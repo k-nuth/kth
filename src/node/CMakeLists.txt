@@ -192,6 +192,58 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+# Optional gRPC + Protobuf server (conan option rpc=grpc), never for WebAssembly.
+# The schema in proto/ is compiled at build time with protoc and grpc_cpp_plugin,
+# which must be runnable on the BUILD machine (conan puts the build-context
+# tool_requires on PATH; override with -DKTH_PROTOC= / -DKTH_GRPC_CPP_PLUGIN=).
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(gRPC CONFIG REQUIRED)
+  find_package(protobuf CONFIG REQUIRED)
+  find_package(asio-grpc CONFIG REQUIRED)
+  find_program(KTH_PROTOC NAMES protoc NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+  find_program(KTH_GRPC_CPP_PLUGIN NAMES grpc_cpp_plugin NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+
+  set(kth_proto_root ${CMAKE_CURRENT_LIST_DIR}/proto)
+  set(kth_proto_file ${kth_proto_root}/kth/rpc/v1/node.proto)
+  set(kth_proto_gen ${CMAKE_CURRENT_BINARY_DIR}/generated)
+  set(kth_proto_outputs
+    ${kth_proto_gen}/kth/rpc/v1/node.pb.cc
+    ${kth_proto_gen}/kth/rpc/v1/node.pb.h
+    ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.cc
+    ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.h)
+  add_custom_command(
+    OUTPUT ${kth_proto_outputs}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${kth_proto_gen}
+    COMMAND ${KTH_PROTOC}
+            --proto_path=${kth_proto_root}
+            --cpp_out=${kth_proto_gen}
+            --grpc_out=${kth_proto_gen}
+            --plugin=protoc-gen-grpc=${KTH_GRPC_CPP_PLUGIN}
+            ${kth_proto_file}
+    DEPENDS ${kth_proto_file}
+    COMMENT "Generating kth.rpc.v1 protobuf and gRPC sources"
+    VERBATIM)
+
+  # One generation step shared by every target that compiles the output, so
+  # parallel builds never run protoc twice into the same files.
+  add_custom_target(kth_node_proto DEPENDS ${kth_proto_outputs})
+
+  # Generated code is not ours to lint: keep its warnings out of the build.
+  if(MSVC)
+    set_source_files_properties(${kth_proto_outputs} PROPERTIES COMPILE_OPTIONS "/W0")
+  else()
+    set_source_files_properties(${kth_proto_outputs} PROPERTIES COMPILE_OPTIONS "-w")
+  endif()
+
+  set(kth_sources_just_legacy
+    ${kth_sources_just_legacy}
+    src/grpc_rpc/transport.cpp
+    src/grpc_rpc/chain_handlers.cpp
+    src/grpc_rpc/server.cpp
+    ${kth_proto_outputs}
+  )
+endif()
+
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
     ${kth_sources_just_legacy}
@@ -241,6 +293,11 @@ set(kth_headers
   include/kth/node/rpc/query.hpp
   include/kth/node/rpc/server.hpp
 
+  # Optional gRPC server (compiled only when KTH_WITH_GRPC is set).
+  include/kth/node/grpc_rpc/transport.hpp
+  include/kth/node/grpc_rpc/chain_handlers.hpp
+  include/kth/node/grpc_rpc/server.hpp
+
   # CSP-based sync system
   include/kth/node/sync.hpp
   include/kth/node/sync/messages.hpp
@@ -252,6 +309,9 @@ set(kth_headers
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+if(TARGET kth_node_proto)
+  add_dependencies(${PROJECT_NAME} kth_node_proto)
+endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
 
@@ -290,7 +350,28 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_compile_definitions(${PROJECT_NAME} PUBLIC -DKTH_WITH_RPC)
 endif()
 
+# gRPC server: link the foreign runtime, enable the feature macro, and expose the
+# generated protobuf headers (kth/rpc/v1/node.pb.h) to this target and its users.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_link_libraries(${PROJECT_NAME} PUBLIC
+    gRPC::grpc++_unsecure protobuf::libprotobuf asio-grpc::asio-grpc)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    $<BUILD_INTERFACE:${kth_proto_gen}>)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC
+    KTH_WITH_GRPC KTH_ASIO_STANDALONE ASIO_STANDALONE)
+endif()
+
 _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
+
+# Smoke client for the gRPC API: talks to a running node through the generated
+# stubs only, so it links no node code.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(kth-grpc-smoke-client examples/grpc_smoke_client.cpp ${kth_proto_outputs})
+  set_target_properties(kth-grpc-smoke-client PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
+  add_dependencies(kth-grpc-smoke-client kth_node_proto)
+  target_include_directories(kth-grpc-smoke-client PRIVATE ${kth_proto_gen})
+  target_link_libraries(kth-grpc-smoke-client PRIVATE gRPC::grpc++_unsecure protobuf::libprotobuf)
+endif()
 
 # Tests
 # ------------------------------------------------------------------------------
@@ -358,6 +439,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
       test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp)
+  endif()
+
+  # gRPC transport tests run a real generated client against the real transport.
+  if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_sources(kth_node_test PRIVATE
+      test/grpc_transport.cpp test/grpc_chain_handlers.cpp test/grpc_full_node.cpp test/grpc_cookie.cpp test/grpc_real_chain.cpp)
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
@@ -437,6 +524,15 @@ install(TARGETS ${PROJECT_NAME}
 # decision worth testing on its own does not have to become a public symbol.
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         PATTERN "detail" EXCLUDE)
+
+# gRPC backend: the public headers include the generated protobuf messages, so
+# those are installed with it, and the schema is exported for other languages.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  install(FILES ${kth_proto_gen}/kth/rpc/v1/node.pb.h ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.h
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kth/rpc/v1)
+  install(FILES ${kth_proto_file}
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/kth/proto/kth/rpc/v1)
+endif()
 
 # Generate and install a CMake package configuration file
 install(EXPORT ${PROJECT_NAME}-targets

@@ -56,6 +56,10 @@
 #include <kth/node/rpc/server.hpp>
 #endif
 
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+#include <kth/node/grpc_rpc/server.hpp>
+#endif
+
 #include <asio/awaitable.hpp>
 
 namespace kth::node {
@@ -223,6 +227,11 @@ private:
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<rpc::server> rpc_server_;
+#endif
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // Declared after chain_ so it is destroyed first; join() also ends it before
+    // the chain is stopped, because its in-flight calls read the chain.
+    std::unique_ptr<grpc_rpc::server> grpc_server_;
 #endif
 };
 

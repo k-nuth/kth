@@ -33,6 +33,20 @@ if(TARGET kth::database)
     target_link_libraries(test_installed_database_headers PRIVATE kth::database)
 endif()
 
+# The gRPC backend's public headers include the generated protobuf messages, and
+# the schema is exported. Compile a consumer against the installed package only
+# (an object target, so cross builds that cannot run it are covered too).
+if(KTH_EXPECT_GRPC)
+    if(NOT TARGET kth::node)
+        message(FATAL_ERROR "rpc=grpc must export kth::node")
+    endif()
+    add_library(test_installed_grpc_headers OBJECT test_installed_grpc_headers.cpp)
+    target_link_libraries(test_installed_grpc_headers PRIVATE kth::node)
+    if(NOT EXISTS "${KTH_PACKAGE_FOLDER}/share/kth/proto/kth/rpc/v1/node.proto")
+        message(FATAL_ERROR "rpc=grpc must install node.proto")
+    endif()
+endif()
+
 # Test meta target
 add_executable(test_meta test_meta.cpp)
 target_link_libraries(test_meta 

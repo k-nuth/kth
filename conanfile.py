@@ -179,6 +179,18 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             self.requires("llhttp/9.3.0", transitive_headers=True, transitive_libs=True)
 
+        # gRPC + Protobuf back rpc=grpc (docs/grpc.md). asio-grpc is the header-only
+        # bridge that lets gRPC completion queues drive the node's standalone-asio
+        # coroutines; nothing here is pulled in by the other backends. Pinned to
+        # reviewed recipe revisions.
+        if self._with_grpc:
+            self.requires("grpc/1.84.0#c7c2ff9ed88b66eac8b8399c96d8df2c",
+                          transitive_headers=True, transitive_libs=True)
+            self.requires("protobuf/6.33.5#ca5ff466767b31a1b496ec60247e105c",
+                          transitive_headers=True, transitive_libs=True)
+            self.requires("asio-grpc/3.7.0#32772dbeaa3c196a84f9a4ef9bc9cddc",
+                          transitive_headers=True, transitive_libs=True)
+
         if self.options.with_png:
             self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
@@ -194,11 +206,23 @@ class KthRecipe(KnuthConanFileV2):
             # selection (select_channel / make_select / make_selector). Pinned to the
             # reviewed recipe revision; see docs/asio-select-sync.md. The target stays
             # asio::asio and ASIO_VERSION stays 103802.
+            # asio-grpc asks for asio/[>=1.17 <2], which never matches a -kth
+            # pre-release; force=True makes the fork win that range as well.
             self.requires("asio/1.38.3-kth.1#350bc1a8f6021cd9973a02957d9972c4",
-                          transitive_headers=True, transitive_libs=True)
+                          transitive_headers=True, transitive_libs=True,
+                          force=self._with_grpc)
 
+
+    @property
+    def _with_grpc(self):
+        return self.options.rpc == "grpc" and self.settings.os != "Emscripten"
 
     def build_requirements(self):
+        if self._with_grpc:
+            # protoc and grpc_cpp_plugin run at build time, so they must come
+            # from the build context (this is what makes cross-builds work).
+            self.tool_requires("protobuf/<host_version>")
+            self.tool_requires("grpc/<host_version>")
         if self.options.tests:
             self.test_requires("catch2/3.16.1")
             self.test_requires("nanobench/4.3.11")
@@ -217,10 +241,19 @@ class KthRecipe(KnuthConanFileV2):
     def configure(self):
         # Reserve the backend names without silently building a node that cannot
         # serve the selected protocol. Check before resolving any dependencies.
-        if str(self.options.rpc) in ("grpc", "capnproto"):
+        if self.options.rpc == "grpc" and self.options.consensus and self.settings.os != "Emscripten":
+            # grpc/1.84.0 requires openssl <4 and does not compile against the
+            # openssl/4.1.0 that consensus pins (X509_CRL_get_issuer now returns a
+            # const pointer). Neither pin is changed to hide that.
             raise ConanInvalidConfiguration(
-                f"RPC backend '{self.options.rpc}' is not implemented; "
-                "use rpc=jsonrpc or rpc=none."
+                "rpc=grpc cannot be combined with consensus=True yet: grpc requires "
+                "openssl <4 while consensus pins openssl/4.1.0. Use consensus=False or "
+                "another rpc backend."
+            )
+        if str(self.options.rpc) == "capnproto":
+            raise ConanInvalidConfiguration(
+                "RPC backend 'capnproto' is not implemented; "
+                "use rpc=jsonrpc, rpc=grpc or rpc=none."
             )
         KnuthConanFileV2.configure(self)
 
@@ -239,6 +272,14 @@ class KthRecipe(KnuthConanFileV2):
         self.options["boost/*"].without_cobalt = True
 
         self.options["spdlog/*"].header_only = True
+
+        if self._with_grpc:
+            # asio-grpc drives the node's standalone asio (not boost.asio).
+            self.options["asio-grpc/*"].backend = "asio"
+            # Only the C++ plugin is used; skip building the other languages.
+            for plugin in ("csharp", "node", "objective_c", "php", "python", "ruby"):
+                setattr(self.options["grpc/*"], plugin + "_plugin", False)
+            self.options["grpc/*"].csharp_ext = False
 
         self.options["utxoz/*"].log = "spdlog"
 
@@ -327,9 +368,20 @@ class KthRecipe(KnuthConanFileV2):
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
 
-        # KTH_WITH_RPC currently describes the JSON-RPC implementation, not any RPC.
-        rpc_defines = (["KTH_WITH_RPC"] if self.options.rpc == "jsonrpc"
-                       and self.settings.os != "Emscripten" else [])
+        # KTH_WITH_RPC describes the JSON-RPC implementation only; gRPC has its own
+        # KTH_WITH_GRPC macro so the two transports never share a guard.
+        rpc_defines = []
+        if self.settings.os != "Emscripten":
+            if self.options.rpc == "jsonrpc":
+                rpc_defines = ["KTH_WITH_RPC"]
+            elif self.options.rpc == "grpc":
+                rpc_defines = ["KTH_WITH_GRPC"]
+                # The gRPC public headers pull in infrastructure's asio wrapper, which
+                # selects standalone asio by macro; a consumer must see the same macros
+                # the library was built with or it gets Boost.Asio types (found by the
+                # installed-header consumer test).
+                if self.options.asio_standalone:
+                    rpc_defines += ["KTH_ASIO_STANDALONE", "ASIO_STANDALONE"]
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -466,6 +518,8 @@ class KthRecipe(KnuthConanFileV2):
             node_requires.append("ftxui::ftxui")
         if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             node_requires.append("llhttp::llhttp")
+        if self._with_grpc:
+            node_requires += ["grpc::grpc++_unsecure", "protobuf::libprotobuf", "asio-grpc::asio-grpc"]
         self.cpp_info.components["node"].requires = node_requires
         
         # Optional components
