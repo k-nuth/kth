@@ -27,7 +27,15 @@ struct KB_API settings {
     uint32_t cores = 0;
     bool priority = true;
     float byte_fee_satoshis = 0.1f;
-    float sigop_fee_satoshis= 100.0f;
+#if defined(KTH_CURRENCY_BCH)
+    // Bitcoin Cash prices a transaction by its size alone: wallets pay a fee per
+    // byte, and nothing is charged per signature operation (SigChecks limits
+    // bound that work instead). A per-sigop price on top refuses ordinary
+    // payments, such as one input and two outputs at one satoshi per byte.
+    float sigop_fee_satoshis = 0.0f;
+#else
+    float sigop_fee_satoshis = 100.0f;
+#endif
 #if defined(KTH_CURRENCY_BCH)
     uint64_t minimum_output_satoshis = 0;
     domain::policy::transaction_standardness_parameters standardness;
