@@ -47,6 +47,7 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/transaction_relay.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
@@ -218,6 +219,8 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::node::p2p_node network_;
+    // Present when the node relays transactions (network.relay_transactions).
+    std::unique_ptr<transaction_relay> relay_;
 #endif
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
