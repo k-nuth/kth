@@ -6,6 +6,7 @@
 #define KTH_NODE_RPC_QUERY_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -47,9 +48,11 @@ std::string render_mempool_info(blockchain::mempool_totals const& totals);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
 
-// getblockheader (verbose) result object.
+// getblockheader (verbose) result object. `confirmations` is -1 for a block
+// that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash);
+                                std::size_t height, hash_digest const& hash,
+                                std::int64_t confirmations);
 
 } // namespace kth::node::rpc
 

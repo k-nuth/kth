@@ -29,6 +29,24 @@ namespace kth::node::rpc {
 
 namespace {
 
+// How many blocks the connected chain has from the block at `height` with
+// `hash` up to its tip, that block included; -1 when that block is not on the
+// connected chain, including a header stored ahead of it.
+std::int64_t confirmations(blockchain::block_chain const& chain,
+                           std::size_t height, hash_digest const& hash) {
+    auto const view = chain.chain_view();
+    if ( ! view || height > view->connected_tip_height) {
+        return -1;
+    }
+    auto const on_chain = height == view->connected_tip_height
+        ? std::expected<hash_digest, database::result_code>{view->tip_hash}
+        : chain.get_block_hash(height);
+    if ( ! on_chain || *on_chain != hash) {
+        return -1;
+    }
+    return static_cast<std::int64_t>(view->connected_tip_height - height + 1);
+}
+
 // getblockcount -> the height of the most-work fully-validated block.
 // C-API counterpart: kth_chain_sync_last_height (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
@@ -239,8 +257,9 @@ get_block(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
-// getblockheader <blockhash> [verbose=true] -> the header fields, or with
-// verbose=false the 80-byte serialized header as hex.
+// getblockheader <blockhash> [verbose=true] -> the header fields with its
+// height and confirmations, or with verbose=false the 80-byte serialized
+// header as hex.
 // C-API counterpart: kth_chain_sync_block_header_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_header(method_context& ctx, request const& req) {
@@ -269,7 +288,8 @@ get_block_header(method_context& ctx, request const& req) {
     }
 
     auto const& [header, height] = *result;
-    co_return render_block_header(*header, height, *hash);
+    co_return render_block_header(*header, height, *hash,
+        confirmations(ctx.chain, height, *hash));
 }
 
 // sendrawtransaction <hexstring> -> the accepted txid, or a reject error.
