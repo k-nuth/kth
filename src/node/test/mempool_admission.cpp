@@ -112,6 +112,30 @@ struct admission_chain {
                                  chain().chain_settings().enabled_flags());
     }
 #if defined(KTH_CURRENCY_BCH)
+    // A signed spend of block 1's coinbase into three P2PKH outputs, paying
+    // `fee` satoshis: a payment with change to two parties, as wallets make.
+    domain::chain::transaction three_output_spend(uint64_t fee) {
+        using namespace domain::chain;
+        auto const& cb = trunk.front().transactions().front();
+        auto const share = (cb.outputs()[0].value() - fee) / 3;
+        auto const outputs = [&] {
+            return output::list{
+                output{share, miner_script(), std::nullopt},
+                output{share, miner_script(), std::nullopt},
+                output{cb.outputs()[0].value() - fee - 2 * share, miner_script(), std::nullopt}};
+        };
+        input::list ins{input{output_point{cb.hash(), 0}, script{}, 0xffffffff}};
+        transaction unsigned_tx{1, 0, std::move(ins), outputs()};
+        unsigned_tx.inputs()[0].previous_output().validation.cache = cb.outputs()[0];
+        auto sig = script::create_endorsement(miner_secret(), miner_script(), unsigned_tx, 0,
+            uint8_t(infrastructure::machine::sighash_algorithm::forkid_all),
+            chain().chain_settings().enabled_flags(), cb.outputs()[0].value());
+        REQUIRE(sig);
+        input::list signed_ins{input{output_point{cb.hash(), 0},
+            script(script::to_pay_public_key_hash_pattern_unlocking(*sig, miner_public())), 0xffffffff}};
+        return transaction{1, 0, std::move(signed_ins), outputs()};
+    }
+
     domain::chain::transaction p2sh_funding() {
         using namespace domain::chain;
         using domain::machine::operation;
@@ -395,4 +419,27 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
     chain.unsubscribe_transaction(channel);
 }
 
+#endif // KTH_CURRENCY_BCH
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("a payment paying one satoshi per byte is admitted at the default price", "[mempool][admission][fee]") {
+    // A wallet pays by size. With one input and three outputs the payment
+    // carries three signature operations, so any per-sigop price of note would
+    // exceed what one satoshi per byte pays for its ~260 bytes.
+    admission_chain built("one_sat_per_byte", trunk_len);
+    auto& chain = built.chain();
+    CHECK(chain.chain_settings().sigop_fee_satoshis == 0.0f);
+
+    auto const size = built.three_output_spend(0).serialized_size(true);
+    auto const tx = std::make_shared<domain::message::transaction>(built.three_output_spend(size));
+    // The fee is the funding value less the outputs: one satoshi per byte of a
+    // payment that is about as large as the one it was measured on.
+    auto const funding = built.trunk.front().transactions().front().outputs()[0].value();
+    REQUIRE(funding - tx->total_output_value() == size);
+    REQUIRE(tx->serialized_size(true) > 250u);
+    REQUIRE(tx->serialized_size(true) <= size + 2);
+
+    CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::success);
+    CHECK(chain.mempool_ref().contains(tx->hash()));
+}
 #endif // KTH_CURRENCY_BCH
