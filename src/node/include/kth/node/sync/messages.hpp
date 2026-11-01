@@ -235,7 +235,10 @@ using fast_validation_input_channel = select_channel<fast_validation_input>;
 using chunk_validated_channel = concurrent_channel<chunk_validated>;
 
 // Block storage pipeline (writes validated chunks to flat files)
-using block_storage_input = std::variant<stop_request, downloaded_chunk>;
+// A wake-up only: the existing barrier's pause flag is authoritative. When
+// the bounded storage input is full, a queued chunk already wakes its owner.
+struct storage_reorg_wake {};
+using block_storage_input = std::variant<stop_request, downloaded_chunk, storage_reorg_wake>;
 using block_storage_input_channel = concurrent_channel<block_storage_input>;
 
 // Control

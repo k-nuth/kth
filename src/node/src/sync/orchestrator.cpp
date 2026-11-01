@@ -1540,7 +1540,7 @@ static
                         [&network] { return network.stopped(); },
                         [&chain](domain::chain::header::list const& headers, size_t start_height) {
                             return chain.replace_headers_from(headers, start_height);
-                        });
+                        }, reorg_pipeline{&block_storage_input, contiguous_height.get()});
 
                     if (reorg.fatal) {
                         // The chain moved but its persisted description did not.
@@ -1568,10 +1568,9 @@ static
                     // height 0, which would rewind the whole sync to genesis.
                     if (outcome.validated_tip) {
                         blocks_synced_to = *outcome.validated_tip;
-                        // The shared contiguous counter still holds the pre-switch
-                        // value; leaving it would make the UTXO build request
-                        // headers-only heights on every poll.
-                        contiguous_height->store(blocks_synced_to + 1, std::memory_order_release);
+                        // execute_reorg reset the shared storage cursor while
+                        // every writer was parked. Repeating that reset here
+                        // could overwrite progress storage already published.
 
                         // HERE, before any branching: the branches below that do
                         // not re-drive the download are exactly the ones that
