@@ -4,6 +4,7 @@
 
 #include <test_helpers.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -12,12 +13,19 @@
 #include <thread>
 #include <vector>
 
-#include <atomic>
+#include <future>
+#include <system_error>
+#include <variant>
+
+#include <asio/experimental/awaitable_operators.hpp>
+#include <asio/steady_timer.hpp>
+#include <asio/use_future.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
+#include <asio/read_until.hpp>
 #include <asio/write.hpp>
 
 #include <kth/node/rpc/server.hpp>
@@ -45,23 +53,41 @@ struct rpc_server_fixture {
         if (runner.joinable()) runner.join();
     }
 
+    void finish() {
+        server->stop();
+        if (runner.joinable()) runner.join();
+        if (server_done.valid()) server_done.get();
+    }
+
     [[nodiscard]] bool start() {
         if ( ! chain.created() || ! chain.start()) return false;
         server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor());
-        ::asio::co_spawn(io, server->run(), [this](std::exception_ptr) { ended = true; });
+        server_done = ::asio::co_spawn(io, server->run(), ::asio::use_future);
+        auto started = ::asio::co_spawn(io, await_startup(), ::asio::use_future);
         runner = std::thread([this] { io.run(); });
-        // The listener binds on the server's own strand. Wait for the server to
-        // report the port it listens on, or for run() to end, as it does when
-        // the bind fails.
-        for (int attempt = 0; attempt < 500; ++attempt) {
-            if (auto const bound = server->listening_port(); bound != 0) {
-                port = bound;
-                return true;
-            }
-            if (ended) return false;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Only the synchronous Catch2 driver crosses the executor boundary.
+        // Readiness, failure and the deadline suspend coroutines on the I/O loop.
+        auto const result = started.get();
+        startup_error = result.first;
+        port = result.second;
+        return !startup_error && port != 0;
+    }
+
+    ::asio::awaitable<std::pair<std::error_code, uint16_t>> listening_result() {
+        try {
+            auto const bound = co_await server->wait_until_listening();
+            co_return std::make_pair(std::error_code{}, bound);
+        } catch (std::system_error const& e) {
+            co_return std::make_pair(e.code(), uint16_t{});
         }
-        return false;
+    }
+
+    ::asio::awaitable<std::pair<std::error_code, uint16_t>> await_startup() {
+        using namespace ::asio::experimental::awaitable_operators;
+        ::asio::steady_timer deadline(io, std::chrono::seconds(5));
+        auto result = co_await (listening_result() || deadline.async_wait(::asio::use_awaitable));
+        if (result.index() == 0) co_return std::get<0>(result);
+        co_return std::make_pair(std::error_code(::asio::error::timed_out), uint16_t{});
     }
 
     // Send the bytes as given and read until the server closes the connection.
@@ -85,7 +111,8 @@ struct rpc_server_fixture {
     ::asio::io_context io;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
-    std::atomic<bool> ended{false};
+    std::future<void> server_done;
+    std::error_code startup_error;
     uint16_t port = 0;
 };
 
@@ -136,6 +163,61 @@ TEST_CASE("rpc server answers every request pipelined on one connection", "[rpc 
     CHECK(answers[0].find(R"("id":1)") != std::string::npos);
     CHECK(answers[1].find(R"("id":2)") != std::string::npos);
     CHECK(answers[2].find(R"("id":3)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server reports bind failure to its startup waiter", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_startup_failure");
+    fixture.settings.bind = "not-an-ip-address";
+    REQUIRE_FALSE(fixture.start());
+    CHECK(fixture.startup_error == ::asio::error::invalid_argument);
+    CHECK(fixture.startup_error != ::asio::error::timed_out);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server joins an admitted connection during shutdown", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_join_connection");
+    REQUIRE(fixture.start());
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    socket.connect({::asio::ip::make_address("127.0.0.1"), fixture.port});
+    auto const first = request(1, "keep-alive");
+    ::asio::write(socket, ::asio::buffer(first));
+    std::string reply;
+    ::asio::read_until(socket, ::asio::dynamic_buffer(reply), "\r\n\r\n");
+    auto const header_end = reply.find("\r\n\r\n") + 4;
+    auto const field = reply.find("Content-Length: ");
+    REQUIRE(field != std::string::npos);
+    auto const length = std::stoul(reply.substr(field + 16));
+    if (reply.size() < header_end + length) {
+        ::asio::read(socket, ::asio::dynamic_buffer(reply),
+            ::asio::transfer_exactly(header_end + length - reply.size()));
+    }
+    REQUIRE(bodies(reply).size() == 1);
+    // An answered request proves admission, rather than just a backlog entry.
+    std::string const partial = "POST / HTTP/1.1\r\nHost: localhost\r\n";
+    ::asio::write(socket, ::asio::buffer(partial));
+    CHECK_NOTHROW(fixture.finish());
+    std::array<char, 1> byte{};
+    std::error_code ec;
+    CHECK(socket.read_some(::asio::buffer(byte), ec) == 0);
+    CHECK((ec == ::asio::error::eof || ec == ::asio::error::connection_reset));
+}
+
+TEST_CASE("rpc server wakes a startup waiter stopped before run", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_pre_run_stop");
+    REQUIRE(fixture.chain.created());
+    REQUIRE(fixture.chain.start());
+    fixture.server = std::make_unique<node::rpc::server>(
+        fixture.settings, fixture.chain.chain(), fixture.io.get_executor());
+    auto startup = ::asio::co_spawn(fixture.io, fixture.await_startup(), ::asio::use_future);
+    // There is deliberately no run(): stop must settle readiness on its own.
+    fixture.server->stop();
+    fixture.io.run();
+    auto const result = startup.get();
+    CHECK(result.first);
+    CHECK(result.first != ::asio::error::timed_out);
+    CHECK(result.second == 0);
 }
 
 TEST_CASE("rpc server accepts request lines that end in a bare LF", "[rpc server]") {
@@ -157,6 +239,7 @@ TEST_CASE("rpc server accepts request lines that end in a bare LF", "[rpc server
     auto const answers = bodies(reply);
     REQUIRE(answers.size() == 1);
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
 }
 
 TEST_CASE("rpc server refuses a CR that does not end its line", "[rpc server]") {
@@ -187,4 +270,47 @@ TEST_CASE("rpc server refuses a CR that does not end its line", "[rpc server]") 
         "Authorization: Basic dGVzdDp0ZXN0\r\n"
         "Connection: close\r\n" + head_end);
     CHECK(crlf.starts_with("HTTP/1.1 200 OK\r\n"));
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server validates CR after leading empty lines", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_leading_lines");
+    REQUIRE(fixture.start());
+    auto malformed = request(1, "close");
+    malformed.replace(malformed.find("\r\n"), 2, "\r");
+    for (auto const prefix : {"\r\n\r\n", "\n\n"}) {
+        auto const reply = fixture.exchange(std::string(prefix) + malformed);
+        CHECK(reply.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    }
+    auto const valid = fixture.exchange("\r\n\r\n" + request(2, "close"));
+    CHECK(valid.starts_with("HTTP/1.1 200 OK\r\n"));
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server pipelines LF heads without changing body bytes", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_lf_body");
+    REQUIRE(fixture.start());
+    auto lf_request = [](std::string const& body, std::string_view connection) {
+        return "POST / HTTP/1.1\nAuthorization: Basic dGVzdDp0ZXN0\nConnection: "
+            + std::string(connection) + "\nContent-Length: "
+            + std::to_string(body.size()) + "\n\n" + body;
+    };
+    // A lone CR is valid JSON whitespace in the body, not a head terminator.
+    std::string const body = "\r" + std::string(R"({"id":7,"method":"getblockcount","params":[]})") + "\r";
+    auto const reply = fixture.exchange("\n\n" + lf_request(body, "keep-alive")
+        + lf_request(R"({"id":8,"method":"getblockcount","params":[]})", "close"));
+    auto const answers = bodies(reply);
+    REQUIRE(answers.size() == 2);
+    CHECK(answers[0].find(R"("id":7)") != std::string::npos);
+    CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK(answers[1].find(R"("id":8)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server refuses an unfinished CR at head EOF", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_head_eof");
+    REQUIRE(fixture.start());
+    auto const reply = fixture.exchange("POST / HTTP/1.1\r\nAuthorization: Basic dGVzdDp0ZXN0\r\nContent-Length: 0\r\n\r");
+    CHECK(reply.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    CHECK_NOTHROW(fixture.finish());
 }
