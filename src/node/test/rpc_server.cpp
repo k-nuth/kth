@@ -239,6 +239,7 @@ TEST_CASE("rpc server accepts request lines that end in a bare LF", "[rpc server
     auto const answers = bodies(reply);
     REQUIRE(answers.size() == 1);
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
 }
 
 TEST_CASE("rpc server refuses a CR that does not end its line", "[rpc server]") {
@@ -269,4 +270,47 @@ TEST_CASE("rpc server refuses a CR that does not end its line", "[rpc server]") 
         "Authorization: Basic dGVzdDp0ZXN0\r\n"
         "Connection: close\r\n" + head_end);
     CHECK(crlf.starts_with("HTTP/1.1 200 OK\r\n"));
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server validates CR after leading empty lines", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_leading_lines");
+    REQUIRE(fixture.start());
+    auto malformed = request(1, "close");
+    malformed.replace(malformed.find("\r\n"), 2, "\r");
+    for (auto const prefix : {"\r\n\r\n", "\n\n"}) {
+        auto const reply = fixture.exchange(std::string(prefix) + malformed);
+        CHECK(reply.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    }
+    auto const valid = fixture.exchange("\r\n\r\n" + request(2, "close"));
+    CHECK(valid.starts_with("HTTP/1.1 200 OK\r\n"));
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server pipelines LF heads without changing body bytes", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_lf_body");
+    REQUIRE(fixture.start());
+    auto lf_request = [](std::string const& body, std::string_view connection) {
+        return "POST / HTTP/1.1\nAuthorization: Basic dGVzdDp0ZXN0\nConnection: "
+            + std::string(connection) + "\nContent-Length: "
+            + std::to_string(body.size()) + "\n\n" + body;
+    };
+    // A lone CR is valid JSON whitespace in the body, not a head terminator.
+    std::string const body = "\r" + std::string(R"({"id":7,"method":"getblockcount","params":[]})") + "\r";
+    auto const reply = fixture.exchange("\n\n" + lf_request(body, "keep-alive")
+        + lf_request(R"({"id":8,"method":"getblockcount","params":[]})", "close"));
+    auto const answers = bodies(reply);
+    REQUIRE(answers.size() == 2);
+    CHECK(answers[0].find(R"("id":7)") != std::string::npos);
+    CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK(answers[1].find(R"("id":8)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server refuses an unfinished CR at head EOF", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_head_eof");
+    REQUIRE(fixture.start());
+    auto const reply = fixture.exchange("POST / HTTP/1.1\r\nAuthorization: Basic dGVzdDp0ZXN0\r\nContent-Length: 0\r\n\r");
+    CHECK(reply.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    CHECK_NOTHROW(fixture.finish());
 }

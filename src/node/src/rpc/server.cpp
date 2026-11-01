@@ -116,38 +116,39 @@ int on_message_complete(llhttp_t* p) {
     return HPE_PAUSED;
 }
 
-// Every CR in a request's head must end its line. The request line and the
-// header lines end in CRLF or, from the clients above, a bare LF; a CR followed
-// by anything else ends no line and is refused, as other nodes refuse it. The
-// lenience llhttp needs for a bare LF on the request line also lets such a lone
-// CR through, so the head is checked here, before it is parsed. Fed the bytes
-// as they arrive, across reads; it stops at the blank line that ends the head,
-// so the body is not looked at.
-struct head_line_check {
-    bool done = false;
+// Canonicalize only the request head. CR is held until its LF arrives;
+// bodies and subsequent pipelined requests remain byte-for-byte unchanged.
+struct head_line_normalizer {
+    bool complete = false;
     bool after_cr = false;
-    bool at_line_start = false;
+    bool line_has_content = false;
+    bool saw_request_line = false;
 
-    // False when the bytes hold a CR that does not end its line.
-    [[nodiscard]] bool accept(std::string_view bytes) {
-        for (auto const b : bytes) {
-            if (done) {
+    [[nodiscard]] bool append(std::string_view input, std::string& output) {
+        for (std::size_t i = 0; i < input.size(); ++i) {
+            if (complete) {
+                output.append(input.substr(i));
                 return true;
             }
+            auto const b = input[i];
             if (after_cr) {
                 after_cr = false;
-                if (b != '\n') {
-                    return false;
-                }
-            }
-            if (b == '\r') {
+                if (b != '\n') return false;
+            } else if (b == '\r') {
                 after_cr = true;
-            } else if (b == '\n') {
-                done = at_line_start;
-                at_line_start = true;
-            } else {
-                at_line_start = false;
+                continue;
+            } else if (b != '\n') {
+                output += b;
+                line_has_content = true;
+                continue;
             }
+            output += "\r\n";
+            if (line_has_content) {
+                saw_request_line = true;
+            } else if (saw_request_line) {
+                complete = true;
+            }
+            line_has_content = false;
         }
         return true;
     }
@@ -161,12 +162,6 @@ void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) 
     settings.on_body = on_body;
     settings.on_message_complete = on_message_complete;
     llhttp_init(&parser, HTTP_REQUEST, &settings);
-    // Mining pool software in the ckpool family ends its request lines with a
-    // bare LF instead of CRLF. llhttp takes the LF after the HTTP version for
-    // the CR and then needs the LF to be optional, so the request line needs
-    // both flags; header lines need only the first.
-    llhttp_set_lenient_optional_cr_before_lf(&parser, 1);
-    llhttp_set_lenient_optional_lf_after_cr(&parser, 1);
     parser.data = &ctx;
 }
 
@@ -259,7 +254,7 @@ bool server::authorized(std::string_view authorization_header) const {
         llhttp_t parser;
         llhttp_settings_t settings;
         init_parser(parser, settings, ctx);
-        head_line_check head;
+        head_line_normalizer head;
 
         while ( ! ctx.complete) {
             std::string_view input = pending;
@@ -267,11 +262,20 @@ bool server::authorized(std::string_view authorization_header) const {
                 auto [ec, n] = co_await socket.async_read_some(
                     ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
                 if (ec || n == 0) {
+                    if (head.after_cr && (!ec || ec == ::asio::error::eof)) {
+                        co_await write_response(socket, 400, "Bad Request",
+                            R"({"result":null,"error":{"code":-32700,"message":"Parse error"},"id":null})",
+                            false);
+                    }
                     co_return; // client closed or read error
                 }
                 input = std::string_view(buffer.data(), n);
             }
-            auto const status = head.accept(input)
+            std::string normalized;
+            normalized.reserve(input.size() + 128);
+            auto const valid_head = head.append(input, normalized);
+            input = normalized;
+            auto const status = valid_head
                 ? llhttp_execute(&parser, input.data(), input.size())
                 : HPE_LF_EXPECTED;
             if (status == HPE_PAUSED) {
