@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(node VERSION 0 LANGUAGES CXX C)
 
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthRpcBackend.cmake)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -177,7 +179,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
-# set (conan option rpc) and never for WebAssembly.
+# set (conan option rpc=jsonrpc) and never for WebAssembly.
 if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}

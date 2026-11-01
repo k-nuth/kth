@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(kth VERSION 0.0.0 LANGUAGES CXX C)
 
+include(cmake/KthRpcBackend.cmake)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
