@@ -11,6 +11,7 @@
 #include <kth/node/transaction_relay.hpp>
 
 using namespace kth;
+using domain::message::get_data;
 using domain::message::inventory;
 using domain::message::inventory_vector;
 
@@ -70,4 +71,29 @@ TEST_CASE("transactions_to_request asks for unseen transactions only", "[transac
     CHECK(wanted[1].hash() == make_hash(3));
     // Announced again, by this peer or another: not asked for twice.
     CHECK(node::transactions_to_request(inv, pool, recent).empty());
+}
+
+TEST_CASE("answer_transaction_request sends what the mempool has", "[transaction relay]") {
+    blockchain::mempool pool{0x1111u, 0x2222u};
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{make_hash(9), 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, domain::chain::script{}, domain::chain::token_data_opt{});
+    auto const pooled = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{2u, 0u, std::move(ins), std::move(outs)});
+    REQUIRE(pool.add(blockchain::mempool_entry{pooled, 1000u, uint32_t(pooled->serialized_size(true)), 1u, 0u}));
+
+    auto const request = get_data::create(inventory_vector::list{
+        {inventory_vector::type_id::transaction, pooled->hash()},
+        {inventory_vector::type_id::block, make_hash(2)},
+        {inventory_vector::type_id::transaction, make_hash(3)}});
+    REQUIRE(request);
+
+    // The pooled transaction is found, the unknown one is missing, and the
+    // block entry is not this path's to answer.
+    auto const answer = node::answer_transaction_request(*request, pool);
+    REQUIRE(answer.found.size() == 1u);
+    CHECK(answer.found.front()->hash() == pooled->hash());
+    REQUIRE(answer.missing.size() == 1u);
+    CHECK(answer.missing.front().hash() == make_hash(3));
 }

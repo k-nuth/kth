@@ -124,7 +124,7 @@ full_node::~full_node() {
 #if ! defined(__EMSCRIPTEN__)
     // Transactions peers announce: asked for, then offered to the mempool.
     if (network_settings_.relay_transactions) {
-        relay_ = std::make_unique<transaction_relay>(chain_);
+        relay_ = std::make_unique<transaction_relay>(chain_, network_);
         network_.register_message_handler<domain::message::inventory>(
             [this](peer_session& peer, domain::message::inventory const& inv)
                 -> ::asio::awaitable<message_result> {
@@ -134,6 +134,11 @@ full_node::~full_node() {
             [this](peer_session& peer, domain::message::transaction const& tx)
                 -> ::asio::awaitable<message_result> {
                 co_return co_await relay_->on_transaction(peer, tx);
+            });
+        network_.register_message_handler<domain::message::get_data>(
+            [this](peer_session& peer, domain::message::get_data const& request)
+                -> ::asio::awaitable<message_result> {
+                co_return co_await relay_->on_get_data(peer, request);
             });
     }
 #endif
@@ -199,7 +204,8 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() &&
+                  run_transaction_relay());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -270,6 +276,43 @@ full_node::~full_node() {
 }
 
 #if ! defined(__EMSCRIPTEN__)
+// Announce each transaction the mempool admits, from a peer or from the RPC,
+// until the node stops.
+::asio::awaitable<void> full_node::run_transaction_relay() {
+    if ( ! relay_) {
+        co_return;
+    }
+    auto channel = subscribe_transaction();
+    if ( ! channel) {
+        co_return;
+    }
+
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor);
+    while ( ! stopped()) {
+        transaction_const_ptr admitted;
+        bool const received = channel->try_receive([&](std::error_code ec, transaction_const_ptr tx) {
+            if ( ! ec) {
+                admitted = std::move(tx);
+            }
+        });
+        if (received) {
+            if (admitted) {
+                co_await relay_->announce(admitted);
+            }
+        } else if ( ! channel->is_open()) {
+            break;
+        } else {
+            timer.expires_after(std::chrono::milliseconds(100));
+            auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                break;
+            }
+        }
+    }
+    unsubscribe_transaction(channel);
+}
+
 ::asio::awaitable<void> full_node::run_sync() {
     spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 

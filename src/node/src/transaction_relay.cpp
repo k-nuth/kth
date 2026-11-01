@@ -47,8 +47,26 @@ inventory_vector::list transactions_to_request(
     return wanted;
 }
 
-transaction_relay::transaction_relay(blockchain::block_chain& chain)
+transaction_answer answer_transaction_request(
+    domain::message::get_data const& request, blockchain::mempool const& pool) {
+
+    transaction_answer answer;
+    for (auto const& item : request.inventories()) {
+        if (item.type() != inventory_vector::type_id::transaction) {
+            continue;
+        }
+        if (auto tx = pool.get(item.hash())) {
+            answer.found.push_back(std::move(tx));
+        } else {
+            answer.missing.push_back(item);
+        }
+    }
+    return answer;
+}
+
+transaction_relay::transaction_relay(blockchain::block_chain& chain, p2p_node& network)
     : chain_(chain)
+    , network_(network)
     , recent_(remembered_txids) {
 }
 
@@ -86,6 +104,38 @@ transaction_relay::transaction_relay(blockchain::block_chain& chain)
             encode_hash(pooled->hash()), peer.authority(), ec.message());
     }
     co_return message_result::handled;
+}
+
+::asio::awaitable<message_result> transaction_relay::on_get_data(
+    network::peer_session& peer, domain::message::get_data const& request) {
+
+    auto const answer = answer_transaction_request(request, chain_.mempool_ref());
+    for (auto const& tx : answer.found) {
+        co_await peer.send(*tx);
+    }
+    if ( ! answer.missing.empty()) {
+        if (auto const missing = domain::message::not_found::create(answer.missing)) {
+            co_await peer.send(*missing);
+        }
+    }
+    co_return message_result::handled;
+}
+
+::asio::awaitable<void> transaction_relay::announce(transaction_const_ptr tx) {
+    // Nobody needs to be asked for it any more.
+    recent_.remember(tx->hash());
+    auto const inv = domain::message::inventory::create(
+        inventory_vector::list{{inventory_vector::type_id::transaction, tx->hash()}});
+    if ( ! inv) {
+        co_return;
+    }
+    for (auto const& peer : co_await network_.peers().all()) {
+        auto const version = peer->peer_version();
+        if (peer->stopped() || (version && ! version->relay())) {
+            continue;
+        }
+        co_await peer->send(*inv);
+    }
 }
 
 } // namespace kth::node

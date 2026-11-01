@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <deque>
 #include <mutex>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
@@ -42,16 +43,30 @@ KND_API domain::message::inventory_vector::list transactions_to_request(
     domain::message::inventory const& inv,
     blockchain::mempool const& pool, recent_txids& recent);
 
+// What answers a peer's `getdata` for transactions: the requested mempool
+// transactions, and the requested transactions the mempool does not have.
+// Entries of other kinds are left to whatever serves them.
+struct transaction_answer {
+    std::vector<transaction_const_ptr> found;
+    domain::message::inventory_vector::list missing;
+};
+
+KND_API transaction_answer answer_transaction_request(
+    domain::message::get_data const& request, blockchain::mempool const& pool);
+
 // Relays transactions between the peers and the mempool (#371). It asks a peer
 // for the transactions it announces that the node has not seen, and offers each
 // one to the mempool through organize(tx), the same entry sendrawtransaction
-// uses, where the transaction organizer validates it.
+// uses, where the transaction organizer validates it. It announces every
+// transaction the mempool admits, from a peer or from the RPC, to the peers
+// that asked for transaction relay in their version message, and answers their
+// requests for the mempool's transactions.
 class KND_API transaction_relay {
 public:
     // How many txids are remembered as asked for or known.
     static constexpr std::size_t remembered_txids = 50000;
 
-    explicit transaction_relay(blockchain::block_chain& chain);
+    transaction_relay(blockchain::block_chain& chain, p2p_node& network);
 
     // inv: ask the peer for the transactions it announces that the node lacks.
     // Ignored while the node is not synchronized: it has nothing current to
@@ -63,8 +78,18 @@ public:
     ::asio::awaitable<message_result> on_transaction(
         network::peer_session& peer, domain::message::transaction const& tx);
 
+    // getdata: send the requested mempool transactions, and notfound for the
+    // requested transactions the mempool does not have.
+    ::asio::awaitable<message_result> on_get_data(
+        network::peer_session& peer, domain::message::get_data const& request);
+
+    // Announce a transaction the mempool admitted to every peer that takes
+    // transaction relay: one that did not set `relay` false in its version.
+    ::asio::awaitable<void> announce(transaction_const_ptr tx);
+
 private:
     blockchain::block_chain& chain_;
+    p2p_node& network_;
     recent_txids recent_;
 };
 
