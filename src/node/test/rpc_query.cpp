@@ -402,3 +402,10 @@ TEST_CASE("render_network_info reads the version number part by part", "[rpc que
     REQUIRE(version("1.5.2-rc1") == R"({"version":1050200)");
     REQUIRE(version("unknown") == R"({"version":0)");
 }
+
+TEST_CASE("render_raw_mempool_verbose keys each entry by its txid", "[rpc query]") {
+    REQUIRE(render_raw_mempool_verbose({}) == "{}");
+    REQUIRE(render_raw_mempool_verbose({{null_hash, /*fee*/ 219u, /*size*/ 219u, /*time*/ 42u, {}, {null_hash}}}) ==
+        std::string(R"({")") + zeros + R"(":{"fees":{"base":0.00000219,"modified":0.00000219},)" +
+        R"("size":219,"time":42,"depends":[],"spentby":[")" + zeros + R"("]}})");
+}
