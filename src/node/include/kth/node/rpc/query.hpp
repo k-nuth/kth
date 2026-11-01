@@ -6,6 +6,7 @@
 #define KTH_NODE_RPC_QUERY_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -13,6 +14,7 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/infrastructure/hash_define.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
 // out so it can be unit-tested without a live block_chain.
@@ -46,6 +48,12 @@ std::string render_hash_list(hash_list const& hashes);
 std::string render_mempool_info(blockchain::mempool_totals const& totals);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
+
+// The getnetworkhashps result: the work the blocks of a window add, from the
+// chain work before them to the chain work at its last block, over the time
+// the window's timestamps span. 0 when they span no time.
+std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
+                                   std::uint32_t min_time, std::uint32_t max_time);
 
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,

@@ -137,6 +137,59 @@ std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size
     return std::nullopt;
 }
 
+std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t index,
+                                       std::int64_t fallback) {
+    if (params_json.empty()) {
+        return fallback;
+    }
+
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params_json);
+
+    simdjson::ondemand::document doc;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
+        return fallback;
+    }
+
+    simdjson::ondemand::array arr;
+    if (doc.get_array().get(arr) != simdjson::SUCCESS) {
+        return fallback;
+    }
+
+    std::size_t i = 0;
+    for (auto element : arr) {
+        if (i != index) {
+            ++i;
+            continue;
+        }
+        simdjson::ondemand::value value;
+        std::string_view raw;
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.raw_json().get(raw) != simdjson::SUCCESS) {
+            return std::nullopt;
+        }
+        while ( ! raw.empty() && (raw.back() == ' ' || raw.back() == '\t' ||
+                                  raw.back() == '\n' || raw.back() == '\r')) {
+            raw.remove_suffix(1);
+        }
+        if (raw == "null") {
+            return fallback;
+        }
+        // Accept a bare number ("-1") or a quoted numeric string ("\"-1\"").
+        std::string_view text = raw;
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+            text = text.substr(1, text.size() - 2);
+        }
+        std::int64_t out = 0;
+        auto const [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
+        if (ec == std::errc{} && ptr == text.data() + text.size()) {
+            return out;
+        }
+        return std::nullopt;
+    }
+    return fallback;
+}
+
 std::optional<bool> params_bool(std::string_view params_json, std::size_t index, bool fallback) {
     if (params_json.empty()) {
         return fallback;

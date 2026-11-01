@@ -91,6 +91,18 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     return w.str();
 }
 
+std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
+                                   std::uint32_t min_time, std::uint32_t max_time) {
+    writer w;
+    if (max_time <= min_time || work_at_end < work_before) {
+        w.value(0.0);
+    } else {
+        uint256_t const work = work_at_end - work_before;
+        w.value(work.convert_to<double>() / static_cast<double>(max_time - min_time));
+    }
+    return w.str();
+}
+
 std::string header_to_hex(domain::chain::header const& header) {
     return encode_base16(to_data_chunk(header, /*wire*/ true));
 }

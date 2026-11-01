@@ -84,3 +84,10 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("render_network_hash_ps divides the work by the time spanned", "[rpc query]") {
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1600u)) == 2.0);
+    // No time spanned, or a window given backwards: 0.
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1000u)) == 0.0);
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{1300}, uint256_t{100}, 1000u, 1600u)) == 0.0);
+}
