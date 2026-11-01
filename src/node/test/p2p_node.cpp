@@ -329,9 +329,14 @@ TEST_CASE("p2p_node tells peers the fee floor its source gives", "[p2p_node][fee
     ::asio::io_context ctx;
     auto refresh = [&] {
         auto done = ::asio::co_spawn(ctx, seam::refresh_fee_filter(node), ::asio::use_future);
-        run_until_p2p(ctx, [&] {
-            return done.wait_for(0s) == std::future_status::ready;
-        }, 2000ms);
+        // The refresh can wait on the node's own executor, and an io_context
+        // that ran out of work meanwhile stays stopped until restarted.
+        auto const deadline = std::chrono::steady_clock::now() + 2s;
+        while (done.wait_for(0s) != std::future_status::ready
+            && std::chrono::steady_clock::now() < deadline) {
+            ctx.restart();
+            ctx.run_for(10ms);
+        }
         REQUIRE(done.wait_for(0s) == std::future_status::ready);
         done.get();
     };
