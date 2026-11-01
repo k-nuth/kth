@@ -38,6 +38,11 @@ std::string block_to_hex(domain::chain::block const& block);
 // verbose=false).
 std::string header_to_hex(domain::chain::header const& header);
 
+// The `chain` value of getblockchaininfo and getmininginfo: main, test, test4,
+// scale, chip or regtest. Pools key the address prefix of their payout address
+// on it, so it is a short identifier rather than the display name.
+std::string_view chain_name(domain::config::network net);
+
 // The getblockchaininfo fields. The tip fields (blocks through chain_work) are
 // read from one published chain view, so that they describe one chain.
 struct blockchain_info {

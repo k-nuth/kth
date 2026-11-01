@@ -314,3 +314,13 @@ TEST_CASE("render_network_hash_ps divides the work by the time spanned", "[rpc q
     REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1000u)) == 0.0);
     REQUIRE(std::stod(render_network_hash_ps(uint256_t{1300}, uint256_t{100}, 1000u, 1600u)) == 0.0);
 }
+
+TEST_CASE("chain_name gives each network's short chain name", "[rpc query]") {
+    using domain::config::network;
+    REQUIRE(chain_name(network::mainnet) == "main");
+    REQUIRE(chain_name(network::testnet) == "test");
+    REQUIRE(chain_name(network::testnet4) == "test4");
+    REQUIRE(chain_name(network::scalenet) == "scale");
+    REQUIRE(chain_name(network::chipnet) == "chip");
+    REQUIRE(chain_name(network::regtest) == "regtest");
+}
