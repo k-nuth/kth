@@ -42,3 +42,34 @@ TEST_CASE("assemble_block with an empty selection is coinbase-only", "[mining bl
     REQUIRE(block.transactions().size() == 1u);
     REQUIRE(block.transactions()[0].hash() == coinbase.hash());
 }
+
+TEST_CASE("coinbase_merkle_branch folds the coinbase to the block's merkle root", "[mining block_submit]") {
+    domain::chain::transaction coinbase{1u, 0u, {}, {}};
+    auto const fold = [&](hash_list const& branch) {
+        auto root = coinbase.hash();
+        for (auto const& sibling : branch) {
+            data_chunk pair;
+            extend_data(pair, root);
+            extend_data(pair, sibling);
+            root = bitcoin_hash(pair);
+        }
+        return root;
+    };
+
+    // Odd and even selections at every level, up to three levels deep.
+    std::vector<transaction_const_ptr> job;
+    for (uint32_t size = 0; size <= 8; ++size) {
+        CAPTURE(size);
+        auto const branch = coinbase_merkle_branch(job);
+        auto const block = assemble_block(domain::chain::header{}, coinbase, job);
+        REQUIRE(fold(branch) == block.generate_merkle_root());
+        if ( ! job.empty()) {
+            REQUIRE(branch.front() == job.front()->hash());
+        }
+        job.push_back(make_tx(100u + size));
+    }
+}
+
+TEST_CASE("coinbase_merkle_branch is empty for a coinbase-only block", "[mining block_submit]") {
+    REQUIRE(coinbase_merkle_branch({}).empty());
+}
