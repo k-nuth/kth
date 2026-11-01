@@ -997,7 +997,7 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     fixture.stop();
 }
 
-TEST_CASE("sv2 closes a connection when the chain cannot supply a template", "[sv2 template_provider]") {
+TEST_CASE("sv2 closes a connection when the chain has stopped", "[sv2 template_provider]") {
     listener_fixture fixture(loopback_settings());
     auto client = fixture.connect(fixture.start());
     fixture.write(*client, frame(setup()));
@@ -1007,4 +1007,29 @@ TEST_CASE("sv2 closes a connection when the chain cannot supply a template", "[s
     fixture.finish_writing(*client);
     fixture.require_closed(*client);
     fixture.stop();
+}
+
+TEST_CASE("sv2 keeps a client through a moment without a template and sends one when it can", "[sv2 template_provider]") {
+    // A chain mid-transition, like one holding a new header whose block is
+    // still connecting, has no template for a moment. The client is kept, and
+    // the wake-up that ends the transition brings its work.
+    listener_fixture fixture(loopback_settings());
+    (void)seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+
+    auto& chain = fixture.chain.chain();
+    REQUIRE(chain.begin_transition());
+    fixture.write(*client, frame(coinbase_output_constraints{120, 3}));
+    int slices = 0;
+    (void)fixture.wait_until([&] { return ++slices > 20; });
+
+    chain.end_transition();
+    auto const work = fixture.receive<new_template>(*client);
+    auto const activation = fixture.receive<set_new_prev_hash>(*client);
+    CHECK(activation.template_id == work.template_id);
+    CHECK(work.future_template);
+    fixture.stop();
+    fixture.require_closed(*client);
 }

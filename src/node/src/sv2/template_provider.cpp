@@ -306,10 +306,18 @@ template_provider::template_provider(sv2_settings const& settings,
     // queue complete frames and tip wake-ups, so a tip cannot cancel a partial
     // read or interleave its messages with a transaction-data response.
     ::asio::experimental::channel<void(std::error_code, event)> inbox(owner_, 8);
-    detail::scope_action cleanup([&] {
+    // Closing a channel does not wake an operation already waiting on it in
+    // the pinned Asio; cancelling first does.
+    auto const end_inputs = [&] {
         std::error_code ignored;
         socket.close(ignored);
+        inbox.cancel();
         inbox.close();
+        tips->cancel();
+        tips->close();
+    };
+    detail::scope_action cleanup([&] {
+        end_inputs();
         chain_.unsubscribe_blockchain(tips);
     }, true);
 
@@ -341,6 +349,7 @@ template_provider::template_provider(sv2_settings const& settings,
             auto [error, height, incoming, outgoing] = co_await tips->async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
             if (error) {
+                inbox.cancel();
                 inbox.close();
                 co_return;
             }
@@ -357,8 +366,17 @@ template_provider::template_provider(sv2_settings const& settings,
                 + uint64_t{constraints.coinbase_output_max_additional_size},
             constraints.coinbase_output_max_additional_sigops);
         if ( ! value) {
-            spdlog::warn("[sv2] Cannot obtain a mining template: {}", value.error().message());
-            co_return template_provider_session::result{{}, true};
+            // Only a stopped chain ends the connection. One that has a new
+            // header but not yet its block, or is mid-transition, has no
+            // template for a moment; the tip wake-up sent once the block
+            // connects asks again.
+            if (value.error() == kth::error::service_stopped) {
+                spdlog::warn("[sv2] Cannot obtain a mining template: {}", value.error().message());
+                co_return template_provider_session::result{{}, true};
+            }
+            spdlog::debug("[sv2] No template yet ({}); waiting for the next tip",
+                value.error().message());
+            co_return template_provider_session::result{};
         }
         sent_previous = value->previous_block_hash;
         co_return session.set_template(std::move(*value));
@@ -366,12 +384,7 @@ template_provider::template_provider(sv2_settings const& settings,
     auto dispatch = [&]() -> ::asio::awaitable<void> {
         // Close both producers even when parsing, allocation or a chain call
         // throws. The group below joins them before any captured locals go.
-        detail::scope_action finish([&] {
-            std::error_code ignored;
-            socket.close(ignored);
-            inbox.close();
-            tips->close();
-        }, true);
+        detail::scope_action finish(end_inputs, true);
         for (;;) {
             auto [error, input] = co_await inbox.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
