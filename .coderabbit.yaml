@@ -8,6 +8,9 @@ reviews:
   poem: false
   auto_review:
     enabled: true
+    # Assigned only to organization-authored PRs by the metadata workflow.
+    # External PRs are reviewed on a member's explicit @coderabbitai review.
+    labels: ["maintainer-pr"]
     # Do NOT review while a PR is in draft. Iterate in draft, mark ready once,
     # and CR reviews a single time — instead of one review per intermediate push.
     drafts: false
@@ -41,3 +44,7 @@ reviews:
     - "!**/*.S.in"
     - "!tui_screenshot.png"
     - "!doc/**"
+
+chat:
+  # External contributors cannot trigger comment interactions or review commands.
+  allow_non_org_members: false

@@ -1,0 +1,60 @@
+name: Classify pull request
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    steps:
+      # Metadata only: never check out or execute the pull request's code.
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            // Refresh metadata instead of trusting a stale queued event.
+            const {data: pr} = await github.rest.pulls.get({
+              owner, repo, pull_number: context.issue.number
+            });
+            if (pr.state !== 'open') return;
+            const internal = ['OWNER', 'MEMBER'].includes(pr.author_association);
+            const label = internal ? 'maintainer-pr' : 'contribution';
+            const reserved = 'maintainer-pr';
+            const labels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number: pr.number, per_page: 100
+            });
+            if (!internal && labels.some(item => item.name === reserved)) {
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number: pr.number, name: reserved
+              });
+            }
+            // Create missing labels without modifying existing descriptions/colors.
+            try {
+              await github.rest.issues.getLabel({owner, repo, name: label});
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              try {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: label,
+                  color: internal ? '0E8A16' : '5319E7',
+                  description: internal
+                    ? 'Organization-authored PR eligible for automatic review'
+                    : 'External contribution'
+                });
+              } catch (createError) {
+                // Another classification run may have created it concurrently.
+                if (createError.status !== 422) throw createError;
+                await github.rest.issues.getLabel({owner, repo, name: label});
+              }
+            }
+            if (!labels.some(item => item.name === label)) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number, labels: [label]
+              });
+            }
