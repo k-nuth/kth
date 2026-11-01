@@ -5,9 +5,10 @@
 #include <test_helpers.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <functional>
 #include <future>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -68,8 +69,9 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
+    // `configure` sets anything else in the chain's settings before it starts.
     explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
-        std::optional<float> sigop_fee_satoshis = std::nullopt)
+        std::function<void(blockchain::settings&)> const& configure = {})
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -77,7 +79,7 @@ struct admission_chain {
 #if defined(KTH_CURRENCY_BCH)
         fixture.settings().standardness.maximum_transaction_size = policy_size;
 #endif
-        if (sigop_fee_satoshis) fixture.settings().sigop_fee_satoshis = *sigop_fee_satoshis;
+        if (configure) configure(fixture.settings());
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -111,6 +113,15 @@ struct admission_chain {
     [[nodiscard]]
     domain::chain::transaction matured_spend(uint64_t fee) {
         auto const& coinbase = trunk.front().transactions().front();
+        return test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
+                                 chain().chain_settings().enabled_flags());
+    }
+
+    // A signed spend of the coinbase of block `height`, paying `fee`. Matured
+    // for heights up to the trunk's length less 99.
+    [[nodiscard]]
+    domain::chain::transaction coinbase_spend(uint32_t height, uint64_t fee) {
+        auto const& coinbase = trunk[height - 1].transactions().front();
         return test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
                                  chain().chain_settings().enabled_flags());
     }
@@ -466,7 +477,8 @@ TEST_CASE("a per-signature-operation price set by the operator still applies", "
     // At the old default of 100, the payment one satoshi per byte pays for is
     // refused, and admitted once it also pays for its three signature
     // operations.
-    admission_chain built("operator_sigop_price", trunk_len, true, 1'000'000, 100.0f);
+    admission_chain built("operator_sigop_price", trunk_len, true, 1'000'000,
+        [](blockchain::settings& settings) { settings.sigop_fee_satoshis = 100.0f; });
     auto& chain = built.chain();
     REQUIRE(chain.chain_settings().sigop_fee_satoshis == 100.0f);
 
@@ -480,3 +492,146 @@ TEST_CASE("a per-signature-operation price set by the operator still applies", "
     CHECK(chain.mempool_ref().contains(priced->hash()));
 }
 #endif // KTH_CURRENCY_BCH
+
+// =============================================================================
+// A full mempool, a floor that rises and decays, and expiry
+// =============================================================================
+
+namespace {
+
+// A trunk long enough that the coinbases of blocks 1 to 11 have matured.
+constexpr uint32_t spendable_trunk_len = 110;
+constexpr uint64_t start_time = 1'700'000'000;
+constexpr uint64_t hour = 60 * 60;
+
+std::shared_ptr<domain::message::transaction> as_message(domain::chain::transaction const& tx) {
+    return std::make_shared<domain::message::transaction>(tx);
+}
+
+code organize_on(blockchain::block_chain& chain, transaction_const_ptr tx) {
+    return run_on_chain(chain, [&chain, tx] { return chain.organize(tx); });
+}
+
+} // namespace
+
+TEST_CASE("a full mempool evicts the lowest fee per byte and raises its floor", "[mempool][admission][fee][limit]") {
+    // Room for two of these one-input, one-output payments (about 191 bytes
+    // each), not three.
+    admission_chain built("mempool_full", spendable_trunk_len, true, 1'000'000,
+        [](blockchain::settings& settings) { settings.mempool_max_bytes = 450; });
+    auto& chain = built.chain();
+    std::atomic<uint64_t> now{start_time};
+    chain.set_policy_clock([&now] { return now.load(); });
+    REQUIRE(chain.fee_filter() == 100);
+
+    auto const two = as_message(built.coinbase_spend(1, 400));
+    auto const three = as_message(built.coinbase_spend(2, 600));
+    REQUIRE(organize_on(chain, two) == error::success);
+    REQUIRE(organize_on(chain, three) == error::success);
+
+    // Cheaper than all the pool holds: it is the one evicted, so it is refused,
+    // and the two already there stay.
+    auto const one = as_message(built.coinbase_spend(3, 200));
+    CHECK(organize_on(chain, one) == error::insufficient_fee);
+    CHECK_FALSE(chain.mempool_ref().contains(one->hash()));
+    CHECK(chain.mempool_ref().contains(two->hash()));
+    CHECK(chain.mempool_ref().contains(three->hash()));
+    CHECK(chain.mempool_ref().bytes() <= 450u);
+    CHECK(chain.fee_filter() > 1000);
+
+    // Paying more than the cheapest held: that one goes, with nothing else.
+    auto const five = as_message(built.coinbase_spend(4, 1000));
+    CHECK(organize_on(chain, five) == error::success);
+    CHECK_FALSE(chain.mempool_ref().contains(two->hash()));
+    CHECK(chain.mempool_ref().contains(three->hash()));
+    CHECK(chain.mempool_ref().contains(five->hash()));
+    CHECK(chain.mempool_ref().bytes() <= 450u);
+
+    // The floor is now the evicted rate (about 2.1 per byte) plus the
+    // configured 0.1, so a payment of about 1.6 per byte is refused on price.
+    auto const raised = chain.fee_filter();
+    CHECK(raised > 2000);
+    auto const under = as_message(built.coinbase_spend(5, 300));
+    CHECK(organize_on(chain, under) == error::insufficient_fee);
+
+    // The excess halves every 12 hours, and is gone within days.
+    now += 12 * hour;
+    CHECK(chain.fee_filter() < raised);
+    CHECK(chain.fee_filter() > 100);
+    now += 7 * 24 * hour;
+    CHECK(chain.fee_filter() == 100);
+}
+
+TEST_CASE("an unconfirmed transaction expires with its descendants when a block connects", "[mempool][admission][expiry]") {
+    admission_chain built("mempool_expiry", spendable_trunk_len);
+    auto& chain = built.chain();
+    REQUIRE(chain.chain_settings().mempool_expiry_hours == 336u);
+    std::atomic<uint64_t> now{start_time};
+    chain.set_policy_clock([&now] { return now.load(); });
+
+    auto const parent = built.coinbase_spend(1, 1000);
+    REQUIRE(organize_on(chain, as_message(parent)) == error::success);
+    now += hour;
+    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - 1000,
+        chain.chain_settings().enabled_flags());
+    REQUIRE(organize_on(chain, as_message(child)) == error::success);
+    now += hour;
+    auto const other = built.coinbase_spend(2, 1000);
+    REQUIRE(organize_on(chain, as_message(other)) == error::success);
+
+    // Not yet: 335 hours after the parent was first seen.
+    now = start_time + 335 * hour;
+    chain.mempool_remove_for_block(built.trunk.back());
+    CHECK(chain.mempool_ref().contains(parent.hash()));
+
+    // 337 hours: the parent has expired, and its child (seen an hour later, so
+    // not expired itself) goes with it; the one seen two hours later stays.
+    now = start_time + 337 * hour;
+    chain.mempool_remove_for_block(built.trunk.back());
+    CHECK_FALSE(chain.mempool_ref().contains(parent.hash()));
+    CHECK_FALSE(chain.mempool_ref().contains(child.hash()));
+    CHECK(chain.mempool_ref().contains(other.hash()));
+}
+
+TEST_CASE("a transaction reloaded from mempool.dat keeps its age", "[mempool][admission][expiry]") {
+    admission_chain built("mempool_reload_age", spendable_trunk_len);
+    auto& chain = built.chain();
+    std::atomic<uint64_t> now{start_time};
+    chain.set_policy_clock([&now] { return now.load(); });
+
+    auto const expired = built.coinbase_spend(1, 1000);
+    auto const recent = built.coinbase_spend(2, 1000);
+    std::vector<database::mempool_stored_tx> stored{
+        {as_message(expired), start_time - 337 * hour},
+        {as_message(recent), start_time - hour}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+
+    auto const admitted = run_count_on_chain(chain, [&] { return chain.load_mempool_from_disk(); });
+    CHECK(admitted == 1u);
+    CHECK_FALSE(chain.mempool_ref().contains(expired.hash()));
+    auto const entry = chain.mempool_ref().entry(recent.hash());
+    REQUIRE(entry.has_value());
+    CHECK(entry->time_seen == start_time - hour);
+}
+
+TEST_CASE("a mempool limit or expiry of zero turns it off", "[mempool][admission][limit][expiry]") {
+    admission_chain built("mempool_unlimited", spendable_trunk_len, true, 1'000'000,
+        [](blockchain::settings& settings) {
+            settings.mempool_max_bytes = 0;
+            settings.mempool_expiry_hours = 0;
+        });
+    auto& chain = built.chain();
+    std::atomic<uint64_t> now{start_time};
+    chain.set_policy_clock([&now] { return now.load(); });
+
+    auto const first = as_message(built.coinbase_spend(1, 200));
+    auto const second = as_message(built.coinbase_spend(2, 200));
+    REQUIRE(organize_on(chain, first) == error::success);
+    REQUIRE(organize_on(chain, second) == error::success);
+    CHECK(chain.fee_filter() == 100);
+
+    now += 10'000 * hour;
+    chain.mempool_remove_for_block(built.trunk.back());
+    CHECK(chain.mempool_ref().contains(first->hash()));
+    CHECK(chain.mempool_ref().contains(second->hash()));
+}

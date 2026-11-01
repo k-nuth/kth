@@ -53,7 +53,9 @@ void put_in_pool(blockchain::block_chain& chain, domain::chain::transaction cons
         .fee = 1000u,
         .size = static_cast<uint32_t>(ptr->serialized_size(true)),
         .sigchecks = 1u,
-        .time_seen = 1u}));
+        // First seen now: a connected block expires what was first seen more
+        // than mempool_expiry_hours ago.
+        .time_seen = uint64_t(zulu_time())}));
 }
 
 } // namespace

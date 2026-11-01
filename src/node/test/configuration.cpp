@@ -14,6 +14,22 @@
 
 using namespace kth;
 
+TEST_CASE("mempool limit and expiry have defaults and can be set", "[configuration tests][parser][mempool]") {
+    node::parser defaults(domain::config::network::regtest);
+    char const* none[]{"kth", "--network", "regtest"};
+    std::ostringstream error;
+    REQUIRE(defaults.parse(3, none, error));
+    CHECK(defaults.configured.chain.mempool_max_bytes == 320'000'000u);
+    CHECK(defaults.configured.chain.mempool_expiry_hours == 336u);
+
+    node::parser parser(domain::config::network::regtest);
+    char const* argv[]{"kth", "--network", "regtest", "--node.mempool_max_bytes", "1000000",
+        "--node.mempool_expiry_hours", "0"};
+    REQUIRE(parser.parse(7, argv, error));
+    CHECK(parser.configured.chain.mempool_max_bytes == 1'000'000u);
+    CHECK(parser.configured.chain.mempool_expiry_hours == 0u);
+}
+
 TEST_CASE("parser retains explicit settings after network defaults are rebuilt", "[configuration tests][parser]") {
     node::parser parser(domain::config::network::regtest);
     char const* argv[]{"kth", "--network", "regtest", "--db.directory", "selected-database",
