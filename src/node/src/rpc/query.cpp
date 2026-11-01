@@ -38,6 +38,27 @@ std::string to_hex256(uint256_t const& value) {
 
 } // namespace
 
+std::string_view chain_name(domain::config::network net) {
+    using domain::config::network;
+    switch (net) {
+        case network::testnet:
+            return "test";
+        case network::regtest:
+            return "regtest";
+#if defined(KTH_CURRENCY_BCH)
+        case network::testnet4:
+            return "test4";
+        case network::scalenet:
+            return "scale";
+        case network::chipnet:
+            return "chip";
+#endif
+        default:
+        case network::mainnet:
+            return "main";
+    }
+}
+
 std::string render_blockchain_info(blockchain_info const& info) {
     // By height: kth keeps no per-block transaction counts to weigh it by.
     auto const progress = info.headers == 0 ? 1.0

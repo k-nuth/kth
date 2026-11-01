@@ -22,7 +22,7 @@ constexpr auto zeros = "00000000000000000000000000000000000000000000000000000000
 
 TEST_CASE("render_blockchain_info serializes the getblockchaininfo fields", "[rpc query]") {
     REQUIRE(render_blockchain_info({
-                .chain = "Mainnet",
+                .chain = "main",
                 .blocks = 12u,
                 .headers = 12u,
                 .best_block_hash = null_hash,
@@ -31,7 +31,7 @@ TEST_CASE("render_blockchain_info serializes the getblockchaininfo fields", "[rp
                 .chain_work = uint256_t{0x1234},
                 .size_on_disk = 4096u,
                 .initial_block_download = false}) ==
-        std::string(R"({"chain":"Mainnet","blocks":12,"headers":12,"bestblockhash":")") + zeros +
+        std::string(R"({"chain":"main","blocks":12,"headers":12,"bestblockhash":")") + zeros +
         R"(","difficulty":1.0,"mediantime":1000,"verificationprogress":1.0,)"
         R"("initialblockdownload":false,)"
         R"("chainwork":"0000000000000000000000000000000000000000000000000000000000001234",)"
@@ -42,7 +42,7 @@ TEST_CASE("render_blockchain_info reports a node still syncing", "[rpc query]") 
     // A quarter of the header chain connected, and a tip the header index
     // cannot name yet: no chainwork rather than a made-up one.
     REQUIRE(render_blockchain_info({
-                .chain = "Regtest",
+                .chain = "regtest",
                 .blocks = 25u,
                 .headers = 100u,
                 .best_block_hash = null_hash,
@@ -51,7 +51,7 @@ TEST_CASE("render_blockchain_info reports a node still syncing", "[rpc query]") 
                 .chain_work = std::nullopt,
                 .size_on_disk = 0u,
                 .initial_block_download = true}) ==
-        std::string(R"({"chain":"Regtest","blocks":25,"headers":100,"bestblockhash":")") + zeros +
+        std::string(R"({"chain":"regtest","blocks":25,"headers":100,"bestblockhash":")") + zeros +
         R"(","difficulty":2.5,"mediantime":7,"verificationprogress":0.25,)"
         R"("initialblockdownload":true,"size_on_disk":0,"warnings":""})");
 }
@@ -112,4 +112,14 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         std::string(R"({"hash":")") + zeros + R"(","height":5,"version":2,)" +
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
+}
+
+TEST_CASE("chain_name gives each network's short chain name", "[rpc query]") {
+    using domain::config::network;
+    REQUIRE(chain_name(network::mainnet) == "main");
+    REQUIRE(chain_name(network::testnet) == "test");
+    REQUIRE(chain_name(network::testnet4) == "test4");
+    REQUIRE(chain_name(network::scalenet) == "scale");
+    REQUIRE(chain_name(network::chipnet) == "chip");
+    REQUIRE(chain_name(network::regtest) == "regtest");
 }

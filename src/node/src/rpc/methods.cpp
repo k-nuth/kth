@@ -222,7 +222,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     }
 
     co_return render_blockchain_info({
-        .chain = domain::config::name(view->state->network()),
+        .chain = chain_name(view->state->network()),
         .blocks = view->connected_tip_height,
         .headers = heights->header,
         .best_block_hash = view->tip_hash,

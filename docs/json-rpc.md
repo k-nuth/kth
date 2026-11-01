@@ -93,7 +93,8 @@ _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 
 ## getblockchaininfo
 
-Returns `chain`, `blocks` (connected tip height), `headers`, `bestblockhash`,
+Returns `chain` (`main`, `test`, `test4`, `scale`, `chip` or `regtest`), `blocks`
+(connected tip height), `headers`, `bestblockhash`,
 `difficulty` (of the next required work), `mediantime` (median time past of the
 connected tip), `verificationprogress`, `initialblockdownload`, `chainwork`,
 `size_on_disk` and `warnings`. The tip fields come from one published chain
@@ -138,7 +139,7 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 
 Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
 required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
-(network name), and `warnings`. `networkhashps` is not reported yet — it needs a
+(the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
 ## Mining: submitblocklight

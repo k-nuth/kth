@@ -103,7 +103,7 @@ TEST_CASE("getblockchaininfo dispatch reports the connected tip from one view", 
     double progress = 0;
 
     REQUIRE(result["chain"].get_string().get(text) == simdjson::SUCCESS);
-    REQUIRE(text == "Regtest");
+    REQUIRE(text == "regtest");
     REQUIRE(result["blocks"].get_uint64().get(number) == simdjson::SUCCESS);
     REQUIRE(number == 0u);
     REQUIRE(result["headers"].get_uint64().get(number) == simdjson::SUCCESS);
