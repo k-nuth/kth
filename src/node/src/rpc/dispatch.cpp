@@ -4,6 +4,7 @@
 
 #include <kth/node/rpc/dispatch.hpp>
 
+#include <algorithm>
 #include <utility>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -18,6 +19,16 @@ void dispatcher::add(std::string method, handler_fn handler) {
 
 bool dispatcher::has(std::string_view method) const {
     return methods_.find(std::string(method)) != methods_.end();
+}
+
+std::vector<std::string> dispatcher::methods() const {
+    std::vector<std::string> names;
+    names.reserve(methods_.size());
+    for (auto const& [name, handler] : methods_) {
+        names.push_back(name);
+    }
+    std::ranges::sort(names);
+    return names;
 }
 
 ::asio::awaitable<std::string>

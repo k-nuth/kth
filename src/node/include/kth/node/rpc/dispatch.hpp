@@ -9,6 +9,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
@@ -45,6 +46,9 @@ struct dispatcher {
     void add(std::string method, handler_fn handler);
     [[nodiscard]] bool has(std::string_view method) const;
 
+    // The registered method names, sorted.
+    [[nodiscard]] std::vector<std::string> methods() const;
+
     // Parse `body`, invoke the matching handler, and return the full response body.
     [[nodiscard]] ::asio::awaitable<std::string>
     handle(method_context& ctx, std::string_view body) const;
@@ -53,7 +57,8 @@ private:
     boost::unordered_flat_map<std::string, handler_fn> methods_;
 };
 
-// Register the built-in methods on `d` (getblockcount, ...).
+// Register the built-in methods on `d` (getblockcount, ...), and last `help`,
+// which lists them.
 void register_builtin_methods(dispatcher& d);
 
 } // namespace kth::node::rpc
