@@ -1587,7 +1587,7 @@ static
                 // body is here, so nothing asks a peer for a block only this node has.
                 auto const answer = submitted->answer;
                 if ( ! header_validation_input.try_send(std::error_code{},
-                        header_validation_input_channel::value_type{std::move(*submitted)})) {
+                        kth::node::sync::header_validation_input{std::move(*submitted)})) {
                     (*answer)(error::service_stopped);
                     continue;
                 }
@@ -1752,7 +1752,7 @@ static
                         spdlog::info("[sync_coordinator] Submitted block {} accepted at {}",
                             encode_hash(submitted.block->hash()), submitted.height);
                         auto [store_ec] = co_await block_storage_input.async_send(std::error_code{},
-                            block_storage_input_channel::value_type{downloaded_chunk{
+                            kth::node::sync::block_storage_input{downloaded_chunk{
                                 .start_height = uint32_t(submitted.height),
                                 .chunk_id = 0,
                                 .blocks = {submitted.light},
