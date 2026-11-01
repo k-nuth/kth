@@ -240,3 +240,33 @@ TEST_CASE("rpc server accepts request lines that end in a bare LF", "[rpc server
     REQUIRE(answers.size() == 1);
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
 }
+
+TEST_CASE("rpc server refuses a CR that does not end its line", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_lone_cr");
+    REQUIRE(fixture.start());
+
+    std::string const body = R"({"id":0,"method": "getblockcount"})";
+    auto const head_end = "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
+
+    // A request line ended by a lone CR, then CRLF headers: mixed framing in
+    // which the CR ends no line.
+    auto const request_line = fixture.exchange(
+        "POST / HTTP/1.1\r"
+        "Authorization: Basic dGVzdDp0ZXN0\r\n"
+        "Connection: close\r\n" + head_end);
+    CHECK(request_line.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+
+    // The same inside a header line.
+    auto const header_line = fixture.exchange(
+        "POST / HTTP/1.1\r\n"
+        "Host: 127.0.0.1\rAuthorization: Basic dGVzdDp0ZXN0\r\n"
+        "Connection: close\r\n" + head_end);
+    CHECK(header_line.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+
+    // CRLF throughout is answered, so the refusals above are about the CR.
+    auto const crlf = fixture.exchange(
+        "POST / HTTP/1.1\r\n"
+        "Authorization: Basic dGVzdDp0ZXN0\r\n"
+        "Connection: close\r\n" + head_end);
+    CHECK(crlf.starts_with("HTTP/1.1 200 OK\r\n"));
+}
