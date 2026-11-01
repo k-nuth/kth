@@ -33,6 +33,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/node/detail/scope_action.hpp>
 #include <kth/infrastructure/formats/base_64.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -176,7 +177,8 @@ server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     , chain_(chain)
     , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
     , owner_(::asio::make_strand(std::move(executor)))
-    , stop_requests_(owner_, 1) {
+    , stop_requests_(owner_, 1)
+    , listening_(owner_, 1) {
     register_builtin_methods(dispatcher_);
 
     if ( ! settings_.user.empty() || ! settings_.password.empty()) {
@@ -263,17 +265,20 @@ bool server::authorized(std::string_view authorization_header) const {
 }
 
 void server::stop() {
+    // Startup may have a waiter even if run() will never be entered.
+    // This channel is concurrent; socket shutdown still belongs to owner_.
+    listening_.close();
     (void)stop_requests_.try_send(std::error_code{}, 1);
 }
 
 ::asio::awaitable<void> server::run() {
-    try {
-        co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
-    } catch (...) {
-        listening_port_ = 0;
-        throw;
-    }
-    listening_port_ = 0;
+    // Also wake a startup waiter if cancellation prevents run_owned starting.
+    detail::scope_action close_startup([this] { listening_.close(); }, true);
+    co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
+}
+
+::asio::awaitable<uint16_t> server::wait_until_listening() {
+    co_return co_await listening_.async_receive(::asio::use_awaitable);
 }
 
 ::asio::awaitable<void> server::run_owned() {
@@ -284,6 +289,7 @@ void server::stop() {
     auto const address = ::asio::ip::make_address(settings_.bind, ec);
     if (ec) {
         spdlog::error("[rpc] invalid bind address '{}': {}", settings_.bind, ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
 
@@ -292,6 +298,7 @@ void server::stop() {
     acceptor.open(endpoint.protocol(), ec);
     if (ec) {
         spdlog::error("[rpc] failed to open acceptor: {}", ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
     acceptor.set_option(tcp::acceptor::reuse_address(true), ec);
@@ -299,17 +306,23 @@ void server::stop() {
     if (ec) {
         spdlog::error("[rpc] failed to bind {}:{}: {}", settings_.bind, settings_.port,
             ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
     acceptor.listen(tcp::socket::max_listen_connections, ec);
     if (ec) {
         spdlog::error("[rpc] failed to listen: {}", ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
 
     auto const bound = acceptor.local_endpoint(ec);
-    listening_port_ = ec ? settings_.port : bound.port();
-    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, listening_port_.load());
+    if (ec) {
+        (void)listening_.try_send(ec, uint16_t{});
+        co_return;
+    }
+    (void)listening_.try_send(std::error_code{}, bound.port());
+    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, bound.port());
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.
