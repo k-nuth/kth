@@ -139,7 +139,7 @@ TEST_CASE("rpc server answers every request pipelined on one connection", "[rpc 
 }
 
 TEST_CASE("rpc server replies end their headers with Content-Length and their body with LF", "[rpc server]") {
-    rpc_server_fixture fixture("rpc_server_reply_framing", 28433);
+    rpc_server_fixture fixture("rpc_server_reply_framing");
     REQUIRE(fixture.start());
 
     // The header line right before the blank line, as a line reader sees it.
