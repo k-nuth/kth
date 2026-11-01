@@ -5,6 +5,8 @@
 #ifndef KTH_NODE_RPC_SERVER_HPP
 #define KTH_NODE_RPC_SERVER_HPP
 
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -40,6 +42,11 @@ struct server {
     // Socket cancellation itself is performed only by the RPC owner strand.
     void stop();
 
+    // The port the listener is bound to once it listens: the configured one,
+    // or the one the system chose when the configured port is 0. Zero before
+    // that, after a bind that failed, and once run() has returned.
+    [[nodiscard]] uint16_t listening_port() const noexcept { return listening_port_.load(); }
+
 private:
     ::asio::awaitable<void> run_owned();
     ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
@@ -54,6 +61,7 @@ private:
     std::string expected_credentials_;
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
+    std::atomic<uint16_t> listening_port_{0};
 };
 
 } // namespace kth::node::rpc

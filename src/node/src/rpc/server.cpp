@@ -271,7 +271,13 @@ void server::stop() {
 }
 
 ::asio::awaitable<void> server::run() {
-    co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
+    try {
+        co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
+    } catch (...) {
+        listening_port_ = 0;
+        throw;
+    }
+    listening_port_ = 0;
 }
 
 ::asio::awaitable<void> server::run_owned() {
@@ -305,7 +311,9 @@ void server::stop() {
         co_return;
     }
 
-    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, settings_.port);
+    auto const bound = acceptor.local_endpoint(ec);
+    listening_port_ = ec ? settings_.port : bound.port();
+    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, listening_port_.load());
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.
