@@ -7,12 +7,16 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #include <asio/awaitable.hpp>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/message/block.hpp>
 #include <kth/domain/message/transaction.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -69,6 +73,53 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
     co_return render_mining_info(*info);
 }
 
+[[nodiscard]]
+std::expected<domain::message::block, rpc_error> parse_submitted_block(std::string_view hexdata) {
+    auto const raw = decode_base16(hexdata);
+    if ( ! raw) {
+        return std::unexpected(make_error(error_code::invalid_params,
+            "hexdata is not valid hex"));
+    }
+
+    byte_reader reader(*raw);
+    auto block = domain::message::block::from_data(reader, 0u);
+    if ( ! block || reader.remaining_size() != 0) {
+        return std::unexpected(make_error(error_code::invalid_params,
+            "hexdata is not a decodable block"));
+    }
+    return std::move(*block);
+}
+
+[[nodiscard]]
+std::string render_submit_result(code const& ec) {
+    writer w;
+    if (ec) {
+        w.value(ec.message()); // BIP22-style reject reason
+    } else {
+        w.value_null();        // accepted
+    }
+    return w.str();
+}
+
+// submitblock -> submit a full wire block, with an optional ignored second arg.
+// C-API counterpart: kth_chain_async_organize_block (see docs/json-rpc.md).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+submit_block(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args.size() > 2 || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "submitblock requires [hexdata] or [hexdata, dummy]"));
+    }
+
+    auto decoded = parse_submitted_block(args[0]);
+    if ( ! decoded) {
+        co_return std::unexpected(decoded.error());
+    }
+    auto const block = std::make_shared<domain::message::block>(std::move(*decoded));
+    auto const ec = co_await ctx.chain.organize(block);
+    co_return render_submit_result(ec);
+}
+
 // submitblocklight -> reconstruct the full block from the miner's solved header +
 // coinbase and the cached job selection, then submit it to the chain. Returns
 // (Bitcoin submitblock semantics) null on accept, or a reject-reason string.
@@ -108,13 +159,7 @@ submit_block_light(method_context& ctx, request const& req) {
         header_and_coinbase->transactions().front(),
         *job);
 
-    writer w;
-    if (ec) {
-        w.value(ec.message()); // BIP22-style reject reason
-    } else {
-        w.value_null();        // accepted
-    }
-    co_return w.str();
+    co_return render_submit_result(ec);
 }
 
 // ---- blockchain query methods --------------------------------------------
@@ -394,6 +439,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmempooldescendants", get_mempool_descendants);
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
+    d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
 }
 

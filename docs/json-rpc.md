@@ -82,12 +82,13 @@ counterpart.
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
+| `submitblock` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
 callback (`kth_chain_async_*`) flavor.
 
-_More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
+_More methods land per phase: mining, mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
 
@@ -121,6 +122,19 @@ Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the nex
 required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
 (network name), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
+
+## Mining: submitblock
+
+`submitblock ["hexdata"]` submits a full serialized block: the header followed by
+all transactions in wire format. An optional second argument (`"dummy"` or a
+parameters object) is ignored. No template job or cached transactions are needed.
+The block follows the same validation and connection path as `submitblocklight`
+below: it must extend the connected tip, and the call returns `null` once it is
+connected, otherwise a reject-reason string (e.g. `"duplicate block"` or
+`"service stopped"` when no sync pipeline is running).
+
+Missing or invalid parameters, more than two arguments, bad hex, an undecodable
+block, or trailing bytes after the block produce a JSON-RPC `-32602` error.
 
 ## Mining: submitblocklight
 
