@@ -98,9 +98,11 @@ set(kth_headers
   include/kth/network/peer_record.hpp
   include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
+  include/kth/network/peer_identity.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
+  include/kth/network/socks5.hpp
   include/kth/network.hpp
   include/kth/network/hosts.hpp  # Legacy - will be replaced by peer_database
 
@@ -148,6 +150,7 @@ set(kth_sources
   src/peer_manager.cpp
   src/protocols_coro.cpp
   src/settings.cpp
+  src/socks5.cpp
   src/hosts.cpp  # Legacy - will be replaced by peer_database
 
   # Message handlers (one per message type)
@@ -225,6 +228,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/peer_database.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
+    test/socks5.cpp
     test/protocols_coro.cpp
   )
 

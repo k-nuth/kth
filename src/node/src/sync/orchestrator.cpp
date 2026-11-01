@@ -718,11 +718,11 @@ static
             fast_peers.reserve(peers.size());
             size_t slow_count = 0;
             for (auto const& p : peers) {
-                if (network.is_slow_peer(p->authority())) {
+                if (p->has_numeric_authority() && network.is_slow_peer(p->authority())) {
                     ++slow_count;
                     auto speed = network.get_peer_speed(p->authority());
                     spdlog::debug("[peer_provider] Excluding slow peer {} ({:.1f}ms/block)",
-                        p->authority(), speed);
+                        p->destination(), speed);
                 } else {
                     fast_peers.push_back(p);
                 }
@@ -805,10 +805,12 @@ static
                     bool found = false;
                     for (auto const& p : peers) {
                         if (p->nonce() == perf->peer_nonce) {
-                            network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
-                            auto speed = network.get_peer_speed(p->authority());
-                            spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
-                                p->authority(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            if (p->has_numeric_authority()) {
+                                network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
+                                auto speed = network.get_peer_speed(p->authority());
+                                spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
+                                    p->destination(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            }
                             found = true;
                             break;
                         }
