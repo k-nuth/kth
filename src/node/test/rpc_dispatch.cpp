@@ -80,7 +80,7 @@ TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
         return result.get();
     };
 
-    // help itself is registered last and is in its own list.
+    // help is in its own list.
     auto const methods = dispatcher.methods();
     REQUIRE(std::ranges::is_sorted(methods));
     REQUIRE(std::ranges::binary_search(methods, std::string("help")));
@@ -99,4 +99,20 @@ TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
     REQUIRE(request(R"(["getblockhash"])") == node::rpc::build_success("5", R"("getblockhash")"));
     REQUIRE(request(R"(["nosuchmethod"])") ==
         node::rpc::build_success("5", R"("help: unknown command: nosuchmethod")"));
+
+    // A method added after the built-in ones is listed and known too: help
+    // reads the dispatcher when it is called.
+    dispatcher.add("addedlater", [](node::rpc::method_context&, node::rpc::request const&)
+        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+        co_return std::string("null");
+    });
+    REQUIRE(request(R"(["addedlater"])") == node::rpc::build_success("5", R"("addedlater")"));
+    REQUIRE(request("[]") == node::rpc::build_success("5", R"(")" + [&] {
+        std::string updated;
+        for (auto const& method : dispatcher.methods()) {
+            updated += (updated.empty() ? "" : "\\n") + method;
+        }
+        return updated;
+    }() + R"(")"));
+    REQUIRE(request("[]") != node::rpc::build_success("5", '"' + listing + '"'));
 }

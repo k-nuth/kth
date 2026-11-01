@@ -380,7 +380,7 @@ get_mempool_descendants(method_context& ctx, request const& req) {
 
 // help [command] -> the commands this server answers, one per line; with a
 // command, its name, or that it is unknown. There is no per-command help text
-// yet. `commands` is taken by value so the coroutine frame owns its copy.
+// yet. `commands` (sorted) is taken by value so the coroutine frame owns it.
 // C-API counterpart: none; it describes this server.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 help(std::vector<std::string> commands, request const& req) {
@@ -425,12 +425,10 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
 
-    // Last, so the list it answers with holds every method above, and itself.
-    auto commands = d.methods();
-    commands.emplace_back("help");
-    std::ranges::sort(commands);
-    d.add("help", [commands = std::move(commands)](method_context&, request const& req) {
-        return help(commands, req);
+    // The list is read when help is called, so it holds every method the
+    // dispatcher has then, including any added after these.
+    d.add("help", [&d](method_context&, request const& req) {
+        return help(d.methods(), req);
     });
 }
 
