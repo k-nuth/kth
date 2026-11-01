@@ -316,7 +316,7 @@ TEST_CASE("rpc server refuses an unfinished CR at head EOF", "[rpc server]") {
 }
 
 TEST_CASE("rpc server replies end their headers with Content-Length and their body with LF", "[rpc server]") {
-    rpc_server_fixture fixture("rpc_server_reply_framing", 28433);
+    rpc_server_fixture fixture("rpc_server_reply_framing");
     REQUIRE(fixture.start());
 
     // The header line right before the blank line, as a line reader sees it.
