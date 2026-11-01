@@ -15,6 +15,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/chain/light_block.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
@@ -65,8 +66,14 @@ struct header_performance {
     uint32_t download_time_ms;
 };
 
+// A block the node was handed rather than downloaded (block_chain::organize, for
+// a block a miner found). Checked against the connected tip already; its header
+// goes through the header validation task like any other, so the organizer
+// keeps its single writer, and its body to storage like a downloaded chunk.
+using block_submission = blockchain::block_chain::block_submission;
+
 // Header validation task input - single channel (CSP pattern)
-using header_validation_input = std::variant<stop_request, downloaded_headers>;
+using header_validation_input = std::variant<stop_request, downloaded_headers, block_submission>;
 
 struct headers_validated {
     uint32_t height;
@@ -80,6 +87,10 @@ struct headers_validated {
     bool reorg_candidate{false};
     int32_t reorg_fork_height{-1};
     uint32_t reorg_branch_head{0};
+
+    // Set when the header was a submitted block's: the coordinator stores its
+    // body or answers the submission with why its header was refused.
+    std::optional<block_submission> submission;
 };
 
 // -----------------------------------------------------------------------------
@@ -323,7 +334,8 @@ using sync_coordinator_event = std::variant<
     block_validated,
     chunk_validated,
     utxo_build_advanced,
-    body_range_retry
+    body_range_retry,
+    block_submission
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;
