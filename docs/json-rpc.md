@@ -100,7 +100,12 @@ alone, so transactions never travel over the wire.
 
 Response fields: `version`, `previousblockhash`, `height`, `coinbasevalue`
 (subsidy + selected fees), `target`, `bits`, `mintime` (MTP + 1), `curtime`,
-`sizelimit`, `sigchecklimit`, `noncerange`, `mutable`, and `job_id`.
+`sizelimit`, `sigchecklimit`, `noncerange`, `mutable`, `job_id`, and `merkle`.
+
+`merkle` is the coinbase's merkle branch: the hashes, in display order like
+`previousblockhash`, that the miner folds its coinbase txid with, one after the
+other (`root = sha256d(root || hash)`, each hash in internal byte order), to get
+the block's merkle root. It is empty when the template has no transactions.
 
 Job cache config (mirrors bitcoind `-gbtcachesize` / `-gbtstoretime`):
 

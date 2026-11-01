@@ -4,6 +4,9 @@
 
 #include <test_helpers.hpp>
 
+#include <memory>
+#include <string>
+
 #include <kth/domain.hpp>
 #include <kth/node/rpc/mining.hpp>
 
@@ -34,7 +37,41 @@ TEST_CASE("render_mining_template serializes the GBT-light fields", "[rpc mining
         R"("sizelimit":32000000,"sigchecklimit":226950,)"
         R"("noncerange":"00000000ffffffff",)"
         R"("mutable":["time","transactions","prevblock"],)"
-        R"("job_id":"testjob"})");
+        R"("job_id":"testjob","merkle":[]})");
+}
+
+TEST_CASE("render_mining_template carries the coinbase merkle branch", "[rpc mining]") {
+    auto const make_tx = [](uint32_t locktime) {
+        return std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1u, locktime, {}, {}});
+    };
+    auto const first = make_tx(11u);
+    auto const second = make_tx(22u);
+
+    blockchain::block_template selection{};
+    selection.txs = {first, second};
+    blockchain::mining_template tmpl{
+        /*version*/ 0x20000000u,
+        /*previous_block_hash*/ null_hash,
+        /*height*/ 5u,
+        /*bits*/ 0x1d00ffffu,
+        /*min_time*/ 1000u,
+        /*current_time*/ 2000u,
+        /*coinbase_value*/ 5000000000ULL,
+        /*size_limit*/ 32000000u,
+        /*sigchecks_limit*/ 226950u,
+        selection};
+
+    // Coinbase, first, second: the coinbase pairs with `first`, then with the
+    // hash of `second` paired with itself, the odd one out of its level.
+    data_chunk pair;
+    extend_data(pair, second->hash());
+    extend_data(pair, second->hash());
+    auto const expected = std::string(R"("job_id":"testjob","merkle":[")") +
+        encode_hash(first->hash()) + R"(",")" + encode_hash(bitcoin_hash(pair)) + R"("]})";
+
+    auto const rendered = render_mining_template(tmpl, "testjob");
+    REQUIRE(rendered.ends_with(expected));
 }
 
 TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining]") {

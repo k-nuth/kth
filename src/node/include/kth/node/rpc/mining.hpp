@@ -19,7 +19,7 @@ namespace kth::node::rpc {
 
 // Serialize a mining template as the getblocktemplatelight "result" object
 // (compact bits expanded to the 256-bit target, hashes in display order),
-// tagged with `job_id`.
+// tagged with `job_id` and carrying the coinbase's merkle branch.
 std::string render_mining_template(
     blockchain::mining_template const& tmpl, std::string_view job_id);
 
