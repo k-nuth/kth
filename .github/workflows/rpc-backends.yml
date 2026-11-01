@@ -47,6 +47,10 @@ jobs:
           - backend: grpc
             targets: kth_node_test kth-grpc-smoke-client
             tests: '"[grpc transport],[grpc chain],[grpc real],[grpc cookie],[grpc]"'
+          # Cap'n Proto RPC (docs/capnproto-rpc.md), with its example client.
+          - backend: capnproto
+            targets: kth_node_test kth_capnp_chain_client
+            tests: '"[capnp rpc]"'
 
     steps:
       - name: 📥 Checkout

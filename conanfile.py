@@ -24,6 +24,10 @@ _BLOCK_ALIGNMENT = 65536  # 2^16, for nice alignment
 _BASE_PERIOD_YEAR = 2030
 _PERIOD_LENGTH_YEARS = 5
 
+# Pinned to the reviewed ConanCenter recipe revision of capnproto 1.5.0. The same
+# reference is used for the host library and the build-context schema compiler.
+CAPNPROTO_REF = "capnproto/1.5.0#50b2e14c58a3840a4eed6ac9d887e622"
+
 
 def _get_target_year(compile_year: int) -> int:
     """Calculate target year based on compilation year (5-year periods)."""
@@ -205,6 +209,14 @@ class KthRecipe(KnuthConanFileV2):
             self.requires("asio-grpc/3.7.0#32772dbeaa3c196a84f9a4ef9bc9cddc",
                           transitive_headers=True, transitive_libs=True)
 
+        # Cap'n Proto serialization + RPC (KJ runtime) backs rpc=capnproto. The KJ
+        # event loop runs on one owned transport thread, see docs/capnproto-rpc.md.
+        # TLS and gzip are not used, which also keeps capnproto's openssl range
+        # (<4) out of a graph that pins openssl 4.x.
+        if self.options.rpc == "capnproto":
+            self.requires(CAPNPROTO_REF, transitive_headers=True, transitive_libs=True,
+                          options={"with_openssl": False, "with_zlib": False})
+
         if self.options.with_png:
             self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
@@ -237,6 +249,10 @@ class KthRecipe(KnuthConanFileV2):
             # from the build context (this is what makes cross-builds work).
             self.tool_requires("protobuf/<host_version>")
             self.tool_requires("grpc/<host_version>")
+        # The schema compiler (capnp, capnpc-c++) must run on the build machine,
+        # also when cross compiling; the host package only supplies libraries.
+        if self.options.rpc == "capnproto":
+            self.tool_requires(CAPNPROTO_REF, options={"with_openssl": False, "with_zlib": False})
         if self.options.tests:
             self.test_requires("catch2/3.16.1")
             self.test_requires("nanobench/4.3.11")
@@ -272,11 +288,6 @@ class KthRecipe(KnuthConanFileV2):
                 "rpc=grpc cannot be combined with consensus=True yet: grpc requires "
                 "openssl <4 while consensus pins openssl/4.1.0. Use consensus=False or "
                 "another rpc backend."
-            )
-        if str(self.options.rpc) == "capnproto":
-            raise ConanInvalidConfiguration(
-                "RPC backend 'capnproto' is not implemented; "
-                "use rpc=jsonrpc, rpc=grpc or rpc=none."
             )
         KnuthConanFileV2.configure(self)
 
@@ -393,8 +404,8 @@ class KthRecipe(KnuthConanFileV2):
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
 
-        # KTH_WITH_RPC describes the JSON-RPC implementation only; gRPC has its own
-        # KTH_WITH_GRPC macro so the two backends never share a guard. Neither for
+        # KTH_WITH_RPC describes the JSON-RPC implementation only; each backend has its
+        # own macro, so two never share a guard. Neither for
         # WebAssembly: configure() selects none there.
         rpc_defines = []
         if self.options.rpc == "jsonrpc":
@@ -407,6 +418,8 @@ class KthRecipe(KnuthConanFileV2):
             # installed-header consumer test).
             if self.options.asio_standalone:
                 rpc_defines += ["KTH_ASIO_STANDALONE", "ASIO_STANDALONE"]
+        elif self.options.rpc == "capnproto":
+            rpc_defines = ["KTH_WITH_CAPNPROTO_RPC", "KTH_ASIO_STANDALONE", "ASIO_STANDALONE"]
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -548,6 +561,8 @@ class KthRecipe(KnuthConanFileV2):
             node_requires.append("llhttp::llhttp")
         if self._with_grpc:
             node_requires += ["grpc::grpc++_unsecure", "protobuf::libprotobuf", "asio-grpc::asio-grpc"]
+        if self.options.rpc == "capnproto":
+            node_requires.append("capnproto::capnp-rpc")
         self.cpp_info.components["node"].requires = node_requires
         
         # Optional components

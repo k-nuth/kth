@@ -225,10 +225,18 @@ full_node::~full_node() {
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        capnp_reader_ = std::make_unique<capnp_rpc::chain_reader>(chain_);
+        capnp_server_ = std::make_unique<capnp_rpc::server>(rpc_settings_, *capnp_reader_,
+            network_.thread_pool().get_executor());
+    } else {
+        spdlog::info("[node] Cap'n Proto RPC server disabled (rpc.enabled=false).");
+    }
 #elif ! defined(__EMSCRIPTEN__) && ! defined(KTH_WITH_GRPC)
     if (rpc_settings_.enabled) {
         spdlog::warn("[node] rpc.enabled=true but this build has no RPC server "
-            "(compile with Conan rpc=jsonrpc or rpc=grpc, or CMake KTH_RPC_BACKEND=jsonrpc|grpc).");
+            "(compile with Conan rpc=jsonrpc|grpc|capnproto, or CMake KTH_RPC_BACKEND=jsonrpc|grpc|capnproto).");
     }
 #endif
 
@@ -279,6 +287,9 @@ full_node::~full_node() {
 #if defined(KTH_WITH_GRPC)
         if (grpc_server_) grpc_server_->stop();
 #endif
+#if defined(KTH_WITH_CAPNPROTO_RPC)
+        if (capnp_server_) capnp_server_->stop();
+#endif
     };
     co_await (core() && run_rpc());
     spdlog::debug("[full_node] All parallel tasks completed");
@@ -293,6 +304,8 @@ full_node::~full_node() {
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) co_await rpc_server_->run();
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) co_await capnp_server_->run();
 #endif
     co_return;
 }
@@ -426,6 +439,9 @@ void full_node::stop() {
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
     // Only asks (never blocks): this can run on a node executor thread.
     if (grpc_server_) grpc_server_->stop();
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) capnp_server_->stop();
 #endif
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
