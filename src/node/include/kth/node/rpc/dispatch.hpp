@@ -43,6 +43,13 @@ using handler_fn = std::function<
 // Routes a parsed JSON-RPC request to its registered handler and wraps the
 // outcome (or any error) in a JSON-RPC response envelope.
 struct dispatcher {
+    dispatcher() = default;
+
+    // A handler may refer to the dispatcher it is registered on (help lists its
+    // methods), so a dispatcher stays where it was built.
+    dispatcher(dispatcher const&) = delete;
+    dispatcher& operator=(dispatcher const&) = delete;
+
     void add(std::string method, handler_fn handler);
     [[nodiscard]] bool has(std::string_view method) const;
 
@@ -57,8 +64,8 @@ private:
     boost::unordered_flat_map<std::string, handler_fn> methods_;
 };
 
-// Register the built-in methods on `d` (getblockcount, ...), and last `help`,
-// which lists them.
+// Register the built-in methods on `d` (getblockcount, ...), and `help`, which
+// lists whatever `d` holds when it is called.
 void register_builtin_methods(dispatcher& d);
 
 } // namespace kth::node::rpc
