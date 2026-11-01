@@ -13,7 +13,7 @@
  */
 
 #include <kth/blockchain.hpp>
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/network.hpp>
 #endif
 #include <kth/node/configuration.hpp>

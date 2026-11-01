@@ -73,7 +73,7 @@ add_definitions(-DKTH_NODE_BUILD_TIMESTAMP=${KTH_NODE_BUILD_TIMESTAMP})
 
 if (NOT GLOBAL_BUILD)
   find_package(blockchain REQUIRED)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
     find_package(network REQUIRED)
   endif()
 endif()
@@ -137,7 +137,7 @@ set(kth_sources_just_legacy
   src/utility/performance.cpp
 )
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
@@ -174,6 +174,16 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/messages.cpp
     src/sv2/connection.cpp
   )
+endif()
+
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
+  # The native executor owns OS threads, signals and blocking joins. Browser
+  # lifecycle is hosted directly on the Worker runtime instead.
+  list(REMOVE_ITEM kth_sources_just_legacy
+    src/executor/executor.cpp
+    src/utility/reservation.cpp
+    src/utility/reservations.cpp)
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
@@ -248,6 +258,10 @@ set(kth_headers
   include/kth/node/sync/orchestrator.hpp
 )
 
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+endif()
+
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
@@ -273,7 +287,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC blockchain::blockchain)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC network::network)
 endif()
 

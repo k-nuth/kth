@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
@@ -480,7 +481,7 @@ static
             spdlog::info("[header_persist] A reorg is executing; stopping at height {}", height);
             chain.enter_reorg_barrier();
             while (chain.reorg_pause_requested() && ! chain.stopped()) {
-                ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
+                ::kth::steady_timer timer(co_await ::asio::this_coro::executor);
                 timer.expires_after(std::chrono::milliseconds(50));
                 co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
             }
@@ -611,7 +612,7 @@ static
     all_tasks.spawn("peer_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_bridge] Started, forwarding peer events to peer_provider");
         auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer check_timer(exec);
+        ::kth::steady_timer check_timer(exec);
 
         try {
             while (!network.stopped()) {
@@ -1138,7 +1139,7 @@ static
         try {
             if ( ! network.stopped()) {
                 auto completion = co_await ::asio::experimental::make_select(
-                    ::asio::experimental::after(::asio::steady_timer::time_point::max())
+                    ::asio::experimental::after(::kth::steady_timer::time_point::max())
                 ).async_wait(exec, {}, network.stop_token(), ::asio::as_tuple(::asio::deferred));
                 auto& [ec, selected] = completion;
                 (void)selected;

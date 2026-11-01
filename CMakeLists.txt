@@ -54,6 +54,19 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
 option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
+option(KTH_BROWSER_NODE "Build the experimental Worker-owned WebSocket node" OFF)
+if(KTH_BROWSER_NODE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR NOT KTH_ASIO_STANDALONE)
+        message(FATAL_ERROR "KTH_BROWSER_NODE requires Emscripten and standalone Asio")
+    endif()
+    add_compile_definitions(KTH_BROWSER_NODE ASIO_DISABLE_THREADS)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fwasm-exceptions>)
+    add_link_options(-fwasm-exceptions -lwebsocket.js)
+    find_package(asio REQUIRED)
+    add_compile_definitions(
+        ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"
+        ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
+endif()
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
@@ -106,6 +119,11 @@ if(ENABLE_TEST)
 endif()
 
 add_subdirectory(src)
+option(KTH_BROWSER_CONTROLS "Build browser interoperability controls" OFF)
+option(KTH_LEGACY_API_CONTROL "Build ordinary WASM C API compatibility control" OFF)
+if((KTH_BROWSER_NODE AND KTH_BROWSER_CONTROLS) OR KTH_LEGACY_API_CONTROL)
+    add_subdirectory(experiments/browser-worker)
+endif()
 
 
 

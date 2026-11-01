@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_EXE_EXECUTOR_HPP_
 #define KTH_NODE_EXE_EXECUTOR_HPP_
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <atomic>
 #include <condition_variable>
 #include <expected>
@@ -342,7 +343,7 @@ private:
     ///
     /// Declared AFTER io_context_ so it is destroyed before it, and touched only
     /// from the io thread: wake_heartbeat() posts, it does not cancel in place.
-    ::asio::steady_timer heartbeat_timer_{io_context_};
+    ::kth::steady_timer heartbeat_timer_{io_context_};
 
     std::thread io_thread_;
 

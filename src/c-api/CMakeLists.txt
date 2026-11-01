@@ -131,7 +131,7 @@ if (_has_pedantic_warning_flag)
   _add_c_compile_flag(-pedantic _has_pedantic_flag)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten" AND NOT KTH_BROWSER_NODE)
     message(STATUS "Knuth: OS is Emscripten")
     message(STATUS "Knuth: CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS}")
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory")
@@ -505,6 +505,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources src/node/header_sync.cpp)
+  list(APPEND kth_headers include/kth/capi/node/header_sync.h)
+endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

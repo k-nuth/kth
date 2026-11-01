@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>Worker transport controls</title>
+<style>body{font:15px system-ui;margin:2rem;max-width:1000px}pre{white-space:pre-wrap;background:#f2f4f7;padding:1rem}h2{font-size:1rem}</style>
+<h1>C++ Worker transport controls</h1>
+<p>These are engineering controls. The BCHN driver checks protocol and context-free rules; it does not run full node sync or UTXO/script connection.</p>
+<div id="controls"></div>
+<script>
+for (const name of ['stream','cap','eof','select','terminal','interop','lifecycle']) {
+  const section = document.createElement('section');
+  const heading = document.createElement('h2'); heading.textContent = name;
+  const output = document.createElement('pre'); output.textContent = 'Starting Worker…\n';
+  section.append(heading,output); document.querySelector('#controls').append(section);
+  const worker = new Worker(`worker.js?module=browser_${name}_control.js`);
+  const deadline = setTimeout(() => { output.textContent += 'FAILED: control deadline exceeded\n'; worker.terminate(); },15000);
+  let completed=false, quiescent=false;
+  worker.onmessage = event => {
+    output.textContent += event.data+'\n';
+    if (/control joined|FAILED/.test(event.data)) completed=true;
+    if (/OWNER QUIESCENT timers=0 streams=0/.test(event.data)) quiescent=true;
+    if (completed && quiescent) { clearTimeout(deadline); worker.terminate(); }
+  };
+  worker.onerror = event => { output.textContent += 'FAILED: '+event.message+'\n'; clearTimeout(deadline); worker.terminate(); };
+}
+</script>

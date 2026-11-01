@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KTH · Header synchronization control</title>
+<style>
+body{font:16px system-ui;background:#101820;color:#eaf0f4;max-width:850px;margin:4rem auto;padding:0 1.5rem}
+h1{font-size:2rem}p{color:#b9c8d2;line-height:1.5}label{display:block;margin:1rem 0}
+input,select,button{font:inherit;border:1px solid #59707f;border-radius:6px;padding:.6rem;background:#172832;color:inherit}
+input{width:min(90%,530px)}button{cursor:pointer;background:#156f63}button:disabled{opacity:.5;cursor:default}
+#height{font-size:4rem;font-variant-numeric:tabular-nums;color:#70e6c7}pre{white-space:pre-wrap;max-height:280px;overflow:auto;font-size:.8rem;background:#172832;padding:1rem}
+</style>
+<h1>KTH header synchronization</h1>
+<p>Integration control: C++ in a Worker downloads headers over BCH P2P through a WebSocket bridge and validates them with KTH. Temporary memory only; no blocks or UTXO database. This control does not yet use the application binding.</p>
+<label>WebSocket bridge <input id="bridge" value="ws://127.0.0.1:18766"></label>
+<label>Network <select id="network"><option value="mainnet">BCH mainnet</option><option value="regtest">BCH regtest</option></select></label>
+<button id="start">Download headers</button>
+<p>Last validated height</p><div id="height">—</div>
+<p id="status" data-state="idle">Ready</p>
+<pre id="log"></pre>
+<script>
+const query = new URLSearchParams(location.search);
+if(query.has('network')) document.querySelector('#network').value=query.get('network');
+if(query.has('bridge')) document.querySelector('#bridge').value=query.get('bridge');
+const start=document.querySelector('#start'), status=document.querySelector('#status');
+start.onclick=()=>{
+    start.disabled=true;
+    status.textContent='Connecting…'; status.dataset.state='running';
+    const worker=new Worker('headers-worker.js');
+    let caughtUp=false;
+    worker.onmessage=({data})=>{
+        const log=document.querySelector('#log');
+        const lines=(log.textContent+data.text+'\n').split('\n');log.textContent=lines.slice(-100).join('\n');
+        const height=/HEADERS (?:validated|caught_up) height=(\d+)/.exec(data.text);
+        if(height) document.querySelector('#height').textContent=Number(height[1]).toLocaleString('en-US');
+        if(data.text==='HEADERS connected')status.textContent='Connected; validating headers…';
+        if(data.text==='HEADERS stopped'){status.textContent='Stopped; run completed';status.dataset.state='stopped';}
+        if(data.text.startsWith('HEADERS caught_up')){caughtUp=true;status.textContent='Peer has no additional headers';}
+        if(data.text.startsWith('HEADERS FAILED')||data.type==='error'){
+            status.textContent=data.text;status.dataset.state='failed';start.disabled=false;
+        }
+        if(data.text==='OWNER QUIESCENT timers=0 streams=0'){
+            if(caughtUp)status.dataset.state='complete';
+            worker.terminate();start.disabled=false;
+        }
+    };
+    worker.onerror=event=>{status.textContent=event.message;status.dataset.state='failed';worker.terminate();start.disabled=false;};
+    worker.postMessage({type:'start',bridge:document.querySelector('#bridge').value,network:document.querySelector('#network').value,stop:query.get('stop')==='1'});
+};
+</script>
+</html>

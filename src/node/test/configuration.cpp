@@ -14,6 +14,18 @@
 
 using namespace kth;
 
+TEST_CASE("parser connection defaults match the supported transport", "[configuration tests][parser]") {
+    node::parser parser(domain::config::network::regtest);
+#if defined(KTH_BROWSER_NODE)
+    CHECK(parser.configured.network.inbound_connections == 0);
+    CHECK(parser.configured.network.outbound_connections == 0);
+    CHECK(parser.configured.network.seeds.empty());
+#elif !defined(__EMSCRIPTEN__)
+    CHECK(parser.configured.network.inbound_connections == 8);
+    CHECK(parser.configured.network.outbound_connections == 32);
+#endif
+}
+
 TEST_CASE("parser retains explicit settings after network defaults are rebuilt", "[configuration tests][parser]") {
     node::parser parser(domain::config::network::regtest);
     char const* argv[]{"kth", "--network", "regtest", "--db.directory", "selected-database",

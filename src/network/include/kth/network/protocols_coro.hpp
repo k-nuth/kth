@@ -55,6 +55,7 @@
 //
 // =============================================================================
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <chrono>
 #include <expected>
 #include <string>
@@ -101,7 +102,7 @@ awaitable_expected<Message> wait_for_message(
     using namespace ::asio::experimental::awaitable_operators;
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
+    ::kth::steady_timer timer(executor, timeout);
 
     // Race between message receive and timeout
     auto result = co_await (
