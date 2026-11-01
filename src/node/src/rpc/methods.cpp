@@ -5,8 +5,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <system_error>
 
 #include <asio/awaitable.hpp>
 
@@ -28,6 +31,26 @@
 namespace kth::node::rpc {
 
 namespace {
+
+// The bytes the regular files in `dir` take (getblockchaininfo's size_on_disk,
+// over the block and undo files). That includes the space the files have
+// preallocated: block_store keeps the bytes written, but it is driven from
+// one thread and its bookkeeping is not for the RPC thread to read.
+std::uint64_t files_size(std::filesystem::path const& dir) {
+    std::uint64_t total = 0;
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    for (std::filesystem::directory_iterator const end; ! ec && it != end; it.increment(ec)) {
+        std::error_code entry_ec;
+        if (it->is_regular_file(entry_ec)) {
+            auto const size = it->file_size(entry_ec);
+            if ( ! entry_ec) {
+                total += size;
+            }
+        }
+    }
+    return total;
+}
 
 // getblockcount -> the height of the most-work fully-validated block.
 // C-API counterpart: kth_chain_sync_last_height (see docs/json-rpc.md).
@@ -170,27 +193,46 @@ get_difficulty(method_context& ctx, request const& /*req*/) {
     co_return w.str();
 }
 
-// getblockchaininfo -> chain, height, headers, best block hash, difficulty.
+// getblockchaininfo -> chain, heights, best block hash, difficulty, median time
+// past, sync state, chain work, and the size of the block and undo files.
 // C-API counterpart: kth_chain_sync_mining_info (+ sync_block_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_blockchain_info(method_context& ctx, request const& /*req*/) {
-    auto const info = co_await ctx.chain.fetch_mining_info();
-    if ( ! info) {
-        co_return std::unexpected(from_code(info.error()));
+    // The tip fields from one published view: a height and a hash read apart
+    // can describe two different tips.
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
     }
     auto const heights = ctx.chain.get_last_heights();
     if ( ! heights) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "chain height unavailable"));
     }
-    auto const best = ctx.chain.get_block_hash(info->blocks);
-    if ( ! best) {
-        co_return std::unexpected(make_error(error_code::internal_error,
-            "best block hash unavailable"));
+
+    // The header index counts work from the genesis block's child on; the
+    // chain's work includes the genesis block's own.
+    std::optional<uint256_t> chain_work;
+    auto const& index = ctx.chain.headers();
+    if (auto const idx = index.find(view->tip_hash); idx != blockchain::header_index::null_index) {
+        auto const genesis = index.get_ancestor(idx, 0);
+        if (genesis != blockchain::header_index::null_index) {
+            chain_work = index.get_chain_work(idx) +
+                domain::chain::header::proof(index.get_bits(genesis));
+        }
     }
-    co_return render_blockchain_info(
-        domain::config::name(info->chain), info->blocks, heights->header,
-        encode_hash(*best), info->difficulty);
+
+    co_return render_blockchain_info({
+        .chain = domain::config::name(view->state->network()),
+        .blocks = view->connected_tip_height,
+        .headers = heights->header,
+        .best_block_hash = view->tip_hash,
+        .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
+        .median_time = view->state->median_time_past(),
+        .chain_work = chain_work,
+        .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
+        .initial_block_download = ! ctx.chain.synchronization().synchronized()});
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.

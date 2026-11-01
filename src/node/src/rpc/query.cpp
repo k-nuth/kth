@@ -4,6 +4,7 @@
 
 #include <kth/node/rpc/query.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <iomanip>
 #include <span>
@@ -26,17 +27,37 @@ std::string block_to_hex(domain::chain::block const& block) {
     return encode_base16(to_data_chunk(block));
 }
 
-std::string render_blockchain_info(
-    std::string_view chain, std::size_t blocks, std::size_t headers,
-    std::string_view best_block_hash, double difficulty) {
+namespace {
+
+// 256-bit value as a 64-char, zero-padded, big-endian hex string (chainwork).
+std::string to_hex256(uint256_t const& value) {
+    std::ostringstream os;
+    os << std::hex << std::setfill('0') << std::setw(64) << value;
+    return os.str();
+}
+
+} // namespace
+
+std::string render_blockchain_info(blockchain_info const& info) {
+    // By height: kth keeps no per-block transaction counts to weigh it by.
+    auto const progress = info.headers == 0 ? 1.0
+        : std::min(1.0, static_cast<double>(info.blocks) / static_cast<double>(info.headers));
 
     writer w;
     w.begin_object();
-    w.field("chain", chain);
-    w.field("blocks", static_cast<std::uint64_t>(blocks));
-    w.field("headers", static_cast<std::uint64_t>(headers));
-    w.field("bestblockhash", best_block_hash);
-    w.field("difficulty", difficulty);
+    w.field("chain", info.chain);
+    w.field("blocks", static_cast<std::uint64_t>(info.blocks));
+    w.field("headers", static_cast<std::uint64_t>(info.headers));
+    w.field("bestblockhash", encode_hash(info.best_block_hash));
+    w.field("difficulty", info.difficulty);
+    w.field("mediantime", static_cast<std::int64_t>(info.median_time));
+    w.field("verificationprogress", progress);
+    w.field("initialblockdownload", info.initial_block_download);
+    if (info.chain_work) {
+        w.field("chainwork", to_hex256(*info.chain_work));
+    }
+    w.field("size_on_disk", info.size_on_disk);
+    w.field("warnings", "");
     w.end_object();
     return w.str();
 }
