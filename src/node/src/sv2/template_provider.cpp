@@ -366,15 +366,11 @@ template_provider::template_provider(sv2_settings const& settings,
                 + uint64_t{constraints.coinbase_output_max_additional_size},
             constraints.coinbase_output_max_additional_sigops);
         if ( ! value) {
-            // Only a stopped chain ends the connection. One that has a new
-            // header but not yet its block, or is mid-transition, has no
-            // template for a moment; the tip wake-up sent once the block
-            // connects asks again.
-            if (value.error() == kth::error::service_stopped) {
-                spdlog::warn("[sv2] Cannot obtain a mining template: {}", value.error().message());
-                co_return template_provider_session::result{{}, true};
-            }
-            spdlog::debug("[sv2] No template yet ({}); waiting for the next tip",
+            // A node that has a new header but not yet its block, or is in a
+            // chain transition, has no template for a moment; the tip wake-up
+            // sent once the block connects asks again. The client is kept: a
+            // stopping node stops this provider, which ends the connection.
+            spdlog::info("[sv2] No template yet ({}); waiting for the next tip",
                 value.error().message());
             co_return template_provider_session::result{};
         }

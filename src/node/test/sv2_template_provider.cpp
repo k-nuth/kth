@@ -997,18 +997,6 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     fixture.stop();
 }
 
-TEST_CASE("sv2 closes a connection when the chain has stopped", "[sv2 template_provider]") {
-    listener_fixture fixture(loopback_settings());
-    auto client = fixture.connect(fixture.start());
-    fixture.write(*client, frame(setup()));
-    (void)fixture.receive<setup_connection_success>(*client);
-    REQUIRE(fixture.chain.chain().stop());
-    fixture.write(*client, frame(coinbase_output_constraints{120, 3}));
-    fixture.finish_writing(*client);
-    fixture.require_closed(*client);
-    fixture.stop();
-}
-
 TEST_CASE("sv2 keeps a client through a moment without a template and sends one when it can", "[sv2 template_provider]") {
     // A chain mid-transition, like one holding a new header whose block is
     // still connecting, has no template for a moment. The client is kept, and
