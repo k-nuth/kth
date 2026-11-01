@@ -70,7 +70,7 @@ counterpart.
 | `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
-| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `get_last_heights()` + `synchronization()` + `headers()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
@@ -90,6 +90,28 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## getblockchaininfo
+
+Returns `chain` (`main`, `test`, `test4`, `scale`, `chip` or `regtest`), `blocks`
+(connected tip height), `headers`, `bestblockhash`,
+`difficulty` (of the next required work), `mediantime` (median time past of the
+connected tip), `verificationprogress`, `initialblockdownload`, `chainwork`,
+`size_on_disk` and `warnings`. The tip fields come from one published chain
+view, so they always describe the same tip.
+
+- `verificationprogress` is the connected tip's share of the header chain by
+  height, `1.0` once they meet.
+- `initialblockdownload` is `true` until the node is synchronized: its connected
+  tip has reached the header tip, and that tip is within
+  `chain.notify_limit_hours` of now. These are the two conditions
+  `getmininginfo` reports as `caughtup` and `fresh`.
+- `chainwork` is the connected tip's cumulative work, as 64 hex digits. It is
+  left out while the header index cannot name the tip.
+- `size_on_disk` is the size of the block and undo files as they are on disk,
+  including the space each file has preallocated for the blocks to come (block
+  files grow in 128 MiB chunks).
+- `pruned` is not reported.
 
 ## Mining: getblocktemplatelight
 
@@ -119,7 +141,7 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 
 Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
 required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
-(network name), and `warnings`. `networkhashps` is not reported yet — it needs a
+(the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
 ## Mining: submitblocklight

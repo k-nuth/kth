@@ -50,7 +50,7 @@ TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining
         .fresh = true};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"Mainnet",)"
+        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"main",)"
         R"("transitioninprogress":false,"caughtup":true,"fresh":true,"warnings":""})");
 }
 
@@ -69,7 +69,7 @@ TEST_CASE("render_mining_info reports the three refusal reasons apart", "[rpc mi
         .fresh = false};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":7,"difficulty":2.5,"pooledtx":0,"chain":"Regtest",)"
+        R"({"blocks":7,"difficulty":2.5,"pooledtx":0,"chain":"regtest",)"
         R"("transitioninprogress":true,"caughtup":false,"fresh":false,"warnings":""})");
 }
 
@@ -88,6 +88,6 @@ TEST_CASE("render_mining_info reports a caught-up but stale tip", "[rpc mining]"
         .fresh = false};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"Regtest",)"
+        R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"regtest",)"
         R"("transitioninprogress":false,"caughtup":true,"fresh":false,"warnings":""})");
 }
