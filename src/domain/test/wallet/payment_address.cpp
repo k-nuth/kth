@@ -279,6 +279,54 @@ TEST_CASE("payment_address token address from string", "[payment_address]") {
     REQUIRE(address.encoded_legacy().empty());
 }
 
+TEST_CASE("payment_address token-aware P2PKH cashAddr decodes as P2PKH", "[payment_address]") {
+    // The pair from the CashTokens specification's address examples.
+    auto const plain = payment_address::parse_from("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl").value();
+    auto const token = payment_address::parse_from("bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v").value();
+    REQUIRE(token.version() == payment_address::mainnet_p2kh);
+    REQUIRE(token == plain);
+    REQUIRE(token.encoded_cashaddr(false) == "bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl");
+    REQUIRE(token.encoded_cashaddr(true) == "bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v");
+}
+
+TEST_CASE("payment_address token-aware cashAddr keeps the P2PKH or P2SH kind", "[payment_address]") {
+    // One hash under each of the four types, on each network's prefix.
+    auto const hash = decode_base16<short_hash_size>("4423cfd20e8f5f10863ae31df5634620d36b0fc3");
+    REQUIRE(hash);
+
+    struct address_case {
+        char const* address;
+        domain::config::network net;
+        uint8_t version;
+    };
+    for (auto const& v : {
+        address_case{"bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", domain::config::network::mainnet, payment_address::mainnet_p2kh},
+        address_case{"bitcoincash:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvvwyry2nl", domain::config::network::mainnet, payment_address::mainnet_p2sh},
+        address_case{"bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3", domain::config::network::mainnet, payment_address::mainnet_p2kh},
+        address_case{"bitcoincash:rpzz8n7jp6847yyx8t33matrgcsdx6c0cvtyha2vvv", domain::config::network::mainnet, payment_address::mainnet_p2sh},
+        address_case{"bchtest:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvcnw40csd", domain::config::network::testnet, payment_address::testnet_p2kh},
+        address_case{"bchtest:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv0kn6gmts", domain::config::network::testnet, payment_address::testnet_p2sh},
+        address_case{"bchreg:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvz0c5vtnt", domain::config::network::regtest, payment_address::testnet_p2kh},
+        address_case{"bchreg:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv429mtggk", domain::config::network::regtest, payment_address::testnet_p2sh}}) {
+        CAPTURE(v.address);
+        auto const address = payment_address::parse_from(v.address, v.net);
+        REQUIRE(address);
+        REQUIRE(address->version() == v.version);
+        REQUIRE(address->hash20() == *hash);
+    }
+}
+
+TEST_CASE("payment_address cashAddr with an unknown type is rejected", "[payment_address]") {
+    // Type 4, otherwise well formed, with a valid checksum.
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:ypzz8n7jp6847yyx8t33matrgcsdx6c0cv4lkel9ld"));
+}
+
+TEST_CASE("payment_address cashAddr with a hash of neither 20 nor 32 bytes is rejected", "[payment_address]") {
+    // Well formed, with valid checksums: a 24-byte P2PKH and a 40-byte P2SH.
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:q9zz8n7jp6847yyx8t33matrgcsdx6c0cvqqqqqqs8e2yj0m"));
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:p3zz8n7jp6847yyx8t33matrgcsdx6c0cvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkuv60mtm"));
+}
+
 // ---------------------------------------------------------------------------
 // 32-byte hash truncation guards (`pay_script_hash_32`, BCH 2025 Leibniz)
 // ---------------------------------------------------------------------------
