@@ -75,6 +75,8 @@ counterpart.
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
+| `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
@@ -90,6 +92,27 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## decoderawtransaction
+
+`decoderawtransaction "<hex>"` decodes a serialized transaction without looking
+anything up: `txid`, `hash`, `version`, `size`, `locktime`, `vin` (for a coinbase
+just `coinbase` and `sequence`) and `vout`. Each output has `value` in BCH, `n`,
+`scriptPubKey` (`asm`, `hex`, `type`: `pubkeyhash`, `scripthash`, `pubkey`,
+`multisig`, `nulldata` or `nonstandard`, and for a spendable kind `reqSigs` and
+`addresses` as cashaddr under the node's network prefix) and, when it carries
+CashTokens, `tokenData` (`category`, `amount` as a string, and `nft` with
+`capability` and `commitment`). `scriptPubKey.hex` leaves out the token prefix.
+`asm` is kth's own script notation, under the node's current script rules.
+
+## gettxout
+
+`gettxout "<txid>" <n> [include_mempool=true]` returns the output if it is
+unspent and `null` otherwise: `bestblock` (the connected tip it was read
+against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
+`decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
+output that a mempool transaction spends is `null`, and an output of a mempool
+transaction is returned with `0` confirmations.
 
 ## Mining: getblocktemplatelight
 

@@ -84,6 +84,11 @@ struct mempool {
     std::optional<domain::chain::output>
     resolve(domain::chain::point const& outpoint) const;
 
+    // The pool transaction that spends `outpoint`, if any (the spent_by_ entry,
+    // == BCHN mapNextTx). gettxout asks it to report an output as spent once
+    // a pool transaction spends it.
+    std::optional<hash_digest> spender(domain::chain::point const& outpoint) const;
+
     bool contains(hash_digest const& txid) const;
     std::size_t size() const;
 

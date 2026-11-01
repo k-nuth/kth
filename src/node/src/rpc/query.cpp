@@ -8,9 +8,16 @@
 #include <iomanip>
 #include <span>
 #include <sstream>
+#include <string_view>
+#include <vector>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/domain/chain/script.hpp>
+#include <kth/domain/chain/token_data.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/payment_address.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -87,6 +94,191 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     write_hash_array(w, depends);
     w.key("spentby");
     write_hash_array(w, spentby);
+    w.end_object();
+    return w.str();
+}
+
+namespace {
+
+// Satoshis as an exact BCH amount, e.g. 150000000 -> 1.50000000.
+std::string satoshis_to_bch(std::uint64_t value) {
+    constexpr std::uint64_t satoshis_per_bch = 100'000'000;
+    std::ostringstream os;
+    os << value / satoshis_per_bch << '.'
+       << std::setfill('0') << std::setw(8) << value % satoshis_per_bch;
+    return os.str();
+}
+
+// The cashaddr form of `address` under `net`'s prefix. payment_address itself
+// encodes a regtest address under the testnet prefix.
+std::string cashaddr_for(domain::wallet::payment_address const& address,
+                         domain::config::network net) {
+    namespace cashaddr = domain::wallet::cashaddr;
+    auto const payload = cashaddr::decode(address.encoded_cashaddr(false), "").second;
+    return cashaddr::encode(domain::wallet::payment_address::cashaddr_prefix_for(net), payload);
+}
+
+// An output script's kind as the scriptPubKey "type", and the addresses it
+// pays with the number of signatures that takes; no addresses for an
+// unspendable or unrecognized script.
+struct script_destination {
+    std::string_view type;
+    std::size_t required = 0;
+    std::vector<std::string> addresses;
+};
+
+script_destination describe_output_script(domain::chain::script const& script,
+                                          domain::config::network net) {
+    using domain::machine::script_pattern;
+    using domain::wallet::payment_address;
+    auto const mainnet = net == domain::config::network::mainnet;
+    auto const p2kh = mainnet ? payment_address::mainnet_p2kh : payment_address::testnet_p2kh;
+    auto const p2sh = mainnet ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh;
+
+    script_destination out;
+    switch (script.output_pattern()) {
+        case script_pattern::pay_to_public_key_hash:
+            out.type = "pubkeyhash";
+            break;
+        case script_pattern::pay_to_script_hash:
+        case script_pattern::pay_to_script_hash_32:
+            out.type = "scripthash";
+            break;
+        case script_pattern::pay_to_public_key:
+            out.type = "pubkey";
+            break;
+        case script_pattern::pay_to_multisig: {
+            // <m> <pubkey>... <n> checkmultisig
+            out.type = "multisig";
+            auto const ops = script.operations();
+            out.required = std::size_t(uint8_t(ops.front().code()) -
+                                       uint8_t(domain::machine::opcode::push_positive_1) + 1);
+            for (auto it = ops.begin() + 1; it + 2 < ops.end(); ++it) {
+                out.addresses.push_back(cashaddr_for(
+                    payment_address{bitcoin_short_hash(it->data()), p2kh}, net));
+            }
+            return out;
+        }
+        case script_pattern::null_data:
+            out.type = "nulldata";
+            return out;
+        default:
+            out.type = "nonstandard";
+            return out;
+    }
+    for (auto const& address : payment_address::extract_output(script, p2kh, p2sh)) {
+        out.addresses.push_back(cashaddr_for(address, net));
+    }
+    out.required = out.addresses.empty() ? 0 : 1;
+    return out;
+}
+
+std::string_view capability_name(domain::chain::capability_t capability) {
+    switch (capability) {
+        case domain::chain::capability_t::mut:
+            return "mutable";
+        case domain::chain::capability_t::minting:
+            return "minting";
+        default:
+            return "none";
+    }
+}
+
+// A "scriptPubKey" object: asm, hex, and the kind with its addresses.
+void write_script_pubkey(writer& w, domain::chain::script const& script,
+                         domain::config::network net, domain::script_flags_t flags) {
+    auto const destination = describe_output_script(script, net);
+    w.key("scriptPubKey").begin_object();
+    w.field("asm", script.to_string(flags));
+    w.field("hex", encode_base16(script.bytes()));
+    if ( ! destination.addresses.empty()) {
+        w.field("reqSigs", static_cast<std::uint64_t>(destination.required));
+    }
+    w.field("type", destination.type);
+    if ( ! destination.addresses.empty()) {
+        w.key("addresses").begin_array();
+        for (auto const& address : destination.addresses) {
+            w.value(address);
+        }
+        w.end_array();
+    }
+    w.end_object();
+}
+
+// A "tokenData" object: category, fungible amount and the NFT, if any.
+void write_token_data(writer& w, domain::chain::token_data_t const& token) {
+    w.key("tokenData").begin_object();
+    w.field("category", encode_hash(token.id));
+    w.field("amount", std::to_string(domain::chain::get_amount(token)));
+    if (domain::chain::has_nft(token)) {
+        w.key("nft").begin_object();
+        w.field("capability", capability_name(domain::chain::get_nft_capability(token)));
+        w.field("commitment", encode_base16(domain::chain::get_nft_commitment(token)));
+        w.end_object();
+    }
+    w.end_object();
+}
+
+} // namespace
+
+std::string render_transaction(domain::chain::transaction const& tx,
+                               domain::config::network net, domain::script_flags_t flags) {
+    writer w;
+    w.begin_object();
+    w.field("txid", encode_hash(tx.hash()));
+    w.field("hash", encode_hash(tx.hash()));
+    w.field("version", static_cast<std::int64_t>(tx.version()));
+    w.field("size", static_cast<std::uint64_t>(tx.serialized_size(true)));
+    w.field("locktime", static_cast<std::int64_t>(tx.locktime()));
+
+    w.key("vin").begin_array();
+    for (auto const& input : tx.inputs()) {
+        w.begin_object();
+        if (tx.is_coinbase()) {
+            w.field("coinbase", encode_base16(input.script().bytes()));
+        } else {
+            w.field("txid", encode_hash(input.previous_output().hash()));
+            w.field("vout", static_cast<std::int64_t>(input.previous_output().index()));
+            w.key("scriptSig").begin_object();
+            w.field("asm", input.script().to_string(flags));
+            w.field("hex", encode_base16(input.script().bytes()));
+            w.end_object();
+        }
+        w.field("sequence", static_cast<std::int64_t>(input.sequence()));
+        w.end_object();
+    }
+    w.end_array();
+
+    w.key("vout").begin_array();
+    std::uint64_t n = 0;
+    for (auto const& output : tx.outputs()) {
+        w.begin_object();
+        w.field_raw("value", satoshis_to_bch(output.value()));
+        w.field("n", n++);
+        write_script_pubkey(w, output.script(), net, flags);
+        if (auto const& token = output.token_data()) {
+            write_token_data(w, *token);
+        }
+        w.end_object();
+    }
+    w.end_array();
+    w.end_object();
+    return w.str();
+}
+
+std::string render_tx_out(hash_digest const& best_block, std::int64_t confirmations,
+                          domain::chain::output const& output, bool coinbase,
+                          domain::config::network net, domain::script_flags_t flags) {
+    writer w;
+    w.begin_object();
+    w.field("bestblock", encode_hash(best_block));
+    w.field("confirmations", confirmations);
+    w.field_raw("value", satoshis_to_bch(output.value()));
+    write_script_pubkey(w, output.script(), net, flags);
+    if (auto const& token = output.token_data()) {
+        write_token_data(w, *token);
+    }
+    w.field("coinbase", coinbase);
     w.end_object();
     return w.str();
 }

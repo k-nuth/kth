@@ -4,8 +4,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <expected>
+#include <limits>
 #include <memory>
+#include <span>
 #include <string>
 
 #include <asio/awaitable.hpp>
@@ -305,6 +308,114 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// decoderawtransaction <hexstring> -> the transaction's fields, decoded for
+// this node's network and current script rules.
+// C-API counterpart: kth_chain_transaction_construct_from_data (+ its accessors).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+decode_raw_transaction(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "decoderawtransaction requires [hexstring]"));
+    }
+    auto const raw = decode_base16(args[0]);
+    if ( ! raw) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "hexstring is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto const tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx || ! reader.is_exhausted()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "transaction decode failed"));
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    co_return render_transaction(*tx, view->state->network(), view->state->enabled_flags());
+}
+
+// gettxout <txid> <n> [include_mempool=true] -> the output if it is unspent,
+// else null. With include_mempool, an output that a mempool transaction spends
+// is null, and an output of a mempool transaction has 0 confirmations.
+// C-API counterpart: none yet; the C-API has no UTXO reader.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_tx_out(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    auto const index = params_uint(req.params, 1);
+    if (args.empty() || args[0].empty() || ! index ||
+        *index > std::numeric_limits<std::uint32_t>::max()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "gettxout requires [txid, n]"));
+    }
+    auto const hash = decode_hash(args[0]);
+    if ( ! hash) {
+        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+    }
+    auto const include_mempool = params_bool(req.params, 2, /*fallback*/ true);
+    if ( ! include_mempool) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "include_mempool must be a boolean"));
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const net = view->state->network();
+    auto const flags = view->state->enabled_flags();
+    domain::chain::output_point const outpoint{*hash, static_cast<std::uint32_t>(*index)};
+    writer none;
+    none.value_null();
+
+    if (*include_mempool) {
+        auto const& pool = ctx.chain.mempool_ref();
+        if (pool.spender(outpoint)) {
+            co_return none.str();
+        }
+        if (auto const output = pool.resolve(outpoint)) {
+            co_return render_tx_out(view->tip_hash, 0, *output, /*coinbase*/ false, net, flags);
+        }
+    }
+
+    // The confirmed UTXO set at the connected tip. "Not resolved" means only
+    // that the active versions cannot answer: the older ones are asked with a
+    // request of one, and only their miss is absence.
+    auto const tip = view->connected_tip_height;
+    auto utxo = ctx.chain.get_utxo(outpoint, tip);
+    if ( ! utxo && utxo.error() == database::result_code::not_resolved) {
+        auto const height = database::to_store_height(tip);
+        if ( ! height) {
+            co_return std::unexpected(make_error(error_code::internal_error,
+                "tip height does not fit the UTXO store"));
+        }
+        auto const& txid = outpoint.hash();
+        std::array<utxoz::lookup_request, 1> const own{utxoz::lookup_request{
+            utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, outpoint.index()),
+            *height}};
+        auto const resolved = ctx.chain.utxo_resolve(own);
+        if ( ! resolved) {
+            co_return std::unexpected(make_error(error_code::internal_error,
+                "the UTXO store could not be read"));
+        }
+        auto const it = resolved->found.find(own[0].key);
+        if (it == resolved->found.end()) {
+            co_return none.str();
+        }
+        utxo = blockchain::block_chain::output_info{
+            it->second.output(), it->second.height(),
+            it->second.median_time_past(), it->second.coinbase()};
+    }
+    if ( ! utxo) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "the UTXO store could not be read"));
+    }
+    co_return render_tx_out(view->tip_hash,
+        static_cast<std::int64_t>(tip - utxo->height + 1), utxo->output, utxo->coinbase, net, flags);
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -387,6 +498,8 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("decoderawtransaction", decode_raw_transaction);
+    d.add("gettxout", get_tx_out);
     d.add("getrawmempool", get_raw_mempool);
     d.add("getmempoolinfo", get_mempool_info);
     d.add("getmempoolentry", get_mempool_entry);
