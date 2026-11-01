@@ -80,18 +80,19 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
     test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
     REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
 
-    // A two-block side branch off block 2, headers only. The organizer is told
-    // how far blocks are validated, as the node's sync tasks tell it; otherwise
-    // a fork a few blocks down reads as a rewind of the whole chain and is parked.
-    fixture.organizer().note_block_validated(
-        static_cast<int32_t>(fixture.chain().chain_view()->connected_tip_height));
+    // A two-block side branch off block 2, headers only, with less work than the
+    // trunk. The organizer stores it and reports the batch as not advancing the
+    // tip (`stale_chain`, nothing added), which is the contract for a side branch.
     std::vector<domain::chain::block> side;
     prev = trunk[1].hash();
     for (uint32_t h = 3; h <= 4; ++h) {
         side.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing + 60, /*salt*/ 1, {}, 0));
         prev = side.back().hash();
     }
-    REQUIRE(fixture.organizer().add_headers(test::headers_of(side)).headers_added == side.size());
+    auto const added = fixture.organizer().add_headers(test::headers_of(side));
+    REQUIRE(added.headers_added == 0u);
+    REQUIRE(added.error == error::stale_chain);
+    REQUIRE(fixture.chain().headers().find(side[1].hash()) != blockchain::header_index::null_index);
 
     node::mining::job_store jobs(1, 60);
     node::rpc::method_context context{fixture.chain(), jobs};
