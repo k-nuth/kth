@@ -59,7 +59,9 @@ enum class body_range_trigger {
     /// admission is about a set that describes the chain BELOW the range, and a
     /// switch has just moved what that means — but it names itself here so every
     /// range in the log speaks one vocabulary.
-    reorg
+    reorg,
+    /// Retry a failed built-height read while a body range remains owed.
+    admission_retry
 };
 
 /// `body_range_trigger` as text, for the one log line that reports it.
@@ -160,8 +162,8 @@ struct body_range_deps {
 /// What the body-range decision remembers between events, purely so the logs can
 /// report a CHANGE instead of a state.
 ///
-/// Nothing here is consulted by a decision: the decision is a function of the
-/// heights. Kept together so the caller carries one thing rather than three, and
+/// Admission remains a function of fresh heights. The owner also consults
+/// `last_hold` to schedule a retry after an unavailable height read. Kept together so the caller carries one thing rather than three, and
 /// so a control can watch what was reported.
 struct body_range_log_memory {
     /// The last admission reported, so a hold is named once.
