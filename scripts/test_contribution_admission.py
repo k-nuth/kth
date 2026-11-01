@@ -31,11 +31,12 @@ const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const classify = new AsyncFunction('github', 'context', JSON.parse(process.argv[1]));
 (async () => {
   for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR', 'FIRST_TIMER', 'NONE']) {
+    for (const permission of ['read', 'write', 'maintain', 'admin']) {
     for (const existing of [[], ['maintainer-pr'], ['contribution']]) {
       const labels = new Set(existing);
       const calls = [];
-      const github = {rest: {pulls: {get: async () => ({data: {
-        state: 'open', number: 42, author_association: association
+      const github = {rest: {repos: {getCollaboratorPermissionLevel: async ({username}) => {assert.equal(username, 'author'); return {data: {permission}};}}, pulls: {get: async () => ({data: {
+        state: 'open', number: 42, user: {login: 'author'}, author_association: association
       }})}, issues: {
         listLabelsOnIssue: () => {},
         getLabel: async () => {},
@@ -43,14 +44,15 @@ const classify = new AsyncFunction('github', 'context', JSON.parse(process.argv[
         addLabels: async (args) => {args.labels.forEach(x => labels.add(x)); calls.push('add');}
       }}, paginate: async () => [...labels].map(name => ({name}))};
       await classify(github, {repo: {owner: 'k-nuth', repo: 'kth'}, issue: {number: 42}});
-      const internal = ['OWNER', 'MEMBER'].includes(association);
+      const internal = ['OWNER', 'MEMBER'].includes(association) || ['admin', 'maintain', 'write'].includes(permission);
       assert.equal(labels.has('maintainer-pr'), internal);
-      if (!internal) assert(labels.has('contribution'));
+      assert.equal(labels.has('contribution'), !internal);
       const count = calls.length;
       await classify(github, {repo: {owner: 'k-nuth', repo: 'kth'}, issue: {number: 42}});
       assert.equal(calls.length, count, 'classification must be idempotent');
     }
   }
+}
 })().catch(error => {console.error(error); process.exit(1);});
 '''
         subprocess.run(['node', '-e', harness, json.dumps(script)], check=True)
