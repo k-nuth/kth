@@ -79,8 +79,8 @@ TEST_CASE("header_to_hex serializes the 80-byte wire header", "[rpc query]") {
 TEST_CASE("render_block_header serializes the verbose header fields", "[rpc query]") {
     domain::chain::header h{/*version*/ 2u, null_hash, null_hash,
                            /*timestamp*/ 1000u, /*bits*/ 0x1d00ffffu, /*nonce*/ 42u};
-    REQUIRE(render_block_header(h, /*height*/ 5u, null_hash) ==
-        std::string(R"({"hash":")") + zeros + R"(","height":5,"version":2,)" +
+    REQUIRE(render_block_header(h, /*height*/ 5u, null_hash, /*confirmations*/ 3) ==
+        std::string(R"({"hash":")") + zeros + R"(","confirmations":3,"height":5,"version":2,)" +
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
@@ -152,4 +152,11 @@ TEST_CASE("render_validate_address rejects other networks and non-addresses", "[
     // A broken checksum, and no address at all.
     REQUIRE(render_validate_address("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfga", network::mainnet) == invalid);
     REQUIRE(render_validate_address("not an address", network::mainnet) == invalid);
+}
+
+TEST_CASE("render_block_header reports a block off the connected chain", "[rpc query]") {
+    domain::chain::header h{/*version*/ 2u, null_hash, null_hash,
+                           /*timestamp*/ 1000u, /*bits*/ 0x1d00ffffu, /*nonce*/ 42u};
+    REQUIRE(render_block_header(h, /*height*/ 5u, null_hash, /*confirmations*/ -1).find(
+        R"("confirmations":-1,"height":5,)") != std::string::npos);
 }

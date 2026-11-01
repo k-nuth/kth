@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include "sync_harness.hpp"
 
 #include <algorithm>
 #include <string>
@@ -225,4 +226,50 @@ TEST_CASE("help keeps prepared JSON current when methods are added or replaced",
     REQUIRE(request(R"({"method":"a\"b\\c","id":10})") == node::rpc::build_success("10", "9"));
     REQUIRE(request(R"({"method":"help","params":["a\"b\\c"],"id":10})") ==
         node::rpc::build_success("10", R"("a\"b\\c")"));
+}
+
+TEST_CASE("getblockheader dispatch counts confirmations from the connected tip", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_header_confirmations");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    auto const added = fixture.organizer().add_headers(test::headers_of(trunk));
+    REQUIRE(added.headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto confirmations = [&](hash_digest const& hash) {
+        auto const body = std::string(R"({"method":"getblockheader","params":[")")
+            + encode_hash(hash) + R"(",true],"id":9})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto const raw = result.get();
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(raw);
+        simdjson::ondemand::document document;
+        REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+        std::int64_t value = 0;
+        REQUIRE(document["result"]["confirmations"].get_int64().get(value) == simdjson::SUCCESS);
+        return value;
+    };
+
+    REQUIRE(confirmations(domain::chain::block::genesis_regtest().hash()) == 4);
+    REQUIRE(confirmations(trunk[1].hash()) == 2);
+    REQUIRE(confirmations(trunk[2].hash()) == 1);
+    // Stored, but its block is not connected yet.
+    REQUIRE(confirmations(trunk[4].hash()) == -1);
 }
