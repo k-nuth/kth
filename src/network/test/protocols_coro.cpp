@@ -7,6 +7,7 @@
 #include <thread>
 
 #include <test_helpers.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <kth/network.hpp>
 
