@@ -49,6 +49,7 @@
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 
 namespace kth::blockchain {
@@ -124,9 +125,56 @@ struct KB_API block_chain {
     // ORGANIZERS (Core blockchain operations)
     // =========================================================================
 
+    /// Accept a block that extends the connected tip, such as one a miner found
+    /// (#563). Everything that can be checked against the tip is checked before
+    /// anything is stored; a valid block then goes to the node's sync pipeline
+    /// through the channel set with set_block_submissions(), which connects it as
+    /// it connects every block.
+    /// Completes once the block is connected, or with the reason it was not.
     /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
     [[nodiscard]]
     ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
+
+    /// The answer to one submitted block, given once by whoever takes or refuses
+    /// it. A submission dropped unanswered, as a pipeline that shuts down drops
+    /// what it still holds, answers service_stopped as its last copy goes, so
+    /// organize() never waits for an answer that cannot come.
+    class block_submission_answer {
+    public:
+        using channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
+
+        explicit block_submission_answer(std::shared_ptr<channel> to)
+            : to_(std::move(to)) {}
+        ~block_submission_answer() { (*this)(error::service_stopped); }
+        block_submission_answer(block_submission_answer const&) = delete;
+        block_submission_answer& operator=(block_submission_answer const&) = delete;
+
+        void operator()(code result) {
+            if ( ! answered_.exchange(true)) {
+                to_->try_send(std::error_code{}, result);
+            }
+        }
+
+    private:
+        std::shared_ptr<channel> to_;
+        std::atomic<bool> answered_{false};
+    };
+
+    /// A block organize() has checked against the connected tip, on its way to
+    /// whatever connects blocks in this process.
+    struct block_submission {
+        block_const_ptr block;
+        std::shared_ptr<domain::chain::light_block const> light;
+        size_t height;
+        std::shared_ptr<block_submission_answer> answer;
+    };
+    using block_submission_channel =
+        ::asio::experimental::concurrent_channel<void(std::error_code, block_submission)>;
+
+    /// Where organize() hands a checked block. The node's sync orchestrator
+    /// sets its own channel for as long as it runs and clears it when it stops;
+    /// with none set, organize() refuses the block.
+    void set_block_submissions(std::shared_ptr<block_submission_channel> submissions);
 
     /// Fast IBD: merkle validation (+ disk storage when enabled) for blocks under checkpoint.
     /// Posts work to priority_pool_ so network pool stays free for downloads.
@@ -1063,6 +1111,10 @@ private:
     // Thread safe
     mutable prioritized_mutex validation_mutex_;
     mutable threadpool priority_pool_;
+
+    // organize(block) -> the node's sync pipeline; see set_block_submissions().
+    mutable std::mutex block_submissions_mutex_;
+    std::shared_ptr<block_submission_channel> block_submissions_;
 
 
     // Must be declared before block_organizer_: the organizer's block_pool is

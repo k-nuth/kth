@@ -576,6 +576,12 @@ static
     sync_coordinator_event_channel coordinator_events(executor, 100);
     utxo_build_progress_channel utxo_progress(executor, 1);
 
+    // Blocks handed to the chain rather than downloaded (block_chain::organize,
+    // for a block a miner found). Set on the chain for as long as this runs.
+    auto const block_submissions =
+        std::make_shared<blockchain::block_chain::block_submission_channel>(executor, 8);
+    chain.set_block_submissions(block_submissions);
+
     // =========================================================================
     // TASKS - All independent, communicate only via channels
     // =========================================================================
@@ -854,6 +860,11 @@ static
         stored_chunks.close();
         utxo_progress.cancel();
         utxo_progress.close();
+        // No more blocks handed over; what is still queued is dropped, and
+        // each drops its answer: service_stopped (see block_submission_answer).
+        chain.set_block_submissions(nullptr);
+        block_submissions->cancel();
+        block_submissions->close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1182,6 +1193,28 @@ static
         spdlog::info("[coordinator:headers_bridge] Task ended");
     });
 
+    // Bridge: blocks handed to the chain (block_chain::organize) -> coordinator_events.
+    // A dropped submission answers for itself, so a send that fails here needs
+    // nothing more than to end the bridge.
+    all_tasks.spawn("coordinator_submissions_bridge", [&]() -> ::asio::awaitable<void> {
+        spdlog::debug("[coordinator:submissions_bridge] Started");
+        while (true) {
+            auto [ec, submitted] = co_await block_submissions->async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                spdlog::debug("[coordinator:submissions_bridge] Channel closed: {}", ec.message());
+                break;
+            }
+            auto [send_ec] = co_await coordinator_events.async_send(std::error_code{},
+                std::move(submitted), ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[coordinator:submissions_bridge] Coordinator channel closed");
+                break;
+            }
+        }
+        spdlog::info("[coordinator:submissions_bridge] Task ended");
+    });
+
     // Bridge: validated_blocks -> coordinator_events
     all_tasks.spawn("coordinator_blocks_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:blocks_bridge] Started");
@@ -1204,6 +1237,12 @@ static
     all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
         refresh_validated_tip(chain, organizer);
         spdlog::info("[sync_coordinator] Task started");
+        struct submitted_block {
+            hash_digest hash;
+            size_t height;
+            block_const_ptr block;
+        };
+        std::vector<submitted_block> submitted_blocks;
         try {
 
         // The bodies held, not the bodies connected: the range this opens starts
@@ -1218,6 +1257,10 @@ static
         // tip that moves afterwards left the flag true, the coordinator complete
         // and the remaining bodies never requested — see next_slow_sync_range.
         std::optional<uint32_t> slow_sync_end;
+
+        // A submitted block whose header is with the header validation task.
+        // One at a time: the next one's height depends on this one.
+        bool submission_pending = false;
 
         // What the range decision needs, and what its logs remember. Both live
         // outside the loop so the decision itself is a function a control can
@@ -1462,6 +1505,39 @@ static
                 break;
             }
 
+            // Storage alone connects nothing. The published view includes the
+            // mempool update, and a wake-up's height may already be stale.
+            for (auto it = submitted_blocks.begin(); it != submitted_blocks.end();) {
+                auto const view = chain.chain_view();
+                if ( ! view || view->connected_tip_height < it->height) {
+                    ++it;
+                    continue;
+                }
+                auto const connected = view->connected_tip_height == it->height
+                    ? std::expected<hash_digest, database::result_code>{view->tip_hash}
+                    : chain.get_block_hash(it->height);
+                if ( ! connected) {
+                    ++it;
+                    continue;
+                }
+                if (*connected == it->hash) {
+                    // Peers cannot fetch blocks from us yet, so give them the
+                    // body too. The node adds peers only after their handshake.
+                    // A task of its own: a send waits while a peer's outbound
+                    // queue is full, and this loop must not wait on a slow peer.
+                    // Parameters, not captures: they live in the coroutine
+                    // frame, and the closure is gone once this line ends.
+                    all_tasks.spawn("submitted_block_announcement",
+                        [](kth::node::p2p_node& peers, block_const_ptr block) -> ::asio::awaitable<void> {
+                            auto const sent = co_await peers.broadcast(*block);
+                            spdlog::info("[sync_coordinator] Submitted block {} sent to {} peer(s)",
+                                encode_hash(block->hash()), sent);
+                        }(network, it->block));
+                }
+                // Announced once, or another block took this height.
+                it = submitted_blocks.erase(it);
+            }
+
             if (auto* update = std::get_if<peers_updated>(&event)) {
                 header_peers.clear();
                 std::vector<detail::walk_peer> walk_peers;
@@ -1537,6 +1613,36 @@ static
                     "a follow-up from height {} is owed", unknown_hashes.size(),
                     announced.overflowed ? " (registry overflowed)" : "", headers_synced_to);
                 co_await apply(walk.owe(headers_synced_to), "announcement");
+                continue;
+            }
+
+            if (auto* submitted = std::get_if<block_submission>(&event)) {
+                // A block the node was handed, checked against the connected tip.
+                // Taken only when it is the next block and nothing else is under
+                // way: no header above the stored bodies and no range downloading,
+                // or a peer's block could be stored at the same height.
+                bool const at_tip = headers_synced_to == blocks_synced_to
+                    && submitted->height == size_t(blocks_synced_to) + 1
+                    && ( ! slow_sync_end || *slow_sync_end <= blocks_synced_to);
+                if (submission_pending || ! at_tip) {
+                    spdlog::info("[sync_coordinator] Submitted block {} at {} not taken: headers={} "
+                        "bodies={} previous_end={}{}", encode_hash(submitted->block->hash()),
+                        submitted->height, headers_synced_to, blocks_synced_to, end_name(slow_sync_end),
+                        submission_pending ? ", another submission in progress" : "");
+                    (*submitted->answer)(error::stale_chain);
+                    continue;
+                }
+
+                // Recorded as an opened range is: the range is this block, and its
+                // body is here, so nothing asks a peer for a block only this node has.
+                auto const answer = submitted->answer;
+                if ( ! header_validation_input.try_send(std::error_code{},
+                        kth::node::sync::header_validation_input{std::move(*submitted)})) {
+                    (*answer)(error::service_stopped);
+                    continue;
+                }
+                slow_sync_end = uint32_t(blocks_synced_to + 1);
+                submission_pending = true;
                 continue;
             }
 
@@ -1685,6 +1791,38 @@ static
                         spdlog::warn("[header_persist] Could not persist headers through {}; "
                             "they will be re-fetched after a restart", headers_synced_to);
                     }
+                }
+
+                if (result->submission) {
+                    submission_pending = false;
+                    auto const& submitted = *result->submission;
+                    if (result->count == 1 && result->height == submitted.height) {
+                        // Stored as a downloaded chunk of one, under the current
+                        // generation; the UTXO build connects it from there.
+                        spdlog::info("[sync_coordinator] Submitted block {} accepted at {}",
+                            encode_hash(submitted.block->hash()), submitted.height);
+                        auto [store_ec] = co_await block_storage_input.async_send(std::error_code{},
+                            kth::node::sync::block_storage_input{downloaded_chunk{
+                                .start_height = uint32_t(submitted.height),
+                                .chunk_id = 0,
+                                .blocks = {submitted.light},
+                                .source_peer = nullptr,
+                                .generation = chain.chain_generation()}},
+                            ::asio::as_tuple(::asio::use_awaitable));
+                        if ( ! store_ec) {
+                            submitted_blocks.push_back(submitted_block{
+                                submitted.block->hash(), submitted.height, submitted.block});
+                        }
+                        (*submitted.answer)(store_ec ? error::service_stopped : error::success);
+                    } else {
+                        // Refused by the organizer, or a peer's block took the
+                        // height first. The range recorded for it is dropped, so
+                        // whatever is owed there is asked of peers again.
+                        (*submitted.answer)(result->result ? result->result : error::stale_chain);
+                        slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
+                        co_await try_start_slow_sync(body_range_trigger::headers_advanced);
+                    }
+                    continue;
                 }
 
                 // Every batch comes from the ingest with the session it arrived
@@ -1941,6 +2079,7 @@ static
             spdlog::error("[sync_coordinator] UNKNOWN EXCEPTION");
         }
 
+        submitted_blocks.clear();
         // Nobody reads this channel from here on. Disarmed, so the clock has
         // nothing to report; closed, so every task waiting to tell the
         // coordinator something — a deadline, a peer set, a header result —

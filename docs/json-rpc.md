@@ -127,7 +127,12 @@ historical hashrate estimate and is a follow-up.
 `submitblocklight ["hexdata", "job_id"]` closes the light-template loop. `hexdata`
 is the solved block carrying just the header and the coinbase; the node looks up
 `job_id`, splices the cached selection after the coinbase, and submits the
-reconstructed block to the chain. Returns the Bitcoin `submitblock` result: `null`
+reconstructed block to the chain. The block must extend the connected tip of a
+node that is in sync. It is checked there (header, merkle root, transaction
+sizes, then scripts, fees and spent outputs as the UTXO build checks them) before
+anything is stored, then stored and connected by the node's sync pipeline like any
+other block; the call returns once it is connected. Returns the Bitcoin `submitblock` result: `null`
 when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
 `"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
 or expired `job_id`) is a JSON-RPC `-32602` error instead.
+The accepted block is sent to connected peers once it is connected.
