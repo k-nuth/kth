@@ -12,7 +12,7 @@
 namespace kth {
 
 namespace {
-constexpr size_t hash_size = hash_digest{}.size();
+// hash_size is kth's: the 32 bytes of a SHA-256 digest.
 constexpr size_t max_output = 255 * hash_size;
 } // namespace
 
