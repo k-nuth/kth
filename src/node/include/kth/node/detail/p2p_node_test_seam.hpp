@@ -11,7 +11,10 @@
 #ifndef KTH_NODE_DETAIL_P2P_NODE_TEST_SEAM_HPP_
 #define KTH_NODE_DETAIL_P2P_NODE_TEST_SEAM_HPP_
 
+#include <cstdint>
 #include <utility>
+
+#include <asio/awaitable.hpp>
 
 #include <kth/node/p2p_node.hpp>
 
@@ -30,6 +33,21 @@ struct p2p_node_test_seam {
     template <typename Probe>
     static void set_status_probe(p2p_node& target, Probe probe) {
         target.status_probe_ = std::move(probe);
+    }
+
+    /// The fee filter the node sends a peer after the handshake.
+    static uint64_t fee_filter(p2p_node const& target) {
+        return target.fee_filter();
+    }
+
+    /// The fee filter last sent to every peer.
+    static uint64_t advertised_fee_filter(p2p_node const& target) {
+        return target.advertised_fee_filter_;
+    }
+
+    /// One pass of what the status task does with the fee filter.
+    static ::asio::awaitable<void> refresh_fee_filter(p2p_node& target) {
+        return target.refresh_fee_filter();
     }
 };
 

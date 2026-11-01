@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -41,6 +42,10 @@ transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_
     , validator_(executor_, threads_, chain_, settings)
     , broadcaster_(executor_)
     , ds_proof_broadcaster_(executor_)
+    , clock_([] {
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    })
 {}
 
 // Properties.
@@ -160,6 +165,11 @@ bool transaction_organizer::stop() {
 
 // This is called from blockchain::organize.
 ::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx) {
+    co_return co_await organize(std::move(tx), now());
+}
+
+::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx,
+    uint64_t first_seen) {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
     mutex_.lock_low_priority();
@@ -253,18 +263,29 @@ bool transaction_organizer::stop() {
     // Admit to the mempool. The tx is already validated (accept / fee / dust /
     // connect above); this only records it. add() enforces first-seen: it
     // returns false on a double-spend conflict with a pooled tx (or a duplicate).
-    auto const seen = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    auto const admitted = chain_.mempool_ref().add(mempool_entry{
+    auto& pool = chain_.mempool_ref();
+    auto const admitted = pool.add(mempool_entry{
         tx,
         tx->fees(),
         static_cast<uint32_t>(tx->serialized_size(true)),
         static_cast<uint32_t>(*connected),
-        seen});
+        first_seen});
     if ( ! admitted) {
         mutex_.unlock_low_priority();
         co_return error::double_spend_mempool;
+    }
+
+    // A full pool makes room by evicting the lowest fee per byte. When that is
+    // this transaction it is refused as paying too little; either way the
+    // floor rises so what was evicted cannot come straight back.
+    if (settings_.mempool_max_bytes > 0) {
+        if (auto const evicted = pool.trim_to_size(settings_.mempool_max_bytes)) {
+            raise_floor(*evicted);
+            if ( ! pool.contains(tx->hash())) {
+                mutex_.unlock_low_priority();
+                co_return error::insufficient_fee;
+            }
+        }
     }
     //#########################################################################
 
@@ -340,11 +361,11 @@ transaction_organizer::fetch_ds_proof(hash_digest const& hash) const {
 //-----------------------------------------------------------------------------
 
 uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
-    auto const byte_fee = settings_.byte_fee_satoshis;
+    auto const byte_fee = minimum_byte_fee();
     auto const sigop_fee = settings_.sigop_fee_satoshis;
 
     // Guard against summing signed values by testing independently.
-    if (byte_fee == 0.0f && sigop_fee == 0.0f) return 0;
+    if (byte_fee == 0.0 && sigop_fee == 0.0f) return 0;
 
     // TODO: this is a second pass on size and sigops, implement cache.
     // This at least prevents uncached calls when zero fee is configured.
@@ -354,6 +375,51 @@ uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
 
     // Require at least one satoshi per tx if there are any fees configured.
     return std::max(uint64_t(1), uint64_t(byte + sigop));
+}
+
+// The excess of a raised floor over the configured one halves this often.
+constexpr uint64_t floor_half_life_seconds = 12 * 60 * 60;
+
+uint64_t transaction_organizer::now() const {
+    return clock_();
+}
+
+void transaction_organizer::set_clock(std::function<uint64_t()> clock) {
+    clock_ = std::move(clock);
+}
+
+double transaction_organizer::floor_at(uint64_t now) const {
+    double const configured = settings_.byte_fee_satoshis;
+    if (raised_floor_ <= configured) {
+        return configured;
+    }
+    auto const elapsed = now > raised_at_ ? double(now - raised_at_) : 0.0;
+    auto const excess = (raised_floor_ - configured)
+        * std::pow(0.5, elapsed / double(floor_half_life_seconds));
+
+    // Once the excess is under half the configured floor it is gone: what is
+    // left is too small to keep the pool from refilling at the configured price.
+    if (excess < configured / 2) {
+        return configured;
+    }
+    return configured + excess;
+}
+
+double transaction_organizer::minimum_byte_fee() const {
+    std::lock_guard const lock(floor_mutex_);
+    return floor_at(now());
+}
+
+uint64_t transaction_organizer::fee_filter() const {
+    return static_cast<uint64_t>(std::llround(minimum_byte_fee() * 1000.0));
+}
+
+void transaction_organizer::raise_floor(fee_rate evicted) {
+    double const rate = double(evicted.fee) / double(evicted.size);
+    auto const at = now();
+    std::lock_guard const lock(floor_mutex_);
+    raised_floor_ = std::max(floor_at(at), rate + settings_.byte_fee_satoshis);
+    raised_at_ = at;
 }
 
 } // namespace kth::blockchain

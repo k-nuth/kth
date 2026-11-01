@@ -122,6 +122,27 @@ full_node::~full_node() {
         });
 
 #if ! defined(__EMSCRIPTEN__)
+    // Transactions peers announce: asked for, then offered to the mempool.
+    if (network_settings_.relay_transactions) {
+        relay_ = std::make_unique<transaction_relay>(chain_);
+        network_.register_message_handler<domain::message::inventory>(
+            [this](peer_session& peer, domain::message::inventory const& inv)
+                -> ::asio::awaitable<message_result> {
+                co_return co_await relay_->on_inventory(peer, inv);
+            });
+        network_.register_message_handler<domain::message::transaction>(
+            [this](peer_session& peer, domain::message::transaction const& tx)
+                -> ::asio::awaitable<message_result> {
+                co_return co_await relay_->on_transaction(peer, tx);
+            });
+    }
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
+    // Peers are told the floor the mempool admits at, which rises while a full
+    // mempool evicts and decays back after.
+    network_.set_fee_filter_source([this] { return chain_.fee_filter(); });
+
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
