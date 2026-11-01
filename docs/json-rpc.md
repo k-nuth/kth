@@ -71,10 +71,11 @@ counterpart.
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
-| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
@@ -90,6 +91,36 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## Blocks and transactions
+
+`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+store, through the header index; a side-branch block the node holds is returned
+too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
+`confirmations` (-1 off the connected chain), `size`, `height`, `version`,
+`versionHex`, `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`,
+`difficulty`, `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2`
+lists each transaction with its `decoderawtransaction` fields and `hex`. `fee`
+per transaction and `ablastate` are not reported. `getrawtransaction "<txid>"` answers for a mempool transaction.
+Confirmed transactions are not indexed by txid (#491), so for one of those pass
+the block hash as the third parameter: `getrawtransaction "<txid>" false
+"<blockhash>"`. With `verbose` true (or non-zero) it returns the
+`decoderawtransaction` fields with `hex`, and for a transaction read from a block
+also `blockhash`, `confirmations`, `time`, `blocktime` and `in_active_chain`; for a
+block off the connected chain `confirmations` is 0, the times are left out and
+`in_active_chain` is false. A block or transaction the node does not have is error `-5`.
+
+## decoderawtransaction
+
+`decoderawtransaction "<hex>"` decodes a serialized transaction without looking
+anything up: `txid`, `hash`, `version`, `size`, `locktime`, `vin` (for a coinbase
+just `coinbase` and `sequence`) and `vout`. Each output has `value` in BCH, `n`,
+`scriptPubKey` (`asm`, `hex`, `type`: `pubkeyhash`, `scripthash`, `pubkey`,
+`multisig`, `nulldata` or `nonstandard`, and for a spendable kind `reqSigs` and
+`addresses` as cashaddr under the node's network prefix) and, when it carries
+CashTokens, `tokenData` (`category`, `amount` as a string, and `nft` with
+`capability` and `commitment`). `scriptPubKey.hex` leaves out the token prefix.
+`asm` is kth's own script notation, under the node's current script rules.
 
 ## Mining: getblocktemplatelight
 

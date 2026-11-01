@@ -2488,15 +2488,47 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 
 // DEPRECATED: Block storage moved to flat files (blk*.dat)
 // These functions will return not_found until we implement reading from flat files
+std::expected<std::pair<block_const_ptr, size_t>, code>
+block_chain::read_indexed_block(header_index::index_t idx) const {
+    if ( ! block_store_ || ! header_index_.has_block_data(idx)) {
+        return std::unexpected(error::not_found);
+    }
+
+    database::flat_file_pos const pos{
+        header_index_.get_file_number(idx),
+        header_index_.get_data_pos(idx)
+    };
+    auto const raw = block_store_->read_block_raw(pos);
+    if ( ! raw) {
+        spdlog::error("[blockchain] cannot read block {} from the block files",
+            encode_hash(header_index_.get_hash(idx)));
+        return std::unexpected(error::operation_failed);
+    }
+
+    byte_reader reader(*raw);
+    auto block = domain::message::block::from_data(reader, 0u);
+    if ( ! block) {
+        spdlog::error("[blockchain] cannot parse block {} read from the block files",
+            encode_hash(header_index_.get_hash(idx)));
+        return std::unexpected(error::operation_failed);
+    }
+    return std::pair{std::make_shared<domain::message::block const>(std::move(*block)),
+                     size_t(header_index_.get_height(idx))};
+}
+
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)height;
-    co_return std::unexpected(error::not_found);
+    // The block on the active chain at that height. The index also holds side
+    // branches, numbered in arrival order, so an entry's index is not its height.
+    auto const idx = header_index_.active_at(static_cast<int32_t>(height));
+    if (idx == header_index::null_index) {
+        co_return std::unexpected(error::not_found);
+    }
+    co_return read_indexed_block(idx);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
@@ -2505,9 +2537,11 @@ block_chain::fetch_block(hash_digest const& hash) const {
         co_return std::unexpected(error::service_stopped);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)hash;
-    co_return std::unexpected(error::not_found);
+    auto const idx = header_index_.find(hash);
+    if (idx == header_index::null_index) {
+        co_return std::unexpected(error::not_found);
+    }
+    co_return read_indexed_block(idx);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
@@ -2689,10 +2723,14 @@ block_chain::fetch_transaction(hash_digest const& hash, bool require_confirmed) 
     }
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
-    // store was removed; blocks live in flat files). Reading a tx by hash will be
-    // reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // store was removed; blocks live in flat files), so only the mempool can
+    // answer by hash. A pool transaction is in no block: its position and height
+    // are max_size_t. See issue #491.
+    if ( ! require_confirmed) {
+        if (auto tx = mempool_.get(hash)) {
+            co_return std::tuple{std::move(tx), size_t(max_size_t), size_t(max_size_t)};
+        }
+    }
     co_return std::unexpected(error::not_found);
 }
 
@@ -2704,9 +2742,11 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
     // store was removed; blocks live in flat files). Reading a tx position by hash
-    // will be reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // will be reimplemented over the flat-file block store. See issue #491. A
+    // mempool transaction is in no block: max_size_t for both.
+    if ( ! require_confirmed && mempool_.contains(hash)) {
+        co_return std::pair{size_t(max_size_t), size_t(max_size_t)};
+    }
     co_return std::unexpected(error::not_found);
 }
 
