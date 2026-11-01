@@ -80,7 +80,11 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
     test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
     REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
 
-    // A two-block side branch off block 2, headers only.
+    // A two-block side branch off block 2, headers only. The organizer is told
+    // how far blocks are validated, as the node's sync tasks tell it; otherwise
+    // a fork a few blocks down reads as a rewind of the whole chain and is parked.
+    fixture.organizer().note_block_validated(
+        static_cast<int32_t>(fixture.chain().chain_view()->connected_tip_height));
     std::vector<domain::chain::block> side;
     prev = trunk[1].hash();
     for (uint32_t h = 3; h <= 4; ++h) {
