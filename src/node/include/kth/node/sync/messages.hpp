@@ -270,11 +270,22 @@ using stop_channel = concurrent_event_channel;
 /// the range would start on the next unrelated one — a peer connecting, a header
 /// batch landing — which is how the range came to depend on an accident.
 ///
-/// Carries the height rather than a bare "look again", so the coordinator logs
-/// what it is waiting for and how far off it is without reading the store from
-/// its own loop.
+/// Emitted by the builder only after a coherent connected view is published.
+/// The height is diagnostic; delayed delivery cannot authorize finalization.
+/// The coordinator reads the current immutable view and active branch itself.
 struct utxo_build_advanced {
     uint32_t built_height{0};
+};
+
+// Capacity one in the orchestrator. Every queued value is the same instruction:
+// re-read the latest connected view. A full channel therefore retains the debt
+// for all publications, irrespective of the diagnostic height it carries.
+using utxo_build_progress_channel = concurrent_channel<utxo_build_advanced>;
+
+// Retry one failed admission read. The coordinator owns the generation and
+// ignores a deadline that was replaced or cancelled before it was delivered.
+struct body_range_retry {
+    uint64_t generation{0};
 };
 
 // One or more blocks were announced. Carries nothing: the hashes are held on
@@ -323,6 +334,7 @@ using sync_coordinator_event = std::variant<
     block_validated,
     chunk_validated,
     utxo_build_advanced,
+    body_range_retry,
     block_submission
 >;
 

@@ -1690,13 +1690,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_storage_input_channel& input,
     chunk_validated_channel& output,
     uint32_t start_height,
-    blockchain::header_organizer& organizer,
+    blockchain::header_organizer&,
     std::atomic<uint32_t>* contiguous_out
 ) {
     spdlog::info("[block_storage] Task started at height {}", start_height);
 
-    // This task marks blocks have_data and advances the validated height, both of
-    // which a chain switch rewrites, so it participates in the reorg barrier.
+    // A chain switch rewrites the have_data flags this task publishes, so
+    // storage participates in the reorg barrier. Stored does not mean validated.
     reorg_participation const storage_participation(chain);
 
     uint64_t chunks_stored = 0;
@@ -1838,7 +1838,6 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // no longer its height. Walking the index directly would count the
             // abandoned branch's blocks as contiguous and push the validated tip
             // past where the chain actually reaches.
-            auto const prev_contiguous = contiguous_height;
             auto const& hdr = chain.headers();
             while (true) {
                 auto const idx = hdr.active_at(static_cast<int32_t>(contiguous_height));
@@ -1852,11 +1851,6 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 contiguous_out->store(contiguous_height, std::memory_order_release);
             }
 
-            // Advance the finalized block as newly stored (batch-validated)
-            // blocks extend the contiguous validated range.
-            if (contiguous_height > prev_contiguous) {
-                organizer.note_block_validated(static_cast<int32_t>(contiguous_height - 1));
-            }
         } else {
             // Store failed — release memory
             chunk.blocks.clear();
@@ -2062,6 +2056,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal
+) {
+    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+        std::move(should_stop), std::move(on_fatal), nullptr);
+}
+
+::asio::awaitable<void> utxo_build_task(
+    blockchain::block_chain& chain,
+    std::atomic<uint32_t> const& contiguous_height,
+    uint32_t start_height,
+    domain::config::network network,
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal,
+    utxo_build_progress_channel* progress
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -2845,6 +2852,18 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Earned, not unwound.
         chain.end_transition();
+
+        // A progress-only channel retains one wake-up, not work per block. If
+        // full, its queued wake already asks the coordinator to read the latest
+        // published view, so this notification is coalesced without losing debt.
+        // Never suspend this reorg participant behind the coordinator: it may
+        // be waiting for this task to reach the next reorg barrier.
+        if (progress) {
+            if ( ! progress->try_send(std::error_code{}, utxo_build_advanced{utxo_built_height}) &&
+                ! progress->is_open()) {
+                co_return;
+            }
+        }
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
     }
