@@ -15,12 +15,14 @@
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/use_future.hpp>
 #include <asio/io_context.hpp>
 
 #include <test_helpers.hpp>
 
 #include <kth/node/sync/block_tasks.hpp>
 #include <kth/node/sync/messages.hpp>
+#include <kth/node/sync/orchestrator.hpp>
 #include <kth/node/sync/reorg.hpp>
 
 #include "../../blockchain/test/regtest_miner.hpp"
@@ -97,10 +99,11 @@ inline domain::message::header::list headers_of(std::vector<domain::chain::block
 // `on_fatal` is what the build reports a fatal condition through. Most callers
 // want the default below, which fails the test; a caller that is deliberately
 // staging one of those conditions passes its own and inspects what came out.
-inline void run_connect_tasks(test::chain_fixture& fixture,
+inline bool run_connect_tasks(test::chain_fixture& fixture,
                               std::vector<domain::chain::block> const& blocks,
                               uint32_t start_height,
-                              std::function<void(std::string const&)> on_fatal) {
+                              std::function<void(std::string const&)> on_fatal,
+                              std::chrono::milliseconds timeout = std::chrono::seconds(120)) {
 
     auto& chain = fixture.chain();
     auto const end_height = start_height + uint32_t(blocks.size()) - 1;
@@ -116,19 +119,8 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
         light.push_back(to_light(blk));
     }
 
-    ::asio::co_spawn(ctx,
-        block_storage_task(chain, input, output, start_height, fixture.organizer(), &contiguous),
-        ::asio::detached);
-
-    ::asio::co_spawn(ctx,
-        utxo_build_task(chain, contiguous, start_height, domain::config::network::regtest,
-            [&chain, end_height] {
-                auto const built = chain.get_utxo_built_height();
-                return built && *built >= end_height;
-            },
-            std::move(on_fatal)),
-        ::asio::detached);
-
+    // Queue setup before launching work: no failing assertion can abandon a
+    // suspended task holding this fixture. All three owned coroutines are joined.
     REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
         .start_height = start_height,
         .chunk_id = 0,
@@ -137,11 +129,71 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
         .generation = chain.headers().generation()
     }));
     REQUIRE(input.try_send(std::error_code{}, stop_request{}));
-
-    ctx.run_for(std::chrono::seconds(120));
+    utxo_build_progress_channel progress(ctx.get_executor(), 1);
+    bool storage_failed = false; // Owned by this single-threaded test executor.
+    bool deadline_fired = false;
+    ::asio::steady_timer watchdog(ctx);
+    watchdog.expires_after(timeout);
+    watchdog.async_wait([&](std::error_code ec) {
+        if (ec) return;
+        deadline_fired = true;
+        storage_failed = true;
+        input.cancel();
+        input.close();
+        output.cancel();
+        output.close();
+        progress.cancel();
+        progress.close();
+    });
+    auto storage = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        try {
+            co_await block_storage_task(chain, input, output, start_height,
+                fixture.organizer(), &contiguous);
+        } catch (...) {
+            storage_failed = true;
+            input.cancel();
+            input.close();
+            progress.cancel();
+            progress.close();
+            throw;
+        }
+    }, ::asio::use_future);
+    auto writer = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        try {
+            co_await utxo_build_task(chain, contiguous, start_height,
+                domain::config::network::regtest,
+                [&chain, end_height, &storage_failed] {
+                    if (storage_failed) return true;
+                    auto const built = chain.get_utxo_built_height();
+                    return built && *built >= end_height;
+                }, std::move(on_fatal), &progress);
+        } catch (...) {
+            watchdog.cancel();
+            input.cancel();
+            input.close();
+            progress.cancel();
+            progress.close();
+            throw;
+        }
+        watchdog.cancel();
+        progress.close();
+    }, ::asio::use_future);
+    auto coordinator = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        while (true) {
+            auto [ec, event] = co_await progress.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) co_return;
+            refresh_validated_tip(chain, fixture.organizer());
+        }
+    }, ::asio::use_future);
+    ctx.run();
+    storage.get();
+    writer.get();
+    coordinator.get();
 
     // Drain what the storage task reported, so nothing is left owning blocks.
     while (output.try_receive([](std::error_code, chunk_validated) {})) {}
+    return ! deadline_fired;
 }
 
 // The ordinary form: a fatal condition means the test has found something, so
@@ -150,10 +202,10 @@ inline void run_connect_tasks(test::chain_fixture& fixture,
 inline void run_connect_tasks(test::chain_fixture& fixture,
                               std::vector<domain::chain::block> const& blocks,
                               uint32_t start_height) {
-    run_connect_tasks(fixture, blocks, start_height,
+    REQUIRE(run_connect_tasks(fixture, blocks, start_height,
         [](std::string const& reason) {
             FAIL("the UTXO build reported a fatal condition: " << reason);
-        });
+        }));
 }
 
 // For a test that STAGES a fatal condition: the build must report it, and it
@@ -165,8 +217,8 @@ inline void run_connect_tasks_expect_fatal(test::chain_fixture& fixture,
                                            uint32_t start_height,
                                            std::string const& expected) {
     std::vector<std::string> fatals;
-    run_connect_tasks(fixture, blocks, start_height,
-        [&fatals](std::string const& reason) { fatals.push_back(reason); });
+    REQUIRE(run_connect_tasks(fixture, blocks, start_height,
+        [&fatals](std::string const& reason) { fatals.push_back(reason); }));
 
     REQUIRE(fatals.size() == 1);
     REQUIRE(fatals.front() == expected);

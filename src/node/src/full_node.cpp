@@ -279,7 +279,7 @@ full_node::~full_node() {
     blockchain::detail::block_chain_internal::end_hydration(chain_);
 
     // Tell it how far blocks are already validated. Nothing else does until the
-    // first newly stored block, and deep-reorg parking measures depth against
+    // first connected publication, and deep-reorg parking measures depth against
     // this height: left at "nothing validated yet", a node that just came up
     // would follow any branch with more work no matter how deep it forks — in
     // exactly the window where finalization is not protecting either, since it
@@ -288,7 +288,7 @@ full_node::~full_node() {
         organizer.note_block_validated(static_cast<int32_t>(heights->block));
     } else {
         spdlog::error("[full_node] Could not read the validated height at startup; deep-reorg "
-            "parking stays inactive until the first block is stored");
+            "parking stays inactive until the first connected publication");
     }
 
     spdlog::info("[node] Starting CSP-based sync system...");
