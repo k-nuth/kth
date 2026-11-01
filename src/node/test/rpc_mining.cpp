@@ -5,6 +5,8 @@
 #include <test_helpers.hpp>
 
 #include <kth/domain.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/node/rpc/mining.hpp>
 
 using namespace kth;
@@ -90,4 +92,46 @@ TEST_CASE("render_mining_info reports a caught-up but stale tip", "[rpc mining]"
     REQUIRE(render_mining_info(info) ==
         R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"Regtest",)"
         R"("transitioninprogress":false,"caughtup":true,"fresh":false,"warnings":""})");
+}
+
+TEST_CASE("render_block_template serializes the GBT fields with the transactions", "[rpc mining]") {
+    // A parent and a child that spends it, in template order.
+    auto const parent = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 11u, {}, {}});
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{parent->hash(), 0}, domain::chain::script{}, 0xffffffffu);
+    auto const child = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 22u, std::move(ins), {}});
+
+    blockchain::block_template selection{};
+    selection.txs = {parent, child};
+    blockchain::mining_template tmpl{
+        /*version*/ 0x20000000u,
+        /*previous_block_hash*/ null_hash,
+        /*height*/ 5u,
+        /*bits*/ 0x1d00ffffu,
+        /*min_time*/ 1000u,
+        /*current_time*/ 2000u,
+        /*coinbase_value*/ 5000000300ULL,
+        /*size_limit*/ 32000000u,
+        /*sigchecks_limit*/ 226950u,
+        selection};
+
+    // The child's entry has left the mempool: no fee or sigops for it.
+    auto const json = render_block_template(tmpl, {template_tx_policy{300u, 2u}, std::nullopt}, "lp");
+    auto const hex = [](transaction_const_ptr const& tx) {
+        domain::chain::transaction const& chain_tx = *tx;
+        return encode_base16(to_data_chunk(chain_tx, /*wire*/ true));
+    };
+    REQUIRE(json ==
+        std::string(R"({"capabilities":[],"version":536870912,)") +
+        R"("previousblockhash":"0000000000000000000000000000000000000000000000000000000000000000",)" +
+        R"("transactions":[{"data":")" + hex(parent) + R"(","txid":")" + encode_hash(parent->hash()) +
+        R"(","hash":")" + encode_hash(parent->hash()) + R"(","fee":300,"sigops":2},)" +
+        R"({"data":")" + hex(child) + R"(","txid":")" + encode_hash(child->hash()) +
+        R"(","hash":")" + encode_hash(child->hash()) + R"(","depends":[1]}],)" +
+        R"("coinbaseaux":{"flags":""},"coinbasevalue":5000000300,"longpollid":"lp",)" +
+        R"("target":"00000000ffff0000000000000000000000000000000000000000000000000000",)" +
+        R"("mintime":1000,"mutable":["time","transactions","prevblock"],"noncerange":"00000000ffffffff",)" +
+        R"("sigoplimit":226950,"sizelimit":32000000,"curtime":2000,"bits":"1d00ffff","height":5})");
 }

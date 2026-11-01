@@ -6,9 +6,13 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include <asio/awaitable.hpp>
+#include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
@@ -56,6 +60,53 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 
     auto const job_id = ctx.jobs.add(tmpl->selection.txs);
     co_return render_mining_template(*tmpl, job_id);
+}
+
+// getblocktemplate [template_request] -> the next-block template with its
+// transactions in full (BIP22), for pools that build and submit whole blocks.
+// Only "template" mode; "proposal" is refused. The request's capabilities and
+// rules ask for nothing this template leaves out.
+// C-API counterpart: kth_chain_async_fetch_mining_template.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_block_template(method_context& ctx, request const& req) {
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    if (parser.iterate(padded).get(doc) == simdjson::SUCCESS && doc.get_array().get(params) == simdjson::SUCCESS) {
+        for (auto element : params) {
+            simdjson::ondemand::object request_object;
+            std::string_view mode;
+            if (element.get_object().get(request_object) == simdjson::SUCCESS &&
+                request_object["mode"].get_string().get(mode) == simdjson::SUCCESS &&
+                mode != "template") {
+                co_return std::unexpected(make_error(error_code::invalid_params,
+                    "only template mode is supported"));
+            }
+            break;
+        }
+    }
+
+    auto const tmpl = co_await ctx.chain.fetch_mining_template(
+        blockchain::default_coinbase_reserve_size);
+    if ( ! tmpl) {
+        co_return std::unexpected(from_code(tmpl.error()));
+    }
+
+    // Fee and sigchecks per transaction, from the mempool entries.
+    auto const& pool = ctx.chain.mempool_ref();
+    std::vector<std::optional<template_tx_policy>> policy;
+    policy.reserve(tmpl->selection.txs.size());
+    for (auto const& tx : tmpl->selection.txs) {
+        auto const entry = pool.entry(tx->hash());
+        policy.push_back(entry
+            ? std::optional<template_tx_policy>{{entry->fee, entry->sigchecks}}
+            : std::nullopt);
+    }
+
+    // Changes when the tip or the mempool does.
+    auto const longpollid = encode_hash(tmpl->previous_block_hash) + std::to_string(pool.generation());
+    co_return render_block_template(*tmpl, policy, longpollid);
 }
 
 // getmininginfo -> height, difficulty, mempool size, and network.
@@ -392,6 +443,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmempoolentry", get_mempool_entry);
     d.add("getmempoolancestors", get_mempool_ancestors);
     d.add("getmempooldescendants", get_mempool_descendants);
+    d.add("getblocktemplate", get_block_template);
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
