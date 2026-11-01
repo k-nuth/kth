@@ -122,6 +122,10 @@ full_node::~full_node() {
         });
 
 #if ! defined(__EMSCRIPTEN__)
+    // Peers are told the floor the mempool admits at, which rises while a full
+    // mempool evicts and decays back after.
+    network_.set_fee_filter_source([this] { return chain_.fee_filter(); });
+
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {

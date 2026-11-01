@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <thread>
@@ -10,9 +11,11 @@
 
 #include <kth/network.hpp>
 #include <kth/node/p2p_node.hpp>
+#include <kth/node/detail/p2p_node_test_seam.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/use_future.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 
@@ -304,4 +307,48 @@ TEST_CASE("p2p_node destructor stops node", "[p2p_node]") {
     // Node should have been stopped by destructor
     // (no crash = success)
     REQUIRE(true);
+}
+
+// =============================================================================
+// Fee filter
+// =============================================================================
+
+TEST_CASE("p2p_node tells peers the fee floor its source gives", "[p2p_node][fee]") {
+    using seam = node::detail::p2p_node_test_seam;
+    auto settings = make_test_settings_p2p();
+    p2p_node node(settings);
+
+    // Without a source, peers are told one satoshi per byte, as before.
+    CHECK(seam::fee_filter(node) == 1000u);
+
+    std::atomic<uint64_t> floor{100};
+    node.set_fee_filter_source([&floor] { return floor.load(); });
+    CHECK(seam::fee_filter(node) == 100u);
+    CHECK(seam::advertised_fee_filter(node) == 100u);
+
+    ::asio::io_context ctx;
+    auto refresh = [&] {
+        auto done = ::asio::co_spawn(ctx, seam::refresh_fee_filter(node), ::asio::use_future);
+        run_until_p2p(ctx, [&] {
+            return done.wait_for(0s) == std::future_status::ready;
+        }, 2000ms);
+        REQUIRE(done.wait_for(0s) == std::future_status::ready);
+        done.get();
+    };
+
+    // Unchanged: nothing is sent again.
+    refresh();
+    CHECK(seam::advertised_fee_filter(node) == 100u);
+
+    // A raised floor is sent to every peer (none here) and recorded.
+    floor = 2190;
+    CHECK(seam::fee_filter(node) == 2190u);
+    refresh();
+    CHECK(seam::advertised_fee_filter(node) == 2190u);
+
+    // A change within ten minutes of the last one waits for the interval.
+    floor = 1145;
+    refresh();
+    CHECK(seam::advertised_fee_filter(node) == 2190u);
+    CHECK(seam::fee_filter(node) == 1145u);
 }

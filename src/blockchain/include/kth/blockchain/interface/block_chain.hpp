@@ -711,6 +711,14 @@ struct KB_API block_chain {
     blockchain::mempool& mempool_ref();
     blockchain::mempool const& mempool_ref() const;
 
+    // The admission floor in satoshis per 1000 bytes, as peers are told it in
+    // fee_filter: the configured floor, or more while a full mempool raised it.
+    [[nodiscard]] uint64_t fee_filter() const;
+
+    // Replaces the clock (unix seconds) that the rising floor and mempool expiry
+    // read. For tests: set it before transactions arrive.
+    void set_policy_clock(std::function<uint64_t()> clock);
+
     // =========================================================================
     // SUBSCRIPTIONS
     // =========================================================================
@@ -957,6 +965,13 @@ private:
 
     // <datadir>/mempool.dat — sibling of the blocks/ and utxoz/ directories.
     std::filesystem::path mempool_dat_path() const;
+
+    // The first-seen time before which a pooled transaction has expired, or 0
+    // when expiry is off. Read on the organizer's clock.
+    uint64_t mempool_expiry_cutoff() const;
+
+    // Drop expired transactions, with their descendants. Validation lock held.
+    void expire_mempool();
 
     /// Whether the last chain transition finished, and therefore whether this
     /// database may be opened for operation at all (#600). Logs the refusal —
