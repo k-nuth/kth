@@ -42,18 +42,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     set(KTH_RPC_BACKEND "none")
 endif()
 
-if(KTH_RPC_BACKEND STREQUAL "capnproto")
-    message(FATAL_ERROR "RPC backend 'capnproto' is not implemented; use jsonrpc, grpc or none.")
-endif()
-
-# These are derived, non-cache variables. KTH_WITH_RPC keeps meaning JSON-RPC
-# only; every transport has its own flag, sources and guards, so selecting one
-# never switches another on.
+# Derived, non-cache variables. KTH_WITH_RPC keeps meaning JSON-RPC only; every
+# backend has its own flag, sources and guards, and exactly one is on.
 set(KTH_WITH_RPC OFF)
 set(KTH_WITH_GRPC OFF)
+set(KTH_WITH_CAPNPROTO_RPC OFF)
 if(KTH_RPC_BACKEND STREQUAL "jsonrpc")
     set(KTH_WITH_RPC ON)
 elseif(KTH_RPC_BACKEND STREQUAL "grpc")
     set(KTH_WITH_GRPC ON)
+elseif(KTH_RPC_BACKEND STREQUAL "capnproto")
+    set(KTH_WITH_CAPNPROTO_RPC ON)
 endif()
 message(STATUS "Knuth: RPC backend: ${KTH_RPC_BACKEND}")

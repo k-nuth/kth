@@ -250,6 +250,33 @@ if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+# Optional Cap'n Proto RPC server (KJ transport thread + asio owner). Compiled
+# only for rpc=capnproto and never for WebAssembly. The generated schema code is
+# appended below, once CapnProto has been found.
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(CapnProto REQUIRED)
+
+  # Generate into the build tree. Schemas are compiled by the *build machine's*
+  # capnp/capnpc-c++: CapnProtoMacros.cmake takes them from PATH when
+  # cross-compiling (Conan's tool_requires supplies them), otherwise from the
+  # package next to the library.
+  set(KTH_CAPNP_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/schema)
+  set(KTH_CAPNP_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/capnp_gen)
+  file(MAKE_DIRECTORY ${KTH_CAPNP_GEN_DIR})
+  set(CAPNPC_SRC_PREFIX ${KTH_CAPNP_SCHEMA_DIR})
+  set(CAPNPC_OUTPUT_DIR ${KTH_CAPNP_GEN_DIR})
+  capnp_generate_cpp(kth_capnp_sources kth_capnp_headers
+    ${KTH_CAPNP_SCHEMA_DIR}/kth/rpc/v1/chain.capnp)
+
+  set(kth_sources_just_legacy
+    ${kth_sources_just_legacy}
+    src/capnp_rpc/chain_reader.cpp
+    src/capnp_rpc/kj_service.cpp
+    src/capnp_rpc/server.cpp
+    ${kth_capnp_sources}
+  )
+endif()
+
 if (NOT JUST_KTH_SOURCES)
   set(kth_sources
     ${kth_sources_just_legacy}
@@ -305,6 +332,10 @@ set(kth_headers
   include/kth/node/grpc_rpc/transport.hpp
   include/kth/node/grpc_rpc/chain_handlers.hpp
   include/kth/node/grpc_rpc/server.hpp
+
+  # Optional Cap'n Proto RPC server (compiled only for rpc=capnproto).
+  include/kth/node/capnp_rpc/reader.hpp
+  include/kth/node/capnp_rpc/server.hpp
 
   # CSP-based sync system
   include/kth/node/sync.hpp
@@ -368,6 +399,19 @@ if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     $<BUILD_INTERFACE:${kth_proto_gen}>)
   target_compile_definitions(${PROJECT_NAME} PUBLIC
     KTH_WITH_GRPC KTH_ASIO_STANDALONE ASIO_STANDALONE)
+endif()
+
+# Cap'n Proto RPC: link the KJ/capnp runtime and enable the feature macro. The
+# generated schema headers (kth/rpc/v1/chain.capnp.h) are public: they are what
+# a client compiles against, so they are installed with the other headers.
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_link_libraries(${PROJECT_NAME} PUBLIC CapnProto::capnp-rpc)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC
+    KTH_WITH_CAPNPROTO_RPC KTH_ASIO_STANDALONE ASIO_STANDALONE)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    $<BUILD_INTERFACE:${KTH_CAPNP_GEN_DIR}>
+    $<INSTALL_INTERFACE:include>)
+  target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 endif()
 
 _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
@@ -469,6 +513,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
       test/grpc_transport.cpp test/grpc_chain_handlers.cpp test/grpc_full_node.cpp test/grpc_cookie.cpp test/grpc_real_chain.cpp)
   endif()
 
+  # Cap'n Proto RPC tests drive the real transport with generated clients.
+  if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_sources(kth_node_test PRIVATE test/capnp_rpc.cpp)
+
+    # Client example; built here so API drift in the generated headers fails CI.
+    add_executable(kth_capnp_chain_client examples/capnp_chain_client.cpp)
+    target_link_libraries(kth_capnp_chain_client PRIVATE ${PROJECT_NAME})
+  endif()
+
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
   target_link_libraries(kth_node_test PUBLIC ${PROJECT_NAME})
@@ -557,6 +610,14 @@ if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kth/rpc/v1)
   install(FILES ${kth_proto_file}
           DESTINATION ${CMAKE_INSTALL_DATADIR}/kth/proto/kth/rpc/v1)
+endif()
+
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  # Generated C++ for clients, and the schema itself for other languages.
+  install(DIRECTORY ${KTH_CAPNP_GEN_DIR}/kth DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          FILES_MATCHING PATTERN "*.capnp.h")
+  install(FILES ${KTH_CAPNP_SCHEMA_DIR}/kth/rpc/v1/chain.capnp
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/kth/schema/kth/rpc/v1)
 endif()
 
 # Generate and install a CMake package configuration file
