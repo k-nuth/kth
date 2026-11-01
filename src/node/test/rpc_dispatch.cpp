@@ -600,3 +600,46 @@ TEST_CASE("getblockchaininfo dispatch leaves initial download once synchronized"
     auto const raw = blockchain_info(fixture.chain());
     REQUIRE(raw.find(R"("initialblockdownload":false)") != std::string::npos);
 }
+
+TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyond it", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_chain_tips");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    // A two-block side branch off block 2, headers only.
+    std::vector<domain::chain::block> side;
+    prev = trunk[1].hash();
+    for (uint32_t h = 3; h <= 4; ++h) {
+        side.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing + 60, /*salt*/ 1, {}, 0));
+        prev = side.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(side)).headers_added == side.size());
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getchaintips","params":[],"id":3})"),
+        ::asio::use_future);
+    io.run();
+
+    REQUIRE(result.get() == node::rpc::build_success("3", node::rpc::render_chain_tips({
+        {5u, trunk[4].hash(), 2u, "headers-only"},
+        {4u, side[1].hash(), 2u, "headers-only"},
+        {3u, trunk[2].hash(), 0u, "active"}})));
+}

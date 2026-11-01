@@ -72,6 +72,8 @@ counterpart.
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `get_last_heights()` + `synchronization()` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
+
+| `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -161,6 +163,15 @@ view, so they always describe the same tip.
   including the space each file has preallocated for the blocks to come (block
   files grow in 128 MiB chunks).
 - `pruned` is not reported.
+
+## getchaintips
+
+`getchaintips` returns every chain tip the header index knows, highest first,
+each with `height`, `hash`, `branchlen` (blocks from the connected chain to the
+tip) and `status`: `active` for the connected tip, `valid-headers` for a branch
+whose blocks the node all holds, and `headers-only` for one it does not. The
+header index does not record whether a block failed validation, so `invalid`
+and `valid-fork` are not reported.
 
 ## Mining: getblocktemplatelight
 

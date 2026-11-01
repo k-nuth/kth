@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
@@ -82,6 +83,17 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // The estimatefee result: `byte_fee_satoshis` per byte as BCH per kB, rounded
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
+
+// One getchaintips entry.
+struct chain_tip {
+    std::size_t height;
+    hash_digest hash;
+    std::size_t branch_length;   // blocks from the connected chain to this tip
+    std::string_view status;     // "active", "valid-headers" or "headers-only"
+};
+
+// Serialize the getchaintips result array, in the order given.
+std::string render_chain_tips(std::vector<chain_tip> const& tips);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
