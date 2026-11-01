@@ -1,0 +1,81 @@
+name: 🔌 gRPC backend
+
+# The default build selects rpc=jsonrpc, so none of the gRPC backend is
+# compiled by the main workflows. This job builds and tests the rpc=grpc
+# variant on its own. It uses no secrets and never uploads anything, so it is the
+# same on fork pull requests.
+
+on:
+  push:
+    branches: [master]
+    paths: &paths
+      - '.github/workflows/grpc-backend.yml'
+      - 'cmake/KthRpcBackend.cmake'
+      - 'conanfile.py'
+      - 'conan.lock'
+      - 'docs/grpc.md'
+      - 'src/node/**'
+      - 'test_package/**'
+  pull_request:
+    paths: *paths
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  grpc:
+    name: 🔌 rpc=grpc build + tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
+
+      - name: 🧪 Backend selection tests
+        shell: bash
+        run: python3 -m unittest scripts/test_rpc_backend.py
+
+      # gRPC, Protobuf and their build tools come from the conan.lock pins;
+      # the schema compiler is resolved in the build context.
+      - name: 📦 Install dependencies
+        shell: bash
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b linux-ci-cd -pr:h linux-ci-cd \
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=grpc
+
+      - name: 🔨 Build the node tests and the example client
+        shell: bash
+        run: |
+          cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_node_test kth-grpc-smoke-client
+
+      - name: ✅ gRPC tests
+        shell: bash
+        run: ./build/build/Release/src/node/kth_node_test "[grpc transport],[grpc chain],[grpc real],[grpc cookie],[grpc]"
+
+      # Installed-package control: public headers, generated schema header and
+      # public gRPC API as a consumer sees it (conan create runs test_package).
+      - name: 📦 Package consumer check
+        shell: bash
+        run: |
+          conan create conanfile.py --version 0.0.0 --build=missing \
+            -pr:b linux-ci-cd -pr:h linux-ci-cd \
+            -o march_id=ZLm9Pjh -o tests=False -o consensus=False -o rpc=grpc

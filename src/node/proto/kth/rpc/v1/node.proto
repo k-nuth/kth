@@ -1,0 +1,107 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+// Read-only node query API, served when the node is built with rpc=grpc.
+//
+// HASH BYTE ORDER. Every `bytes ... hash` field on this API is exactly 32 bytes
+// in the node's internal (wire) order: the bytes SHA-256d produces, which is also
+// how hashes appear inside serialized blocks and transactions. This is the
+// REVERSE of the hexadecimal text that block explorers and bitcoind-style RPC
+// print. To look up the genesis block of mainnet, send the 32 bytes of
+// 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000, not
+// 000000000019d668...8ce26f. A request whose hash is not exactly 32 bytes is
+// rejected with INVALID_ARGUMENT; the server never reverses, pads or truncates.
+//
+// BLOCKS AND TRANSACTIONS are returned in their consensus wire serialization,
+// not re-encoded: parse them with any wire-compatible decoder.
+//
+// STATUS CODES (grpc::StatusCode), the same for every method:
+//   OK                  success.
+//   INVALID_ARGUMENT    malformed request (for instance a hash that is not 32 bytes).
+//   NOT_FOUND           the node does not have the object.
+//   RESOURCE_EXHAUSTED  the server is at its in-flight limit (retry later), or the
+//                       result is larger than the server's response limit.
+//   UNAUTHENTICATED     missing or wrong `authorization` metadata.
+//   UNAVAILABLE         the node is shutting down or its chain is not serving.
+//   ABORTED             the chain tip moved while the answer was assembled; retry.
+//   CANCELLED           the client (or the server, on shutdown) cancelled the call.
+//   INTERNAL            the chain reported an unexpected failure; the message says which.
+//
+// Compatibility: fields are only ever added; numbers are never reused. The
+// package is versioned in its name (v1).
+
+syntax = "proto3";
+
+package kth.rpc.v1;
+
+service NodeService {
+  // Where the node's chain currently stands.
+  rpc GetChainInfo(GetChainInfoRequest) returns (GetChainInfoResponse);
+
+  // A block by hash, from the active chain's block store.
+  rpc GetBlock(GetBlockRequest) returns (GetBlockResponse);
+
+  // A transaction by hash: confirmed in a block, or waiting in the mempool.
+  rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse);
+}
+
+enum Network {
+  NETWORK_UNSPECIFIED = 0;
+  NETWORK_MAINNET = 1;
+  NETWORK_TESTNET3 = 2;
+  NETWORK_TESTNET4 = 3;
+  NETWORK_REGTEST = 4;
+  NETWORK_SCALENET = 5;
+  NETWORK_CHIPNET = 6;
+}
+
+message GetChainInfoRequest {}
+
+message GetChainInfoResponse {
+  Network network = 1;
+
+  // Height of the best fully validated block (genesis is 0).
+  uint64 block_height = 2;
+
+  // Hash of that block: 32 bytes, internal byte order (see the file comment).
+  bytes best_block_hash = 3;
+
+  // Height of the best known header; >= block_height while blocks are still
+  // being downloaded.
+  uint64 header_height = 4;
+}
+
+message GetBlockRequest {
+  // 32 bytes, internal byte order.
+  bytes hash = 1;
+}
+
+message GetBlockResponse {
+  // The block in consensus wire serialization (header + transactions).
+  bytes raw_block = 1;
+
+  // Its height on the active chain.
+  uint64 height = 2;
+}
+
+message GetTransactionRequest {
+  // 32 bytes, internal byte order.
+  bytes hash = 1;
+}
+
+message GetTransactionResponse {
+  // The transaction in consensus wire serialization.
+  bytes raw_transaction = 1;
+
+  // Present when the transaction is confirmed; absent when it is only in the
+  // mempool.
+  Confirmation confirmation = 2;
+}
+
+message Confirmation {
+  uint64 block_height = 1;
+
+  // Position of the transaction inside that block (coinbase is 0).
+  uint64 index_in_block = 2;
+}
