@@ -186,14 +186,14 @@ stimulus_sender::stimulus_sender(::asio::any_io_executor const& executor,
     , spawn_(std::move(spawn))
 {}
 
-void stimulus_sender::send(network::peer_session::ptr peer, hash_digest const& from_hash, uint64_t seq) {
+void stimulus_sender::send(network::peer_session::ptr peer, hash_list locator, uint64_t seq) {
     cancel();
     current_ = std::make_shared<sending>();
 
     auto sending_task = [](std::shared_ptr<sending> state,
                            ::asio::strand<::asio::any_io_executor> strand,
                            network::peer_session::ptr peer,
-                           hash_digest from_hash,
+                           hash_list locator,
                            uint64_t seq,
                            sync::sync_coordinator_event_channel& events) -> ::asio::awaitable<void> {
         // On the strand from here on.
@@ -204,7 +204,7 @@ void stimulus_sender::send(network::peer_session::ptr peer, hash_digest const& f
         // The send itself, bound to this stimulus's cancellation slot. Bound
         // here, on the strand, where the slot is also emitted.
         auto const ec = co_await ::asio::co_spawn(strand,
-            network::send_get_headers(*peer, hash_list{from_hash}, null_hash),
+            network::send_get_headers(*peer, locator, null_hash),
             ::asio::bind_cancellation_slot(state->signal.slot(), ::asio::use_awaitable));
 
         if (ec == error::success) {
@@ -225,7 +225,7 @@ void stimulus_sender::send(network::peer_session::ptr peer, hash_digest const& f
     };
 
     spawn_(::asio::co_spawn(strand_,
-        sending_task(current_, strand_, std::move(peer), from_hash, seq, events_),
+        sending_task(current_, strand_, std::move(peer), std::move(locator), seq, events_),
         ::asio::use_awaitable));
 }
 

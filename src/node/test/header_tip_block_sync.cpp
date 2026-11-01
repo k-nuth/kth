@@ -241,10 +241,9 @@ struct wire_peer {
     wire_peer(wire_peer const&) = delete;
     wire_peer& operator=(wire_peer const&) = delete;
 
-    // The first locator hash of the next getheaders the node sends, skipping
-    // anything else it sends (block download asks for bodies, for instance).
+    // The complete locator of the next getheaders on the wire.
     // Nothing when none arrives in time.
-    std::optional<hash_digest> next_getheaders(std::chrono::milliseconds limit) {
+    std::optional<hash_list> next_locator(std::chrono::milliseconds limit) {
         auto const deadline = std::chrono::steady_clock::now() + limit;
         while (true) {
             data_chunk heading(24);
@@ -265,8 +264,15 @@ struct wire_peer {
             auto parsed = domain::message::get_headers::from_data(reader, session->negotiated_version());
             REQUIRE(parsed.has_value());
             REQUIRE_FALSE(parsed->start_hashes().empty());
-            return parsed->start_hashes().front();
+            return parsed->start_hashes();
         }
+    }
+
+
+    std::optional<hash_digest> next_getheaders(std::chrono::milliseconds limit) {
+        auto const locator = next_locator(limit);
+        if ( ! locator) return std::nullopt;
+        return locator->front();
     }
 
     bool read_exact(data_chunk& out, std::chrono::steady_clock::time_point deadline) {
@@ -1548,4 +1554,201 @@ TEST_CASE("integrated: an answer from before an announcement does not confirm th
     CHECK(confirmed_at_end);
     CHECK(log.count("confirming the tip") == 1u);
     CHECK(log.count("Peer error") == 0u);
+}
+
+
+TEST_CASE("integrated: restart on an orphan tip locates a same-height peer fork",
+          "[header_tip][integration][orphan_locator]") {
+    captured_log log;
+    chain_fixture fixture{"orphan_tip_locator"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t common_height = kth::max_get_headers;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base = uint32_t(zulu_time()) - (common_height + 30) * block_spacing;
+    std::vector<domain::chain::block> common;
+    common.reserve(common_height);
+    auto previous = genesis.hash();
+    for (uint32_t height = 1; height <= common_height; ++height) {
+        common.push_back(mine_block(previous, height, base + height * block_spacing, 0, {}, 0));
+        previous = common.back().hash();
+    }
+    auto const orphan = mine_block(previous, common_height + 1,
+        base + (common_height + 1) * block_spacing, 1, {}, 0);
+    auto const sibling = mine_block(previous, common_height + 1,
+        base + (common_height + 1) * block_spacing + 30, 2, {}, 0);
+    auto const extension = mine_block(sibling.hash(), common_height + 2,
+        base + (common_height + 2) * block_spacing + 30, 2, {}, 0);
+    auto local = common;
+    local.push_back(orphan);
+    REQUIRE(fixture.organizer().add_headers(headers_of(local)).headers_added == local.size());
+    persist_headers(fixture, local, 1);
+    REQUIRE(fixture.restart());
+    REQUIRE(fixture.organizer().header_tip_hash() == orphan.hash());
+    REQUIRE(fixture.organizer().index().find(sibling.hash()) == blockchain::header_index::null_index);
+
+    auto const peer_config = node_settings("orphan_tip_locator_peer");
+    // Same advertised height, different tip: height claims cannot find the fork.
+    wire_peer peer(peer_config, 9921, common_height + 1);
+    std::optional<hash_list> first_locator;
+    std::optional<hash_list> adopted_locator;
+    bool learned_sibling = false;
+    bool adopted = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "orphan_tip_locator");
+        run.connect(peer.session);
+        first_locator = peer.next_locator(quick);
+        REQUIRE(first_locator);
+        // Emulate the peer's normal locator matching: use the first known hash,
+        // otherwise genesis. Its bounded response holds at most 2000 headers.
+        uint32_t matched_height = 0;
+        for (auto const& hash : *first_locator) {
+            if (hash == sibling.hash()) { matched_height = common_height + 1; break; }
+            if (hash == genesis.hash()) break;
+            auto const known = std::find_if(common.begin(), common.end(), [&](auto const& block) {
+                return block.hash() == hash;
+            });
+            if (known != common.end()) {
+                matched_height = uint32_t(std::distance(common.begin(), known)) + 1;
+                break;
+            }
+        }
+        std::vector<domain::chain::block> reply;
+        for (uint32_t height = matched_height + 1;
+             height <= common_height + 1 && reply.size() < kth::max_get_headers; ++height) {
+            reply.push_back(height <= common_height ? common[height - 1] : sibling);
+        }
+        run.deliver(peer.session, peer.headers(reply));
+        learned_sibling = wait_until([&] {
+            return fixture.organizer().index().find(sibling.hash()) != blockchain::header_index::null_index;
+        }, quick);
+        // Reproduce a getheaders message admitted before adoption but still
+        // unread on the wire. Use the real session and its execution context.
+        auto stale = ::asio::co_spawn(peer.ioc,
+            [session = peer.session, tip = orphan.hash()]() -> ::asio::awaitable<code> {
+                co_return co_await session->send(domain::message::get_headers{hash_list{tip}, null_hash});
+            }, ::asio::use_future);
+        auto const stale_ready = stale.wait_for(quick) == std::future_status::ready;
+        CHECK(stale_ready);
+        if (stale_ready) CHECK(stale.get() == error::success);
+        // The sibling alone has equal work. Its later extension can be admitted
+        // only if the initial locator let the peer supply that missing sibling.
+        run.deliver(peer.session, peer.headers({extension}));
+        adopted = wait_until([&] {
+            return fixture.organizer().header_tip_hash() == extension.hash();
+        }, quick);
+        if (adopted) {
+            auto const deadline = std::chrono::steady_clock::now() + quick;
+            while (std::chrono::steady_clock::now() < deadline) {
+                auto const remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    deadline - std::chrono::steady_clock::now());
+                auto next = peer.next_locator(remaining);
+                if ( ! next) break;
+                if ( ! next->empty() && next->front() == extension.hash()) {
+                    adopted_locator = std::move(next);
+                    break;
+                }
+            }
+        }
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    CHECK(learned_sibling);
+    CHECK(adopted);
+    REQUIRE(first_locator);
+    CHECK(first_locator->front() == orphan.hash());
+    CHECK(first_locator->back() == genesis.hash());
+    CHECK(first_locator->size() <= kth::max_locator);
+    CHECK(std::find(first_locator->begin(), first_locator->end(), common.back().hash()) != first_locator->end());
+    REQUIRE(adopted_locator);
+    REQUIRE(adopted_locator->size() >= 2);
+    CHECK(adopted_locator->front() == extension.hash());
+    CHECK((*adopted_locator)[1] == sibling.hash());
+    CHECK(std::find(adopted_locator->begin(), adopted_locator->end(), orphan.hash()) == adopted_locator->end());
+    auto const persisted = fixture.chain().get_header(common_height + 1);
+    REQUIRE(persisted);
+    CHECK(domain::chain::hash(*persisted) == sibling.hash());
+}
+
+TEST_CASE("integrated: a failed admission read retries without another publication",
+          "[header_tip][integration][admission_retry]") {
+    captured_log log;
+    chain_fixture fixture{"admission_read_retry"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const base = uint32_t(zulu_time()) - 30 * block_spacing;
+    std::vector<domain::chain::block> headers_only;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 5; ++height) {
+        headers_only.push_back(mine_block(previous, height,
+            base + height * block_spacing, 0, {}, 0));
+        previous = headers_only.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(headers_only)).headers_added == 5);
+    persist_headers(fixture, headers_only, 1);
+
+    // Same metadata-fault boundary as the fail-closed body-range controls: a
+    // populated set with no built-height marker cannot authorize a range. The
+    // synthetic entry is never spent; this case only observes range admission.
+    REQUIRE_FALSE(chain.get_utxo_built_height());
+    {
+        auto const window = chain.begin_utxo_write().value();
+        blockchain::utxo_raw_delta delta;
+        hash_digest key{};
+        key.fill(0xAB);
+        delta.inserts.emplace(
+            utxoz::make_outpoint(std::span<uint8_t const, 32>{key.data(), 32}, 0),
+            blockchain::utxo_raw_value{std::vector<uint8_t>(8, 0x11), 0});
+        REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts) == database::result_code::success);
+    }
+    REQUIRE(chain.utxo_count().value() > 0);
+    auto const before = chain.chain_view();
+    REQUIRE(before);
+    auto const peer_config = node_settings("admission_read_retry_peer");
+    wire_peer peer(peer_config, 9911, 5);
+    bool recover = false;
+    SECTION("metadata recovers at the same published height") { recover = true; }
+    SECTION("shutdown cancels an owed admission deadline") {}
+    bool held = false;
+    bool requested = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> before_recovery;
+    std::vector<wire_peer::sent_message> after_recovery;
+    {
+        node_run run(fixture, "admission_read_retry");
+        run.connect(peer.session);
+        REQUIRE(peer.next_getheaders(quick).has_value());
+        run.deliver(peer.session, peer.headers(headers_only));
+        held = wait_until([&] {
+            return log.count("height could not be read") > 0;
+        }, quick);
+        REQUIRE(held);
+        before_recovery = peer.sent_until_quiet(std::chrono::milliseconds(100));
+        // Restore metadata at the SAME connected height. No header, peer event
+        // or builder publication follows: only the owned retry can drive it.
+        if (recover) {
+            REQUIRE(chain.set_utxo_built_height(0) == database::result_code::success);
+            requested = wait_until([&] {
+                return log.count("trigger=admission_retry") > 0;
+            }, quick);
+        }
+        after_recovery = peer.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    CHECK(held);
+    CHECK(requested == recover);
+    CHECK(chain.chain_view() == before);
+    CHECK(std::none_of(before_recovery.begin(), before_recovery.end(), [](auto const& sent) {
+        return sent.command == "getdata";
+    }));
+    CHECK(std::any_of(after_recovery.begin(), after_recovery.end(), [](auto const& sent) {
+        return sent.command == "getdata";
+    }) == recover);
+    CHECK(log.count("block_range_request") == size_t(recover));
 }

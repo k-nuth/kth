@@ -98,7 +98,7 @@ struct chain_fixture {
 
         // Same as full_node::run_sync: the organizer learns how far blocks are
         // validated at startup, since nothing else tells it until a new block is
-        // stored and deep-reorg parking measures against that height.
+        // connected and deep-reorg parking measures against that height.
         if (auto const heights = chain_->get_last_heights(); heights) {
             organizer_->note_block_validated(static_cast<int32_t>(heights->block));
         }
