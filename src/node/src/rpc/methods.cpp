@@ -309,10 +309,16 @@ send_raw_transaction(method_context& ctx, request const& req) {
 // node's transaction price asks for (chain.byte_fee_satoshis). The price also
 // charges per signature operation (chain.sigop_fee_satoshis), which a per-kB
 // rate cannot carry. kth has no fee estimator, so nblocks, which older clients
-// send, does not change the answer.
+// send, does not change the answer. Anything other than no argument or one
+// non-negative integer is refused rather than answered.
 // C-API counterpart: kth_blockchain_settings.byte_fee_satoshis.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
-estimate_fee(method_context& ctx, request const& /*req*/) {
+estimate_fee(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.size() > 1 || (args.size() == 1 && ! params_uint(req.params, 0))) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    }
     co_return render_estimate_fee(ctx.chain.chain_settings().byte_fee_satoshis);
 }
 

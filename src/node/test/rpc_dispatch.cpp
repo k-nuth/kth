@@ -83,4 +83,11 @@ TEST_CASE("estimatefee dispatch answers with or without a target", "[rpc dispatc
     // Fulcrum sends one argument to nodes it does not know to take none.
     REQUIRE(request("[6]") == expected);
     REQUIRE(request("[]") == expected);
+
+    // Anything else is refused, not answered with a rate.
+    for (auto const* invalid : {"[{}]", "[{},6]", "[1,2]", "[-1]", "[6.5]", R"(["six"])", "[null]"}) {
+        CAPTURE(invalid);
+        REQUIRE(request(invalid) == node::rpc::build_error("2", -32602,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    }
 }
