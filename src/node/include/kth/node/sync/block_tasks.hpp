@@ -6,6 +6,7 @@
 #define KTH_NODE_SYNC_BLOCK_TASKS_HPP
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -107,7 +108,8 @@ using download_worker_launcher = std::function<void(
     block_download_channel& output,  // carries blocks + performance stats
     blockchain::header_organizer& organizer,  // read-only for hashes
     fast_validation_input_channel* fast_val = nullptr,  // chunk-based fast validation (nullptr = old path)
-    download_worker_launcher launcher = nullptr   // test seam; null means the real worker
+    download_worker_launcher launcher = nullptr,  // test seam; null means the real worker
+    std::chrono::milliseconds timeout_tick = std::chrono::seconds(10)
 );
 
 // =============================================================================
