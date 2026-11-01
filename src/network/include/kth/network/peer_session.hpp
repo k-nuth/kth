@@ -5,6 +5,10 @@
 #ifndef KTH_NETWORK_PEER_SESSION_HPP
 #define KTH_NETWORK_PEER_SESSION_HPP
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
+#if defined(KTH_BROWSER_NODE)
+#include <kth/network/browser_stream.hpp>
+#endif
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -63,7 +67,11 @@ public:
     using ptr = std::shared_ptr<peer_session>;
     using executor_type = ::asio::any_io_executor;
     using strand_type = ::asio::strand<executor_type>;
+#if defined(KTH_BROWSER_NODE)
+    using socket_type = browser_stream;
+#else
     using socket_type = ::asio::ip::tcp::socket;
+#endif
 
     // Channel for outbound messages (serialized bytes ready to send)
     using outbound_channel = concurrent_channel<data_chunk>;
@@ -375,8 +383,8 @@ private:
     response_channel addr_responses_;
 
     // Timers
-    ::asio::steady_timer inactivity_timer_;
-    ::asio::steady_timer expiration_timer_;
+    ::kth::steady_timer inactivity_timer_;
+    ::kth::steady_timer expiration_timer_;
     std::atomic<bool> activity_signaled_{false};
 
     // State

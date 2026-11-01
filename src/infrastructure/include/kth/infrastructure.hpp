@@ -106,7 +106,7 @@
 #include <kth/infrastructure/utility/socket.hpp>
 #include <kth/infrastructure/utility/string.hpp>
 #include <kth/infrastructure/utility/system_memory.hpp>
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/infrastructure/utility/async_channel.hpp>
 #include <kth/infrastructure/utility/awaitable_helpers.hpp>
 #include <kth/infrastructure/utility/cpu_executor.hpp>

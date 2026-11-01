@@ -48,7 +48,7 @@ std::string to_ipv6(std::string_view ipv4_address) {
     return fmt::format("::ffff:{}", ipv4_address);
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 static
 asio::ipv6 to_ipv6(asio::ipv4 const& ipv4_address) {
     auto const ipv6 = to_ipv6(ipv4_address.to_string());
@@ -67,7 +67,7 @@ asio::ipv6 to_ipv6(asio::address const& ip_address) {
 
 static
 std::string to_ipv4_hostname(asio::address const& ip_address) {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     constexpr auto pattern = ctll::fixed_string{"^::ffff:([0-9\\.]+)$"};
     auto const address = ip_address.to_string();
     if (auto m = ctre::match<pattern>(address)) {
@@ -79,14 +79,14 @@ std::string to_ipv4_hostname(asio::address const& ip_address) {
 
 static
 std::string to_ipv6_hostname(asio::address const& ip_address) {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     return fmt::format("[{}]", to_ipv6(ip_address));
 #else
     return "";
 #endif
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 static
 asio::ipv6 to_boost_address(message::ip_address const& in) {
     asio::ipv6::bytes_type bytes;
@@ -139,7 +139,7 @@ std::expected<authority, kth::code> authority::parse_from(std::string_view text)
         }
     }
 
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && !defined(KTH_BROWSER_NODE)
     // `asio::ipv6` degrades to `int` under Emscripten (see
     // <kth/infrastructure/utility/asio.hpp>), so we can't actually round-trip
     // a textual address through boost::asio. Refuse the parse rather than
@@ -177,7 +177,7 @@ authority::authority(message::ip_address const& ip, uint16_t port)
     : ip_(to_boost_address(ip)), port_(port)
 {}
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 authority::authority(asio::address const& ip, uint16_t port)
     : ip_(to_ipv6(ip)), port_(port)
 {}

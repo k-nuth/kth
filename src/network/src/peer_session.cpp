@@ -2,8 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/peer_session.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -61,13 +63,27 @@ std::string summarize_user_agent(std::string const& user_agent) {
 }
 
 // Helper to extract authority from socket
-infrastructure::config::authority extract_authority(::asio::ip::tcp::socket const& socket) {
+infrastructure::config::authority extract_authority(peer_session::socket_type const& socket) {
+#if defined(KTH_BROWSER_NODE)
+    return infrastructure::config::authority::any();
+#else
     boost_code ec;
     auto const endpoint = socket.remote_endpoint(ec);
     if (ec) {
         return infrastructure::config::authority::any();
     }
     return infrastructure::config::authority(endpoint);
+#endif
+}
+
+size_t maximum_payload(settings const& settings) {
+    auto const protocol = heading::maximum_payload_size(settings.protocol_maximum,
+        settings.identifier, settings.inbound_port == 48333);
+#if defined(KTH_BROWSER_NODE)
+    return std::min(protocol, settings.browser_maximum_payload);
+#else
+    return protocol;
+#endif
 }
 
 } // anonymous namespace
@@ -80,17 +96,18 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, outbound_capacity)
+#if defined(KTH_BROWSER_NODE)
+    , inbound_(strand_, 8)
+#else
     , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
+#endif
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(extract_authority(socket_))
     , protocol_magic_(settings.identifier)
-    , maximum_payload_(heading::maximum_payload_size(
-          settings.protocol_maximum,
-          settings.identifier,
-          settings.inbound_port == 48333))
+    , maximum_payload_(maximum_payload(settings))
     , validate_checksum_(settings.validate_checksum)
     , inactivity_timeout_(std::chrono::minutes(settings.channel_inactivity_minutes))
     , expiration_timeout_(std::chrono::minutes(settings.channel_expiration_minutes))
@@ -539,6 +556,15 @@ void peer_session::set_wants_addrv2(bool value) {
         // Signal activity to reset inactivity timer
         signal_activity();
 
+#if defined(KTH_BROWSER_NODE)
+        // A full downstream queue must not suspend the socket reader behind
+        // unrelated work. Closure returns sync debt to the session's owner.
+        if (!inbound_.try_send(std::error_code{}, std::move(*result))) {
+            spdlog::warn("[peer_session] Browser inbound admission full; closing session");
+            stop(error::channel_stopped);
+            co_return;
+        }
+#else
         // Send message to inbound channel
         auto [ec] = co_await inbound_.async_send(
             std::error_code{},
@@ -550,6 +576,7 @@ void peer_session::set_wants_addrv2(bool value) {
             stop(error::channel_stopped);
             co_return;
         }
+#endif
     }
 }
 
@@ -722,6 +749,18 @@ awaitable_expected<peer_session::ptr> async_connect(
 {
     using namespace ::asio::experimental::awaitable_operators;
 
+#if defined(KTH_BROWSER_NODE)
+    if (settings.browser_bridge_url.empty()) co_return std::unexpected(error::operation_failed);
+    peer_session::socket_type socket(executor);
+    kth::steady_timer timer(executor, timeout);
+    auto result = co_await (
+        socket.async_connect(settings.browser_bridge_url, ::asio::as_tuple(::asio::use_awaitable)) ||
+        timer.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+    if (result.index() == 1) co_return std::unexpected(error::channel_timeout);
+    auto [ec] = std::get<0>(result);
+    if (ec) co_return std::unexpected(error::boost_to_error_code(ec));
+    co_return std::make_shared<peer_session>(std::move(socket), settings, false);
+#else
     // Try to parse hostname as IP address first (skip DNS for IPs)
     std::error_code ip_parse_ec;
     auto ip_address = ::asio::ip::make_address(hostname, ip_parse_ec);
@@ -738,7 +777,7 @@ awaitable_expected<peer_session::ptr> async_connect(
         auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);
 
         // DNS resolution timeout (5 seconds should be plenty for DNS)
-        auto dns_timer = std::make_shared<::asio::steady_timer>(executor);
+        auto dns_timer = std::make_shared<::kth::steady_timer>(executor);
         dns_timer->expires_after(std::chrono::seconds(5));
 
         auto start_time = std::chrono::steady_clock::now();
@@ -808,7 +847,7 @@ awaitable_expected<peer_session::ptr> async_connect(
 
     // Create socket and timer for connection timeout
     ::asio::ip::tcp::socket socket(executor);
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     timer.expires_after(timeout);
 
     // Race: connect vs timeout (use single endpoint connect)
@@ -846,6 +885,7 @@ awaitable_expected<peer_session::ptr> async_connect(
     }
 
     co_return session;
+#endif
 }
 
 awaitable_expected<peer_session::ptr> async_connect(
@@ -866,6 +906,9 @@ awaitable_expected<peer_session::ptr> async_accept(
     ::asio::ip::tcp::acceptor& acceptor,
     settings const& settings)
 {
+#if defined(KTH_BROWSER_NODE)
+    co_return std::unexpected(error::operation_failed);
+#else
     auto [ec, socket] = co_await acceptor.async_accept(
         ::asio::as_tuple(::asio::use_awaitable));
 
@@ -897,12 +940,16 @@ awaitable_expected<peer_session::ptr> async_accept(
     }
 
     co_return session;
+#endif
 }
 
 awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
     ::asio::any_io_executor executor,
     uint16_t port)
 {
+#if defined(KTH_BROWSER_NODE)
+    co_return std::unexpected(error::operation_failed);
+#else
     try {
         ::asio::ip::tcp::acceptor acceptor(executor);
 
@@ -921,6 +968,7 @@ awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
         spdlog::error("[async_listen] Failed to listen on port {}: {}", port, e.what());
         co_return std::unexpected(error::boost_to_error_code(e.code()));
     }
+#endif
 }
 
 } // namespace kth::network

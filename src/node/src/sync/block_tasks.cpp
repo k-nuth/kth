@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 #include <kth/node/sync/block_tasks.hpp>
 
@@ -296,7 +297,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         fast_sender.emplace(executor, ::asio::experimental::channel_select_options{},
             coordinator->stop_token(),
             ::asio::experimental::send(*fast_val, fast_validation_input{}),
-            ::asio::experimental::after(::asio::steady_timer::time_point::max()));
+            ::asio::experimental::after(::kth::steady_timer::time_point::max()));
         // A send case takes part while it holds a payload, and the case was
         // built around a default-constructed input (a stop_request). Emptied
         // before any wait; each chunk is emplaced right before its hand-over.
@@ -321,7 +322,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 break;
             }
             // Slots busy - wait with backoff before retry (avoid busy-wait)
-            ::asio::steady_timer timer(executor);
+            ::kth::steady_timer timer(executor);
             timer.expires_after(std::chrono::milliseconds(20));
             co_await timer.async_wait(::asio::use_awaitable);
             continue;
@@ -1734,7 +1735,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             ~parked_scope() { chain.leave_reorg_barrier(); }
         } const parked(chain);
         while (chain.reorg_pause_requested() && ! chain.stopped()) {
-            ::asio::steady_timer pause_timer(co_await ::asio::this_coro::executor);
+            ::kth::steady_timer pause_timer(co_await ::asio::this_coro::executor);
             pause_timer.expires_after(std::chrono::milliseconds(50));
             auto const [ec] = co_await pause_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
             if (ec) throw std::system_error(ec);
@@ -2137,7 +2138,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // does not block this coroutine's executor (download supervision, storage).
     // validate_block_batch fans script verification out to its own threads, so one
     // pool thread to run the serial phase and orchestrate is enough.
+#if defined(KTH_BROWSER_NODE)
+    kth::threadpool validation_pool("validation", 1);
+#else
     ::asio::thread_pool validation_pool(1);
+#endif
 
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
@@ -2152,7 +2157,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (chain.reorg_pause_requested()) {
             chain.enter_reorg_barrier();
             while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
-                ::asio::steady_timer timer(executor);
+                ::kth::steady_timer timer(executor);
                 timer.expires_after(poll_interval);
                 co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
             }
@@ -2186,7 +2191,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         if (batch_len == 0) {
             // Still in IBD and short of a full batch — wait and poll.
-            ::asio::steady_timer timer(executor);
+            ::kth::steady_timer timer(executor);
             timer.expires_after(poll_interval);
             co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
             continue;
@@ -2222,7 +2227,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if ( ! raw_result) {
             spdlog::error("[utxo_build] Failed to fetch blocks {}-{}", batch_start, batch_end);
             // Wait and retry — blocks might not be fully written yet
-            ::asio::steady_timer timer(executor);
+            ::kth::steady_timer timer(executor);
             timer.expires_after(std::chrono::seconds(1));
             co_await timer.async_wait(::asio::use_awaitable);
             continue;

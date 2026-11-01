@@ -31,7 +31,7 @@ using steady_clock = std::chrono::steady_clock;
 using duration = steady_clock::duration;
 using time_point = steady_clock::time_point;
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 using timer = ::asio::basic_waitable_timer<steady_clock>;
 
 using context = ::asio::io_context;
@@ -54,7 +54,11 @@ constexpr int max_connections = SOMAXCONN;
 
 // Boost thread is used because of thread_specific_ptr limitation:
 // stackoverflow.com/q/22448022/1172329
+#if defined(KTH_BROWSER_NODE)
+using thread = int; // Browser execution is owned by browser::runtime, never a native thread.
+#else
 using thread = boost::thread;
+#endif
 
 #else
 
@@ -87,7 +91,7 @@ using socket_ptr = std::shared_ptr<socket>;
 #define FMT_HEADER_ONLY 1
 #include <fmt/format.h>
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 // template <>
 // struct fmt::formatter<kth::asio::ipv6> {
 //     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }

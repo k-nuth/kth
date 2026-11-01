@@ -7,7 +7,7 @@
 #include <cstddef>
 
 #include <kth/blockchain.hpp>
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/network.hpp>
 #endif
 
@@ -27,7 +27,7 @@ configuration::configuration(domain::config::network net)
     , node(net)
     , chain(net)
     , database(net)
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     , network(net)
 #endif
 {}

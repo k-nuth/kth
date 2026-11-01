@@ -201,7 +201,7 @@ jobs:
           echo "**Compiler:** emcc 6.0.13" >> $GITHUB_STEP_SUMMARY
           echo "**C++ Standard:** C++23" >> $GITHUB_STEP_SUMMARY
           echo "**Build Type:** Release" >> $GITHUB_STEP_SUMMARY
-          echo "**Tests:** Disabled (not supported on WASM)" >> $GITHUB_STEP_SUMMARY
+          echo "**Tests:** Installed-package consumers linked; runtime Worker controls run in the browser-node job" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ github.event_name }}" = "push" ]; then
@@ -218,3 +218,72 @@ jobs:
         run: |
           conan remote login -p ${{ secrets.CONAN_3_PASSWORD }} ${{ env.CONAN_REMOTE }} ${{ secrets.CONAN_LOGIN_USERNAME }}
           conan upload kth/${{ needs.setup.outputs.build-version }}@ -r ${{ env.CONAN_REMOTE }}
+
+  browser-worker:
+    needs: [setup]
+    if: >-
+      github.event_name != 'pull_request' ||
+      (!startsWith(github.head_ref, 'release/') &&
+       !startsWith(github.head_ref, 'hotfix/') &&
+       !startsWith(github.head_ref, 'dev-publish/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    name: 🧭 Browser node — Build and Worker controls
+    permissions:
+      contents: read
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          submodules: true
+      - name: 🔧 Replace version
+        uses: ./ci_utils/.github/actions/replace-version-monorepo
+        with:
+          new-version: ${{ needs.setup.outputs.build-version }}
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.11'
+      - name: 📦 Install build and browser test dependencies
+        run: |
+          python -m pip install conan==2.31.2 kthbuild playwright==1.55.0 websockets==15.0.1
+          python -m playwright install --with-deps chromium
+          conan profile detect --force
+          git clone --depth 1 https://github.com/conan-io/conan-toolchains.git "$RUNNER_TEMP/conan-toolchains"
+          conan remote add conan-toolchains "$RUNNER_TEMP/conan-toolchains"
+          conan remote add "$CONAN_REMOTE" "$CONAN_REMOTE_URL" --force
+      - name: 🏗️ Configure browser_node=True and compile controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/browser-results
+          conan install . --version="${{ needs.setup.outputs.build-version }}" \
+            --output-folder=build/browser-deps --lockfile=conan-wasm.lock --lockfile-partial \
+            -pr:h ci_utils/conan/profiles/ems6 --build=missing \
+            -o browser_node=True -o tests=False -o rpc=False -o consensus=False \
+            2>&1 | tee build/browser-results/dependencies.log
+          source build/browser-deps/build/Release/generators/conanbuild.sh
+          cmake -S . -B build/browser -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/build/browser-deps/build/Release/generators/conan_toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
+            -DKTH_BROWSER_NODE=ON -DKTH_BROWSER_CONTROLS=ON \
+            2>&1 | tee build/browser-results/configure.log
+          cmake --build build/browser --parallel 4 --target \
+            browser_configuration_control browser_stream_control browser_cap_control \
+            browser_eof_control browser_select_control browser_terminal_control browser_lifecycle_control \
+            browser_headers_control c-api \
+            2>&1 | tee build/browser-results/build.log
+          node build/browser/experiments/browser-worker/browser_configuration_control.js \
+            2>&1 | tee build/browser-results/configuration.log
+      - name: 🌐 Run real WASM in Chromium Workers
+        run: |
+          set -euo pipefail
+          python experiments/browser-worker/ci.py build/browser/experiments/browser-worker \
+            --report build/browser-results/workers.json 2>&1 | tee build/browser-results/workers.log
+      - name: 📎 Retain build logs and Worker observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: browser-worker-controls
+          path: build/browser-results
+          if-no-files-found: warn
