@@ -151,3 +151,69 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
     REQUIRE(request("getrawtransaction", "[" + quoted(pooled->hash()) + "]") ==
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
 }
+
+TEST_CASE("getblock and getrawtransaction dispatch answer verbosely", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_verbose_block_and_tx");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five connected blocks.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = R"({"method":")" + method + R"(","params":)" + params + R"(,"id":13})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+    auto const has = [](std::string const& text, std::string const& fragment) {
+        return text.find(fragment) != std::string::npos;
+    };
+
+    // Block 3: three confirmations, its neighbours, the median of its own
+    // timestamp and those of the blocks before it.
+    auto const block = request("getblock", "[" + quoted(trunk[2].hash()) + "]");
+    CHECK(has(block, R"("result":{"hash":)" + quoted(trunk[2].hash()) + R"(,"confirmations":3,)"));
+    CHECK(has(block, R"("height":3,)"));
+    CHECK(has(block, R"("tx":[)" + quoted(trunk[2].transactions().front().hash()) + "]"));
+    CHECK(has(block, R"("mediantime":)" + std::to_string(trunk[1].header().timestamp()) + ","));
+    CHECK(has(block, R"("nTx":1,"previousblockhash":)" + quoted(trunk[1].hash()) +
+        R"(,"nextblockhash":)" + quoted(trunk[3].hash()) + "}"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",1]") == block);
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",true]") == block);
+    // The tip has no next block; the hex form is still there.
+    CHECK_FALSE(has(request("getblock", "[" + quoted(trunk[4].hash()) + "]"), "nextblockhash"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",0]") ==
+        node::rpc::build_success("13", '"' + node::rpc::block_to_hex(trunk[2]) + '"'));
+    // Verbosity 2: the transactions decoded, with their hex.
+    auto const full = request("getblock", "[" + quoted(trunk[2].hash()) + ",2]");
+    CHECK(has(full, R"("tx":[{"txid":)" + quoted(trunk[2].transactions().front().hash())));
+    CHECK(has(full, R"("vin":[{"coinbase":")"));
+    CHECK(has(full, R"("hex":")" + node::rpc::transaction_to_hex(trunk[2].transactions().front()) + R"("}])"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",3]") ==
+        node::rpc::build_error("13", -32602, "verbosity must be 0, 1, 2 or a boolean"));
+
+    // A transaction read from its block, verbosely.
+    auto const& coinbase = trunk[2].transactions().front();
+    auto const tx = request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",true," + quoted(trunk[2].hash()) + "]");
+    CHECK(has(tx, R"("hex":")" + node::rpc::transaction_to_hex(coinbase) + R"(","blockhash":)" +
+        quoted(trunk[2].hash()) + R"(,"confirmations":3,"time":)" +
+        std::to_string(trunk[2].header().timestamp()) + R"(,"blocktime":)" +
+        std::to_string(trunk[2].header().timestamp()) + "}"));
+}

@@ -6,6 +6,8 @@
 #define KTH_NODE_RPC_QUERY_HPP
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -15,6 +17,7 @@
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/script_flags.hpp>
 #include <kth/infrastructure/hash_define.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
 // out so it can be unit-tested without a live block_chain.
@@ -56,6 +59,36 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 // under `flags`); the hex is there for anything that reads the bytes.
 std::string render_transaction(domain::chain::transaction const& tx,
                                domain::config::network net, domain::script_flags_t flags);
+
+// Where a confirmed transaction sits, for verbose getrawtransaction.
+struct transaction_location {
+    hash_digest block_hash;
+    std::int64_t confirmations;     // -1 when its block is off the connected chain
+    std::uint32_t block_time;
+};
+
+// The verbose getrawtransaction object: the decoderawtransaction fields, `hex`,
+// and for a transaction read from a block its `blockhash`, `confirmations`,
+// `time` and `blocktime`.
+std::string render_transaction_verbose(domain::chain::transaction const& tx,
+                                       domain::config::network net, domain::script_flags_t flags,
+                                       std::optional<transaction_location> const& location);
+
+// What getblock reports about a block beyond the block itself.
+struct block_location {
+    std::size_t height;
+    std::int64_t confirmations;            // -1 when off the connected chain
+    std::uint32_t median_time;             // of the 11 blocks ending at this one
+    std::optional<uint256_t> chain_work;   // the chain's work up to this block
+    std::optional<hash_digest> next_block_hash;
+};
+
+// The verbose getblock object. `with_transactions` (verbosity 2) lists each
+// transaction as verbose getrawtransaction's fields without the location;
+// otherwise (verbosity 1) by txid.
+std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
+                                 bool with_transactions,
+                                 domain::config::network net, domain::script_flags_t flags);
 
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,

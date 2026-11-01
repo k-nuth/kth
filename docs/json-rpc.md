@@ -94,12 +94,19 @@ _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 
 ## Blocks and transactions
 
-`getblock "<hash>"` reads the block from the flat-file block store, through the
-header index, and returns it as hex; a side-branch block the node holds is
-returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
+`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+store, through the header index; a side-branch block the node holds is returned
+too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
+`confirmations` (-1 off the connected chain), `size`, `height`, `version`,
+`versionHex`, `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`,
+`difficulty`, `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2`
+lists each transaction with its `decoderawtransaction` fields and `hex`. `fee`
+per transaction and `ablastate` are not reported. `getrawtransaction "<txid>"` answers for a mempool transaction.
 Confirmed transactions are not indexed by txid (#491), so for one of those pass
 the block hash as the third parameter: `getrawtransaction "<txid>" false
-"<blockhash>"`. A block or transaction the node does not have is error `-5`.
+"<blockhash>"`. With `verbose` true (or non-zero) it returns the
+`decoderawtransaction` fields with `hex`, and for a transaction read from a block
+also `blockhash`, `confirmations`, `time` and `blocktime`. A block or transaction the node does not have is error `-5`.
 
 ## decoderawtransaction
 
