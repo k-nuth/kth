@@ -305,6 +305,35 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// decoderawtransaction <hexstring> -> the transaction's fields, decoded for
+// this node's network and current script rules.
+// C-API counterpart: kth_chain_transaction_construct_from_data (+ its accessors).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+decode_raw_transaction(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args[0].empty()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "decoderawtransaction requires [hexstring]"));
+    }
+    auto const raw = decode_base16(args[0]);
+    if ( ! raw) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "hexstring is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto const tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx || ! reader.is_exhausted()) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "transaction decode failed"));
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    co_return render_transaction(*tx, view->state->network(), view->state->enabled_flags());
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -387,6 +416,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("decoderawtransaction", decode_raw_transaction);
     d.add("getrawmempool", get_raw_mempool);
     d.add("getmempoolinfo", get_mempool_info);
     d.add("getmempoolentry", get_mempool_entry);

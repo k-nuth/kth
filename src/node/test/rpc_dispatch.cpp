@@ -10,6 +10,7 @@
 
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/query.hpp>
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
 
 using namespace kth;
@@ -58,4 +59,35 @@ TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[
         CAPTURE(invalid);
         REQUIRE(request(invalid) == node::rpc::build_error("7", -32602, "verbose must be a boolean"));
     }
+}
+
+TEST_CASE("decoderawtransaction dispatch decodes for the node's network", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_decode_raw_transaction");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"decoderawtransaction","params":)" + params + R"(,"id":6})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // The regtest genesis coinbase, as EloPool decodes its own coinbase at startup.
+    auto const coinbase = domain::chain::block::genesis_regtest().transactions().front();
+    auto const hex = node::rpc::transaction_to_hex(coinbase);
+    auto const reply = request(R"([")" + hex + R"("])");
+    REQUIRE(reply.find(R"("txid":")" + encode_hash(coinbase.hash()) + '"') != std::string::npos);
+    REQUIRE(reply.find(R"("vin":[{"coinbase":")") != std::string::npos);
+    REQUIRE(reply.find(R"("error":null)") != std::string::npos);
+
+    REQUIRE(request(R"([")" + hex + R"(00"])") ==
+        node::rpc::build_error("6", -32602, "transaction decode failed"));
+    REQUIRE(request(R"(["zz"])") == node::rpc::build_error("6", -32602, "hexstring is not valid hex"));
+    REQUIRE(request("[]") == node::rpc::build_error("6", -32602, "decoderawtransaction requires [hexstring]"));
 }
