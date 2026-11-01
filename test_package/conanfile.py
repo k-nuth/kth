@@ -17,6 +17,8 @@ class TestPackageConan(ConanFile):
         toolchain = CMakeToolchain(self)
         toolchain.variables["KTH_PACKAGE_FOLDER"] = self.dependencies["kth"].package_folder
         toolchain.variables["KTH_EXPECT_CONSENSUS"] = bool(self.dependencies["kth"].options.consensus)
+        toolchain.variables["KTH_EXPECT_GRPC"] = (
+            self.dependencies["kth"].options.rpc == "grpc" and self.settings.os != "Emscripten")
         toolchain.generate()
 
     def build(self):
