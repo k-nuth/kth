@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <future>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -67,7 +68,8 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
-    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000)
+    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
+        std::optional<float> sigop_fee_satoshis = std::nullopt)
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -75,6 +77,7 @@ struct admission_chain {
 #if defined(KTH_CURRENCY_BCH)
         fixture.settings().standardness.maximum_transaction_size = policy_size;
 #endif
+        if (sigop_fee_satoshis) fixture.settings().sigop_fee_satoshis = *sigop_fee_satoshis;
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -456,5 +459,24 @@ TEST_CASE("a payment paying less than the per-byte price is still refused", "[me
 
     CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::insufficient_fee);
     CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
+}
+
+TEST_CASE("a per-signature-operation price set by the operator still applies", "[mempool][admission][fee]") {
+    // node.sigop_fee_satoshis still prices signature operations when it is set.
+    // At the old default of 100, the payment one satoshi per byte pays for is
+    // refused, and admitted once it also pays for its three signature
+    // operations.
+    admission_chain built("operator_sigop_price", trunk_len, true, 1'000'000, 100.0f);
+    auto& chain = built.chain();
+    REQUIRE(chain.chain_settings().sigop_fee_satoshis == 100.0f);
+
+    auto const size = built.three_output_spend(0).serialized_size(true);
+    auto const by_size = std::make_shared<domain::message::transaction>(built.three_output_spend(size));
+    CHECK(run_on_chain(chain, [&chain, by_size] { return chain.organize(by_size); }) == error::insufficient_fee);
+    CHECK_FALSE(chain.mempool_ref().contains(by_size->hash()));
+
+    auto const priced = std::make_shared<domain::message::transaction>(built.three_output_spend(size + 300));
+    CHECK(run_on_chain(chain, [&chain, priced] { return chain.organize(priced); }) == error::success);
+    CHECK(chain.mempool_ref().contains(priced->hash()));
 }
 #endif // KTH_CURRENCY_BCH
