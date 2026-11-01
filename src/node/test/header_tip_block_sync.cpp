@@ -1674,6 +1674,87 @@ TEST_CASE("integrated: restart on an orphan tip locates a same-height peer fork"
     CHECK(domain::chain::hash(*persisted) == sibling.hash());
 }
 
+TEST_CASE("integrated: a failed admission read retries without another publication",
+          "[header_tip][integration][admission_retry]") {
+    captured_log log;
+    chain_fixture fixture{"admission_read_retry"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const base = uint32_t(zulu_time()) - 30 * block_spacing;
+    std::vector<domain::chain::block> headers_only;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 5; ++height) {
+        headers_only.push_back(mine_block(previous, height,
+            base + height * block_spacing, 0, {}, 0));
+        previous = headers_only.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(headers_only)).headers_added == 5);
+    persist_headers(fixture, headers_only, 1);
+
+    // Same metadata-fault boundary as the fail-closed body-range controls: a
+    // populated set with no built-height marker cannot authorize a range. The
+    // synthetic entry is never spent; this case only observes range admission.
+    REQUIRE_FALSE(chain.get_utxo_built_height());
+    {
+        auto const window = chain.begin_utxo_write().value();
+        blockchain::utxo_raw_delta delta;
+        hash_digest key{};
+        key.fill(0xAB);
+        delta.inserts.emplace(
+            utxoz::make_outpoint(std::span<uint8_t const, 32>{key.data(), 32}, 0),
+            blockchain::utxo_raw_value{std::vector<uint8_t>(8, 0x11), 0});
+        REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts) == database::result_code::success);
+    }
+    REQUIRE(chain.utxo_count().value() > 0);
+    auto const before = chain.chain_view();
+    REQUIRE(before);
+    auto const peer_config = node_settings("admission_read_retry_peer");
+    wire_peer peer(peer_config, 9911, 5);
+    bool recover = false;
+    SECTION("metadata recovers at the same published height") { recover = true; }
+    SECTION("shutdown cancels an owed admission deadline") {}
+    bool held = false;
+    bool requested = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> before_recovery;
+    std::vector<wire_peer::sent_message> after_recovery;
+    {
+        node_run run(fixture, "admission_read_retry");
+        run.connect(peer.session);
+        REQUIRE(peer.next_getheaders(quick).has_value());
+        run.deliver(peer.session, peer.headers(headers_only));
+        held = wait_until([&] {
+            return log.count("height could not be read") > 0;
+        }, quick);
+        REQUIRE(held);
+        before_recovery = peer.sent_until_quiet(std::chrono::milliseconds(100));
+        // Restore metadata at the SAME connected height. No header, peer event
+        // or builder publication follows: only the owned retry can drive it.
+        if (recover) {
+            REQUIRE(chain.set_utxo_built_height(0) == database::result_code::success);
+            requested = wait_until([&] {
+                return log.count("trigger=admission_retry") > 0;
+            }, quick);
+        }
+        after_recovery = peer.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    CHECK(held);
+    CHECK(requested == recover);
+    CHECK(chain.chain_view() == before);
+    CHECK(std::none_of(before_recovery.begin(), before_recovery.end(), [](auto const& sent) {
+        return sent.command == "getdata";
+    }));
+    CHECK(std::any_of(after_recovery.begin(), after_recovery.end(), [](auto const& sent) {
+        return sent.command == "getdata";
+    }) == recover);
+    CHECK(log.count("block_range_request") == size_t(recover));
+}
+
+// =============================================================================
 // A block handed to the node at its tip (#563)
 // =============================================================================
 
@@ -1791,85 +1872,4 @@ TEST_CASE("integrated: a block handed to the node at its tip is connected, and n
     CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
         return message.command == domain::message::get_data::command;
     }));
-=======
-TEST_CASE("integrated: a failed admission read retries without another publication",
-          "[header_tip][integration][admission_retry]") {
-    captured_log log;
-    chain_fixture fixture{"admission_read_retry"};
-    REQUIRE(fixture.created());
-    fixture.settings().max_checkpoint_height = 0;
-    REQUIRE(fixture.start());
-    auto& chain = fixture.chain();
-    auto const base = uint32_t(zulu_time()) - 30 * block_spacing;
-    std::vector<domain::chain::block> headers_only;
-    auto previous = domain::chain::block::genesis_regtest().hash();
-    for (uint32_t height = 1; height <= 5; ++height) {
-        headers_only.push_back(mine_block(previous, height,
-            base + height * block_spacing, 0, {}, 0));
-        previous = headers_only.back().hash();
-    }
-    REQUIRE(fixture.organizer().add_headers(headers_of(headers_only)).headers_added == 5);
-    persist_headers(fixture, headers_only, 1);
-
-    // Same metadata-fault boundary as the fail-closed body-range controls: a
-    // populated set with no built-height marker cannot authorize a range. The
-    // synthetic entry is never spent; this case only observes range admission.
-    REQUIRE_FALSE(chain.get_utxo_built_height());
-    {
-        auto const window = chain.begin_utxo_write().value();
-        blockchain::utxo_raw_delta delta;
-        hash_digest key{};
-        key.fill(0xAB);
-        delta.inserts.emplace(
-            utxoz::make_outpoint(std::span<uint8_t const, 32>{key.data(), 32}, 0),
-            blockchain::utxo_raw_value{std::vector<uint8_t>(8, 0x11), 0});
-        REQUIRE(chain.apply_utxo_inserts_raw(window, delta.inserts) == database::result_code::success);
-    }
-    REQUIRE(chain.utxo_count().value() > 0);
-    auto const before = chain.chain_view();
-    REQUIRE(before);
-    auto const peer_config = node_settings("admission_read_retry_peer");
-    wire_peer peer(peer_config, 9911, 5);
-    bool recover = false;
-    SECTION("metadata recovers at the same published height") { recover = true; }
-    SECTION("shutdown cancels an owed admission deadline") {}
-    bool held = false;
-    bool requested = false;
-    bool stopped_cleanly = false;
-    std::vector<wire_peer::sent_message> before_recovery;
-    std::vector<wire_peer::sent_message> after_recovery;
-    {
-        node_run run(fixture, "admission_read_retry");
-        run.connect(peer.session);
-        REQUIRE(peer.next_getheaders(quick).has_value());
-        run.deliver(peer.session, peer.headers(headers_only));
-        held = wait_until([&] {
-            return log.count("height could not be read") > 0;
-        }, quick);
-        REQUIRE(held);
-        before_recovery = peer.sent_until_quiet(std::chrono::milliseconds(100));
-        // Restore metadata at the SAME connected height. No header, peer event
-        // or builder publication follows: only the owned retry can drive it.
-        if (recover) {
-            REQUIRE(chain.set_utxo_built_height(0) == database::result_code::success);
-            requested = wait_until([&] {
-                return log.count("trigger=admission_retry") > 0;
-            }, quick);
-        }
-        after_recovery = peer.sent_until_quiet(quiet);
-        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
-    }
-    CHECK(stopped_cleanly);
-    CHECK(held);
-    CHECK(requested == recover);
-    CHECK(chain.chain_view() == before);
-    CHECK(std::none_of(before_recovery.begin(), before_recovery.end(), [](auto const& sent) {
-        return sent.command == "getdata";
-    }));
-    CHECK(std::any_of(after_recovery.begin(), after_recovery.end(), [](auto const& sent) {
-        return sent.command == "getdata";
-    }) == recover);
-    CHECK(log.count("block_range_request") == size_t(recover));
 }
-
-// ======================================================================}
