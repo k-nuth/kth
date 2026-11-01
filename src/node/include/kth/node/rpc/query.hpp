@@ -14,6 +14,7 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/machine/script_flags.hpp>
 #include <kth/infrastructure/hash_define.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
@@ -48,6 +49,14 @@ std::string render_hash_list(hash_list const& hashes);
 std::string render_mempool_info(blockchain::mempool_totals const& totals);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
+
+// A transaction as the decoderawtransaction result object: txid, hash,
+// version, size, locktime, vin and vout, with each output's value in BCH, its
+// script, its kind and addresses, and its token data. Addresses are cashaddr
+// under `net`'s prefix. Script text is kth's own notation (script::to_string
+// under `flags`); the hex is there for anything that reads the bytes.
+std::string render_transaction(domain::chain::transaction const& tx,
+                               domain::config::network net, domain::script_flags_t flags);
 
 // The estimatefee result: `byte_fee_satoshis` per byte as BCH per kB, rounded
 // to whole satoshis per kB.
