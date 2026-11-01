@@ -59,8 +59,8 @@ result_code internal_database_basis<Clock>::push_header_only(domain::chain::head
     // every existing one, which holds while the chain only grows.
     auto res = kth_db_put(db_txn, dbi_block_header_, &key, &value, KTH_DB_APPEND);
     if (res == KTH_DB_KEYEXIST) {
-        // The height is already occupied, which means a reorganization put a
-        // different block there. Rewrite it: leaving the abandoned header would
+        // An occupied height may be an identical retry or a reorganization.
+        // Rewrite a different header: leaving the abandoned header would
         // make every reader that addresses blocks by height — median time past,
         // staleness, the RPC surface — answer from the branch the node left.
         //
@@ -73,6 +73,19 @@ result_code internal_database_basis<Clock>::push_header_only(domain::chain::head
         if (auto const displaced = get_header(height, db_txn); displaced) {
             auto displaced_hash = kth::domain::chain::hash(*displaced);
             auto displaced_key = kth_db_make_value(displaced_hash.size(), displaced_hash.data());
+            if (displaced_hash == kth::domain::chain::hash(header)) {
+                // A headers-only retry must not erase the ABLA state already
+                // attached to this row by block connection. Repair its secondary
+                // index in the same transaction, including a missing/stale entry.
+                auto const indexed = kth_db_put(db_txn, dbi_block_header_by_hash_,
+                    &displaced_key, &key, 0);
+                if (indexed != KTH_DB_SUCCESS) {
+                    spdlog::info("[database] Error repairing the existing header by hash "
+                        "[push_header_only] {}", indexed);
+                    return result_code::other;
+                }
+                return result_code::success;
+            }
             auto const del = kth_db_del(db_txn, dbi_block_header_by_hash_, &displaced_key, NULL);
             if (del != KTH_DB_SUCCESS && del != KTH_DB_NOTFOUND) {
                 spdlog::info("[database] Error dropping the displaced header by hash "

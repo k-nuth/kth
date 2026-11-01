@@ -8,6 +8,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <random>
+#include <stdexcept>
 
 #include <kth/network/peer_database.hpp>
 
@@ -16,15 +18,32 @@ using namespace kth::network;
 
 namespace {
 
-kth::path temp_file() {
-    return std::filesystem::temp_directory_path() / "kth_peer_database_test.dat";
-}
-
 struct temp_file_guard {
+    kth::path directory;
     kth::path path;
-    temp_file_guard() : path(temp_file()) {}
+
+    temp_file_guard() {
+        std::random_device random;
+        for (unsigned attempt = 0; attempt < 128; ++attempt) {
+            auto candidate = std::filesystem::temp_directory_path()
+                / ("kth_peer_database_" + std::to_string(random())
+                    + "_" + std::to_string(random()));
+            // Exclusive creation also isolates concurrent CTest processes.
+            if (std::filesystem::create_directory(candidate)) {
+                directory = std::move(candidate);
+                path = directory / "peers.dat";
+                return;
+            }
+        }
+        throw std::runtime_error("Cannot create peer database test directory");
+    }
+
+    temp_file_guard(temp_file_guard const&) = delete;
+    temp_file_guard& operator=(temp_file_guard const&) = delete;
+
     ~temp_file_guard() {
-        std::filesystem::remove(path);
+        std::error_code ignored;
+        std::filesystem::remove_all(directory, ignored);
     }
 };
 
@@ -35,6 +54,27 @@ infrastructure::config::authority auth(std::string_view text) {
 }
 
 } // anonymous namespace
+
+TEST_CASE("peer_database persistence fixtures are isolated", "[peer_database]") {
+    temp_file_guard first;
+    auto const addr = auth("192.168.1.100:8333");
+    {
+        peer_database db(first.path);
+        (void)db.get_or_create(addr);
+        REQUIRE(db.save());
+    }
+    {
+        temp_file_guard second;
+        CHECK(first.path != second.path);
+        peer_database db(second.path);
+        (void)db.load();
+        CHECK(db.size() == 0);
+    }
+    // Destroying another fixture must not remove this fixture's database.
+    peer_database reloaded(first.path);
+    REQUIRE(reloaded.load());
+    CHECK(reloaded.exists(addr));
+}
 
 TEST_CASE("peer_database basic operations", "[peer_database]") {
     peer_database db;
@@ -402,8 +442,8 @@ TEST_CASE("peer_database JSON persistence", "[peer_database]") {
 
 TEST_CASE("peer_database import legacy files", "[peer_database]") {
     temp_file_guard guard;
-    auto hosts_path = std::filesystem::temp_directory_path() / "kth_test_hosts.cache";
-    auto banlist_path = std::filesystem::temp_directory_path() / "kth_test_banlist.dat";
+    auto hosts_path = guard.directory / "hosts.cache";
+    auto banlist_path = guard.directory / "banlist.dat";
 
     std::filesystem::remove(hosts_path);
     std::filesystem::remove(banlist_path);
