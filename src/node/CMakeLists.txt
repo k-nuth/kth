@@ -142,6 +142,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     ${kth_sources_just_legacy}
     src/full_node.cpp
     src/detail/block_announcements.cpp
+    src/detail/chunk_result_bridge.cpp
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
@@ -331,6 +332,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
+          test/chunk_result_bridge.cpp
           test/block_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp

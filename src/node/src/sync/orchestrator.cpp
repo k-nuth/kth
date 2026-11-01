@@ -5,6 +5,7 @@
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
+#include <kth/node/detail/chunk_result_bridge.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
@@ -1079,42 +1080,14 @@ static
     ));
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
-    all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:chunks_bridge] Started");
-        while (true) {
-            auto [ec, result] = co_await validated_chunks.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[coordinator:chunks_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:chunks_bridge] Channel full, chunk_validated dropped");
-                break;
-            }
-        }
-        spdlog::info("[coordinator:chunks_bridge] Task ended");
-    });
+    all_tasks.spawn("coordinator_chunks_bridge", detail::chunk_result_bridge(
+        validated_chunks, coordinator_events, "coordinator:chunks_bridge"));
 
     // Storage results report body availability only. The builder delivers its
     // own progress after publishing a complete connected state; no timer bridge
     // or unrelated peer event is needed to wake the coordinator.
-    all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:stored_bridge] Started");
-        while (true) {
-            auto [ec, result] = co_await stored_chunks.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[coordinator:stored_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:stored_bridge] Channel full, chunk_validated dropped");
-                break;
-            }
-        }
-        spdlog::info("[coordinator:stored_bridge] Task ended");
-    });
+    all_tasks.spawn("coordinator_stored_bridge", detail::chunk_result_bridge(
+        stored_chunks, coordinator_events, "coordinator:stored_bridge"));
 
     // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
