@@ -280,10 +280,16 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
     write_transaction_fields(w, tx, net, flags);
     w.field("hex", transaction_to_hex(tx));
     if (location) {
+        auto const active = location->confirmations >= 0;
         w.field("blockhash", encode_hash(location->block_hash));
-        w.field("confirmations", location->confirmations);
-        w.field("time", static_cast<std::int64_t>(location->block_time));
-        w.field("blocktime", static_cast<std::int64_t>(location->block_time));
+        if (active) {
+            w.field("confirmations", location->confirmations);
+            w.field("time", static_cast<std::int64_t>(location->block_time));
+            w.field("blocktime", static_cast<std::int64_t>(location->block_time));
+        } else {
+            w.field("confirmations", std::int64_t(0));
+        }
+        w.field("in_active_chain", active);
     }
     w.end_object();
     return w.str();

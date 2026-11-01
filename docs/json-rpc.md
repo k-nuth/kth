@@ -106,7 +106,9 @@ Confirmed transactions are not indexed by txid (#491), so for one of those pass
 the block hash as the third parameter: `getrawtransaction "<txid>" false
 "<blockhash>"`. With `verbose` true (or non-zero) it returns the
 `decoderawtransaction` fields with `hex`, and for a transaction read from a block
-also `blockhash`, `confirmations`, `time` and `blocktime`. A block or transaction the node does not have is error `-5`.
+also `blockhash`, `confirmations`, `time`, `blocktime` and `in_active_chain`; for a
+block off the connected chain `confirmations` is 0, the times are left out and
+`in_active_chain` is false. A block or transaction the node does not have is error `-5`.
 
 ## decoderawtransaction
 

@@ -69,7 +69,8 @@ struct transaction_location {
 
 // The verbose getrawtransaction object: the decoderawtransaction fields, `hex`,
 // and for a transaction read from a block its `blockhash`, `confirmations`,
-// `time` and `blocktime`.
+// `time`, `blocktime` and `in_active_chain`. A block off the connected chain
+// gives `confirmations` 0, no times and `in_active_chain` false.
 std::string render_transaction_verbose(domain::chain::transaction const& tx,
                                        domain::config::network net, domain::script_flags_t flags,
                                        std::optional<transaction_location> const& location);

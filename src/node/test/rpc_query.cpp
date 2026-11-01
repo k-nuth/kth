@@ -121,6 +121,24 @@ TEST_CASE("render_transaction decodes a coinbase", "[rpc query]") {
         R"("addresses":["bchreg:qpk2lvcmngg2vx5e90u547xmg27m8g3mzsj5p6rqer"]}}]})"));
 }
 
+TEST_CASE("render_transaction_verbose says whether the block it was read from is active", "[rpc query]") {
+    auto const tx = parse_tx(
+        "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0b016f0101062f"
+        "41424c412fffffffff01dbf2052a010000001976a9146cafb31b9a10a61a992bf94af8db42bdb3a23b1488ac00000000");
+    auto const block_hash = domain::chain::block::genesis_regtest().hash();
+    auto const quoted = R"("blockhash":")" + encode_hash(block_hash) + '"';
+
+    auto const active = render_transaction_verbose(tx, regtest, flags,
+        transaction_location{block_hash, 3, 1296688602});
+    CHECK(contains(active, quoted +
+        R"(,"confirmations":3,"time":1296688602,"blocktime":1296688602,"in_active_chain":true})"));
+
+    // Off the connected chain there is nothing to count and no time to give.
+    auto const stale = render_transaction_verbose(tx, regtest, flags,
+        transaction_location{block_hash, -1, 1296688602});
+    CHECK(contains(stale, quoted + R"(,"confirmations":0,"in_active_chain":false})"));
+}
+
 TEST_CASE("render_transaction decodes a spend with its inputs and outputs", "[rpc query]") {
     auto const tx = parse_tx(
         "02000000013cd49214320f36fd78fd8ed5daf9c25c95d392fbfd9c5e3d1b2da4fa6f7927f0000000006441a51a5935eb9d2b"

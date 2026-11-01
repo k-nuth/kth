@@ -215,5 +215,5 @@ TEST_CASE("getblock and getrawtransaction dispatch answer verbosely", "[rpc disp
     CHECK(has(tx, R"("hex":")" + node::rpc::transaction_to_hex(coinbase) + R"(","blockhash":)" +
         quoted(trunk[2].hash()) + R"(,"confirmations":3,"time":)" +
         std::to_string(trunk[2].header().timestamp()) + R"(,"blocktime":)" +
-        std::to_string(trunk[2].header().timestamp()) + "}"));
+        std::to_string(trunk[2].header().timestamp()) + R"(,"in_active_chain":true})"));
 }
