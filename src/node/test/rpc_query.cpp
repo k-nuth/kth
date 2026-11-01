@@ -84,3 +84,72 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+namespace {
+// One hash, 4423cfd2...0fc3, under each address form used below.
+constexpr auto pkh_script = "76a9144423cfd20e8f5f10863ae31df5634620d36b0fc388ac";
+constexpr auto sh_script = "a9144423cfd20e8f5f10863ae31df5634620d36b0fc387";
+
+std::string valid(std::string_view address, std::string_view script, bool is_script, bool token_aware) {
+    return std::string(R"({"isvalid":true,"address":")") + std::string(address) +
+        R"(","scriptPubKey":")" + std::string(script) + R"(","isscript":)" +
+        (is_script ? "true" : "false") + R"(,"istokenaware":)" + (token_aware ? "true" : "false") + "}";
+}
+} // namespace
+
+TEST_CASE("render_validate_address describes P2PKH and P2SH addresses", "[rpc query]") {
+    using domain::config::network;
+    REQUIRE(render_validate_address("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", network::mainnet) ==
+        valid("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", pkh_script, false, false));
+    REQUIRE(render_validate_address("bitcoincash:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvvwyry2nl", network::mainnet) ==
+        valid("bitcoincash:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvvwyry2nl", sh_script, true, false));
+    REQUIRE(render_validate_address("bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc", network::regtest) ==
+        valid("bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc", pkh_script, false, false));
+    REQUIRE(render_validate_address("bchtest:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvguqyxa5r", network::chipnet) ==
+        valid("bchtest:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvguqyxa5r", sh_script, true, false));
+}
+
+TEST_CASE("render_validate_address keeps the token-aware signal", "[rpc query]") {
+    using domain::config::network;
+    REQUIRE(render_validate_address("bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3", network::mainnet) ==
+        valid("bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3", pkh_script, false, true));
+    REQUIRE(render_validate_address("bchtest:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv0kn6gmts", network::testnet4) ==
+        valid("bchtest:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv0kn6gmts", sh_script, true, true));
+}
+
+TEST_CASE("render_validate_address returns legacy and prefix-less input as cashaddr", "[rpc query]") {
+    using domain::config::network;
+    REQUIRE(render_validate_address("17DHrHvtmMRs9ciersFCPNhvJtryd5NWbT", network::mainnet) ==
+        valid("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", pkh_script, false, false));
+    REQUIRE(render_validate_address("mmjF9M1saNs7vjCGaSDaDHvFAtTgUNtfrJ", network::regtest) ==
+        valid("bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc", pkh_script, false, false));
+    REQUIRE(render_validate_address("qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", network::mainnet) ==
+        valid("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", pkh_script, false, false));
+    REQUIRE(render_validate_address("BITCOINCASH:QPZZ8N7JP6847YYX8T33MATRGCSDX6C0CVMTEVRFGZ", network::mainnet) ==
+        valid("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", pkh_script, false, false));
+}
+
+TEST_CASE("render_validate_address pays a 32-byte script hash with P2SH32", "[rpc query]") {
+    using domain::config::network;
+    // Hash 000102...1f.
+    REQUIRE(render_validate_address(
+                "bitcoincash:pvqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7h2c7ctj5", network::mainnet) ==
+        valid("bitcoincash:pvqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7h2c7ctj5",
+              "aa20000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f87", true, false));
+}
+
+TEST_CASE("render_validate_address rejects other networks and non-addresses", "[rpc query]") {
+    using domain::config::network;
+    constexpr auto invalid = R"({"isvalid":false})";
+    // Another network's cashaddr prefix, and another network's legacy version.
+    REQUIRE(render_validate_address("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", network::regtest) == invalid);
+    REQUIRE(render_validate_address("bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707", network::regtest) == invalid);
+    REQUIRE(render_validate_address("17DHrHvtmMRs9ciersFCPNhvJtryd5NWbT", network::chipnet) == invalid);
+    REQUIRE(render_validate_address("mmjF9M1saNs7vjCGaSDaDHvFAtTgUNtfrJ", network::mainnet) == invalid);
+    // A 32-byte public key hash, which no standard output pays to.
+    REQUIRE(render_validate_address(
+                "bitcoincash:qvqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p77hk2ql29", network::mainnet) == invalid);
+    // A broken checksum, and no address at all.
+    REQUIRE(render_validate_address("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfga", network::mainnet) == invalid);
+    REQUIRE(render_validate_address("not an address", network::mainnet) == invalid);
+}

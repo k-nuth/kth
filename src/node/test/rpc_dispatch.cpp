@@ -59,3 +59,30 @@ TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[
         REQUIRE(request(invalid) == node::rpc::build_error("7", -32602, "verbose must be a boolean"));
     }
 }
+
+TEST_CASE("validateaddress dispatch checks addresses against the node's network", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_validate_address");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"validateaddress","params":)" + params + R"(,"id":3})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // The fixture chain is regtest, so bchreg addresses are this network's.
+    REQUIRE(request(R"(["bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc"])") == node::rpc::build_success("3",
+        R"({"isvalid":true,"address":"bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc",)"
+        R"("scriptPubKey":"76a9144423cfd20e8f5f10863ae31df5634620d36b0fc388ac",)"
+        R"("isscript":false,"istokenaware":false})"));
+    REQUIRE(request(R"(["bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz"])") ==
+        node::rpc::build_success("3", R"({"isvalid":false})"));
+    REQUIRE(request("[]") == node::rpc::build_error("3", -32602, "validateaddress requires [address]"));
+}
