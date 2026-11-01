@@ -261,6 +261,11 @@ public:
     void set_top_block(infrastructure::config::checkpoint const& top);
     void set_top_block(infrastructure::config::checkpoint&& top);
 
+    /// Where the fee filter sent to peers comes from: the node's admission
+    /// floor, in satoshis per 1000 bytes. Without one, peers are told 1000.
+    /// Set before run().
+    void set_fee_filter_source(std::function<uint64_t()> source);
+
     /// Register a message handler injected by the node. This is how chain-backed
     /// replies (e.g. the BIP-35 `mempool` -> inv) are served: the node owns the
     /// bridge to the blockchain and supplies the handler, so p2p_node itself
@@ -433,6 +438,14 @@ private:
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
 
+    /// The fee filter peers are told now.
+    [[nodiscard]]
+    uint64_t fee_filter() const;
+
+    /// Send the fee filter to every peer when it changed since it was last
+    /// sent, at most once per ten minutes. Status strand only.
+    ::asio::awaitable<void> refresh_fee_filter();
+
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
     ::asio::awaitable<void> peer_supervisor();
 
@@ -555,6 +568,13 @@ private:
     ///
     /// Built on the strand above, and touched only from it.
     ::asio::steady_timer status_timer_{status_strand_};
+
+    std::function<uint64_t()> fee_filter_source_;
+
+    /// The fee filter last sent to every peer, and when. Status strand only,
+    /// after set_fee_filter_source.
+    uint64_t advertised_fee_filter_{1000};
+    std::chrono::steady_clock::time_point advertised_at_{};
 
     /// Ask the status task to look again, now.
     ///
