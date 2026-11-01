@@ -128,6 +128,15 @@ code validate_block_batch(
         return error::success;
     }
 
+    // Headers-first sync has already checked the headers, but not the bodies.
+    // Reject malformed transactions and block structure before resolving any
+    // prevouts or scheduling script verification.
+    for (auto const& block : blocks) {
+        if (auto const ec = block->check_body()) {
+            return ec;
+        }
+    }
+
     // Per-height consensus flags: build every block's chain_state from the
     // header_index, the same construction header validation uses, so each block
     // is judged by the rules of its own height. Using a fixed all-forks flag set
@@ -205,6 +214,20 @@ code validate_block_batch(
             return error::operation_failed;
         }
         block_flags[i] = state->enabled_flags();
+        if (state->is_enabled(domain::machine::script_flags::bip34_rule)
+            && ! block.is_valid_coinbase_script(height)) {
+            return error::coinbase_height_mismatch;
+        }
+#if defined(KTH_CURRENCY_BCH)
+        if (state->is_euclid_enabled()) {
+            if ( ! block.is_canonical_ordered()) {
+                return error::non_canonical_ordered;
+            }
+        } else if (block.is_forward_reference()) {
+            return error::forward_reference;
+        }
+#endif
+
         // Per-block dynamic SigChecks limit: the ABLA block-size limit at this
         // height divided by the fixed ratio, matching BCHN's
         // GetMaxBlockSigChecksCount(nMaxBlockSize).

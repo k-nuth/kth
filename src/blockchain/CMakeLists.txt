@@ -322,6 +322,7 @@ if (ENABLE_TEST)
         test/batch_sigchecks.cpp
         test/batch_sigchecks_activation.cpp
         test/batch_activation_boundary.cpp
+        test/batch_structure.cpp
         test/finalization.cpp
         test/parking.cpp
         test/block_undo.cpp

@@ -500,7 +500,9 @@ bool block::is_canonical_ordered() const {
     //precondition: transactions_.size() > 1
 
     auto const hash_cmp = [](transaction const& a, transaction const& b){
-        return std::lexicographical_compare(a.hash().rbegin(), a.hash().rend(), b.hash().rbegin(), b.hash().rend());
+        auto const a_hash = a.hash();
+        auto const b_hash = b.hash();
+        return std::lexicographical_compare(a_hash.rbegin(), a_hash.rend(), b_hash.rbegin(), b_hash.rend());
     };
 
     // Skip the coinbase

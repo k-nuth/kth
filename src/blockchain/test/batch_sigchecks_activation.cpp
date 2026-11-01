@@ -258,6 +258,13 @@ std::vector<domain::message::block::const_ptr> chain_with_spends(
                 fees += 1000;
             }
         }
+        // These scenarios vary SigChecks rules after Euclid; their funding
+        // and spending transactions must still satisfy canonical ordering.
+        std::sort(txs.begin(), txs.end(), [](auto const& a, auto const& b) {
+            auto const ah = a.hash();
+            auto const bh = b.hash();
+            return std::lexicographical_compare(ah.rbegin(), ah.rend(), bh.rbegin(), bh.rend());
+        });
         auto mined = mine_block(prev, h, base + h * 600, 0, std::move(txs), fees);
         prev = mined.hash();
         blocks.push_back(std::make_shared<domain::message::block const>(std::move(mined)));

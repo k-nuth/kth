@@ -711,3 +711,24 @@ TEST_CASE("block subsidy halving 128 zero sat", "[chain block subsidy]") {
 }
 
 // End Test Suite
+
+TEST_CASE("block canonical order uses complete stable transaction hashes", "[chain block canonical_order]") {
+    auto const coinbase = chain::transaction(1, 0, {}, {});
+    auto const first = chain::transaction(1, 1, {}, {});
+    auto const second = chain::transaction(1, 2, {}, {});
+    auto const first_hash = first.hash();
+    auto const second_hash = second.hash();
+    REQUIRE(first_hash != second_hash);
+    auto const first_before_second = std::lexicographical_compare(
+        first_hash.rbegin(), first_hash.rend(), second_hash.rbegin(), second_hash.rend());
+    auto const& low = first_before_second ? first : second;
+    auto const& high = first_before_second ? second : first;
+
+    CHECK(make_block({coinbase, low, high}).is_canonical_ordered());
+    CHECK_FALSE(make_block({coinbase, high, low}).is_canonical_ordered());
+    // Equal hashes force comparison of every byte. Duplicate rejection belongs
+    // to the separate block checks, but ordering must remain memory-safe.
+    CHECK(make_block({coinbase, first, first}).is_canonical_ordered());
+    // Coinbase is excluded even when its hash sorts after the following hash.
+    CHECK(make_block({high, low}).is_canonical_ordered());
+}
