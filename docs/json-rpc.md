@@ -74,6 +74,8 @@ counterpart.
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
+
+| `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -182,6 +184,16 @@ against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
 `decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
 output that a mempool transaction spends is `null`, and an output of a mempool
 transaction is returned with `0` confirmations.
+
+## getnetworkinfo
+
+`getnetworkinfo` returns `version` (`kth::version` as one number, major × 1000000
++ minor × 10000 + patch × 100), `subversion` (the user agent the node sends its
+peers), `protocolversion`, `localservices` (16 hex digits) with
+`localservicesnames`, `localrelay`, `networkactive`, `connections`, `relayfee`
+and `warnings`. `relayfee` is the size part of the node's transaction price,
+`node.byte_fee_satoshis` per byte, in BCH per kB; the price also charges
+`node.sigop_fee_satoshis` per signature operation.
 
 ## Mining: getblocktemplatelight
 
