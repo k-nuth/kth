@@ -115,6 +115,43 @@ int on_message_complete(llhttp_t* p) {
     return HPE_PAUSED;
 }
 
+// Every CR in a request's head must end its line. The request line and the
+// header lines end in CRLF or, from the clients above, a bare LF; a CR followed
+// by anything else ends no line and is refused, as other nodes refuse it. The
+// lenience llhttp needs for a bare LF on the request line also lets such a lone
+// CR through, so the head is checked here, before it is parsed. Fed the bytes
+// as they arrive, across reads; it stops at the blank line that ends the head,
+// so the body is not looked at.
+struct head_line_check {
+    bool done = false;
+    bool after_cr = false;
+    bool at_line_start = false;
+
+    // False when the bytes hold a CR that does not end its line.
+    [[nodiscard]] bool accept(std::string_view bytes) {
+        for (auto const b : bytes) {
+            if (done) {
+                return true;
+            }
+            if (after_cr) {
+                after_cr = false;
+                if (b != '\n') {
+                    return false;
+                }
+            }
+            if (b == '\r') {
+                after_cr = true;
+            } else if (b == '\n') {
+                done = at_line_start;
+                at_line_start = true;
+            } else {
+                at_line_start = false;
+            }
+        }
+        return true;
+    }
+};
+
 void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) {
     llhttp_settings_init(&settings);
     settings.on_header_field = on_header_field;
@@ -220,6 +257,7 @@ bool server::authorized(std::string_view authorization_header) const {
         llhttp_t parser;
         llhttp_settings_t settings;
         init_parser(parser, settings, ctx);
+        head_line_check head;
 
         while ( ! ctx.complete) {
             std::string_view input = pending;
@@ -231,7 +269,9 @@ bool server::authorized(std::string_view authorization_header) const {
                 }
                 input = std::string_view(buffer.data(), n);
             }
-            auto const status = llhttp_execute(&parser, input.data(), input.size());
+            auto const status = head.accept(input)
+                ? llhttp_execute(&parser, input.data(), input.size())
+                : HPE_LF_EXPECTED;
             if (status == HPE_PAUSED) {
                 // on_message_complete paused right after this request.
                 pending = std::string(llhttp_get_error_pos(&parser), input.data() + input.size());
