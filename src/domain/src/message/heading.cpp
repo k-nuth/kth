@@ -110,6 +110,7 @@ message_type heading::type() const {
     if (command_ == get_blocks::command) return message_type::get_blocks;
     if (command_ == get_data::command) return message_type::get_data;
     if (command_ == get_headers::command) return message_type::get_headers;
+    if (command_ == get_shv::command) return message_type::get_shv;
     if (command_ == headers::command) return message_type::headers;
     if (command_ == inventory::command) return message_type::inventory;
     if (command_ == memory_pool::command) return message_type::memory_pool;
@@ -120,6 +121,7 @@ message_type heading::type() const {
     if (command_ == reject::command) return message_type::reject;
     if (command_ == send_compact::command) return message_type::send_compact;
     if (command_ == send_headers::command) return message_type::send_headers;
+    if (command_ == shv::command) return message_type::shv;
     if (command_ == transaction::command) return message_type::transaction;
     if (command_ == verack::command) return message_type::verack;
     if (command_ == version::command) return message_type::version;

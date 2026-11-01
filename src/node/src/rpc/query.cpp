@@ -28,7 +28,8 @@ std::string block_to_hex(domain::chain::block const& block) {
 
 std::string render_blockchain_info(
     std::string_view chain, std::size_t blocks, std::size_t headers,
-    std::string_view best_block_hash, double difficulty) {
+    std::string_view best_block_hash, double difficulty,
+    std::optional<hash_digest> const& shv_root) {
 
     writer w;
     w.begin_object();
@@ -37,6 +38,9 @@ std::string render_blockchain_info(
     w.field("headers", static_cast<std::uint64_t>(headers));
     w.field("bestblockhash", best_block_hash);
     w.field("difficulty", difficulty);
+    if (shv_root) {
+        w.field("shvroot", encode_hash(*shv_root));
+    }
     w.end_object();
     return w.str();
 }
@@ -96,7 +100,8 @@ std::string header_to_hex(domain::chain::header const& header) {
 }
 
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash) {
+                                std::size_t height, hash_digest const& hash,
+                                std::optional<hash_digest> const& shv_root) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
@@ -107,6 +112,21 @@ std::string render_block_header(domain::chain::header const& header,
     w.field("time", static_cast<std::int64_t>(header.timestamp()));
     w.field("bits", bits_to_hex(header.bits()));
     w.field("nonce", static_cast<std::int64_t>(header.nonce()));
+    if (shv_root) {
+        w.field("shvroot", encode_hash(*shv_root));
+    }
+    w.end_object();
+    return w.str();
+}
+
+std::string render_shv(domain::chain::header const& header,
+    hash_list const& proof, hash_digest const& target, bool to_root) {
+    writer w;
+    w.begin_object();
+    w.key("branch");
+    write_hash_array(w, proof);
+    w.field("header", header_to_hex(header));
+    w.field(to_root ? "root" : "peak", encode_hash(target));
     w.end_object();
     return w.str();
 }

@@ -6,6 +6,7 @@
 #define KTH_NODE_RPC_QUERY_HPP
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -36,7 +37,8 @@ std::string header_to_hex(domain::chain::header const& header);
 // Serialize the getblockchaininfo result object.
 std::string render_blockchain_info(
     std::string_view chain, std::size_t blocks, std::size_t headers,
-    std::string_view best_block_hash, double difficulty);
+    std::string_view best_block_hash, double difficulty,
+    std::optional<hash_digest> const& shv_root = std::nullopt);
 
 // A JSON array of display-order hashes (getrawmempool, getmempoolancestors,
 // getmempooldescendants).
@@ -49,7 +51,12 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash);
+                                std::size_t height, hash_digest const& hash,
+                                std::optional<hash_digest> const& shv_root = std::nullopt);
+
+// SHV hashes use display order; the header retains its 80-byte wire encoding.
+[[nodiscard]] std::string render_shv(domain::chain::header const& header,
+    hash_list const& proof, hash_digest const& target, bool to_root);
 
 } // namespace kth::node::rpc
 

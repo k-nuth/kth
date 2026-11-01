@@ -84,3 +84,27 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("SHV RPC results preserve wire headers and display hash order", "[rpc query][shv]") {
+    auto const header = domain::chain::block::genesis_regtest().header();
+    auto const root = domain::chain::hash(header);
+    hash_digest sibling{};
+    sibling.front() = 0x12;
+    sibling.back() = 0xab;
+    auto const branch = render_hash_list({sibling});
+    auto const base = std::string(R"({"branch":)") + branch + R"(,"header":")"
+        + header_to_hex(header);
+    REQUIRE(render_shv(header, {sibling}, root, true) ==
+        base + R"(","root":")" + encode_hash(root) + R"("})");
+    REQUIRE(render_shv(header, {sibling}, root, false) ==
+        base + R"(","peak":")" + encode_hash(root) + R"("})");
+    REQUIRE(branch == std::string("[\"ab") + std::string(60, '0') + "12\"]");
+
+    auto const suffix = std::string(R"(,"shvroot":")") + encode_hash(root) + R"("})";
+    REQUIRE(render_blockchain_info("regtest", 0, 2, encode_hash(root), 1.0, root) ==
+        std::string(R"({"chain":"regtest","blocks":0,"headers":2,"bestblockhash":")")
+            + encode_hash(root) + R"(","difficulty":1.0)" + suffix);
+    auto expected_header = render_block_header(header, 0, root);
+    expected_header.pop_back();
+    REQUIRE(render_block_header(header, 0, root, root) == expected_header + suffix);
+}

@@ -11,8 +11,8 @@ change.
 
 The implementation lives in `src/domain`, under `math`, alongside pure domain
 primitives. It depends on hashes and containers, with no chain, database or
-network dependency. The blockchain layer can later provide the block hashes
-and maintain the index through block connection and disconnection.
+network dependency. The blockchain layer supplies the connected block hashes
+and maintains the index through block connection and disconnection.
 
 A leaf is a block hash. A parent is double-SHA256 of the left hash followed by
 the right hash, with no prefixes or height encoding. Peaks are ordered from
@@ -67,9 +67,67 @@ and BCHN's `src/test/data/mmr_test_vectors.json` (the same vector set), covering
 Bitcoin Merkle roots, early block hashes, Electrum proofs and the duplicate
 subtree attack.
 
-## Following pieces
+## Enabling the chain index
 
-This piece supplies the MMR primitives and tests. It does not yet maintain an
-MMR for the active chain or expose SHV through the node. Later work will add
-the chain index with block connect/disconnect handling, P2P `getshv`/`shv`
-messages with service bit `NODE_SHV` (`1 << 9`), and RPC `getshv` and `shvroot`.
+Start Knuth with `--node.mmr_index=true`, or set `node.mmr_index = true` in
+the configuration file. The default is false. Startup reconstructs the MMR
+from the header index in height order, from genesis through the connected
+UTXO tip. Downloading headers or storing block bodies does not advance it.
+Connected blocks extend the index; disconnecting blocks truncates it before
+the replacement chain is published. Roots and proofs are unavailable during
+a chain transition.
+
+With the index enabled, Knuth advertises `NODE_SHV` (`1 << 9`) in the version
+handshake. With it disabled, Knuth clears that service bit and ignores
+`getshv` messages.
+
+## P2P requests and replies
+
+The `getshv` and `shv` payloads use BCHN's SHV MR wire format. `CompactSize`
+means canonical Bitcoin variable-length integers. Heights start at zero;
+a commitment at height `h` includes `h + 1` block hashes.
+
+`getshv` begins with a CompactSize request count, followed by these fields
+for each request:
+
+| Field | Encoding |
+|---|---|
+| `type` | One byte: bit 0 selects root (1) or peak (0); bit 1 selects hash (1) or height (0) |
+| `commitment_height` | CompactSize |
+| `block_height_or_hash` | 32 bytes: internal-order block hash, or little-endian height with bytes 8 through 31 zero |
+
+Bits 2 through 7 are reserved and must be zero. A batch may contain at most
+100 requests. A larger batch receives a 20-point misbehavior penalty and no
+reply. Invalid individual entries are omitted: reserved bits, a malformed
+height, an unknown or disconnected block hash, a height beyond the commitment,
+or a commitment beyond the connected tip. A valid batch still receives `shv`
+when every entry is omitted. If the enabled index is temporarily unavailable,
+the response may be empty.
+
+`shv` begins with a CompactSize response count. Successful entries preserve
+request order and contain:
+
+| Field | Encoding |
+|---|---|
+| `type` | The request's type byte |
+| `commitment_height` | CompactSize |
+| `block_height` | CompactSize, resolved even for hash selections |
+| `header` | Raw 80-byte block header, without the `headers` message's transaction-count byte |
+| `proof` | CompactSize sibling count, followed by 32-byte internal-order hashes, from leaf upward |
+| `target` | 32-byte internal-order root or containing peak |
+
+For example, a proof-to-peak request for block 5 committed at height 10 is
+`01 00 0a 05` followed by 31 zero bytes. Change the type byte to `01` for a
+proof to the root. A client hashes the returned header and verifies the
+branch with `mmr_accumulator::verify_proof_to_peak` or `verify_proof_to_root`
+against its trusted accumulator. It must match the returned heights and type
+to its request. A returned target alone does not establish trust.
+
+## RPC
+
+With RPC compiled and enabled, `getshv ["root", commitment_height, block_height]`
+returns `branch`, raw `header` hex and `root`. Using `"peak"` returns `peak`
+instead of `root`. JSON hash strings use display order; wire hashes use
+internal order. Verbose `getblockheader` includes `shvroot` for indexed
+connected headers, and `getblockchaininfo` includes it at the connected tip.
+See [JSON-RPC](json-rpc.md#header-inclusion-proofs-getshv) for arguments and errors.

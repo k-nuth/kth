@@ -145,6 +145,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/shv.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
@@ -219,6 +220,7 @@ set(kth_headers
   include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
+  include/kth/node/detail/shv.hpp
   include/kth/node/parser.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
@@ -349,6 +351,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_messages.cpp
           test/sv2_connection.cpp
           test/settings.cpp
+          test/shv.cpp
+          test/shv_transport.cpp
+          test/shv_chain.cpp
           test/utility.cpp
           test/utility.hpp)
 

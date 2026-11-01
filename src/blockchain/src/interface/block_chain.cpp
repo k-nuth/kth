@@ -3,12 +3,14 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/detail/block_chain_internal.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/database/flat_file_pos.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <chrono>
 #include <cstddef>
@@ -20,6 +22,7 @@
 #include <latch>
 #include <memory>
 #include <numeric>
+#include <new>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -74,6 +77,27 @@ using namespace kd::config;
 using namespace kd::message;
 using namespace kth::database;
 using namespace std::placeholders;
+
+namespace detail {
+
+std::atomic<mmr_update_fault> mmr_fault{mmr_update_fault::none};
+
+void fail_mmr_update(mmr_update_fault fault) {
+    mmr_fault.store(fault, std::memory_order_release);
+}
+
+bool update_mmr(chain_mmr& index, header_index::index_t tip) {
+    switch (mmr_fault.load(std::memory_order_acquire)) {
+        case mmr_update_fault::reject_tip:
+            return index.set_tip(header_index::null_index);
+        case mmr_update_fault::allocation:
+            throw std::bad_alloc{};
+        default:
+            return index.set_tip(tip);
+    }
+}
+
+} // namespace detail
 
 namespace {
 
@@ -541,6 +565,23 @@ bool block_chain::start(uint32_t disk_magic) {
     spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
+    if (settings_.mmr_index) {
+        // Headers may be far ahead of the UTXO set. The reconciled connected
+        // tip is the only prefix this node can advertise as its chain. The
+        // index is optional: if it cannot be built, SHV is off and the node
+        // runs without it.
+        try {
+            mmr_index_ = std::make_unique<chain_mmr>(header_index_);
+            if ( ! detail::update_mmr(*mmr_index_, header_index_.find(chain_view()->tip_hash))) {
+                mmr_index_.reset();
+                spdlog::error("[blockchain] Could not build the connected-chain MMR index; SHV is off");
+            }
+        } catch (std::exception const& e) {
+            mmr_index_.reset();
+            spdlog::error("[blockchain] Could not allocate the MMR index: {}; SHV is off", e.what());
+        }
+    }
+
     return true;
 }
 
@@ -576,6 +617,45 @@ bool block_chain::close() {
 
 bool block_chain::stopped() const {
     return stopped_;
+}
+
+bool block_chain::shv_enabled() const {
+    return settings_.mmr_index;
+}
+
+std::optional<uint64_t> block_chain::shv_height(hash_digest const& hash) const {
+    captured_lease const lease(capture_gate_);
+    if ( ! lease || ! mmr_index_ || stopped()) {
+        return std::nullopt;
+    }
+    return mmr_index_->height(hash);
+}
+
+std::optional<hash_digest> block_chain::shv_root(uint64_t height,
+    std::optional<hash_digest> expected_hash) const {
+    captured_lease const lease(capture_gate_);
+    if ( ! lease || ! mmr_index_ || stopped()) {
+        return std::nullopt;
+    }
+    return mmr_index_->root(height, expected_hash);
+}
+
+std::optional<shv_proof_result> block_chain::shv_proof(uint64_t height,
+    uint64_t commitment_height, bool to_root) const {
+    captured_lease const lease(capture_gate_);
+    if ( ! lease || ! mmr_index_ || stopped()) {
+        return std::nullopt;
+    }
+    return mmr_index_->proof(height, commitment_height, to_root);
+}
+
+std::optional<shv_proof_result> block_chain::shv_proof(hash_digest const& hash,
+    uint64_t commitment_height, bool to_root) const {
+    captured_lease const lease(capture_gate_);
+    if ( ! lease || ! mmr_index_ || stopped()) {
+        return std::nullopt;
+    }
+    return mmr_index_->proof(hash, commitment_height, to_root);
 }
 
 // =============================================================================
@@ -1432,6 +1512,10 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
     spdlog::info("[blockchain] Disconnected block at height {} ({} outputs removed, {} restored)",
         height, parsed->outputs.size(), undo->spent.size());
 
+    if (mmr_index_) {
+        mmr_index_->disconnect(height);
+    }
+
     return database::disconnect_result::ok;
 }
 #endif
@@ -2086,6 +2170,22 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
         spdlog::error("[blockchain] Could not allocate the chain view at height {}: {}",
                       connected_tip_height, e.what());
         return error::pool_state_failed;
+    }
+
+    // The MMR index is optional. A failure to move it turns SHV off, logged,
+    // and never stops the chain from publishing the tip it has connected.
+    if (mmr_index_) {
+        try {
+            if ( ! detail::update_mmr(*mmr_index_, header_index_.find(tip_hash))) {
+                mmr_index_.reset();
+                spdlog::error("[blockchain] Could not move the MMR index to height {}; SHV is off",
+                    connected_tip_height);
+            }
+        } catch (std::exception const& e) {
+            mmr_index_.reset();
+            spdlog::error("[blockchain] Could not move the MMR index to height {}: {}; SHV is off",
+                connected_tip_height, e.what());
+        }
     }
 
     built->state = std::move(state);

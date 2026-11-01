@@ -13,8 +13,10 @@
 
 #include <kth/blockchain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
+#include <kth/domain/message/get_shv.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/shv.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -74,6 +76,9 @@ full_node::full_node(configuration const& configuration)
     features.push_back(format_eb(configuration.chain.default_consensus_block_size));
 #endif
     network_settings_.user_agent = get_user_agent(features);
+    auto const shv_service = uint64_t(domain::message::version::service::node_shv);
+    network_settings_.services = (network_settings_.services & ~shv_service)
+        | (configuration.chain.mmr_index ? shv_service : 0);
 #endif
 }
 
@@ -122,6 +127,9 @@ full_node::~full_node() {
         });
 
 #if ! defined(__EMSCRIPTEN__)
+    network_.register_message_handler(domain::message::get_shv::command,
+        detail::make_get_shv_handler(chain_, network_));
+
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
