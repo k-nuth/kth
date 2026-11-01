@@ -108,6 +108,18 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
     return w.str();
 }
 
+std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
+                                   std::uint32_t min_time, std::uint32_t max_time) {
+    writer w;
+    if (max_time <= min_time || work_at_end < work_before) {
+        w.value(0.0);
+    } else {
+        uint256_t const work = work_at_end - work_before;
+        w.value(work.convert_to<double>() / static_cast<double>(max_time - min_time));
+    }
+    return w.str();
+}
+
 namespace {
 
 // An output script's kind as the scriptPubKey "type", and the addresses it

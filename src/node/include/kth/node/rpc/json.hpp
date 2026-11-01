@@ -40,6 +40,13 @@ std::vector<std::string> params_strings(std::string_view params_json);
 // or not a non-negative integer.
 std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index);
 
+// The positional param at `index` as a signed integer (e.g. getnetworkhashps's
+// `height`, where -1 means the tip). Accepts a JSON number or a numeric string.
+// `fallback` when the param is absent or null; nullopt when it is present but
+// not an integer, so the handler can report invalid params.
+std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t index,
+                                       std::int64_t fallback);
+
 // The positional param at `index` as a boolean (e.g. getblockheader's
 // `verbose`). `fallback` when the param is absent or null; nullopt when it is
 // present but not a JSON boolean, so the handler can report invalid params.

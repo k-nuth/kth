@@ -127,6 +127,16 @@ CashTokens, `tokenData` (`category`, `amount` as a string, and `nft` with
 `capability` and `commitment`). `scriptPubKey.hex` leaves out the token prefix.
 `asm` is kth's own script notation, under the node's current script rules.
 
+## getnetworkhashps
+
+`getnetworkhashps [nblocks=120] [height=-1]` returns the hashes per second the
+network did over the `nblocks` blocks ending at `height` on the connected chain:
+the chain work those blocks add, divided by the time between the earliest and
+the latest timestamp among them and the block before them. A non-positive
+`nblocks` counts the default 120 and the window stops at the genesis block; a
+`height` of -1, or past the connected tip, means the connected tip. It is `0`
+when those timestamps span no time.
+
 ## Mining: getblocktemplatelight
 
 Returns the next-block template **without** the transaction list. The selected

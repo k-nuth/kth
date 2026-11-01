@@ -16,6 +16,7 @@
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/script_flags.hpp>
 #include <kth/infrastructure/hash_define.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
 // out so it can be unit-tested without a live block_chain.
@@ -57,6 +58,12 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 // under `flags`); the hex is there for anything that reads the bytes.
 std::string render_transaction(domain::chain::transaction const& tx,
                                domain::config::network net, domain::script_flags_t flags);
+
+// The getnetworkhashps result: the work the blocks of a window add, from the
+// chain work before them to the chain work at its last block, over the time
+// the window's timestamps span. 0 when they span no time.
+std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
+                                   std::uint32_t min_time, std::uint32_t max_time);
 
 // The estimatefee result: `byte_fee_satoshis` per byte as BCH per kB, rounded
 // to whole satoshis per kB.

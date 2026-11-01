@@ -132,3 +132,16 @@ TEST_CASE("params_bool rejects a param that is not a boolean", "[rpc json]") {
     REQUIRE_FALSE(params_bool(R"(["00ff", 0])", 1, true).has_value());
     REQUIRE_FALSE(params_bool(R"(["00ff", {}])", 1, true).has_value());
 }
+
+TEST_CASE("params_int reads signed integers and falls back when absent", "[rpc json]") {
+    REQUIRE(params_int("[-1]", 0, 7) == -1);
+    REQUIRE(params_int("[120,42]", 1, 7) == 42);
+    REQUIRE(params_int(R"(["-3"])", 0, 7) == -3);
+    REQUIRE(params_int("[]", 0, 7) == 7);
+    REQUIRE(params_int("[1]", 1, 7) == 7);
+    REQUIRE(params_int("[null]", 0, 7) == 7);
+    REQUIRE(params_int("", 0, 7) == 7);
+    REQUIRE_FALSE(params_int("[1.5]", 0, 7).has_value());
+    REQUIRE_FALSE(params_int(R"(["x"])", 0, 7).has_value());
+    REQUIRE_FALSE(params_int("[true]", 0, 7).has_value());
+}
