@@ -55,6 +55,9 @@
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
 #include <kth/node/rpc/server.hpp>
 #endif
+#if ! defined(__EMSCRIPTEN__)
+#include <kth/node/sv2/template_provider.hpp>
+#endif
 
 #include <asio/awaitable.hpp>
 
@@ -205,6 +208,7 @@ private:
     ::asio::awaitable<void> run_blockchain_subscriber();
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
+    ::asio::awaitable<void> run_sv2();
     ::asio::awaitable<void> run_sync();
 #endif
 
@@ -221,8 +225,12 @@ private:
 #endif
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+    node::sv2_settings sv2_settings_;
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<rpc::server> rpc_server_;
+#endif
+#if ! defined(__EMSCRIPTEN__)
+    std::unique_ptr<sv2::template_provider> template_provider_;
 #endif
 };
 

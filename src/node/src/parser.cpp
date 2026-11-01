@@ -294,6 +294,14 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the plaintext Stratum V2 Template Provider.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Template Provider binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Template Provider (default 8442).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

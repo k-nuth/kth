@@ -52,6 +52,7 @@ full_node::full_node(configuration const& configuration)
         configuration.network.relay_transactions
     )
     , rpc_settings_(configuration.rpc)
+    , sv2_settings_(configuration.sv2)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
@@ -62,6 +63,7 @@ full_node::full_node(configuration const& configuration)
         network_type_
     )
     , rpc_settings_(configuration.rpc)
+    , sv2_settings_(configuration.sv2)
 #endif
 {
 #if ! defined(__EMSCRIPTEN__)
@@ -145,6 +147,15 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(__EMSCRIPTEN__)
+    if (sv2_settings_.enabled) {
+        template_provider_ = std::make_unique<sv2::template_provider>(
+            sv2_settings_, network_.thread_pool().get_executor());
+    } else {
+        spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
+    }
+#endif
+
     spdlog::info("[node] Node started successfully.");
     co_return error::success;
 }
@@ -183,13 +194,14 @@ full_node::~full_node() {
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
         co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        // Embedders may stop P2P directly. Listeners must not keep run()
+        // pending after the core tasks finish without full_node::stop().
 #if defined(KTH_WITH_RPC)
-        // Embedders may stop P2P directly. RPC must not keep run() pending
-        // after every core task has finished, even without full_node::stop().
         if (rpc_server_) rpc_server_->stop();
 #endif
+        if (template_provider_) template_provider_->stop();
     };
-    co_await (core() && run_rpc());
+    co_await (core() && run_rpc() && run_sv2());
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -205,6 +217,13 @@ full_node::~full_node() {
 #endif
     co_return;
 }
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_sv2() {
+    if (template_provider_) co_await template_provider_->run();
+    co_return;
+}
+#endif
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
     spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
@@ -332,6 +351,7 @@ void full_node::stop() {
     if (rpc_server_) rpc_server_->stop();
 #endif
 #if ! defined(__EMSCRIPTEN__)
+    if (template_provider_) template_provider_->stop();
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
     // run_sync() may still be inside chain.organize() when this is called.
