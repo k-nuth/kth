@@ -4,6 +4,11 @@
 
 #include <test_helpers.hpp>
 
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
+#include <string>
+
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
@@ -58,4 +63,78 @@ TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[
         CAPTURE(invalid);
         REQUIRE(request(invalid) == node::rpc::build_error("7", -32602, "verbose must be a boolean"));
     }
+}
+
+namespace {
+
+// The getblockchaininfo response from `chain`, through the dispatcher.
+std::string blockchain_info(blockchain::block_chain& chain) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{chain, jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getblockchaininfo","params":[],"id":1})"),
+        ::asio::use_future);
+    io.run();
+    return result.get();
+}
+
+} // namespace
+
+TEST_CASE("getblockchaininfo dispatch reports the connected tip from one view", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_blockchain_info");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const raw = blockchain_info(fixture.chain());
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(raw);
+    simdjson::ondemand::document document;
+    REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+    simdjson::ondemand::object result;
+    REQUIRE(document["result"].get_object().get(result) == simdjson::SUCCESS);
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    std::string_view text;
+    std::uint64_t number = 0;
+    bool flag = false;
+    double progress = 0;
+
+    REQUIRE(result["chain"].get_string().get(text) == simdjson::SUCCESS);
+    REQUIRE(text == "Regtest");
+    REQUIRE(result["blocks"].get_uint64().get(number) == simdjson::SUCCESS);
+    REQUIRE(number == 0u);
+    REQUIRE(result["headers"].get_uint64().get(number) == simdjson::SUCCESS);
+    REQUIRE(number == 0u);
+    REQUIRE(result["bestblockhash"].get_string().get(text) == simdjson::SUCCESS);
+    REQUIRE(text == encode_hash(genesis.hash()));
+    REQUIRE(result["mediantime"].get_uint64().get(number) == simdjson::SUCCESS);
+    REQUIRE(number == genesis.header().timestamp());
+    REQUIRE(result["verificationprogress"].get_double().get(progress) == simdjson::SUCCESS);
+    REQUIRE(progress == 1.0);
+    // The regtest genesis is from 2011, far past the default 24-hour limit.
+    REQUIRE(result["initialblockdownload"].get_bool().get(flag) == simdjson::SUCCESS);
+    REQUIRE(flag);
+    REQUIRE(result["chainwork"].get_string().get(text) == simdjson::SUCCESS);
+    std::ostringstream work;
+    work << std::hex << std::setfill('0') << std::setw(64)
+         << domain::chain::header::proof(genesis.header().bits());
+    REQUIRE(text == work.str());
+    REQUIRE(result["size_on_disk"].get_uint64().get(number) == simdjson::SUCCESS);
+    REQUIRE(result["warnings"].get_string().get(text) == simdjson::SUCCESS);
+    REQUIRE(text.empty());
+}
+
+TEST_CASE("getblockchaininfo dispatch leaves initial download once synchronized", "[rpc dispatch]") {
+    // A limit of zero turns the clock half off; the genesis-only chain has
+    // connected everything it has headers for, so the node is synchronized.
+    test::chain_fixture fixture("rpc_blockchain_info_synced", /*notify_limit_hours*/ 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    REQUIRE(fixture.chain().synchronization().synchronized());
+
+    auto const raw = blockchain_info(fixture.chain());
+    REQUIRE(raw.find(R"("initialblockdownload":false)") != std::string::npos);
 }

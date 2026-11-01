@@ -6,6 +6,8 @@
 #define KTH_NODE_RPC_QUERY_HPP
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -13,6 +15,7 @@
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/infrastructure/hash_define.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
 // out so it can be unit-tested without a live block_chain.
@@ -33,10 +36,23 @@ std::string block_to_hex(domain::chain::block const& block);
 // verbose=false).
 std::string header_to_hex(domain::chain::header const& header);
 
-// Serialize the getblockchaininfo result object.
-std::string render_blockchain_info(
-    std::string_view chain, std::size_t blocks, std::size_t headers,
-    std::string_view best_block_hash, double difficulty);
+// The getblockchaininfo fields. The tip fields (blocks through chain_work) are
+// read from one published chain view, so that they describe one chain.
+struct blockchain_info {
+    std::string_view chain;
+    std::size_t blocks;                  // connected tip height
+    std::size_t headers;
+    hash_digest best_block_hash;
+    double difficulty;                   // of the next required work
+    std::uint32_t median_time;           // median time past of the connected tip
+    std::optional<uint256_t> chain_work; // absent while the header index cannot name the tip
+    std::uint64_t size_on_disk;          // block and undo files
+    bool initial_block_download;         // the node is not yet synchronized
+};
+
+// Serialize the getblockchaininfo result object. verificationprogress is the
+// connected tip's share of the header chain, by height.
+std::string render_blockchain_info(blockchain_info const& info);
 
 // A JSON array of display-order hashes (getrawmempool, getmempoolancestors,
 // getmempooldescendants).
