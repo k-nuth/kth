@@ -209,10 +209,16 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
             "chain height unavailable"));
     }
 
+    // The header index counts work from the genesis block's child on; the
+    // chain's work includes the genesis block's own.
     std::optional<uint256_t> chain_work;
     auto const& index = ctx.chain.headers();
     if (auto const idx = index.find(view->tip_hash); idx != blockchain::header_index::null_index) {
-        chain_work = index.get_chain_work(idx);
+        auto const genesis = index.get_ancestor(idx, 0);
+        if (genesis != blockchain::header_index::null_index) {
+            chain_work = index.get_chain_work(idx) +
+                domain::chain::header::proof(index.get_bits(genesis));
+        }
     }
 
     co_return render_blockchain_info({
