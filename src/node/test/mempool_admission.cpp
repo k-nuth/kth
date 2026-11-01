@@ -442,4 +442,19 @@ TEST_CASE("a payment paying one satoshi per byte is admitted at the default pric
     CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::success);
     CHECK(chain.mempool_ref().contains(tx->hash()));
 }
+
+TEST_CASE("a payment paying less than the per-byte price is still refused", "[mempool][admission][fee]") {
+    // Only the per-signature-operation price is gone. A payment paying a
+    // twentieth of a satoshi per byte, under the default 0.1, is refused as
+    // before.
+    admission_chain built("under_byte_price", trunk_len);
+    auto& chain = built.chain();
+    REQUIRE(chain.chain_settings().byte_fee_satoshis == 0.1f);
+
+    auto const size = built.three_output_spend(0).serialized_size(true);
+    auto const tx = std::make_shared<domain::message::transaction>(built.three_output_spend(size / 20));
+
+    CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::insufficient_fee);
+    CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
+}
 #endif // KTH_CURRENCY_BCH
