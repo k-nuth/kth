@@ -767,6 +767,9 @@ struct KB_API block_chain {
     using transaction_channel_ptr = transaction_organizer::transaction_broadcaster::channel_ptr;
     using ds_proof_channel_ptr = transaction_organizer::ds_proof_broadcaster::channel_ptr;
 
+    // A completed transition also sends a wake-up with the connected height
+    // and empty block lists. Read chain_view() for the current tip; capture
+    // has reopened before this notification is published.
     [[nodiscard]]
     block_channel_ptr subscribe_blockchain();
     [[nodiscard]]
@@ -941,12 +944,12 @@ struct KB_API block_chain {
 
     // Full mining template (header fields + coinbase value + tx selection) for
     // getblocktemplate[light]. C-API counterpart: kth_chain_async_fetch_mining_template.
-    // coinbase_reserve_size is the space held back for the caller's coinbase; a
-    // caller with extra coinbase outputs, such as an SV2 CoinbaseOutputDataSize
-    // request, raises it above default_coinbase_reserve_size. The reserve is
-    // part of the template cache key.
+    // The reserves hold back space and SigChecks for the caller's coinbase,
+    // including any extra outputs requested by an SV2 client. Both reserves
+    // are part of the template cache key.
     [[nodiscard]] awaitable_expected<blockchain::mining_template>
-    fetch_mining_template(uint64_t coinbase_reserve_size) const;
+    fetch_mining_template(uint64_t coinbase_reserve_size,
+        uint64_t coinbase_reserve_sigchecks = default_coinbase_reserve_sigchecks) const;
 
     // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
     // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
@@ -1147,6 +1150,7 @@ private:
         uint64_t generation;
         uint32_t time;
         uint64_t coinbase_reserve_size;
+        uint64_t coinbase_reserve_sigchecks;
     };
     mutable boost::atomic_shared_ptr<template_snapshot> template_cache_;
     /// Ends the hydration phase. Called once, by the start path, after the header

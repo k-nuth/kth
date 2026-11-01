@@ -60,6 +60,10 @@ void block_organizer::unsubscribe(block_broadcaster::channel_ptr const& channel)
     broadcaster_.unsubscribe(channel);
 }
 
+void block_organizer::notify_tip(size_t height) {
+    broadcaster_.publish(height, {}, {});
+}
+
 void block_organizer::filter(get_data_ptr message) const {
     block_pool_.filter(message);
 }

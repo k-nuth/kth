@@ -4,10 +4,16 @@
 
 #include <test_helpers.hpp>
 
+#include "sync_harness.hpp"
+
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <exception>
+#include <future>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -18,8 +24,12 @@
 #include <asio/io_context.hpp>
 #include <asio/ip/address_v4.hpp>
 #include <asio/read.hpp>
+#include <asio/use_future.hpp>
 #include <asio/write.hpp>
 
+#include <kth/domain/message/transaction.hpp>
+#include <kth/infrastructure/math/hash.hpp>
+#include <kth/node/p2p_node.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/template_provider.hpp>
 
@@ -123,6 +133,7 @@ struct completion {
 // One io_context on the test thread. Every wait runs it in short slices up to
 // a deadline, so a server that never answers fails the test instead of hanging.
 struct listener_fixture {
+    test::chain_fixture chain{"sv2_listener", 0};
     ::asio::io_context io;
     std::shared_ptr<template_provider> provider;
     std::shared_ptr<completion> completed = std::make_shared<completion>();
@@ -130,8 +141,11 @@ struct listener_fixture {
     bool running = false;
 
     explicit listener_fixture(node::sv2_settings const& settings)
-        : provider(std::make_shared<template_provider>(settings, io.get_executor()))
-    {}
+    {
+        REQUIRE(chain.created());
+        REQUIRE(chain.start());
+        provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain());
+    }
 
     ~listener_fixture() {
         provider->stop();
@@ -144,13 +158,20 @@ struct listener_fixture {
     }
 
     template <typename Predicate>
-    bool wait_until(Predicate predicate) {
-        auto const deadline = std::chrono::steady_clock::now() + 5s;
+    bool wait_until(Predicate predicate, std::chrono::seconds limit = 5s) {
+        auto const deadline = std::chrono::steady_clock::now() + limit;
         while ( ! predicate() && std::chrono::steady_clock::now() < deadline) {
             io.restart();
             io.run_for(5ms);
         }
         return predicate();
+    }
+
+    template <typename T>
+    T execute(::asio::awaitable<T> task) {
+        auto result = ::asio::co_spawn(io, std::move(task), ::asio::use_future);
+        REQUIRE(wait_until([&] { return result.wait_for(0s) == std::future_status::ready; }, 60s));
+        return result.get();
     }
 
     void run() {
@@ -259,6 +280,165 @@ node::sv2_settings loopback_settings() {
     settings.enabled = true;
     settings.port = 0;
     return settings;
+}
+
+std::vector<domain::chain::block> seed_chain(listener_fixture& fixture, uint32_t height) {
+    auto const base = uint32_t(zulu_time()) - (height + 10) * test::block_spacing;
+    std::vector<domain::chain::block> blocks;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= height; ++h) {
+        blocks.push_back(test::mine_block(previous, h, base + h * test::block_spacing, 0, {}, 0));
+        previous = blocks.back().hash();
+    }
+    REQUIRE(fixture.chain.organizer().add_headers(test::headers_of(blocks)).headers_added == height);
+    test::persist_headers(fixture.chain, blocks, 1);
+    test::connect_bodies(fixture.chain, blocks, 1);
+    return blocks;
+}
+
+// The same orchestrator that connects RPC submissions, with no external peers.
+// Its lifetime extends through the completion even if an assertion unwinds.
+struct submission_pipeline {
+    struct node_state {
+        kth::network::settings config;
+        node::p2p_node network;
+
+        static kth::network::settings settings(listener_fixture& fixture) {
+            kth::network::settings config;
+            config.identifier = 0xdab5bffa;
+            config.protocol_maximum = 70015;
+            config.inbound_port = 0;
+            config.inbound_connections = 0;
+            config.outbound_connections = 0;
+            config.threads = 1;
+            config.hosts_file = fixture.chain.dir() / "hosts.dat";
+            config.banlist_file = fixture.chain.dir() / "banlist.dat";
+            config.peers_file = fixture.chain.dir() / "peers.dat";
+            return config;
+        }
+
+        explicit node_state(listener_fixture& fixture)
+            : config(settings(fixture)), network(config)
+        {}
+    };
+
+    listener_fixture& fixture;
+    std::shared_ptr<node_state> state;
+    std::shared_ptr<completion> completed = std::make_shared<completion>();
+
+    explicit submission_pipeline(listener_fixture& listener)
+        : fixture(listener), state(std::make_shared<node_state>(fixture)) {
+        REQUIRE(fixture.execute(state->network.start()) == error::success);
+        ::asio::co_spawn(fixture.io,
+            node::sync::sync_orchestrator(fixture.chain.chain(), fixture.chain.organizer(),
+                state->network, domain::config::network::regtest,
+                [](std::string const& reason) { FAIL("sync failed: " << reason); }),
+            [completed = completed, keep_alive = state](std::exception_ptr error) {
+                completed->error = error;
+                completed->done = true;
+            });
+    }
+
+    ~submission_pipeline() {
+        state->network.stop();
+        CHECK(fixture.wait_until([&] { return completed->done; }, 30s));
+        CHECK_FALSE(completed->error);
+    }
+};
+
+struct template_pair {
+    new_template work;
+    set_new_prev_hash prev;
+};
+
+template_pair receive_template(listener_fixture& fixture, ::asio::ip::tcp::socket& client) {
+    auto work = fixture.receive<new_template>(client);
+    auto prev = fixture.receive<set_new_prev_hash>(client);
+    REQUIRE(work.template_id == prev.template_id);
+    return {std::move(work), std::move(prev)};
+}
+
+template_pair template_messages(template_provider_session::result const& result) {
+    REQUIRE_FALSE(result.close);
+    byte_reader reader(result.response);
+    auto const first_header = message_header::from_data(reader);
+    REQUIRE(first_header.has_value());
+    REQUIRE(first_header->msg_type == new_template::message_type);
+    auto const first_payload = reader.read_bytes(first_header->msg_length);
+    REQUIRE(first_payload.has_value());
+    byte_reader first_reader(*first_payload);
+    auto work = new_template::from_data(first_reader);
+    REQUIRE(work.has_value());
+    REQUIRE(first_reader.is_exhausted());
+    auto const second_header = message_header::from_data(reader);
+    REQUIRE(second_header.has_value());
+    REQUIRE(second_header->msg_type == set_new_prev_hash::message_type);
+    auto prev = set_new_prev_hash::from_data(reader);
+    REQUIRE(prev.has_value());
+    REQUIRE(reader.is_exhausted());
+    REQUIRE(work->template_id == prev->template_id);
+    return {std::move(*work), std::move(*prev)};
+}
+
+blockchain::mining_template empty_template() {
+    return {0x20000000, null_hash, 1, test::regtest_bits, 1, 1,
+        50 * uint64_t{100000000}, 1000, 100, {}};
+}
+
+template_pair request_template(listener_fixture& fixture, ::asio::ip::tcp::socket& client,
+    coinbase_output_constraints constraints = {120, 3}) {
+    fixture.write(client, frame(constraints));
+    return receive_template(fixture, client);
+}
+
+// Use the fields received on the wire, including the actual coinbase prefix.
+domain::chain::block solution_block(template_pair const& job,
+    std::vector<data_chunk> const& raw_transactions, bool valid_work = true) {
+    auto script = job.work.coinbase_prefix;
+    script.resize(100, 0);
+    domain::chain::input::list inputs;
+    inputs.emplace_back(domain::chain::output_point{null_hash, domain::chain::point::null_index},
+        domain::chain::script(std::move(script), false), job.work.coinbase_tx_input_sequence);
+    domain::chain::output::list outputs;
+    outputs.emplace_back(job.work.coinbase_tx_value_remaining,
+        test::miner_script(), domain::chain::token_data_opt{});
+    domain::chain::transaction::list transactions;
+    transactions.emplace_back(job.work.coinbase_tx_version, job.work.coinbase_tx_locktime,
+        std::move(inputs), std::move(outputs));
+    for (auto const& raw : raw_transactions) {
+        byte_reader reader(raw);
+        auto tx = domain::chain::transaction::from_data(reader, true);
+        REQUIRE(tx.has_value());
+        REQUIRE(reader.is_exhausted());
+        transactions.push_back(std::move(*tx));
+    }
+    domain::chain::block candidate({}, std::move(transactions));
+    auto const merkle = candidate.generate_merkle_root();
+    auto branch_root = candidate.transactions().front().hash();
+    for (auto const& sibling : job.work.merkle_path) {
+        branch_root = bitcoin_hash(build_chunk({branch_root, sibling}));
+    }
+    REQUIRE(branch_root == merkle);
+    // Regtest's target succeeds about every other hash. A broken target fails
+    // after a small, explicit bound instead of spending a nonce space on CI.
+    for (uint32_t nonce = 0; nonce < 10000; ++nonce) {
+        domain::chain::header header{job.work.version, job.prev.prev_hash, merkle,
+            job.prev.header_timestamp, job.prev.n_bits, nonce};
+        if (header.is_valid_proof_of_work(domain::chain::hash(header), false) == valid_work) {
+            return domain::chain::block(std::move(header), candidate.transactions());
+        }
+    }
+    FAIL("no regtest nonce matched the requested proof of work");
+    return {};
+}
+
+submit_solution solution_message(template_pair const& job, domain::chain::block const& block) {
+    auto const& coinbase = block.transactions().front();
+    data_chunk bytes(coinbase.serialized_size(true));
+    byte_writer writer(bytes);
+    REQUIRE(coinbase.to_data(writer, true));
+    return {job.work.template_id, block.header().version(), block.header().timestamp(),
+        block.header().nonce(), std::move(bytes)};
 }
 
 } // namespace
@@ -422,6 +602,74 @@ TEST_CASE("sv2 session closes on malformed, server-only and undefined messages",
 
 // The listener, over loopback sockets on an OS-assigned port.
 
+TEST_CASE("sv2 templates encode the BIP34 height and distinguish evicted from stale ids", "[sv2 template_provider]") {
+    auto session = ready_session();
+    auto value = empty_template();
+    uint64_t first_id = 0;
+    for (uint32_t const height : {1, 16, 17, 127, 128}) {
+        value.height = height;
+        auto const job = template_messages(session.set_template(value));
+        if (first_id == 0) first_id = job.work.template_id;
+        REQUIRE(job.work.coinbase_prefix == test::coinbase_script(height, 0).first_operation().to_data());
+        REQUIRE(job.work.merkle_path.empty());
+        REQUIRE(job.work.future_template);
+        // The regtest target is 0x7fffff followed by 29 zero bytes, serialized
+        // as a little-endian U256 by TDP.
+        hash_digest target{};
+        target[29] = 0xff;
+        target[30] = 0xff;
+        target[31] = 0x7f;
+        REQUIRE(job.prev.target == target);
+    }
+    for (size_t i = 0; i < template_provider_session::max_templates; ++i) {
+        (void)template_messages(session.set_template(value));
+    }
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{first_id}).response).error_code == "template-id-not-found");
+    hash_digest next_tip{};
+    next_tip[0] = 1;
+    session.set_tip(next_tip);
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{first_id}).response).error_code == "stale-template-id");
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{0}).response).error_code == "template-id-not-found");
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{std::numeric_limits<uint64_t>::max()}).response).error_code == "template-id-not-found");
+}
+
+TEST_CASE("sv2 does not advertise templates outside coinbase or TDP limits", "[sv2 template_provider]") {
+    auto value = empty_template();
+    SECTION("setup must be complete") {
+        template_provider_session session;
+        require_closed(session.set_template(value));
+        return;
+    }
+    SECTION("constraints must be present") {
+        auto session = ready_session(false);
+        require_closed(session.set_template(value));
+        return;
+    }
+    SECTION("coinbase bytes cannot fit") { value.size_limit = 347; }
+    SECTION("coinbase SigChecks cannot fit") { value.sigchecks_limit = 1; }
+    SECTION("target overflows") { value.bits = 0x23010000; }
+    SECTION("height prefix exceeds eight bytes") {
+        value.height = static_cast<size_t>(std::numeric_limits<int64_t>::max());
+    }
+    SECTION("transaction count exceeds U16") {
+        auto tx = std::make_shared<domain::message::transaction const>(domain::chain::transaction{});
+        value.selection.txs.assign(0x10000, tx);
+    }
+    SECTION("transaction data exceeds one U24 frame") {
+        domain::chain::output::list outputs;
+        outputs.emplace_back(0, domain::chain::script(data_chunk(1024, 0), false), domain::chain::token_data_opt{});
+        auto tx = std::make_shared<domain::message::transaction const>(
+            domain::chain::transaction(1, 0, {}, std::move(outputs)));
+        value.selection.txs.assign(20000, tx);
+    }
+    auto session = ready_session();
+    require_closed(session.set_template(std::move(value)));
+}
+
 TEST_CASE("sv2 listener reports its port and serves a client whose frames arrive in pieces", "[sv2 template_provider]") {
     listener_fixture fixture(loopback_settings());
     auto client = fixture.connect(fixture.start());
@@ -438,6 +686,7 @@ TEST_CASE("sv2 listener reports its port and serves a client whose frames arrive
     auto const constraints = frame(coinbase_output_constraints{120, 3});
     fixture.write(*client, byte_span(constraints).first(constraints.size() - 1));
     fixture.write(*client, byte_span(constraints).last(1));
+    (void)receive_template(fixture, *client);
     fixture.write(*client, frame(request_transaction_data{9}));
     auto const error = fixture.receive<request_transaction_data_error>(*client);
     REQUIRE(error.template_id == 9);
@@ -454,6 +703,7 @@ TEST_CASE("sv2 listener keeps a connection that sends an unknown extension messa
 
     fixture.write(*client, frame(coinbase_output_constraints{120, 3}, 0x0001));
     fixture.write(*client, frame(coinbase_output_constraints{120, 3}));
+    (void)receive_template(fixture, *client);
     fixture.write(*client, frame(request_transaction_data{5}));
     REQUIRE(fixture.receive<request_transaction_data_error>(*client).template_id == 5);
     fixture.finish_writing(*client);
@@ -580,4 +830,181 @@ TEST_CASE("sv2 listener reports a bind failure as its startup outcome", "[sv2 te
         REQUIRE(fixture.wait_until([&] { return fixture.completed->done; }));
         REQUIRE_FALSE(fixture.completed->error);
     }
+}
+
+TEST_CASE("sv2 constraints send the chain template and its transactions in block order", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto const trunk = seed_chain(fixture, 101);
+    auto const view = fixture.chain.chain().chain_view();
+    REQUIRE(view);
+    auto const& first_coinbase = trunk.front().transactions().front();
+    auto const parent = test::spend_p2pkh(first_coinbase, 0,
+        first_coinbase.outputs().front().value() - 1000, view->state->enabled_flags());
+    auto const child = test::spend_p2pkh(parent, 0,
+        parent.outputs().front().value() - 1000, view->state->enabled_flags());
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(parent))) == error::success);
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(child))) == error::success);
+
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(248 + 120, 3));
+    REQUIRE(expected.has_value());
+    REQUIRE(expected->selection.txs.size() == 2);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const job = request_template(fixture, *client);
+    REQUIRE(job.work.future_template);
+    REQUIRE(job.work.version == expected->version);
+    REQUIRE(job.work.coinbase_prefix == test::coinbase_script(uint32_t(expected->height), 0).first_operation().to_data());
+    REQUIRE(job.work.coinbase_prefix.size() <= 8);
+    REQUIRE(job.work.coinbase_tx_version == 1);
+    REQUIRE(job.work.coinbase_tx_input_sequence == 0xffffffff);
+    REQUIRE(job.work.coinbase_tx_value_remaining == expected->coinbase_value);
+    REQUIRE(job.work.coinbase_tx_outputs_count == 0);
+    REQUIRE(job.work.coinbase_tx_outputs.empty());
+    REQUIRE(job.work.coinbase_tx_locktime == 0);
+    REQUIRE(job.prev.prev_hash == expected->previous_block_hash);
+    REQUIRE(job.prev.n_bits == expected->bits);
+    REQUIRE(job.prev.header_timestamp >= expected->min_time);
+
+    fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+    auto const data = fixture.receive<request_transaction_data_success>(*client);
+    REQUIRE(data.template_id == job.work.template_id);
+    REQUIRE(data.excess_data.empty());
+    REQUIRE(data.transaction_list.size() == expected->selection.txs.size());
+    for (size_t i = 0; i < data.transaction_list.size(); ++i) {
+        domain::chain::transaction const& tx = *expected->selection.txs[i];
+        data_chunk bytes(tx.serialized_size(true));
+        byte_writer writer(bytes);
+        REQUIRE(tx.to_data(writer, true));
+        REQUIRE(data.transaction_list[i] == bytes);
+    }
+    // The three-leaf tree checks the odd-leaf duplication as well as the
+    // coinbase-at-zero branch; the client reconstructs the same block root.
+    (void)solution_block(job, data.transaction_list);
+
+    auto const updated = request_template(fixture, *client, {200, 4});
+    REQUIRE(updated.work.template_id > job.work.template_id);
+    REQUIRE(updated.prev.prev_hash == job.prev.prev_hash);
+    fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).transaction_list == data.transaction_list);
+    fixture.require_closed(*client);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 solved templates connect and notify ready clients without a request", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto const trunk = seed_chain(fixture, 5);
+    submission_pipeline pipeline(fixture);
+    auto const port = fixture.start();
+    auto miner = fixture.connect(port);
+    fixture.write(*miner, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*miner);
+    auto const job = request_template(fixture, *miner);
+    auto observer = fixture.connect(port);
+    fixture.write(*observer, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*observer);
+    auto const observed = request_template(fixture, *observer);
+
+    auto const wrong = solution_block(job, {}, false);
+    fixture.write(*miner, frame(solution_message(job, wrong)));
+    fixture.write(*miner, frame(request_transaction_data{job.work.template_id}));
+    (void)fixture.receive<request_transaction_data_success>(*miner);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == trunk.back().hash());
+
+    auto const solved = solution_block(job, {});
+    fixture.write(*miner, frame(solution_message(job, solved)));
+    auto const next = receive_template(fixture, *miner);
+    auto const observer_next = receive_template(fixture, *observer);
+    REQUIRE(next.work.template_id > job.work.template_id);
+    REQUIRE(observer_next.work.template_id > observed.work.template_id);
+    REQUIRE(next.work.future_template);
+    REQUIRE(next.prev.prev_hash == solved.hash());
+    REQUIRE(observer_next.prev.prev_hash == solved.hash());
+    auto const view = fixture.chain.chain().chain_view();
+    REQUIRE(view);
+    REQUIRE(view->connected_tip_height == 6);
+    REQUIRE(view->tip_hash == solved.hash());
+
+    fixture.write(*miner, frame(request_transaction_data{job.work.template_id}));
+    auto const stale = fixture.receive<request_transaction_data_error>(*miner);
+    REQUIRE(stale.template_id == job.work.template_id);
+    REQUIRE(stale.error_code == "stale-template-id");
+    // Neither a stale solution nor an id never issued gets a TDP reply. The
+    // request after them proves they were consumed and the read loop continued.
+    fixture.write(*miner, frame(solution_message(job, solved)));
+    auto unknown = solution_message(next, solved);
+    unknown.template_id = std::numeric_limits<uint64_t>::max();
+    fixture.write(*miner, frame(unknown));
+    fixture.write(*miner, frame(request_transaction_data{next.work.template_id}));
+    fixture.finish_writing(*miner);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*miner).template_id == next.work.template_id);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == solved.hash());
+    fixture.require_closed(*miner);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 refuses malformed coinbase solutions even across reads", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto const trunk = seed_chain(fixture, 5);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const job = request_template(fixture, *client);
+    auto const solved = solution_block(job, {});
+    for (bool const trailing : {false, true}) {
+        CAPTURE(trailing);
+        auto solution = solution_message(job, solved);
+        if (trailing) {
+            solution.coinbase_tx.push_back(0);
+        } else {
+            solution.coinbase_tx.pop_back();
+        }
+        auto const bytes = frame(solution);
+        fixture.write(*client, byte_span(bytes).first(bytes.size() - 1));
+        fixture.write(*client, byte_span(bytes).last(1));
+        fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+        REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == job.work.template_id);
+        REQUIRE(fixture.chain.chain().chain_view()->tip_hash == trunk.back().hash());
+    }
+    fixture.stop();
+}
+
+TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const first = request_template(fixture, *client);
+    auto previous = first.work.template_id;
+    for (size_t i = 0; i < 16; ++i) {
+        auto const current = request_template(fixture, *client, {uint32_t(120 + i), 3});
+        REQUIRE(current.work.template_id > previous);
+        previous = current.work.template_id;
+    }
+    fixture.write(*client, frame(request_transaction_data{first.work.template_id}));
+    auto const evicted = fixture.receive<request_transaction_data_error>(*client);
+    REQUIRE(evicted.template_id == first.work.template_id);
+    REQUIRE(evicted.error_code == "template-id-not-found");
+
+    auto const oversized = frame(coinbase_output_constraints{std::numeric_limits<uint32_t>::max(), 0});
+    fixture.write(*client, byte_span(oversized).first(oversized.size() - 1));
+    fixture.write(*client, byte_span(oversized).last(1));
+    fixture.finish_writing(*client);
+    fixture.require_closed(*client);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 closes a connection when the chain cannot supply a template", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    REQUIRE(fixture.chain.chain().stop());
+    fixture.write(*client, frame(coinbase_output_constraints{120, 3}));
+    fixture.finish_writing(*client);
+    fixture.require_closed(*client);
+    fixture.stop();
 }

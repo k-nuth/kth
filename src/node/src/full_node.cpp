@@ -150,7 +150,7 @@ full_node::~full_node() {
 #if ! defined(__EMSCRIPTEN__)
     if (sv2_settings_.enabled) {
         template_provider_ = std::make_unique<sv2::template_provider>(
-            sv2_settings_, network_.thread_pool().get_executor());
+            sv2_settings_, network_.thread_pool().get_executor(), chain_);
     } else {
         spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
     }

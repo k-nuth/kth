@@ -2131,6 +2131,11 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
+    // Consumers may build mining work as soon as they receive this wake-up,
+    // so publishing it while capture is still closed would lose the update.
+    if (auto const view = chain_view()) {
+        block_organizer_.notify_tip(view->connected_tip_height);
+    }
 }
 
 bool block_chain::transition_in_progress() const {
@@ -3068,7 +3073,8 @@ block_chain::fetch_template() const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size,
+    uint64_t coinbase_reserve_sigchecks) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -3113,6 +3119,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         return s &&
                s->previous == tip &&
                s->coinbase_reserve_size == coinbase_reserve_size &&
+               s->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
                (s->generation == gen ||
                 at - s->time < settings_.gbt_template_refresh_seconds);
     };
@@ -3145,7 +3152,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         // budget — and the caller asked for that number precisely because its
         // coinbase does not fit the default. Wait for the rebuild instead.
         if (snapshot && snapshot->previous == served_previous &&
-            snapshot->coinbase_reserve_size == coinbase_reserve_size) {
+            snapshot->coinbase_reserve_size == coinbase_reserve_size &&
+            snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks) {
             co_return snapshot->value;
         }
         lock.lock();
@@ -3208,7 +3216,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         state->dynamic_max_block_sigchecks(),
         height,
         state->median_time_past(),
-        coinbase_reserve_size});
+        coinbase_reserve_size,
+        coinbase_reserve_sigchecks});
 
     // 0x20000000: the BIP9 version base. BCH has no active version-bits signaling,
     // and miners routinely override this, so it is only a sensible default.
@@ -3224,7 +3233,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         std::move(selection));
 
     auto next = boost::make_shared<template_snapshot>(
-        template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});
+        template_snapshot{std::move(built), previous, view.generation, now,
+            coinbase_reserve_size, coinbase_reserve_sigchecks});
     template_cache_.store(next);
     co_return next->value;
 }

@@ -47,6 +47,10 @@ struct KB_API block_organizer {
     block_broadcaster::channel_ptr subscribe();
     void unsubscribe(block_broadcaster::channel_ptr const& channel);
 
+    // Wake subscribers after a coherent connected tip is available. Empty
+    // block lists distinguish this from a block-by-block reorganization.
+    void notify_tip(size_t height);
+
     /// Remove all message vectors that match block hashes.
     void filter(get_data_ptr message) const;
 
