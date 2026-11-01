@@ -193,8 +193,11 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         encode_hash(*best), info->difficulty);
 }
 
-// getrawtransaction <txid> -> the wire-serialized transaction as hex.
-// C-API counterpart: kth_chain_sync_transaction.
+// getrawtransaction <txid> [verbose] [blockhash] -> the wire-serialized
+// transaction as hex. With a block hash it is read from that block; without
+// one only the mempool can answer, since confirmed transactions are not
+// indexed by txid (#491).
+// C-API counterpart: kth_chain_sync_transaction (+ kth_chain_sync_block_by_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
@@ -206,8 +209,34 @@ get_raw_transaction(method_context& ctx, request const& req) {
     if ( ! hash) {
         co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
     }
+
+    if (args.size() > 2 && ! args[2].empty()) {
+        auto const block_hash = decode_hash(args[2]);
+        if ( ! block_hash) {
+            co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
+        }
+        auto const block = co_await ctx.chain.fetch_block(*block_hash);
+        if ( ! block) {
+            co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+                "Block hash not found"));
+        }
+        for (auto const& tx : std::get<0>(*block)->transactions()) {
+            if (tx.hash() == *hash) {
+                writer w;
+                w.value(transaction_to_hex(tx));
+                co_return w.str();
+            }
+        }
+        co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+            "No such transaction found in the provided block"));
+    }
+
     auto const result = co_await ctx.chain.fetch_transaction(*hash, /*require_confirmed*/ false);
     if ( ! result) {
+        if (result.error() == error::not_found) {
+            co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+                "No such mempool transaction; pass the block hash for a confirmed one"));
+        }
         co_return std::unexpected(from_code(result.error()));
     }
     auto const& tx = std::get<0>(*result);
@@ -231,6 +260,10 @@ get_block(method_context& ctx, request const& req) {
     }
     auto const result = co_await ctx.chain.fetch_block(*hash);
     if ( ! result) {
+        if (result.error() == error::not_found) {
+            co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+                "Block not found"));
+        }
         co_return std::unexpected(from_code(result.error()));
     }
     auto const& block = std::get<0>(*result);

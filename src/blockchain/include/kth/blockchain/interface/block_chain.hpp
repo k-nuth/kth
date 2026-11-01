@@ -948,6 +948,11 @@ struct KB_API block_chain {
 private:
     using handle = database::data_base::handle;
 
+    // The block at header-index entry `idx`, read from the flat-file store,
+    // with its height. not_found when the node does not hold its data.
+    [[nodiscard]] std::expected<std::pair<block_const_ptr, size_t>, code>
+    read_indexed_block(header_index::index_t idx) const;
+
     template <typename R>
     void read_serial(R const& reader) const;
 
