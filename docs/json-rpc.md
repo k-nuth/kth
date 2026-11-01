@@ -71,8 +71,8 @@ counterpart.
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
-| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
@@ -90,6 +90,15 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## Blocks and transactions
+
+`getblock "<hash>"` reads the block from the flat-file block store, through the
+header index, and returns it as hex; a side-branch block the node holds is
+returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
+Confirmed transactions are not indexed by txid (#491), so for one of those pass
+the block hash as the third parameter: `getrawtransaction "<txid>" false
+"<blockhash>"`. A block or transaction the node does not have is error `-5`.
 
 ## Mining: getblocktemplatelight
 

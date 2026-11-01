@@ -25,6 +25,9 @@ enum class error_code : int {
     parse_error      = -32700,
     // Application-level (Bitcoin RPC_MISC_ERROR family).
     misc_error       = -1,
+    // A block or transaction the node does not have (RPC_INVALID_ADDRESS_OR_KEY);
+    // clients such as Fulcrum treat this one as "not there", not as a failure.
+    invalid_address_or_key = -5,
 };
 
 // A JSON-RPC error carried as data (not thrown): handlers return
