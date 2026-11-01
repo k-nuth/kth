@@ -131,7 +131,22 @@ expect<payment_address> payment_address::from_string_cashaddr(std::string const&
         return std::unexpected(kth::error::illegal_value);
     }
 
-    auto type = cash_addr_type((version >> 3U) & 0x1f);
+    // A token-aware address carries the same P2PKH or P2SH payload as its
+    // plain counterpart; the type only signals that the receiver accepts
+    // CashTokens. Any other type is not an address kind this decodes.
+    bool is_script = false;
+    switch (cash_addr_type((version >> 3U) & 0x1f)) {
+        case PUBKEY_TYPE:
+        case TOKEN_PUBKEY_TYPE:
+            break;
+        case SCRIPT_TYPE:
+        case TOKEN_SCRIPT_TYPE:
+            is_script = true;
+            break;
+        default:
+            return std::unexpected(kth::error::illegal_value);
+    }
+
     uint32_t hash_size = 20 + 4 * (version & 0x03);
     if ((version & 0x04) != 0) {
         hash_size *= 2;
@@ -142,14 +157,21 @@ expect<payment_address> payment_address::from_string_cashaddr(std::string const&
         return std::unexpected(kth::error::illegal_value);
     }
 
+    // A payment_address holds a 20- or a 32-byte hash. The format can express
+    // other sizes, which the copy below would leave partly unset (24 and 28
+    // bytes) or write past the end of the 32-byte hash (40 bytes and up).
+    if (hash_size != short_hash_size && hash_size != sizeof(hash_digest)) {
+        return std::unexpected(kth::error::illegal_value);
+    }
+
     if (data.size() == short_hash_size + 1) {
         short_hash hash;
         std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
         if (prefix == cashaddr_prefix_mainnet) {
-            return payment_address{hash, type == PUBKEY_TYPE ? mainnet_p2kh : mainnet_p2sh};
+            return payment_address{hash, is_script ? mainnet_p2sh : mainnet_p2kh};
         }
-        return payment_address{hash, type == PUBKEY_TYPE ? testnet_p2kh : testnet_p2sh};
+        return payment_address{hash, is_script ? testnet_p2sh : testnet_p2kh};
     }
 
     // 32-byte hash variant (BCH 2025 Leibniz `pay_script_hash_32`).
@@ -157,9 +179,9 @@ expect<payment_address> payment_address::from_string_cashaddr(std::string const&
     std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
     if (prefix == cashaddr_prefix_mainnet) {
-        return payment_address{hash, type == PUBKEY_TYPE ? mainnet_p2kh : mainnet_p2sh};
+        return payment_address{hash, is_script ? mainnet_p2sh : mainnet_p2kh};
     }
-    return payment_address{hash, type == PUBKEY_TYPE ? testnet_p2kh : testnet_p2sh};
+    return payment_address{hash, is_script ? testnet_p2sh : testnet_p2kh};
 }
 
 #endif  //KTH_CURRENCY_BCH
