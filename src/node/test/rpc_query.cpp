@@ -84,3 +84,39 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("render_network_info serializes the getnetworkinfo fields", "[rpc query]") {
+    // NETWORK, BITCOIN_CASH and NETWORK_LIMITED, plus bit 30, which has no name.
+    auto const services = std::uint64_t((1u << 0) | (1u << 5) | (1u << 10) | (1u << 30));
+    auto const json = render_network_info({
+        .version = "1.5.2",
+        .subversion = "/Knuth:1.5.2(EB32.0)/",
+        .protocol_version = 70016u,
+        .services = services,
+        .relay = true,
+        .connections = 8u,
+        .byte_fee_satoshis = 0.1f});
+    auto const fee = json.find(R"("relayfee":)");
+    REQUIRE(fee != std::string::npos);
+    REQUIRE(json.substr(0, fee) ==
+        R"({"version":1050200,"subversion":"/Knuth:1.5.2(EB32.0)/","protocolversion":70016,)"
+        R"("localservices":"0000000040000421",)"
+        R"("localservicesnames":["NETWORK","BITCOIN_CASH","NETWORK_LIMITED","UNKNOWN[2^30]"],)"
+        R"("localrelay":true,"networkactive":true,"connections":8,)");
+    // 0.1 satoshi per byte is 100 satoshis per kB.
+    REQUIRE(std::stod(json.substr(fee + 11)) == 0.000001);
+    REQUIRE(json.ends_with(R"(,"warnings":""})"));
+}
+
+TEST_CASE("render_network_info reads the version number part by part", "[rpc query]") {
+    auto const version = [](std::string_view text) {
+        auto const json = render_network_info({.version = text, .subversion = "", .protocol_version = 0u,
+            .services = 0u, .relay = false, .connections = 0u, .byte_fee_satoshis = 0.0f});
+        return json.substr(0, json.find(','));
+    };
+    REQUIRE(version("1.5.2") == R"({"version":1050200)");
+    REQUIRE(version("12.0.7") == R"({"version":12000700)");
+    REQUIRE(version("2.1") == R"({"version":2010000)");
+    REQUIRE(version("1.5.2-rc1") == R"({"version":1050200)");
+    REQUIRE(version("unknown") == R"({"version":0)");
+}

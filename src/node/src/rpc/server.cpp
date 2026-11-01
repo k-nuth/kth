@@ -169,9 +169,10 @@ std::string random_token() {
 } // namespace
 
 server::server(rpc_settings const& settings, blockchain::block_chain& chain,
-    ::asio::any_io_executor executor)
+    ::asio::any_io_executor executor, p2p_node const* network)
     : settings_(settings)
     , chain_(chain)
+    , network_(network)
     , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
     , owner_(::asio::make_strand(std::move(executor)))
     , stop_requests_(owner_, 1) {
@@ -238,7 +239,7 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_};
+        method_context mctx{chain_, jobs_, network_};
         std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {

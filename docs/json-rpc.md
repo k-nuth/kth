@@ -71,6 +71,7 @@ counterpart.
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
@@ -90,6 +91,16 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## getnetworkinfo
+
+`getnetworkinfo` returns `version` (`kth::version` as one number, major × 1000000
++ minor × 10000 + patch × 100), `subversion` (the user agent the node sends its
+peers), `protocolversion`, `localservices` (16 hex digits) with
+`localservicesnames`, `localrelay`, `networkactive`, `connections`, `relayfee`
+and `warnings`. `relayfee` is the size part of the node's transaction price,
+`node.byte_fee_satoshis` per byte, in BCH per kB; the price also charges
+`node.sigop_fee_satoshis` per signature operation.
 
 ## Mining: getblocktemplatelight
 
