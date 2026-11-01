@@ -50,10 +50,12 @@
 #include <kth/infrastructure/machine/script_version.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 
+#include <kth/infrastructure/math/chacha20_poly1305.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/crypto.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/math/hkdf.hpp>
 #include <kth/infrastructure/math/uint256.hpp>
 
 #include <kth/infrastructure/message/message_tools.hpp>
