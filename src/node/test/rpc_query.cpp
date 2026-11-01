@@ -84,3 +84,10 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]") {
+    REQUIRE(render_chain_tips({}) == "[]");
+    REQUIRE(render_chain_tips({{7u, null_hash, 2u, "headers-only"}, {5u, null_hash, 0u, "active"}}) ==
+        std::string(R"([{"height":7,"hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
+        R"({"height":5,"hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
+}

@@ -71,6 +71,7 @@ counterpart.
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
@@ -90,6 +91,15 @@ callback (`kth_chain_async_*`) flavor.
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
+
+## getchaintips
+
+`getchaintips` returns every chain tip the header index knows, highest first,
+each with `height`, `hash`, `branchlen` (blocks from the connected chain to the
+tip) and `status`: `active` for the connected tip, `valid-headers` for a branch
+whose blocks the node all holds, and `headers-only` for one it does not. The
+header index does not record whether a block failed validation, so `invalid`
+and `valid-fork` are not reported.
 
 ## Mining: getblocktemplatelight
 
