@@ -40,6 +40,15 @@ target_link_libraries(test_meta
     kth::kth
 )
 
+# rpc=capnproto: the installed node component must carry the capnp runtime, the
+# generated schema header and the exported server symbols (shared builds
+# included). Constructing and stopping a server, and calling the exported
+# mapping function, forces the link against the node library itself.
+if(KTH_EXPECT_CAPNPROTO_RPC)
+    add_executable(test_capnp_rpc_consumer test_capnp_rpc_consumer.cpp)
+    target_link_libraries(test_capnp_rpc_consumer PRIVATE kth::node)
+endif()
+
 # Print available targets for verification
 message(STATUS "Testing KTH package targets:")
 if(TARGET kth::infrastructure)
