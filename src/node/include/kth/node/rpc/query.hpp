@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
@@ -46,6 +47,17 @@ std::string render_hash_list(hash_list const& hashes);
 std::string render_mempool_info(blockchain::mempool_totals const& totals);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
+
+// One getchaintips entry.
+struct chain_tip {
+    std::size_t height;
+    hash_digest hash;
+    std::size_t branch_length;   // blocks from the connected chain to this tip
+    std::string_view status;     // "active", "valid-headers" or "headers-only"
+};
+
+// Serialize the getchaintips result array, in the order given.
+std::string render_chain_tips(std::vector<chain_tip> const& tips);
 
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,

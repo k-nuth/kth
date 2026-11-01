@@ -4,9 +4,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 
@@ -191,6 +194,71 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     co_return render_blockchain_info(
         domain::config::name(info->chain), info->blocks, heights->header,
         encode_hash(*best), info->difficulty);
+}
+
+// getchaintips -> every chain tip the header index knows, highest first: the
+// connected tip as "active", and each other header without children with its
+// branch length from the connected chain, as "valid-headers" when the node
+// holds every block of the branch and "headers-only" otherwise.
+// C-API counterpart: none yet; the C-API does not expose the header index.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_chain_tips(method_context& ctx, request const& /*req*/) {
+    using blockchain::header_index;
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const& index = ctx.chain.headers();
+    auto const active = index.find(view->tip_hash);
+    if (active == header_index::null_index) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "connected tip not in the header index"));
+    }
+
+    // A tip is an entry no other entry names as its parent. Entries are only
+    // appended, so reading the count once gives a consistent prefix.
+    auto const count = index.size();
+    std::vector<bool> has_child(count, false);
+    for (std::size_t i = 0; i < count; ++i) {
+        auto const parent = index.get_parent_index(header_index::index_t(i));
+        if (parent != header_index::null_index && parent < count) {
+            has_child[parent] = true;
+        }
+    }
+
+    auto const connected_height = std::int32_t(view->connected_tip_height);
+    std::vector<chain_tip> tips;
+    for (std::size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        if (idx == active) {
+            tips.push_back({view->connected_tip_height, view->tip_hash, 0, "active"});
+            continue;
+        }
+        if (has_child[i]) {
+            continue;
+        }
+        // Down the branch to the connected chain, noting any block not held.
+        auto const height = index.get_height(idx);
+        auto fork = idx;
+        bool all_data = true;
+        while (fork != header_index::null_index) {
+            auto const fork_height = index.get_height(fork);
+            if (fork_height <= connected_height && index.get_ancestor(active, fork_height) == fork) {
+                break;
+            }
+            all_data = all_data && index.has_status(fork, blockchain::header_status::have_data);
+            fork = index.get_parent_index(fork);
+        }
+        if (fork == header_index::null_index) {
+            continue;
+        }
+        tips.push_back({std::size_t(height), index.get_hash(idx),
+            std::size_t(height - index.get_height(fork)),
+            all_data ? "valid-headers" : "headers-only"});
+    }
+    std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);
+    co_return render_chain_tips(tips);
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.
@@ -384,6 +452,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblockheader", get_block_header);
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
+    d.add("getchaintips", get_chain_tips);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
