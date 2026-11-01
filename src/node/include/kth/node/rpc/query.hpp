@@ -91,6 +91,14 @@ using chain_tip = blockchain::header_index::chain_tip;
 // Serialize the getchaintips result array, in the order given.
 std::string render_chain_tips(std::vector<chain_tip> const& tips);
 
+// The gettxout result object for an unspent output: the tip it was read
+// against, its confirmations (0 for an output of a mempool transaction), its
+// value in BCH, its scriptPubKey and token data as decoderawtransaction shows
+// them, and whether a coinbase created it.
+std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
+                          domain::chain::output const& output, bool coinbase,
+                          domain::config::network net, domain::script_flags_t flags);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
