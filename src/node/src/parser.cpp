@@ -281,15 +281,15 @@ void add_settings(CLI::App& app, configuration& cfg) {
 
     // [rpc]
     app.add_option("--rpc.enabled",  cfg.rpc.enabled,
-        "Enable the JSON-RPC server (requires a build with RPC support).");
+        "Enable the RPC server of the compiled-in backend (jsonrpc or capnproto).");
     app.add_option("--rpc.bind",     cfg.rpc.bind,
-        "Address the JSON-RPC listener binds to (default 127.0.0.1).");
+        "Address the RPC listener binds to (default 127.0.0.1; capnproto accepts loopback only).");
     app.add_option("--rpc.port",     cfg.rpc.port,
-        "TCP port for the JSON-RPC listener (default 8332).");
+        "TCP port for the RPC listener (default 8332).");
     app.add_option("--rpc.user",     cfg.rpc.user,
-        "JSON-RPC HTTP Basic-Auth user (empty uses the .cookie file).");
+        "RPC user: HTTP Basic-Auth (jsonrpc) or login (capnproto); empty uses the .cookie file.");
     app.add_option("--rpc.password", cfg.rpc.password,
-        "JSON-RPC HTTP Basic-Auth password.");
+        "RPC password.");
     app.add_option("--rpc.gbt_cache_size", cfg.rpc.gbt_cache_size,
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,

@@ -48,7 +48,7 @@ class RpcRecipeTests(unittest.TestCase):
         self.assertEqual(str(recipe.options.rpc), "jsonrpc")
 
     def test_none_omits_http_dependency_and_consumer_define(self):
-        for backend, enabled in (("jsonrpc", True), ("none", False)):
+        for backend, enabled in (("jsonrpc", True), ("none", False), ("capnproto", False)):
             with self.subTest(backend=backend):
                 recipe, _ = self.recipe(backend)
                 recipe.requirements()
@@ -59,8 +59,59 @@ class RpcRecipeTests(unittest.TestCase):
                 self.assertEqual("llhttp::llhttp" in node.requires, enabled)
                 self.assertEqual("KTH_WITH_RPC" in node.defines, enabled)
 
-    def test_toolchain_passes_backend_name_instead_of_truthiness(self):
+    def test_capnproto_pins_host_library_and_build_context_generator(self):
+        recipe, module = self.recipe("capnproto")
+        pinned = module["CAPNPROTO_REF"]
+        self.assertRegex(pinned, r"^capnproto/1\.5\.0#[0-9a-f]{32}$")
+
+        recipe.requirements()
+        host = [r for r in recipe.requires.values() if r.ref.name == "capnproto"]
+        self.assertEqual(len(host), 1)
+        self.assertEqual(f"{host[0].ref.name}/{host[0].ref.version}#{host[0].ref.revision}", pinned)
+        # No TLS/gzip: keeps capnproto's openssl<4 range out of the graph.
+        self.assertEqual(host[0].options, {"with_openssl": False, "with_zlib": False})
+
+        # The schema compiler is a build-context tool, also when cross compiling.
+        recipe.tool_requires = mock.Mock()
+        recipe.test_requires = mock.Mock()
+        recipe.build_requirements()
+        recipe.tool_requires.assert_called_once_with(
+            pinned, options={"with_openssl": False, "with_zlib": False})
+
+        recipe.package_info()
+        node = recipe.cpp_info.components["node"]
+        self.assertIn("capnproto::capnp-rpc", node.requires)
+        self.assertIn("KTH_WITH_CAPNPROTO_RPC", node.defines)
+        self.assertIn("KTH_ASIO_STANDALONE", node.defines)
+        self.assertIn("ASIO_STANDALONE", node.defines)
+        self.assertNotIn("KTH_WITH_RPC", node.defines)
+        self.assertNotIn("llhttp::llhttp", node.requires)
+
+    def test_other_backends_have_no_capnproto(self):
         for backend in ("jsonrpc", "none"):
+            with self.subTest(backend=backend):
+                recipe, _ = self.recipe(backend)
+                recipe.requirements()
+                recipe.tool_requires = mock.Mock()
+                recipe.test_requires = mock.Mock()
+                recipe.build_requirements()
+                self.assertNotIn("capnproto", {r.ref.name for r in recipe.requires.values()})
+                recipe.tool_requires.assert_not_called()
+                recipe.package_info()
+                node = recipe.cpp_info.components["node"]
+                self.assertNotIn("KTH_WITH_CAPNPROTO_RPC", node.defines)
+                self.assertNotIn("capnproto::capnp-rpc", node.requires)
+
+    def test_lockfile_pins_capnproto_for_both_contexts(self):
+        import json
+        lock = json.loads((ROOT / "conan.lock").read_text())
+        for key in ("requires", "build_requires"):
+            with self.subTest(key=key):
+                entries = [e for e in lock[key] if e.startswith("capnproto/1.5.0#50b2e14c")]
+                self.assertEqual(len(entries), 1)
+
+    def test_toolchain_passes_backend_name_instead_of_truthiness(self):
+        for backend in ("jsonrpc", "none", "capnproto"):
             with self.subTest(backend=backend):
                 recipe, module = self.recipe(backend)
                 toolchain = SimpleNamespace(variables={}, generate=mock.Mock())
@@ -72,15 +123,18 @@ class RpcRecipeTests(unittest.TestCase):
                 self.assertEqual(toolchain.variables["KTH_RPC_BACKEND"], backend)
                 self.assertNotIn("KTH_WITH_RPC", toolchain.variables)
 
-    def test_future_backends_fail_before_resolving_dependencies(self):
-        for backend in ("grpc", "capnproto"):
-            with self.subTest(backend=backend):
-                recipe, _ = self.recipe(backend)
-                with mock.patch.object(BuildHelpers, "configure") as base:
-                    with self.assertRaisesRegex(ConanInvalidConfiguration,
-                                                backend + ".*not implemented"):
-                        recipe.configure()
-                    base.assert_not_called()
+    def test_reserved_backend_fails_before_resolving_dependencies(self):
+        recipe, _ = self.recipe("grpc")
+        with mock.patch.object(BuildHelpers, "configure") as base:
+            with self.assertRaisesRegex(ConanInvalidConfiguration, "grpc.*not implemented"):
+                recipe.configure()
+            base.assert_not_called()
+
+    def test_capnproto_is_a_configurable_backend(self):
+        recipe, _ = self.recipe("capnproto")
+        with mock.patch.object(BuildHelpers, "configure") as base:
+            recipe.configure()
+            base.assert_called_once()
 
     def test_emscripten_disables_rpc(self):
         for backend in ("jsonrpc", "none", "grpc", "capnproto"):
@@ -90,9 +144,17 @@ class RpcRecipeTests(unittest.TestCase):
                 self.assertEqual(str(recipe.options.rpc), "none")
                 recipe.configure()
                 recipe.requirements()
-                self.assertNotIn("llhttp", {r.ref.name for r in recipe.requires.values()})
+                refs = {r.ref.name for r in recipe.requires.values()}
+                self.assertNotIn("llhttp", refs)
+                self.assertNotIn("capnproto", refs)
+                recipe.tool_requires = mock.Mock()
+                recipe.test_requires = mock.Mock()
+                recipe.build_requirements()
+                recipe.tool_requires.assert_not_called()
                 recipe.package_info()
-                self.assertNotIn("KTH_WITH_RPC", recipe.cpp_info.components["node"].defines)
+                defines = recipe.cpp_info.components["node"].defines
+                self.assertNotIn("KTH_WITH_RPC", defines)
+                self.assertNotIn("KTH_WITH_CAPNPROTO_RPC", defines)
 
     def test_invalid_or_old_boolean_options_are_rejected(self):
         for backend in ("grcp", "", "True", "False", True, False):
@@ -117,7 +179,6 @@ class RpcCMakeTests(unittest.TestCase):
 
     def test_future_and_invalid_backends_are_rejected_before_dependencies(self):
         for backend, diagnostic in (("", "Invalid RPC backend"), ("grpc", "not implemented"),
-                                    ("capnproto", "not implemented"),
                                     ("grcp", "Invalid RPC backend")):
             with self.subTest(backend=backend):
                 result, _ = self.configure("-DKTH_RPC_BACKEND=" + backend)
@@ -129,11 +190,14 @@ class RpcCMakeTests(unittest.TestCase):
 
     def test_default_legacy_normal_variable_and_wasm_selection(self):
         for setup, options, expected in (
-            ("", [], "jsonrpc;ON;jsonrpc"),
-            ("", ["-DKTH_WITH_RPC=ON"], "jsonrpc;ON;jsonrpc"),
-            ('set(KTH_RPC_BACKEND none)\n', [], "none;OFF;none"),
+            ("", [], "jsonrpc;ON;OFF;jsonrpc"),
+            ("", ["-DKTH_WITH_RPC=ON"], "jsonrpc;ON;OFF;jsonrpc"),
+            ("", ["-DKTH_RPC_BACKEND=capnproto"], "capnproto;OFF;ON;capnproto"),
+            ('set(KTH_RPC_BACKEND none)\n', [], "none;OFF;OFF;none"),
             ("", ["-DCMAKE_SYSTEM_NAME=Emscripten", "-DKTH_RPC_BACKEND=grpc"],
-             "none;OFF;grpc"),
+             "none;OFF;OFF;grpc"),
+            ("", ["-DCMAKE_SYSTEM_NAME=Emscripten", "-DKTH_RPC_BACKEND=capnproto"],
+             "none;OFF;OFF;capnproto"),
         ):
             with self.subTest(setup=setup, options=options), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -142,7 +206,7 @@ class RpcCMakeTests(unittest.TestCase):
                     + setup + f'include("{ROOT / "cmake/KthRpcBackend.cmake"}")\n'
                     'get_property(cached CACHE KTH_RPC_BACKEND PROPERTY VALUE)\n'
                     'file(WRITE "${CMAKE_BINARY_DIR}/selected" '
-                    '"${KTH_RPC_BACKEND};${KTH_WITH_RPC};${cached}")\n'
+                    '"${KTH_RPC_BACKEND};${KTH_WITH_RPC};${KTH_WITH_CAPNPROTO_RPC};${cached}")\n'
                 )
                 result = subprocess.run(
                     [os.environ.get("CMAKE_COMMAND", "cmake"), "-S", str(root),
@@ -160,6 +224,18 @@ class RpcCMakeTests(unittest.TestCase):
             (root / "llhttpConfig.cmake").write_text(
                 "add_library(llhttp::llhttp INTERFACE IMPORTED)\n"
             )
+            # Stands in for Conan's CapnProto package: the imported target and
+            # CAPNP_GENERATE_CPP (which would run the build machine's capnp).
+            (root / "CapnProtoConfig.cmake").write_text(
+                "add_library(CapnProto::capnp-rpc INTERFACE IMPORTED)\n"
+                "function(capnp_generate_cpp SOURCES HEADERS)\n"
+                '  set(source "${CAPNPC_OUTPUT_DIR}/kth/rpc/v1/chain.capnp.c++")\n'
+                '  set(header "${CAPNPC_OUTPUT_DIR}/kth/rpc/v1/chain.capnp.h")\n'
+                "  set_source_files_properties(${source} ${header} PROPERTIES GENERATED TRUE)\n"
+                "  set(${SOURCES} ${source} PARENT_SCOPE)\n"
+                "  set(${HEADERS} ${header} PARENT_SCOPE)\n"
+                "endfunction()\n"
+            )
             (root / "CMakeLists.txt").write_text(
                 "cmake_minimum_required(VERSION 3.22)\nproject(selection LANGUAGES C CXX)\n"
                 "include(CheckCXXCompilerFlag)\n"
@@ -173,19 +249,28 @@ class RpcCMakeTests(unittest.TestCase):
                 'get_target_property(defines node INTERFACE_COMPILE_DEFINITIONS)\n'
                 'file(WRITE "${CMAKE_BINARY_DIR}/selected" "${sources}\\n${links}\\n${defines}")\n'
             )
-            for backend, enabled in (("jsonrpc", True), ("none", False), ("jsonrpc", True)):
+            for backend in ("jsonrpc", "none", "capnproto", "jsonrpc", "capnproto", "none"):
                 result = subprocess.run(
                     [os.environ.get("CMAKE_COMMAND", "cmake"), "-S", str(root),
                      "-B", str(root / "build"), f"-DKTH_RPC_BACKEND={backend}",
-                     f"-Dllhttp_DIR={root}"],
+                     f"-Dllhttp_DIR={root}", f"-DCapnProto_DIR={root}"],
                     capture_output=True, text=True, timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 sources, links, defines = (root / "build/selected").read_text().splitlines()
-                self.assertEqual("src/rpc/server.cpp" in sources, enabled)
-                self.assertEqual("src/rpc/methods.cpp" in sources, enabled)
-                self.assertEqual("llhttp::llhttp" in links, enabled)
-                self.assertEqual("KTH_WITH_RPC" in defines, enabled)
+                with self.subTest(backend=backend):
+                    json = backend == "jsonrpc"
+                    capnp = backend == "capnproto"
+                    self.assertEqual("src/rpc/server.cpp" in sources, json)
+                    self.assertEqual("src/rpc/methods.cpp" in sources, json)
+                    self.assertEqual("llhttp::llhttp" in links, json)
+                    self.assertEqual("KTH_WITH_RPC" in defines, json)
+                    self.assertEqual("src/capnp_rpc/server.cpp" in sources, capnp)
+                    self.assertEqual("src/capnp_rpc/kj_service.cpp" in sources, capnp)
+                    self.assertEqual("src/capnp_rpc/chain_reader.cpp" in sources, capnp)
+                    self.assertEqual("chain.capnp.c++" in sources, capnp)
+                    self.assertEqual("CapnProto::capnp-rpc" in links, capnp)
+                    self.assertEqual("KTH_WITH_CAPNPROTO_RPC" in defines, capnp)
 
     def test_backend_switch_overrides_cached_legacy_flag(self):
         # Exercise the production selector in an isolated CMake project; no

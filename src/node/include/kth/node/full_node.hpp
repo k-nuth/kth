@@ -55,6 +55,10 @@
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
 #include <kth/node/rpc/server.hpp>
 #endif
+#if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+#include <kth/node/capnp_rpc/reader.hpp>
+#include <kth/node/capnp_rpc/server.hpp>
+#endif
 
 #include <asio/awaitable.hpp>
 
@@ -223,6 +227,11 @@ private:
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<rpc::server> rpc_server_;
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    // Declared in this order so the server is destroyed before its reader.
+    std::unique_ptr<capnp_rpc::chain_reader> capnp_reader_;
+    std::unique_ptr<capnp_rpc::server> capnp_server_;
 #endif
 };
 

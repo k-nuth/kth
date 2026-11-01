@@ -17,6 +17,7 @@ class TestPackageConan(ConanFile):
         toolchain = CMakeToolchain(self)
         toolchain.variables["KTH_PACKAGE_FOLDER"] = self.dependencies["kth"].package_folder
         toolchain.variables["KTH_EXPECT_CONSENSUS"] = bool(self.dependencies["kth"].options.consensus)
+        toolchain.variables["KTH_EXPECT_CAPNPROTO_RPC"] = str(self.dependencies["kth"].options.rpc) == "capnproto"
         toolchain.generate()
 
     def build(self):
@@ -26,6 +27,9 @@ class TestPackageConan(ConanFile):
 
     def test(self):
         if can_run(self):
-            for executable in ("test_exported_secp256k1", "test_big_number",
-                               "test_individual", "test_meta"):
+            executables = ["test_exported_secp256k1", "test_big_number",
+                           "test_individual", "test_meta"]
+            if str(self.dependencies["kth"].options.rpc) == "capnproto":
+                executables.append("test_capnp_rpc_consumer")
+            for executable in executables:
                 self.run(os.path.join(self.cpp.build.bindir, executable), env="conanrun")

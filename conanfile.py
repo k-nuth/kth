@@ -24,6 +24,10 @@ _BLOCK_ALIGNMENT = 65536  # 2^16, for nice alignment
 _BASE_PERIOD_YEAR = 2030
 _PERIOD_LENGTH_YEARS = 5
 
+# Pinned to the reviewed ConanCenter recipe revision of capnproto 1.5.0. The same
+# reference is used for the host library and the build-context schema compiler.
+CAPNPROTO_REF = "capnproto/1.5.0#50b2e14c58a3840a4eed6ac9d887e622"
+
 
 def _get_target_year(compile_year: int) -> int:
     """Calculate target year based on compilation year (5-year periods)."""
@@ -179,6 +183,14 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             self.requires("llhttp/9.3.0", transitive_headers=True, transitive_libs=True)
 
+        # Cap'n Proto serialization + RPC (KJ runtime) backs rpc=capnproto. The KJ
+        # event loop runs on one owned transport thread, see docs/capnproto-rpc.md.
+        # TLS and gzip are not used, which also keeps capnproto's openssl range
+        # (<4) out of a graph that pins openssl 4.x.
+        if self.options.rpc == "capnproto" and self.settings.os != "Emscripten":
+            self.requires(CAPNPROTO_REF, transitive_headers=True, transitive_libs=True,
+                          options={"with_openssl": False, "with_zlib": False})
+
         if self.options.with_png:
             self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
@@ -199,6 +211,10 @@ class KthRecipe(KnuthConanFileV2):
 
 
     def build_requirements(self):
+        # The schema compiler (capnp, capnpc-c++) must run on the build machine,
+        # also when cross compiling; the host package only supplies libraries.
+        if self.options.rpc == "capnproto" and self.settings.os != "Emscripten":
+            self.tool_requires(CAPNPROTO_REF, options={"with_openssl": False, "with_zlib": False})
         if self.options.tests:
             self.test_requires("catch2/3.16.1")
             self.test_requires("nanobench/4.3.11")
@@ -217,10 +233,10 @@ class KthRecipe(KnuthConanFileV2):
     def configure(self):
         # Reserve the backend names without silently building a node that cannot
         # serve the selected protocol. Check before resolving any dependencies.
-        if str(self.options.rpc) in ("grpc", "capnproto"):
+        if str(self.options.rpc) == "grpc":
             raise ConanInvalidConfiguration(
-                f"RPC backend '{self.options.rpc}' is not implemented; "
-                "use rpc=jsonrpc or rpc=none."
+                "RPC backend 'grpc' is not implemented; "
+                "use rpc=jsonrpc, rpc=capnproto or rpc=none."
             )
         KnuthConanFileV2.configure(self)
 
@@ -328,8 +344,12 @@ class KthRecipe(KnuthConanFileV2):
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
 
         # KTH_WITH_RPC currently describes the JSON-RPC implementation, not any RPC.
-        rpc_defines = (["KTH_WITH_RPC"] if self.options.rpc == "jsonrpc"
-                       and self.settings.os != "Emscripten" else [])
+        rpc_defines = []
+        if self.settings.os != "Emscripten":
+            if self.options.rpc == "jsonrpc":
+                rpc_defines = ["KTH_WITH_RPC"]
+            elif self.options.rpc == "capnproto":
+                rpc_defines = ["KTH_WITH_CAPNPROTO_RPC", "KTH_ASIO_STANDALONE", "ASIO_STANDALONE"]
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -466,6 +486,8 @@ class KthRecipe(KnuthConanFileV2):
             node_requires.append("ftxui::ftxui")
         if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             node_requires.append("llhttp::llhttp")
+        if self.options.rpc == "capnproto" and self.settings.os != "Emscripten":
+            node_requires.append("capnproto::capnp-rpc")
         self.cpp_info.components["node"].requires = node_requires
         
         # Optional components
