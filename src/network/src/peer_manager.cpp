@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/network/peer_manager.hpp>
+#include <kth/network/peer_identity.hpp>
 
 #include <algorithm>
 
@@ -50,7 +51,7 @@ peer_manager::~peer_manager() {
     if (nonce == 0) {
         // Generate a temporary nonce based on address hash if not set
         // This allows adding peers before handshake completes
-        auto const& auth = peer->authority();
+        auto const& auth = peer->destination();
         nonce = std::hash<std::string>{}(auth.to_string());
     }
 
@@ -67,9 +68,9 @@ peer_manager::~peer_manager() {
         }
 
         // Check for duplicate authority
-        auto const& new_auth = peer->authority();
+        auto const& new_auth = peer->destination();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
-            if (existing_peer->authority() == new_auth) {
+            if (existing_peer->destination() == new_auth) {
                 co_return error::address_in_use;  // Duplicate authority
             }
         }
@@ -96,7 +97,7 @@ peer_manager::~peer_manager() {
 
     auto nonce = peer->nonce();
     if (nonce == 0) {
-        auto const& auth = peer->authority();
+        auto const& auth = peer->destination();
         nonce = std::hash<std::string>{}(auth.to_string());
     }
 
@@ -150,7 +151,7 @@ peer_manager::~peer_manager() {
     }
     co_return co_await ::asio::co_spawn(strand_, [this, &authority]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->authority() == authority) {
+            if (peer->has_numeric_authority() && peer->authority() == authority) {
                 co_return true;
             }
         }
@@ -164,7 +165,24 @@ peer_manager::~peer_manager() {
     }
     co_return co_await ::asio::co_spawn(strand_, [this, &ip]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->authority().asio_ip() == ip) {
+            if (peer->has_numeric_authority() && peer->authority().asio_ip() == ip) {
+                co_return true;
+            }
+        }
+        co_return false;
+    }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<bool> peer_manager::exists_by_destination(
+    infrastructure::config::endpoint const& destination) const
+{
+    if (stopped()) {
+        co_return false;
+    }
+    auto const canonical = canonical_peer_endpoint(destination);
+    co_return co_await ::asio::co_spawn(strand_, [this, canonical]() -> ::asio::awaitable<bool> {
+        for (auto const& [nonce, peer] : peers_) {
+            if (peer->destination() == canonical) {
                 co_return true;
             }
         }

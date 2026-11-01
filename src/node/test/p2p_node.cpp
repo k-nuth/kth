@@ -76,6 +76,79 @@ TEST_CASE("p2p_node settings preserved", "[p2p_node]") {
     REQUIRE(node.network_settings().threads == 4);
 }
 
+TEST_CASE("p2p_node leaves proxy hostname peers out of the peer database", "[p2p_node][socks5]") {
+    auto settings = make_test_settings_p2p();
+    settings.peers_file.clear();
+    settings.proxy = "127.0.0.1:9050";
+    p2p_node node(settings);
+    ::asio::io_context ctx;
+    auto first = std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+        infrastructure::config::endpoint("first.example", 8333));
+    auto second = std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+        infrastructure::config::endpoint("second.example", 8333));
+    auto const unspecified = infrastructure::config::authority::any();
+    REQUIRE( ! first->has_numeric_authority());
+    REQUIRE( ! second->has_numeric_authority());
+    REQUIRE(first->authority() == unspecified);
+    REQUIRE(second->authority() == unspecified);
+    // Reports under the ban threshold cannot add up without a record, so they
+    // leave the peer connected; one at the threshold disconnects it.
+    CHECK( ! node.report_misbehavior(first, 60, "timeout"));
+    CHECK( ! node.report_misbehavior(first, 60, "timeout"));
+    CHECK( ! first->stopped());
+    CHECK( ! node.peer_db().get(unspecified));
+    CHECK(node.report_misbehavior(second, peer_session::misbehavior_ban_threshold, "invalid block"));
+    CHECK(second->stopped());
+    CHECK( ! node.is_banned(unspecified));
+    CHECK( ! node.peer_db().get(unspecified));
+    for (int i = 0; i < 3; ++i) {
+        node.record_peer_performance(first, 1, 1000);
+        node.record_peer_performance(second, 1, 1000);
+    }
+    CHECK( ! node.is_slow_peer(unspecified));
+    CHECK(node.get_peer_speed(unspecified) == 0.0);
+    node.ban_peer(second, 60s);
+    CHECK( ! node.is_banned(unspecified));
+    CHECK( ! node.peer_db().get(unspecified));
+    CHECK(node.peer_db().size() == 0);
+    ctx.poll();
+}
+
+TEST_CASE("p2p_node bans a numeric proxy destination under its own address", "[p2p_node][socks5]") {
+    auto settings = make_test_settings_p2p();
+    settings.peers_file.clear();
+    settings.proxy = "127.0.0.1:9050";
+    p2p_node node(settings);
+    ::asio::io_context ctx;
+    auto peer = std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+        infrastructure::config::endpoint("192.0.2.1", 8333));
+    auto const address = infrastructure::config::authority::parse_from("192.0.2.1", 8333);
+    REQUIRE(address);
+    REQUIRE(peer->has_numeric_authority());
+    REQUIRE(peer->authority() == *address);
+    CHECK( ! node.report_misbehavior(peer, 40));
+    CHECK( ! peer->stopped());
+    CHECK(node.report_misbehavior(peer, 60, "invalid block"));
+    CHECK(peer->stopped());
+    CHECK(node.is_banned(*address));
+    REQUIRE(node.peer_db().get(*address));
+    CHECK(node.peer_db().get(*address)->reputation_score == 100);
+    for (int i = 0; i < 3; ++i) {
+        node.record_peer_performance(peer, 1, 1000);
+    }
+    CHECK(node.is_slow_peer(*address));
+    CHECK(node.get_peer_speed(*address) == 1000.0);
+    CHECK( ! node.is_banned(infrastructure::config::authority::any()));
+    CHECK( ! node.peer_db().get(infrastructure::config::authority::any()));
+    CHECK(node.peer_db().size() == 1);
+    auto second = std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+        infrastructure::config::endpoint("192.0.2.2", 8333));
+    node.ban_peer(second, 60s);
+    CHECK(node.is_banned(second->authority()));
+    CHECK(second->stopped());
+    ctx.poll();
+}
+
 // =============================================================================
 // Top Block Tests
 // =============================================================================

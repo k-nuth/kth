@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <kth/domain.hpp>
@@ -78,7 +79,9 @@ public:
     /// @param socket The connected socket
     /// @param settings Network settings
     /// @param inbound True if this is an inbound connection (we accepted it)
-    peer_session(socket_type socket, settings const& settings, bool inbound = false);
+    /// @param destination Requested SOCKS destination, when the socket reaches a proxy
+    peer_session(socket_type socket, settings const& settings, bool inbound = false,
+        std::optional<infrastructure::config::endpoint> destination = std::nullopt);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -195,9 +198,17 @@ public:
     // Properties
     // -------------------------------------------------------------------------
 
-    /// Get the authority (address:port) of the remote peer
+    /// Numeric peer address for wire messages; unspecified for a proxy-resolved hostname.
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
+
+    /// The requested destination; a proxy's socket address is never a peer identity.
+    [[nodiscard]]
+    infrastructure::config::endpoint const& destination() const;
+
+    /// Hostnames resolved by a proxy have no numeric authority locally.
+    [[nodiscard]]
+    bool has_numeric_authority() const;
 
     /// Get formatted string with authority and user agent (for logging)
     /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
@@ -386,6 +397,8 @@ private:
     /// channel still hands out what it already holds.
     void drain_response_channels();
     infrastructure::config::authority authority_;
+    infrastructure::config::endpoint destination_;
+    bool const has_numeric_authority_;
 
     // Protocol settings
     uint32_t const protocol_magic_;

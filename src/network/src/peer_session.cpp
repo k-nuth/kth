@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/network/peer_session.hpp>
+#include <kth/network/socks5.hpp>
+#include <kth/network/peer_identity.hpp>
 
 #include <chrono>
 #include <format>
@@ -76,7 +78,8 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
 // Construction / Destruction
 // =============================================================================
 
-peer_session::peer_session(socket_type socket, settings const& settings, bool inbound)
+peer_session::peer_session(socket_type socket, settings const& settings, bool inbound,
+    std::optional<infrastructure::config::endpoint> destination)
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, outbound_capacity)
@@ -85,7 +88,15 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , addr_responses_(10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
-    , authority_(extract_authority(socket_))
+    , authority_(destination
+        ? infrastructure::config::authority::parse_from(
+            canonical_peer_endpoint(*destination).host(), destination->port())
+                .value_or(infrastructure::config::authority::any())
+        : extract_authority(socket_))
+    , destination_(destination ? canonical_peer_endpoint(*destination)
+        : infrastructure::config::endpoint(authority_))
+    , has_numeric_authority_( ! destination ||
+        infrastructure::config::authority::parse_from(destination_.host(), destination_.port()).has_value())
     , protocol_magic_(settings.identifier)
     , maximum_payload_(heading::maximum_payload_size(
           settings.protocol_maximum,
@@ -326,11 +337,19 @@ infrastructure::config::authority const& peer_session::authority() const {
     return authority_;
 }
 
+infrastructure::config::endpoint const& peer_session::destination() const {
+    return destination_;
+}
+
+bool peer_session::has_numeric_authority() const {
+    return has_numeric_authority_;
+}
+
 std::string peer_session::authority_with_agent() const {
     if ( ! short_user_agent_.empty()) {
-        return std::format("{} {}", authority_.to_string(), short_user_agent_);
+        return std::format("{} {}", destination_.to_string(), short_user_agent_);
     }
-    return authority_.to_string();
+    return destination_.to_string();
 }
 
 uint32_t peer_session::negotiated_version() const {
@@ -721,6 +740,26 @@ awaitable_expected<peer_session::ptr> async_connect(
     std::chrono::seconds timeout)
 {
     using namespace ::asio::experimental::awaitable_operators;
+
+    if ( ! settings.proxy.empty()) {
+        auto result = co_await async_socks5_connect(
+            executor, settings.proxy, hostname, port, settings.proxy_randomize, timeout);
+        if ( ! result) {
+            co_return std::unexpected(result.error());
+        }
+
+        auto session = std::make_shared<peer_session>(
+            std::move(*result), settings, false,
+            infrastructure::config::endpoint(hostname, port));
+        // A proxy never establishes that a hostname belongs to a whitelisted IP.
+        if (session->has_numeric_authority()) {
+            auto flags = settings.get_whitelist_permissions(session->authority());
+            if (flags != permission_flags::none) {
+                session->set_permissions(settings.apply_legacy_whitelist_permissions(flags));
+            }
+        }
+        co_return session;
+    }
 
     // Try to parse hostname as IP address first (skip DNS for IPs)
     std::error_code ip_parse_ec;

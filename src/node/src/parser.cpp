@@ -186,6 +186,10 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
     app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
     app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    app.add_option("--net.proxy", cfg.network.proxy,
+        "SOCKS5 proxy as numeric IP:port; empty disables proxying.");
+    app.add_option("--net.proxy_randomize", cfg.network.proxy_randomize,
+        "Use fresh SOCKS5 credentials for each outbound connection (default true).");
     app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
     app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
     app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);

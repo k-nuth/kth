@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -36,6 +37,8 @@ struct KN_API settings {
     uint32_t manual_attempt_limit;
     uint32_t connect_batch_size;
     uint32_t connect_timeout_seconds;
+    std::string proxy;
+    bool proxy_randomize;
     uint32_t channel_handshake_seconds;
     uint32_t channel_heartbeat_minutes;
     uint32_t channel_inactivity_minutes;

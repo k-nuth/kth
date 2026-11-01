@@ -50,6 +50,35 @@ private:
 
 } // namespace
 
+#if ! defined(__EMSCRIPTEN__)
+TEST_CASE("outbound proxy settings retain defaults and explicit command line values", "[configuration tests][parser][socks5]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.proxy.empty());
+    CHECK(defaults.configured.network.proxy_randomize);
+
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "[::1]:9050",
+        "--net.proxy_randomize", "false"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(7, argv, error));
+    CHECK(parser.configured.network.proxy == "[::1]:9050");
+    CHECK_FALSE(parser.configured.network.proxy_randomize);
+}
+
+TEST_CASE("outbound proxy settings load from dotted config keys and reject invalid booleans", "[configuration tests][parser][socks5]") {
+    config_file file("proxy", "net.proxy=127.0.0.1:9050\nnet.proxy_randomize=false");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    CHECK(parser.configured.network.proxy == "127.0.0.1:9050");
+    CHECK_FALSE(parser.configured.network.proxy_randomize);
+
+    node::parser invalid(domain::config::network::regtest);
+    char const* argv[]{"kth", "--net.proxy_randomize", "sometimes"};
+    CHECK_FALSE(invalid.parse(3, argv, error));
+}
+#endif
+
 namespace {
 
 #if !defined(KTH_CURRENCY_BCH)
