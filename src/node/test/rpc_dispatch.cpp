@@ -4,6 +4,10 @@
 
 #include <test_helpers.hpp>
 
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
@@ -216,4 +220,60 @@ TEST_CASE("getblock and getrawtransaction dispatch answer verbosely", "[rpc disp
         quoted(trunk[2].hash()) + R"(,"confirmations":3,"time":)" +
         std::to_string(trunk[2].header().timestamp()) + R"(,"blocktime":)" +
         std::to_string(trunk[2].header().timestamp()) + R"(,"in_active_chain":true})"));
+}
+
+TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failure", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_file_damaged");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    auto& chain = fixture.chain();
+    auto const fetch = [&](hash_digest const& hash) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, chain.fetch_block(hash), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(fetch(trunk[0].hash()));
+    REQUIRE(fetch(trunk[1].hash()));
+
+    // Overwrite bytes of a block's record in its block file, relative to the
+    // start of the block itself. The record opens with an 8-byte header: the
+    // network magic, then the block's size.
+    auto const overwrite = [&](domain::chain::block const& block, long offset, data_chunk const& bytes) {
+        auto const idx = chain.headers().find(block.hash());
+        REQUIRE(idx != blockchain::header_index::null_index);
+        std::ostringstream name;
+        name << "blk" << std::setw(5) << std::setfill('0') << chain.headers().get_file_number(idx) << ".dat";
+        std::fstream file(chain.data_dir() / "blocks" / name.str(),
+            std::ios::in | std::ios::out | std::ios::binary);
+        REQUIRE(file.is_open());
+        file.seekp(long(chain.headers().get_data_pos(idx)) + offset);
+        file.write(reinterpret_cast<char const*>(bytes.data()), std::streamsize(bytes.size()));
+        REQUIRE(file.good());
+    };
+
+    // The first block's magic is gone: the record cannot be read.
+    overwrite(trunk[0], -8, data_chunk(4, 0x00));
+    auto const unreadable = fetch(trunk[0].hash());
+    REQUIRE_FALSE(unreadable);
+    CHECK(unreadable.error() == error::operation_failed);
+
+    // The second block's record reads, but its bytes are not a block: the
+    // transaction count after the 80-byte header claims far more than follows.
+    overwrite(trunk[1], 80, data_chunk(9, 0xff));
+    auto const unparsable = fetch(trunk[1].hash());
+    REQUIRE_FALSE(unparsable);
+    CHECK(unparsable.error() == error::operation_failed);
 }
