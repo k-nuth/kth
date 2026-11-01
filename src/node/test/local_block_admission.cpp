@@ -22,6 +22,10 @@
 
 #include <kth/infrastructure/utility/timer.hpp>
 #include <kth/node.hpp>
+#if defined(KTH_WITH_RPC)
+#include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/json.hpp>
+#endif
 
 #include "../../blockchain/test/regtest_miner.hpp"
 
@@ -571,3 +575,35 @@ TEST_CASE("local admission: interrupted rejection recovery persists replacement 
         REQUIRE(run.stop());
     }
 }
+
+#if defined(KTH_WITH_RPC)
+TEST_CASE("submitblock RPC publishes acceptance and returns standard duplicates", "[local admission][rpc submitblock]") {
+    running_node run("rpc_submitblock");
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{run.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](domain::chain::block const& block, std::string const& suffix) {
+        auto const body = std::string(R"({"method":"submitblock","params":[")")
+            + encode_base16(to_data_chunk(block)) + '"' + suffix + R"(],"id":9})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run_for(answer_limit);
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        return result.get();
+    };
+    auto const block = valid_block(run.connected_tip(), 1);
+    REQUIRE(request(block, "") == node::rpc::build_success("9", "null"));
+    REQUIRE(run.connected_tip() == block.hash());
+    for (auto const* suffix : {"", ",\"dummy\"", ",null", ",{}"}) {
+        CAPTURE(suffix);
+        CHECK(request(block, suffix) == node::rpc::build_success("9", R"("duplicate")"));
+    }
+    auto const invalid = mine_block(block.hash(), 2, timestamp_at(2), 17, {}, 1);
+    CHECK(request(invalid, "") == node::rpc::build_success("9", R"("bad-cb-amount")"));
+    CHECK(run.connected_tip() == block.hash());
+    CHECK(request(invalid, "") == node::rpc::build_success("9", R"("duplicate-invalid")"));
+    REQUIRE(run.stop());
+}
+
+#endif
