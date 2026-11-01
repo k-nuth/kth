@@ -75,7 +75,7 @@ counterpart.
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
-| `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
+| `getrawmempool` (`verbose=true`: entries keyed by txid) | `kth_chain_get_mempool_txids` (+ `kth_chain_get_mempool_entry`) | `get_mempool_txids()` (+ `get_mempool_entry()`) |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |

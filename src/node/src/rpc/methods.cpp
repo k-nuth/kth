@@ -7,6 +7,7 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 
@@ -307,11 +308,34 @@ send_raw_transaction(method_context& ctx, request const& req) {
 
 // ---- mempool query methods -----------------------------------------------
 
-// getrawmempool -> the txids currently in the mempool.
-// C-API counterpart: kth_chain_get_mempool_txids.
+// getrawmempool [verbose=false] -> the txids currently in the mempool; with
+// verbose, an object keyed by txid with each transaction's entry.
+// C-API counterpart: kth_chain_get_mempool_txids (+ kth_chain_get_mempool_entry).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
-get_raw_mempool(method_context& ctx, request const& /*req*/) {
-    co_return render_hash_list(ctx.chain.get_mempool_txids());
+get_raw_mempool(method_context& ctx, request const& req) {
+    auto const verbose = params_bool(req.params, 0, /*fallback*/ false);
+    if ( ! verbose) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "verbose must be a boolean"));
+    }
+    auto const txids = ctx.chain.get_mempool_txids();
+    if ( ! *verbose) {
+        co_return render_hash_list(txids);
+    }
+
+    std::vector<mempool_listing> listings;
+    listings.reserve(txids.size());
+    for (auto const& txid : txids) {
+        // A transaction can leave the pool between the two reads; it is then
+        // simply not listed.
+        auto const entry = ctx.chain.get_mempool_entry(txid);
+        if ( ! entry) {
+            continue;
+        }
+        listings.push_back({txid, entry->fee, entry->size, entry->time,
+            ctx.chain.get_mempool_depends(txid), ctx.chain.get_mempool_spentby(txid)});
+    }
+    co_return render_raw_mempool_verbose(listings);
 }
 
 // getmempoolinfo -> mempool size, byte total, and fee total.

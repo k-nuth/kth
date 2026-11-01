@@ -84,3 +84,10 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("previousblockhash":")" + zeros + R"(","merkleroot":")" + zeros + R"(",)" +
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
+
+TEST_CASE("render_raw_mempool_verbose keys each entry by its txid", "[rpc query]") {
+    REQUIRE(render_raw_mempool_verbose({}) == "{}");
+    REQUIRE(render_raw_mempool_verbose({{null_hash, /*fee*/ 219u, /*size*/ 219u, /*time*/ 42u, {}, {null_hash}}}) ==
+        std::string(R"({")") + zeros + R"(":{"fees":{"base":0.00000219,"modified":0.00000219},)" +
+        R"("size":219,"time":42,"depends":[],"spentby":[")" + zeros + R"("]}})");
+}

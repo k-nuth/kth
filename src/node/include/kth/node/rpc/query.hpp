@@ -7,7 +7,9 @@
 
 #include <cstddef>
 #include <string>
+#include <cstdint>
 #include <string_view>
+#include <vector>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
@@ -46,6 +48,21 @@ std::string render_hash_list(hash_list const& hashes);
 std::string render_mempool_info(blockchain::mempool_totals const& totals);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
+
+// One transaction of verbose getrawmempool, with what the mempool knows about it.
+struct mempool_listing {
+    hash_digest txid;
+    std::uint64_t fee;      // satoshis
+    std::uint32_t size;     // serialized bytes
+    std::uint64_t time;     // first seen (unix seconds)
+    hash_list depends;
+    hash_list spentby;
+};
+
+// The verbose getrawmempool object: each transaction keyed by its txid, with
+// `fees` (`base` and `modified`, in BCH; the mempool keeps no fee deltas, so
+// they are equal), `size`, `time`, `depends` and `spentby`.
+std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listings);
 
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,
