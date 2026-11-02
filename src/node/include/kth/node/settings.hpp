@@ -38,14 +38,20 @@ struct KND_API rpc_settings {
     uint32_t gbt_store_time;
 };
 
-/// Stratum V2 Template Provider settings. The plaintext listener is disabled
-/// by default and binds to localhost until the Noise transport is available.
+/// Stratum V2 Template Provider settings. The listener is disabled by default.
 struct KND_API sv2_settings {
     sv2_settings();
 
     bool enabled;
     std::string bind;
     uint16_t port;
+    bool noise;
+    std::string static_key_file;
+    std::string authority_key_file;
+    std::string certificate_file;
+    std::string authority_public_key;
+    uint32_t certificate_validity_seconds;
+    uint32_t handshake_timeout_seconds;
 };
 
 /// Common database configuration settings, properties not thread safe.

@@ -10,9 +10,12 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
+#include <limits>
 #include <optional>
+#include <string>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 
 #include <asio/as_tuple.hpp>
 #include <asio/buffer.hpp>
@@ -66,6 +69,14 @@ std::optional<Message> parse(byte_span payload) {
 
 hash_digest merkle_parent(hash_digest const& left, hash_digest const& right) {
     return bitcoin_hash(build_chunk({left, right}));
+}
+
+// Certificate timestamps are U32 seconds (sv2-spec 4.5.2).
+std::optional<uint32_t> unix_time() {
+    auto const now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    if (now < 0 || now > std::numeric_limits<uint32_t>::max()) return std::nullopt;
+    return static_cast<uint32_t>(now);
 }
 
 std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr> const& txs) {
@@ -292,6 +303,38 @@ template_provider::template_provider(sv2_settings const& settings,
 ::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket) {
     using namespace ::asio::experimental::awaitable_operators;
 
+    std::optional<noise_transport> transport;
+    if (credentials_) {
+        ::asio::steady_timer deadline(owner_);
+        deadline.expires_after(std::chrono::seconds(settings_.handshake_timeout_seconds));
+        auto exchange = [&]() -> ::asio::awaitable<bool> {
+            byte_array<64> first{};
+            auto [read_error, count] = co_await ::asio::async_read(socket,
+                ::asio::buffer(first), ::asio::as_tuple(::asio::use_awaitable));
+            if (read_error) co_return false;
+            auto const now = unix_time();
+            auto const certificate = now ? credentials_->certificate_at(*now) : std::nullopt;
+            if ( ! certificate) {
+                spdlog::error("[sv2] Noise certificate is not valid now; renew it and restart");
+                co_return false;
+            }
+            noise_responder responder(noise_keypair::generate(), credentials_->static_key,
+                *certificate);
+            auto const second = responder.respond(first);
+            if ( ! second) co_return false;
+            auto [write_error, written] = co_await ::asio::async_write(socket,
+                ::asio::buffer(*second), ::asio::as_tuple(::asio::use_awaitable));
+            if (write_error) co_return false;
+            transport.emplace(*responder.keys(), false, template_provider_session::max_payload_size);
+            co_return true;
+        };
+        // Join the cancelled operation before its buffers leave this scope.
+        // The deadline covers both flights; it is never extended by input.
+        auto const outcome = co_await (exchange()
+            || deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+        if (outcome.index() != 0 || ! std::get<0>(outcome)) co_return;
+    }
+
     template_provider_session session;
     auto tips = chain_.subscribe_blockchain();
     if ( ! tips) co_return;
@@ -323,7 +366,25 @@ template_provider::template_provider(sv2_settings const& settings,
 
     auto read_frames = [&]() -> ::asio::awaitable<void> {
         std::array<uint8_t, message_header::size> header_bytes{};
+        std::array<uint8_t, 8192> encrypted{};
         for (;;) {
+            if (transport) {
+                auto [read_error, size] = co_await socket.async_read_some(
+                    ::asio::buffer(encrypted), ::asio::as_tuple(::asio::use_awaitable));
+                if (read_error) break;
+                auto frames = transport->feed(byte_span(encrypted).first(size));
+                if ( ! frames) break;
+                for (auto const& bytes : *frames) {
+                    auto const header = from_data_chunk<message_header>(
+                        byte_span(bytes).first(message_header::size));
+                    data_chunk payload(bytes.begin() + message_header::size, bytes.end());
+                    auto [error] = co_await inbox.async_send(std::error_code{},
+                        event{event_kind::frame, *header, std::move(payload)},
+                        ::asio::as_tuple(::asio::use_awaitable));
+                    if (error) co_return;
+                }
+                continue;
+            }
             auto [header_error, header_size] = co_await ::asio::async_read(socket,
                 ::asio::buffer(header_bytes), ::asio::as_tuple(::asio::use_awaitable));
             if (header_error) break;
@@ -397,6 +458,20 @@ template_provider::template_provider(sv2_settings const& settings,
                 if (result.constraints_changed) result = co_await next_template();
             }
             if ( ! result.response.empty()) {
+                if (transport) {
+                    data_chunk encrypted;
+                    byte_span remaining(result.response);
+                    while ( ! remaining.empty()) {
+                        auto const header = from_data_chunk<message_header>(
+                            remaining.first(message_header::size));
+                        auto const size = message_header::size + header->msg_length;
+                        auto bytes = transport->encrypt_frame(remaining.first(size));
+                        if ( ! bytes) co_return;
+                        encrypted.insert(encrypted.end(), bytes->begin(), bytes->end());
+                        remaining = remaining.subspan(size);
+                    }
+                    result.response = std::move(encrypted);
+                }
                 auto [write_error, written] = co_await ::asio::async_write(socket,
                     ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
                 if (write_error) co_return;
@@ -441,6 +516,21 @@ void template_provider::stop() {
         co_return;
     }
 
+    if (settings_.noise) {
+        credentials_.reset();
+        auto const now = unix_time();
+        std::string error;
+        if (now) credentials_ = load_noise_credentials(settings_, *now, error);
+        if ( ! credentials_) {
+            spdlog::error("[sv2] Cannot start Noise listener: {}",
+                error.empty() ? "clock outside certificate timestamp range" : error);
+            (void)listening_.try_send(std::make_error_code(std::errc::invalid_argument), uint16_t{});
+            co_return;
+        }
+        spdlog::info("[sv2] Noise authority public key: {}",
+            noise_authority_key(credentials_->authority_public_key));
+    }
+
     tcp::endpoint const endpoint(address, settings_.port);
     tcp::acceptor acceptor(owner_);
     acceptor.open(endpoint.protocol(), ec);
@@ -470,8 +560,8 @@ void template_provider::stop() {
         co_return;
     }
     (void)listening_.try_send(std::error_code{}, bound.port());
-    spdlog::info("[sv2] Template Provider listening on {}:{} (plaintext)", settings_.bind,
-        bound.port());
+    spdlog::info("[sv2] Template Provider listening on {}:{} ({})", settings_.bind,
+        bound.port(), settings_.noise ? "Noise" : "plaintext");
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.

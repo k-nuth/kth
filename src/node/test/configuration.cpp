@@ -91,6 +91,41 @@ TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][p
     }
 }
 
+TEST_CASE("sv2 Noise credentials survive config and command line parsing", "[configuration tests][parser][sv2 noise]") {
+    config_file file("sv2_noise", "sv2.noise=false\nsv2.static_key_file=provider.key\n"
+        "sv2.authority_key_file=authority.key\nsv2.certificate_file=provider.cert\n"
+        "sv2.authority_public_key=pinned\nsv2.certificate_validity_seconds=600\n"
+        "sv2.handshake_timeout_seconds=3");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    auto const& settings = parser.configured.sv2;
+    CHECK_FALSE(settings.noise);
+    CHECK(settings.static_key_file == "provider.key");
+    CHECK(settings.authority_key_file == "authority.key");
+    CHECK(settings.certificate_file == "provider.cert");
+    CHECK(settings.authority_public_key == "pinned");
+    CHECK(settings.certificate_validity_seconds == 600u);
+    CHECK(settings.handshake_timeout_seconds == 3u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.noise=true", "--sv2.static_key_file", "selected.key",
+        "--sv2.authority_key_file", "selected-authority.key",
+        "--sv2.certificate_file", "selected.cert", "--sv2.authority_public_key", "selected-pin",
+        "--sv2.certificate_validity_seconds", "900", "--sv2.handshake_timeout_seconds", "4"};
+    REQUIRE(overridden.parse(18, argv, error));
+    auto const& selected = overridden.configured.sv2;
+    CHECK(selected.noise);
+    CHECK(selected.static_key_file == "selected.key");
+    CHECK(selected.authority_key_file == "selected-authority.key");
+    CHECK(selected.certificate_file == "selected.cert");
+    CHECK(selected.authority_public_key == "selected-pin");
+    CHECK(selected.certificate_validity_seconds == 900u);
+    CHECK(selected.handshake_timeout_seconds == 4u);
+}
+
 namespace {
 
 #if !defined(KTH_CURRENCY_BCH)

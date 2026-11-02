@@ -12,14 +12,69 @@ It is off by default. Enable it in the config file:
 sv2.enabled = true
 sv2.bind    = 127.0.0.1   # localhost only by default
 sv2.port    = 8442
+sv2.noise   = true        # default
 ```
 
-The same settings are `--sv2.enabled`, `--sv2.bind` and `--sv2.port` on the
-command line.
+Every setting is also available on the command line with a `--` prefix.
 
-The listener speaks plaintext SV2 frames until the Noise transport is added, so
-it has no encryption and no authentication. Keep it on localhost or another
-trusted interface.
+Clients complete the `Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256` handshake
+before sending `SetupConnection`. Both the six-byte frame header and every
+Template Distribution payload are authenticated and encrypted. The handshake
+deadline is `sv2.handshake_timeout_seconds` (default 10). A missing handshake or
+an authentication failure closes the connection; there is no plaintext fallback.
+
+To serve plaintext clients on a trusted local interface, explicitly set
+`sv2.noise=false`. Remote clients should use Noise.
+
+## Keys and certificates
+
+On the first Noise-enabled start, Knuth creates `.sv2-static-key` and
+`.sv2-authority-key` in its working directory, like the RPC cookie. They are
+separate raw 32-byte secp256k1 secret keys with owner-only permissions (`0600`).
+Existing files must contain exactly one valid secret key, belong to the node's
+user, and have no group or other permissions. Invalid files are refused and
+never replaced. Key and certificate paths must name regular files, without
+symbolic links. Back up both keys: replacing the authority key changes what
+clients must pin. Override their paths with `sv2.static_key_file` and
+`sv2.authority_key_file`; parent directories must already exist.
+
+By default, Knuth signs a fresh certificate for its static key in every
+handshake, so a node that runs for months keeps serving a current one. Each
+certificate starts one hour before the node's clock, so a client whose clock is
+a little behind still accepts it, and lasts `sv2.certificate_validity_seconds`
+after it (default 2592000, or 30 days). The authority key stays the same across
+restarts.
+
+Startup prints `Noise authority public key: <key>`. Give that public key to the
+Job Declarator or pool over a trusted channel and configure it as the client's
+authority public key. It is the SV2 section 4.7 encoding: Base58Check of
+`01 00` followed by the 32-byte BIP340 x-only authority public key. SV2 clients
+that accept a mining URL use the key in its path, for example:
+
+```text
+stratum2+tcp://your-node:8442/<authority-public-key>
+```
+
+To keep the authority secret offline, provide a certificate and the pinned
+authority public key instead:
+
+```ini
+sv2.static_key_file       = /secure/provider.key
+sv2.certificate_file      = /etc/kth/provider.cert
+sv2.authority_public_key  = <authority-public-key>
+```
+
+In this mode Knuth does not open or generate `sv2.authority_key_file`. The
+certificate file contains exactly the 74 raw bytes of `SIGNATURE_NOISE_MESSAGE`
+(SV2 section 4.5.2): little-endian version U16 (zero), `valid_from` U32,
+`not_valid_after` U32, then a 64-byte BIP340 signature. Sign the SHA-256 digest of
+the first ten bytes followed by the provider's 32-byte x-only static public key
+using the authority secret key. The certificate uses BIP340 Schnorr, which is
+different from BCH transaction Schnorr signatures. Knuth verifies the authority
+signature, certificate version, validity times and static key match before
+binding the listener. Once an offline certificate expires, every handshake is
+refused and logged; supply a renewed certificate and restart before that. Secret
+file loading requires POSIX file permissions.
 
 ## Template flow
 

@@ -21,11 +21,11 @@
 #include <kth/node/settings.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/messages.hpp>
+#include <kth/node/sv2/noise_credentials.hpp>
 
 // Stratum V2 Template Provider (sv2-spec 07, Template Distribution Protocol):
-// the listener, connection setup and block template flow. Frames are plaintext;
-// the Noise transport (sv2-spec 04) will wrap
-// them later, which is why the listener binds to localhost by default.
+// the listener, connection setup and block template flow, over the authenticated
+// Noise transport (sv2-spec 04) unless explicitly disabled by the operator.
 
 namespace kth::blockchain { struct block_chain; }
 
@@ -122,6 +122,7 @@ private:
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
+    std::optional<noise_credentials> credentials_;
 };
 
 } // namespace kth::node::sv2

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <exception>
+#include <fstream>
 #include <future>
 #include <limits>
 #include <memory>
@@ -278,9 +279,79 @@ struct listener_fixture {
 node::sv2_settings loopback_settings() {
     node::sv2_settings settings;
     settings.enabled = true;
+    settings.noise = false;
     settings.port = 0;
     return settings;
 }
+
+struct noise_listener_fixture : listener_fixture {
+    node::sv2_settings noise_settings;
+    hash_digest authority{};
+
+    noise_listener_fixture()
+        : listener_fixture(loopback_settings())
+        , noise_settings(loopback_settings())
+    {
+        noise_settings.noise = true;
+        noise_settings.static_key_file = (chain.dir() / "noise-static").string();
+        noise_settings.authority_key_file = (chain.dir() / "noise-authority").string();
+        auto const now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        std::string error;
+        auto const credentials = load_noise_credentials(noise_settings, now, error);
+        INFO(error);
+        REQUIRE(credentials.has_value());
+        authority = credentials->authority_public_key;
+        configure();
+    }
+
+    void configure() {
+        provider = std::make_shared<template_provider>(noise_settings, io.get_executor(), chain.chain());
+    }
+
+    noise_transport handshake(::asio::ip::tcp::socket& client) {
+        auto const now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        noise_initiator initiator(noise_keypair::generate(), authority, now);
+        auto const first = initiator.start();
+        REQUIRE(first.has_value());
+        write(client, byte_span(*first).first(13));
+        write(client, byte_span(*first).subspan(13));
+        auto const second = read(client, noise_responder::flight_size);
+        REQUIRE_FALSE(second->error);
+        REQUIRE(initiator.finish(second->bytes));
+        REQUIRE(initiator.keys().has_value());
+        return noise_transport(*initiator.keys(), true);
+    }
+
+    template <typename Message>
+    void send(::asio::ip::tcp::socket& client, noise_transport& transport, Message const& message) {
+        auto const bytes = transport.encrypt_frame(frame(message));
+        REQUIRE(bytes.has_value());
+        write(client, byte_span(*bytes).first(7));
+        write(client, byte_span(*bytes).subspan(7));
+    }
+
+    template <typename Message>
+    Message receive(::asio::ip::tcp::socket& client, noise_transport& transport) {
+        // Reading a byte at a time also proves that the decryptor retains an
+        // incomplete header or tag without treating it as a plaintext frame.
+        auto const deadline = std::chrono::steady_clock::now() + 5s;
+        for (size_t count = 0; count < 65536; ++count) {
+            REQUIRE(std::chrono::steady_clock::now() < deadline);
+            auto const next = read(client, 1);
+            REQUIRE_FALSE(next->error);
+            auto const frames = transport.feed(next->bytes);
+            REQUIRE(frames.has_value());
+            if ( ! frames->empty()) {
+                REQUIRE(frames->size() == 1);
+                return response<Message>(frames->front());
+            }
+        }
+        FAIL("Noise frame exceeded the bounded test read");
+        return {};
+    }
+};
 
 std::vector<domain::chain::block> seed_chain(listener_fixture& fixture, uint32_t height) {
     auto const base = uint32_t(zulu_time()) - (height + 10) * test::block_spacing;
@@ -668,6 +739,202 @@ TEST_CASE("sv2 does not advertise templates outside coinbase or TDP limits", "[s
     }
     auto session = ready_session();
     require_closed(session.set_template(std::move(value)));
+}
+
+TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted frames", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    auto const trunk = seed_chain(fixture, 5);
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(248 + 120, 3));
+    REQUIRE(expected.has_value());
+    auto client = fixture.connect(fixture.start());
+    auto transport = fixture.handshake(*client);
+    fixture.send(*client, transport, setup());
+    auto const success = fixture.receive<setup_connection_success>(*client, transport);
+    REQUIRE(success.used_version == 2);
+    REQUIRE(success.flags == 0);
+
+    fixture.send(*client, transport, coinbase_output_constraints{120, 3});
+    auto const work = fixture.receive<new_template>(*client, transport);
+    auto const previous = fixture.receive<set_new_prev_hash>(*client, transport);
+    REQUIRE(work.template_id == previous.template_id);
+    REQUIRE(work.future_template);
+    REQUIRE(work.version == expected->version);
+    REQUIRE(work.coinbase_tx_value_remaining == expected->coinbase_value);
+    REQUIRE(previous.prev_hash == trunk.back().hash());
+    REQUIRE(previous.n_bits == expected->bits);
+
+    fixture.send(*client, transport, request_transaction_data{work.template_id});
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client, transport).template_id
+        == work.template_id);
+    fixture.require_closed(*client);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 Noise listener never downgrades and bounds incomplete handshakes", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    fixture.noise_settings.handshake_timeout_seconds = 1;
+    fixture.configure();
+    auto const port = fixture.start();
+    SECTION("plaintext setup is closed without a setup response") {
+        auto client = fixture.connect(port);
+        auto const bytes = frame(setup());
+        fixture.write(*client, byte_span(bytes).first(3));
+        fixture.write(*client, byte_span(bytes).subspan(3));
+        fixture.finish_writing(*client);
+        fixture.require_closed(*client);
+    }
+    SECTION("idle and incomplete first flights expire") {
+        auto idle = fixture.connect(port);
+        auto partial = fixture.connect(port);
+        fixture.write(*partial, data_chunk(63, 1));
+        fixture.require_closed(*idle);
+        fixture.require_closed(*partial);
+    }
+    SECTION("stop joins an incomplete handshake") {
+        auto client = fixture.connect(port);
+        fixture.write(*client, data_chunk(13, 1));
+        fixture.stop();
+        fixture.require_closed(*client);
+    }
+    fixture.stop();
+}
+
+TEST_CASE("sv2 Noise listener closes on split encrypted tag failures", "[sv2 noise]") {
+    for (bool const payload_tag : {false, true}) {
+        CAPTURE(payload_tag);
+        noise_listener_fixture fixture;
+        auto client = fixture.connect(fixture.start());
+        auto transport = fixture.handshake(*client);
+        auto bytes = transport.encrypt_frame(frame(setup()));
+        REQUIRE(bytes.has_value());
+        (*bytes)[payload_tag ? bytes->size() - 1 : noise_transport::encrypted_header_size - 1] ^= 1;
+        if ( ! payload_tag) bytes->resize(noise_transport::encrypted_header_size);
+        auto const split = payload_tag ? bytes->size() - 1 : noise_transport::encrypted_header_size - 1;
+        fixture.write(*client, byte_span(*bytes).first(split));
+        fixture.write(*client, byte_span(*bytes).subspan(split));
+        fixture.finish_writing(*client);
+        fixture.require_closed(*client);
+        fixture.stop();
+    }
+}
+
+TEST_CASE("sv2 Noise listener refuses handshakes once an offline certificate expires", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    auto const unix_now = [] {
+        return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    };
+    auto const now = unix_now();
+    std::string error;
+    auto const online = load_noise_credentials(fixture.noise_settings, now, error);
+    REQUIRE(online.has_value());
+    REQUIRE(online->authority.has_value());
+    auto const certificate = noise_certificate::sign(online->authority->secret(),
+        online->static_key.public_key(), now - 10, now + 2);
+    REQUIRE(certificate.has_value());
+    fixture.noise_settings.certificate_file = (fixture.chain.dir() / "offline-certificate").string();
+    {
+        auto const bytes = certificate->bytes();
+        std::ofstream output(fixture.noise_settings.certificate_file, std::ios::binary);
+        output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+        REQUIRE(output.good());
+    }
+    fixture.noise_settings.authority_public_key = noise_authority_key(fixture.authority);
+    fixture.configure();
+    auto const port = fixture.start();
+
+    REQUIRE(fixture.wait_until([&] { return unix_now() > now + 2; }));
+    auto client = fixture.connect(port);
+    noise_initiator initiator(noise_keypair::generate(), fixture.authority, unix_now());
+    auto const first = initiator.start();
+    REQUIRE(first.has_value());
+    fixture.write(*client, *first);
+    fixture.require_closed(*client);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 Noise listener reports invalid credentials before binding", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    fixture.noise_settings.certificate_file = (fixture.chain.dir() / "absent-certificate").string();
+    fixture.noise_settings.authority_public_key = noise_authority_key(fixture.authority);
+    fixture.configure();
+    fixture.run();
+    auto const state = fixture.listening();
+    REQUIRE(state->error == std::make_error_code(std::errc::invalid_argument));
+    REQUIRE(state->port == 0);
+    REQUIRE(fixture.wait_until([&] { return fixture.completed->done; }));
+    REQUIRE_FALSE(fixture.completed->error);
+}
+
+TEST_CASE("sv2 Noise stop joins partial encrypted headers and payloads", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    auto const port = fixture.start();
+    auto in_header = fixture.connect(port);
+    auto header_transport = fixture.handshake(*in_header);
+    auto const header_bytes = header_transport.encrypt_frame(frame(setup()));
+    REQUIRE(header_bytes);
+    fixture.write(*in_header, byte_span(*header_bytes).first(3));
+
+    auto in_payload = fixture.connect(port);
+    auto payload_transport = fixture.handshake(*in_payload);
+    auto const payload_bytes = payload_transport.encrypt_frame(frame(setup()));
+    REQUIRE(payload_bytes);
+    fixture.write(*in_payload,
+        byte_span(*payload_bytes).first(noise_transport::encrypted_header_size + 1));
+
+    auto ready = fixture.connect(port);
+    auto ready_transport = fixture.handshake(*ready);
+    fixture.send(*ready, ready_transport, setup());
+    REQUIRE(fixture.receive<setup_connection_success>(*ready, ready_transport).used_version == 2);
+    fixture.stop();
+    fixture.require_closed(*in_header);
+    fixture.require_closed(*in_payload);
+    fixture.require_closed(*ready);
+}
+
+TEST_CASE("sv2 Noise preserves setup and frame refusal across reads", "[sv2 noise]") {
+    noise_listener_fixture fixture;
+    auto client = fixture.connect(fixture.start());
+    auto transport = fixture.handshake(*client);
+    SECTION("unsupported setup receives an encrypted error") {
+        auto message = setup();
+        message.protocol = setup_connection::protocol_mining;
+        fixture.send(*client, transport, message);
+        fixture.finish_writing(*client);
+        REQUIRE(fixture.receive<setup_connection_error>(*client, transport).error_code
+            == "unsupported-protocol");
+    }
+    SECTION("channel messages remain invalid") {
+        fixture.send(*client, transport, setup());
+        (void)fixture.receive<setup_connection_success>(*client, transport);
+        auto const bytes = transport.encrypt_frame(frame(coinbase_output_constraints{120, 3},
+            message_header::channel_msg_flag));
+        REQUIRE(bytes);
+        fixture.write(*client, byte_span(*bytes).first(21));
+        fixture.write(*client, byte_span(*bytes).subspan(21));
+        fixture.finish_writing(*client);
+    }
+    SECTION("an oversized authenticated header is refused before its payload") {
+        auto plain = to_data_chunk(message_header{0, 0,
+            template_provider_session::max_payload_size + 1});
+        plain.resize(message_header::size + template_provider_session::max_payload_size + 1);
+        auto const bytes = transport.encrypt_frame(plain);
+        REQUIRE(bytes);
+        fixture.write(*client, byte_span(*bytes).first(21));
+        fixture.write(*client, byte_span(*bytes).subspan(21, 1));
+        fixture.finish_writing(*client);
+    }
+    SECTION("an incomplete encrypted payload is refused at EOF") {
+        auto const bytes = transport.encrypt_frame(frame(setup()));
+        REQUIRE(bytes);
+        fixture.write(*client, byte_span(*bytes).first(21));
+        fixture.write(*client,
+            byte_span(*bytes).subspan(21, bytes->size() - 22));
+        fixture.finish_writing(*client);
+    }
+    fixture.require_closed(*client);
+    fixture.stop();
 }
 
 TEST_CASE("sv2 listener reports its port and serves a client whose frames arrive in pieces", "[sv2 template_provider]") {
