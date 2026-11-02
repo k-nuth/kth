@@ -295,7 +295,9 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS
+            # Exercise optional WS transport in Linux development builds;
+            # package/upload builds above retain their default feature options.
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o with_websocket=True
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"
@@ -577,6 +579,19 @@ jobs:
             echo "::error::kth_infrastructure_compile_fail_tests failed or timed out (exit=$rc)"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
+
+      - name: 🧪 P2P transports and discovery
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        working-directory: build/build/Release
+        run: |
+          for test in ./src/network/kth_network_test ./src/network/kth_ws_transport_test ./src/node/kth_ws_config_test; do
+            rc=0
+            timeout --kill-after=30 300 "$test" --reporter compact || rc=$?
+            if [ "$rc" != 0 ]; then
+              echo "::error::$test failed or timed out (exit=$rc)"
+              echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+            fi
+          done
 
       - name: 🧪 kth_blockchain_test (vmlimits)
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}

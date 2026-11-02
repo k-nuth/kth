@@ -54,6 +54,7 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
 option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
+option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)

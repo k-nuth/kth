@@ -150,6 +150,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
+    src/p2p_websocket.cpp
+    src/detail/header_service.cpp
+    src/detail/ws_discovery_task.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -328,6 +331,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_storage_wakeup.cpp
           test/select_sync.cpp
           test/configuration.cpp
+          test/p2p_websocket_config.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
@@ -337,6 +341,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
+          test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
           test/performance.cpp
           test/reservation.cpp
@@ -356,6 +361,22 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
       test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp)
+  endif()
+
+  add_executable(kth_p2p_close_test test/p2p_connection_close.cpp)
+  target_link_libraries(kth_p2p_close_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_p2p_close_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  target_compile_definitions(kth_p2p_close_test PRIVATE KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_p2p_close_test>")
+  add_test(NAME kth_p2p_close_test COMMAND kth_p2p_close_test)
+
+  add_executable(kth_ws_config_test test/p2p_websocket_config.cpp)
+  target_link_libraries(kth_ws_config_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_ws_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  add_test(NAME kth_ws_config_test COMMAND kth_ws_config_test)
+
+  if(KTH_WITH_WEBSOCKET)
+    add_executable(kth_ws_fixture test/websocket_fixture.cpp)
+    target_link_libraries(kth_ws_fixture PRIVATE ${PROJECT_NAME})
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

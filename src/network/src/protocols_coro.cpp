@@ -5,6 +5,7 @@
 // See protocols_coro.hpp for documentation on what this file replaces.
 
 #include <kth/network/protocols_coro.hpp>
+#include <kth/network/ws_discovery.hpp>
 
 #include <algorithm>
 
@@ -395,7 +396,7 @@ handshake_config make_handshake_config(
         .invalid_services = network_settings.invalid_services,
         .minimum_version = network_settings.protocol_minimum,
         .minimum_services = domain::message::version::service::none,
-        .user_agent = network_settings.user_agent,
+        .user_agent = network_settings.ws_discovery ? ws_discovery::advertise(network_settings.user_agent).value() : network_settings.user_agent,
         .start_height = current_height,
         .nonce = nonce,
         .timeout = std::chrono::seconds(network_settings.channel_handshake_seconds),

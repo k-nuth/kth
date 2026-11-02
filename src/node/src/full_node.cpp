@@ -16,6 +16,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/user_agent.hpp>
+#include <kth/node/header_service.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -108,6 +109,14 @@ full_node::~full_node() {
     // Reload the persisted mempool (re-validated against the current tip) before
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
+
+    // The same BCH handler serves both inbound and established outbound peers.
+    network_.register_message_handler<domain::message::get_headers>(
+        [this](peer_session& peer, domain::message::get_headers const& request)
+            -> ::asio::awaitable<message_result> {
+            auto ec = co_await node::serve_headers(chain_, peer, request, network_settings_.identifier);
+            co_return ec == error::success ? message_result::handled : message_result::disconnect;
+        });
 
     // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
     // chain-backed handler into the network layer, which stays chain-agnostic.

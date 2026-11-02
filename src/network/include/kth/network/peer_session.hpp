@@ -12,6 +12,9 @@
 #include <expected>
 #include <memory>
 #include <string>
+#if defined(KTH_WITH_WEBSOCKET)
+#include <kth/network/websocket_transport.hpp>
+#endif
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -125,6 +128,16 @@ public:
     /// Send raw bytes to the peer (coroutine version)
     ::asio::awaitable<code> send_raw(data_chunk data);
 
+    /// Bounded admission for task-owned responders. False requires explicit
+    /// session closure or protocol debt handling; never silently drop a reply.
+    bool try_send_raw(data_chunk data) {
+        return !stopped() && outbound_.try_send(std::error_code{}, std::move(data));
+    }
+
+    bool is_websocket() const;
+    /// Execution context for the complete peer lifecycle, not just socket I/O.
+    executor_type get_executor() const { return strand_; }
+
     /// Get the inbound message channel for receiving messages
     [[nodiscard]]
     inbound_channel& messages();
@@ -134,6 +147,8 @@ public:
     // -------------------------------------------------------------------------
     // These methods read/write directly to the socket without using channels.
     // Use ONLY before calling run() - after run() starts, use send() and messages().
+    // TCP only: WebSocket has an owned codec pump under run(); use the normal
+    // channel-based handshake concurrently with run() for that transport.
 
     /// Read a message directly from the socket (bypasses inbound channel)
     /// Use this for handshake before run() is started
@@ -144,15 +159,13 @@ public:
     /// Use this for handshake before run() is started
     template <typename Message>
     ::asio::awaitable<code> send_direct(Message const& message) {
+        if (is_websocket()) co_return error::not_implemented;
         if (stopped()) {
             co_return error::channel_stopped;
         }
 
         auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto [ec, bytes_written] = co_await write_exact(::asio::buffer(data));
 
         if (ec) {
             co_return error::boost_to_error_code(ec);
@@ -361,9 +374,18 @@ private:
     // Data members
     // -------------------------------------------------------------------------
 
+    ::asio::awaitable<std::pair<std::error_code, size_t>> read_exact(::asio::mutable_buffer buffer);
+    ::asio::awaitable<std::pair<std::error_code, size_t>> write_exact(::asio::const_buffer buffer);
+#if defined(KTH_WITH_WEBSOCKET)
+    friend awaitable_expected<peer_session::ptr> async_accept_websocket(socket_type, settings const&, websocket_server_options);
+#endif
+
     // Socket and strand (all I/O serialized through strand)
     socket_type socket_;
     strand_type strand_;
+#if defined(KTH_WITH_WEBSOCKET)
+    std::unique_ptr<websocket_transport> websocket_;
+#endif
 
     // Channels for message passing
     outbound_channel outbound_;
@@ -436,6 +458,11 @@ private:
 // =============================================================================
 // Connection helpers - replace connector/acceptor classes
 // =============================================================================
+
+#if defined(KTH_WITH_WEBSOCKET)
+[[nodiscard]] awaitable_expected<peer_session::ptr> async_accept_websocket(
+    peer_session::socket_type socket, settings const& settings, websocket_server_options options);
+#endif
 
 /// Connect to a peer by hostname and port
 /// Resolves DNS and connects with timeout
