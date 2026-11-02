@@ -31,6 +31,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/domain/message/compact_block.hpp>
+#include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
@@ -1751,4 +1752,124 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
         return sent.command == "getdata";
     }) == recover);
     CHECK(log.count("block_range_request") == size_t(recover));
+}
+
+// =============================================================================
+// A block handed to the node at its tip (#563)
+// =============================================================================
+
+namespace {
+
+// block_chain::organize on a thread of its own, as the RPC server calls it.
+std::future<code> organize_async(chain_fixture& fixture, domain::chain::block const& block) {
+    return std::async(std::launch::async, [&fixture, block] {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            fixture.chain().organize(std::make_shared<domain::message::block const>(block)),
+            ::asio::use_future);
+        io.run();
+        return result.get();
+    });
+}
+
+code organize_now(chain_fixture& fixture, domain::chain::block const& block) {
+    auto organized = organize_async(fixture, block);
+    REQUIRE(organized.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
+    return organized.get();
+}
+
+} // namespace
+
+TEST_CASE("a block that does not pass at the connected tip is refused before anything is stored",
+          "[header_tip][submit]") {
+    // No orchestrator: everything here is decided by organize() itself, before
+    // the block reaches anything that writes.
+    chain_fixture fixture{"submit_refused"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 5, 5);
+    auto const unknown = [&](domain::chain::block const& block) {
+        return fixture.organizer().index().find(block.hash()) == blockchain::header_index::null_index;
+    };
+
+    // The tip itself, and a block built on something below it.
+    CHECK(organize_now(fixture, staged.trunk[4]) == error::duplicate_block);
+    auto const off_tip = mine_block(staged.trunk[2].hash(), 4,
+        staged.trunk[3].header().timestamp() + 1, /*salt*/ 3, {}, 0);
+    CHECK(organize_now(fixture, off_tip) == error::orphan_block);
+    CHECK(unknown(off_tip));
+
+    // The next block's header over another block's transactions.
+    auto const other = mine_block(staged.trunk[4].hash(), 6,
+        staged.next.header().timestamp(), /*salt*/ 5, {}, 0);
+    domain::chain::block const mismatched(staged.next.header(), other.transactions());
+    CHECK(organize_now(fixture, mismatched) == error::merkle_mismatch);
+    CHECK(unknown(mismatched));
+
+    // A valid next block, with nothing running that connects blocks.
+    CHECK(organize_now(fixture, staged.next) == error::service_stopped);
+    CHECK(unknown(staged.next));
+
+    auto const view = fixture.chain().chain_view();
+    REQUIRE(view);
+    CHECK(view->connected_tip_height == 5u);
+}
+
+TEST_CASE("integrated: a block handed to the node at its tip is connected, and no peer is asked for it",
+          "[header_tip][integration][submit]") {
+    // First, so it is installed before any thread that logs exists and
+    // removed after all of them are gone: swapping the default logger under a
+    // running thread is a data race.
+    captured_log log;
+
+    // Fully synced at 5. Block 6 is handed to the node, as a block a miner
+    // found reaches it: it is connected through the node's own storage and
+    // UTXO build, and the peer is never asked for a body only this node has.
+    chain_fixture fixture{"submit_at_tip"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 5, 5);
+
+    auto const peer_config = node_settings("submit_at_tip_peer");
+    wire_peer peer(peer_config, 9201, 5);
+
+    bool confirmed = false;
+    std::optional<code> accepted;
+    std::optional<code> again;
+    std::vector<wire_peer::sent_message> sent;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "submit_at_tip");
+        run.connect(peer.session);
+
+        REQUIRE(peer.next_getheaders(quick).has_value());
+        run.deliver(peer.session, peer.headers({}));
+        confirmed = wait_until([&] { return log.count("Fully synced at height 5") > 0; }, quick);
+
+        accepted = organize_now(fixture, staged.next);
+        // Handed over again once connected.
+        again = organize_now(fixture, staged.next);
+        sent = peer.sent_until_quiet(quiet);
+
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("submit_at_tip");
+
+    CHECK(stopped_cleanly);
+    CHECK(confirmed);
+    REQUIRE(accepted.has_value());
+    CHECK(*accepted == error::success);
+    REQUIRE(again.has_value());
+    CHECK(*again == error::duplicate_block);
+
+    auto const view = fixture.chain().chain_view();
+    REQUIRE(view);
+    CHECK(view->connected_tip_height == 6u);
+    CHECK(view->tip_hash == staged.next.hash());
+
+    // Its body came with it: no range was opened and nothing was asked for.
+    CHECK(log.count("block_range_request") == 0u);
+    CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
+        return message.command == domain::message::get_data::command;
+    }));
 }
