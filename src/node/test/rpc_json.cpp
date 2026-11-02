@@ -101,6 +101,27 @@ TEST_CASE("params_strings tolerates empty and non-array params", "[rpc json]") {
     REQUIRE(params_strings("{}").empty());
 }
 
+TEST_CASE("SHV scalar params retain JSON types and integer bounds", "[rpc json][shv]") {
+    REQUIRE(params_string(R"(["",0])", 0) == "");
+    REQUIRE(params_string(R"([0,"root"])", 1) == "root");
+    REQUIRE(params_int32("[-2147483648,2147483647]", 0) == -2147483647 - 1);
+    REQUIRE(params_int32("[-2147483648,2147483647]", 1) == 2147483647);
+    for (auto const* invalid : {"", "{bad", "{}", "[]", "[,1]", "[null]", "[false]", "[{}]", "[[]]"}) {
+        CAPTURE(invalid);
+        REQUIRE_FALSE(params_string(invalid, 0));
+        REQUIRE_FALSE(params_int32(invalid, 0));
+    }
+    REQUIRE_FALSE(params_string("[0]", 0));
+    REQUIRE_FALSE(params_string(R"(["root"])", 1));
+    for (auto const* invalid : {R"(["0"])", "[0.5]", "[2147483648]", "[-2147483649]", "[18446744073709551616]"}) {
+        CAPTURE(invalid);
+        REQUIRE_FALSE(params_int32(invalid, 0));
+    }
+    REQUIRE_FALSE(params_int32("[0]", 1));
+    REQUIRE_FALSE(params_int32("[0,,1]", 1));
+    REQUIRE_FALSE(params_string("[0,,1]", 1));
+}
+
 TEST_CASE("params_uint reads a JSON number or numeric string", "[rpc json]") {
     REQUIRE(params_uint("[0]", 0) == 0u);
     REQUIRE(params_uint("[42]", 0) == 42u);

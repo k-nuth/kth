@@ -25,6 +25,7 @@
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_headers.hpp>
+#include <kth/domain/message/get_shv.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/heading.hpp>
 #include <kth/domain/message/inventory.hpp>
@@ -38,6 +39,7 @@
 #include <kth/domain/message/send_addrv2.hpp>
 #include <kth/domain/message/send_compact.hpp>
 #include <kth/domain/message/send_headers.hpp>
+#include <kth/domain/message/shv.hpp>
 #include <kth/domain/message/addrv2.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/verack.hpp>
@@ -119,6 +121,7 @@ DECLARE_MESSAGE_POINTER_TYPES(get_blocks);
 DECLARE_MESSAGE_POINTER_TYPES(get_block_transactions);
 DECLARE_MESSAGE_POINTER_TYPES(get_data);
 DECLARE_MESSAGE_POINTER_TYPES(get_headers);
+DECLARE_MESSAGE_POINTER_TYPES(get_shv);
 DECLARE_MESSAGE_POINTER_TYPES(header);
 DECLARE_MESSAGE_POINTER_TYPES(headers);
 DECLARE_MESSAGE_POINTER_TYPES(inventory);
@@ -131,6 +134,7 @@ DECLARE_MESSAGE_POINTER_TYPES(reject);
 DECLARE_MESSAGE_POINTER_TYPES(send_addrv2);
 DECLARE_MESSAGE_POINTER_TYPES(send_compact);
 DECLARE_MESSAGE_POINTER_TYPES(send_headers);
+DECLARE_MESSAGE_POINTER_TYPES(shv);
 DECLARE_MESSAGE_POINTER_TYPES(addrv2);
 DECLARE_MESSAGE_POINTER_TYPES(transaction);
 DECLARE_MESSAGE_POINTER_TYPES(verack);

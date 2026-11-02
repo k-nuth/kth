@@ -69,6 +69,13 @@ void fail_abla_lookup(bool enabled);
 /// Whether the ABLA lookup is currently made to fail.
 [[nodiscard]] bool abla_lookup_faulted();
 
+enum class mmr_update_fault { none, reject_tip, allocation };
+
+/// A failed index update turns SHV off and must not stop the chain from
+/// publishing the tip it connected. These failures cannot be arranged from a
+/// valid persisted chain on demand.
+void fail_mmr_update(mmr_update_fault fault);
+
 } // namespace kth::blockchain::detail
 
 #endif // KTH_BLOCKCHAIN_DETAIL_BLOCK_CHAIN_INTERNAL_HPP_

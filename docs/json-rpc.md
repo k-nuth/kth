@@ -4,9 +4,9 @@ Knuth exposes an optional JSON-RPC-over-HTTP interface, compatible in shape with
 the Bitcoin Cash Node / Bitcoin Core RPC that mining and wallet tooling expects.
 
 The JSON-RPC server and the C-API are two frontends over the same C++ core
-(`kth::blockchain::block_chain`). **Every JSON-RPC method has a C-API
-counterpart**; the [equivalence table](#method-equivalences) below is the source
-of truth for that mapping.
+(`kth::blockchain::block_chain`). The
+[equivalence table](#method-equivalences) below maps these methods to the C++
+core and, where available, their C-API counterparts.
 
 ## Building
 
@@ -61,8 +61,7 @@ codes follow Bitcoin Core (`-32700` parse error, `-32601` method not found, ...)
 ## Method equivalences
 
 Each row maps a JSON-RPC method to its C-API function and the underlying C++
-`block_chain` method. New methods must be added here together with their C-API
-counterpart.
+`block_chain` method.
 
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
@@ -71,6 +70,7 @@ counterpart.
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getshv` | Not exposed in the C-API | `shv_proof(block_height, commitment_height, to_root)` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` |
@@ -86,6 +86,40 @@ counterpart.
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
 callback (`kth_chain_async_*`) flavor.
+
+## Header inclusion proofs: getshv
+
+Enable the connected-chain MMR index with `--node.mmr_index=true` (default false),
+or `node.mmr_index = true` in the configuration file. RPC support and the RPC
+server must also be enabled as described above.
+
+`getshv ["root", commitment_height, block_height]` returns an inclusion proof
+against the Bitcoin Merkle root at `commitment_height`. Use `"peak"` to request
+a proof against the containing MMR peak instead. Both heights are JSON integers
+from zero through 2147483647; block height cannot exceed commitment height.
+The commitment includes genesis and all connected blocks through that height.
+
+The result has exactly three fields: `branch` (sibling hashes from leaf upward),
+`header` (the 80-byte header encoded as hex), and `root` or `peak` (the target
+hash). Hashes use Bitcoin display order. At genesis the branch is empty and
+the target is the genesis block hash.
+
+For example, `getshv ["root", 1000, 500]` proves block 500 against the root
+covering blocks 0 through 1000. The client hashes the returned header and
+verifies the branch against its trusted commitment; the server's returned
+target alone is not a trust anchor. See [SHV](shv.md) for the client accumulator
+and P2P messages.
+
+With the index enabled, `getblockchaininfo` includes `shvroot` at its connected
+tip, and verbose `getblockheader` includes `shvroot` for a header in the indexed
+connected chain. The field is omitted when no matching indexed root is
+available, including headers ahead of the connected tip. Raw header responses
+remain 80 bytes.
+
+`getshv` returns `-1` when the index is disabled, `-8` for an unknown proof type,
+invalid heights, a block outside the connected chain, or a commitment beyond
+the connected tip. Arguments of the wrong JSON type or outside the signed
+32-bit integer range return `-3`. Malformed argument lists return `-32602`.
 
 _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,

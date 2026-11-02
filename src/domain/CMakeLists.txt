@@ -212,6 +212,8 @@ set(kth_sources_just_legacy
 
         src/multi_crypto_support.cpp
 
+        src/math/mmr.cpp
+        src/math/mmr_accumulator.cpp
         src/math/stealth.cpp
         src/math/external/scrypt.h
 
@@ -231,6 +233,7 @@ set(kth_sources_just_legacy
 
         src/message/get_data.cpp
         src/message/get_headers.cpp
+        src/message/get_shv.cpp
         src/message/header.cpp
         src/message/headers.cpp
         src/message/heading.cpp
@@ -246,6 +249,7 @@ set(kth_sources_just_legacy
         src/message/send_compact.cpp
         src/message/send_addrv2.cpp
         src/message/send_headers.cpp
+        src/message/shv.cpp
         src/message/addrv2.cpp
         src/message/transaction.cpp
         src/message/verack.cpp
@@ -320,6 +324,7 @@ set(kth_headers
     include/kth/domain/message/messages.hpp
     include/kth/domain/message/heading.hpp
     include/kth/domain/message/get_headers.hpp
+    include/kth/domain/message/get_shv.hpp
     include/kth/domain/message/block.hpp
     include/kth/domain/message/not_found.hpp
     include/kth/domain/message/merkle_block.hpp
@@ -340,6 +345,7 @@ set(kth_headers
     include/kth/domain/message/double_spend_proof.hpp
     include/kth/domain/message/send_addrv2.hpp
     include/kth/domain/message/send_headers.hpp
+    include/kth/domain/message/shv.hpp
     include/kth/domain/message/addrv2.hpp
     include/kth/domain/message/transaction.hpp
     include/kth/domain/message/reject.hpp
@@ -416,6 +422,7 @@ set(kth_headers
     include/kth/domain/machine/script_flags.hpp
     include/kth/domain/machine/script_pattern.hpp
     include/kth/domain/math/limits.hpp
+    include/kth/domain/math/mmr.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/impl/machine
     include/kth/domain/impl/machine/program.ipp
@@ -600,6 +607,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
         test/math/domain_limits_constraints.cpp
         test/math/limits.cpp
+        test/math/mmr.cpp
         test/math/stealth.cpp
 
         test/message/address.cpp
@@ -619,6 +627,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/message/get_blocks.cpp
         test/message/get_data.cpp
         test/message/get_headers.cpp
+        test/message/shv.cpp
         test/message/header.cpp
         test/message/headers.cpp
         test/message/heading.cpp

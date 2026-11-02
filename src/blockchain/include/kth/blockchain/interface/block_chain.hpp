@@ -33,6 +33,7 @@
 #include <kth/domain/chain/light_block.hpp>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/chain_mmr.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
@@ -119,6 +120,15 @@ struct KB_API block_chain {
     [[nodiscard]] bool stop();
     [[nodiscard]] bool close();
     [[nodiscard]] bool stopped() const;
+
+    [[nodiscard]] bool shv_enabled() const;
+    [[nodiscard]] std::optional<uint64_t> shv_height(hash_digest const& hash) const;
+    [[nodiscard]] std::optional<hash_digest> shv_root(uint64_t height,
+        std::optional<hash_digest> expected_hash = std::nullopt) const;
+    [[nodiscard]] std::optional<shv_proof_result> shv_proof(uint64_t height,
+        uint64_t commitment_height, bool to_root) const;
+    [[nodiscard]] std::optional<shv_proof_result> shv_proof(hash_digest const& hash,
+        uint64_t commitment_height, bool to_root) const;
 
     // =========================================================================
     // ORGANIZERS (Core blockchain operations)
@@ -1128,6 +1138,7 @@ private:
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
     header_index header_index_;
+    std::unique_ptr<chain_mmr> mmr_index_;
 
     // Flat file block storage (for fast sequential I/O during IBD)
     std::unique_ptr<database::block_store> block_store_;

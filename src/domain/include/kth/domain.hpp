@@ -38,6 +38,7 @@
 #include <kth/domain/machine/script_flags.hpp>
 #include <kth/domain/machine/script_pattern.hpp>
 
+#include <kth/domain/math/mmr.hpp>
 #include <kth/domain/math/stealth.hpp>
 
 #include <kth/domain/message/address.hpp>
@@ -56,6 +57,7 @@
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_headers.hpp>
+#include <kth/domain/message/get_shv.hpp>
 #include <kth/domain/message/header.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/heading.hpp>
@@ -71,6 +73,7 @@
 #include <kth/domain/message/reject.hpp>
 #include <kth/domain/message/send_compact.hpp>
 #include <kth/domain/message/send_headers.hpp>
+#include <kth/domain/message/shv.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/verack.hpp>
 #include <kth/domain/message/version.hpp>

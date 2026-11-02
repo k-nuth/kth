@@ -24,7 +24,54 @@ bool copy_raw(simdjson::ondemand::value value, std::string& out) {
     return true;
 }
 
+template <typename T, typename Read>
+std::optional<T> scalar_param(std::string_view params_json, std::size_t index, Read read) {
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params_json);
+    simdjson::ondemand::document doc;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
+        return std::nullopt;
+    }
+    simdjson::ondemand::array arr;
+    if (doc.get_array().get(arr) != simdjson::SUCCESS) {
+        return std::nullopt;
+    }
+    std::size_t i = 0;
+    for (auto element : arr) {
+        if (i++ == index) {
+            simdjson::ondemand::value value;
+            if (element.get(value) != simdjson::SUCCESS) {
+                return std::nullopt;
+            }
+            return read(value);
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace
+
+std::optional<std::string> params_string(std::string_view params_json, std::size_t index) {
+    return scalar_param<std::string>(params_json, index,
+        [](simdjson::ondemand::value value) -> std::optional<std::string> {
+            std::string_view text;
+            if (value.get_string().get(text) != simdjson::SUCCESS) {
+                return std::nullopt;
+            }
+            return std::string(text);
+        });
+}
+
+std::optional<std::int32_t> params_int32(std::string_view params_json, std::size_t index) {
+    return scalar_param<std::int32_t>(params_json, index,
+        [](simdjson::ondemand::value value) -> std::optional<std::int32_t> {
+            std::int32_t number{};
+            if (value.get_int32().get(number) != simdjson::SUCCESS) {
+                return std::nullopt;
+            }
+            return number;
+        });
+}
 
 std::expected<request, rpc_error> parse_request(std::string_view body) {
     simdjson::ondemand::parser parser;

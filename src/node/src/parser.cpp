@@ -243,6 +243,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--fork.asert_half_life",         cfg.chain.asert_half_life);
 
     // [node]
+    app.add_option("--node.mmr_index",             cfg.chain.mmr_index,
+        "Maintain the connected-chain MMR index and serve Simplified Header Verification proofs.");
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);

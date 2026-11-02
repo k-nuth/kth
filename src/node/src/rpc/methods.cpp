@@ -190,7 +190,64 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     }
     co_return render_blockchain_info(
         domain::config::name(info->chain), info->blocks, heights->header,
-        encode_hash(*best), info->difficulty);
+        encode_hash(*best), info->difficulty, ctx.chain.shv_root(info->blocks, *best));
+}
+
+// getshv <type> <commitment_height> <block_height> -> a header inclusion proof.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_shv(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.size() != 3) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getshv requires [type, commitment_height, block_height]"));
+    }
+    if ( ! ctx.chain.shv_enabled()) {
+        co_return std::unexpected(make_error(error_code::misc_error,
+            "MMR index is not enabled. Start with --node.mmr_index=true"));
+    }
+
+    auto const type = params_string(req.params, 0);
+    if ( ! type) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "type must be a string"));
+    }
+    auto const commitment_height = params_int32(req.params, 1);
+    if ( ! commitment_height) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "commitment_height must be a 32-bit integer"));
+    }
+    auto const block_height = params_int32(req.params, 2);
+    if ( ! block_height) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "block_height must be a 32-bit integer"));
+    }
+    if (*commitment_height < 0) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "commitment_height must be non-negative"));
+    }
+    if (*block_height < 0) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "block_height must be non-negative"));
+    }
+    if (*block_height > *commitment_height) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "block_height cannot exceed commitment_height"));
+    }
+    if ( ! ctx.chain.shv_root(*block_height)) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Block not found"));
+    }
+    if (*type != "root" && *type != "peak") {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Unknown type. Use: root, peak"));
+    }
+
+    auto const proof = ctx.chain.shv_proof(uint64_t(*block_height), uint64_t(*commitment_height), *type == "root");
+    if ( ! proof) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Failed to generate proof"));
+    }
+    co_return render_shv(proof->header, proof->proof, proof->target, *type == "root");
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.
@@ -269,7 +326,7 @@ get_block_header(method_context& ctx, request const& req) {
     }
 
     auto const& [header, height] = *result;
-    co_return render_block_header(*header, height, *hash);
+    co_return render_block_header(*header, height, *hash, ctx.chain.shv_root(height, *hash));
 }
 
 // sendrawtransaction <hexstring> -> the accepted txid, or a reject error.
@@ -384,6 +441,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblockheader", get_block_header);
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
+    d.add("getshv", get_shv);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
