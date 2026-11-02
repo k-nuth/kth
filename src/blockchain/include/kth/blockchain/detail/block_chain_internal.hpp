@@ -71,8 +71,9 @@ void fail_abla_lookup(bool enabled);
 
 enum class mmr_update_fault { none, reject_tip, allocation };
 
-/// A failed index update must keep the old chain view and stop serving proofs.
-/// These failures cannot be arranged from a valid persisted chain on demand.
+/// A failed index update turns SHV off and must not stop the chain from
+/// publishing the tip it connected. These failures cannot be arranged from a
+/// valid persisted chain on demand.
 void fail_mmr_update(mmr_update_fault fault);
 
 } // namespace kth::blockchain::detail
