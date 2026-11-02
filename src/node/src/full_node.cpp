@@ -13,6 +13,7 @@
 
 #include <kth/blockchain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
+#include <kth/node/block_serving.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/user_agent.hpp>
@@ -117,6 +118,39 @@ full_node::~full_node() {
             auto const inv = co_await chain_.fetch_mempool(50000, 0);
             if (inv && *inv) {
                 co_await peer.send(**inv);
+            }
+            co_return message_result::handled;
+        });
+
+    // Serve peers that sync from this node: headers, then the blocks they name.
+    network_.register_message_handler<domain::message::get_headers>(
+        [this](peer_session& peer, domain::message::get_headers const& request)
+            -> ::asio::awaitable<message_result> {
+            co_await peer.send(answer_header_request(request, chain_));
+            co_return message_result::handled;
+        });
+
+    network_.register_message_handler<domain::message::get_data>(
+        [this](peer_session& peer, domain::message::get_data const& request)
+            -> ::asio::awaitable<message_result> {
+            // Each block goes out as it is read, so a large request never holds
+            // more than one block in memory.
+            domain::message::inventory_vector::list missing;
+            for (auto const& entry : request.inventories()) {
+                if ( ! is_block_request(entry)) {
+                    continue;
+                }
+                auto const block = co_await servable_block(chain_, entry.hash());
+                if ( ! block) {
+                    missing.push_back(entry);
+                } else if (co_await peer.send(*block) != error::success) {
+                    co_return message_result::handled;
+                }
+            }
+            if ( ! missing.empty()) {
+                if (auto const answer = domain::message::not_found::create(std::move(missing))) {
+                    co_await peer.send(*answer);
+                }
             }
             co_return message_result::handled;
         });

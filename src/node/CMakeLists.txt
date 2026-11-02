@@ -141,6 +141,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/block_serving.cpp
     src/detail/block_announcements.cpp
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
@@ -219,6 +220,7 @@ set(kth_headers
   include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
+  include/kth/node/block_serving.hpp
   include/kth/node/parser.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
@@ -331,6 +333,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
+          test/block_serving.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
           test/main.cpp
