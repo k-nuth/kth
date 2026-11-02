@@ -139,12 +139,15 @@ TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entri
         node::message_dispatcher dispatcher;
         dispatcher.register_handler(domain::message::get_shv::command,
             node::detail::make_get_shv_handler(fixture.chain(), p2p));
+        // Spelled as the handler type: a lambda with no captures also converts
+        // to the function-pointer overload.
         dispatcher.register_handler<domain::message::ping>(
-            [](network::peer_session& peer, domain::message::ping const& ping)
-                -> ::asio::awaitable<node::message_result> {
-                auto const ec = co_await peer.send(domain::message::pong(ping.nonce()));
-                co_return ec ? node::message_result::disconnect : node::message_result::handled;
-            });
+            node::typed_message_handler_fn<domain::message::ping>{
+                [](network::peer_session& peer, domain::message::ping const& ping)
+                    -> ::asio::awaitable<node::message_result> {
+                    auto const ec = co_await peer.send(domain::message::pong(ping.nonce()));
+                    co_return ec ? node::message_result::disconnect : node::message_result::handled;
+                }});
 
         ::asio::io_context io;
         ::asio::ip::tcp::acceptor listener(io,
