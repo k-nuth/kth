@@ -33,6 +33,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/node/detail/scope_action.hpp>
 #include <kth/infrastructure/formats/base_64.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -110,7 +111,9 @@ int on_message_complete(llhttp_t* p) {
     c->complete = true;
     c->method = llhttp_get_method(p);
     c->keep_alive = llhttp_should_keep_alive(p) != 0;
-    return 0;
+    // Stop at the end of this request: bytes after it belong to the next
+    // request a client pipelined on the same connection.
+    return HPE_PAUSED;
 }
 
 void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) {
@@ -174,7 +177,8 @@ server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     , chain_(chain)
     , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
     , owner_(::asio::make_strand(std::move(executor)))
-    , stop_requests_(owner_, 1) {
+    , stop_requests_(owner_, 1)
+    , listening_(owner_, 1) {
     register_builtin_methods(dispatcher_);
 
     if ( ! settings_.user.empty() || ! settings_.password.empty()) {
@@ -204,6 +208,9 @@ bool server::authorized(std::string_view authorization_header) const {
 
 ::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket& socket) {
     std::array<char, 8192> buffer;
+    // Bytes read past the end of the previous request: the start of the next
+    // one when a client pipelines requests on a keep-alive connection.
+    std::string pending;
     for (;;) {
         parse_ctx ctx;
         llhttp_t parser;
@@ -211,12 +218,22 @@ bool server::authorized(std::string_view authorization_header) const {
         init_parser(parser, settings, ctx);
 
         while ( ! ctx.complete) {
-            auto [ec, n] = co_await socket.async_read_some(
-                ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
-            if (ec || n == 0) {
-                co_return; // client closed or read error
+            std::string_view input = pending;
+            if (input.empty()) {
+                auto [ec, n] = co_await socket.async_read_some(
+                    ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
+                if (ec || n == 0) {
+                    co_return; // client closed or read error
+                }
+                input = std::string_view(buffer.data(), n);
             }
-            if (llhttp_execute(&parser, buffer.data(), n) != HPE_OK) {
+            auto const status = llhttp_execute(&parser, input.data(), input.size());
+            if (status == HPE_PAUSED) {
+                // on_message_complete paused right after this request.
+                pending = std::string(llhttp_get_error_pos(&parser), input.data() + input.size());
+            } else if (status == HPE_OK) {
+                pending.clear();
+            } else {
                 co_await write_response(socket, 400, "Bad Request",
                     R"({"result":null,"error":{"code":-32700,"message":"Parse error"},"id":null})",
                     false);
@@ -248,11 +265,20 @@ bool server::authorized(std::string_view authorization_header) const {
 }
 
 void server::stop() {
+    // Startup may have a waiter even if run() will never be entered.
+    // This channel is concurrent; socket shutdown still belongs to owner_.
+    listening_.close();
     (void)stop_requests_.try_send(std::error_code{}, 1);
 }
 
 ::asio::awaitable<void> server::run() {
+    // Also wake a startup waiter if cancellation prevents run_owned starting.
+    detail::scope_action close_startup([this] { listening_.close(); }, true);
     co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
+}
+
+::asio::awaitable<uint16_t> server::wait_until_listening() {
+    co_return co_await listening_.async_receive(::asio::use_awaitable);
 }
 
 ::asio::awaitable<void> server::run_owned() {
@@ -263,6 +289,7 @@ void server::stop() {
     auto const address = ::asio::ip::make_address(settings_.bind, ec);
     if (ec) {
         spdlog::error("[rpc] invalid bind address '{}': {}", settings_.bind, ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
 
@@ -271,6 +298,7 @@ void server::stop() {
     acceptor.open(endpoint.protocol(), ec);
     if (ec) {
         spdlog::error("[rpc] failed to open acceptor: {}", ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
     acceptor.set_option(tcp::acceptor::reuse_address(true), ec);
@@ -278,15 +306,23 @@ void server::stop() {
     if (ec) {
         spdlog::error("[rpc] failed to bind {}:{}: {}", settings_.bind, settings_.port,
             ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
     acceptor.listen(tcp::socket::max_listen_connections, ec);
     if (ec) {
         spdlog::error("[rpc] failed to listen: {}", ec.message());
+        (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
 
-    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, settings_.port);
+    auto const bound = acceptor.local_endpoint(ec);
+    if (ec) {
+        (void)listening_.try_send(ec, uint16_t{});
+        co_return;
+    }
+    (void)listening_.try_send(std::error_code{}, bound.port());
+    spdlog::info("[rpc] JSON-RPC server listening on {}:{}", settings_.bind, bound.port());
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.
