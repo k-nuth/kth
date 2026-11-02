@@ -116,6 +116,44 @@ int on_message_complete(llhttp_t* p) {
     return HPE_PAUSED;
 }
 
+// Canonicalize only the request head. CR is held until its LF arrives;
+// bodies and subsequent pipelined requests remain byte-for-byte unchanged.
+struct head_line_normalizer {
+    bool complete = false;
+    bool after_cr = false;
+    bool line_has_content = false;
+    bool saw_request_line = false;
+
+    [[nodiscard]] bool append(std::string_view input, std::string& output) {
+        for (std::size_t i = 0; i < input.size(); ++i) {
+            if (complete) {
+                output.append(input.substr(i));
+                return true;
+            }
+            auto const b = input[i];
+            if (after_cr) {
+                after_cr = false;
+                if (b != '\n') return false;
+            } else if (b == '\r') {
+                after_cr = true;
+                continue;
+            } else if (b != '\n') {
+                output += b;
+                line_has_content = true;
+                continue;
+            }
+            output += "\r\n";
+            if (line_has_content) {
+                saw_request_line = true;
+            } else if (saw_request_line) {
+                complete = true;
+            }
+            line_has_content = false;
+        }
+        return true;
+    }
+};
+
 void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) {
     llhttp_settings_init(&settings);
     settings.on_header_field = on_header_field;
@@ -216,6 +254,7 @@ bool server::authorized(std::string_view authorization_header) const {
         llhttp_t parser;
         llhttp_settings_t settings;
         init_parser(parser, settings, ctx);
+        head_line_normalizer head;
 
         while ( ! ctx.complete) {
             std::string_view input = pending;
@@ -223,11 +262,22 @@ bool server::authorized(std::string_view authorization_header) const {
                 auto [ec, n] = co_await socket.async_read_some(
                     ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
                 if (ec || n == 0) {
+                    if (head.after_cr && (!ec || ec == ::asio::error::eof)) {
+                        co_await write_response(socket, 400, "Bad Request",
+                            R"({"result":null,"error":{"code":-32700,"message":"Parse error"},"id":null})",
+                            false);
+                    }
                     co_return; // client closed or read error
                 }
                 input = std::string_view(buffer.data(), n);
             }
-            auto const status = llhttp_execute(&parser, input.data(), input.size());
+            std::string normalized;
+            normalized.reserve(input.size() + 128);
+            auto const valid_head = head.append(input, normalized);
+            input = normalized;
+            auto const status = valid_head
+                ? llhttp_execute(&parser, input.data(), input.size())
+                : HPE_LF_EXPECTED;
             if (status == HPE_PAUSED) {
                 // on_message_complete paused right after this request.
                 pending = std::string(llhttp_get_error_pos(&parser), input.data() + input.size());
