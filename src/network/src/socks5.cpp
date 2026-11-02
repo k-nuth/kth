@@ -114,7 +114,7 @@ awaitable_expected<::asio::ip::tcp::socket> async_socks5_connect(
     std::chrono::steady_clock::duration timeout)
 {
     auto const proxy_address = infrastructure::config::authority::parse_from(proxy);
-    if ( ! proxy_address || proxy_address->port() == 0 || port == 0 ||
+    if ( ! proxy_address || proxy_address->is_overlay() || proxy_address->port() == 0 || port == 0 ||
          hostname.empty() || hostname.size() > 255 ||
          hostname.find('\0') != std::string::npos || hostname.find('%') != std::string::npos) {
         co_return std::unexpected(error::illegal_value);

@@ -31,6 +31,31 @@ struct p2p_node_test_seam {
     static void set_status_probe(p2p_node& target, Probe probe) {
         target.status_probe_ = std::move(probe);
     }
+
+    static ::asio::awaitable<void> supervise(p2p_node& target) {
+        co_await target.peer_supervisor();
+    }
+
+    [[nodiscard]] static bool supervisor_ready(p2p_node const& target) {
+        return target.supervisor_ready_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] static size_t inbound_count(p2p_node const& target) {
+        return target.inbound_count_.load();
+    }
+
+    static ::asio::awaitable<void> submit(p2p_node& target, network::peer_session::ptr peer,
+        peer_direction direction)
+    {
+        co_await target.new_peer_channel_->async_send(std::error_code{},
+            peer_event{std::move(peer), direction, nullptr}, ::asio::use_awaitable);
+    }
+
+    [[nodiscard]] static bool ingest_addresses(p2p_node& target, network::raw_message const& raw,
+        uint32_t version)
+    {
+        return target.ingest_peer_addresses(raw, version);
+    }
 };
 
 } // namespace kth::node::detail

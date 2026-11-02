@@ -9,6 +9,7 @@
 #include <test_helpers.hpp>
 
 #include <kth/network.hpp>
+#include <kth/node/detail/p2p_node_test_seam.hpp>
 #include <kth/node/p2p_node.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -149,6 +150,47 @@ TEST_CASE("p2p_node bans a numeric proxy destination under its own address", "[p
     ctx.poll();
 }
 
+TEST_CASE("p2p_node keys overlay bans and misbehavior by the peer address", "[p2p_node][i2p][onion]") {
+    auto settings = make_test_settings_p2p();
+    settings.peers_file.clear();
+    p2p_node node(settings);
+    ::asio::io_context ctx;
+    auto make = [&](infrastructure::message::address_network network, uint8_t value, uint16_t port) {
+        infrastructure::message::overlay_address bytes{};
+        bytes[0] = value;
+        infrastructure::config::authority const address(
+            infrastructure::message::network_address(0, 0, network, bytes, port));
+        return std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, true,
+            infrastructure::config::endpoint(address));
+    };
+    for (auto const network : {infrastructure::message::address_network::i2p,
+                              infrastructure::message::address_network::torv3}) {
+        auto const port = network == infrastructure::message::address_network::i2p ? uint16_t(0) : uint16_t(8333);
+        auto first = make(network, 1, port);
+        auto second = make(network, 2, port);
+        REQUIRE(first->has_peer_address());
+        REQUIRE( ! first->has_numeric_authority());
+        REQUIRE(first->authority().is_overlay());
+        CHECK( ! node.report_misbehavior(first, 40));
+        CHECK( ! first->stopped());
+        CHECK( ! node.report_misbehavior(second, 60));
+        CHECK(node.report_misbehavior(first, 60, "invalid block"));
+        CHECK(first->stopped());
+        CHECK(node.is_banned(first->authority()));
+        CHECK( ! node.is_banned(second->authority()));
+        REQUIRE(node.peer_db().get(first->authority()));
+        CHECK(node.peer_db().get(first->authority())->reputation_score == 100);
+        REQUIRE(node.peer_db().get(second->authority()));
+        CHECK(node.peer_db().get(second->authority())->reputation_score == 60);
+        node.ban_peer(second, 60s);
+        CHECK(second->stopped());
+        CHECK(node.is_banned(second->authority()));
+    }
+    CHECK( ! node.peer_db().get(infrastructure::config::authority::any()));
+    CHECK(node.peer_db().size() == 4);
+    ctx.poll();
+}
+
 // =============================================================================
 // Top Block Tests
 // =============================================================================
@@ -283,6 +325,84 @@ TEST_CASE("p2p_node address count starts at zero", "[p2p_node]") {
     p2p_node node(settings);
 
     REQUIRE(node.address_count() == 0);
+}
+
+TEST_CASE("p2p_node retains unsolicited addrv2 overlays and legacy IP announcements", "[p2p_node][i2p][addrv2]") {
+    auto settings = make_test_settings_p2p();
+    settings.peers_file.clear();
+    settings.protocol_maximum = domain::message::version::level::feature_negotiation;
+    p2p_node node(settings);
+    infrastructure::message::overlay_address bytes{};
+    bytes[0] = 1;
+    infrastructure::message::network_address const i2p(1234567890, 1,
+        infrastructure::message::address_network::i2p, bytes, 0);
+    infrastructure::message::network_address const onion(1234567891, 5,
+        infrastructure::message::address_network::torv3, bytes, 8333);
+    auto const message = domain::message::addrv2::create({
+        domain::message::addrv2_entry::from_network_address(i2p),
+        domain::message::addrv2_entry::from_network_address(onion)});
+    REQUIRE(message);
+    raw_message announcement;
+    announcement.heading.set_command(domain::message::addrv2::command);
+    announcement.payload = kth::to_data_chunk(*message, settings.protocol_maximum);
+    REQUIRE(kth::node::detail::p2p_node_test_seam::ingest_addresses(node, announcement, settings.protocol_maximum));
+    CHECK(node.peer_db().size() == 2);
+    auto const stored_i2p = node.peer_db().get(infrastructure::config::authority(i2p));
+    auto const stored_onion = node.peer_db().get(infrastructure::config::authority(onion));
+    REQUIRE(stored_i2p);
+    REQUIRE(stored_onion);
+    CHECK(stored_i2p->services == 1);
+    CHECK(stored_onion->services == 5);
+    CHECK(stored_i2p->last_active == peer_record::time_point(std::chrono::seconds(i2p.timestamp())));
+
+    auto ip = infrastructure::config::authority::parse_from("8.8.4.4", 8333)->to_network_address();
+    ip.set_services(1);
+    ip.set_timestamp(1234567892);
+    auto const legacy = domain::message::address::create({ip});
+    REQUIRE(legacy);
+    announcement.heading.set_command(domain::message::address::command);
+    announcement.payload = kth::to_data_chunk(*legacy, settings.protocol_maximum);
+    REQUIRE(kth::node::detail::p2p_node_test_seam::ingest_addresses(node, announcement, settings.protocol_maximum));
+    CHECK(node.peer_db().size() == 3);
+    CHECK(node.peer_db().exists(infrastructure::config::authority(ip)));
+}
+
+TEST_CASE("p2p_node refuses malformed announcements and invalid peer ports", "[p2p_node][i2p][addrv2]") {
+    auto settings = make_test_settings_p2p();
+    settings.peers_file.clear();
+    settings.protocol_maximum = domain::message::version::level::feature_negotiation;
+    p2p_node node(settings);
+    for (auto const& command : {domain::message::address::command, domain::message::addrv2::command}) {
+        for (auto const& payload : {data_chunk{}, data_chunk{0xfd, 0xe9, 0x03}, data_chunk{1, 0}}) {
+            raw_message announcement;
+            announcement.heading.set_command(command);
+            announcement.payload = payload;
+            CHECK( ! kth::node::detail::p2p_node_test_seam::ingest_addresses(node, announcement, settings.protocol_maximum));
+        }
+    }
+    CHECK(node.peer_db().size() == 0);
+
+    infrastructure::message::overlay_address bytes{};
+    infrastructure::message::network_address const i2p_with_port(1234567890, 1,
+        infrastructure::message::address_network::i2p, bytes, 8333);
+    infrastructure::message::network_address const onion_without_port(1234567890, 1,
+        infrastructure::message::address_network::torv3, bytes, 0);
+    auto ip = infrastructure::config::authority::parse_from("8.8.8.8", 0)->to_network_address();
+    ip.set_services(1);
+    auto no_services = i2p_with_port;
+    no_services.set_port(0);
+    no_services.set_services(0);
+    auto const message = domain::message::addrv2::create({
+        domain::message::addrv2_entry::from_network_address(i2p_with_port),
+        domain::message::addrv2_entry::from_network_address(onion_without_port),
+        domain::message::addrv2_entry::from_network_address(ip),
+        domain::message::addrv2_entry::from_network_address(no_services)});
+    REQUIRE(message);
+    raw_message announcement;
+    announcement.heading.set_command(domain::message::addrv2::command);
+    announcement.payload = kth::to_data_chunk(*message, settings.protocol_maximum);
+    CHECK(kth::node::detail::p2p_node_test_seam::ingest_addresses(node, announcement, settings.protocol_maximum));
+    CHECK(node.peer_db().size() == 0);
 }
 
 // =============================================================================

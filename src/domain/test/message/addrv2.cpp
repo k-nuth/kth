@@ -52,6 +52,50 @@ TEST_CASE("addrv2_entry create accepts a known network at its size", "[addrv2]")
     REQUIRE(entry->port() == 8333u);
 }
 
+TEST_CASE("addrv2 retains I2P and Tor v3 identities without legacy advertisement", "[addrv2][i2p][onion]") {
+    data_chunk const bytes(32, 0x42);
+    for (auto const network : {bip155_network::i2p, bip155_network::torv3}) {
+        auto const port = network == bip155_network::i2p ? uint16_t(0) : uint16_t(8333);
+        auto const entry = addrv2_entry::create(1234, 1, network, bytes, port);
+        REQUIRE(entry);
+        auto const converted = entry->to_network_address();
+        REQUIRE(converted);
+        REQUIRE(converted->is_overlay());
+        REQUIRE(converted->port() == port);
+        REQUIRE(converted->is_routable());
+        auto const restored = addrv2_entry::from_network_address(*converted);
+        REQUIRE(restored == *entry);
+        auto const message = addrv2::create({restored});
+        REQUIRE(message);
+        REQUIRE(message->to_network_addresses().size() == 1);
+        auto const raw = to_data_chunk(*message, version::level::maximum);
+        byte_reader reader(raw);
+        auto const decoded = addrv2::from_data(reader, version::level::maximum);
+        REQUIRE(decoded);
+        REQUIRE(decoded->addresses()[0] == *entry);
+        auto const legacy = address::create({*converted});
+        REQUIRE(legacy);
+        REQUIRE(legacy->addresses().empty());
+        REQUIRE(to_data_chunk(*legacy, version::level::maximum) == data_chunk{0});
+        infrastructure::message::network_address const ip(1234, 1,
+            infrastructure::message::unspecified_ip_address, 8333);
+        auto const mixed = address::create({*converted, ip});
+        REQUIRE(mixed);
+        REQUIRE(mixed->addresses().size() == 1);
+        REQUIRE( ! mixed->addresses()[0].is_overlay());
+        REQUIRE(mixed->addresses()[0].ip() == ip.ip());
+    }
+}
+
+TEST_CASE("addrv2 does not convert deprecated Tor v2 or unsupported CJDNS", "[addrv2]") {
+    auto const tor = addrv2_entry::create(1, 1, bip155_network::torv2, data_chunk(10, 0), 8333);
+    auto const cjdns = addrv2_entry::create(1, 1, bip155_network::cjdns, data_chunk(16, 0), 8333);
+    REQUIRE(tor);
+    REQUIRE(cjdns);
+    REQUIRE( ! tor->to_network_address());
+    REQUIRE( ! cjdns->to_network_address());
+}
+
 TEST_CASE("addrv2_entry create rejects an unknown network", "[addrv2]") {
     auto const net = static_cast<bip155_network>(0x07);   // beyond cjdns=6
     auto const entry = addrv2_entry::create(1u, 0u, net, data_chunk(16, 0x00), 0u);

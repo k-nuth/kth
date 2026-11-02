@@ -226,7 +226,7 @@ KN_API ::asio::awaitable<code> run_ping_pong(
 /// @param timeout Maximum time to wait for response
 /// @return Vector of addresses or error
 [[nodiscard]]
-KN_API awaitable_expected<domain::message::address> request_addresses(
+KN_API awaitable_expected<infrastructure::message::network_address::list> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout);
 

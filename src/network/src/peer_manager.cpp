@@ -70,7 +70,9 @@ peer_manager::~peer_manager() {
         // Check for duplicate authority
         auto const& new_auth = peer->destination();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
-            if (existing_peer->destination() == new_auth) {
+            if (existing_peer->destination() == new_auth ||
+                (peer->authority().is_overlay() && existing_peer->authority().is_overlay() &&
+                    existing_peer->authority().to_hostname() == peer->authority().to_hostname())) {
                 co_return error::address_in_use;  // Duplicate authority
             }
         }
@@ -151,7 +153,7 @@ peer_manager::~peer_manager() {
     }
     co_return co_await ::asio::co_spawn(strand_, [this, &authority]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->has_numeric_authority() && peer->authority() == authority) {
+            if (peer->has_peer_address() && peer->authority() == authority) {
                 co_return true;
             }
         }
@@ -182,7 +184,8 @@ peer_manager::~peer_manager() {
     auto const canonical = canonical_peer_endpoint(destination);
     co_return co_await ::asio::co_spawn(strand_, [this, canonical]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->destination() == canonical) {
+            if (peer->destination() == canonical ||
+                (peer->authority().is_overlay() && peer->destination().host() == canonical.host())) {
                 co_return true;
             }
         }

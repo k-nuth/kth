@@ -39,6 +39,9 @@ struct KN_API settings {
     uint32_t connect_timeout_seconds;
     std::string proxy;
     bool proxy_randomize;
+    std::string i2psam;
+    bool i2p_accept_incoming;
+    kth::path i2p_private_key_file;
     uint32_t channel_handshake_seconds;
     uint32_t channel_heartbeat_minutes;
     uint32_t channel_inactivity_minutes;

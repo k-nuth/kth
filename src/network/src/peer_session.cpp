@@ -4,6 +4,7 @@
 
 #include <kth/network/peer_session.hpp>
 #include <kth/network/socks5.hpp>
+#include <kth/network/sam.hpp>
 #include <kth/network/peer_identity.hpp>
 
 #include <chrono>
@@ -95,8 +96,9 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
         : extract_authority(socket_))
     , destination_(destination ? canonical_peer_endpoint(*destination)
         : infrastructure::config::endpoint(authority_))
-    , has_numeric_authority_( ! destination ||
-        infrastructure::config::authority::parse_from(destination_.host(), destination_.port()).has_value())
+    , has_numeric_authority_(( ! destination ||
+        infrastructure::config::authority::parse_from(destination_.host(), destination_.port()).has_value()) &&
+        ! authority_.is_overlay())
     , protocol_magic_(settings.identifier)
     , maximum_payload_(heading::maximum_payload_size(
           settings.protocol_maximum,
@@ -343,6 +345,10 @@ infrastructure::config::endpoint const& peer_session::destination() const {
 
 bool peer_session::has_numeric_authority() const {
     return has_numeric_authority_;
+}
+
+bool peer_session::has_peer_address() const {
+    return has_numeric_authority_ || authority_.is_overlay();
 }
 
 std::string peer_session::authority_with_agent() const {
@@ -737,20 +743,55 @@ awaitable_expected<peer_session::ptr> async_connect(
     std::string const& hostname,
     uint16_t port,
     settings const& settings,
-    std::chrono::seconds timeout)
+    std::chrono::seconds timeout,
+    sam_session* sam)
 {
     using namespace ::asio::experimental::awaitable_operators;
 
+    if (hostname.empty() || hostname.find('\0') != std::string::npos) {
+        co_return std::unexpected(error::illegal_value);
+    }
+    auto const destination = canonical_peer_endpoint(infrastructure::config::endpoint(hostname, port));
+    auto const& host = destination.host();
+    auto reserved_host = hostname;
+    for (auto& c : reserved_host) {
+        if (c >= 'A' && c <= 'Z') c = char(c + ('a' - 'A'));
+    }
+    while ( ! reserved_host.empty() && reserved_host.back() == '.') reserved_host.pop_back();
+    bool const i2p_name = reserved_host.ends_with(".i2p");
+    bool const onion_name = reserved_host.ends_with(".onion");
+    // Refuse reserved overlay names before either DNS or a direct connection.
+    // Invalid names must not escape through the ordinary hostname path.
+    if (i2p_name || onion_name) {
+        auto const address = infrastructure::config::authority::parse_from(hostname, port);
+        if ( ! address || ! address->is_overlay()) {
+            co_return std::unexpected(error::illegal_value);
+        }
+        if (address->is_i2p()) {
+            if (settings.i2psam.empty() || sam == nullptr || port != 0) {
+                co_return std::unexpected(error::operation_failed);
+            }
+            auto stream = co_await sam->connect(host);
+            if ( ! stream) {
+                co_return std::unexpected(stream.error());
+            }
+            co_return std::make_shared<peer_session>(std::move(*stream), settings, false, destination);
+        }
+        if (settings.proxy.empty() || port == 0) {
+            co_return std::unexpected(error::operation_failed);
+        }
+    }
+
     if ( ! settings.proxy.empty()) {
         auto result = co_await async_socks5_connect(
-            executor, settings.proxy, hostname, port, settings.proxy_randomize, timeout);
+            executor, settings.proxy, host, port, settings.proxy_randomize, timeout);
         if ( ! result) {
             co_return std::unexpected(result.error());
         }
 
         auto session = std::make_shared<peer_session>(
             std::move(*result), settings, false,
-            infrastructure::config::endpoint(hostname, port));
+            destination);
         // A proxy never establishes that a hostname belongs to a whitelisted IP.
         if (session->has_numeric_authority()) {
             auto flags = settings.get_whitelist_permissions(session->authority());
@@ -891,14 +932,16 @@ awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
-    std::chrono::seconds timeout)
+    std::chrono::seconds timeout,
+    sam_session* sam)
 {
     co_return co_await async_connect(
         executor,
         authority.to_hostname(),
         authority.port(),
         settings,
-        timeout);
+        timeout,
+        sam);
 }
 
 awaitable_expected<peer_session::ptr> async_accept(

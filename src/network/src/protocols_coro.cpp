@@ -63,7 +63,9 @@ domain::message::version make_version_message(
     version.set_value(config.protocol_version);
     version.set_services(config.services);
     version.set_timestamp(uint64_t(zulu_time()));
-    version.set_address_receiver(peer_authority.to_network_address());
+    // Version still carries a legacy IP address, even on an overlay stream.
+    version.set_address_receiver((peer_authority.is_overlay()
+        ? infrastructure::config::authority::any() : peer_authority).to_network_address());
     version.set_nonce(config.nonce);
     version.set_user_agent(config.user_agent);
     version.set_start_height(config.start_height);
@@ -491,7 +493,7 @@ handshake_config make_handshake_config(
 // Address Protocol
 // =============================================================================
 
-awaitable_expected<domain::message::address> request_addresses(
+awaitable_expected<infrastructure::message::network_address::list> request_addresses(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
@@ -530,23 +532,14 @@ awaitable_expected<domain::message::address> request_addresses(
 
     // Handle both addr (legacy) and addrv2 (BIP155) formats
     if (command == domain::message::addrv2::command) {
-        // Parse as addrv2 and convert to legacy address format
+        // Keep the network tag when converting from addrv2.
         auto addrv2_result = domain::message::addrv2::from_data(reader, peer.negotiated_version());
         if (!addrv2_result) {
             spdlog::debug("[protocol] Failed to parse addrv2 from [{}]", peer.authority());
             co_return std::unexpected(error::bad_stream);
         }
 
-        // Convert to legacy format (only IPv4/IPv6 addresses)
-        auto addresses = addrv2_result->to_network_addresses();
-        spdlog::debug("[protocol] Parsed addrv2 from [{}]: {} entries, {} convertible to legacy",
-            peer.authority(), addrv2_result->addresses().size(), addresses.size());
-
-        auto legacy = domain::message::address::create(std::move(addresses));
-        if ( ! legacy) {
-            co_return std::unexpected(legacy.error());
-        }
-        co_return std::move(*legacy);
+        co_return addrv2_result->to_network_addresses();
     }
 
     // Parse as legacy addr
@@ -556,7 +549,7 @@ awaitable_expected<domain::message::address> request_addresses(
         co_return std::unexpected(error::bad_stream);
     }
 
-    co_return std::move(*addr_result);
+    co_return std::move(addr_result->addresses());
 }
 
 ::asio::awaitable<code> send_addresses(

@@ -337,6 +337,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
+          test/i2p.cpp
           test/p2p_status_timer.cpp
           test/performance.cpp
           test/reservation.cpp

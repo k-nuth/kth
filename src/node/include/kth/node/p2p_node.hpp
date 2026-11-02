@@ -430,8 +430,10 @@ private:
     ::asio::awaitable<void> run_seeding();
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
+    ::asio::awaitable<void> run_i2p_inbound();
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
+    [[nodiscard]] bool ingest_peer_addresses(raw_message const& raw, uint32_t version);
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
     ::asio::awaitable<void> peer_supervisor();
@@ -453,17 +455,19 @@ private:
     threadpool pool_;
     peer_manager manager_;
     peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
+    std::unique_ptr<network::sam_session> sam_;
+    std::atomic<size_t> inbound_count_{0};
 
     // Track IPs currently being connected to (for deduplication)
     // Prevents multiple simultaneous connection attempts to the same IP
-    boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
+    boost::concurrent_flat_set<network::normalized_address, network::salted_address_hasher> pending_connections_;
 
     // Track recently failed connection IPs with cooldown timestamp
     // Prevents rapid reconnection to failing peers
     boost::concurrent_flat_map<
-        ::asio::ip::address,
+        network::normalized_address,
         std::chrono::steady_clock::time_point,
-        salted_ip_hasher
+        network::salted_address_hasher
     > failed_connections_;
 
     // Acceptor for inbound connections

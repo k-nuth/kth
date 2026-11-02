@@ -22,6 +22,9 @@ namespace kth::infrastructure::message {
 using ip_address = byte_array<16>;
 constexpr ip_address null_address {{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }};
 
+enum class address_network : uint8_t { ip, torv3 = 4, i2p = 5 };
+using overlay_address = byte_array<32>;
+
 struct KI_API network_address {
     using list = std::vector<network_address>;
 
@@ -33,6 +36,16 @@ struct KI_API network_address {
         , services_(services)
         , ip_(ip)
         , port_(port)
+    {}
+
+    constexpr
+    network_address(uint32_t timestamp, uint64_t services, address_network network,
+        message::overlay_address const& address, uint16_t port)
+        : timestamp_(timestamp)
+        , services_(services)
+        , port_(port)
+        , network_(network)
+        , overlay_(address)
     {}
 
     network_address(network_address const& x) = default;
@@ -55,6 +68,10 @@ struct KI_API network_address {
     uint16_t port() const;
     void set_port(uint16_t value);
 
+    [[nodiscard]] address_network network() const { return network_; }
+    [[nodiscard]] bool is_overlay() const { return network_ != address_network::ip; }
+    [[nodiscard]] message::overlay_address const& overlay_address() const { return overlay_; }
+
     size_t serialized_size(uint32_t version, bool with_timestamp) const;
 
     static
@@ -76,6 +93,8 @@ private:
     uint64_t services_{0};
     ip_address ip_{null_address};
     uint16_t port_{0};
+    address_network network_{address_network::ip};
+    message::overlay_address overlay_{};
 };
 
 // version::services::none

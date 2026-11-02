@@ -3,7 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <exception>
 #include <future>
+#include <optional>
 #include <thread>
 
 #include <test_helpers.hpp>
@@ -11,7 +13,9 @@
 #include <kth/network.hpp>
 
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/detached.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
 
@@ -404,4 +408,190 @@ TEST_CASE("run_ping_pong sends periodic pings", "[protocols_coro]") {
     kth::test::drain_context(ctx);
 
     REQUIRE(received_ping);
+}
+
+namespace {
+
+struct overlay_protocol_pair {
+    ::asio::io_context ctx;
+    ::asio::ip::tcp::acceptor listener{ctx, {::asio::ip::address_v4::loopback(), 0}};
+    ::asio::ip::tcp::socket client{ctx};
+    ::asio::ip::tcp::socket server{ctx};
+    peer_session::ptr sender;
+    peer_session::ptr receiver;
+    bool accepted{false};
+    bool connected{false};
+
+    bool connect() {
+        auto const port = listener.local_endpoint().port();
+        listener.async_accept(server, [this](std::error_code ec) { accepted = ! ec; });
+        client.async_connect({::asio::ip::address_v4::loopback(), port},
+            [this](std::error_code ec) { connected = ! ec; });
+        ctx.run_for(2s);
+        ctx.restart();
+        return accepted && connected;
+    }
+
+    void finish() {
+        if (sender) sender->stop();
+        if (receiver) receiver->stop();
+        std::error_code ignored;
+        listener.close(ignored);
+        client.close(ignored);
+        server.close(ignored);
+        ctx.restart();
+        ctx.run_for(100ms);
+    }
+
+    ~overlay_protocol_pair() { finish(); }
+};
+
+struct overlay_address_result {
+    std::optional<std::expected<infrastructure::message::network_address::list, code>> addresses;
+    std::string request_command;
+    std::string command;
+    code send_result{error::unknown};
+    std::exception_ptr exception;
+    bool done{false};
+    bool routed{false};
+};
+
+::asio::awaitable<code> serve_overlay_address_request(peer_session::ptr sender,
+    peer_session::ptr receiver, infrastructure::message::network_address::list addresses,
+    std::shared_ptr<overlay_address_result> state)
+{
+    auto [request_ec, request] = co_await sender->messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (request_ec) co_return error::channel_stopped;
+    state->request_command = request.heading.command();
+    if (state->request_command != "getaddr") co_return error::bad_stream;
+    state->send_result = co_await send_addresses_auto(*sender, addresses);
+    if (state->send_result != error::success) co_return state->send_result;
+    auto [response_ec, response] = co_await receiver->messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (response_ec) co_return error::channel_stopped;
+    state->command = response.heading.command();
+    auto executor = co_await ::asio::this_coro::executor;
+    auto delivered = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(receiver->addr_responses(), std::move(response)),
+        ::asio::experimental::after(std::chrono::steady_clock::now() + 1s)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = delivered;
+    if (ec || selected.index != 0) co_return error::channel_timeout;
+    co_return error::success;
+}
+
+awaitable_expected<handshake_result> handshake_overlay_peer(peer_session::ptr peer,
+    handshake_config config)
+{
+    co_return co_await perform_handshake_direct(*peer, config);
+}
+
+} // namespace
+
+TEST_CASE("send_addresses_auto retains overlays only after sendaddrv2", "[protocols_coro][addrv2][i2p]") {
+    bool addrv2 = false;
+    SECTION("negotiated addrv2") { addrv2 = true; }
+    SECTION("legacy addr") {}
+    overlay_protocol_pair pair;
+    REQUIRE(pair.connect());
+    auto settings = make_test_settings_proto();
+    settings.protocol_maximum = domain::message::version::level::feature_negotiation;
+    pair.sender = std::make_shared<peer_session>(std::move(pair.server), settings);
+    pair.receiver = std::make_shared<peer_session>(std::move(pair.client), settings);
+    pair.sender->set_wants_addrv2(addrv2);
+    infrastructure::message::overlay_address bytes{};
+    bytes.fill(0x42);
+    infrastructure::message::network_address::list const addresses{
+        {1234567890, 1, infrastructure::message::address_network::i2p, bytes, 0},
+        {1234567891, 5, infrastructure::message::address_network::torv3, bytes, 8333},
+        {1234567892, 9, infrastructure::config::authority::parse_from("8.8.8.8", 8333)->ip(), 8333}
+    };
+    auto state = std::make_shared<overlay_address_result>();
+    ::asio::co_spawn(pair.ctx, pair.sender->run(), [state](std::exception_ptr ep, code) {
+        if (ep) state->exception = ep;
+    });
+    ::asio::co_spawn(pair.ctx, pair.receiver->run(), [state](std::exception_ptr ep, code) {
+        if (ep) state->exception = ep;
+    });
+    ::asio::co_spawn(pair.ctx, serve_overlay_address_request(pair.sender, pair.receiver, addresses, state),
+        [state](std::exception_ptr ep, code ec) {
+            if (ep) state->exception = ep;
+            state->routed = ec == error::success;
+        });
+    ::asio::co_spawn(pair.ctx, request_addresses(*pair.receiver, 1s),
+        [state](std::exception_ptr ep, std::expected<infrastructure::message::network_address::list, code> result) {
+            if (ep) state->exception = ep;
+            state->addresses.emplace(std::move(result));
+            state->done = true;
+        });
+    run_until_proto(pair.ctx, [&] { return state->done && state->routed; }, 2000ms);
+    pair.finish();
+    REQUIRE(state->done);
+    REQUIRE(state->routed);
+    REQUIRE( ! state->exception);
+    REQUIRE(state->send_result == error::success);
+    REQUIRE(state->addresses);
+    REQUIRE(*state->addresses);
+    auto const& received = **state->addresses;
+    CHECK(state->request_command == "getaddr");
+    CHECK(state->command == (addrv2 ? "addrv2" : "addr"));
+    if (addrv2) {
+        CHECK(received == addresses);
+        REQUIRE(received.size() == addresses.size());
+        for (size_t i = 0; i < received.size(); ++i) {
+            CHECK(received[i].timestamp() == addresses[i].timestamp());
+        }
+        peer_database db;
+        for (auto const& address : received) CHECK(db.store_address(address));
+        CHECK(db.size() == 3);
+    } else {
+        REQUIRE(received.size() == 1);
+        CHECK(received.front() == addresses.back());
+        CHECK( ! received.front().is_overlay());
+    }
+}
+
+TEST_CASE("overlay stream completes a version handshake with legacy version addresses", "[protocols_coro][i2p]") {
+    overlay_protocol_pair pair;
+    REQUIRE(pair.connect());
+    auto settings = make_test_settings_proto();
+    settings.protocol_maximum = domain::message::version::level::feature_negotiation;
+    infrastructure::message::overlay_address bytes{};
+    auto const remote = infrastructure::config::authority(infrastructure::message::network_address(
+        0, 1, infrastructure::message::address_network::i2p, bytes, 0));
+    pair.sender = std::make_shared<peer_session>(std::move(pair.server), settings, false,
+        infrastructure::config::endpoint(remote));
+    pair.receiver = std::make_shared<peer_session>(std::move(pair.client), settings);
+    struct handshake_completion {
+        std::optional<std::expected<handshake_result, code>> first;
+        std::optional<std::expected<handshake_result, code>> second;
+        std::exception_ptr exception;
+    };
+    auto state = std::make_shared<handshake_completion>();
+    auto first = make_handshake_config(settings, 1, 12345);
+    auto second = make_handshake_config(settings, 2, 54321);
+    first.timeout = 2s;
+    second.timeout = 2s;
+    ::asio::co_spawn(pair.ctx, handshake_overlay_peer(pair.sender, first),
+        [state](std::exception_ptr ep, std::expected<handshake_result, code> result) {
+            if (ep) state->exception = ep;
+            state->first.emplace(std::move(result));
+        });
+    ::asio::co_spawn(pair.ctx, handshake_overlay_peer(pair.receiver, second),
+        [state](std::exception_ptr ep, std::expected<handshake_result, code> result) {
+            if (ep) state->exception = ep;
+            state->second.emplace(std::move(result));
+        });
+    run_until_proto(pair.ctx, [&] { return state->first && state->second; }, 2000ms);
+    pair.finish();
+    REQUIRE( ! state->exception);
+    REQUIRE(state->first);
+    REQUIRE(state->second);
+    REQUIRE(*state->first);
+    REQUIRE(*state->second);
+    CHECK(pair.sender->authority() == remote);
+    CHECK(pair.sender->wants_addrv2());
+    auto const& wire_version = (*state->second)->peer_version;
+    REQUIRE(wire_version);
+    CHECK( ! wire_version->address_receiver().is_overlay());
+    CHECK(wire_version->address_receiver().ip() == infrastructure::message::null_address);
 }

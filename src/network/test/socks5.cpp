@@ -199,6 +199,92 @@ struct fake_socks5 {
 
 } // namespace
 
+TEST_CASE("overlay destinations never enter DNS or direct TCP", "[socks5][i2p]") {
+    auto const i2p = std::string(52, 'a') + ".b32.i2p";
+    std::string const onion = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion";
+    for (bool proxy_enabled : {false, true}) {
+        for (bool sam_configured : {false, true}) {
+            fake_socks5 proxy;
+            proxy.start();
+            network::settings settings(domain::config::network::regtest);
+            settings.proxy = proxy_enabled ? proxy.proxy() : "";
+            settings.i2psam = sam_configured ? proxy.proxy() : "";
+            // A configured bridge without an active session cannot send an I2P
+            // name to the SOCKS proxy, even when both transports are configured.
+            auto result = proxy.run(async_connect(proxy.ctx.get_executor(), i2p, 0, settings, 1s));
+            REQUIRE( ! result);
+            CHECK(result.error() == error::operation_failed);
+            CHECK( ! proxy.accepted);
+        }
+    }
+    for (auto const& host : {i2p, onion, std::string("bad.b32.i2p"), std::string("bad.onion")}) {
+        fake_socks5 proxy;
+        proxy.start();
+        network::settings settings(domain::config::network::regtest);
+        auto result = proxy.run(async_connect(proxy.ctx.get_executor(), host,
+            host.ends_with(".i2p") ? 0 : 8333, settings, 1s));
+        REQUIRE( ! result);
+        CHECK(result.error() == (host.starts_with("bad.")
+            ? code(error::illegal_value) : code(error::operation_failed)));
+        CHECK( ! proxy.accepted);
+    }
+}
+
+TEST_CASE("onion peers use SOCKS domain CONNECT and retain their tagged identity", "[socks5][i2p]") {
+    fake_socks5 proxy;
+    proxy.start();
+    network::settings settings(domain::config::network::regtest);
+    settings.proxy = proxy.proxy();
+    settings.proxy_randomize = false;
+    std::string const host = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion";
+    auto result = proxy.run(async_connect(proxy.ctx.get_executor(), host, 8333, settings, 1s));
+    REQUIRE(result);
+    CHECK((*result)->authority().is_tor_v3());
+    CHECK((*result)->has_peer_address());
+    CHECK( ! (*result)->has_numeric_authority());
+    CHECK((*result)->destination().host() == host);
+    data_chunk expected{5, 1, 0, 3, uint8_t(host.size())};
+    expected.insert(expected.end(), host.begin(), host.end());
+    expected.insert(expected.end(), {0x20, 0x8d});
+    CHECK(proxy.request == expected);
+    CHECK(settings.get_whitelist_permissions((*result)->authority()) == permission_flags::none);
+}
+
+TEST_CASE("malformed overlays and overlay proxy addresses are refused before transport", "[socks5][i2p]") {
+    for (auto const& host : {std::string{}, std::string(52, 'a') + ".b32.i2p" + '\0' + "invalid",
+        std::string("duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion") + '\0' + "invalid"}) {
+        for (bool enabled : {false, true}) {
+            fake_socks5 proxy;
+            proxy.start();
+            network::settings settings(domain::config::network::regtest);
+            settings.proxy = enabled ? proxy.proxy() : "";
+            auto result = proxy.run(async_connect(proxy.ctx.get_executor(), host, 8333, settings, 1s));
+            REQUIRE( ! result);
+            CHECK(result.error() == error::illegal_value);
+            CHECK( ! proxy.accepted);
+        }
+    }
+    for (auto const& host : {std::string("bad.b32.i2p"), std::string("bad.onion"),
+        std::string(52, 'a') + ".b32.i2p.", std::string(52, 'A') + ".b32.i2p",
+        std::string("bad.onion..")}) {
+        fake_socks5 proxy;
+        proxy.start();
+        network::settings settings(domain::config::network::regtest);
+        settings.proxy = proxy.proxy();
+        auto result = proxy.run(async_connect(proxy.ctx.get_executor(), host, 8333, settings, 1s));
+        REQUIRE( ! result);
+        CHECK(result.error() == error::illegal_value);
+        CHECK( ! proxy.accepted);
+    }
+    fake_socks5 proxy;
+    proxy.start();
+    auto result = proxy.run(async_socks5_connect(proxy.ctx.get_executor(),
+        std::string(52, 'a') + ".b32.i2p:9050", "8.8.8.8", 8333, false, 1s));
+    REQUIRE( ! result);
+    CHECK(result.error() == error::illegal_value);
+    CHECK( ! proxy.accepted);
+}
+
 TEST_CASE("SOCKS5 CONNECT preserves destination address and port", "[socks5]") {
     fake_socks5 proxy;
     std::string host;
