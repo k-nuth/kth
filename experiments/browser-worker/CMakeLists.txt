@@ -22,6 +22,7 @@ if(KTH_HEADERS_GLUE_CPP AND KTH_HEADERS_PRE_JS)
       -sMODULARIZE=1 -sEXPORT_NAME=createHeaders -sENVIRONMENT=worker
       -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
       -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB
+      -lidbfs.js "-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS']"
       "-sEXPORTED_FUNCTIONS=['_malloc','_free','_strlen']")
   set_target_properties(browser_headers_api_control PROPERTIES SUFFIX ".js")
 endif()
