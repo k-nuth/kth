@@ -216,8 +216,19 @@ using connected_handler = std::function<void(uint32_t first, uint32_t last)>;
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
     domain::config::network network,
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal
+);
+
+::asio::awaitable<void> utxo_build_task(
+    blockchain::block_chain& chain,
+    std::atomic<uint32_t> const& contiguous_height,
+    uint32_t start_height,
+    domain::config::network network,
     std::function<bool()> should_stop,  // node-owned stop signal (e.g. network.stopped())
     std::function<void(std::string const&)> on_fatal,
+    // Borrowed until completion. The owner closes it before joining this task.
+    utxo_build_progress_channel* progress,
     connected_handler on_connected = {}
 );
 

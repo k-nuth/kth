@@ -234,6 +234,7 @@ void connect_with_relay(chain_fixture& fixture, domain::chain::block const& bloc
     ::asio::co_spawn(io, sync::utxo_build_task(chain, contiguous, 1, domain::config::network::regtest,
         [&] { return notified || ! fatal.empty(); },
         [&](std::string const& reason) { fatal.push_back(reason); },
+        nullptr,
         [&](uint32_t first, uint32_t last) {
             REQUIRE(first == 1);
             REQUIRE(last == 1);
