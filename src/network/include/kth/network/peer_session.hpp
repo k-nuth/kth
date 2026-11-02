@@ -9,8 +9,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <kth/domain.hpp>
@@ -120,6 +122,24 @@ public:
             co_return error::channel_stopped;
         }
         co_return error::success;
+    }
+
+    /// Queue a message without waiting for the peer's outbound queue.
+    template <typename Message>
+    [[nodiscard]]
+    bool try_send(Message const& message) {
+        if (stopped()) {
+            return false;
+        }
+
+        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
+        if ( ! outbound_.try_send(std::error_code{}, std::move(data))) {
+            // The queue is full: the message is dropped instead of awaited,
+            // so a slow peer can't hold up the caller. The peer is kept; a
+            // peer downloading blocks from us can fill its queue legitimately.
+            return false;
+        }
+        return true;
     }
 
     /// Send raw bytes to the peer (coroutine version)
@@ -334,6 +354,22 @@ public:
     /// Mark that peer supports addrv2 (called when sendaddrv2 received)
     void set_wants_addrv2(bool value);
 
+    /// Whether this peer requested block announcements through BIP130 headers.
+    [[nodiscard]]
+    bool wants_headers() const;
+    void set_wants_headers(bool value);
+
+    static constexpr size_t known_block_capacity = 128;
+
+    [[nodiscard]]
+    bool knows_block(hash_digest const& hash) const;
+
+    /// Remember a received or announced block; true if it was not already known.
+    bool remember_block(hash_digest const& hash);
+
+    [[nodiscard]]
+    size_t known_block_count() const;
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -428,6 +464,10 @@ private:
     // BIP155 (addrv2) support
     // Set to true when peer sends sendaddrv2 during handshake
     std::atomic<bool> wants_addrv2_{false};
+
+    std::atomic<bool> wants_headers_{false};
+    mutable std::mutex known_blocks_mutex_;
+    std::deque<hash_digest> known_blocks_;
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

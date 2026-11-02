@@ -14,6 +14,7 @@
 #include <kth/blockchain.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/sync/block_tasks.hpp>
 #include <kth/node/sync/messages.hpp>
 
 namespace kth::node::sync {
@@ -139,7 +140,8 @@ char const* to_string(slow_sync_admission admission);
     blockchain::header_organizer& organizer,
     kth::node::p2p_node& network,
     domain::config::network network_type,
-    std::function<void(std::string const&)> on_fatal
+    std::function<void(std::string const&)> on_fatal,
+    connected_handler on_connected = {}
 );
 
 /// How long the header walk waits, in the two places it waits.
@@ -169,7 +171,8 @@ inline constexpr header_walk_timing node_header_walk_timing{
     kth::node::p2p_node& network,
     domain::config::network network_type,
     std::function<void(std::string const&)> on_fatal,
-    header_walk_timing timing
+    header_walk_timing timing,
+    connected_handler on_connected = {}
 );
 
 } // namespace kth::node::sync

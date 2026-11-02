@@ -2061,7 +2061,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
-    std::function<void(std::string const&)> on_fatal
+    std::function<void(std::string const&)> on_fatal,
+    connected_handler on_connected
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -2845,6 +2846,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Earned, not unwound.
         chain.end_transition();
+
+        if (on_connected) {
+            on_connected(batch_start, batch_end);
+        }
 
         spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
     }

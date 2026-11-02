@@ -203,17 +203,22 @@ using download_worker_launcher = std::function<void(
 //
 // =============================================================================
 
+using connected_handler = std::function<void(uint32_t first, uint32_t last)>;
+
 // `on_fatal` reports a condition this task cannot go on from and that ending the
 // coroutine would not communicate: the task group only propagates exceptions, so
 // a co_return here reduces a counter and nothing else. Winding the node down is
 // the owner's (see full_node::notify_fatal).
+// `on_connected` observes a published batch after its transition has ended. It
+// must queue any network work, so a peer cannot hold up the next connection.
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,  // node-owned stop signal (e.g. network.stopped())
-    std::function<void(std::string const&)> on_fatal
+    std::function<void(std::string const&)> on_fatal,
+    connected_handler on_connected = {}
 );
 
 } // namespace kth::node::sync

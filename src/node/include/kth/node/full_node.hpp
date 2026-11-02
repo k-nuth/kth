@@ -60,6 +60,10 @@
 
 namespace kth::node {
 
+namespace detail {
+class block_relay_state;
+}
+
 /// Startup mode selection
 enum class start_modules {
     all,
@@ -206,6 +210,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    void handle_connected(uint32_t first, uint32_t last);
 #endif
 
     // Configuration references (stored in configuration object)
@@ -218,6 +223,7 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::node::p2p_node network_;
+    std::unique_ptr<detail::block_relay_state> block_relay_;
 #endif
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.

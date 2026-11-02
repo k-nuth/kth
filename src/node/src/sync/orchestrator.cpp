@@ -497,10 +497,11 @@ static
     blockchain::header_organizer& organizer,
     kth::node::p2p_node& network,
     domain::config::network network_type,
-    std::function<void(std::string const&)> on_fatal
+    std::function<void(std::string const&)> on_fatal,
+    connected_handler on_connected
 ) {
     co_await sync_orchestrator(chain, organizer, network, network_type,
-        std::move(on_fatal), node_header_walk_timing);
+        std::move(on_fatal), node_header_walk_timing, std::move(on_connected));
 }
 
 ::asio::awaitable<void> sync_orchestrator(
@@ -509,7 +510,8 @@ static
     kth::node::p2p_node& network,
     domain::config::network network_type,
     std::function<void(std::string const&)> on_fatal,
-    header_walk_timing timing
+    header_walk_timing timing,
+    connected_handler on_connected
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -1039,7 +1041,8 @@ static
         initial_block_height + 1,
         network_type,
         [&network]() { return network.stopped(); },
-        on_fatal
+        on_fatal,
+        std::move(on_connected)
     ));
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)

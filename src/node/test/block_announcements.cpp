@@ -12,6 +12,7 @@
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/send_headers.hpp>
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/p2p_node.hpp>
@@ -342,6 +343,9 @@ TEST_CASE("routing: every headers goes to the ingest and is consumed, asked for 
     CHECK(got[0].peer == peer);
     CHECK(got[0].headers.size() == 3u);
     CHECK(got[1].headers.empty());
+    for (auto const& header : some_headers(1, 3)) {
+        CHECK(peer->knows_block(domain::chain::hash(header)));
+    }
 
     // Nothing was registered as an announcement: a header goes to one place.
     CHECK(node.take_announced_blocks().hashes.empty());
@@ -362,6 +366,7 @@ TEST_CASE("routing: a cmpctblock header goes to the ingest and the message carri
     REQUIRE(got.size() == 1u);
     REQUIRE(got[0].headers.size() == 1u);
     CHECK(kth::domain::chain::hash(got[0].headers[0]) == kth::domain::chain::hash(header));
+    CHECK(peer->knows_block(domain::chain::hash(header)));
     CHECK(node.take_announced_blocks().hashes.empty());
 }
 
@@ -380,6 +385,7 @@ TEST_CASE("routing: an inv registers its blocks, carries on, and submits no head
     auto const taken = node.take_announced_blocks();
     REQUIRE(taken.hashes.size() == 1u);
     CHECK(taken.hashes[0] == hash);
+    CHECK(peer->knows_block(hash));
     CHECK(submitted(node).empty());
 }
 
@@ -398,6 +404,71 @@ TEST_CASE("routing: other commands and unreadable headers are left alone",
     CHECK(node.observe_block_message(peer, wire(domain::message::headers::command, data_chunk{0xde, 0xad})));
     CHECK(submitted(node).empty());
     CHECK_FALSE(debt_rung(node));
+    CHECK(peer->known_block_count() == 0u);
+}
+
+TEST_CASE("routing: sendheaders requires an empty payload and BIP130 version",
+          "[announcements][routing]") {
+    ::asio::io_context ioc;
+    auto const settings = node_settings();
+    p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9501);
+    CHECK_FALSE(peer->wants_headers());
+
+    SECTION("valid request changes only this peer's preference") {
+        auto other = make_peer(ioc, settings, 9502);
+        CHECK(node.observe_block_message(peer, wire(domain::message::send_headers::command, {})));
+        CHECK(peer->wants_headers());
+        CHECK_FALSE(other->wants_headers());
+        CHECK(peer->known_block_count() == 0u);
+    }
+    SECTION("a nonempty payload does not set the preference") {
+        CHECK(node.observe_block_message(peer, wire(domain::message::send_headers::command, {0})));
+        CHECK_FALSE(peer->wants_headers());
+    }
+    SECTION("an older protocol does not set the preference") {
+        peer->set_negotiated_version(domain::message::send_headers::version_minimum - 1);
+        CHECK(node.observe_block_message(peer, wire(domain::message::send_headers::command, {})));
+        CHECK_FALSE(peer->wants_headers());
+    }
+}
+
+TEST_CASE("routing: a full block remembers its source before the download receives it",
+          "[announcements][routing]") {
+    ::asio::io_context ioc;
+    auto const settings = node_settings();
+    p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9503);
+    auto other = make_peer(ioc, settings, 9504);
+    auto const header = make_header(99);
+    auto const hash = domain::chain::hash(header);
+
+    data_chunk payload(header.serialized_size(true));
+    byte_writer writer(payload);
+    REQUIRE(header.to_data(writer, true).has_value());
+    payload.push_back(0);
+
+    CHECK_FALSE(node.observe_block_message(peer, wire(domain::message::block::command, std::move(payload))));
+    CHECK(peer->knows_block(hash));
+    CHECK_FALSE(other->knows_block(hash));
+    CHECK(submitted(node).empty());
+    CHECK(node.take_announced_blocks().hashes.empty());
+}
+
+TEST_CASE("routing: transaction inventory does not become known block inventory",
+          "[announcements][routing]") {
+    using domain::message::inventory_vector;
+    ::asio::io_context ioc;
+    auto const settings = node_settings();
+    p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9505);
+    auto const hash = domain::chain::hash(make_header(100));
+
+    CHECK_FALSE(node.observe_block_message(peer,
+        wire(domain::message::inventory::command, inventory_payload({{inventory_vector::type_id::transaction, hash}}))));
+    CHECK_FALSE(peer->knows_block(hash));
+    CHECK(peer->known_block_count() == 0u);
+    CHECK(node.take_announced_blocks().hashes.empty());
 }
 
 TEST_CASE("routing: a submission the ingest cannot take returns at once, owed and unscored",

@@ -593,6 +593,23 @@ void p2p_node::announce_blocks(hash_list const& hashes) {
 
 bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message const& raw) {
     auto const& command = raw.heading.command();
+    if (command == domain::message::send_headers::command) {
+        byte_reader reader(raw.payload);
+        auto parsed = domain::message::send_headers::from_data(reader, peer->negotiated_version());
+        if (parsed && raw.payload.empty()) {
+            peer->set_wants_headers(true);
+        }
+        return true;
+    }
+    if (command == domain::message::block::command) {
+        byte_reader reader(raw.payload);
+        auto header = domain::chain::header::from_data(reader);
+        if (header) {
+            // Record the source before a waiting download can connect the block.
+            peer->remember_block(domain::chain::hash(*header));
+        }
+        return false;
+    }
     if (command == domain::message::headers::command) {
         ingest_headers(peer, raw);
         return true;
@@ -625,6 +642,9 @@ void p2p_node::ingest_headers(peer_session::ptr const& peer, raw_message const& 
         return;
     }
     auto const count = headers->size();
+    for (auto const& header : *headers) {
+        peer->remember_block(domain::chain::hash(header));
+    }
     // Empty ones too: an empty `headers` is how a peer says it has nothing past
     // our locator, and the walk needs to hear that.
     if ( ! header_ingest_->submit(peer, std::move(*headers))) {
@@ -641,6 +661,7 @@ void p2p_node::ingest_compact_block(peer_session::ptr const& peer, raw_message c
         spdlog::debug("[p2p_node] Unparseable cmpctblock from [{}]; header not taken", peer->authority());
         return;
     }
+    peer->remember_block(domain::chain::hash(*header));
     if ( ! header_ingest_->submit(peer, domain::message::header::list{std::move(*header)})) {
         spdlog::debug("[p2p_node] cmpctblock header from [{}] not queued; a follow-up is owed",
             peer->authority());
@@ -663,6 +684,9 @@ void p2p_node::announce_from_inventory(peer_session& peer, raw_message const& ra
     }
     spdlog::debug("[p2p_node] {} block(s) announced by inv from [{}]",
         hashes.size(), peer.authority());
+    for (auto const& hash : hashes) {
+        peer.remember_block(hash);
+    }
     announce_blocks(std::move(hashes));
 }
 

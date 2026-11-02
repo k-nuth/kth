@@ -4,6 +4,7 @@
 
 #include <kth/network/peer_session.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -507,6 +508,36 @@ bool peer_session::wants_addrv2() const {
 
 void peer_session::set_wants_addrv2(bool value) {
     wants_addrv2_.store(value, std::memory_order_relaxed);
+}
+
+bool peer_session::wants_headers() const {
+    return wants_headers_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_wants_headers(bool value) {
+    wants_headers_.store(value, std::memory_order_relaxed);
+}
+
+bool peer_session::knows_block(hash_digest const& hash) const {
+    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
+    return std::find(known_blocks_.begin(), known_blocks_.end(), hash) != known_blocks_.end();
+}
+
+bool peer_session::remember_block(hash_digest const& hash) {
+    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
+    if (std::find(known_blocks_.begin(), known_blocks_.end(), hash) != known_blocks_.end()) {
+        return false;
+    }
+    if (known_blocks_.size() == known_block_capacity) {
+        known_blocks_.pop_front();
+    }
+    known_blocks_.push_back(hash);
+    return true;
+}
+
+size_t peer_session::known_block_count() const {
+    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
+    return known_blocks_.size();
 }
 
 // =============================================================================

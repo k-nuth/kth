@@ -320,10 +320,9 @@ public:
     // are registered as announcements instead, under a mutex, because they
     // arrive on several peer strands at once. Its channel is only a doorbell.
 
-    /// What the read loop does with `headers`, `cmpctblock` and `inv` before
-    /// anything else sees them. Answers whether the message was consumed: only
-    /// `headers` is; the other two carry on to the dispatcher. Any other
-    /// command is left alone.
+    /// Observe block messages before anything else sees them. `sendheaders`
+    /// sets this peer's preference, and `headers` goes to the header ingest;
+    /// both are consumed. The other block forms carry on to the dispatcher.
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 

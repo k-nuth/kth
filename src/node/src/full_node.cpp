@@ -14,8 +14,12 @@
 #include <kth/blockchain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/block_serving.hpp>
+#if ! defined(__EMSCRIPTEN__)
+#include <kth/node/block_relay.hpp>
+#endif
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/block_relay.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -126,7 +130,12 @@ full_node::~full_node() {
     network_.register_message_handler<domain::message::get_headers>(
         [this](peer_session& peer, domain::message::get_headers const& request)
             -> ::asio::awaitable<message_result> {
-            co_await peer.send(answer_header_request(request, chain_));
+            auto const answer = answer_header_request(request, chain_);
+            if (co_await peer.send(answer) == error::success) {
+                for (auto const& header : answer.elements()) {
+                    peer.remember_block(domain::chain::hash(header));
+                }
+            }
             co_return message_result::handled;
         });
 
@@ -145,6 +154,8 @@ full_node::~full_node() {
                     missing.push_back(entry);
                 } else if (co_await peer.send(*block) != error::success) {
                     co_return message_result::handled;
+                } else {
+                    peer.remember_block(entry.hash());
                 }
             }
             if ( ! missing.empty()) {
@@ -312,6 +323,9 @@ full_node::~full_node() {
     // stops depending on how far that checkpoint happened to get (#697).
     blockchain::detail::block_chain_internal::end_hydration(chain_);
 
+    block_relay_ = std::make_unique<detail::block_relay_state>(
+        chain_.synchronization().caught_up && ! chain_.is_stale());
+
     // Tell it how far blocks are already validated. Nothing else does until the
     // first newly stored block, and deep-reorg parking measures depth against
     // this height: left at "nothing validated yet", a node that just came up
@@ -333,12 +347,32 @@ full_node::~full_node() {
     co_await ::asio::co_spawn(
         network_.thread_pool().get_executor(),
         sync::sync_orchestrator(chain_, organizer, network_, network_type_,
-            [this](std::string const& reason) { notify_fatal(reason); }),
+            [this](std::string const& reason) { notify_fatal(reason); },
+            [this](uint32_t first, uint32_t last) { handle_connected(first, last); }),
         ::asio::use_awaitable
     );
 
     organizer.stop();
     spdlog::info("[full_node] run_sync() ENDED");
+}
+
+void full_node::handle_connected(uint32_t first, uint32_t last) {
+    auto const range = block_relay_->connected(first, last,
+        chain_.synchronization().caught_up && ! chain_.is_stale());
+    if ( ! range) {
+        return;
+    }
+
+    auto incoming = connected_block_headers(chain_.headers(), range->first, range->last);
+    if (incoming.empty()) {
+        return;
+    }
+    network_.set_top_block({domain::chain::hash(incoming.back()), range->last});
+
+    // Snapshotting peers runs separately from the builder. Every send uses a
+    // bounded, non-waiting queue, so one stalled peer cannot hold up another.
+    ::asio::co_spawn(network_.thread_pool().get_executor(),
+        announce_blocks(network_.peers(), std::move(incoming)), ::asio::detached);
 }
 #endif
 
