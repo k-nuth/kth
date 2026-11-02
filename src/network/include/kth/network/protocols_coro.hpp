@@ -158,6 +158,7 @@ struct handshake_config {
     std::string user_agent;         // Our user agent string
     uint32_t start_height;          // Our current block height
     uint64_t nonce;                 // Connection nonce
+    bool relay;                     // Ask the peer to announce transactions (BIP37)
     std::chrono::seconds timeout;   // Handshake timeout
     std::vector<std::string> user_agent_blacklist;  // Blacklisted user agents
 };

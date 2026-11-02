@@ -882,3 +882,112 @@ TEST_CASE("a leased view is closed under in-mempool parents while admissions run
     CHECK_FALSE(handshake_timed_out.load());
     CHECK(partial > 0);
 }
+
+// ---------------------------------------------------------------------------
+// Size limit, eviction order and expiry
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using kth::blockchain::fee_rate;
+
+mempool_entry priced(transaction const& tx, uint64_t fee, uint64_t time_seen) {
+    auto const ptr = as_ptr(tx);
+    return mempool_entry{ptr, fee, static_cast<uint32_t>(ptr->serialized_size(true)), 1u, time_seen};
+}
+
+} // namespace
+
+TEST_CASE("mempool bytes follow additions and removals", "[mempool][serial][limit]") {
+    mempool mp{0x1111u, 0x2222u};
+    CHECK(mp.bytes() == 0u);
+
+    auto const a = make_tx({op(1, 0)}, 1, 1);
+    auto const b = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(mp.add(priced(a, 100, 1)));
+    REQUIRE(mp.add(priced(b, 100, 2)));
+    CHECK(mp.bytes() == a.serialized_size(true) + b.serialized_size(true));
+
+    // A duplicate or a conflict adds nothing.
+    CHECK_FALSE(mp.add(priced(a, 100, 3)));
+    CHECK(mp.bytes() == a.serialized_size(true) + b.serialized_size(true));
+
+    mp.remove_for_block(make_block({a}));
+    CHECK(mp.bytes() == b.serialized_size(true));
+    mp.remove_for_block(make_block({b}));
+    CHECK(mp.bytes() == 0u);
+}
+
+TEST_CASE("mempool trim evicts the lowest fee per byte first, with its descendants", "[mempool][serial][limit]") {
+    mempool mp{0x1111u, 0x2222u};
+    auto const parent = make_tx({op(1, 0)}, 1, 1);
+    auto const child = make_tx({output_point{parent.hash(), 0}}, 1, 2);
+    auto const other = make_tx({op(3, 0)}, 1, 3);
+    REQUIRE(mp.add(priced(parent, 100, 1)));
+    REQUIRE(mp.add(priced(child, 100'000, 2)));
+    REQUIRE(mp.add(priced(other, 500, 3)));
+
+    // Within the limit: nothing goes.
+    CHECK_FALSE(mp.trim_to_size(mp.bytes()).has_value());
+    CHECK(mp.size() == 3u);
+
+    // The parent pays least per byte; its child cannot stay without it.
+    auto const evicted = mp.trim_to_size(mp.bytes() - 1);
+    REQUIRE(evicted.has_value());
+    CHECK(evicted->fee == 100u);
+    CHECK_FALSE(mp.contains(parent.hash()));
+    CHECK_FALSE(mp.contains(child.hash()));
+    CHECK(mp.contains(other.hash()));
+    CHECK(mp.bytes() == other.serialized_size(true));
+
+    // Down to nothing, and an empty pool stops the loop.
+    auto const last = mp.trim_to_size(0);
+    REQUIRE(last.has_value());
+    CHECK(last->fee == 500u);
+    CHECK(mp.size() == 0u);
+    CHECK(mp.bytes() == 0u);
+    CHECK_FALSE(mp.trim_to_size(0).has_value());
+}
+
+TEST_CASE("mempool trim evicts the one seen last of two equal fee rates", "[mempool][serial][limit]") {
+    mempool mp{0x1111u, 0x2222u};
+    auto const first = make_tx({op(1, 0)}, 1, 1);
+    auto const later = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(first.serialized_size(true) == later.serialized_size(true));
+    REQUIRE(mp.add(priced(later, 300, 20)));
+    REQUIRE(mp.add(priced(first, 300, 10)));
+
+    REQUIRE(mp.trim_to_size(mp.bytes() - 1).has_value());
+    CHECK(mp.contains(first.hash()));
+    CHECK_FALSE(mp.contains(later.hash()));
+}
+
+TEST_CASE("mempool fee rates compare exactly", "[mempool][serial][limit]") {
+    CHECK(fee_rate{2, 5} < fee_rate{3, 7});
+    CHECK_FALSE(fee_rate{3, 7} < fee_rate{2, 5});
+    CHECK_FALSE(fee_rate{2, 4} < fee_rate{1, 2});
+    CHECK_FALSE(fee_rate{1, 2} < fee_rate{2, 4});
+
+    // Products past 2^64: a 64-bit cross-multiplication would wrap.
+    uint64_t const big = uint64_t(1) << 62;
+    uint32_t const large = uint32_t(1) << 31;
+    CHECK(fee_rate{big, large} < fee_rate{big + 1, large});
+    CHECK_FALSE(fee_rate{big + 1, large} < fee_rate{big, large});
+}
+
+TEST_CASE("mempool expire removes what was first seen too long ago, with its descendants", "[mempool][serial][expiry]") {
+    mempool mp{0x1111u, 0x2222u};
+    auto const old = make_tx({op(1, 0)}, 1, 1);
+    auto const child = make_tx({output_point{old.hash(), 0}}, 1, 2);
+    auto const young = make_tx({op(3, 0)}, 1, 3);
+    REQUIRE(mp.add(priced(old, 100, 10)));
+    REQUIRE(mp.add(priced(child, 100, 200)));
+    REQUIRE(mp.add(priced(young, 100, 100)));
+
+    CHECK(mp.expire(10) == 0u);
+    CHECK(mp.expire(60) == 2u);
+    CHECK_FALSE(mp.contains(old.hash()));
+    CHECK_FALSE(mp.contains(child.hash()));
+    CHECK(mp.contains(young.hash()));
+    CHECK(mp.bytes() == young.serialized_size(true));
+}

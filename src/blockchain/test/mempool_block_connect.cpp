@@ -8,6 +8,7 @@
 
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/domain.hpp>
+#include <kth/infrastructure/utility/timer.hpp>
 
 #include "reorg_chain_fixture.hpp"
 
@@ -75,7 +76,9 @@ mempool_entry entry_for(transaction_const_ptr const& tx, uint64_t tag) {
         .fee = 1000u + tag,
         .size = static_cast<uint32_t>(tx->serialized_size(true)),
         .sigchecks = 1u,
-        .time_seen = tag};
+        // First seen now, in tag order: a connected block expires what was
+        // first seen more than mempool_expiry_hours ago.
+        .time_seen = uint64_t(zulu_time()) + tag};
 }
 
 // A block carrying `txs` after a coinbase. Only its transactions matter here —

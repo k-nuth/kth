@@ -67,6 +67,7 @@ domain::message::version make_version_message(
     version.set_nonce(config.nonce);
     version.set_user_agent(config.user_agent);
     version.set_start_height(config.start_height);
+    version.set_relay(config.relay);
 
     // The peer's services cannot be reflected, so zero it
     version.address_receiver().set_services(domain::message::version::service::none);
@@ -398,6 +399,7 @@ handshake_config make_handshake_config(
         .user_agent = network_settings.user_agent,
         .start_height = current_height,
         .nonce = nonce,
+        .relay = network_settings.relay_transactions,
         .timeout = std::chrono::seconds(network_settings.channel_handshake_seconds),
         .user_agent_blacklist = network_settings.user_agent_blacklist
     };

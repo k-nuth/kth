@@ -27,7 +27,22 @@ struct KB_API settings {
     uint32_t cores = 0;
     bool priority = true;
     float byte_fee_satoshis = 0.1f;
-    float sigop_fee_satoshis= 100.0f;
+#if defined(KTH_CURRENCY_BCH)
+    // Bitcoin Cash wallets pay a fee per byte. Signature work is bounded at
+    // admission by the SigChecks rules (per-input density, 3000 per
+    // transaction), so a per-sigop price on top only refuses ordinary payments,
+    // such as one input and two outputs at one satoshi per byte.
+    float sigop_fee_satoshis = 0.0f;
+#else
+    float sigop_fee_satoshis = 100.0f;
+#endif
+    // The most the mempool holds, in serialized transaction bytes (not memory):
+    // ten 32 MB blocks. Past it the lowest fee per byte is evicted first and
+    // the per-byte floor rises for a while.
+    uint64_t mempool_max_bytes = 320'000'000;
+    // A transaction still unconfirmed this long after it was first seen is
+    // dropped with its descendants, freeing its inputs. 0 keeps them forever.
+    uint32_t mempool_expiry_hours = 336;
 #if defined(KTH_CURRENCY_BCH)
     uint64_t minimum_output_satoshis = 0;
     domain::policy::transaction_standardness_parameters standardness;

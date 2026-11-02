@@ -90,8 +90,21 @@ bool mempool::add(mempool_entry entry) {
         ++claimed;
     }
 
-    // Commit the transaction; release the claims if it is a duplicate.
-    if ( ! pool_.try_insert(txid, std::move(entry))) {
+    // Commit the transaction; release the claims if it is a duplicate. The
+    // pool, its byte count and the eviction order change together, so the
+    // order never names a transaction the pool does not hold.
+    eviction_key const key{fee_rate{entry.fee, entry.size}, entry.time_seen, txid};
+    auto const size = entry.size;
+    bool inserted = false;
+    {
+        std::lock_guard const lock(eviction_mutex_);
+        inserted = pool_.try_insert(txid, std::move(entry));
+        if (inserted) {
+            eviction_order_.insert(key);
+            bytes_.fetch_add(size, std::memory_order_relaxed);
+        }
+    }
+    if ( ! inserted) {
         release(claimed);
         KTH_STATS_INCREMENT(stats_, add_rejected_duplicate);
         KTH_STATS_TIME_ADD(stats_, add, add_time_ns);
@@ -106,8 +119,10 @@ bool mempool::add(mempool_entry entry) {
 
 void mempool::remove_entry(hash_digest const& txid) {
     transaction_const_ptr tx;
+    std::optional<eviction_key> key;
     bool const found = pool_.visit(txid, [&](mempool_entry const& e) {
         tx = e.tx;
+        key = eviction_key{fee_rate{e.fee, e.size}, e.time_seen, txid};
     });
     if ( ! found) {
         return;
@@ -121,8 +136,13 @@ void mempool::remove_entry(hash_digest const& txid) {
     // the pool unrecorded as the spender of its inputs, and a conflicting one
     // would then be admitted beside it. Until the winner releases them the keys
     // stay claimed by this transaction, so no one can take them in the meantime.
-    if ( ! pool_.erase(txid)) {
-        return;
+    {
+        std::lock_guard const lock(eviction_mutex_);
+        if ( ! pool_.erase(txid)) {
+            return;
+        }
+        eviction_order_.erase(*key);
+        bytes_.fetch_sub(key->rate.size, std::memory_order_relaxed);
     }
 
     for (auto const& in : tx->inputs()) {
@@ -188,6 +208,45 @@ void mempool::remove_for_block(domain::chain::block const& block) {
     }
 
     KTH_STATS_TIME_ADD(stats_, rmv, remove_time_ns);
+}
+
+std::optional<fee_rate> mempool::trim_to_size(uint64_t max_bytes) {
+    std::optional<fee_rate> highest;
+    while (bytes() > max_bytes) {
+        eviction_key lowest{};
+        {
+            std::lock_guard const lock(eviction_mutex_);
+            if (eviction_order_.empty()) {
+                break;
+            }
+            lowest = *eviction_order_.begin();
+        }
+
+        // Its descendants go with it: they spend its outputs, so they cannot
+        // stay without it.
+        if ( ! highest || *highest < lowest.rate) {
+            highest = lowest.rate;
+        }
+        remove_recursive(lowest.txid);
+    }
+    return highest;
+}
+
+std::size_t mempool::expire(uint64_t seen_before) {
+    std::vector<hash_digest> expired;
+    pool_.for_each([&](hash_digest const& txid, mempool_entry const& e) {
+        if (e.time_seen < seen_before) {
+            expired.push_back(txid);
+        }
+    });
+
+    auto const before = size();
+    for (auto const& txid : expired) {
+        // A descendant removed with an earlier one is simply not found again.
+        remove_recursive(txid);
+    }
+    auto const after = size();
+    return before > after ? before - after : 0;
 }
 
 void mempool::update_for_reorg(block_const_ptr_list_const_ptr /*outgoing*/,

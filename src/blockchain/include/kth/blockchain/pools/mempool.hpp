@@ -9,7 +9,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include <kth/domain.hpp>
@@ -32,6 +34,19 @@ struct mempool_entry {
     uint32_t size;
     uint32_t sigchecks;
     uint64_t time_seen;
+};
+
+// A fee per byte, kept as the exact fraction fee / size.
+struct fee_rate {
+    uint64_t fee;
+    uint32_t size;
+
+    // Compared exactly, by cross-multiplying in 128 bits: a fee can exceed
+    // 2^50 satoshis and a size 2^31 bytes, so a 64-bit product can overflow.
+    friend bool operator<(fee_rate const& a, fee_rate const& b) {
+        return static_cast<unsigned __int128>(a.fee) * b.size
+             < static_cast<unsigned __int128>(b.fee) * a.size;
+    }
 };
 
 // Aggregate figures over the whole pool (== the BCHN getmempoolinfo fields KTH
@@ -108,6 +123,21 @@ struct mempool {
     // Aggregate size / bytes / total_fee over the pool (== getmempoolinfo).
     mempool_totals summary() const;
 
+    // The serialized size of every pooled transaction, kept as they come and go.
+    uint64_t bytes() const {
+        return bytes_.load(std::memory_order_relaxed);
+    }
+
+    // Evict the transaction with the lowest fee per byte, with its descendants,
+    // until the pool holds at most `max_bytes`. At equal rates the one seen last
+    // goes first. Returns the highest fee rate chosen for eviction, or nullopt
+    // if the pool was already within the limit.
+    std::optional<fee_rate> trim_to_size(uint64_t max_bytes);
+
+    // Remove every transaction first seen before `seen_before` (unix seconds),
+    // with its descendants. Returns how many transactions left the pool.
+    std::size_t expire(uint64_t seen_before);
+
     // Visit every pooled entry. Snapshot-ish under concurrency (an entry added
     // or removed during the walk may or may not be seen) — fine for the
     // read-only listing/relay queries that use it.
@@ -143,10 +173,35 @@ private:
     std::vector<hash_digest> parents_of(hash_digest const& txid) const;
     std::vector<hash_digest> children_of(hash_digest const& txid) const;
 
+    // An entry's place in the eviction order: lowest fee rate first; at equal
+    // rates the one seen last, so a newcomer cannot push out a transaction
+    // that pays as much and was there first; then the txid, so the order is
+    // total and repeatable.
+    struct eviction_key {
+        fee_rate rate;
+        uint64_t time_seen;
+        hash_digest txid;
+
+        friend bool operator<(eviction_key const& a, eviction_key const& b) {
+            if (a.rate < b.rate) return true;
+            if (b.rate < a.rate) return false;
+            if (a.time_seen != b.time_seen) return a.time_seen > b.time_seen;
+            return a.txid < b.txid;
+        }
+    };
+
     mempool_map<hash_digest, mempool_entry, salted_txid_hasher> pool_;
     mempool_map<outpoint_key, hash_digest, salted_outpoint_hasher> spent_by_;
     mempool_stats stats_;
     std::atomic<uint64_t> generation_{0};
+    std::atomic<uint64_t> bytes_{0};
+
+    // The eviction order is an ordinary set, so it has its own lock rather than
+    // leaning on the organizers' mutex, as the maps above do not either. A
+    // transaction enters and leaves pool_, bytes_ and the order under it
+    // together, so trim_to_size never picks one the pool no longer holds.
+    std::mutex eviction_mutex_;
+    std::set<eviction_key> eviction_order_;
 };
 
 // A set of entries the pool actually held, and the number that labels it.
