@@ -121,8 +121,8 @@ bool run_until(::asio::io_context& ctx, Pred pred, std::chrono::seconds budget =
     return true;
 }
 
-// Drive `ctx` with poll() only, so no timer can fire: whatever makes `pred`
-// true must be a handler that is already queued or queued by one that runs.
+// Drive `ctx` without waiting for future events. Already-ready timers may run,
+// along with handlers that are queued or queued by one that runs.
 // Returns false as soon as the context runs dry with `pred` still false.
 template <typename Pred>
 bool drain_until(::asio::io_context& ctx, Pred pred) {
@@ -256,8 +256,8 @@ struct supervisor_fixture {
     }
 
     // Fill the workers' output channel with performance reports, which the
-    // supervisor forwards best-effort. Returns how many it took: the capacity
-    // plus the one that a suspended wait takes directly.
+    // supervisor forwards best-effort. Returns the admitted count: the buffer
+    // capacity plus an extra item if the output receive is still eligible.
     size_t flood_task_output() {
         REQUIRE(launcher.output != nullptr);
         size_t sent = 0;
@@ -399,11 +399,21 @@ TEST_CASE("select: a worker's task_ended report waits out a full channel instead
     REQUIRE(f.launcher.output != nullptr);
 
     // Keep the supervisor executor paused while the report executor runs.
-    // The flood commits one receive and fills every buffer slot before the
-    // worker initiates its send. No cross-coroutine FIFO scheduling assumption.
+    // Fill every buffer slot before the worker initiates its send. An already
+    // selected input can retire the output receive before the flood arrives.
     auto worker = f.start_real_worker(0);
+    SECTION("no competing control event is queued") {}
+    SECTION("a benign peer update wins selection before the flood") {
+        // Commit the input alternative without running the supervisor yet.
+        // Its output receive is no longer entitled to take the extra item.
+        REQUIRE(f.input.try_send(block_download_input{peers_updated{{p1}}}));
+    }
     auto const flooded = f.flood_task_output();
-    CHECK(flooded == 256u + 1u);
+    REQUIRE(f.launcher.output->buffered() == 256u);
+    // At most one extra report can be committed to the suspended receive.
+    // The pending critical send must wait in either selection ordering.
+    CHECK(flooded >= 256u);
+    CHECK(flooded <= 257u);
     REQUIRE(drain_until(f.report_ctx, [&] { return f.launcher.output->pending() == 1u && ! worker->done.load(); }));
 
     // Everything ahead of it drains in order; the report lands last and is
@@ -411,13 +421,16 @@ TEST_CASE("select: a worker's task_ended report waits out a full channel instead
     f.pump();
     REQUIRE(drain_until(f.report_ctx, [&] { return worker->done.load(); }));
     worker->check();
-    f.pump();
+    // The send completes when admitted, before the supervisor consumes the
+    // entire prefix. Cooperative selection may need several executor turns.
+    REQUIRE(drain_until(f.ctx, [&] { return f.launcher.output->buffered() == 0u; }));
     // Drained, every one of them forwarded. (pending() is not asserted to be
     // zero: the supervisor's own receive registration counts once it waits.)
     CHECK(f.launcher.output->buffered() == 0u);
     CHECK(f.forwarded_performance() == flooded);
 
     f.send(block_range_request{201, 300});
+    REQUIRE(drain_until(f.ctx, [&] { return f.launcher.launches.size() == 2u; }));
     REQUIRE(f.launcher.launches.size() == 2u);
     CHECK(f.launcher.launches[1].epoch == 2u);
 }

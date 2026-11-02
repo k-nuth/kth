@@ -5,6 +5,9 @@
 #ifndef KTH_INFRASTRUCTURE_TASK_GROUP_HPP
 #define KTH_INFRASTRUCTURE_TASK_GROUP_HPP
 
+#if defined(KTH_BROWSER_NODE)
+#include <kth/infrastructure/utility/browser_task_group.hpp>
+#else
 #include <atomic>
 #include <chrono>
 #include <concepts>
@@ -286,4 +289,5 @@ private:
 
 } // namespace kth
 
+#endif // KTH_BROWSER_NODE
 #endif // KTH_INFRASTRUCTURE_TASK_GROUP_HPP

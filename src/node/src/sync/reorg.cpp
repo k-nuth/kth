@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <mutex>
 
 #include <kth/node/detail/header_persist_test_seam.hpp>
@@ -366,7 +367,7 @@ namespace {
             timed_out = true;
             break;
         }
-        ::asio::steady_timer wait_timer(executor);
+        ::kth::steady_timer wait_timer(executor);
         wait_timer.expires_after(std::chrono::milliseconds(50));
         co_await wait_timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
     }

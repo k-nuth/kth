@@ -31,6 +31,8 @@
 
 #include <boost/circular_buffer.hpp>
 #include <boost/iostreams/stream.hpp>
+#if !defined(__EMSCRIPTEN__)
 #include <boost/thread.hpp>
+#endif
 
 #endif

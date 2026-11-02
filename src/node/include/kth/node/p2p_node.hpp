@@ -5,6 +5,7 @@
 #ifndef KTH_NETWORK_P2P_NODE_HPP
 #define KTH_NETWORK_P2P_NODE_HPP
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <atomic>
 #include <stop_token>
 #include <chrono>
@@ -543,7 +544,7 @@ private:
     /// execution, and a clean TSan run would not make it one.
     ///
     /// Declared after pool_ so it is destroyed before the executor it wraps.
-    ::asio::strand<::asio::thread_pool::executor_type> status_strand_{
+    ::asio::strand<threadpool::context_type::executor_type> status_strand_{
         ::asio::make_strand(pool_.get_executor())};
 
     /// What the status task waits on, held here so a stop can reach it.
@@ -554,7 +555,7 @@ private:
     /// join() waits for the pool it keeps alive.
     ///
     /// Built on the strand above, and touched only from it.
-    ::asio::steady_timer status_timer_{status_strand_};
+    ::kth::steady_timer status_timer_{status_strand_};
 
     /// Ask the status task to look again, now.
     ///
@@ -595,6 +596,9 @@ private:
     friend struct detail::p2p_node_test_seam;
 
     std::atomic<bool> seeded_{false};
+#if defined(KTH_BROWSER_NODE)
+    event_channel browser_supervisor_ready_{pool_.get_executor(), 1};
+#endif
     std::atomic<bool> supervisor_ready_{false};  // Signals that peer_supervisor is ready
     std::atomic<int> seed_task_counter_{0};  // For unique seed task names in logging
     std::atomic<int> conn_task_counter_{0};  // For unique connection task names in logging

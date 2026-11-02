@@ -4,6 +4,7 @@
 
 // See protocols_coro.hpp for documentation on what this file replaces.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/protocols_coro.hpp>
 
 #include <algorithm>
@@ -30,7 +31,7 @@ awaitable_expected<raw_message> wait_for_any_message(
     std::chrono::seconds timeout)
 {
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
+    ::kth::steady_timer timer(executor, timeout);
 
     auto result = co_await (
         peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
@@ -302,7 +303,7 @@ awaitable_expected<handshake_result> perform_handshake_direct(
 
         // Read message directly from socket with timeout
         // Use racing pattern with timer
-        ::asio::steady_timer timer(executor, remaining);
+        ::kth::steady_timer timer(executor, remaining);
 
         auto result = co_await (
             peer.read_message_direct() ||
@@ -415,7 +416,7 @@ handshake_config make_handshake_config(
         peer.authority(), ping_interval.count());
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer ping_timer(executor);
+    ::kth::steady_timer ping_timer(executor);
 
     uint64_t last_ping_nonce = 0;
 
@@ -689,7 +690,7 @@ awaitable_expected<domain::message::address> request_addresses(
 //             co_return std::unexpected(error::channel_timeout);
 //         }
 
-//         ::asio::steady_timer timer(executor, remaining);
+//         ::kth::steady_timer timer(executor, remaining);
 
 //         auto result = co_await (
 //             peer.block_responses().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||

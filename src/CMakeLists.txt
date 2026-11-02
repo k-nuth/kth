@@ -78,7 +78,7 @@ if (WITH_CONSENSUS)
 endif()
 
 # Network module is not compatible with Emscripten
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
     add_subdirectory(network)
 endif()
 

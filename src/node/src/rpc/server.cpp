@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/node/rpc/server.hpp>
 
 #include <array>
@@ -295,7 +296,7 @@ void server::stop() {
     std::unordered_set<std::shared_ptr<tcp::socket>> connections;
     std::size_t pending = 0;
     bool stopping = false;
-    ::asio::steady_timer accept_retry(owner_);
+    ::kth::steady_timer accept_retry(owner_);
     std::exception_ptr failure;
     auto close_owned = [&] {
         stopping = true;

@@ -50,6 +50,11 @@ struct KN_API settings {
     infrastructure::config::endpoint::list peers;
     infrastructure::config::endpoint::list seeds;
     std::string user_agent;
+#if defined(KTH_BROWSER_NODE)
+    // Explicit bridge URL; browser connections never use native DNS/TCP.
+    std::string browser_bridge_url;
+    size_t browser_maximum_payload = size_t(-1);
+#endif
 
     // [log]
     kth::path debug_file;

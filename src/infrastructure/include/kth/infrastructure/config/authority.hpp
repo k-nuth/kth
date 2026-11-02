@@ -61,7 +61,7 @@ struct KI_API authority {
 
     authority(message::ip_address const& ip, uint16_t port);
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     authority(asio::address const& ip, uint16_t port);
 
     explicit

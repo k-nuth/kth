@@ -44,7 +44,7 @@
 
 #include <kth/blockchain.hpp>
 #include <kth/infrastructure.hpp>
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
 #endif
@@ -127,7 +127,7 @@ public:
     [[nodiscard]]
     blockchain::settings const& chain_settings() const;
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     /// Network configuration settings.
     [[nodiscard]]
     kth::network::settings const& network_settings() const;
@@ -141,7 +141,7 @@ public:
     [[nodiscard]]
     blockchain::block_chain& chain_kth();
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     /// P2P network node.
     [[nodiscard]]
     kth::node::p2p_node& network();
@@ -154,7 +154,7 @@ public:
     [[nodiscard]]
     threadpool& chain_thread_pool();
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     /// Thread pool for network operations (P2P, sockets).
     [[nodiscard]]
     threadpool& network_thread_pool();
@@ -196,6 +196,9 @@ public:
     static domain::chain::block get_genesis_block(domain::config::network network);
 
 private:
+#if defined(KTH_BROWSER_NODE)
+    block_channel_ptr browser_block_subscription_;
+#endif
     // Internal helpers
     bool handle_reorganized(code ec, size_t fork_height,
         block_const_ptr_list_const_ptr incoming,
@@ -204,7 +207,7 @@ private:
     // Background task coroutines (for structured concurrency)
     ::asio::awaitable<void> run_blockchain_subscriber();
     ::asio::awaitable<void> run_rpc();
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     ::asio::awaitable<void> run_sync();
 #endif
 
@@ -215,7 +218,7 @@ private:
     domain::config::network network_type_;
 
     // Core components (composition, not inheritance)
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::node::p2p_node network_;
 #endif

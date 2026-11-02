@@ -48,7 +48,7 @@ struct KI_API endpoint {
         : host_(host), port_(port)
     {}
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     explicit
     endpoint(asio::endpoint const& host);
 
