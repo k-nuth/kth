@@ -18,6 +18,9 @@
 #include <cassert>
 #include <stdexcept>
 #include <optional>
+#include <filesystem>
+#include <fstream>
+#include <cstdio>
 
 namespace kth::node {
 namespace {
@@ -152,6 +155,78 @@ struct header_sync::impl {
     bool active = false;
     bool stop_requested = false;
     std::string message = "idle";
+    // Opt-in: the embedding Worker mounts this network-specific directory on IDBFS.
+    // The cache is raw active-chain headers, never a trusted memory/index image.
+    std::string cache_path;
+    int32_t cache_height = -1;
+    hash_digest cache_tip{};
+
+    void restore_cache(size_t capacity) {
+        auto directory = std::string("/kth-header-cache/") + std::string(domain::config::name(network));
+        if (!std::filesystem::is_directory(directory)) return;
+        cache_path = directory + "/chain-v1.bin";
+        std::ifstream input(cache_path, std::ios::binary | std::ios::ate);
+        if (!input) return;
+        auto length = static_cast<std::streamoff>(input.tellg());
+        if (length < 80 || length % 80 != 0 || uint64_t(length) / 80 > capacity)
+            throw std::runtime_error("invalid stored header cache size");
+        auto count = uint64_t(length) / 80;
+        input.seekg(0);
+        std::array<uint8_t, 80> bytes{};
+        auto read_header = [&]() {
+            if (!input.read(reinterpret_cast<char*>(bytes.data()), bytes.size()))
+                throw std::runtime_error("truncated stored header cache");
+            byte_reader reader(bytes);
+            auto header = domain::chain::header::from_data(reader);
+            if (!header) throw std::runtime_error("invalid stored header encoding");
+            return *header;
+        };
+        if (domain::chain::hash(read_header()) != index.get_hash(index.active_at(0)))
+            throw std::runtime_error("stored header cache has wrong genesis");
+        organizer.start();
+        uint64_t height = 1;
+        while (height < count) {
+            domain::message::header::list batch;
+            auto end = std::min(count, height + 2000);
+            for (; height < end; ++height) batch.emplace_back(read_header());
+            auto result = organizer.add_headers(batch);
+            if (result.error || result.headers_added != batch.size())
+                throw std::runtime_error("stored header cache failed consensus validation");
+            if (result.reorg_candidate) organizer.adopt_tip(result.reorg_branch_head);
+        }
+        organizer.stop();
+        if (uint64_t(organizer.header_height()) + 1 != count)
+            throw std::runtime_error("stored header cache is not an active chain");
+        cache_height = organizer.header_height();
+        cache_tip = index.get_hash(index.active_at(cache_height));
+    }
+
+    void persist_cache() noexcept {
+        if (cache_path.empty()) return;
+        try {
+            auto height = organizer.header_height();
+            auto append = cache_height >= 0 && cache_height <= height &&
+                index.get_hash(index.active_at(cache_height)) == cache_tip;
+            if (append && cache_height == height) return;
+            std::ofstream output(cache_path, std::ios::binary | (append ? std::ios::app : std::ios::trunc));
+            if (!output) throw std::runtime_error("cannot write header cache");
+            for (int32_t at = append ? cache_height + 1 : 0; at <= height; ++at) {
+                std::array<uint8_t, 80> bytes{};
+                byte_writer writer(bytes);
+                auto header = index.get_header(index.active_at(at));
+                if (!header.to_data(writer, true)) throw std::runtime_error("cannot encode header cache");
+                output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+            }
+            output.flush();
+            if (!output) throw std::runtime_error("header cache write failed");
+            cache_height = height;
+            cache_tip = index.get_hash(index.active_at(height));
+        } catch (std::exception const& e) {
+            std::fprintf(stderr, "Header cache disabled: %s\n", e.what());
+            std::remove(cache_path.c_str());
+            cache_path.clear();
+        }
+    }
 
     impl(std::string const& url, domain::config::network net, size_t capacity)
         : bridge(url), network(net), index(checked_capacity(capacity)), consensus(validation_settings(net)),
@@ -160,6 +235,7 @@ struct header_sync::impl {
         auto genesis = full_node::get_genesis_block(network);
         if (!index.add(genesis.hash(), genesis.header()).inserted) throw std::runtime_error("genesis initialization failed");
         organizer.sync_tip();
+        restore_cache(capacity);
     }
 };
 
@@ -260,6 +336,7 @@ header_sync::~header_sync() { assert(!state_->active); }
                     if (accepted.error) throw std::runtime_error(accepted.error.message());
                     if (accepted.reorg_candidate) organizer.adopt_tip(accepted.reorg_branch_head);
                     if (index.size() == before) throw std::runtime_error("peer made no header progress");
+                    state.persist_cache();
 
                     received = true;
                     break;

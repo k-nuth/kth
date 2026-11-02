@@ -2,7 +2,7 @@
 
 This is an experimental transport/executor milestone, **not a completed browser
 full node**. The existing C++ full-node and sync modules compile with the opt-in
-build. The tests below do not run full sync orchestration, connect blocks to a
+build. The baseline transport tests below do not run full sync orchestration, connect blocks to a
 UTXO set, establish contextual consensus acceptance, or establish persistence.
 No JavaScript implementation of BCH protocol or validation is used.
 
@@ -280,3 +280,57 @@ application table; `headers-live-worker.js` accepts `{type: 'getHeaders', reques
 height, count}` and returns at most 50 entries. Omit height for the current tip.
 `check-headers-follow.py --headers` checks double-SHA256 hashes against the wire
 bytes, parent continuity and out-of-range behavior through the generated binding.
+
+
+## Optional persistent header cache
+
+The headers API application control now exports Emscripten `FS`/`IDBFS` and links
+`idbfs.js`. The ordinary transport controls remain memory-only. There are no C
+API, IDL or generated-wrapper changes.
+
+`headers-persistent-worker.js` and `header-storage.js` are an opt-in embedding
+example. Copy them beside the built `browser_headers_api_control.js`/`.wasm`,
+renaming that matching module pair to `browser_headers_persistent_v1.js` and
+`browser_headers_persistent_v1.wasm`. Start the Worker with the existing
+`{type:'start', bridge, network, capacity}` message. This retains the existing
+stop, refresh and header-window messages. The endpoint must permit the page's
+exact Origin. HTTPS pages must select WSS.
+
+The Worker mounts `/kth-header-cache/<Network>` on IDBFS before constructing
+`HeaderSync`. Each network has its own IndexedDB database. When this directory
+exists, the native actor maintains `chain-v1.bin`: contiguous 80-byte active-chain
+headers, including genesis. It appends on extension and rewrites the active
+chain when its saved anchor no longer matches after a reorganization. It never
+serializes pointers, orphan branches, cached work or trusted consensus state.
+Without that opt-in directory, native actor behavior is unchanged.
+
+On restore, the native actor checks size/capacity and genesis and replays every
+header through the same contextual consensus validator used by P2P sync. A
+malformed or invalid cache is discarded by the embedding Worker, which starts
+fresh. The active-chain locator then resumes from the restored tip. This saves
+network download; local revalidation still takes time on large chains.
+
+The Worker commits the single cache file through an IndexedDB transaction at
+most once every two seconds while progress advances, and flushes on joined
+Stop. An abrupt reload can lose the most recent uncommitted progress, which is
+fetched again from the peer. Refresh, tab closure and browser restart preserve
+the last committed chain. A quota/storage failure emits `storageUnavailable`
+and networking continues in memory. Clearing or evicting site data removes the
+cache; storage is scoped to the browser profile and page origin. Storage events
+also include `storageLoading`, `storageRestored`, `storageSaved` and `storageReset`.
+
+A reproducible Chromium control checks partial reload, full reload without
+redownloading the chain, a complete browser restart, corrupted-cache rejection
+and quota-failure fallback. It serves its own virtual fixture under an
+operator-selected allowed Origin, without changing a production site's files.
+The selected peer must have at least one non-genesis header:
+
+```sh
+python check-headers-persistence.py \
+  --module-dir "$BUILD/experiments/browser-worker" \
+  --peer ws://127.0.0.1:18774/p2p --network tempnet \
+  --origin http://127.0.0.1:8766
+```
+
+Use a Python environment with Playwright and Chromium installed. This is a
+headers-only browser cache; it does not introduce block, UTXO or wallet storage.
