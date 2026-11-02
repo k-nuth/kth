@@ -161,6 +161,7 @@ struct handshake_config {
     uint64_t nonce;                 // Connection nonce
     std::chrono::seconds timeout;   // Handshake timeout
     std::vector<std::string> user_agent_blacklist;  // Blacklisted user agents
+    bool relay_transactions = false; // BIP37 version.relay, independent of service flags
 };
 
 /// Result of a successful handshake

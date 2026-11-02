@@ -2486,8 +2486,8 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// DEPRECATED: Block storage moved to flat files (blk*.dat)
-// These functions will return not_found until we implement reading from flat files
+// Legacy by-height fetch is still unimplemented. The hash overload below reads
+// active connected blocks from flat files without relying on the old LMDB store.
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
     if (stopped()) {
@@ -2501,13 +2501,34 @@ block_chain::fetch_block(size_t height) const {
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
-    }
-
-    // LMDB block storage removed - blocks now in flat files
-    (void)hash;
-    co_return std::unexpected(error::not_found);
+    if (stopped()) co_return std::unexpected(error::service_stopped);
+    // Serve only the active connected chain. Capture a stable flat-file position
+    // before awaiting I/O; an index position is not a chain height after a fork.
+    auto const view = chain_view();
+    auto const at = header_index_.find(hash);
+    if (!view || at == header_index::null_index || !header_index_.has_block_data(at))
+        co_return std::unexpected(error::not_found);
+    if (view->connected_tip_height > size_t(max_int32)) co_return std::unexpected(error::not_found);
+    auto const connected_at = header_index_.active_at(static_cast<int32_t>(view->connected_tip_height));
+    if (connected_at == header_index::null_index || header_index_.get_hash(connected_at) != view->tip_hash)
+        co_return std::unexpected(error::not_found);
+    auto const height = header_index_.get_height(at);
+    if (height < 0 || size_t(height) > view->connected_tip_height || header_index_.active_at(height) != at)
+        co_return std::unexpected(error::not_found);
+    auto const position = database::flat_file_pos(header_index_.get_file_number(at), header_index_.get_data_pos(at));
+    // Read the captured position on the chain pool, not the network dispatcher.
+    auto raw = co_await ::asio::co_spawn(priority_pool_.get_executor(),
+        [this, position]() -> ::asio::awaitable<std::expected<std::vector<data_chunk>, database::result_code>> {
+            auto result = block_store_->read_blocks_raw(std::vector<database::flat_file_pos>{position});
+            if (!result) co_return std::unexpected(database::result_code::other);
+            co_return std::move(*result);
+        }, ::asio::use_awaitable);
+    if (!raw || raw->empty()) co_return std::unexpected(error::not_found);
+    byte_reader reader(raw->front());
+    auto block = domain::chain::block::from_data(reader);
+    if (!block || reader.remaining_size() || domain::chain::hash(block->header()) != hash)
+        co_return std::unexpected(error::not_found);
+    co_return std::pair{std::make_shared<domain::message::block const>(std::move(*block)), size_t(height)};
 }
 
 std::expected<domain::chain::block::list, database::result_code>

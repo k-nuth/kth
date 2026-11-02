@@ -1,4 +1,4 @@
-#include <kth/network/browser_stream.hpp>
+#include <kth/network/browser/stream.hpp>
 #include <cstdio>
 #include <stdexcept>
 kth::browser::runtime owner;

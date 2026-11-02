@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <future>
+#include <fstream>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -396,3 +398,22 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
 }
 
 #endif // KTH_CURRENCY_BCH
+
+TEST_CASE("export an isolated funded Regtest transaction relay fixture", "[.tx_relay_fixture]") {
+    auto const* destination=std::getenv("KTH_TX_RELAY_FIXTURE");
+    REQUIRE(destination != nullptr);
+    auto const directory=std::filesystem::path(destination);
+    REQUIRE(directory.is_absolute());
+    REQUIRE_FALSE(std::filesystem::exists(directory));
+    admission_chain built("tx_relay_export",100);
+    auto transaction=std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(run_on_chain(built.chain(),[&]{return built.chain().transaction_validate(transaction);})==error::success);
+    data_chunk wire(transaction->serialized_size(true));byte_writer writer(wire);
+    REQUIRE(transaction->to_data(writer,true));
+    auto const source=built.fixture.dir();built.fixture.close();
+    std::filesystem::create_directories(directory);
+    std::filesystem::copy(source,directory/"database",std::filesystem::copy_options::recursive);
+    std::ofstream output(directory/"transaction.hex");output<<encode_base16(wire)<<'\n';output.close();
+    REQUIRE(bool(output));
+    std::ofstream info(directory/"transaction-id.txt");info<<encode_hash(transaction->hash())<<'\n';
+}

@@ -3,7 +3,7 @@ add_executable(browser_configuration_control configuration-proof.cpp)
 target_link_libraries(browser_configuration_control PRIVATE node::node)
 target_link_options(browser_configuration_control PRIVATE -sENVIRONMENT=node -sEXIT_RUNTIME=1)
 set_target_properties(browser_configuration_control PROPERTIES SUFFIX ".js")
-foreach(control IN ITEMS stream cap eof select terminal)
+foreach(control IN ITEMS stream cap eof select terminal timer)
   add_executable(browser_${control}_control ${control}-proof.cpp)
   target_link_libraries(browser_${control}_control PRIVATE network::network)
   target_link_options(browser_${control}_control PRIVATE
@@ -26,6 +26,20 @@ if(KTH_HEADERS_GLUE_CPP AND KTH_HEADERS_PRE_JS)
       "-sEXPORTED_FUNCTIONS=['_malloc','_free','_strlen']")
   set_target_properties(browser_headers_api_control PROPERTIES SUFFIX ".js")
 endif()
+
+add_executable(browser_reset_control reset-proof.cpp)
+target_link_libraries(browser_reset_control PRIVATE c-api::c-api)
+target_link_options(browser_reset_control PRIVATE
+    -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+    -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+set_target_properties(browser_reset_control PROPERTIES SUFFIX ".js")
+
+add_executable(browser_headers_session_control headers-session-proof.cpp)
+target_link_libraries(browser_headers_session_control PRIVATE node::node)
+target_link_options(browser_headers_session_control PRIVATE
+    -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+    -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+set_target_properties(browser_headers_session_control PROPERTIES SUFFIX ".js")
 
 add_executable(browser_headers_control headers-sync-proof.cpp)
 target_link_libraries(browser_headers_control PRIVATE node::node)

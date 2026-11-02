@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 async def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(headless=True, executable_path=args.browser_executable)
         page = await browser.new_page(viewport={'width': 1100, 'height': 850})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -73,6 +73,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True, help='Directory URL serving the page and WASM controls')
     parser.add_argument('--bridge', required=True)
+    parser.add_argument('--browser-executable', help='optional installed Chromium/Chrome executable')
     parser.add_argument('--network', choices=('mainnet', 'regtest'), default='regtest')
     parser.add_argument('--scenario', choices=('sync', 'rejection', 'lifecycle', 'reconnect', 'construction'), default='sync')
     parser.add_argument('--expected-height', type=int)

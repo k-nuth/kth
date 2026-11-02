@@ -104,6 +104,7 @@ TEST_CASE("make_handshake_config from settings", "[protocols_coro]") {
     REQUIRE(config.start_height == 100000);
     REQUIRE(config.nonce == 12345);
     REQUIRE(config.timeout == 30s);
+    REQUIRE(config.relay_transactions == settings.relay_transactions);
 }
 
 // =============================================================================
@@ -180,6 +181,8 @@ TEST_CASE("wait_for_any_message timeout", "[protocols_coro]") {
 TEST_CASE("perform_handshake success", "[protocols_coro]") {
     ::asio::io_context ctx;
     auto settings = make_test_settings_proto();
+    SECTION("request transaction relay") { settings.relay_transactions = true; }
+    SECTION("disable transaction relay") { settings.relay_transactions = false; }
     auto [client, server] = make_connected_sockets_proto(ctx);
 
     auto peer = std::make_shared<peer_session>(std::move(server), settings);
@@ -207,6 +210,10 @@ TEST_CASE("perform_handshake success", "[protocols_coro]") {
     auto n = client.read_some(::asio::buffer(recv_buf), read_ec);
     REQUIRE(!read_ec);
     REQUIRE(n > 24);  // At least header size
+    byte_reader sent_reader(byte_span(recv_buf.data()+24,n-24));
+    auto sent_version=domain::message::version::from_data(sent_reader,70015);
+    REQUIRE(sent_version);
+    CHECK(sent_version->relay()==settings.relay_transactions);
 
     // Create and send remote version
     domain::message::version remote_version;

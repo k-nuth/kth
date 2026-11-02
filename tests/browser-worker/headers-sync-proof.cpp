@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/node/header_sync.hpp>
-#include <kth/infrastructure/utility/browser_runtime.hpp>
+#include <kth/infrastructure/utility/browser/runtime.hpp>
 #include <asio/co_spawn.hpp>
 #include <emscripten.h>
 #include <cstdio>

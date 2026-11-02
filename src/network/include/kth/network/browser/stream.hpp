@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see COPYING.
 #ifndef KTH_NETWORK_BROWSER_STREAM_HPP
 #define KTH_NETWORK_BROWSER_STREAM_HPP
-#include <kth/infrastructure/utility/browser_runtime.hpp>
+#include <kth/infrastructure/utility/browser/runtime.hpp>
 #include <emscripten/websocket.h>
 #include <algorithm>
 #include <deque>
@@ -17,7 +17,7 @@ namespace kth::network {
 // after discarding any stream byte would corrupt BCH framing.
 class browser_stream {
     struct state {
-        explicit state(::asio::any_io_executor executor) : executor(std::move(executor)) { browser::runtime::current().stream_created(); }
+        explicit state(::asio::any_io_executor executor, std::size_t frame_limit) : executor(std::move(executor)), capacity(std::max<std::size_t>(1024*1024,frame_limit)), maximum_frame(frame_limit) { browser::runtime::current().stream_created(); }
         ::asio::any_io_executor executor;
         ::asio::any_io_executor read_executor;
         ::asio::any_io_executor connect_executor;
@@ -32,7 +32,8 @@ class browser_stream {
         ::asio::any_completion_handler<void(std::error_code)> connect;
         ::asio::cancellation_slot read_slot;
         ::asio::cancellation_slot connect_slot;
-        static constexpr std::size_t capacity = 1024 * 1024;
+        std::size_t const capacity;
+        std::size_t const maximum_frame;
         void finish_read(std::error_code ec, std::size_t size) {
             read_slot.clear();
             auto handler = std::move(read);
@@ -77,7 +78,8 @@ class browser_stream {
     };
 public:
     using executor_type = ::asio::any_io_executor;
-    explicit browser_stream(executor_type executor) : state_(std::make_unique<state>(std::move(executor))) {}
+    explicit browser_stream(executor_type executor, std::size_t maximum_frame = 65536)
+        : state_(std::make_unique<state>(std::move(executor), std::clamp<std::size_t>(maximum_frame,65536,32*1024*1024+24))) {}
     browser_stream(browser_stream&&) = default;
     browser_stream& operator=(browser_stream&&) = default;
     executor_type get_executor() const { return state_->executor; }
@@ -121,7 +123,7 @@ public:
                 emscripten_websocket_set_onmessage_callback(s.socket, &s, [](int, EmscriptenWebSocketMessageEvent const* event, void* pointer) -> EM_BOOL {
                     auto& s = *static_cast<state*>(pointer);
                     if (s.stopped) return EM_TRUE;
-                    if (event->isText || event->numBytes > 65536 || event->numBytes > state::capacity - s.buffered || s.frames.size() >= 64) {
+                    if (event->isText || event->numBytes > s.maximum_frame || event->numBytes > s.capacity - s.buffered || s.frames.size() >= 64) {
                         s.stop(::asio::error::no_buffer_space); return EM_TRUE;
                     }
                     if (event->numBytes) {
@@ -178,7 +180,7 @@ public:
                 else if (first.size()) {
                     unsigned long pending = 0;
                     size = std::min<std::size_t>(first.size(), 65536);
-                    if (emscripten_websocket_get_buffered_amount(s.socket, &pending) != EMSCRIPTEN_RESULT_SUCCESS || pending > state::capacity-size) {
+                    if (emscripten_websocket_get_buffered_amount(s.socket, &pending) != EMSCRIPTEN_RESULT_SUCCESS || pending > s.capacity-size) {
                         ec = ::asio::error::no_buffer_space;
                     } else if (emscripten_websocket_send_binary(s.socket, const_cast<void*>(first.data()), size) != EMSCRIPTEN_RESULT_SUCCESS) {
                         ec = ::asio::error::connection_reset;

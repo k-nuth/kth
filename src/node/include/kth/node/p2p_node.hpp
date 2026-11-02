@@ -304,6 +304,10 @@ public:
     /// Get the peer manager (for advanced use)
     [[nodiscard]]
     peer_manager& peers();
+    // Relay only a caller-verified connected publication. sendheaders peers get a
+    // header; other peers get INV. A full output queue closes that peer explicitly.
+    ::asio::awaitable<void> announce_transaction(hash_digest const& hash);
+    ::asio::awaitable<void> announce_connected_header(domain::chain::header const& header);
 
     /// Get the channel that receives peer lifecycle events (CSP pattern)
     /// Use this to subscribe to peer connection/disconnection events.

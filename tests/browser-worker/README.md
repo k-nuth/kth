@@ -1,10 +1,15 @@
 # Browser Worker transport controls
 
-This is an experimental transport/executor milestone, **not a completed browser
-full node**. The existing C++ full-node and sync modules compile with the opt-in
-build. The baseline transport tests below do not run full sync orchestration, connect blocks to a
-UTXO set, establish contextual consensus acceptance, or establish persistence.
-No JavaScript implementation of BCH protocol or validation is used.
+This directory owns the C++ controls, Python runners, loopback fixtures, manual
+transport harness (`index.html` / `worker.js`), and scenario-specific application
+Workers. Reusable application demos live in
+[`examples/browser-worker`](../../examples/browser-worker/README.md).
+All commands below are run from the repository root unless stated otherwise.
+
+These controls exercise the opt-in C++ browser transport, header actor and
+application boundary. They do not establish full block/UTXO validation or a
+background execution guarantee. BCH protocol parsing and header validation run
+in C++; JavaScript provides the browser harness and storage integration.
 
 ## Ownership and limits
 
@@ -43,10 +48,10 @@ conan install "$SOURCE" --output-folder="$DEPENDENCIES" \
 . "$DEPENDENCIES/build/Release/generators/conanbuild.sh"
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$DEPENDENCIES/build/Release/generators/conan_toolchain.cmake" \
-  -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
   -DKTH_BROWSER_CONTROLS=ON
 cmake --build "$BUILD" -j4
-node "$BUILD/experiments/browser-worker/browser_configuration_control.js"
+node "$BUILD/tests/browser-worker/browser_configuration_control.js"
 ```
 
 The configuration control runs the browser-compiled parser in Node, checks that
@@ -58,11 +63,12 @@ The embedding application must still supply one manual peer and its bridge URL;
 these operator-selected endpoints intentionally have no implicit default.
 
 Copy the generated `browser_*_control.js` and `.wasm` files from
-`$BUILD/experiments/browser-worker` beside this directory's index.html and
-worker.js in a fresh serving directory. With Python 3 and websockets 15.0.1:
+`$BUILD/tests/browser-worker` beside this directory's `index.html` and
+`worker.js` in a fresh serving directory. The header demo pages and application
+Workers live separately in [`examples/browser-worker`](../../examples/browser-worker/README.md). With Python 3 and websockets 15.0.1:
 
 ```sh
-python fixtures.py all
+python tests/browser-worker/fixtures.py all
 python3 -m http.server 18764 --directory "$SERVE"
 ```
 
@@ -83,7 +89,12 @@ The WebAssembly workflow has a separate browser-node job. It explicitly installs
 dependencies with `browser_node=True`, compiles the opt-in controls and executes
 them in Chromium Workers. The ordinary WASM job keeps its default configuration.
 The browser job runs the parser/subscription configuration control under Node
-and the stream, cap, EOF, select, terminal and lifecycle controls in Chromium.
+and the stream, cap, EOF, select, terminal, lifecycle, timer, reset, headers-session
+and headers-busy controls in Chromium. The last two run the real header actor
+against deterministic loopback regtest peers: duplicate batches, a heavier
+sibling branch, and 130 ping/pong exchanges before a valid headers reply.
+The timer control checks long/infinite deadlines, multiple waiters and cancellation;
+the reset control calls the raw C ABI during follow and after its terminal callback.
 It requires both successful completion and zero retained timers/streams, and
 fails on Worker errors or a deadline. Logs and JSON observations are uploaded.
 
@@ -92,13 +103,16 @@ To run the same Worker checks locally after building the controls:
 ```sh
 python -m pip install playwright==1.55.0 websockets==15.0.1
 python -m playwright install chromium
-python experiments/browser-worker/ci.py "$BUILD/experiments/browser-worker" \
+python tests/browser-worker/ci.py "$BUILD/tests/browser-worker" \
     --report browser-results.json
 ```
 
 The runner owns and closes its loopback fixtures. These checks do not require
 an external peer or bridge and do not certify real-node interoperability or
-full chain synchronization. The separate BCHN interop control remains manual.
+full chain synchronization. The separate BCHN interop and generated application-binding controls remain
+manual. `browser_headers_control` is compiled in CI; the finite regtest actor
+sessions are executed by `browser_headers_session_control`. Native coverage
+reports do not measure code excluded by `KTH_BROWSER_NODE`.
 
 For ordinary WASM compatibility, configure a separate build with browser_node
 False, BUILD_C_API ON and KTH_LEGACY_API_CONTROL ON, build
@@ -108,17 +122,15 @@ complete generated JavaScript wrapper suite.
 
 ## Evidence and regression controls
 
-This branch is a draft transport milestone. Earlier controls ran against a
-working tree based on a8e656047a4142c6782a2b1e38317f3dfe00a010 with
-Emscripten 6.0.13. Those observations do not certify this rebased commit.
-The complete control set, including the latest terminal instrumentation, must
-be rerun on the final review commit before readiness.
+The workflow executes the retained controls on its selected commit and uploads
+logs and JSON observations. Historical manual observations below are dated and
+must not be treated as execution evidence for a later tree.
 
 The terminal-state controls reproduced two defects in the initial adapter:
 closure lost the saturation reason, and clean EOF discarded accepted buffered
 bytes. `terminal-state.negative.patch` reconstructs that exact adapter
 (SHA256 `1380046c16aaa2dfe1a8c68bbbaf5056af676296b284578f4e452c0c188b85e7`).
-Apply it only to a disposable copy of browser_stream.hpp and compile the same
+Apply it only to a disposable copy of `kth/network/browser/stream.hpp` and compile the same
 cap/EOF controls with that copy first in the include path. They fail for the
 intended observations; the fixed header passes. This is regression evidence for
 the new transport, not a claim that the unmodified base provided browser P2P.
@@ -128,17 +140,12 @@ remove only emscripten_clear_timeout(timeout_id); the browser then emits
 `UNEXPECTED deadline fired`. Its source SHA256 is
 `47ff6900352a182ee7c8d5216205d60337548cf6a94d203fb3542a24aab99eb2`.
 
-## Remaining integration blocker
+## Scope of storage validation
 
-The pinned UTXO-Z production geometry initially maps 2924 MiB across its full
-mode containers. Its reference mode's 4 GiB size truncates to zero on wasm32.
-The public API offers production open or test-only open_for_testing, without a
-small deployment capacity profile or generation/mapped-byte budget. No test
-geometry is substituted for production here. Bounded production browser storage
-requires a reviewed dependency capacity policy/API and independent LMDB bounds.
-The existing sync path also needs complete runtime/cancellation/CPU-affinity
-validation before the opt-in build can be considered a working browser node.
-
+Header sessions do not open the production block/UTXO databases. Their success
+does not certify production UTXO-Z geometry or LMDB capacity on wasm32. A full
+browser node with those stores needs a separate storage capacity policy and
+runtime validation; it is not a prerequisite for these header controls.
 
 ## Headers-only integration control
 
@@ -150,7 +157,7 @@ Build with `KTH_BROWSER_NODE` enabled:
 cmake --build <build-directory> --target browser_headers_control
 ```
 
-Serve `headers.html`, `headers-worker.js`, `browser_headers_control.js`, and `browser_headers_control.wasm` from one HTTP origin. Configure the Rust bridge to allow that exact origin and connect to a BCH peer. Select the matching network on the page. HTTPS deployments need WSS. The bridge selects the upstream TCP destination; the browser does not select arbitrary TCP hosts.
+Serve `headers.html` and `headers-worker.js` from `examples/browser-worker`, together with `browser_headers_control.js`, and `browser_headers_control.wasm` from one HTTP origin. Configure the Rust bridge to allow that exact origin and connect to a BCH peer. Select the matching network on the page. HTTPS deployments need WSS. The bridge selects the upstream TCP destination; the browser does not select arbitrary TCP hosts.
 
 This is an integration control, not the application binding. The page reads progress reports from a C++ executable in a Worker. The final example still needs the generated lifecycle/status interface, application-level stop/reconnection controls and persistence decisions. The library actor owns the index and pending session; `request_stop()` is a request, and `run()` must settle before reset or disposal.
 
@@ -164,16 +171,16 @@ The index reported 331679052 bytes at that mainnet height. This exceeds raw head
 A retained browser runner (`check-headers.py`, requiring Playwright and Chromium) verifies completion and quiescence and saves JSON plus a screenshot:
 
 ```sh
-python check-headers.py --bridge ws://127.0.0.1:18768 \
+python tests/browser-worker/check-headers.py --bridge ws://127.0.0.1:18768 \
     --network regtest --expected-height 3005 --output /tmp/headers-valid
 ```
 
 The negative control `invalid-headers-proxy.py` sits between the Rust bridge and an isolated BCHN regtest peer. It changes the final header's target in the first nonempty batch to zero and recomputes the BCH message checksum. Thus framing and transport checks pass, while consensus validation must reject the header. Keep this fixture bound to loopback and separate from production connections:
 
 ```sh
-python invalid-headers-proxy.py --upstream 19454 --listen 19455
+python tests/browser-worker/invalid-headers-proxy.py --upstream 19454 --listen 19455
 # Configure a separate Rust bridge endpoint to forward to 127.0.0.1:19455.
-python check-headers.py --bridge ws://127.0.0.1:18770 \
+python tests/browser-worker/check-headers.py --bridge ws://127.0.0.1:18770 \
     --network regtest --expect-rejection --output /tmp/headers-invalid
 ```
 
@@ -187,12 +194,10 @@ The `headers-api.html` page uses the asynchronous `HeaderSync` application class
 including synchronous height/status observations and an asynchronous stop request.
 It does not parse console output to determine chain progress.
 
-Prepare the matching JS checkout (with its root and internal tool dependencies
-installed):
-
-```sh
-python3 helpers/prepare-browser-headers.py --output /tmp/headers-app
-```
+Prepare the application glue and pre-JS from the matching `js-wasm-private`
+checkout using its kth-tools generator and installed dependencies. These generated
+files are external build inputs; this repository does not contain their generator.
+The configuration below assumes the prepared output is in `/tmp/headers-app`.
 
 Configure an existing KTH Emscripten browser build with `BUILD_C_API=ON`,
 `KTH_HEADERS_GLUE_CPP=/tmp/headers-app/javascript/wasm/glue.cpp` and
@@ -200,7 +205,10 @@ Configure an existing KTH Emscripten browser build with `BUILD_C_API=ON`,
 `browser_headers_api_control` target. The files must be accessible to the build
 host; when using different hosts, transfer the complete prepared output first.
 Serve its `.js` and `.wasm` outputs alongside `headers-api.html` and
-`headers-api-worker.js`. Supply the bridge URL and matching network in the page.
+`headers-api-worker.js` from `examples/browser-worker`. For the construction,
+lifecycle and reconnect scenarios, also copy this test directory's
+`headers-api-{construction,contract,reconnect}-worker.js` into the same serving
+directory. The follow runner needs `headers-api-follow-worker.js` there too. Supply the bridge URL and matching network in the page.
 
 The stop request acknowledges cancellation admission. The worker awaits the run's
 terminal completion before disposing the client. Reset and disposal are refused
@@ -208,6 +216,10 @@ while a run is pending; queries and stop remain available. The accompanying
 contract and reconnect workers exercise these lifetime rules against controlled
 peers. Mainnet observations establish header interoperability, not SPV wallet
 completeness, block validation, peer agreement, or durable storage.
+
+The native and raw C `reset()` return false while run/follow is active and
+leave the session unchanged; after all callbacks have joined, a successful reset
+returns true. The generated application wrapper exposes the same boolean result.
 
 Construction returns a C status and writes the owned handle only on success.
 A failure clears the output slot. Allocation exceptions map to
@@ -230,14 +242,20 @@ waits on the inbound queue, so it never cancels an in-flight socket read.
 The actor owns and joins the existing `peer_session` I/O loops. Call
 `asyncRequestStop()`, then await the pending follow operation before disposal or
 reset. As with run, a connection/protocol error terminates follow; a caller may
-reset and retry with backoff while retaining the validated index. This remains a
-single-peer client, not peer discovery or independent peer agreement.
+reset and retry with backoff while retaining the validated index. The browser actor supports a bounded set of peers and optional WebSocket
+endpoint discovery. It shares one validated header index; several peers do not
+constitute independent peer agreement. These manual controls select one peer.
+
+Transport settings retain the normal node's 60-minute connection expiration.
+A follow session rotates that connection and reconnects with backoff, preserving
+its validated index. "Persistent" describes following the chain across those
+connections, not one WebSocket that can never close.
 
 After preparing and serving the generated application binding, check an idle
 session across its refresh deadline:
 
 ```sh
-python3 check-headers-follow.py --url http://127.0.0.1:18765/ \
+python3 tests/browser-worker/check-headers-follow.py --url http://127.0.0.1:18765/ \
   --bridge ws://127.0.0.1:18768 --network regtest --hold-seconds 125 \
   --output /tmp/headers-follow-idle.json
 ```
@@ -288,8 +306,8 @@ The headers API application control now exports Emscripten `FS`/`IDBFS` and link
 `idbfs.js`. The ordinary transport controls remain memory-only. There are no C
 API, IDL or generated-wrapper changes.
 
-`headers-persistent-worker.js` and `header-storage.js` are an opt-in embedding
-example. Copy them beside the built `browser_headers_api_control.js`/`.wasm`,
+`headers-persistent-worker.js` and `header-storage.js`, in
+`examples/browser-worker`, are an opt-in embedding example. Copy them beside the built `browser_headers_api_control.js`/`.wasm`,
 renaming that matching module pair to `browser_headers_persistent_v1.js` and
 `browser_headers_persistent_v1.wasm`. Start the Worker with the existing
 `{type:'start', bridge, network, capacity}` message. This retains the existing
@@ -326,11 +344,15 @@ operator-selected allowed Origin, without changing a production site's files.
 The selected peer must have at least one non-genesis header:
 
 ```sh
-python check-headers-persistence.py \
-  --module-dir "$BUILD/experiments/browser-worker" \
+python tests/browser-worker/check-headers-persistence.py \
+  --module-dir "$BUILD/tests/browser-worker" \
   --peer ws://127.0.0.1:18774/p2p --network tempnet \
   --origin http://127.0.0.1:8766
 ```
 
-Use a Python environment with Playwright and Chromium installed. This is a
+Use a Python environment with Playwright and Chromium installed. With recent
+Chrome, a virtual origin may require the test-only `--allow-local-network`
+permission for a loopback/LAN fixture. `--browser-executable` selects an installed
+Chromium/Chrome binary. The runner reports Worker errors and accepts an unchanged
+restored tip as already durable; it does not require another redundant save event. This is a
 headers-only browser cache; it does not introduce block, UTXO or wallet storage.

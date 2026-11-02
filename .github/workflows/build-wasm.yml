@@ -257,6 +257,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/browser-results
+          python tests/browser-worker/test-package-info.py
           conan install . --version="${{ needs.setup.outputs.build-version }}" \
             --output-folder=build/browser-deps --lockfile=conan-wasm.lock --lockfile-partial \
             -pr:h ci_utils/conan/profiles/ems6 --build=missing \
@@ -270,15 +271,15 @@ jobs:
             2>&1 | tee build/browser-results/configure.log
           cmake --build build/browser --parallel 4 --target \
             browser_configuration_control browser_stream_control browser_cap_control \
-            browser_eof_control browser_select_control browser_terminal_control browser_lifecycle_control \
-            browser_headers_control c-api \
+            browser_eof_control browser_select_control browser_terminal_control browser_lifecycle_control browser_timer_control browser_reset_control \
+            browser_headers_control browser_headers_session_control c-api \
             2>&1 | tee build/browser-results/build.log
-          node build/browser/experiments/browser-worker/browser_configuration_control.js \
+          node build/browser/tests/browser-worker/browser_configuration_control.js \
             2>&1 | tee build/browser-results/configuration.log
       - name: 🌐 Run real WASM in Chromium Workers
         run: |
           set -euo pipefail
-          python experiments/browser-worker/ci.py build/browser/experiments/browser-worker \
+          python tests/browser-worker/ci.py build/browser/tests/browser-worker \
             --report build/browser-results/workers.json 2>&1 | tee build/browser-results/workers.log
       - name: 📎 Retain build logs and Worker observations
         if: always()

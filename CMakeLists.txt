@@ -64,7 +64,7 @@ if(KTH_BROWSER_NODE)
     add_link_options(-fwasm-exceptions -lwebsocket.js)
     find_package(asio REQUIRED)
     add_compile_definitions(
-        ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"
+        ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser/runtime.hpp"
         ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
 endif()
 
@@ -122,7 +122,7 @@ add_subdirectory(src)
 option(KTH_BROWSER_CONTROLS "Build browser interoperability controls" OFF)
 option(KTH_LEGACY_API_CONTROL "Build ordinary WASM C API compatibility control" OFF)
 if((KTH_BROWSER_NODE AND KTH_BROWSER_CONTROLS) OR KTH_LEGACY_API_CONTROL)
-    add_subdirectory(experiments/browser-worker)
+    add_subdirectory(tests/browser-worker)
 endif()
 
 

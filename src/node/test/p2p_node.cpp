@@ -10,6 +10,7 @@
 
 #include <kth/network.hpp>
 #include <kth/node/p2p_node.hpp>
+#include <kth/node/detail/outbound_connections.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -304,4 +305,28 @@ TEST_CASE("p2p_node destructor stops node", "[p2p_node]") {
     // Node should have been stopped by destructor
     // (no crash = success)
     REQUIRE(true);
+}
+
+TEST_CASE("inbound browsers cannot suppress outbound peer recovery", "[p2p_node][outbound_recovery]") {
+    ::asio::io_context ctx;
+    auto settings=make_test_settings_p2p();
+    ::asio::ip::tcp::acceptor listener(ctx,{::asio::ip::address_v4::loopback(),0});
+    std::vector<::asio::ip::tcp::socket> clients;
+    std::vector<peer_session::ptr> peers;
+    auto add=[&](bool inbound) {
+        ::asio::ip::tcp::socket client(ctx);client.connect(listener.local_endpoint());
+        auto socket=listener.accept();clients.push_back(std::move(client));
+        peers.push_back(std::make_shared<peer_session>(std::move(socket),settings,inbound));
+    };
+    for(int i=0;i<8;++i)add(true);
+    CHECK(kth::node::detail::outbound_connection_count(peers)==0);
+    add(false);add(false);
+    CHECK(kth::node::detail::outbound_connection_count(peers)==2);
+    peers.back()->stop();
+    CHECK(kth::node::detail::outbound_connection_count(peers)==1);
+    peers.pop_back();peers.back()->stop();peers.pop_back();
+    // All external peers lost: the eight surviving clients leave the full target owed.
+    REQUIRE(peers.size()==8);
+    CHECK(kth::node::detail::outbound_connection_count(peers)==0);
+    for(auto& peer:peers)peer->stop();
 }

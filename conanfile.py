@@ -364,9 +364,13 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
         infrastructure_defines = list(static_defines)
         if self.options.browser_node:
+            infrastructure = self.cpp_info.components["infrastructure"]
+            infrastructure.cxxflags.append("-fwasm-exceptions")
+            infrastructure.exelinkflags.extend(["-fwasm-exceptions", "-lwebsocket.js"])
+            infrastructure.sharedlinkflags.extend(["-fwasm-exceptions", "-lwebsocket.js"])
             infrastructure_defines.extend([
                 "KTH_BROWSER_NODE", "ASIO_DISABLE_THREADS",
-                'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
+                'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser/runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
         if self.options.with_png:

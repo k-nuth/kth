@@ -72,6 +72,12 @@ TEST_CASE("stored invalid bodies cannot become the validated or finalized tip", 
         CHECK(result.block_count == count);
     }));
     auto const built = chain.get_utxo_built_height();
+    // A stored body that failed connection must not be served through getdata.
+    ::asio::io_context fetch_context;
+    auto const requested_hash = blocks.front().hash();
+    auto fetched = ::asio::co_spawn(fetch_context, chain.fetch_block(requested_hash), ::asio::use_future);
+    fetch_context.run();
+    CHECK_FALSE(fetched.get());
     CHECK(built == initial_built);
     CHECK(built.value_or(0) == 0);
     REQUIRE(chain.chain_state());
@@ -100,6 +106,9 @@ TEST_CASE("connected publication delivers finality progress without a polling br
     }
     REQUIRE(fixture.organizer().add_headers(headers_of(blocks)).headers_added == count);
     persist_headers(fixture, blocks, 1);
+    // Header storage is not a connected publication and must not become relayable.
+    auto const before_connection = node::sync::connected_announcement_tip(chain, fixture.organizer());
+    CHECK((!before_connection || before_connection->height == 0));
     ::asio::io_context ctx;
     node::sync::block_storage_input_channel input(ctx.get_executor(), 16);
     node::sync::chunk_validated_channel output(ctx.get_executor(), 16);
@@ -159,6 +168,20 @@ TEST_CASE("connected publication delivers finality progress without a polling br
     REQUIRE(chain.chain_view());
     CHECK(chain.chain_view()->connected_tip_height == count);
     CHECK(chain.chain_view()->tip_hash == blocks.back().hash());
+    ::asio::io_context fetch_context;
+    auto const requested_hash = blocks.back().hash();
+    auto fetched = ::asio::co_spawn(fetch_context, chain.fetch_block(requested_hash), ::asio::use_future);
+    fetch_context.run();
+    auto served = fetched.get();
+    REQUIRE(served);
+    REQUIRE(served->first);
+    CHECK(served->second == count);
+    CHECK(served->first->hash() == blocks.back().hash());
+    CHECK(served->first->transactions().size() == blocks.back().transactions().size());
+    auto const relayable = node::sync::connected_announcement_tip(chain, fixture.organizer());
+    REQUIRE(relayable);
+    CHECK(relayable->height == count);
+    CHECK(domain::chain::hash(relayable->header) == blocks.back().hash());
     // Storage and building alone never mutate the coordinator's finality state.
     CHECK(fixture.organizer().validated_height() <= 0);
     CHECK(fixture.organizer().finalized_height() <= 0);
@@ -193,6 +216,7 @@ TEST_CASE("connected publication delivers finality progress without a polling br
     fixture.organizer().note_block_validated(17);
     REQUIRE(chain.chain_view() == old_view);
     CHECK_FALSE(node::sync::refresh_validated_tip(chain, fixture.organizer()));
+    CHECK_FALSE(node::sync::connected_announcement_tip(chain, fixture.organizer()));
     CHECK(fixture.organizer().validated_height() == 17);
     CHECK(fixture.organizer().finalized_height() == count - 10);
 

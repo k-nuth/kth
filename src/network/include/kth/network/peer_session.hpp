@@ -7,7 +7,7 @@
 
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #if defined(KTH_BROWSER_NODE)
-#include <kth/network/browser_stream.hpp>
+#include <kth/network/browser/stream.hpp>
 #endif
 #include <atomic>
 #include <chrono>
@@ -132,6 +132,12 @@ public:
 
     /// Send raw bytes to the peer (coroutine version)
     ::asio::awaitable<code> send_raw(data_chunk data);
+    // Announcements must never block the chain publication owner behind a slow peer.
+    bool try_send_raw(data_chunk data) {
+        return !stopped() && outbound_.try_send(std::error_code{}, std::move(data));
+    }
+    bool prefers_headers() const noexcept { return prefer_headers_.load(std::memory_order_relaxed); }
+    void prefer_headers() noexcept { prefer_headers_.store(true, std::memory_order_relaxed); }
 
     /// Get the inbound message channel for receiving messages
     [[nodiscard]]
@@ -403,6 +409,7 @@ private:
     std::chrono::seconds const expiration_timeout_;
 
     // Negotiated values (atomic for thread-safe access)
+    std::atomic<bool> prefer_headers_{false};
     std::atomic<uint32_t> version_;
     std::atomic<uint64_t> nonce_{0};
     std::atomic<bool> notify_{true};

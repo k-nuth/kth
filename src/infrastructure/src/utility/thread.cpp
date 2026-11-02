@@ -66,10 +66,19 @@ thread_priority priority(bool priority)
     return priority ? thread_priority::high : thread_priority::normal;
 }
 
+unsigned thread_hardware_concurrency() noexcept
+{
+#if defined(KTH_BROWSER_NODE)
+    return 1;
+#else
+    return std::thread::hardware_concurrency();
+#endif
+}
+
 inline size_t cores()
 {
     // Cores must be at least 1 (guards against irrational API return).
-    return (std::max)(std::thread::hardware_concurrency(), 1u);
+    return (std::max)(thread_hardware_concurrency(), 1u);
 }
 
 // This is used to default the number of threads to the number of cores and to

@@ -1,5 +1,5 @@
---- a/browser_stream.hpp
-+++ b/browser_stream.hpp
+--- a/stream.hpp
++++ b/stream.hpp
 @@ -26,7 +26,6 @@
          std::size_t offset = 0;
          std::size_t buffered = 0;
