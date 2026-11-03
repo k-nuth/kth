@@ -7,8 +7,10 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include <asio/awaitable.hpp>
+#include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
@@ -305,6 +307,50 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// validateaddress <address> -> whether it is a P2PKH or P2SH address of this
+// node's network and, if it is, its cashaddr form and the scriptPubKey it pays.
+// C-API counterpart: kth_wallet_payment_address_parse_from.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+validate_address(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return std::unexpected(make_error(error_code::invalid_params,
+            "validateaddress requires [address]"));
+    };
+    // An empty string is an invalid address, not a missing argument. Parse
+    // the type explicitly because params_strings maps non-strings to empty.
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array args;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(args) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    std::string address;
+    std::size_t count = 0;
+    for (auto element : args) {
+        if (count++ != 0) {
+            co_return invalid_params();
+        }
+        simdjson::ondemand::value value;
+        std::string_view text;
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.get_string().get(text) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        address.assign(text);
+    }
+    if (count != 1) {
+        co_return invalid_params();
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    co_return render_validate_address(address, view->state->network());
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -387,6 +433,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("validateaddress", validate_address);
     d.add("getrawmempool", get_raw_mempool);
     d.add("getmempoolinfo", get_mempool_info);
     d.add("getmempoolentry", get_mempool_entry);

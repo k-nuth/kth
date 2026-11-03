@@ -12,6 +12,7 @@
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
+#include <kth/domain/config/network.hpp>
 #include <kth/infrastructure/hash_define.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
@@ -50,6 +51,13 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 // getblockheader (verbose) result object.
 std::string render_block_header(domain::chain::header const& header,
                                 std::size_t height, hash_digest const& hash);
+
+// validateaddress result object for `address` on network `net`: only
+// {"isvalid":false} unless it is a P2PKH or P2SH address of that network,
+// otherwise also the address as cashaddr under the network's prefix, the
+// scriptPubKey it pays to, whether that is a script hash, and whether the
+// address signals CashTokens support.
+std::string render_validate_address(std::string_view address, domain::config::network net);
 
 } // namespace kth::node::rpc
 

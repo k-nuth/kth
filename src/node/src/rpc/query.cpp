@@ -10,6 +10,9 @@
 #include <sstream>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/domain/chain/script.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
+#include <kth/domain/wallet/payment_address.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -107,6 +110,69 @@ std::string render_block_header(domain::chain::header const& header,
     w.field("time", static_cast<std::int64_t>(header.timestamp()));
     w.field("bits", bits_to_hex(header.bits()));
     w.field("nonce", static_cast<std::int64_t>(header.nonce()));
+    w.end_object();
+    return w.str();
+}
+
+std::string render_validate_address(std::string_view address, domain::config::network net) {
+    using domain::chain::script;
+    using domain::wallet::payment_address;
+    namespace cashaddr = domain::wallet::cashaddr;
+
+    auto const invalid = [] {
+        writer w;
+        w.begin_object();
+        w.field("isvalid", false);
+        w.end_object();
+        return w.str();
+    };
+
+    auto const parsed = payment_address::parse_from(address, net);
+    if ( ! parsed) {
+        return invalid();
+    }
+
+    // parse_from holds a cashaddr to this network's prefix, but takes a legacy
+    // address of any network, so the version byte is checked here.
+    auto const mainnet = net == domain::config::network::mainnet;
+    auto const p2kh = mainnet ? payment_address::mainnet_p2kh : payment_address::testnet_p2kh;
+    auto const p2sh = mainnet ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh;
+    if (parsed->version() != p2kh && parsed->version() != p2sh) {
+        return invalid();
+    }
+    auto const is_script = parsed->version() == p2sh;
+
+    // The output the address pays to. No standard output pays to a 32-byte
+    // public key hash.
+    auto const short_hash_address = parsed->hash_span().size() == short_hash_size;
+    if ( ! short_hash_address && ! is_script) {
+        return invalid();
+    }
+    script const pays_to{short_hash_address
+        ? (is_script ? script::to_pay_script_hash_pattern(parsed->hash20())
+                     : script::to_pay_public_key_hash_pattern(parsed->hash20()))
+        : script::to_pay_script_hash_32_pattern(parsed->hash32())};
+
+    // The cashaddr payload: the input's own, or for a legacy address that of
+    // its plain cashaddr form. Its first 5-bit group is the address type, and
+    // types 2 and 3 are the token-aware P2PKH and P2SH. Re-encoding it under
+    // the network's prefix keeps the input's token signal.
+    auto const prefix = std::string(payment_address::cashaddr_prefix_for(net));
+    auto payload = cashaddr::decode(std::string(address), prefix).second;
+    if (payload.empty()) {
+        payload = cashaddr::decode(parsed->encoded_cashaddr(false), "").second;
+    }
+    if (payload.empty()) {
+        return invalid();
+    }
+
+    writer w;
+    w.begin_object();
+    w.field("isvalid", true);
+    w.field("address", cashaddr::encode(prefix, payload));
+    w.field("scriptPubKey", encode_base16(pays_to.bytes()));
+    w.field("isscript", is_script);
+    w.field("istokenaware", (payload.front() & 0x02) != 0);
     w.end_object();
     return w.str();
 }
