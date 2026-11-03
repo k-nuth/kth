@@ -10,16 +10,32 @@ of truth for that mapping.
 
 ## Building
 
-The server is **off by default** and gated at compile time:
+The build selects exactly one RPC backend. JSON-RPC is compiled by default;
+the listener remains **off at runtime by default**.
 
-```
-conanfile option  rpc=True   →   CMake KTH_WITH_RPC   →   #if defined(KTH_WITH_RPC)
-```
+| Backend | Conan option | CMake option | Status |
+| --- | --- | --- | --- |
+| JSON-RPC | `-o '&:rpc=jsonrpc'` | `-DKTH_RPC_BACKEND=jsonrpc` | Implemented; default |
+| None | `-o '&:rpc=none'` | `-DKTH_RPC_BACKEND=none` | No RPC listener or llhttp dependency |
+| gRPC | `-o '&:rpc=grpc'` | `-DKTH_RPC_BACKEND=grpc` | Reserved; configuration fails until implemented |
+| Cap'n Proto RPC | `-o '&:rpc=capnproto'` | `-DKTH_RPC_BACKEND=capnproto` | Reserved; configuration fails until implemented |
+
+The former Conan values `rpc=True` and `rpc=False` must be migrated to
+`rpc=jsonrpc` and `rpc=none`. For a first CMake configuration without the new
+selector, the legacy `KTH_WITH_RPC=ON/OFF` still maps to `jsonrpc/none`.
+Once set, `KTH_RPC_BACKEND` takes precedence over that legacy flag, including
+when reconfiguring an existing build directory. Emscripten forces `none`.
+
+`KTH_WITH_RPC` remains the derived C++ feature macro for the JSON-RPC backend.
+The reserved backends add no dependencies and do not fall back to JSON-RPC.
+The selector does not choose a gRPC serialization format. Cap'n Proto's RPC
+runtime, cancellation and bounded admission need an explicit integration with
+the node's coroutine owners before that backend can be enabled.
 
 The transport uses [llhttp](https://github.com/nodejs/llhttp) (the Node.js HTTP
 parser, sans-io) fed by the node's existing standalone-asio coroutine loop, plus
 [simdjson](https://github.com/simdjson/simdjson) for both request parsing and
-response serialization. `llhttp` is only pulled in when the `rpc` option is enabled.
+response serialization. `llhttp` is only pulled in when `rpc=jsonrpc` is selected.
 
 ## Running
 
@@ -34,7 +50,8 @@ rpc.password = mypass
 ```
 
 Starting a build without RPC support but with `rpc.enabled = true` logs a warning
-and continues without the server.
+and continues without the server. The warning identifies `rpc=jsonrpc` as the
+required build selection.
 
 ### Authentication
 

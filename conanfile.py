@@ -5,6 +5,7 @@
 import os
 from datetime import datetime, timezone
 from conan import ConanFile
+from conan.errors import ConanInvalidConfiguration
 from conan.tools.build.cppstd import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
@@ -73,7 +74,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_qrencode": [True, False],
         "with_jemalloc": [True, False],
         "with_stats": [True, False],
-        "rpc": [True, False],
+        "rpc": ["jsonrpc", "grpc", "capnproto", "none"],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -111,7 +112,7 @@ class KthRecipe(KnuthConanFileV2):
         # For now, keep disabled until a proper solution is implemented.
         "with_jemalloc": False,
         "with_stats": False,
-        "rpc": True,
+        "rpc": "jsonrpc",
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -175,7 +176,7 @@ class KthRecipe(KnuthConanFileV2):
         # llhttp (Node.js HTTP parser) backs the optional JSON-RPC server. It is a
         # sans-io codec driven by the node's existing standalone-asio I/O loop, so
         # it is only pulled in when the RPC server is compiled (and never for WASM).
-        if self.options.rpc and self.settings.os != "Emscripten":
+        if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             self.requires("llhttp/9.3.0", transitive_headers=True, transitive_libs=True)
 
         if self.options.with_png:
@@ -210,10 +211,17 @@ class KthRecipe(KnuthConanFileV2):
         # loop and llhttp, neither of which is built for Emscripten.
         if self.settings.os == "Emscripten":
             self.options.tests = False
-            self.options.rpc = False
-            self.output.info("Tests and JSON-RPC disabled for Emscripten build")
+            self.options.rpc = "none"
+            self.output.info("Tests and RPC disabled for Emscripten build")
 
     def configure(self):
+        # Reserve the backend names without silently building a node that cannot
+        # serve the selected protocol. Check before resolving any dependencies.
+        if str(self.options.rpc) in ("grpc", "capnproto"):
+            raise ConanInvalidConfiguration(
+                f"RPC backend '{self.options.rpc}' is not implemented; "
+                "use rpc=jsonrpc or rpc=none."
+            )
         KnuthConanFileV2.configure(self)
 
         self.options["fmt/*"].header_only = True
@@ -268,7 +276,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
-        tc.variables["KTH_WITH_RPC"] = option_on_off(self.options.rpc)
+        tc.variables["KTH_RPC_BACKEND"] = str(self.options.rpc)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -319,8 +327,9 @@ class KthRecipe(KnuthConanFileV2):
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
 
-        # The JSON-RPC server (node module) is compiled only when the rpc option is on.
-        rpc_defines = ["KTH_WITH_RPC"] if self.options.rpc else []
+        # KTH_WITH_RPC currently describes the JSON-RPC implementation, not any RPC.
+        rpc_defines = (["KTH_WITH_RPC"] if self.options.rpc == "jsonrpc"
+                       and self.settings.os != "Emscripten" else [])
 
         # Define STATIC macros when building static libraries
         static_defines = []
@@ -455,7 +464,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             node_requires.append("network")
             node_requires.append("ftxui::ftxui")
-        if self.options.rpc and self.settings.os != "Emscripten":
+        if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             node_requires.append("llhttp::llhttp")
         self.cpp_info.components["node"].requires = node_requires
         
