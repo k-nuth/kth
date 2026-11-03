@@ -11,6 +11,7 @@
 #include <utility>
 
 #include <kth/infrastructure/utility/asio_helper.hpp>
+#include <kth/infrastructure/utility/thread.hpp>
 
 namespace kth {
 
@@ -59,7 +60,7 @@ class cpu_executor {
 public:
     // Construct with specified number of threads
     // Default: hardware_concurrency (number of CPU cores)
-    explicit cpu_executor(size_t threads = std::thread::hardware_concurrency())
+    explicit cpu_executor(size_t threads = kth::thread_hardware_concurrency())
         : pool_(threads > 0 ? threads : 1)
     {}
 
@@ -131,7 +132,7 @@ public:
 
 private:
     ::asio::thread_pool pool_;
-    size_t thread_count_{std::thread::hardware_concurrency()};
+    size_t thread_count_{kth::thread_hardware_concurrency()};
 };
 
 // =============================================================================

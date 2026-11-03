@@ -417,6 +417,17 @@ bool refresh_validated_tip(blockchain::block_chain const& chain,
     return true;
 }
 
+std::optional<connected_header_tip> connected_announcement_tip(
+        blockchain::block_chain const& chain, blockchain::header_organizer const& organizer) {
+    auto const view = chain.chain_view();
+    if (!view || view->connected_tip_height > size_t(max_int32)) return std::nullopt;
+    auto const height = static_cast<int32_t>(view->connected_tip_height);
+    auto const& index = organizer.index();
+    auto const at = index.active_at(height);
+    if (at == blockchain::header_index::null_index || index.get_hash(at) != view->tip_hash) return std::nullopt;
+    return connected_header_tip{static_cast<uint32_t>(height), view->tip_hash, index.get_header(at)};
+}
+
 utxo_progress_step utxo_progress_for_tick(
     std::optional<uint32_t> last_seen,
     std::expected<uint32_t, database::result_code> const& built) {
@@ -1213,6 +1224,9 @@ static
         uint32_t blocks_synced_to = initial_stored_height;
         uint32_t headers_synced_to = initial_header_height;
         bool header_sync_complete = false;
+        auto initial_publication = connected_announcement_tip(chain, organizer);
+        std::optional<hash_digest> last_announced_tip = initial_publication
+            ? std::optional<hash_digest>{initial_publication->hash} : std::nullopt;
         // The END of the post-checkpoint range last sent, or nothing if none has
         // been. NOT a "was it started" flag: a flag cannot say which range, and
         // the range's end is the header tip as it stood when it was opened. A
@@ -1862,6 +1876,15 @@ static
                 // the immutable publication now; storage and event payloads are
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
+                auto const connected = connected_announcement_tip(chain, organizer);
+                // Do not flood peers with intermediate IBD history or relay an
+                // unvalidated header/body. Reorgs deduplicate by hash, not height.
+                if (connected && connected->height >= headers_synced_to &&
+                    (!last_announced_tip || *last_announced_tip != connected->hash)) {
+                    network.set_top_block({connected->hash, connected->height});
+                    co_await network.announce_connected_header(connected->header);
+                    last_announced_tip = connected->hash;
+                }
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

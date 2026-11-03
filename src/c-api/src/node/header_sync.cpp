@@ -128,9 +128,44 @@ char* kth_node_header_sync_status(kth_header_sync_const_t self) {
     return kth::create_c_str(s);
 }
 
+char* kth_node_header_sync_peer_user_agent(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_user_agent();
+    return kth::create_c_str(s);
+}
+
 kth_size_t kth_node_header_sync_index_memory_bytes(kth_header_sync_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).index_memory_bytes();
+}
+
+char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const s = kth::cpp_ref<cpp_t>(self).runtime_settings();
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_chain_state_snapshot(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const s = kth::cpp_ref<cpp_t>(self).chain_state_snapshot();
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_content_state(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const s = kth::cpp_ref<cpp_t>(self).content_state();
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_observed_transactions(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const s = kth::cpp_ref<cpp_t>(self).observed_transactions();
+    return kth::create_c_str(s);
+}
+
+kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).peer_count();
 }
 
 
@@ -190,9 +225,9 @@ void kth_node_header_sync_async_follow(kth_header_sync_mut_t self, void* ctx, kt
     }
 }
 
-void kth_node_header_sync_reset(kth_header_sync_mut_t self) {
+kth_bool_t kth_node_header_sync_reset(kth_header_sync_mut_t self) {
     KTH_PRECONDITION(self != nullptr);
-    kth::cpp_ref<cpp_t>(self).reset();
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).reset());
 }
 
 char* kth_node_header_sync_header_hex(kth_header_sync_const_t self, uint64_t height) {
@@ -205,6 +240,88 @@ char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t he
     KTH_PRECONDITION(self != nullptr);
     auto const s = kth::cpp_ref<cpp_t>(self).header_hash(height);
     return kth::create_c_str(s);
+}
+
+kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(url != nullptr);
+    auto const url_cpp = std::string(url);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).add_peer(url_cpp));
+}
+
+kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, kth_bool_t enabled, kth_bool_t allow_private, kth_bool_t wss_only) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const enabled_cpp = kth::int_to_bool(enabled);
+    auto const allow_private_cpp = kth::int_to_bool(allow_private);
+    auto const wss_only_cpp = kth::int_to_bool(wss_only);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).configure_discovery(enabled_cpp, allow_private_cpp, wss_only_cpp));
+}
+
+char* kth_node_header_sync_peer_source(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_source(at_cpp);
+    return kth::create_c_str(s);
+}
+
+uint64_t kth_node_header_sync_peer_announcements(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    return kth::cpp_ref<cpp_t>(self).peer_announcements(at_cpp);
+}
+
+kth_bool_t kth_node_header_sync_configure_content(kth_header_sync_mut_t self, kth_bool_t blocks, kth_bool_t transactions) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const blocks_cpp = kth::int_to_bool(blocks);
+    auto const transactions_cpp = kth::int_to_bool(transactions);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).configure_content(blocks_cpp, transactions_cpp));
+}
+
+char* kth_node_header_sync_block_metadata(kth_header_sync_const_t self, uint64_t height, kth_bool_t include_transactions) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const include_transactions_cpp = kth::int_to_bool(include_transactions);
+    auto const s = kth::cpp_ref<cpp_t>(self).block_metadata(height, include_transactions_cpp);
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_peer_endpoint(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_endpoint(at_cpp);
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_peer_state(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_state(at_cpp);
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_peer_agent(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_agent(at_cpp);
+    return kth::create_c_str(s);
+}
+
+char* kth_node_header_sync_peer_error(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    auto const s = kth::cpp_ref<cpp_t>(self).peer_error(at_cpp);
+    return kth::create_c_str(s);
+}
+
+uint64_t kth_node_header_sync_peer_height(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    return kth::cpp_ref<cpp_t>(self).peer_height(at_cpp);
+}
+
+kth_bool_t kth_node_header_sync_peer_connected(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    auto const at_cpp = kth::sz(at);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).peer_connected(at_cpp));
 }
 
 } // extern "C"

@@ -3,17 +3,25 @@ import argparse
 import asyncio
 import json
 import tempfile
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 from playwright.async_api import async_playwright
 
-HERE = Path(__file__).resolve().parent
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "browser-worker"
 
 async def install_routes(context, args, quota=False):
+    if args.allow_local_network:
+        # New Chrome versions require explicit permission for a virtual test
+        # origin to contact the operator-selected loopback/LAN fixture.
+        await context.grant_permissions(['local-network-access'])
     options = json.dumps(dict(type='start', bridge=args.peer, network=args.network, capacity=args.capacity))
     html = '''<!doctype html><script>
 window.control={height:0,saved:0,restored:0,caughtUp:false,reset:false,unavailable:false,closed:false};
-window.worker=new Worker('/worker.js');worker.onmessage=({data})=>{
+window.events=[];
+window.worker=new Worker('/worker.js');worker.onerror=event=>{control.failure=event.message};
+worker.onmessage=({data})=>{
+ events.push(data);if(events.length>50)events.shift();
  if(data.type==='progress'){control.height=data.height;control.hash=data.tipHash;}
  if(data.type==='storageSaved')control.saved=data.height;
  if(data.type==='storageRestored')control.restored=data.height;
@@ -27,8 +35,8 @@ window.worker=new Worker('/worker.js');worker.onmessage=({data})=>{
     async def serve(route):
         name = urlsplit(route.request.url).path
         files = {
-            '/worker.js': HERE/'headers-persistent-worker.js',
-            '/header-storage.js': HERE/'header-storage.js',
+            '/worker.js': EXAMPLES/'headers-persistent-worker.js',
+            '/header-storage.js': EXAMPLES/'header-storage.js',
             '/browser_headers_persistent_v1.js': args.module_dir/'browser_headers_api_control.js',
             '/browser_headers_persistent_v1.wasm': args.module_dir/'browser_headers_api_control.wasm',
         }
@@ -46,6 +54,7 @@ window.worker=new Worker('/worker.js');worker.onmessage=({data})=>{
     await context.route(args.origin+'/**', serve)
 
 async def wait(page, condition):
+    print('Waiting: ' + condition, file=sys.stderr, flush=True)
     await page.wait_for_function('window.control && (control.failure || ('+condition+'))', timeout=180000)
     state = await page.evaluate('window.control')
     if state.get('failure'):
@@ -75,7 +84,7 @@ async def main(args):
     results = {}
     async with async_playwright() as playwright:
         with tempfile.TemporaryDirectory(prefix='kth-header-persistence-') as profile:
-            context = await playwright.chromium.launch_persistent_context(profile, headless=True)
+            context = await playwright.chromium.launch_persistent_context(profile, headless=True, executable_path=args.browser_executable)
             try:
                 await install_routes(context, args)
                 page = await context.new_page()
@@ -87,7 +96,9 @@ async def main(args):
                 results['partial_restored_height']=state['restored']
                 state = await wait(page, 'control.caughtUp')
                 tip = state['height'];results['tip']=tip
-                await wait(page, f'control.saved>={tip}')
+                # An unchanged restored tip is already durable: attach() deliberately
+                # skips a redundant save, so it need not emit storageSaved again.
+                await wait(page, f'control.saved>={tip} || control.restored>={tip}')
                 traffic = []
                 page.on('websocket', lambda ws: ws.on('framereceived', lambda data: traffic.append(len(data))))
                 await page.reload()
@@ -98,7 +109,7 @@ async def main(args):
             finally:
                 await context.close()
             # Closing and reopening Chromium preserves IndexedDB, not Worker memory.
-            context = await playwright.chromium.launch_persistent_context(profile, headless=True)
+            context = await playwright.chromium.launch_persistent_context(profile, headless=True, executable_path=args.browser_executable)
             try:
                 await install_routes(context, args)
                 page = await context.new_page();await page.goto(args.origin+'/')
@@ -113,7 +124,7 @@ async def main(args):
                 await stop(page)
             finally:
                 await context.close()
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(headless=True, executable_path=args.browser_executable)
         try:
             context = await browser.new_context()
             await install_routes(context, args, quota=True)
@@ -129,6 +140,8 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--module-dir', type=Path, required=True)
     parser.add_argument('--peer', required=True)
+    parser.add_argument('--browser-executable', help='optional installed Chromium/Chrome executable')
+    parser.add_argument('--allow-local-network', action='store_true', help='grant local network permission in the isolated test browser')
     parser.add_argument('--network', default='regtest', choices=['mainnet','testnet','regtest','testnet4','scalenet','chipnet','tempnet'])
     parser.add_argument('--origin', default='http://127.0.0.1:8766')
     parser.add_argument('--capacity', type=int, default=600000)

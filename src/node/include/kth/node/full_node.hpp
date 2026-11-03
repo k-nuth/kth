@@ -206,6 +206,7 @@ private:
 
     // Background task coroutines (for structured concurrency)
     ::asio::awaitable<void> run_blockchain_subscriber();
+    ::asio::awaitable<void> run_transaction_subscriber();
     ::asio::awaitable<void> run_rpc();
 #if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     ::asio::awaitable<void> run_sync();

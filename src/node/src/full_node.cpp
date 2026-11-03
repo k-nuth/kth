@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <thread>
 #include <utility>
+#include <map>
+#include <mutex>
 
 #include <kth/blockchain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
@@ -110,6 +112,86 @@ full_node::~full_node() {
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
 
+    // Bound transaction acquisition across all peer dispatchers. Inventory is
+    // not a validated mempool entry: only chain_.organize may admit a tx.
+    struct tx_requests {
+        std::mutex mutex;
+        std::map<hash_digest,std::chrono::steady_clock::time_point> pending;
+    };
+    auto requests=std::make_shared<tx_requests>();
+    network_.register_message_handler<domain::message::inventory>(
+        [this,requests](peer_session& peer,domain::message::inventory const& inventory)->::asio::awaitable<message_result>{
+            if(!network_settings_.relay_transactions || chain_.is_stale())co_return message_result::handled;
+            hash_list wanted;
+            for(auto const& item:inventory.inventories()){
+                if(item.type()!=domain::message::inventory::type_id::transaction)continue;
+                auto existing=co_await chain_.fetch_unconfirmed_transaction(item.hash());
+                if(existing && *existing)continue;
+                {
+                    std::lock_guard lock(requests->mutex);auto now=std::chrono::steady_clock::now();
+                    for(auto it=requests->pending.begin();it!=requests->pending.end();)if(now-it->second>std::chrono::seconds(30))it=requests->pending.erase(it);else ++it;
+                    if(requests->pending.size()>=128)break;
+                    if(!requests->pending.emplace(item.hash(),now).second)continue;
+                }
+                wanted.push_back(item.hash());if(wanted.size()>=32)break;
+            }
+            if(!wanted.empty()){
+                auto request=domain::message::get_data::create(wanted,domain::message::inventory::type_id::transaction);
+                if(co_await peer.send(*request))co_return message_result::disconnect;
+                spdlog::debug("[tx_relay] Requested {} transactions from {}",wanted.size(),peer.authority());
+            }
+            co_return message_result::handled;
+        });
+    network_.register_message_handler<domain::message::not_found>(
+        [requests](peer_session&,domain::message::not_found const& missing)->::asio::awaitable<message_result>{
+            std::lock_guard lock(requests->mutex);
+            for(auto const& item:missing.inventories())if(item.type()==domain::message::inventory::type_id::transaction)requests->pending.erase(item.hash());
+            co_return message_result::handled;
+        });
+    network_.register_message_handler<domain::message::transaction>(
+        [this,requests](peer_session& peer,domain::message::transaction const& tx)->::asio::awaitable<message_result>{
+            auto hash=domain::chain::hash(tx);
+            {std::lock_guard lock(requests->mutex);if(!requests->pending.erase(hash))co_return message_result::handled;}
+            if(!network_settings_.relay_transactions)co_return message_result::handled;
+            auto error=co_await chain_.organize(std::make_shared<domain::message::transaction const>(tx));
+            if(error)spdlog::info("[tx_relay] Rejected {} from {}: {}",encode_hash(hash),peer.authority(),error.message());
+            else spdlog::info("[tx_relay] Accepted {} from {}",encode_hash(hash),peer.authority());
+            co_return message_result::handled;
+        });
+
+    // One chain-backed getdata handler serves TCP and WS identically. The
+    // browser advertises no block-serving services; its upstream native node does.
+    network_.register_message_handler<domain::message::get_data>(
+        [this](peer_session& peer, domain::message::get_data const& request)
+            -> ::asio::awaitable<message_result> {
+            if (request.inventories().size() > 1000) co_return message_result::disconnect;
+            domain::message::inventory_vector::list missing;
+            for (auto const& item : request.inventories()) {
+                if (peer.stopped()) co_return message_result::disconnect;
+                if (item.type() == domain::message::inventory::type_id::block) {
+                    auto result = co_await chain_.fetch_block(item.hash());
+                    if (result && result->first) {
+                        auto ec = co_await peer.send(domain::message::block(*result->first));
+                        if (ec) co_return message_result::disconnect;
+                        continue;
+                    }
+                } else if (item.type() == domain::message::inventory::type_id::transaction) {
+                    auto result = co_await chain_.fetch_unconfirmed_transaction(item.hash());
+                    if (result && *result) {
+                        auto ec = co_await peer.send(domain::message::transaction(**result));
+                        if (ec) co_return message_result::disconnect;
+                        continue;
+                    }
+                }
+                missing.push_back(item);
+            }
+            if (!missing.empty()) {
+                auto response = domain::message::not_found::create(std::move(missing));
+                if (co_await peer.send(*response)) co_return message_result::disconnect;
+            }
+            co_return message_result::handled;
+        });
+
     // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
     // chain-backed handler into the network layer, which stays chain-agnostic.
     network_.register_message_handler<domain::message::memory_pool>(
@@ -183,7 +265,7 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && run_transaction_subscriber() && network_.run() && run_sync());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -198,6 +280,25 @@ full_node::~full_node() {
 #endif
 
     co_return error::success;
+}
+
+::asio::awaitable<void> full_node::run_transaction_subscriber() {
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
+    auto channel=subscribe_transaction();if(!channel)co_return;
+    auto executor=co_await ::asio::this_coro::executor;::kth::steady_timer timer(executor);
+    while(!stopped()){
+        transaction_const_ptr transaction;
+        bool received=channel->try_receive([&](std::error_code ec,auto tx){if(!ec)transaction=std::move(tx);});
+        if(transaction && network_settings_.relay_transactions){auto hash=domain::chain::hash(*transaction);co_await network_.announce_transaction(hash);}
+        else if(!received){
+            if(!channel->is_open())break;
+            timer.expires_after(std::chrono::milliseconds(100));
+            auto [ec]=co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));if(ec)break;
+        }
+    }
+    unsubscribe_transaction(channel);
+#endif
+    co_return;
 }
 
 ::asio::awaitable<void> full_node::run_rpc() {

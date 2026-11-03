@@ -7,6 +7,7 @@
 
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/outbound_connections.hpp>
 
 #include <algorithm>
 
@@ -469,6 +470,37 @@ void p2p_node::set_top_block(infrastructure::config::checkpoint const& top) {
 
 void p2p_node::set_top_block(infrastructure::config::checkpoint&& top) {
     top_block_.store(std::move(top));
+}
+
+::asio::awaitable<void> p2p_node::announce_transaction(hash_digest const& hash) {
+    auto inventory=domain::message::inventory::create(hash_list{hash},domain::message::inventory::type_id::transaction);
+    auto connected=co_await manager_.all();size_t sent=0;
+    for(auto const& peer:connected){
+        auto version=peer->peer_version();
+        if(peer->stopped() || !version || !version->relay())continue;
+        if(peer->try_send_raw(domain::message::serialize(peer->negotiated_version(),*inventory,settings_.identifier)))++sent;
+        else peer->stop(error::channel_stopped);
+    }
+    spdlog::info("[tx_relay] Announced {} to {} peers",encode_hash(hash),sent);
+}
+
+::asio::awaitable<void> p2p_node::announce_connected_header(domain::chain::header const& header) {
+    auto const hash = domain::chain::hash(header);
+    auto const headers = domain::message::headers{domain::message::header(header)};
+    auto const inventory = domain::message::inventory::create(hash_list{hash}, domain::message::inventory::type_id::block);
+    auto const connected = co_await manager_.all();
+    size_t sent = 0;
+    for (auto const& peer : connected) {
+        if (peer->stopped()) continue;
+        auto packet = peer->prefers_headers()
+            ? domain::message::serialize(peer->negotiated_version(), headers, settings_.identifier)
+            : domain::message::serialize(peer->negotiated_version(), *inventory, settings_.identifier);
+        if (!peer->try_send_raw(std::move(packet))) {
+            spdlog::warn("[block_relay] Output full: closing peer [{}]", peer->authority());
+            peer->stop(error::channel_stopped);
+        } else ++sent;
+    }
+    spdlog::info("[block_relay] Announced connected tip {} to {} peers", encode_hash(hash), sent);
 }
 
 // Manual connections
@@ -1003,6 +1035,11 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     spdlog::debug("[p2p_node] Ping interval for [{}]: {}s", peer->authority(), ping_interval.count());
 
+    auto version=peer->peer_version();
+    if(settings_.relay_transactions && version && (version->services() & 1u)) {
+        auto ec=co_await request_mempool(*peer);
+        if(ec){peer->stop(ec);co_return;}
+    }
     auto last_ping = std::chrono::steady_clock::now();
 
     while (!peer->stopped() && !stopped()) {
@@ -1061,6 +1098,14 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         }
 
         auto const& command = raw.heading.command();
+
+        if (command == domain::message::send_headers::command) {
+            if (!raw.payload.empty() || peer->negotiated_version() < domain::message::send_headers::version_minimum) {
+                peer->stop(error::bad_stream); break;
+            }
+            peer->prefer_headers();
+            continue;
+        }
 
         // Headers and announcements first: every `headers` is consumed here
         // and goes to the header ingest, answer or not, because the wire cannot
@@ -1227,18 +1272,22 @@ void p2p_node::wake_status_task() noexcept {
                 break;
             }
 
-            auto const current = manager_.count_snapshot();
+            auto const peers = co_await manager_.all();
+            if (stopped()) break;
+            auto const current = detail::outbound_connection_count(peers);
             auto const target = settings_.outbound_connections;
             auto const [hosts, banned] = peer_db_.count_by_status();
             auto const pending = pending_connections_.size();
             probe_status_task(status_probe_point::reported);
-            spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
-                current, target, pending, hosts, banned);
+            spdlog::info("[p2p_node:status] Outbound: {}/{} (target), total peers: {}, pending: {}, hosts: {}, banned: {}",
+                current, target, peers.size(), pending, hosts, banned);
         }
     }, ::asio::detached);
 
     while (!stopped()) {
-        auto const current_count = manager_.count_snapshot();
+        auto const peers = co_await manager_.all();
+        if (stopped()) break;
+        auto const current_count = detail::outbound_connection_count(peers);
         auto const target = settings_.outbound_connections;
         auto const [host_count, ban_count] = peer_db_.count_by_status();
         auto const pending_count = pending_connections_.size();

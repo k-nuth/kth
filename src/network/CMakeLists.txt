@@ -93,6 +93,7 @@ endif()
 # Modern coroutine-based headers (KEEP)
 set(kth_headers
   include/kth/network/banlist.hpp
+  include/kth/network/browser/stream.hpp
   include/kth/network/define.hpp
   include/kth/network/net_permissions.hpp
   include/kth/network/peer_record.hpp
@@ -269,3 +270,6 @@ install(EXPORT ${PROJECT_NAME}-targets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
 
+
+# Shared WS discovery codec/policy used by browser and native sessions.
+target_sources(${PROJECT_NAME} PRIVATE src/ws_discovery.cpp)

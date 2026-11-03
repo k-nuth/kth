@@ -391,6 +391,10 @@ set(kth_headers
     include/kth/infrastructure/utility/timer.hpp
     include/kth/infrastructure/utility/track.hpp
     include/kth/infrastructure/utility/writer.hpp
+    include/kth/infrastructure/utility/browser/runtime.hpp
+    include/kth/infrastructure/utility/browser/task_group.hpp
+    include/kth/infrastructure/utility/native/task_group.hpp
+    include/kth/infrastructure/utility/task_group.hpp
     include/kth/infrastructure/utility/async_channel.hpp
     include/kth/infrastructure/utility/awaitable_helpers.hpp
     include/kth/infrastructure/utility/coroutine_config.hpp

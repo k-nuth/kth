@@ -2,7 +2,7 @@
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
 #include <kth/node/full_node.hpp>
-#include <kth/infrastructure/utility/browser_runtime.hpp>
+#include <kth/infrastructure/utility/browser/runtime.hpp>
 #include <cstdio>
 #include <stdexcept>
 kth::browser::runtime owner;

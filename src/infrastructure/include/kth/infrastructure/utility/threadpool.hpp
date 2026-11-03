@@ -11,9 +11,10 @@
 
 #include <spdlog/spdlog.h>
 #include <asio/thread_pool.hpp>
+#include <kth/infrastructure/utility/thread.hpp>
 
 #if defined(KTH_BROWSER_NODE)
-#include <kth/infrastructure/utility/browser_runtime.hpp>
+#include <kth/infrastructure/utility/browser/runtime.hpp>
 namespace kth {
 struct threadpool {
     using context_type = ::asio::io_context;
@@ -35,9 +36,9 @@ namespace kth {
 struct threadpool {
     using context_type = ::asio::thread_pool;
     explicit
-    threadpool(std::string_view name, size_t num_threads = std::thread::hardware_concurrency())
+    threadpool(std::string_view name, size_t num_threads = kth::thread_hardware_concurrency())
         : name_(name)
-        , num_threads_(num_threads == 0 ? std::thread::hardware_concurrency() : num_threads)
+        , num_threads_(num_threads == 0 ? kth::thread_hardware_concurrency() : num_threads)
         , pool_(num_threads_)
     {
         spdlog::info("[threadpool] '{}' created with {} threads", name_, num_threads_);

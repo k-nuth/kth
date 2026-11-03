@@ -1,4 +1,4 @@
-#include <kth/network/browser_stream.hpp>
+#include <kth/network/browser/stream.hpp>
 #include <cstdio>
 #include <stdexcept>
 #include <asio/experimental/awaitable_operators.hpp>
@@ -7,10 +7,11 @@
 #include <vector>
 kth::browser::runtime owner;
 auto owner_strand = asio::make_strand(owner.context());
+char const* echo_endpoint = "ws://127.0.0.1:18765";
 asio::awaitable<void> control() {
     auto executor = co_await asio::this_coro::executor;
     kth::network::browser_stream stream(executor);
-    co_await stream.async_connect("ws://127.0.0.1:18765", asio::use_awaitable);
+    co_await stream.async_connect(echo_endpoint, asio::use_awaitable);
     std::vector<unsigned char> sent(140000);
     for (std::size_t i=0; i<sent.size(); ++i) sent[i] = i % 251;
     auto written = co_await asio::async_write(stream, asio::buffer(sent), asio::use_awaitable);
@@ -47,7 +48,8 @@ asio::awaitable<void> control() {
     co_await children.join();
     std::printf("nursery joined active=%zu total=%zu\n", children.active_count(), children.total_spawned());
 }
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1) echo_endpoint = argv[1];
     asio::co_spawn(owner_strand, control(), [](std::exception_ptr error) {
         if (error) { try { std::rethrow_exception(error); } catch(std::exception const& e) { std::printf("FAILED %s\n", e.what()); } }
         else std::puts("stream control joined");

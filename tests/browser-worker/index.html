@@ -4,7 +4,7 @@
 <p>These are engineering controls. The BCHN driver checks protocol and context-free rules; it does not run full node sync or UTXO/script connection.</p>
 <div id="controls"></div>
 <script>
-for (const name of ['stream','cap','eof','select','terminal','interop','lifecycle']) {
+for (const name of ['stream','cap','eof','select','terminal','timer','interop','lifecycle','reset']) {
   const section = document.createElement('section');
   const heading = document.createElement('h2'); heading.textContent = name;
   const output = document.createElement('pre'); output.textContent = 'Starting Worker…\n';

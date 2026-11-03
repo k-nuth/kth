@@ -1,4 +1,4 @@
-#include <kth/network/browser_stream.hpp>
+#include <kth/network/browser/stream.hpp>
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <cstdio>
 #include <stdexcept>

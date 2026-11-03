@@ -402,8 +402,10 @@ TEST_CASE("select: a worker's task_ended report waits out a full channel instead
     // Fill every buffer slot before the worker initiates its send. An already
     // selected input can retire the output receive before the flood arrives.
     auto worker = f.start_real_worker(0);
+    size_t expected_flood = 257;
     SECTION("no competing control event is queued") {}
     SECTION("a benign peer update wins selection before the flood") {
+        expected_flood = 256;
         // Commit the input alternative without running the supervisor yet.
         // Its output receive is no longer entitled to take the extra item.
         REQUIRE(f.input.try_send(block_download_input{peers_updated{{p1}}}));
@@ -412,8 +414,7 @@ TEST_CASE("select: a worker's task_ended report waits out a full channel instead
     REQUIRE(f.launcher.output->buffered() == 256u);
     // At most one extra report can be committed to the suspended receive.
     // The pending critical send must wait in either selection ordering.
-    CHECK(flooded >= 256u);
-    CHECK(flooded <= 257u);
+    CHECK(flooded == expected_flood);
     REQUIRE(drain_until(f.report_ctx, [&] { return f.launcher.output->pending() == 1u && ! worker->done.load(); }));
 
     // Everything ahead of it drains in order; the report lands last and is

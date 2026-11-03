@@ -692,6 +692,11 @@ awaitable_expected<raw_message> peer_session::read_message() {
     }
 
     // Read payload
+    // Bound discovery frames before allocating their payload, including before negotiation.
+    if ((head.command() == "getwsaddr" && head.payload_size() != 10) ||
+        (head.command() == "wsaddr" && head.payload_size() > 16384))
+        co_return std::unexpected(error::bad_stream);
+
     data_chunk payload(head.payload_size());
 
     if (head.payload_size() > 0) {
@@ -751,7 +756,10 @@ awaitable_expected<peer_session::ptr> async_connect(
 
 #if defined(KTH_BROWSER_NODE)
     if (settings.browser_bridge_url.empty()) co_return std::unexpected(error::operation_failed);
-    peer_session::socket_type socket(executor);
+    // A block may occupy one WS message; framing is transport-specific. Keep
+    // queue admission bounded while allowing the actor's declared body limit.
+    peer_session::socket_type socket(executor,
+        std::min<size_t>(settings.browser_maximum_payload,32*1024*1024)+24);
     kth::steady_timer timer(executor, timeout);
     auto result = co_await (
         socket.async_connect(settings.browser_bridge_url, ::asio::as_tuple(::asio::use_awaitable)) ||

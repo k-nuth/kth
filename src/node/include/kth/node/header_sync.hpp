@@ -18,9 +18,10 @@
 #if defined(KTH_BROWSER_NODE)
 namespace kth::node {
 
-// Headers-only actor. All access belongs to its executor, including cancellation and destruction.
-// No block or UTXO database is opened. A successful run means the selected peer has no more headers,
-// not that independent peers agree or that block bodies/transactions were validated.
+// Headers-first actor. All access belongs to its executor, including cancellation and destruction.
+// Optional body sampling checks known headers, Merkle commitments and transaction structure,
+// then discards full bodies. No UTXO database or full input/script validation is provided.
+// A successful run means the selected peers have no more headers, not independent peer agreement.
 class KND_API header_sync {
 public:
     header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity);
@@ -38,7 +39,9 @@ public:
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> request_stop() const;
     // Coalesced refresh request for an active session; does not replace or close its peer.
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> request_refresh() const;
-    void reset();
+    // Refuses an active run without mutation. False also reports inability to
+    // prepare the idle status; no C++ exception escapes through the C boundary.
+    bool reset() noexcept;
     uint64_t last_height() const;
     // Active-chain header queries. Empty for heights outside the validated active chain.
     // Hex contains the 80-byte wire header; hash uses conventional displayed byte order.
@@ -48,10 +51,41 @@ public:
     // True after this run and the shared Worker executor have drained.
     bool idle() const;
     std::string status() const;
+    // Remote version-message user agent for the current session. Empty before handshake
+    // and after disconnect/stop. Access belongs to the same executor as the actor.
+    std::string peer_user_agent() const;
     size_t index_memory_bytes() const;
+    // Snapshot of this actor's effective native settings, not full-node defaults.
+    // JSON preserves booleans/numbers, with integers outside JS's safe range as strings.
+    std::string runtime_settings() const;
+    // Current active tip consensus state, built by the native header validator.
+    // Owned JSON snapshot; no borrowed state survives a tip change.
+    std::string chain_state_snapshot() const;
+    // Configure distinct WS/WSS endpoints while stopped. Bounded to eight sessions.
+    // False for duplicate/invalid endpoints, capacity or mutation during a run.
+    bool add_peer(std::string const& url);
+    // Discovery policy is explicit and immutable while the actor is running.
+    // Private endpoints are disabled unless the embedding application opts into a LAN experiment.
+    bool configure_discovery(bool enabled, bool allow_private, bool wss_only);
+    std::string peer_source(size_t at) const;
+    uint64_t peer_announcements(size_t at) const;
+    // Optional bounded content sampling, configured while stopped. No UTXO validation.
+    bool configure_content(bool blocks, bool transactions);
+    std::string block_metadata(uint64_t height, bool include_transactions) const;
+    std::string content_state() const;
+    std::string observed_transactions() const;
+    size_t peer_count() const;
+    std::string peer_endpoint(size_t at) const;
+    std::string peer_state(size_t at) const;
+    std::string peer_agent(size_t at) const;
+    std::string peer_error(size_t at) const;
+    uint64_t peer_height(size_t at) const;
+    bool peer_connected(size_t at) const;
 
 private:
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> run_session(bool follow_tip);
+    void spawn_peer(size_t at, bool follow_tip);
+    ::asio::awaitable<void> run_peer(size_t at, bool follow_tip);
     struct impl;
     std::unique_ptr<impl> state_;
 };

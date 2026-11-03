@@ -7,6 +7,7 @@ self.onmessage=async({data})=>{
  try {
   importScripts('browser_headers_api_control.js');const core=await createHeaders();
   client=new core.HeaderSync(data.bridge,'regtest',1500000);
+  checks.initialReset=client.reset()===true;
   const run=client.asyncRun();
   for(const [name,call] of [['dispose',()=>client.dispose()],['reset',()=>client.reset()]]){
    try{call();throw Error(name+' admitted during run');}catch(e){if(!String(e).includes('pending async'))throw e;checks[name]=true;}
@@ -16,7 +17,7 @@ self.onmessage=async({data})=>{
   await client.asyncRequestStop();await run;checks.stopped=client.status()==='stopped';
   // A new event-loop turn checks executor cleanup after terminal delivery.
   await new Promise(resolve=>setTimeout(resolve,10));checks.idle=client.idle();
-  client.reset();checks.resetAfterCompletion=true;client.dispose();checks.disposed=true;
+  checks.resetAfterCompletion=client.reset()===true;client.dispose();checks.disposed=true;
   if(Object.values(checks).some(v=>v!==true))throw Error(JSON.stringify(checks));
   postMessage({type:'done',checks});
  }catch(e){postMessage({type:'failure',message:String(e),checks});}

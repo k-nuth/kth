@@ -97,6 +97,16 @@ slow_sync_admission may_start_slow_sync(
 KND_API bool refresh_validated_tip(blockchain::block_chain const& chain,
                                   blockchain::header_organizer& organizer);
 
+struct connected_header_tip {
+    uint32_t height;
+    hash_digest hash;
+    domain::chain::header header;
+};
+// A header-index advance alone is not a relayable block. The immutable connected
+// publication must agree with the active index; stale reorg publications fail closed.
+[[nodiscard]] KND_API std::optional<connected_header_tip> connected_announcement_tip(
+    blockchain::block_chain const& chain, blockchain::header_organizer const& organizer);
+
 /// Legacy timer-bridge decision, retained for API compatibility. Production
 /// progress now comes from the builder channel, without polling.
 struct utxo_progress_step {

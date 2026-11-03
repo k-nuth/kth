@@ -59,6 +59,10 @@ using shared_lock = std::shared_lock<shared_mutex>;
 using shared_mutex_ptr = std::shared_ptr<shared_mutex>;
 
 
+// Execution parallelism available to this runtime. Browser Workers are
+// single-threaded; other builds preserve std::thread's result (including zero).
+KI_API unsigned thread_hardware_concurrency() noexcept;
+
 KI_API void set_priority(thread_priority priority);
 KI_API thread_priority priority(bool priority);
 KI_API size_t thread_default(size_t configured);

@@ -42,7 +42,7 @@ extern "C" {
  * bridge_url must be nonempty; capacity must be in 1..2000000.
  * Construction returns a status and writes an owned handle to out on success.
  * On failure out is null; allocation failure is kth_ec_out_of_memory, other exceptions kth_ec_unhandled_exception.
- * @param[out] out Must point to a null `kth_header_sync_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_node_header_sync_destruct`. Untouched on error.
+ * @param[out] out Must point to a null `kth_header_sync_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_node_header_sync_destruct`. Cleared to null on error.
  */
 KTH_EXPORT
 kth_error_code_t kth_node_header_sync_construct(char const* bridge_url, kth_network_t network, kth_size_t capacity, KTH_OUT_OWNED kth_header_sync_mut_t* out);
@@ -86,8 +86,31 @@ kth_bool_t kth_node_header_sync_idle(kth_header_sync_const_t self);
 KTH_EXPORT KTH_OWNED
 char* kth_node_header_sync_status(kth_header_sync_const_t self);
 
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_user_agent(kth_header_sync_const_t self);
+
 KTH_EXPORT
 kth_size_t kth_node_header_sync_index_memory_bytes(kth_header_sync_const_t self);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_chain_state_snapshot(kth_header_sync_const_t self);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_content_state(kth_header_sync_const_t self);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_observed_transactions(kth_header_sync_const_t self);
+
+KTH_EXPORT
+kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self);
 
 
 // Operations
@@ -109,7 +132,7 @@ KTH_EXPORT
 void kth_node_header_sync_async_follow(kth_header_sync_mut_t self, void* ctx, kth_node_header_sync_async_follow_handler_t handler);
 
 KTH_EXPORT
-void kth_node_header_sync_reset(kth_header_sync_mut_t self);
+kth_bool_t kth_node_header_sync_reset(kth_header_sync_mut_t self);
 
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
@@ -118,6 +141,48 @@ char* kth_node_header_sync_header_hex(kth_header_sync_const_t self, uint64_t hei
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
 char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t height);
+
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url);
+
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, kth_bool_t enabled, kth_bool_t allow_private, kth_bool_t wss_only);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_source(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+uint64_t kth_node_header_sync_peer_announcements(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_configure_content(kth_header_sync_mut_t self, kth_bool_t blocks, kth_bool_t transactions);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_block_metadata(kth_header_sync_const_t self, uint64_t height, kth_bool_t include_transactions);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_endpoint(kth_header_sync_const_t self, kth_size_t at);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_state(kth_header_sync_const_t self, kth_size_t at);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_agent(kth_header_sync_const_t self, kth_size_t at);
+
+/** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_error(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+uint64_t kth_node_header_sync_peer_height(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_peer_connected(kth_header_sync_const_t self, kth_size_t at);
 
 #ifdef __cplusplus
 } // extern "C"

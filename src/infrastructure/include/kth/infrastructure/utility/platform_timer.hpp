@@ -3,7 +3,7 @@
 #ifndef KTH_INFRASTRUCTURE_PLATFORM_TIMER_HPP
 #define KTH_INFRASTRUCTURE_PLATFORM_TIMER_HPP
 #if defined(KTH_BROWSER_NODE)
-#include <kth/infrastructure/utility/browser_runtime.hpp>
+#include <kth/infrastructure/utility/browser/runtime.hpp>
 namespace kth { using steady_timer = browser::timer; }
 #else
 #include <kth/infrastructure/utility/asio_helper.hpp>
