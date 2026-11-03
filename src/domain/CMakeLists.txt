@@ -418,6 +418,8 @@ set(kth_headers
     include/kth/domain/math/limits.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/impl/machine
+    include/kth/domain/impl/wallet/cashaddr.ipp
+    include/kth/domain/impl/wallet/payment_address.ipp
     include/kth/domain/impl/machine/program.ipp
     include/kth/domain/impl/machine/interpreter.ipp
     include/kth/domain/impl/machine/operation.ipp

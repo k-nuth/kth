@@ -30,7 +30,7 @@ inline constexpr auto base58_decode_table = []() consteval {
 }();
 
 template <size_t Size>
-std::expected<byte_array<Size>, base58_errc> decode_base58(std::string_view in) {
+constexpr std::expected<byte_array<Size>, base58_errc> decode_base58(std::string_view in) {
     // Zero-alloc, zero-copy exact-size decode.
     //
     // The algorithm unpacks base58 chars into `out` in-place (using the

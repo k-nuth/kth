@@ -674,6 +674,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include(Catch)
     catch_discover_tests(kth_capi_test)
 
+    if(CURRENCY STREQUAL "BCH")
+        add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
+        set_target_properties(kth_payment_address_errors_test PROPERTIES LINKER_LANGUAGE CXX)
+        target_link_libraries(kth_payment_address_errors_test PRIVATE ${PROJECT_NAME})
+        add_test(NAME capi_payment_address_errors COMMAND kth_payment_address_errors_test)
+    endif()
+
+
     # Real C++ exceptions through the generated wrappers. The executable
     # replaces the global allocation functions to inject failures, so it is
     # kept apart from kth_capi_test and built only with the barriers on.

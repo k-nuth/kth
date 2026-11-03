@@ -285,6 +285,33 @@ typedef enum kth_error_code {
     kth_ec_node_behind,  // /< Connected chain has not reached the headers it holds.
     kth_ec_node_stale,  // /< Caught up, but the tip is older than the configured limit.
 
+    // Local transaction policy failures. Kept distinct from consensus failures.
+    kth_ec_standardness_version,
+    kth_ec_standardness_transaction_size,
+    kth_ec_standardness_scriptsig_size,
+    kth_ec_standardness_scriptsig_not_push_only,
+    kth_ec_standardness_tokens_before_activation,
+    kth_ec_standardness_scriptpubkey,
+    kth_ec_standardness_bare_multisig,
+    kth_ec_standardness_dust,
+    kth_ec_standardness_datacarrier_size,
+    kth_ec_standardness_inputs,
+
+    // Address validation. Append to preserve existing C API error values.
+    kth_ec_address_empty_input,
+    kth_ec_address_invalid_character,
+    kth_ec_address_invalid_base58_length,
+    kth_ec_address_invalid_prefix,
+    kth_ec_address_mixed_case,
+    kth_ec_address_network_mismatch,
+    kth_ec_address_invalid_checksum,
+    kth_ec_address_invalid_padding,
+    kth_ec_address_reserved_version,
+    kth_ec_address_unsupported_type,
+    kth_ec_address_invalid_hash_length,
+    kth_ec_address_unsupported_hash_size,
+    kth_ec_address_invalid_script,
+
     // C-API boundary errors
     kth_ec_out_of_memory = 10000,  // Allocation failed inside the C-API
     kth_ec_unhandled_exception = 10001,  // A C++ exception reached the C boundary
