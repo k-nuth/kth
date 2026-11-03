@@ -47,7 +47,7 @@ using kth::awaitable_expected;
 //   co_await session->send(version_message);
 //
 //   // Receive messages via channel
-//   auto [ec, msg] = co_await session->messages().async_receive(...);
+//   auto result = co_await wait_for_any_message(*session, timeout);
 //
 // =============================================================================
 
@@ -72,7 +72,7 @@ public:
     static constexpr size_t outbound_capacity = 100;
 
     // Channel for inbound messages (raw message with heading + payload)
-    using inbound_channel = concurrent_channel<raw_message>;
+    using inbound_channel = select_channel<raw_message>;
 
     /// Construct a peer session from an established socket
     /// @param socket The connected socket
@@ -98,6 +98,11 @@ public:
     /// Check if the session is stopped
     [[nodiscard]]
     bool stopped() const;
+
+    /// The session's strand. run()'s loops run on it; direct socket I/O
+    /// before run() starts (perform_handshake_direct) runs there too.
+    [[nodiscard]]
+    strand_type const& executor() const;
 
     // -------------------------------------------------------------------------
     // Messaging
@@ -341,6 +346,10 @@ private:
 
     /// Read loop - reads messages from socket and dispatches to inbound channel
     ::asio::awaitable<void> read_loop();
+
+    /// Races the read, write and timer loops with ||. run() spawns it on the
+    /// strand, so the race's own bookkeeping runs there too (see run()).
+    ::asio::awaitable<void> run_loops();
 
     /// Write loop - processes outbound channel and writes to socket
     ::asio::awaitable<void> write_loop();

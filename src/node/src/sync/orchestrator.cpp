@@ -8,6 +8,7 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/peer_events.hpp>
 
 #include <algorithm>
 
@@ -607,31 +608,24 @@ static
     peer_provider_input_channel peer_provider_input(100);
 
     // Bridge task: forwards from network.peer_events() to unified channel
-    // 2026-02-07: Use simple timer polling instead of || operator to avoid potential issues
     all_tasks.spawn("peer_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[peer_bridge] Started, forwarding peer events to peer_provider");
-        auto exec = co_await ::asio::this_coro::executor;
-        ::asio::steady_timer check_timer(exec);
 
         try {
             while (!network.stopped()) {
-                // Use timer to periodically check if network stopped
-                check_timer.expires_after(std::chrono::milliseconds(500));
-                auto event = co_await (
-                    network.peer_events().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                    check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-                );
-
-                // Timer fired - just loop to check network.stopped()
-                if (event.index() == 1) {
+                // An event, or the 500 ms re-check of network.stopped(), or the
+                // network's stop. A deadline that wins leaves an event ready at
+                // the same instant queued (see detail::wait_for_peer_event).
+                auto event = co_await detail::wait_for_peer_event(network,
+                    std::chrono::steady_clock::now() + std::chrono::milliseconds(500));
+                if ( ! event && event.error() == error::channel_timeout) {
                     continue;
                 }
-
-                auto [ec, notification] = std::get<0>(event);
-                if (ec) {
-                    spdlog::debug("[peer_bridge] Network channel closed: {}", ec.message());
+                if ( ! event) {
+                    spdlog::debug("[peer_bridge] Network channel closed: {}", event.error().message());
                     break;
                 }
+                auto& notification = *event;
 
                 // Demultiplex based on event type
                 if (notification.event == kth::node::peer_event_type::connected) {
@@ -653,8 +647,6 @@ static
         } catch (...) {
             spdlog::error("[peer_bridge] UNKNOWN EXCEPTION");
         }
-        // Cancel timer before exiting to ensure clean shutdown of || operator internals
-        check_timer.cancel();
         spdlog::info("[peer_bridge] Task ended");
     });
 

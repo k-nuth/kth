@@ -15,7 +15,10 @@
 #include <kth/infrastructure.hpp>
 
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
+#include <asio/deferred.hpp>
 #include <asio/post.hpp>
+#include <asio/strand.hpp>
 
 namespace kth::network {
 
@@ -80,7 +83,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, outbound_capacity)
-    , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
+    , inbound_(100)   // Buffer up to 100 inbound messages
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -113,7 +116,6 @@ peer_session::~peer_session() {
 
     // Cancel before close to ensure any pending async ops are woken up
     outbound_.cancel();
-    inbound_.cancel();
 
     outbound_.close();
     inbound_.close();
@@ -151,19 +153,17 @@ peer_session::~peer_session() {
     // the || operator's internal bookkeeping runs on a single strand, preventing
     // concurrent access to cancellation state.
     //
-    // We use bind_executor to wrap each loop coroutine with the strand, ensuring
-    // all operations (including cancellation) run on the strand.
+    // 2026-11-03 (#772): spawning each loop on the strand was not enough. The ||
+    // itself ran here, on the caller's executor (the pool): each loop's
+    // completion was delivered to the parallel group there, so the group could
+    // emit cancellation to one loop on one pool thread while that loop was
+    // completing on another. The whole || now runs in run_loops(), spawned on
+    // the strand: its loops, their completions and the cancellations between
+    // them all share it.
 
     try {
         // Run all loops concurrently on the strand - when any completes/fails, all stop
-        // Using co_spawn with use_awaitable ensures all operations run on the strand,
-        // which serializes the || operator's cancellation mechanism.
-        co_await (
-            ::asio::co_spawn(strand_, read_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, write_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, inactivity_timer(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, expiration_timer(), ::asio::use_awaitable)
-        );
+        co_await ::asio::co_spawn(strand_, run_loops(), ::asio::use_awaitable);
     } catch (std::exception const& e) {
         spdlog::debug("[peer_session] Exception in run loop [{}]: {}", authority(), e.what());
     }
@@ -171,6 +171,12 @@ peer_session::~peer_session() {
     spdlog::debug("[peer_session] run() - loops completed for [{}]", authority());
     stop(error::channel_stopped);
     co_return error::channel_stopped;
+}
+
+::asio::awaitable<void> peer_session::run_loops() {
+    // Runs on strand_ (see run()): || spawns each loop on this coroutine's
+    // executor and delivers their completions to it.
+    co_await (read_loop() || write_loop() || inactivity_timer() || expiration_timer());
 }
 
 void peer_session::stop(code const& ec) {
@@ -251,13 +257,13 @@ void peer_session::stop(code const& ec) {
     // - outbound_: Used by write_loop() and send operations
     // - block_responses_, addr_responses_: Used by request protocols
     spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
-    inbound_.cancel();
     outbound_.cancel();
     spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
-    inbound_.close();
     outbound_.close();
-    // The response channels are select_channels: close() completes a pending
-    // receive with eof and a pending send with broken_pipe, from any thread.
+    // inbound_ and the response channels are select_channels: close() completes
+    // a pending receive with eof and a pending send with broken_pipe, from any
+    // thread, so they need no cancel().
+    inbound_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -284,6 +290,10 @@ void peer_session::drain_response_channels() {
 
 bool peer_session::stopped() const {
     return stopped_.load();
+}
+
+peer_session::strand_type const& peer_session::executor() const {
+    return strand_;
 }
 
 // =============================================================================
@@ -515,6 +525,7 @@ void peer_session::set_wants_addrv2(bool value) {
 
 ::asio::awaitable<void> peer_session::read_loop() {
     spdlog::debug("[peer_session] read_loop() starting for [{}]", authority());
+    auto executor = co_await ::asio::this_coro::executor;
     while (!stopped()) {
         auto result = co_await read_message();
 
@@ -539,11 +550,12 @@ void peer_session::set_wants_addrv2(bool value) {
         // Signal activity to reset inactivity timer
         signal_activity();
 
-        // Send message to inbound channel
-        auto [ec] = co_await inbound_.async_send(
-            std::error_code{},
-            std::move(*result),
-            ::asio::as_tuple(::asio::use_awaitable));
+        // Send message to inbound channel: a suspended send, which waits while
+        // the channel is full and ends with broken_pipe once it is closed.
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::send(inbound_, std::move(*result))
+        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto const& ec = std::get<0>(completion);
 
         if (ec) {
             spdlog::debug("[peer_session] Failed to enqueue message [{}]", authority());
@@ -713,14 +725,20 @@ void peer_session::signal_activity() {
 // Connection helpers - replace connector/acceptor classes
 // =============================================================================
 
-awaitable_expected<peer_session::ptr> async_connect(
-    ::asio::any_io_executor executor,
+namespace {
+
+awaitable_expected<peer_session::ptr> async_connect_on_strand(
+    ::asio::any_io_executor socket_executor,
     std::string const& hostname,
     uint16_t port,
     settings const& settings,
     std::chrono::seconds timeout)
 {
     using namespace ::asio::experimental::awaitable_operators;
+
+    // This coroutine runs on its own strand (see async_connect below). The
+    // resolver and the timers are local to it and live there too.
+    auto executor = co_await ::asio::this_coro::executor;
 
     // Try to parse hostname as IP address first (skip DNS for IPs)
     std::error_code ip_parse_ec;
@@ -806,12 +824,16 @@ awaitable_expected<peer_session::ptr> async_connect(
         direct_endpoint = *endpoints.begin();
     }
 
-    // Create socket and timer for connection timeout
-    ::asio::ip::tcp::socket socket(executor);
+    // Create socket and timer for connection timeout. The socket becomes the
+    // session's, whose own strand wraps the socket's executor: it keeps the
+    // caller's executor, not this connect's strand.
+    ::asio::ip::tcp::socket socket(socket_executor);
     ::asio::steady_timer timer(executor);
     timer.expires_after(timeout);
 
-    // Race: connect vs timeout (use single endpoint connect)
+    // Race: connect vs timeout (use single endpoint connect). The || runs on
+    // this coroutine's strand, so both completions and the cancellation of the
+    // loser are serialized there, whatever executor the socket has.
     auto connect_result = co_await (
         socket.async_connect(direct_endpoint, ::asio::as_tuple(::asio::use_awaitable)) ||
         timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
@@ -846,6 +868,25 @@ awaitable_expected<peer_session::ptr> async_connect(
     }
 
     co_return session;
+}
+
+} // anonymous namespace
+
+awaitable_expected<peer_session::ptr> async_connect(
+    ::asio::any_io_executor executor,
+    std::string const& hostname,
+    uint16_t port,
+    settings const& settings,
+    std::chrono::seconds timeout)
+{
+    // #772: `connect || timer` cancels the losing branch from the winner's
+    // completion. On the caller's executor (the network's thread pool) that
+    // cancellation could run on one thread while the loser completed on
+    // another. A socket connect has no channel to select on, so the race runs
+    // on a strand of its own instead, as peer_session::run() does.
+    co_return co_await ::asio::co_spawn(::asio::make_strand(executor),
+        async_connect_on_strand(executor, hostname, port, settings, timeout),
+        ::asio::use_awaitable);
 }
 
 awaitable_expected<peer_session::ptr> async_connect(

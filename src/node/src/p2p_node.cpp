@@ -37,7 +37,7 @@ p2p_node::p2p_node(settings const& settings)
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
-    , peer_notification_channel_(std::make_unique<concurrent_channel<peer_notification>>(pool_.get_executor(), 100))
+    , peer_notification_channel_(std::make_unique<select_channel<peer_notification>>(100))
     // One slot: this is a doorbell, and a second ring while the first is
     // unanswered says nothing the first does not.
     , block_announcement_channel_(std::make_unique<concurrent_channel<blocks_announced>>(pool_.get_executor(), 1))
@@ -229,7 +229,6 @@ void p2p_node::stop() {
 
     // Close the peer notification channel to wake up sync layer
     if (peer_notification_channel_) {
-        peer_notification_channel_->cancel();
         peer_notification_channel_->close();
     }
 
@@ -685,7 +684,7 @@ concurrent_channel<blocks_announced>& p2p_node::block_announcements() {
     return *block_announcement_channel_;
 }
 
-concurrent_channel<peer_notification>& p2p_node::peer_events() {
+select_channel<peer_notification>& p2p_node::peer_events() {
     return *peer_notification_channel_;
 }
 
@@ -821,26 +820,16 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                 // Note: Some nodes send a small self-announcement addr (1-2 addresses)
                 // after handshake, before responding to getaddr with many addresses.
                 // We accumulate addresses and stop after getting enough or timeout.
-                ::asio::steady_timer timer(executor);
-                timer.expires_after(30s);
+                auto const deadline = std::chrono::steady_clock::now() + 30s;
                 size_t total_addresses = 0;
                 constexpr size_t minimum_useful_addresses = 10;
 
                 while (!peer->stopped()) {
-                    auto msg_result = co_await (
-                        peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-                        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-                    );
-
-                    if (msg_result.index() == 1) {
-                        // Timeout
+                    auto msg_result = co_await wait_for_any_message(*peer, deadline);
+                    if ( ! msg_result) {
                         break;
                     }
-
-                    auto& [recv_ec, raw] = std::get<0>(msg_result);
-                    if (recv_ec) {
-                        break;
-                    }
+                    auto& raw = *msg_result;
 
                     auto const& command = raw.heading.command();
                     if (command == domain::message::address::command ||
@@ -974,7 +963,6 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer check_timer(executor);
     auto const ping_interval = std::chrono::seconds(settings_.channel_heartbeat_minutes * 60);
     auto const check_interval = std::chrono::seconds(5);  // Check stopped flag every 5s
 
@@ -984,28 +972,18 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     while (!peer->stopped() && !stopped()) {
         // Use short check_interval for responsive shutdown, but track ping timing separately
-        check_timer.expires_after(check_interval);
-
-        // Wait for message or check timer
-        // Using short timer ensures we detect stopped status promptly
-        auto result = co_await (
-            peer->messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            check_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
+        // Wait for message or check deadline: one selection, so a deadline
+        // that fires with a message ready leaves it for the next iteration.
+        auto result = co_await wait_for_any_message(*peer,
+            std::chrono::steady_clock::now() + check_interval);
 
         if (peer->stopped() || stopped()) {
             spdlog::debug("[p2p_node:protocols] [{}] Breaking due to stopped flag", peer->authority());
             break;
         }
 
-        if (result.index() == 1) {
+        if ( ! result && result.error() == error::channel_timeout) {
             // Timer expired - check if we need to send ping
-            auto [timer_ec] = std::get<1>(result);
-            if (timer_ec) {
-                // Timer was cancelled (e.g., by message arrival) - this is fine
-                continue;
-            }
-
             // Check if it's time to send a ping
             auto now = std::chrono::steady_clock::now();
             if (now - last_ping >= ping_interval) {
@@ -1025,11 +1003,11 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
         }
 
         // Message received
-        auto& [ec, raw] = std::get<0>(result);
-        if (ec) {
-            spdlog::debug("[p2p_node:protocols] [{}] Message receive error: {}", peer->authority(), ec.message());
+        if ( ! result) {
+            spdlog::debug("[p2p_node:protocols] [{}] Message receive error: {}", peer->authority(), result.error().message());
             break;
         }
+        auto& raw = *result;
 
         auto const& command = raw.heading.command();
 
@@ -1486,7 +1464,7 @@ void p2p_node::wake_status_task() noexcept {
                         // Notify sync layer of new peer (CSP pattern)
                         spdlog::info("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
                             peer->authority(), peer->nonce());
-                        peer_notification_channel_->try_send(std::error_code{},
+                        peer_notification_channel_->try_send(
                             peer_notification{peer, peer_event_type::connected});
 
                         // Send initial ping to get latency data
@@ -1540,7 +1518,7 @@ void p2p_node::wake_status_task() noexcept {
                         // Notify sync layer of peer disconnection (CSP pattern)
                         spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
                             peer->authority(), peer->nonce());
-                        peer_notification_channel_->try_send(std::error_code{},
+                        peer_notification_channel_->try_send(
                             peer_notification{peer, peer_event_type::disconnected});
 
                         spdlog::debug("[p2p_node] Peer [{}] lambda completed (protocols ended)", peer->authority());

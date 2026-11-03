@@ -307,7 +307,7 @@ public:
     /// Get the channel that receives peer lifecycle events (CSP pattern)
     /// Use this to subscribe to peer connection/disconnection events.
     [[nodiscard]]
-    concurrent_channel<peer_notification>& peer_events();
+    select_channel<peer_notification>& peer_events();
 
     // -------------------------------------------------------------------------
     // Block headers and announcements
@@ -613,7 +613,7 @@ private:
 
     // Channel for notifying sync layer of peer lifecycle events (CSP pattern)
     // Peers are sent here on connection (after handshake) and disconnection
-    std::unique_ptr<concurrent_channel<peer_notification>> peer_notification_channel_;
+    std::unique_ptr<select_channel<peer_notification>> peer_notification_channel_;
     std::unique_ptr<concurrent_channel<blocks_announced>> block_announcement_channel_;
 
     std::unique_ptr<detail::header_ingest_channels> header_ingest_;

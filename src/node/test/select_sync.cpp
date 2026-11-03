@@ -540,11 +540,15 @@ struct remote_peer {
 // `block` goes to the per-request channel the batch request is reading, and a
 // `ping` is observed. Everything else is dropped.
 ::asio::awaitable<void> route_messages(network::peer_session& peer, std::atomic<size_t>& pings_seen) {
+    auto ex = co_await ::asio::this_coro::executor;
     while (true) {
-        auto [ec, raw] = co_await peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(peer.messages())
+        ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
         if (ec) co_return;
+        auto raw = std::move(*selected.value<0>());
         if (raw.heading.command() == domain::message::block::command) {
-            auto ex = co_await ::asio::this_coro::executor;
             auto handed = co_await ::asio::experimental::make_select(
                 ::asio::experimental::send(peer.block_responses(), std::move(raw))
             ).async_wait(ex, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));

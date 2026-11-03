@@ -1,13 +1,13 @@
-# Channel selection in the block sync
+# Channel selection in peer protocols and block sync
 
 Knuth's standalone Asio is the Knuth fork `asio/1.38.3-kth.1`
 (recipe revision `350bc1a8f6021cd9973a02957d9972c4`, source commit
 `4b04892f2d02d5c9e04b79b428d8fe905a927a48`, PR <https://github.com/k-nuth/asio/pull/2>).
 It is upstream `asio-1-38-2` plus one header, `asio/experimental/channel_select.hpp`,
 and one opt-in trait in `asio/impl/awaitable.hpp`. `ASIO_VERSION` is still 103802,
-the CMake target is still `asio::asio`, and every existing `experimental::channel`
-and `concurrent_channel` in Knuth is unchanged. Only the pieces listed below use
-the new primitive.
+the CMake target is still `asio::asio`, and the existing `experimental::channel`
+and `concurrent_channel` APIs are unchanged. Only the pieces listed below use the
+new primitive.
 
 The reviewed recipe and header-only package are published on the `kth` Conan
 remote (`https://packages.kth.cash/api/`). Both native and WebAssembly lockfiles
@@ -122,15 +122,66 @@ taken back so the message still reaches the generic dispatcher as before.
 closes them again (idempotent). A selection keeps the channel state alive
 without borrowing the session object.
 
+### A peer's inbound messages
+
+`peer_session::messages()` is now a `select_channel<raw_message>` too. The
+session's reader hands messages in with a suspended send, keeping its existing
+100-message capacity and wire order. `stop()` and the destructor close the
+channel: a pending receive ends with `eof` and a suspended reader with
+`broken_pipe`. What is buffered stays readable, as it did in the old channel.
+
+`wait_for_any_message` selects one receive and one `after` case. Its deadline
+overload keeps an absolute deadline across repeated receives; its seconds
+overload keeps the per-call timeout. `wait_for_message`, the channel
+handshake, seed address collection and the node's protocol dispatcher all use
+this helper. Ping/pong owns a reusable selector over a receive and its interval
+deadline. Their deadlines are unchanged: the seed collector keeps one 30 s
+deadline, and protocol dispatch re-arms its 5 s check each iteration. The generic
+message loop selects a receive without a deadline. A timeout never consumes an
+inbound message, and the node's dispatch order remains headers and announcements,
+request responses, then the generic dispatcher.
+
+These consumers run on the network's multi-threaded pool, outside the session's
+strand. With `receive || timer` the winner's completion cancelled the loser,
+and on the pool that cancellation could run on one thread while the loser
+completed on another: the use-after-free of #772. A selection owns its timer
+and serializes its own steps; a stop token may be requested from any thread.
+
+### Races that stay `||`, on one strand
+
+Socket operations have no channel to select on, so these keep `||` and run the
+whole race (the coroutine that awaits it, both branches and the cancellation
+between them) on one strand. `||` spawns each branch on the awaiting
+coroutine's executor and delivers both completions to it, so that executor is
+what has to be the strand:
+
+* `async_connect` runs its connect, its DNS lookup and their timers in a child
+  coroutine on a strand made for that connect. The socket keeps the caller's
+  executor, so the session built on it gets a strand of its own as before.
+* `perform_handshake_direct` runs on the peer's strand (`peer_session::executor()`).
+  `run()` has not started, so nothing else is on it.
+* `peer_session::run()` spawns `run_loops()`, which holds the
+  `read || write || inactivity || expiration` race, on the session's strand.
+  Before, only the four loops were spawned there while the `||` itself ran on
+  the caller's executor, so the race's completions and cancellations were
+  still on the pool.
+
 ### The network's stop as an event
 
 `p2p_node::stop_token()` is stopped by `p2p_node::stop()`, once, before any
 channel is closed, whatever lifecycle state the stop found. The sync layer's
 `peer_provider` waits on its (now `select_channel`) input with that token, and
 the coordinator's stop bridge waits on the token alone instead of polling
-`stopped()` every 100 ms. The peer-event bridge still races the node's
-`concurrent_channel` against a 500 ms timer: that channel belongs to the node
-and was not converted.
+`stopped()` every 100 ms.
+
+The node's `peer_events()` is a `select_channel<peer_notification>` of capacity
+100. Its producers keep their best-effort `try_send`. The peer-event bridge
+selects a receive and its 500 ms deadline through `detail::wait_for_peer_event`,
+armed with the network's stop token. A simultaneous timeout leaves the event
+queued for the next wait. `stop()` closes this channel without a separate
+channel cancellation; the token ends a pending selection even when the node was
+stopped before it started. Forwarding to `peer_provider` keeps the existing
+capacity and full-channel logging.
 
 ## Limits that stay explicit
 
@@ -156,10 +207,12 @@ and was not converted.
 
 ## Not converted, and why
 
-* `peer_session::messages()` (`inbound_`) and `outbound_`: `concurrent_channel`s
-  bound to the session's strand, used by the read/write loops and by the
-  handshake, ping/pong and protocol loops through `||`. Converting them changes
-  the session's own loops and every protocol; out of scope for this change.
+* `peer_session::outbound_`: a `concurrent_channel` bound to the session's
+  strand. Its write loop waits on that channel alone, so it needs no selection.
+* The `&&` groups (`peer->run() && protocols` in `p2p_node`, the node's and the
+  executor's top-level tasks, the RPC server's listener): they wait for every
+  branch and cancel the others only when one throws. They are not
+  message-or-timeout waits and were left as they are.
 * The sync coordinator's unified event channel and the header pipeline: many
   producers, one consumer, no `||`; nothing to gain from a selection there.
 * `block_storage_input`, `chunk_validated`, `validated_headers`: still

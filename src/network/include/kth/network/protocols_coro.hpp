@@ -57,6 +57,7 @@
 
 #include <chrono>
 #include <expected>
+#include <stop_token>
 #include <string>
 #include <type_traits>
 
@@ -89,6 +90,26 @@ enum class sync_mode { fast, slow };
 // Message Helpers
 // =============================================================================
 
+/// Wait for any message from the peer until an absolute deadline
+/// One selection: a deadline that wins leaves a message that is ready at the
+/// same instant in the channel. Safe on a multi-threaded executor (#772).
+/// @param peer The peer session to receive from
+/// @param deadline When the wait gives up with channel_timeout
+/// @param stop Ends the wait with channel_stopped, from any thread
+[[nodiscard]]
+KN_API awaitable_expected<raw_message> wait_for_any_message(
+    peer_session& peer,
+    std::chrono::steady_clock::time_point deadline,
+    std::stop_token stop = {});
+
+/// Wait for any message from the peer (returns raw_message)
+/// @param peer The peer session to receive from
+/// @param timeout Maximum time to wait
+[[nodiscard]]
+KN_API awaitable_expected<raw_message> wait_for_any_message(
+    peer_session& peer,
+    std::chrono::seconds timeout);
+
 /// Wait for a specific message type from the peer
 /// Returns the deserialized message or an error code
 /// @param peer The peer session to receive from
@@ -98,28 +119,12 @@ awaitable_expected<Message> wait_for_message(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
-    using namespace ::asio::experimental::awaitable_operators;
-
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
-
-    // Race between message receive and timeout
-    auto result = co_await (
-        peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-
-    // Check which completed first
-    if (result.index() == 1) {
-        // Timeout won
-        co_return std::unexpected(error::channel_timeout);
+    auto result = co_await wait_for_any_message(peer, timeout);
+    if ( ! result) {
+        co_return std::unexpected(result.error());
     }
 
-    // Message received
-    auto& [ec, raw] = std::get<0>(result);
-    if (ec) {
-        co_return std::unexpected(error::channel_stopped);
-    }
+    auto const& raw = *result;
 
     // Check command matches expected type
     if (raw.heading.command() != Message::command) {
@@ -136,13 +141,6 @@ awaitable_expected<Message> wait_for_message(
 
     co_return std::move(*msg);
 }
-
-/// Wait for any message from the peer (returns raw_message)
-/// @param peer The peer session to receive from
-/// @param timeout Maximum time to wait
-awaitable_expected<raw_message> wait_for_any_message(
-    peer_session& peer,
-    std::chrono::seconds timeout);
 
 // =============================================================================
 // Version Handshake Protocol
