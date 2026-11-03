@@ -84,5 +84,14 @@ TEST_CASE("validateaddress dispatch checks addresses against the node's network"
         R"("isscript":false,"istokenaware":false})"));
     REQUIRE(request(R"(["bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz"])") ==
         node::rpc::build_success("3", R"({"isvalid":false})"));
-    REQUIRE(request("[]") == node::rpc::build_error("3", -32602, "validateaddress requires [address]"));
+    CHECK(request(R"([""])") == node::rpc::build_success("3", R"({"isvalid":false})"));
+    // Invalid addresses are results, while wrong types and arity are RPC errors.
+    CHECK(request(R"(["not an address"])") == node::rpc::build_success("3", R"({"isvalid":false})"));
+    for (auto const* params : {
+        "[]", "[null]", "[false]", "[123]", "[{}]", "[[]]", "null", "{}", R"("")",
+        R"(["bchreg:qpzz8n7jp6847yyx8t33matrgcsdx6c0cv99t2zdvc", true])",
+        R"(["", "ignored"])", R"(["not an address", "ignored"])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("3", -32602, "validateaddress requires [address]"));
+    }
 }
