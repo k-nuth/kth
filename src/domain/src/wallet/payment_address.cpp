@@ -157,10 +157,10 @@ expect<payment_address> payment_address::from_string_cashaddr(std::string const&
         return std::unexpected(kth::error::illegal_value);
     }
 
-    // A payment_address holds a 20- or a 32-byte hash. The format can express
-    // other sizes, which the copy below would leave partly unset (24 and 28
-    // bytes) or write past the end of the 32-byte hash (40 bytes and up).
-    if (hash_size != short_hash_size && hash_size != sizeof(hash_digest)) {
+    // P2PKH requires a 20-byte hash. P2SH also supports 32-byte hashes;
+    // reject every other size before copying into the fixed-size storage.
+    if (hash_size != short_hash_size &&
+        (!is_script || hash_size != sizeof(hash_digest))) {
         return std::unexpected(kth::error::illegal_value);
     }
 
