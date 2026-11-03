@@ -16,6 +16,7 @@
 #include <kth/node/block_serving.hpp>
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/node/block_relay.hpp>
+#include <kth/node/compact_block_relay.hpp>
 #endif
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
@@ -152,17 +153,31 @@ full_node::~full_node() {
                 auto const block = co_await servable_block(chain_, entry.hash());
                 if ( ! block) {
                     missing.push_back(entry);
-                } else if (co_await peer.send(*block) != error::success) {
-                    co_return message_result::handled;
-                } else {
-                    peer.remember_block(entry.hash());
+                    continue;
                 }
+                code sent = error::success;
+                if (entry.type() == domain::message::inventory_vector::type_id::compact_block) {
+                    sent = co_await send_compact_block(chain_, peer, *block);
+                } else {
+                    sent = co_await peer.send(*block);
+                }
+                if (sent != error::success) {
+                    co_return message_result::handled;
+                }
+                peer.remember_block(entry.hash());
             }
             if ( ! missing.empty()) {
                 if (auto const answer = domain::message::not_found::create(std::move(missing))) {
                     co_await peer.send(*answer);
                 }
             }
+            co_return message_result::handled;
+        });
+
+    network_.dispatcher().register_handler(domain::message::get_block_transactions::command,
+        [this](peer_session& peer, raw_message const& raw)
+            -> ::asio::awaitable<message_result> {
+            co_await serve_block_transactions(chain_, peer, raw);
             co_return message_result::handled;
         });
 
@@ -187,6 +202,11 @@ full_node::~full_node() {
     // Peers are told the floor the mempool admits at, which rises while a full
     // mempool evicts and decays back after.
     network_.set_fee_filter_source([this] { return chain_.fee_filter(); });
+
+    // Before any peer exists, so a cmpctblock that arrives with the first
+    // connection is reconstructed rather than reduced to its header.
+    compact_block_relay_ = std::make_unique<compact_block_relay>(chain_, network_);
+    compact_block_relay_->attach();
 
     // Start the P2P network
     auto ec = co_await network_.start();
@@ -393,7 +413,17 @@ void full_node::handle_connected(uint32_t first, uint32_t last) {
     // Snapshotting peers runs separately from the builder. Every send uses a
     // bounded, non-waiting queue, so one stalled peer cannot hold up another.
     ::asio::co_spawn(network_.thread_pool().get_executor(),
-        announce_blocks(network_.peers(), std::move(incoming)), ::asio::detached);
+        announce_connected(std::move(incoming)), ::asio::detached);
+}
+
+::asio::awaitable<void> full_node::announce_connected(domain::message::header::list incoming) {
+    std::shared_ptr<domain::message::compact_block const> compact;
+    if (incoming.size() == 1) {
+        if (auto block = co_await servable_compact_block(chain_, domain::chain::hash(incoming.back()))) {
+            compact = std::make_shared<domain::message::compact_block const>(std::move(*block));
+        }
+    }
+    co_await announce_blocks(network_.peers(), std::move(incoming), std::move(compact));
 }
 #endif
 
@@ -432,6 +462,7 @@ void full_node::stop() {
 void full_node::join() {
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
+    compact_block_relay_.reset();
 #endif
 
     // Now that run() has exited (all coroutines done), it's safe to stop the chain.

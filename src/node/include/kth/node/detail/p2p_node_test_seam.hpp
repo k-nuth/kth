@@ -49,6 +49,15 @@ struct p2p_node_test_seam {
     static ::asio::awaitable<void> refresh_fee_filter(p2p_node& target) {
         return target.refresh_fee_filter();
     }
+
+    static bool queue_peer(p2p_node& target, network::peer_session::ptr peer) {
+        return target.new_peer_channel_->try_send(std::error_code{},
+            peer_event{std::move(peer), peer_direction::outbound, nullptr});
+    }
+
+    static size_t compact_announcer_count(p2p_node const& target) {
+        return target.compact_announcers_.load();
+    }
 };
 
 } // namespace kth::node::detail

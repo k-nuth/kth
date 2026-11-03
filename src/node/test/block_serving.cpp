@@ -4,6 +4,9 @@
 
 #include <test_helpers.hpp>
 
+#include <chrono>
+#include <future>
+
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
@@ -64,8 +67,26 @@ struct served_chain {
     domain::message::block::const_ptr serve(hash_digest const& hash) {
         ::asio::io_context io;
         auto result = ::asio::co_spawn(io, node::servable_block(chain(), hash), ::asio::use_future);
-        io.run();
+        io.run_for(std::chrono::seconds(5));
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
         return result.get();
+    }
+
+    std::optional<domain::message::compact_block> compact(hash_digest const& hash) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, node::servable_compact_block(chain(), hash), ::asio::use_future);
+        io.run_for(std::chrono::seconds(5));
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        return result.get();
+    }
+
+    void store_only(domain::chain::block const& block, uint32_t height) {
+        auto const light = test::to_light(block);
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, chain().store_block(light, height), ::asio::use_future);
+        io.run_for(std::chrono::seconds(5));
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        REQUIRE(result.get() == error::success);
     }
 
     hash_digest hash(size_t height) const { return trunk[height - 1].hash(); }
@@ -139,4 +160,67 @@ TEST_CASE("only stored blocks not known invalid are served", "[block_serving]") 
     index.add_status(first, blockchain::header_status::failed_child);
     CHECK_FALSE(served.serve(served.hash(1)));
     CHECK(served.serve(served.hash(3)));
+}
+
+TEST_CASE("compact replies prefill only the coinbase and name the remaining transactions", "[block_serving][compact_blocks]") {
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const extra = test::coinbase_tx(1, 1, 1);
+    domain::message::block const block{genesis.header(), {genesis.transactions().front(), extra}};
+    auto const compact = node::compact_block_reply(block);
+    REQUIRE(compact);
+    CHECK(domain::chain::hash(compact->header()) == block.hash());
+    REQUIRE(compact->transactions().size() == 1);
+    CHECK(compact->transactions().front().index() == 0);
+    CHECK(compact->transactions().front().transaction() == block.transactions().front());
+    REQUIRE(compact->short_ids().size() == 1);
+    CHECK(compact->short_ids().front()
+        == domain::message::compact_short_id(domain::message::hash(*compact), extra.hash()));
+    CHECK_FALSE(node::compact_block_reply(domain::message::block{}));
+}
+
+TEST_CASE("compact serving is restricted to the connected active chain", "[block_serving][compact_blocks]") {
+    served_chain served;
+    auto const compact = served.compact(served.hash(3));
+    REQUIRE(compact);
+    CHECK(domain::chain::hash(compact->header()) == served.hash(3));
+    served.store_only(served.trunk[3], 4);
+    REQUIRE(served.serve(served.hash(4)));
+    CHECK_FALSE(served.compact(served.hash(4)));
+    served.store_only(served.side[0], 2);
+    REQUIRE(served.serve(served.side[0].hash()));
+    CHECK_FALSE(served.compact(served.side[0].hash()));
+    CHECK_FALSE(served.compact(null_hash));
+    auto& index = served.chain().headers();
+    index.add_status(index.find(served.hash(2)), blockchain::header_status::failed_valid);
+    CHECK_FALSE(served.compact(served.hash(2)));
+    // Header-chain membership alone cannot vouch for the connected branch.
+    index.active_set_tip(index.find(served.side[0].hash()));
+    CHECK_FALSE(served.compact(served.side[0].hash()));
+}
+
+TEST_CASE("blocktxn replies preserve requested positions and refuse indexes outside the stored block", "[block_serving][compact_blocks]") {
+    auto const genesis = domain::chain::block::genesis_regtest();
+    domain::message::block const block{genesis.header(), {
+        genesis.transactions().front(), test::coinbase_tx(1, 1, 1), test::coinbase_tx(2, 2, 2)}};
+    auto const request = domain::message::get_block_transactions::create(block.hash(), {0, 2});
+    REQUIRE(request);
+    auto const reply = node::block_transactions_reply(block, *request);
+    REQUIRE(reply);
+    CHECK(reply->block_hash() == block.hash());
+    REQUIRE(reply->transactions().size() == 2);
+    CHECK(reply->transactions()[0] == block.transactions()[0]);
+    CHECK(reply->transactions()[1] == block.transactions()[2]);
+
+    auto const empty = domain::message::get_block_transactions::create(block.hash(), {});
+    REQUIRE(empty);
+    auto const empty_reply = node::block_transactions_reply(block, *empty);
+    REQUIRE(empty_reply);
+    CHECK(empty_reply->transactions().empty());
+
+    auto const past_end = domain::message::get_block_transactions::create(block.hash(), {0, 3});
+    REQUIRE(past_end);
+    CHECK_FALSE(node::block_transactions_reply(block, *past_end));
+    auto const wrong_hash = domain::message::get_block_transactions::create(null_hash, {0});
+    REQUIRE(wrong_hash);
+    CHECK_FALSE(node::block_transactions_reply(block, *wrong_hash));
 }

@@ -446,6 +446,14 @@ infrastructure::config::checkpoint p2p_node::top_block() const {
     return top_block_.load();
 }
 
+void p2p_node::set_compact_block_offer(compact_block_offer offer) {
+    compact_block_offer_ = std::move(offer);
+}
+
+void p2p_node::set_block_transactions_offer(block_transactions_offer offer) {
+    block_transactions_offer_ = std::move(offer);
+}
+
 void p2p_node::set_fee_filter_source(std::function<uint64_t()> source) {
     fee_filter_source_ = std::move(source);
     advertised_fee_filter_ = fee_filter();
@@ -628,6 +636,17 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
         }
         return true;
     }
+    if (command == domain::message::send_compact::command) {
+        // Consumed either way, as sendheaders is. A version this node does not
+        // implement fails the parse or is ignored inside note_sendcmpct, and
+        // the preference already stored stays.
+        byte_reader reader(raw.payload);
+        auto parsed = domain::message::send_compact::from_data(reader, peer->negotiated_version());
+        if (parsed && reader.remaining_size() == 0) {
+            peer->note_sendcmpct(parsed->high_bandwidth_mode(), parsed->version());
+        }
+        return true;
+    }
     if (command == domain::message::block::command) {
         byte_reader reader(raw.payload);
         auto header = domain::chain::header::from_data(reader);
@@ -642,13 +661,36 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
         return true;
     }
     if (command == domain::message::compact_block::command) {
-        // BIP152 announcement. Its first field is the block header, which is
-        // all this needs: the compact body is not reconstructed and no BIP152
-        // support is implied. These arrive because we asked for them —
-        // `sendcmpct(true, 1)` goes out right after the handshake.
+        // During initial sync, and whenever nobody is reconstructing, only the
+        // header is taken. A peer that is caught up and offered a block on the
+        // tip gets the body rebuilt instead, and the header is not ingested:
+        // ingesting it would open a body download for a block this node is
+        // about to connect itself.
+        if (compact_block_offer_) {
+            byte_reader reader(raw.payload);
+            auto parsed = domain::message::compact_block::from_data(reader, peer->negotiated_version());
+            if (parsed && reader.remaining_size() == 0) {
+                // Record the source before the offer, so an announcement of a
+                // block this peer just handed us is not echoed to it.
+                peer->remember_block(domain::chain::hash(parsed->header()));
+                if (compact_block_offer_(peer, *parsed)) {
+                    return false;
+                }
+            }
+        }
         ingest_compact_block(peer, raw);
         // Observed, not consumed: a handler registered for `cmpctblock` still
         // sees it.
+        return false;
+    }
+    if (command == domain::message::block_transactions::command) {
+        if (block_transactions_offer_) {
+            byte_reader reader(raw.payload);
+            auto parsed = domain::message::block_transactions::from_data(reader, peer->negotiated_version());
+            if (parsed && reader.remaining_size() == 0 && block_transactions_offer_(peer, *parsed)) {
+                return true;
+            }
+        }
         return false;
     }
     if (command == domain::message::inventory::command) {
@@ -1479,6 +1521,14 @@ void p2p_node::wake_status_task() noexcept {
             direction == peer_direction::inbound ? "in" : "out",
             peer->authority(), peer_task_counter_.fetch_add(1));
         peer_tasks.spawn(task_name, [this, peer, direction, response_channel]() -> ::asio::awaitable<void> {
+            bool compact_announcer = false;
+            struct release_announcer {
+                std::atomic<size_t>& count;
+                bool& acquired;
+                ~release_announcer() {
+                    if (acquired) count.fetch_sub(1);
+                }
+            } const release{compact_announcers_, compact_announcer};
             try {
                 co_await (
                     [&]() -> ::asio::awaitable<void> {
@@ -1542,24 +1592,28 @@ void p2p_node::wake_status_task() noexcept {
                         peer_notification_channel_->try_send(std::error_code{},
                             peer_notification{peer, peer_event_type::connected});
 
-                        // Send initial ping to get latency data
-                        {
-                            auto const ping_nonce = generate_ping_nonce();
-                            domain::message::ping ping_msg(ping_nonce);
-                            auto ec = co_await peer->send(ping_msg);
-                            if (ec == error::success) {
-                                peer->record_ping_sent(ping_nonce);
-                            }
-                        }
-
                         // Announce our capabilities right after the handshake,
                         // the way BCHN does: prefer header announcements, offer
                         // compact blocks (BIP-152 v1), and advertise our relay
                         // fee filter, the floor this node admits at, so peers
                         // send what it takes and nothing it refuses. Best-effort.
                         co_await peer->send(domain::message::send_headers{});
-                        co_await peer->send(domain::message::send_compact(true, 1));
+                        if (peer->negotiated_version() >= domain::message::send_compact::version_minimum) {
+                            auto count = compact_announcers_.load();
+                            while (count < 3 && ! compact_announcers_.compare_exchange_weak(count, count + 1)) {}
+                            compact_announcer = count < 3;
+                            co_await peer->send(domain::message::send_compact(compact_announcer, 1));
+                        }
                         co_await peer->send(domain::message::fee_filter{fee_filter()});
+
+                        // Finish compact version negotiation before the first ping.
+                        {
+                            auto const ping_nonce = generate_ping_nonce();
+                            auto const ec = co_await peer->send(domain::message::ping(ping_nonce));
+                            if (ec == error::success) {
+                                peer->record_ping_sent(ping_nonce);
+                            }
+                        }
 
                         // Send success response to caller
                         if (response_channel) {

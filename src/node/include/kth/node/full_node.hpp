@@ -47,6 +47,7 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/compact_block_relay.hpp>
 #include <kth/node/transaction_relay.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
@@ -212,6 +213,7 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
     void handle_connected(uint32_t first, uint32_t last);
+    ::asio::awaitable<void> announce_connected(domain::message::header::list incoming);
 #endif
 
     // Configuration references (stored in configuration object)
@@ -227,6 +229,8 @@ private:
     std::unique_ptr<detail::block_relay_state> block_relay_;
     // Present when the node relays transactions (network.relay_transactions).
     std::unique_ptr<transaction_relay> relay_;
+    // cmpctblock reconstruction. Offers are installed before any peer exists.
+    std::unique_ptr<compact_block_relay> compact_block_relay_;
 #endif
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.

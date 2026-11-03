@@ -518,6 +518,23 @@ void peer_session::set_wants_headers(bool value) {
     wants_headers_.store(value, std::memory_order_relaxed);
 }
 
+void peer_session::note_sendcmpct(bool high_bandwidth, uint64_t version) {
+    // Unsupported versions leave the negotiated encoding and preference alone.
+    if (version != 1) {
+        return;
+    }
+    supports_compact_blocks_.store(true, std::memory_order_relaxed);
+    wants_high_bandwidth_compact_.store(high_bandwidth, std::memory_order_relaxed);
+}
+
+bool peer_session::supports_compact_blocks() const {
+    return supports_compact_blocks_.load(std::memory_order_relaxed);
+}
+
+bool peer_session::wants_high_bandwidth_compact() const {
+    return wants_high_bandwidth_compact_.load(std::memory_order_relaxed);
+}
+
 bool peer_session::knows_block(hash_digest const& hash) const {
     std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
     return std::find(known_blocks_.begin(), known_blocks_.end(), hash) != known_blocks_.end();

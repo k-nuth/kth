@@ -1582,10 +1582,14 @@ static
 
             if (auto* submitted = std::get_if<block_submission>(&event)) {
                 // A block the node was handed, checked against the connected tip.
-                // Taken only when it is the next block and nothing else is under
-                // way: no header above the stored bodies and no range downloading,
-                // or a peer's block could be stored at the same height.
-                bool const at_tip = headers_synced_to == blocks_synced_to
+                // A compact body may follow its already-known header. Take it
+                // only before a body range opens, so two writers cannot store
+                // the same height through competing paths.
+                auto const known = organizer.index().find(submitted->block->hash());
+                bool const known_next = headers_synced_to == blocks_synced_to + 1
+                    && known != blockchain::header_index::null_index
+                    && organizer.index().active_at(int32_t(submitted->height)) == known;
+                bool const at_tip = (headers_synced_to == blocks_synced_to || known_next)
                     && submitted->height == size_t(blocks_synced_to) + 1
                     && ( ! slow_sync_end || *slow_sync_end <= blocks_synced_to);
                 if (submission_pending || ! at_tip) {
@@ -1760,7 +1764,11 @@ static
                 if (result->submission) {
                     submission_pending = false;
                     auto const& submitted = *result->submission;
-                    if (result->count == 1 && result->height == submitted.height) {
+                    auto const known = organizer.index().find(submitted.block->hash());
+                    bool const active = known != blockchain::header_index::null_index
+                        && organizer.index().active_at(int32_t(submitted.height)) == known;
+                    if (active && result->height == submitted.height
+                        && ( ! result->result || result->result == error::stale_chain)) {
                         // Stored as a downloaded chunk of one, under the current
                         // generation; the UTXO build connects it from there.
                         spdlog::info("[sync_coordinator] Submitted block {} accepted at {}",

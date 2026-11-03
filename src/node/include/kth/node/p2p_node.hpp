@@ -266,6 +266,18 @@ public:
     /// Set before run().
     void set_fee_filter_source(std::function<uint64_t()> source);
 
+    /// Called from the read loop, on the peer's strand, and must not wait.
+    /// True means this cmpctblock was taken for reconstruction: its header is
+    /// not submitted to the header ingest. False, or no offer, leaves today's
+    /// behaviour, which is the header alone.
+    using compact_block_offer = std::function<bool(peer_session::ptr const&, domain::message::compact_block const&)>;
+    void set_compact_block_offer(compact_block_offer offer);
+
+    /// True means a reconstruction was waiting for this blocktxn and has it.
+    /// False, or no offer, leaves the message for whatever else is registered.
+    using block_transactions_offer = std::function<bool(peer_session::ptr const&, domain::message::block_transactions const&)>;
+    void set_block_transactions_offer(block_transactions_offer offer);
+
     /// Register a message handler injected by the node. This is how chain-backed
     /// replies (e.g. the BIP-35 `mempool` -> inv) are served: the node owns the
     /// bridge to the blockchain and supplies the handler, so p2p_node itself
@@ -326,8 +338,11 @@ public:
     // arrive on several peer strands at once. Its channel is only a doorbell.
 
     /// Observe block messages before anything else sees them. `sendheaders`
-    /// sets this peer's preference, and `headers` goes to the header ingest;
-    /// both are consumed. The other block forms carry on to the dispatcher.
+    /// and `sendcmpct` set this peer's preferences and are consumed. `headers`
+    /// goes to the header ingest and is consumed. `cmpctblock` is reconstructed
+    /// when an offer takes it, and otherwise contributes its header; either way
+    /// it carries on to the dispatcher. `blocktxn` is consumed only when a
+    /// reconstruction is waiting for it.
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 
@@ -569,6 +584,9 @@ private:
     ::asio::steady_timer status_timer_{status_strand_};
 
     std::function<uint64_t()> fee_filter_source_;
+    compact_block_offer compact_block_offer_;
+    block_transactions_offer block_transactions_offer_;
+    std::atomic<size_t> compact_announcers_{0};
 
     /// The fee filter last sent to every peer, and when. Status strand only,
     /// after set_fee_filter_source.

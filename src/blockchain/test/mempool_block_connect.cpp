@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 
 #include <vector>
+#include <unordered_map>
 
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/domain.hpp>
@@ -237,4 +238,62 @@ TEST_CASE("the mempool update refuses to run under the UTXO window",
     // does its work.
     CHECK_FALSE(chain.mempool_remove_for_block(byte_span{raw.data(), raw.size()}));
     CHECK_FALSE(pool.entry(confirmed->hash()));
+}
+
+TEST_CASE("compact mempool fill preserves absolute indexes beyond 16 bits", "[mempool][bip152]") {
+    test::chain_fixture fixture("mp_compact_indexes");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto& pool = chain.mempool_ref();
+
+    auto const first = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto const last = as_ptr(make_tx({op(2, 0)}, 1, 2));
+    auto const outside = as_ptr(make_tx({op(3, 0)}, 1, 3));
+    auto const unmatched = as_ptr(make_tx({op(4, 0)}, 1, 4));
+    REQUIRE(pool.add(entry_for(first, 1)));
+    REQUIRE(pool.add(entry_for(last, 2)));
+    REQUIRE(pool.add(entry_for(outside, 3)));
+    REQUIRE(pool.add(entry_for(unmatched, 4)));
+
+    domain::message::compact_block const compact(header{}, 42, {}, {});
+    auto const key = domain::message::hash(compact);
+    std::unordered_map<uint64_t, size_t> const slots{
+        {domain::message::compact_short_id(key, first->hash()), 1},
+        {domain::message::compact_short_id(key, last->hash()), 70000},
+        {domain::message::compact_short_id(key, outside->hash()), 70001}};
+    REQUIRE(slots.size() == 3);
+    transaction::list available(70001, transaction::null());
+    auto const coinbase = make_tx({output_point{null_hash, point::null_index}}, 1, 99);
+    available.front() = coinbase;
+    size_t count = 0;
+    REQUIRE_FALSE(chain.fill_tx_list_from_mempool(compact, count, available, slots));
+    REQUIRE(count == 2);
+    REQUIRE(available.front() == coinbase);
+    REQUIRE(available.at(1) == *first);
+    REQUIRE(available.at(70000) == *last);
+    REQUIRE(available.at(2).is_null());
+}
+
+TEST_CASE("compact mempool fill clears a slot with multiple candidates once", "[mempool][bip152]") {
+    test::chain_fixture fixture("mp_compact_collision");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto& pool = chain.mempool_ref();
+    domain::message::compact_block const compact(header{}, 42, {}, {});
+    auto const key = domain::message::hash(compact);
+    std::unordered_map<uint64_t, size_t> slots;
+    for (uint64_t tag = 1; tag <= 3; ++tag) {
+        auto const tx = as_ptr(make_tx({op(tag, 0)}, 1, tag));
+        REQUIRE(pool.add(entry_for(tx, tag)));
+        // Put candidates in the same slot to exercise ambiguity without
+        // searching for a 48-bit SipHash collision in the test.
+        REQUIRE(slots.emplace(domain::message::compact_short_id(key, tx->hash()), 1).second);
+    }
+    transaction::list available(2, transaction::null());
+    size_t count = 0;
+    REQUIRE(chain.fill_tx_list_from_mempool(compact, count, available, slots));
+    REQUIRE(count == 0);
+    REQUIRE(available.at(1).is_null());
 }

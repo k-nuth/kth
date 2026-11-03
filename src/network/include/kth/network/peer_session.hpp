@@ -359,6 +359,18 @@ public:
     bool wants_headers() const;
     void set_wants_headers(bool value);
 
+    /// BIP152 sendcmpct. A version other than 1 is ignored. Version 1 records
+    /// the announce flag, including a later message that turns it off.
+    void note_sendcmpct(bool high_bandwidth, uint64_t version);
+
+    [[nodiscard]]
+    bool supports_compact_blocks() const;
+
+    /// True only after sendcmpct(true, 1). High-bandwidth compact announcements
+    /// go to these peers and to no others.
+    [[nodiscard]]
+    bool wants_high_bandwidth_compact() const;
+
     static constexpr size_t known_block_capacity = 128;
 
     [[nodiscard]]
@@ -466,6 +478,8 @@ private:
     std::atomic<bool> wants_addrv2_{false};
 
     std::atomic<bool> wants_headers_{false};
+    std::atomic<bool> supports_compact_blocks_{false};
+    std::atomic<bool> wants_high_bandwidth_compact_{false};
     mutable std::mutex known_blocks_mutex_;
     std::deque<hash_digest> known_blocks_;
 

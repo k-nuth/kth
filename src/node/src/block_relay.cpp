@@ -4,6 +4,7 @@
 
 #include <kth/node/block_relay.hpp>
 
+#include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
 
@@ -25,7 +26,7 @@ domain::message::header::list connected_block_headers(blockchain::header_index c
 
 block_announcement announce_blocks(network::peer_session& peer,
     domain::message::header::list const& incoming, bool caught_up,
-    network::peer_session const* source) {
+    network::peer_session const* source, domain::message::compact_block const* compact) {
     if ( ! caught_up || incoming.empty() || &peer == source || peer.stopped()) {
         return block_announcement::none;
     }
@@ -34,6 +35,19 @@ block_announcement announce_blocks(network::peer_session& peer,
     if (peer.knows_block(tip)) {
         return block_announcement::none;
     }
+
+    // Compact announcements extend a parent the peer knows by one block.
+    // A full queue drops this announcement without recording block knowledge.
+    if (compact != nullptr && incoming.size() == 1 && peer.wants_high_bandwidth_compact()
+        && peer.knows_block(incoming.front().previous_block_hash())
+        && domain::chain::hash(compact->header()) == tip) {
+        if ( ! peer.try_send(*compact)) {
+            return block_announcement::none;
+        }
+        peer.remember_block(tip);
+        return block_announcement::compact;
+    }
+
     bool const use_headers = peer.wants_headers() && incoming.size() <= 8 &&
         peer.knows_block(incoming.front().previous_block_hash());
 
@@ -75,9 +89,9 @@ block_announcement announce_blocks(network::peer_session& peer,
 }
 
 ::asio::awaitable<void> announce_blocks(network::peer_manager& peers,
-    domain::message::header::list incoming) {
+    domain::message::header::list incoming, std::shared_ptr<domain::message::compact_block const> compact) {
     for (auto const& peer : co_await peers.all()) {
-        (void)announce_blocks(*peer, incoming, true);
+        (void)announce_blocks(*peer, incoming, true, nullptr, compact.get());
     }
     co_return;
 }
