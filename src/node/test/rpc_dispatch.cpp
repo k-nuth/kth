@@ -8,6 +8,10 @@
 #include "sync_harness.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <kth/node/detail/scope_action.hpp>
 #include <string>
 #include <type_traits>
 
@@ -987,4 +991,87 @@ TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long 
         INFO(normal);
         CHECK(normal.find(R"("longpollid")") == std::string::npos);
     }
+}
+
+TEST_CASE("getblockchaininfo disk size counts only block and undo regular files", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_disk_size");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto size = [&]() {
+        simdjson::ondemand::parser parser;
+        auto const raw = blockchain_info(fixture.chain());
+        simdjson::padded_string padded(raw);
+        uint64_t value = 0;
+        simdjson::ondemand::document document;
+        REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+        REQUIRE(document["result"]["size_on_disk"].get_uint64().get(value) == simdjson::SUCCESS);
+        return value;
+    };
+    auto const before = size();
+    auto const blocks = fixture.dir() / "blocks";
+    auto make_file = [&](std::filesystem::path const& path, uint64_t bytes) {
+        auto* file = std::fopen(path.string().c_str(), "wb");
+        REQUIRE(file != nullptr);
+        REQUIRE(std::fclose(file) == 0);
+        std::filesystem::resize_file(path, bytes);
+    };
+    make_file(blocks / "blk99999.dat", 11);
+    make_file(blocks / "rev100000.dat", 7);
+    make_file(blocks / "notes.txt", 100);
+    make_file(blocks / "blk00001.dat.bak", 200);
+    make_file(blocks / "blkabcde.dat", 300);
+    make_file(blocks / "blk1234.dat", 400);
+    std::filesystem::create_directory(blocks / "blk12345.dat");
+#if ! defined(_WIN32)
+    make_file(fixture.dir() / "external.dat", 500);
+    std::filesystem::create_symlink(fixture.dir() / "external.dat", blocks / "rev99999.dat");
+#endif
+    REQUIRE(size() == before + 18);
+}
+
+TEST_CASE("getblockchaininfo reports a disk scan failure rather than zero", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_disk_size_error");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const blocks = fixture.dir() / "blocks";
+    auto const saved = fixture.dir() / "saved-blocks";
+    // Genesis-only fixtures have no open block/undo files (also on Windows).
+    REQUIRE(std::filesystem::is_empty(blocks));
+    std::filesystem::rename(blocks, saved);
+    node::detail::scope_action restore([&]() { std::filesystem::rename(saved, blocks); }, true);
+    auto const raw = blockchain_info(fixture.chain());
+    // Restore the open store's paths before checking the RPC observation.
+    restore.run();
+    REQUIRE(std::filesystem::is_directory(blocks));
+    REQUIRE(raw.find(R"("code":-32603)") != std::string::npos);
+    REQUIRE(raw.find(R"("result":null)") != std::string::npos);
+}
+
+TEST_CASE("getblockchaininfo uses the active header tip while blocks are behind", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_headers_ahead", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& index = fixture.chain().headers();
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 2; ++height) {
+        domain::chain::header header{1u, previous, null_hash, 1296688602u + height, 0x207fffffu, height};
+        previous = domain::chain::hash(header);
+        auto const added = index.add(previous, header);
+        REQUIRE(added.inserted);
+        index.active_push(added.index);
+    }
+    // This is the header-only reception state: no connected block publication.
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 0u);
+    REQUIRE(index.active_tip_height() == 2);
+    auto const raw = blockchain_info(fixture.chain());
+    REQUIRE(raw.find(R"("blocks":0)") != std::string::npos);
+    REQUIRE(raw.find(R"("headers":2)") != std::string::npos);
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(raw);
+    simdjson::ondemand::document document;
+    REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+    double progress = 1.0;
+    REQUIRE(document["result"]["verificationprogress"].get_double().get(progress) == simdjson::SUCCESS);
+    REQUIRE(progress == 0.0);
+    REQUIRE(raw.find(R"("initialblockdownload":true)") != std::string::npos);
 }

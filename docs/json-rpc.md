@@ -70,7 +70,7 @@ counterpart.
 | `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
-| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `get_last_heights()` + `synchronization()` + `headers()` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
@@ -165,7 +165,10 @@ view, so they always describe the same tip.
   left out while the header index cannot name the tip.
 - `size_on_disk` is the size of the block and undo files as they are on disk,
   including the space each file has preallocated for the blocks to come (block
-  files grow in 128 MiB chunks).
+  files grow in 128 MiB chunks). Only regular `blk`/`rev` files with numbered
+  `.dat` names are counted; symlinks and unrelated files are excluded. A scan
+  failure returns an RPC error instead of a partial total. The scan runs on
+  the chain work pool rather than the network/RPC executor.
 - `pruned` is not reported.
 
 ## getchaintips

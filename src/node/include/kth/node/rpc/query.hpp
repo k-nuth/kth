@@ -41,8 +41,8 @@ std::string block_to_hex(domain::chain::block const& block);
 // verbose=false).
 std::string header_to_hex(domain::chain::header const& header);
 
-// The getblockchaininfo fields. The tip fields (blocks through chain_work) are
-// read from one published chain view, so that they describe one chain.
+// The connected tip fields use one published chain view. The header height
+// is captured separately from the active header chain.
 struct blockchain_info {
     std::string_view chain;
     size_t blocks;                  // connected tip height
