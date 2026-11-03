@@ -7,6 +7,8 @@
 #define KTH_DOMAIN_WALLET_CASHADDR_HPP_
 
 #include <cstdint>
+#include <kth/infrastructure/expect.hpp>
+#include <string_view>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,10 +17,15 @@
 
 namespace kth::domain::wallet::cashaddr {
 
-std::string encode(std::string_view prefix, data_chunk const& payload);
-std::pair<std::string, data_chunk> decode(std::string const& str, std::string const& default_prefix);
+constexpr expect<std::pair<std::string, data_chunk>>
+decode_checked(std::string_view str, std::string_view default_prefix);
+
+constexpr std::string encode(std::string_view prefix, data_chunk const& payload);
+constexpr std::pair<std::string, data_chunk> decode(std::string_view str, std::string_view default_prefix);
 
 } // namespace kth::domain::wallet::cashaddr
+
+#include <kth/domain/impl/wallet/cashaddr.ipp>
 
 #endif /* KTH_DOMAIN_WALLET_CASHADDR_HPP_ */
 

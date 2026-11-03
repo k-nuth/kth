@@ -65,7 +65,7 @@ KI_API std::expected<data_chunk, base58_errc> decode_base58(std::string_view in)
  */
 template <size_t Size>
 [[nodiscard]]
-std::expected<byte_array<Size>, base58_errc> decode_base58(std::string_view in);
+constexpr std::expected<byte_array<Size>, base58_errc> decode_base58(std::string_view in);
 
 // Compile-time upper bound on the number of bytes decoded from `chars`
 // base58 characters. `log(58)/log(256) ≈ 0.732487`, so we take the

@@ -17,6 +17,7 @@
 
 #include <kth/infrastructure/compat.h>
 #include <kth/infrastructure/compat.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/error.hpp>

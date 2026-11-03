@@ -288,6 +288,7 @@ set(kth_sources ${kth_sources} ${kth_sources_just_knuth})
 set(kth_headers
     include/kth/infrastructure/compiler_constraints.hpp
     include/kth/infrastructure/compat.h
+    include/kth/infrastructure/expect.hpp
     include/kth/infrastructure/compat.hpp
     include/kth/infrastructure/constants.hpp
     include/kth/infrastructure/concepts.hpp
