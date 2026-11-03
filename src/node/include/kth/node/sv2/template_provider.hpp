@@ -18,13 +18,15 @@
 
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
+#include <kth/domain/chain/script.hpp>
+#include <kth/domain/config/network.hpp>
 #include <kth/node/settings.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/messages.hpp>
 #include <kth/node/sv2/noise_credentials.hpp>
 
-// Stratum V2 Template Provider (sv2-spec 07, Template Distribution Protocol):
-// the listener, connection setup and block template flow, over the authenticated
+// Stratum V2 Template Provider and Mining Protocol listener (sv2-spec 05, 07):
+// connection setup and block template flow, over the authenticated
 // Noise transport (sv2-spec 04) unless explicitly disabled by the operator.
 
 namespace kth::blockchain { struct block_chain; }
@@ -93,12 +95,13 @@ private:
     uint64_t stale_through_ = 0;
 };
 
-// Accepts Template Provider clients on sv2.bind:sv2.port. Like the JSON-RPC
-// server it runs on the node's executor, with one coroutine per connection,
-// and every socket is owned by one strand.
+// Accepts Template Distribution and Mining Protocol clients on sv2.bind:sv2.port.
+// Like the JSON-RPC server it runs on the node's executor, with one coroutine
+// per connection, and every socket is owned by one strand.
 struct template_provider {
     template_provider(sv2_settings const& settings, ::asio::any_io_executor executor,
-        blockchain::block_chain& chain);
+        blockchain::block_chain& chain,
+        domain::config::network network = domain::config::network::mainnet);
 
     // Bind the listener and serve connections until stop(). Intended to be
     // co_spawned. Returns on a bind error, or once every connection has ended
@@ -118,7 +121,10 @@ private:
     ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
 
     sv2_settings const settings_;
+    domain::config::network const network_;
     blockchain::block_chain& chain_;
+    std::optional<domain::chain::script> payout_;
+    uint64_t next_salt_ = 1;
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;

@@ -297,11 +297,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
 
     // [sv2]
     app.add_option("--sv2.enabled", cfg.sv2.enabled,
-        "Enable the Stratum V2 Template Provider.");
+        "Enable the Stratum V2 listener.");
     app.add_option("--sv2.bind", cfg.sv2.bind,
-        "Address the Template Provider binds to (default 127.0.0.1).");
+        "Address the Stratum V2 listener binds to (default 127.0.0.1).");
     app.add_option("--sv2.port", cfg.sv2.port,
-        "TCP port for the Template Provider (default 8442).");
+        "TCP port for the Stratum V2 listener (default 8442).");
     app.add_option("--sv2.noise", cfg.sv2.noise,
         "Require the Noise handshake and encrypted transport (default true).");
     app.add_option("--sv2.static_key_file", cfg.sv2.static_key_file,
@@ -316,6 +316,10 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Lifetime in seconds of certificates signed at startup (default 2592000).");
     app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
         "Deadline in seconds for the complete Noise handshake (default 10).");
+    app.add_option("--sv2.mining.enabled", cfg.sv2.mining.enabled,
+        "Accept Mining Protocol clients on the Stratum V2 listener.");
+    app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
+        "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

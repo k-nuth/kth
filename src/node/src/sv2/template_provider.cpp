@@ -33,12 +33,15 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/compact.hpp>
+#include <kth/domain/chain/output.hpp>
 #include <kth/domain/machine/operation.hpp>
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/mining/block_submit.hpp>
+#include <kth/node/mining/work.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/mining_session.hpp>
 
 namespace kth::node::sv2 {
 
@@ -77,6 +80,17 @@ std::optional<uint32_t> unix_time() {
         std::chrono::system_clock::now().time_since_epoch()).count();
     if (now < 0 || now > std::numeric_limits<uint32_t>::max()) return std::nullopt;
     return static_cast<uint32_t>(now);
+}
+
+bool mining_setup(message_header const& header, byte_span payload) {
+    if (header.extension_type != 0 || header.msg_type != setup_connection::message_type
+        || header.msg_length != payload.size()) {
+        return false;
+    }
+    byte_reader source(payload);
+    auto const message = setup_connection::from_data(source);
+    return message && source.is_exhausted()
+        && message->protocol == setup_connection::protocol_mining;
 }
 
 std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr> const& txs) {
@@ -292,8 +306,10 @@ template_provider_session::result template_provider_session::process(
 }
 
 template_provider::template_provider(sv2_settings const& settings,
-    ::asio::any_io_executor executor, blockchain::block_chain& chain)
+    ::asio::any_io_executor executor, blockchain::block_chain& chain,
+    domain::config::network network)
     : settings_(settings)
+    , network_(network)
     , chain_(chain)
     , owner_(::asio::make_strand(executor))
     , stop_requests_(owner_, 1)
@@ -303,6 +319,8 @@ template_provider::template_provider(sv2_settings const& settings,
 ::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket) {
     using namespace ::asio::experimental::awaitable_operators;
 
+    // Taken before the first await so two connections cannot share a salt.
+    auto const connection_salt = next_salt_++;
     std::optional<noise_transport> transport;
     if (credentials_) {
         ::asio::steady_timer deadline(owner_);
@@ -419,6 +437,8 @@ template_provider::template_provider(sv2_settings const& settings,
             if (send_error) co_return;
         }
     };
+    std::optional<mining_session> miner;
+    bool decided = false;
     std::optional<hash_digest> sent_previous;
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
         auto const& constraints = *session.constraints();
@@ -438,6 +458,25 @@ template_provider::template_provider(sv2_settings const& settings,
         sent_previous = value->previous_block_hash;
         co_return session.set_template(std::move(*value));
     };
+    auto refresh_mining = [&]() -> ::asio::awaitable<template_provider_session::result> {
+        // Outputs are outside the fixed coinbase reserve. One payout output is
+        // what this connection will actually place in the coinbase.
+        domain::chain::output const payout_output(0, *payout_, std::nullopt);
+        auto const reserve = template_provider_session::coinbase_fixed_reserve
+            + uint64_t{payout_output.serialized_size(true)};
+        auto value = co_await chain_.fetch_mining_template(reserve, 0);
+        if ( ! value) {
+            spdlog::info("[sv2] No template yet ({}); waiting for the next tip",
+                value.error().message());
+            co_return template_provider_session::result{};
+        }
+        auto produced = miner->apply(std::move(*value));
+        template_provider_session::result out;
+        out.response = std::move(produced.response);
+        out.close = produced.close;
+        out.solution = produced.solution;
+        co_return out;
+    };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
         // Close both producers even when parsing, allocation or a chain call
         // throws. The group below joins them before any captured locals go.
@@ -447,15 +486,48 @@ template_provider::template_provider(sv2_settings const& settings,
                 ::asio::as_tuple(::asio::use_awaitable));
             if (error || input.kind == event_kind::end) co_return;
             auto const view = chain_.chain_view();
-            if (view) session.set_tip(view->tip_hash);
+            if (view) {
+                if (miner) miner->note_tip(view->tip_hash);
+                else session.set_tip(view->tip_hash);
+            }
 
             template_provider_session::result result;
             if (input.kind == event_kind::tip) {
-                if ( ! session.constraints() || (view && sent_previous == view->tip_hash)) continue;
-                result = co_await next_template();
+                if (miner) {
+                    if ( ! miner->needs_template()) continue;
+                    result = co_await refresh_mining();
+                } else {
+                    if ( ! session.constraints() || (view && sent_previous == view->tip_hash)) continue;
+                    result = co_await next_template();
+                }
             } else {
-                result = session.process(input.header, input.payload);
-                if (result.constraints_changed) result = co_await next_template();
+                if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
+                    miner.emplace(connection_salt, *payout_);
+                }
+                decided = true;
+                if (miner) {
+                    auto produced = miner->process(input.header, input.payload);
+                    result.response = std::move(produced.response);
+                    result.close = produced.close;
+                    result.solution = produced.solution;
+                    if (produced.wants_template) {
+                        auto const jobs = co_await refresh_mining();
+                        result.response.insert(result.response.end(),
+                            jobs.response.begin(), jobs.response.end());
+                        result.close = result.close || jobs.close;
+                        if (jobs.solution) result.solution = jobs.solution;
+                    }
+                } else {
+                    result = session.process(input.header, input.payload);
+                    if (result.constraints_changed) result = co_await next_template();
+                }
+            }
+            if (result.solution) {
+                // A miner that stops reading must not delay connecting a block
+                // while its share acknowledgement waits for socket space.
+                auto const outcome = co_await chain_.organize(result.solution);
+                spdlog::info("[sv2] Submitted block {}: {}",
+                    encode_hash(result.solution->hash()), outcome ? outcome.message() : "accepted");
             }
             if ( ! result.response.empty()) {
                 if (transport) {
@@ -477,11 +549,6 @@ template_provider::template_provider(sv2_settings const& settings,
                 if (write_error) co_return;
             }
             if (result.close) co_return;
-            if (result.solution) {
-                auto const outcome = co_await chain_.organize(result.solution);
-                spdlog::info("[sv2] Submitted block {}: {}",
-                    encode_hash(result.solution->hash()), outcome ? outcome.message() : "accepted");
-            }
         }
     };
     co_await (read_frames() && receive_tips() && dispatch());
@@ -514,6 +581,17 @@ void template_provider::stop() {
         spdlog::error("[sv2] invalid bind address '{}': {}", settings_.bind, ec.message());
         (void)listening_.try_send(ec, uint16_t{});
         co_return;
+    }
+
+    if (settings_.mining.enabled) {
+        std::string error;
+        auto const payout = mining::payout_from_address(settings_.mining.address, network_, error);
+        if ( ! payout) {
+            spdlog::error("[sv2] {}", error);
+            (void)listening_.try_send(std::make_error_code(std::errc::invalid_argument), uint16_t{});
+            co_return;
+        }
+        payout_ = payout->script;
     }
 
     if (settings_.noise) {
@@ -560,8 +638,9 @@ void template_provider::stop() {
         co_return;
     }
     (void)listening_.try_send(std::error_code{}, bound.port());
-    spdlog::info("[sv2] Template Provider listening on {}:{} ({})", settings_.bind,
-        bound.port(), settings_.noise ? "Noise" : "plaintext");
+    spdlog::info("[sv2] {} listening on {}:{} ({})",
+        settings_.mining.enabled ? "Template Provider and Mining Protocol" : "Template Provider",
+        settings_.bind, bound.port(), settings_.noise ? "Noise" : "plaintext");
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.

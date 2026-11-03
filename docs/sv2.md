@@ -1,8 +1,9 @@
-# Stratum V2 Template Provider
+# Stratum V2
 
 Knuth can serve block templates to Stratum V2 clients (a Job Declarator or a
-pool) over the Template Distribution Protocol. The provider is part of node
-core and does not need a build with JSON-RPC.
+pool) over the Template Distribution Protocol. It can also serve solo miners
+over the Mining Protocol on the same listener. Both are part of node core and
+do not need a build with JSON-RPC.
 
 ## Running
 
@@ -19,7 +20,7 @@ Every setting is also available on the command line with a `--` prefix.
 
 Clients complete the `Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256` handshake
 before sending `SetupConnection`. Both the six-byte frame header and every
-Template Distribution payload are authenticated and encrypted. The handshake
+protocol payload are authenticated and encrypted. The handshake
 deadline is `sv2.handshake_timeout_seconds` (default 10). A missing handshake or
 an authentication failure closes the connection; there is no plaintext fallback.
 
@@ -79,8 +80,9 @@ file loading requires POSIX file permissions.
 ## Template flow
 
 - Answers `SetupConnection` for the Template Distribution Protocol, version 2,
-  with `SetupConnection.Success`. Any other protocol, a version range without 2,
-  or a feature flag gets `SetupConnection.Error` and the connection is closed.
+  with `SetupConnection.Success`. Unsupported protocols, a version range without
+  2, or a Template Distribution feature flag get `SetupConnection.Error` and
+  the connection is closed.
   No Template Distribution flags are defined yet.
 - The client sends `CoinbaseOutputConstraints` right after setup. Each constraints
   message gets a `NewTemplate` for the current tip, followed by `SetNewPrevHash`
@@ -109,3 +111,97 @@ file loading requires POSIX file permissions.
   requires.
 - Closes the connection on a malformed frame, a message only a server sends, a
   message type the protocol does not define, or a client payload over 1 MiB.
+
+## Mining Protocol
+
+Mining is off by default. Enable it with `sv2.mining.enabled=true` and set
+`sv2.mining.address` to a full CashAddr, including the prefix for the node's
+network: `bitcoincash` on mainnet, `bchreg` on regtest, or `bchtest` on the test
+networks. A missing address, wrong prefix, invalid checksum, unsupported address
+type or disabled listener prevents startup. P2PKH, P2SH and P2SH32 destinations
+are supported, including their token-aware address forms. The address receives
+the full subsidy and transaction fees; `user_identity` is only a miner label.
+
+For example, on a regtest node, replace the address placeholder with your
+wallet's complete regtest CashAddr:
+
+```ini
+sv2.enabled        = true
+sv2.bind           = 127.0.0.1
+sv2.port           = 8442
+sv2.noise          = true
+sv2.mining.enabled = true
+sv2.mining.address = <your-bchreg-cashaddr>
+```
+
+Configure the miner with `stratum2+tcp://127.0.0.1:8442/<authority-public-key>`
+and the authority key printed by Knuth, as described above. It uses the same
+Noise handshake, keys, deadline and frame protection as Template Distribution.
+Plaintext still requires the explicit `sv2.noise=false` setting.
+
+- Mining `SetupConnection` uses protocol 0, version 2. Standard jobs and version
+  rolling requirements are supported. Work selection and unknown flags are
+  refused. Success flags are zero: the server accepts both channel types and
+  permits version rolling.
+- Standard channels receive `NewMiningJob` with a merkle root computed by the
+  node. Extended channels receive `NewExtendedMiningJob` with coinbase prefix
+  and suffix, the merkle branch, a unique extranonce prefix and 12 to 32 bytes
+  of miner-controlled extranonce space. Requests for more than 32 are refused.
+  Each channel has its own group ID; closing that ID closes its channel too.
+- The first job is a future job, followed by Mining Protocol `SetNewPrevHash`
+  to activate it. Every open channel receives fresh work when a tip connects.
+  Jobs from the previous tip are refused, including before replacement work
+  is available during a chain transition.
+- Jobs use the same `fetch_mining_template` transaction selection as Template
+  Distribution. The engine accepts a list of coinbase outputs; this server
+  supplies one payout output. BCH coinbases start with the BIP34 height push,
+  have no SegWit fields or witness commitment, and cannot create CashTokens.
+  Selected transactions retain their CashTokens outputs in ordinary BCH
+  serialization. A job generation value in the coinbase keeps replacement work
+  on the same tip distinct.
+- The initial target aims for one share per 20 seconds at `nominal_hash_rate`,
+  capped by the miner's `max_target`. A zero rate uses that maximum, which lets
+  regtest miners request easy shares. `UpdateChannel` can change the rate or
+  maximum; `SetTarget` announces a changed target for subsequent jobs. Already
+  activated jobs keep their target.
+- Shares must name the right channel type and active job, use exactly the
+  negotiated extranonce size, and hash at or below the job target. Version
+  rolling is limited to bits 5 through 28. The timestamp must be at least the
+  job's `ntime_start` and at most 7200 seconds above it (local policy).
+  Successful shares are acknowledged individually. A hash meeting the network
+  target is submitted through the same validation, connection and relay path
+  as Template Distribution's `SubmitSolution`.
+- Each connection allows 32 open channels and 1024 channel-open requests.
+  Client frames are limited to 1 MiB, and job and duplicate histories are
+  bounded. After 1024 accepted shares on one job, that channel receives fresh
+  work with a different coinbase, without waiting for the next tip. Previous
+  jobs become stale. A slow connection has its own bounded input queue; found
+  blocks are submitted before waiting for the miner to read their acknowledgements.
+
+Mining errors are printable strings (SV2 section 3.5 allows implementation
+specific codes):
+
+| Message | Code | Meaning |
+|---|---|---|
+| `SetupConnection.Error` | `protocol-version-mismatch` | The range excludes version 2. |
+| | `unsupported-feature-flags` | The error flags identify unsupported requirements. |
+| | `unsupported-protocol` | Mining is disabled or the protocol is unsupported. |
+| `OpenMiningChannel.Error` | `duplicate-request-id` | The request ID has already been used. |
+| | `too-many-channels` | The connection's channel limit was reached. |
+| | `min-extranonce-size-too-large` | The requested extranonce cannot fit. |
+| | `requires-standard-jobs` | This connection requested standard jobs only. |
+| `UpdateChannel.Error` | `invalid-channel-id` | No such channel is open. |
+| `SubmitShares.Error` | `invalid-channel-id` | No such channel is open. |
+| | `invalid-channel-type` | The submission type does not match the channel. |
+| | `invalid-job-id` | The job is unknown or no longer retained. |
+| | `stale-share` | A retained job has been invalidated. |
+| | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
+| | `invalid-ntime` | The timestamp is outside the job's bounds. |
+| | `invalid-version` | The miner changed bits outside the rolling mask. |
+| | `difficulty-too-low` | The header hash exceeds the job's share target. |
+| | `duplicate-share` | This proof of work was already accepted. |
+| | `share-limit` | The bounded share history is full; fresh work replaces this job. |
+
+Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
+zero), and server-only messages close the connection. Job Declaration, custom
+jobs, pool failover and Stratum V1 are separate features.

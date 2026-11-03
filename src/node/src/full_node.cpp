@@ -15,6 +15,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/mining/work.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -99,6 +100,11 @@ full_node::~full_node() {
     if (!stopped()) {
         co_return error::operation_failed;
     }
+    if (auto const reason = mining::mining_startup_reason(sv2_settings_, network_type_);
+            ! reason.empty()) {
+        spdlog::error("[node] {}", reason);
+        co_return error::operation_failed;
+    }
 #endif
 
     // Start the blockchain (pass disk magic for block file storage)
@@ -150,7 +156,7 @@ full_node::~full_node() {
 #if ! defined(__EMSCRIPTEN__)
     if (sv2_settings_.enabled) {
         template_provider_ = std::make_unique<sv2::template_provider>(
-            sv2_settings_, network_.thread_pool().get_executor(), chain_);
+            sv2_settings_, network_.thread_pool().get_executor(), chain_, network_type_);
     } else {
         spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
     }

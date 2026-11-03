@@ -91,6 +91,42 @@ TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][p
     }
 }
 
+TEST_CASE("sv2 mining settings survive network selection config and overrides", "[configuration tests][parser][sv2 mining]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled=true",
+        "--sv2.mining.enabled=true", "--sv2.mining.address", "bchreg:payout"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(7, argv, error));
+    CHECK(parser.configured.sv2.enabled);
+    CHECK(parser.configured.sv2.mining.enabled);
+    CHECK(parser.configured.sv2.mining.address == "bchreg:payout");
+
+    config_file file("sv2_mining", "sv2.enabled=true\nsv2.mining.enabled=true\n"
+        "sv2.mining.address=bchreg:configured");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    CHECK(from_file.configured.sv2.mining.enabled);
+    CHECK(from_file.configured.sv2.mining.address == "bchreg:configured");
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.mining.enabled);
+    CHECK(copied.sv2.mining.address == "bchreg:configured");
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.mining.enabled=false", "--sv2.mining.address", "bchreg:selected"};
+    REQUIRE(overridden.parse(8, override_argv, error));
+    CHECK_FALSE(overridden.configured.sv2.mining.enabled);
+    CHECK(overridden.configured.sv2.mining.address == "bchreg:selected");
+}
+
+TEST_CASE("sv2 mining enable option rejects an invalid boolean", "[configuration tests][parser][sv2 mining]") {
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    char const* argv[]{"kth", "--sv2.mining.enabled=invalid"};
+    CHECK_FALSE(parser.parse(2, argv, error));
+}
+
 TEST_CASE("sv2 Noise credentials survive config and command line parsing", "[configuration tests][parser][sv2 noise]") {
     config_file file("sv2_noise", "sv2.noise=false\nsv2.static_key_file=provider.key\n"
         "sv2.authority_key_file=authority.key\nsv2.certificate_file=provider.cert\n"

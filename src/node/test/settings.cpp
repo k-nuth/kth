@@ -26,6 +26,12 @@ TEST_CASE("sv2 settings default to disabled localhost listener with Noise", "[se
     REQUIRE(configuration.handshake_timeout_seconds == 10u);
 }
 
+TEST_CASE("sv2 mining defaults to disabled without a payout address", "[settings tests][sv2 mining]") {
+    node::sv2_settings const configuration;
+    CHECK_FALSE(configuration.mining.enabled);
+    CHECK(configuration.mining.address.empty());
+}
+
 TEST_CASE("settings construct default context expected", "[settings tests]") {
     node::settings configuration;
     REQUIRE(configuration.sync_peers == 0u);

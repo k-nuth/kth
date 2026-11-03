@@ -38,8 +38,16 @@ struct KND_API rpc_settings {
     uint32_t gbt_store_time;
 };
 
-/// Stratum V2 Template Provider settings. The listener is disabled by default.
+/// Stratum V2 listener settings. The listener is disabled by default.
+/// `mining` is the Mining Protocol on that same listener, also off by default.
 struct KND_API sv2_settings {
+    struct mining_settings {
+        mining_settings();
+
+        bool enabled;
+        std::string address;
+    };
+
     sv2_settings();
 
     bool enabled;
@@ -52,6 +60,7 @@ struct KND_API sv2_settings {
     std::string authority_public_key;
     uint32_t certificate_validity_seconds;
     uint32_t handshake_timeout_seconds;
+    mining_settings mining;
 };
 
 /// Common database configuration settings, properties not thread safe.
