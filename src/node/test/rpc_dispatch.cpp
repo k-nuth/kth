@@ -507,7 +507,17 @@ TEST_CASE("getnetworkhashps dispatch computes the rate over the connected chain"
     REQUIRE(rate("[2,-1]") == rate("[2,5]"));
     REQUIRE(rate("[2,99]") == rate("[2,5]"));
     REQUIRE(rate("[]") == Catch::Approx(5 * work / span(0, 5)));
-    REQUIRE(rate("[0]") == rate("[]"));
+    for (auto const* params : {"[0]", "[-1]"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("4", -8,
+            "getnetworkhashps requires a positive number of blocks"));
+    }
+    for (auto const* params : {"null", "{}", "5", R"("blocks")", "[2,-1,7]",
+         "[2147483648]", "[2,2147483648]", "[2,-2147483649]"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("4", -32602,
+            "getnetworkhashps takes [nblocks, height] as integers"));
+    }
     REQUIRE(request(R"(["x"])") == node::rpc::build_error("4", -32602,
         "getnetworkhashps takes [nblocks, height] as integers"));
 }
