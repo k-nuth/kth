@@ -110,6 +110,11 @@ TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
     node::mining::job_store jobs(1, 60);
     node::rpc::method_context context{fixture.chain(), jobs};
     node::rpc::dispatcher dispatcher;
+    // Custom methods are registered before the final built-in help snapshot.
+    dispatcher.add("custommethod", [](node::rpc::method_context&, node::rpc::request const&)
+        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+        co_return std::string("null");
+    });
     node::rpc::register_builtin_methods(dispatcher);
 
     auto request = [&](std::string const& params) {
@@ -140,21 +145,7 @@ TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
     REQUIRE(request(R"(["nosuchmethod"])") ==
         node::rpc::build_success("5", R"("help: unknown command: nosuchmethod")"));
 
-    // A method added after the built-in ones is listed and known too: help
-    // reads the dispatcher when it is called.
-    dispatcher.add("addedlater", [](node::rpc::method_context&, node::rpc::request const&)
-        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
-        co_return std::string("null");
-    });
-    REQUIRE(request(R"(["addedlater"])") == node::rpc::build_success("5", R"("addedlater")"));
-    REQUIRE(request("[]") == node::rpc::build_success("5", R"(")" + [&] {
-        std::string updated;
-        for (auto const& method : dispatcher.methods()) {
-            updated += (updated.empty() ? "" : "\\n") + method;
-        }
-        return updated;
-    }() + R"(")"));
-    REQUIRE(request("[]") != node::rpc::build_success("5", '"' + listing + '"'));
+    REQUIRE(request(R"(["custommethod"])") == node::rpc::build_success("5", R"("custommethod")"));
 }
 
 TEST_CASE("help dispatch rejects wrong argument types and excess arguments", "[rpc dispatch]") {
@@ -185,4 +176,53 @@ TEST_CASE("help dispatch rejects wrong argument types and excess arguments", "[r
         request(R"({"method":"help","params":[],"id":9})"));
     REQUIRE(request(R"({"method":"help","params":["help"],"id":null})") ==
         node::rpc::build_success("null", R"("help")"));
+}
+
+TEST_CASE("dispatcher reuses the prepared sorted method list", "[rpc dispatch]") {
+    node::rpc::dispatcher dispatcher;
+    auto handler = [](node::rpc::method_context&, node::rpc::request const&)
+        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+        co_return std::string("null");
+    };
+    dispatcher.add("z", handler);
+    dispatcher.add("a", handler);
+    auto const& names = dispatcher.methods();
+    REQUIRE(names == std::vector<std::string>{"a", "z"});
+    // Repeated reads must reuse the prepared storage, not allocate/copy it.
+    CHECK(dispatcher.methods().data() == names.data());
+    dispatcher.add("a", handler);
+    CHECK(dispatcher.methods() == std::vector<std::string>{"a", "z"});
+}
+
+TEST_CASE("help keeps prepared JSON current when methods are added or replaced", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_prepared_help");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    auto request = [&](std::string const& body) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    dispatcher.add(R"(a"b\c)", [](node::rpc::method_context&, node::rpc::request const&)
+        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+        co_return std::string("7");
+    });
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const listing = request(R"({"method":"help","params":[],"id":10})");
+    CHECK(listing.find(R"(a\"b\\c)") != std::string::npos);
+    REQUIRE(request(R"({"method":"help","params":["a\"b\\c"],"id":10})") ==
+        node::rpc::build_success("10", R"("a\"b\\c")"));
+    REQUIRE(request(R"({"method":"a\"b\\c","id":10})") == node::rpc::build_success("10", "7"));
+    dispatcher.add(R"(a"b\c)", [](node::rpc::method_context&, node::rpc::request const&)
+        -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+        co_return std::string("9");
+    });
+    CHECK(request(R"({"method":"help","params":[],"id":10})") == listing);
+    REQUIRE(request(R"({"method":"a\"b\\c","id":10})") == node::rpc::build_success("10", "9"));
+    REQUIRE(request(R"({"method":"help","params":["a\"b\\c"],"id":10})") ==
+        node::rpc::build_success("10", R"("a\"b\\c")"));
 }

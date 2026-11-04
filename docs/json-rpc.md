@@ -97,7 +97,9 @@ _More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
 
 `help` returns the methods this server answers, one per line. `help "<method>"`
 returns the method's name, or `help: unknown command: <method>` for a name it
-does not answer; there is no per-method help text yet. An omitted parameter
+does not answer; there is no per-method help text yet. Method names and JSON
+help results are prepared during registration. Custom methods must be
+registered before the built-ins, which install `help` last. An omitted parameter
 or an empty string lists all methods. Parameters must be an array containing
 at most one string; other types or extra arguments return invalid params.
 

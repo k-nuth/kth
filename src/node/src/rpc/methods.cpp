@@ -428,11 +428,15 @@ get_mempool_descendants(method_context& ctx, request const& req) {
     co_return render_hash_list(ctx.chain.get_mempool_descendants(*hash));
 }
 
-// help [command] -> the registered methods, or a named method. Registration
-// finishes before serving; the pinned dispatcher outlives its joined handlers.
+// Prepared method name / JSON result pairs, sorted by name.
+using help_response = std::pair<std::string, std::string>;
+
+// help [command] selects an immutable prepared result. The owning handler
+// and request outlive this coroutine; no dispatcher or mutable table is read.
 // C-API counterpart: none; it describes this server.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
-help(dispatcher const& d, request const& req) {
+help(std::string const& listing_json, std::vector<help_response> const& responses,
+     request const& req) {
     auto const invalid_params = [] {
         return kth::fail(make_error(error_code::invalid_params,
             "help requires [] or [command]"));
@@ -459,16 +463,15 @@ help(dispatcher const& d, request const& req) {
         }
     }
 
-    writer w;
     if (command.empty()) {
-        auto const commands = d.methods();
-        w.value(fmt::format("{}", fmt::join(commands, "\n")));
-    } else if (d.has(command)) {
-        // No listing allocation/sort for the common single-command probe.
-        w.value(command);
-    } else {
-        w.value(fmt::format("help: unknown command: {}", command));
+        co_return listing_json;
     }
+    auto const found = std::ranges::lower_bound(responses, command, {}, &help_response::first);
+    if (found != responses.end() && found->first == command) {
+        co_return found->second;
+    }
+    writer w;
+    w.value(fmt::format("help: unknown command: {}", command));
     co_return w.str();
 }
 
@@ -494,10 +497,25 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
 
-    // The list is read when help is called, so it holds every method the
-    // dispatcher has then, including any added after these.
-    d.add("help", [&d](method_context&, request const& req) {
-        return help(d, req);
+    // Help MUST be the last method registered: capture the completed catalog,
+    // including its own name, before any request can be served.
+    auto names = d.methods();
+    auto const position = std::ranges::lower_bound(names, std::string_view{"help"});
+    if (position == names.end() || *position != "help") {
+        names.insert(position, "help");
+    }
+    writer listing;
+    listing.value(fmt::format("{}", fmt::join(names, "\n")));
+    std::vector<help_response> responses;
+    responses.reserve(names.size());
+    for (auto const& name : names) {
+        writer individual;
+        individual.value(name);
+        responses.emplace_back(name, individual.str());
+    }
+    d.add("help", [listing_json = listing.str(), responses = std::move(responses)]
+        (method_context&, request const& req) {
+        return help(listing_json, responses, req);
     });
 }
 

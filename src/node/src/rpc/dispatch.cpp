@@ -14,21 +14,25 @@
 namespace kth::node::rpc {
 
 void dispatcher::add(std::string method, handler_fn handler) {
-    methods_.insert_or_assign(std::move(method), std::move(handler));
+    if (auto const found = methods_.find(method); found != methods_.end()) {
+        found->second = std::move(handler);
+        return;
+    }
+
+    // Prepare the sorted names before changing the table, so an allocation
+    // failure leaves the two in agreement.
+    auto names = method_names_;
+    names.insert(std::ranges::lower_bound(names, method), method);
+    methods_.emplace(std::move(method), std::move(handler));
+    method_names_.swap(names);
 }
 
 bool dispatcher::has(std::string_view method) const {
-    return methods_.find(std::string(method)) != methods_.end();
+    return methods_.find(method) != methods_.end();
 }
 
-std::vector<std::string> dispatcher::methods() const {
-    std::vector<std::string> names;
-    names.reserve(methods_.size());
-    for (auto const& [name, handler] : methods_) {
-        names.push_back(name);
-    }
-    std::ranges::sort(names);
-    return names;
+std::vector<std::string> const& dispatcher::methods() const noexcept {
+    return method_names_;
 }
 
 ::asio::awaitable<std::string>

@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_RPC_DISPATCH_HPP
 #define KTH_NODE_RPC_DISPATCH_HPP
 
+#include <cstddef>
 #include <expected>
 #include <functional>
 #include <string>
@@ -50,23 +51,31 @@ struct dispatcher {
     dispatcher(dispatcher const&) = delete;
     dispatcher& operator=(dispatcher const&) = delete;
 
-    // Complete registration before concurrent handle() calls begin.
+    // Complete registration before concurrent handle() calls begin. Install
+    // help last: its results capture the complete method catalog.
     void add(std::string method, handler_fn handler);
     [[nodiscard]] bool has(std::string_view method) const;
 
     // The registered method names, sorted.
-    [[nodiscard]] std::vector<std::string> methods() const;
+    [[nodiscard]] std::vector<std::string> const& methods() const noexcept;
 
     // Parse `body`, invoke the matching handler, and return the full response body.
     [[nodiscard]] ::asio::awaitable<std::string>
     handle(method_context& ctx, std::string_view body) const;
 
 private:
-    boost::unordered_flat_map<std::string, handler_fn> methods_;
+    struct method_hash {
+        using is_transparent = void;
+        size_t operator()(std::string_view value) const noexcept {
+            return std::hash<std::string_view>{}(value);
+        }
+    };
+    boost::unordered_flat_map<std::string, handler_fn, method_hash, std::equal_to<>> methods_;
+    std::vector<std::string> method_names_;
 };
 
-// Register the built-in methods on `d` (getblockcount, ...), and `help`, which
-// lists whatever `d` holds when it is called.
+// Register custom methods first, then the built-in methods on `d`. Help is
+// installed last and captures the completed method catalog.
 void register_builtin_methods(dispatcher& d);
 
 } // namespace kth::node::rpc
