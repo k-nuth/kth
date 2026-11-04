@@ -165,8 +165,10 @@ script_destination describe_output_script(domain::chain::script const& script,
             out.required = std::size_t(uint8_t(ops.front().code()) -
                                        uint8_t(domain::machine::opcode::push_positive_1) + 1);
             for (auto it = ops.begin() + 1; it + 2 < ops.end(); ++it) {
-                out.addresses.push_back(cashaddr_for(
-                    payment_address{bitcoin_short_hash(it->data()), p2kh}, net));
+                auto const address = payment_address::from_shorthash(bitcoin_short_hash(it->data()), p2kh);
+                if (address) {
+                    out.addresses.push_back(cashaddr_for(*address, net));
+                }
             }
             return out;
         }
