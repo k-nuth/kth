@@ -180,7 +180,7 @@ struct KD_API block_store {
         io_error,           ///< A seek or read failed.
 
         invalid_checksum,   ///< A record whose contents do not match its checksum.
-        duplicate_record,   ///< Two records claiming the same block.
+        duplicate_record,   ///< Conflicting records claiming the same block.
     };
 
     struct undo_scan_result {
