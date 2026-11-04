@@ -12,12 +12,16 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
 #include <asio/awaitable.hpp>
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/message/transaction.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -424,29 +428,47 @@ get_mempool_descendants(method_context& ctx, request const& req) {
     co_return render_hash_list(ctx.chain.get_mempool_descendants(*hash));
 }
 
-// help [command] -> the commands this server answers, one per line; with a
-// command, its name, or that it is unknown. There is no per-command help text
-// yet. `commands` (sorted) is taken by value so the coroutine frame owns it.
+// help [command] -> the registered methods, or a named method. Registration
+// finishes before serving; the pinned dispatcher outlives its joined handlers.
 // C-API counterpart: none; it describes this server.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
-help(std::vector<std::string> commands, request const& req) {
-    auto const args = params_strings(req.params);
-    std::string text;
-    if (args.empty() || args[0].empty()) {
-        for (auto const& command : commands) {
-            if ( ! text.empty()) {
-                text += '\n';
-            }
-            text += command;
+help(dispatcher const& d, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "help requires [] or [command]"));
+    };
+    simdjson::ondemand::parser parser;
+    auto const params = req.params.empty() ? std::string_view{"[]"} : std::string_view{req.params};
+    simdjson::padded_string padded(params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array args;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(args) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    std::string_view command;
+    size_t count = 0;
+    for (auto element : args) {
+        if (count++ != 0) {
+            co_return invalid_params();
         }
-    } else if (std::ranges::binary_search(commands, args[0])) {
-        text = args[0];
-    } else {
-        text = "help: unknown command: " + args[0];
+        simdjson::ondemand::value value;
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.get_string().get(command) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
     }
 
     writer w;
-    w.value(text);
+    if (command.empty()) {
+        auto const commands = d.methods();
+        w.value(fmt::format("{}", fmt::join(commands, "\n")));
+    } else if (d.has(command)) {
+        // No listing allocation/sort for the common single-command probe.
+        w.value(command);
+    } else {
+        w.value(fmt::format("help: unknown command: {}", command));
+    }
     co_return w.str();
 }
 
@@ -475,7 +497,7 @@ void register_builtin_methods(dispatcher& d) {
     // The list is read when help is called, so it holds every method the
     // dispatcher has then, including any added after these.
     d.add("help", [&d](method_context&, request const& req) {
-        return help(d.methods(), req);
+        return help(d, req);
     });
 }
 

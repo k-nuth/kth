@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string>
+#include <type_traits>
 
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -16,6 +17,9 @@
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
 
 using namespace kth;
+
+static_assert(!std::is_copy_constructible_v<node::rpc::dispatcher>);
+static_assert(!std::is_move_constructible_v<node::rpc::dispatcher>);
 
 TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_header_verbose");
@@ -151,4 +155,34 @@ TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
         return updated;
     }() + R"(")"));
     REQUIRE(request("[]") != node::rpc::build_success("5", '"' + listing + '"'));
+}
+
+TEST_CASE("help dispatch rejects wrong argument types and excess arguments", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_help_argument_validation");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& body) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    for (auto const* params : {"[123]", "[false]", "[null]", "[{}]", "[[]]",
+        "null", "{}", R"("help")", R"(["help","extra"])",
+        R"(["nosuchmethod",7])", R"(["",false])"}) {
+        CAPTURE(params);
+        auto const body = std::string(R"({"method":"help","params":)") + params + R"(,"id":"query"})";
+        CHECK(request(body) == node::rpc::build_error(R"("query")", -32602, "help requires [] or [command]"));
+    }
+    // Omitted params and an empty string retain the listing behavior.
+    REQUIRE(request(R"({"method":"help","id":9})") ==
+        request(R"({"method":"help","params":[],"id":9})"));
+    REQUIRE(request(R"({"method":"help","params":[""],"id":9})") ==
+        request(R"({"method":"help","params":[],"id":9})"));
+    REQUIRE(request(R"({"method":"help","params":["help"],"id":null})") ==
+        node::rpc::build_success("null", R"("help")"));
 }

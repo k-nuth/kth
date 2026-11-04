@@ -50,6 +50,7 @@ struct dispatcher {
     dispatcher(dispatcher const&) = delete;
     dispatcher& operator=(dispatcher const&) = delete;
 
+    // Complete registration before concurrent handle() calls begin.
     void add(std::string method, handler_fn handler);
     [[nodiscard]] bool has(std::string_view method) const;
 
