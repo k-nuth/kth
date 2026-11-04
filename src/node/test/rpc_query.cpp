@@ -160,3 +160,12 @@ TEST_CASE("render_block_header reports a block off the connected chain", "[rpc q
     REQUIRE(render_block_header(h, /*height*/ 5u, null_hash, /*confirmations*/ -1).find(
         R"("confirmations":-1,"height":5,)") != std::string::npos);
 }
+
+TEST_CASE("render_estimate_fee converts the per-byte fee to BCH per kB", "[rpc query]") {
+    // The default 0.1 satoshi per byte is 100 satoshis per kB.
+    REQUIRE(render_estimate_fee(0.1f) == render_estimate_fee(0.1000001f));
+    REQUIRE(std::stod(render_estimate_fee(0.1f)) == 0.000001);
+    REQUIRE(std::stod(render_estimate_fee(1.0f)) == 0.00001);
+    REQUIRE(std::stod(render_estimate_fee(2.5f)) == 0.000025);
+    REQUIRE(std::stod(render_estimate_fee(0.0f)) == 0.0);
+}

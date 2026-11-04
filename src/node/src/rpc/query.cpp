@@ -4,6 +4,8 @@
 
 #include <kth/node/rpc/query.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <span>
@@ -11,11 +13,13 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/constants/common.hpp>
 #include <kth/domain/wallet/cashaddr.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
+#include <kth/infrastructure/utility/units.hpp>
 
 #include <kth/node/rpc/json.hpp>
 
@@ -91,6 +95,13 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
     w.key("spentby");
     write_hash_array(w, spentby);
     w.end_object();
+    return w.str();
+}
+
+std::string render_estimate_fee(float byte_fee_satoshis) {
+    auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
+    writer w;
+    w.value(double(std::max(per_kb, 0LL)) / double(kth::satoshi_per_bitcoin));
     return w.str();
 }
 

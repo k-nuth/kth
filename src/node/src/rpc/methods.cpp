@@ -386,6 +386,43 @@ validate_address(method_context& ctx, request const& req) {
     co_return render_validate_address(address, view->state->network());
 }
 
+// estimatefee [nblocks] -> the fee per kB, in BCH, that the size part of this
+// node's transaction price asks for (chain.byte_fee_satoshis). The price also
+// charges per signature operation (chain.sigop_fee_satoshis), which a per-kB
+// rate cannot carry. kth has no fee estimator, so nblocks, which older clients
+// send, does not change the answer. Anything other than no argument or one
+// non-negative integer is refused rather than answered.
+// C-API counterpart: kth_blockchain_settings.byte_fee_satoshis.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+estimate_fee(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    };
+    if ( ! req.params.empty()) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        size_t count = 0;
+        for (auto element : args) {
+            if (element.error() != simdjson::SUCCESS || ++count > 1) {
+                co_return invalid_params();
+            }
+        }
+        // Preserve the existing target conversion, but only after validating
+        // its container and arity; a non-array must never mean "no target".
+        if (count == 1 && ! params_uint(req.params, 0)) {
+            co_return invalid_params();
+        }
+    }
+    co_return render_estimate_fee(ctx.chain.chain_settings().byte_fee_satoshis);
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -518,6 +555,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("validateaddress", validate_address);
     d.add("getrawmempool", get_raw_mempool);
     d.add("getmempoolinfo", get_mempool_info);
+    d.add("estimatefee", estimate_fee);
     d.add("getmempoolentry", get_mempool_entry);
     d.add("getmempoolancestors", get_mempool_ancestors);
     d.add("getmempooldescendants", get_mempool_descendants);

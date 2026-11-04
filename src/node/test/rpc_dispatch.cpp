@@ -16,6 +16,7 @@
 
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/query.hpp>
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
 
 using namespace kth;
@@ -361,5 +362,57 @@ TEST_CASE("unconnected replacement header never gets positive confirmations duri
         std::string_view message;
         REQUIRE(document["error"]["message"].get_string().get(message) == simdjson::SUCCESS);
         CHECK_FALSE(message.empty());
+    }
+}
+
+TEST_CASE("estimatefee dispatch answers with or without a target", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_estimate_fee");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"estimatefee","params":)" + params + R"(,"id":2})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    auto const expected = node::rpc::build_success("2",
+        node::rpc::render_estimate_fee(fixture.chain().chain_settings().byte_fee_satoshis));
+    // Fulcrum sends one argument to nodes it does not know to take none.
+    REQUIRE(request("[6]") == expected);
+    REQUIRE(request("[]") == expected);
+
+    // Anything else is refused, not answered with a rate.
+    for (auto const* invalid : {"[{}]", "[{},6]", "[1,2]", "[-1]", "[6.5]", R"(["six"])", "[null]"}) {
+        CAPTURE(invalid);
+        REQUIRE(request(invalid) == node::rpc::build_error("2", -32602,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    }
+}
+
+TEST_CASE("estimatefee dispatch rejects non-array params", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_estimatefee_roots");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    for (auto const* params : {"null", "{}", R"({"nblocks":6})", R"("six")"}) {
+        CAPTURE(params);
+        auto const body = std::string(R"({"method":"estimatefee","params":)") + params + R"(,"id":8})";
+        ::asio::io_context io;
+        auto answer = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto const raw = answer.get();
+        CAPTURE(raw);
+        CHECK(raw == node::rpc::build_error("8", -32602,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
     }
 }
