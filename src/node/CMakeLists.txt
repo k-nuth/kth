@@ -443,3 +443,8 @@ install(EXPORT ${PROJECT_NAME}-targets
     NAMESPACE ${PROJECT_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
+
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(kth_node_bench_coinbase_merkle bench/coinbase_merkle_branch.cpp)
+  target_link_libraries(kth_node_bench_coinbase_merkle PRIVATE ${PROJECT_NAME})
+endif()
