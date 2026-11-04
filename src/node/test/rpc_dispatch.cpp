@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <optional>
 #include "sync_harness.hpp"
 
 #include <algorithm>
@@ -272,4 +273,93 @@ TEST_CASE("getblockheader dispatch counts confirmations from the connected tip",
     REQUIRE(confirmations(trunk[2].hash()) == 1);
     // Stored, but its block is not connected yet.
     REQUIRE(confirmations(trunk[4].hash()) == -1);
+}
+
+TEST_CASE("unconnected replacement header never gets positive confirmations during reorg", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_confirmations_reorg_window");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const stamp = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    auto const common = test::mine_block(genesis, 1, stamp, 0, {}, 0);
+    std::vector<domain::chain::block> a;
+    auto previous = common.hash();
+    for (uint32_t height = 2; height <= 3; ++height) {
+        a.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing, 1, {}, 0));
+        previous = a.back().hash();
+    }
+    std::vector<domain::chain::block> connected{common};
+    connected.insert(connected.end(), a.begin(), a.end());
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(connected)).headers_added == 3);
+    test::persist_headers(fixture, connected, 1);
+    test::connect_bodies(fixture, connected, 1);
+    REQUIRE(chain.chain_view()->connected_tip_height == 3);
+    std::vector<domain::chain::block> b;
+    previous = common.hash();
+    for (uint32_t height = 2; height <= 4; ++height) {
+        b.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing + 60, 2, {}, 0));
+        previous = b.back().hash();
+    }
+    auto const candidate = fixture.organizer().add_headers(test::headers_of(b));
+    REQUIRE(candidate.reorg_candidate);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{chain, jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    std::string observed;
+    size_t captured_height = 0;
+    std::optional<uint32_t> built_height;
+    // Use the real persister, then query while execute_reorg still owes its
+    // publication. This fixes the interleaving without timing or extra threads.
+    auto persist = [&](domain::chain::header::list const& headers, size_t start) {
+        auto const ec = chain.replace_headers_from(headers, start);
+        if ( ! ec) {
+            captured_height = chain.chain_view()->connected_tip_height;
+            if (auto const built = chain.get_utxo_built_height(); built) {
+                built_height = *built;
+            }
+            auto const body = std::string(R"({"method":"getblockheader","params":[")") +
+                encode_hash(b.front().hash()) + R"(",true],"id":7})";
+            ::asio::io_context rpc_io;
+            auto result = ::asio::co_spawn(rpc_io, dispatcher.handle(context, body), ::asio::use_future);
+            rpc_io.run();
+            observed = result.get();
+        }
+        return ec;
+    };
+    ::asio::io_context io;
+    auto switched = ::asio::co_spawn(io, node::sync::execute_reorg(chain, fixture.organizer(),
+        candidate.reorg_branch_head, 1, [] { return false; }, persist), ::asio::use_future);
+    io.run();
+    auto const outcome = switched.get();
+    REQUIRE(outcome.result.ok);
+    REQUIRE_FALSE(outcome.fatal);
+    REQUIRE(chain.chain_view()->connected_tip_height == 1);
+    REQUIRE(captured_height == 3);
+    REQUIRE(built_height == 1);
+    CAPTURE(observed);
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(observed);
+    simdjson::ondemand::document document;
+    REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+    bool no_error = false;
+    REQUIRE(document["error"].is_null().get(no_error) == simdjson::SUCCESS);
+    if (no_error) {
+        int64_t confirmations = 0;
+        REQUIRE(document["result"]["confirmations"].get_int64().get(confirmations) == simdjson::SUCCESS);
+        CHECK(confirmations == -1);
+    } else {
+        // A defined transient failure is acceptable during the closed capture
+        // window. A malformed response or an argument error must not pass.
+        bool no_result = false;
+        REQUIRE(document["result"].is_null().get(no_result) == simdjson::SUCCESS);
+        REQUIRE(no_result);
+        int64_t code = 0;
+        REQUIRE(document["error"]["code"].get_int64().get(code) == simdjson::SUCCESS);
+        CHECK((code == -32603 || code == -1));
+        std::string_view message;
+        REQUIRE(document["error"]["message"].get_string().get(message) == simdjson::SUCCESS);
+        CHECK_FALSE(message.empty());
+    }
 }
