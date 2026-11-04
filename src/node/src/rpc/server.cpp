@@ -234,12 +234,12 @@ bool server::authorized(std::string_view authorization_header) const {
     if ( ! authorization_header.starts_with(prefix)) {
         return false;
     }
-    data_chunk decoded;
-    if ( ! decode_base64(decoded, authorization_header.substr(prefix.size()))) {
+    auto const decoded = decode_base64(authorization_header.substr(prefix.size()));
+    if ( ! decoded) {
         return false;
     }
     std::string_view const got(
-        reinterpret_cast<char const*>(decoded.data()), decoded.size());
+        reinterpret_cast<char const*>(decoded->data()), decoded->size());
     return got == expected_credentials_;
 }
 

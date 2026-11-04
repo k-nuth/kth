@@ -74,6 +74,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": [True, False],
         "with_stats": [True, False],
         "rpc": [True, False],
+        "wasm_simd": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -112,6 +113,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": False,
         "with_stats": False,
         "rpc": True,
+        "wasm_simd": True,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -163,7 +165,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
         if self.settings.os != "Emscripten":
             self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
@@ -204,6 +206,9 @@ class KthRecipe(KnuthConanFileV2):
 
     def config_options(self):
         KnuthConanFileV2.config_options(self)
+
+        if self.settings.os != "Emscripten":
+            self.options.rm_safe("wasm_simd")
 
         # Disable tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
         # and force the JSON-RPC server off: it relies on the standalone-asio I/O
@@ -269,6 +274,8 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
         tc.variables["KTH_WITH_RPC"] = option_on_off(self.options.rpc)
+        if self.settings.os == "Emscripten":
+            tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -354,6 +361,9 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
+        if self.settings.os == "Emscripten" and self.options.wasm_simd:
+            self.cpp_info.components["infrastructure"].exelinkflags.append("-msimd128")
+            self.cpp_info.components["infrastructure"].sharedlinkflags.append("-msimd128")
         infrastructure_defines = list(static_defines)
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
@@ -372,7 +382,7 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Add simdutf for SIMD-optimized operations (not available for WebAssembly)
+        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
         if self.settings.os != "Emscripten":
             self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled

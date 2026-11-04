@@ -17,7 +17,7 @@ import os
 import sys
 import argparse
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -45,6 +45,22 @@ HASH_FAIL_TESTS = [
     CompileFailTest("hash_invalid_char", '"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26X"_hash', "invalid character"),
 ]
 
+AMOUNT_FAIL_TESTS = [
+    CompileFailTest("bitcoin_negative", '\"-1\"_bitcoin', "unsigned amount"),
+    CompileFailTest("bitcoin_precision", '\"0.000000001\"_bitcoin', "fractional satoshi"),
+    CompileFailTest("bitcoin_overflow", '\"184467440737.09551616\"_bitcoin', "overflow"),
+    CompileFailTest("bitcoin_numeric_precision", '0.000000001_bitcoin', "fractional satoshi"),
+    CompileFailTest("bitcoin_empty", '\"\"_bitcoin', "empty literal"),
+    CompileFailTest("base64_bad_alphabet", '\"!!!!\"_base64', "invalid alphabet"),
+    CompileFailTest("base64_bad_tail", '\"Z\"_base64', "incomplete tail"),
+]
+
+AMOUNT_SUCCESS_TESTS = [
+    CompileFailTest("bitcoin_exact", '1.5_bitcoin', "exact decimal literal"),
+    CompileFailTest("bitcoin_string", '\"1.5\"_bitcoin', "exact string literal"),
+    CompileFailTest("base64_valid", '\"Zm9v\"_base64', "valid base64"),
+]
+
 # Test cases that should SUCCEED to compile (sanity checks)
 BASE16_SUCCESS_TESTS = [
     CompileFailTest("base16_valid_lower", '"deadbeef"_base16', "valid lowercase"),
@@ -56,6 +72,35 @@ BASE16_SUCCESS_TESTS = [
 HASH_SUCCESS_TESTS = [
     CompileFailTest("hash_valid_zeros", '"0000000000000000000000000000000000000000000000000000000000000000"_hash', "valid 64 zeros"),
     CompileFailTest("hash_valid_genesis", '"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash', "valid genesis hash"),
+]
+
+
+CODEC_FAIL_TESTS = [
+    CompileFailTest("base10_empty", '""_base10', "empty integer literal"),
+    CompileFailTest("base10_negative", '"-1"_base10', "unsigned integer literal"),
+    CompileFailTest("base10_fraction", '"1.0"_base10', "integer literal has no decimal point"),
+    CompileFailTest("base10_overflow", '"18446744073709551616"_base10', "uint64 overflow"),
+    CompileFailTest("base10_space", '" 1"_base10', "whitespace is not a decimal digit"),
+    CompileFailTest("base10_nul", r'"1\0"_base10', "embedded NUL"),
+    CompileFailTest("base58_zero", '"0"_base58', "character outside base58 alphabet"),
+    CompileFailTest("base58_upper_o", '"O"_base58', "character outside base58 alphabet"),
+    CompileFailTest("base58_upper_i", '"I"_base58', "character outside base58 alphabet"),
+    CompileFailTest("base58_nul", r'"2\0g"_base58', "embedded NUL"),
+    CompileFailTest("base85_length", '"Hello!"_base85', "length not divisible by five"),
+    CompileFailTest("base85_newline", r'"Test\n"_base85', "invalid character"),
+    CompileFailTest("base85_nul", r'"He\0lo"_base85', "embedded NUL"),
+    CompileFailTest("base64_padding", '"Zg="_base64', "invalid padding"),
+]
+
+CODEC_SUCCESS_TESTS = [
+    CompileFailTest("base10_valid", '"42"_base10', "unsigned integer"),
+    CompileFailTest("base10_max", '"18446744073709551615"_base10', "uint64 max"),
+    CompileFailTest("base10_leading_zeros", '"00042"_base10', "leading zeros"),
+    CompileFailTest("base58_valid", '"2g"_base58', "exact decoded size"),
+    CompileFailTest("base58_zero_prefix", '"112g"_base58', "leading zero bytes"),
+    CompileFailTest("base58_empty", '""_base58', "empty bytes"),
+    CompileFailTest("base85_valid", '"HelloWorld"_base85', "Z85 reference vector"),
+    CompileFailTest("base85_empty", '""_base85', "empty bytes"),
 ]
 
 
@@ -72,7 +117,7 @@ int main() {{
 '''
 
 
-def try_compile(source: str, compiler: str, include_dir: str, std: str = "c++23") -> tuple[bool, str]:
+def try_compile(source: str, compiler: str, include_dir: str, std: str = "c++23", compiler_options_file: Optional[str] = None) -> tuple[bool, str]:
     """
     Try to compile the source code.
     Returns (success, error_message).
@@ -83,7 +128,7 @@ def try_compile(source: str, compiler: str, include_dir: str, std: str = "c++23"
 
     try:
         result = subprocess.run(
-            [compiler, f"-std={std}", "-fsyntax-only", f"-I{include_dir}", temp_file],
+            [compiler, *(["@" + compiler_options_file] if compiler_options_file else []), f"-std={std}", "-fsyntax-only", f"-I{include_dir}", temp_file],
             capture_output=True,
             text=True,
             timeout=30
@@ -104,7 +149,8 @@ def run_tests(
     success_tests: List[CompileFailTest],
     compiler: str,
     include_dir: str,
-    verbose: bool = False
+    verbose: bool = False,
+    compiler_options_file: Optional[str] = None
 ) -> tuple[int, int]:
     """
     Run all tests and return (passed, failed) counts.
@@ -116,7 +162,7 @@ def run_tests(
     print("\n=== Testing expressions that should FAIL to compile ===")
     for test in fail_tests:
         source = generate_test_file(test.expression, include_dir)
-        compiles, error = try_compile(source, compiler, include_dir)
+        compiles, error = try_compile(source, compiler, include_dir, compiler_options_file=compiler_options_file)
 
         if not compiles:
             print(f"  PASS: {test.name} - {test.description}")
@@ -133,7 +179,7 @@ def run_tests(
     print("\n=== Testing expressions that should SUCCEED to compile ===")
     for test in success_tests:
         source = generate_test_file(test.expression, include_dir)
-        compiles, error = try_compile(source, compiler, include_dir)
+        compiles, error = try_compile(source, compiler, include_dir, compiler_options_file=compiler_options_file)
 
         if compiles:
             print(f"  PASS: {test.name} - {test.description}")
@@ -155,6 +201,7 @@ def main():
     parser = argparse.ArgumentParser(description="Test compile-time failures for UDL operators")
     parser.add_argument("--compiler", default="clang++", help="C++ compiler to use")
     parser.add_argument("--include-dir", required=True, help="Path to infrastructure include directory")
+    parser.add_argument("--compiler-options-file", help="Compiler response file with the actual target includes and definitions")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--with-success-tests", action="store_true",
                         help="Also run success tests (requires full build environment)")
@@ -163,15 +210,16 @@ def main():
     print(f"Using compiler: {args.compiler}")
     print(f"Include directory: {args.include_dir}")
 
-    all_fail_tests = BASE16_FAIL_TESTS + HASH_FAIL_TESTS
-    all_success_tests = BASE16_SUCCESS_TESTS + HASH_SUCCESS_TESTS if args.with_success_tests else []
+    all_fail_tests = BASE16_FAIL_TESTS + HASH_FAIL_TESTS + AMOUNT_FAIL_TESTS + CODEC_FAIL_TESTS
+    all_success_tests = BASE16_SUCCESS_TESTS + HASH_SUCCESS_TESTS + AMOUNT_SUCCESS_TESTS + CODEC_SUCCESS_TESTS if args.with_success_tests else []
 
     passed, failed = run_tests(
         all_fail_tests,
         all_success_tests,
         args.compiler,
         args.include_dir,
-        args.verbose
+        args.verbose,
+        args.compiler_options_file
     )
 
     print(f"\n=== Summary ===")

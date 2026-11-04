@@ -40,6 +40,7 @@
 #include <kth/infrastructure/config/sodium.hpp>
 
 #include <kth/infrastructure/formats/base_10.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/formats/base_64.hpp>
