@@ -181,6 +181,21 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.validate_checksum",    cfg.network.validate_checksum);
     app.add_option("--net.identifier",           cfg.network.identifier);
     app.add_option("--net.inbound_port",         cfg.network.inbound_port);
+    app.add_option("--net.ws_enabled",          cfg.network.ws_enabled,
+        "Enable the compiled native WebSocket P2P listener.");
+    app.add_option("--net.ws_bind",             cfg.network.ws_bind);
+    app.add_option("--net.ws_port",             cfg.network.ws_port);
+    app.add_option("--net.ws_path",             cfg.network.ws_path);
+    app.add_option("--net.ws_origins",          cfg.network.ws_origins,
+        "Exact allowed browser Origins (missing Origin is rejected).");
+    app.add_option("--net.ws_max_connections",  cfg.network.ws_max_connections);
+    app.add_option("--net.ws_handshake_seconds", cfg.network.ws_handshake_seconds);
+    app.add_option("--net.ws_discovery",        cfg.network.ws_discovery,
+        "Negotiate endpoint discovery over TCP and WebSocket connections.");
+    app.add_option("--net.ws_allow_private",    cfg.network.ws_allow_private,
+        "Explicitly permit private endpoints for isolated LAN experiments.");
+    app.add_option("--net.ws_public_endpoints", cfg.network.ws_public_endpoints,
+        "Explicit public WS/WSS URLs, independent of listener bind and TLS termination.");
     app.add_option("--net.inbound_connections",  cfg.network.inbound_connections);
     app.add_option("--net.outbound_connections", cfg.network.outbound_connections);
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);

@@ -51,6 +51,19 @@ struct KN_API settings {
     infrastructure::config::endpoint::list seeds;
     std::string user_agent;
 
+    // Incoming WebSocket endpoint is independent of TCP and public discovery.
+    // These settings exist in every native build so unsupported activation fails.
+    bool ws_enabled{false};
+    std::string ws_bind{"127.0.0.1"};
+    uint16_t ws_port{8080};
+    std::string ws_path{"/p2p"};
+    std::vector<std::string> ws_origins;
+    uint32_t ws_max_connections{32};
+    uint32_t ws_handshake_seconds{10};
+    bool ws_discovery{false};
+    bool ws_allow_private{false};
+    std::vector<std::string> ws_public_endpoints;
+
     // [log]
     kth::path debug_file;
     kth::path error_file;
