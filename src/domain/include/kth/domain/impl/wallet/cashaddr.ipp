@@ -198,9 +198,6 @@ constexpr data_chunk create_checksum(std::string_view prefix, data_chunk const& 
 
 namespace kth::domain::wallet::cashaddr {
 
-/**
- * Encode a cashaddr string.
- */
 constexpr std::string encode(std::string_view prefix, data_chunk const& payload) {
     data_chunk checksum = detail::create_checksum(prefix, payload);
     data_chunk combined = detail::cat(payload, checksum);
@@ -214,10 +211,10 @@ constexpr std::string encode(std::string_view prefix, data_chunk const& payload)
     return ret;
 }
 
-/**
- * Decode a cashaddr string.
- */
-constexpr expect<std::pair<std::string, data_chunk>> decode_checked(std::string_view str, std::string_view default_prefix) {
+namespace detail {
+
+// Keep validation errors as enum values so invalid input is constant-evaluable.
+constexpr std::expected<std::pair<std::string, data_chunk>, kth::error::error_code_t> decode_format(std::string_view str, std::string_view default_prefix) {
     // Go over the string and do some sanity checks.
     bool lower = false;
     bool upper = false;
@@ -246,7 +243,7 @@ constexpr expect<std::pair<std::string, data_chunk>> decode_checked(std::string_
             // The separator cannot be the first character, cannot have number
             // and there must not be 2 separators.
             if (hasNumber || i == 0 || prefixSize != 0) {
-                return kth::fail(kth::error::address_invalid_prefix);
+                return std::unexpected(kth::error::address_invalid_prefix);
             }
 
             prefixSize = i;
@@ -254,12 +251,12 @@ constexpr expect<std::pair<std::string, data_chunk>> decode_checked(std::string_
         }
 
         // We have an unexpected character.
-        return kth::fail(kth::error::address_invalid_character);
+        return std::unexpected(kth::error::address_invalid_character);
     }
 
     // We can't have both upper case and lowercase.
     if (upper && lower) {
-        return kth::fail(kth::error::address_mixed_case);
+        return std::unexpected(kth::error::address_mixed_case);
     }
 
     // Get the prefix.
@@ -283,24 +280,32 @@ constexpr expect<std::pair<std::string, data_chunk>> decode_checked(std::string_
         uint8_t c = str[i + prefixSize];
         // We have an invalid char in there.
         if (c > 127 || detail::CHARSET_REV[c] == -1) {      //NOLINT
-            return kth::fail(kth::error::address_invalid_character);
+            return std::unexpected(kth::error::address_invalid_character);
         }
 
         values[i] = detail::CHARSET_REV[c];                 //NOLINT
     }
 
-    if (values.size() < 8) return kth::fail(kth::error::address_invalid_checksum);
+    if (values.size() < 8) return std::unexpected(kth::error::address_invalid_checksum);
 
     // Verify the checksum.
     if ( ! detail::verify_checksum(prefix, values)) {
-        return kth::fail(kth::error::address_invalid_checksum);
+        return std::unexpected(kth::error::address_invalid_checksum);
     }
 
     return std::pair{std::move(prefix), data_chunk(values.begin(), values.end() - 8)};
 }
 
+} // namespace detail
+
+constexpr expect<std::pair<std::string, data_chunk>> decode_checked(std::string_view str, std::string_view default_prefix) {
+    auto result = detail::decode_format(str, default_prefix);
+    if (!result) return kth::fail(result.error());
+    return std::move(*result);
+}
+
 constexpr std::pair<std::string, data_chunk> decode(std::string_view str, std::string_view default_prefix) {
-    auto result = decode_checked(str, default_prefix);
+    auto result = detail::decode_format(str, default_prefix);
     return result ? std::move(*result) : std::pair<std::string, data_chunk>{};
 }
 

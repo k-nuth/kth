@@ -9,7 +9,7 @@
 #endif
 namespace kth::domain::wallet {
 
-constexpr bool payment_address::is_address(byte_span decoded) {
+constexpr bool payment_address::is_address(byte_span decoded) noexcept {
     return (decoded.size() == payment_size) && verify_checksum(decoded);
 }
 // CashAddr helpers (BCH-only).
@@ -18,6 +18,16 @@ constexpr bool payment_address::is_address(byte_span decoded) {
 #if defined(KTH_CURRENCY_BCH)
 
 namespace payment_address_detail {
+
+[[nodiscard]] constexpr size_t find_cashaddr_separator(std::string_view address) noexcept {
+    if consteval {
+        for (size_t i = 0; i < address.size(); ++i) if (address[i] == ':') return i;
+        return std::string_view::npos;
+    } else {
+        return address.find(':');
+    }
+}
+
 template <unsigned int frombits, unsigned int tobits, bool pad, typename O, typename I>
 constexpr bool convert_bits(O& out, I it, I end) {
     size_t acc = 0;
@@ -56,8 +66,8 @@ enum class cashaddr_destination_type : uint8_t {
 
 } // namespace payment_address_detail
 
-constexpr std::optional<config::network> payment_address::detect_cashaddr_network(std::string_view address) {
-    auto const colon = address.find(':');
+constexpr std::optional<config::network> payment_address::detect_cashaddr_network(std::string_view address) noexcept {
+    auto const colon = payment_address_detail::find_cashaddr_separator(address);
     if (colon == std::string_view::npos) return std::nullopt;
     auto const prefix = address.substr(0, colon);
     auto const matches = [prefix](std::string_view expected) {
@@ -75,30 +85,30 @@ constexpr std::optional<config::network> payment_address::detect_cashaddr_networ
     return std::nullopt;
 }
 
-constexpr expect<payment_address> payment_address::from_string_cashaddr(std::string_view address, config::network net) {
+constexpr std::expected<payment_address, kth::error::error_code_t> payment_address::parse_cashaddr(std::string_view address, config::network net) {
     auto const expected_prefix = cashaddr_prefix_for(net);
-    auto const decoded = cashaddr::decode_checked(address, expected_prefix);
-    if (!decoded) return kth::fail(decoded.error());
+    auto const decoded = cashaddr::detail::decode_format(address, expected_prefix);
+    if (!decoded) return std::unexpected(decoded.error());
     auto const& [prefix, payload] = *decoded;
 
     if (prefix != expected_prefix) {
-        return kth::fail(kth::error::address_network_mismatch);
+        return std::unexpected(kth::error::address_network_mismatch);
     }
 
     if (payload.empty()) {
-        return kth::fail(kth::error::address_invalid_hash_length);
+        return std::unexpected(kth::error::address_invalid_hash_length);
     }
 
     // Check that the padding is zero.
     size_t extrabits = payload.size() * 5 % 8;
     if (extrabits >= 5) {
-        return kth::fail(kth::error::address_invalid_padding);
+        return std::unexpected(kth::error::address_invalid_padding);
     }
 
     uint8_t last = payload.back();
     uint8_t mask = (1U << extrabits) - 1;
     if ((last & mask) != 0) {
-        return kth::fail(kth::error::address_invalid_padding);
+        return std::unexpected(kth::error::address_invalid_padding);
     }
 
     using namespace payment_address_detail;
@@ -110,7 +120,7 @@ constexpr expect<payment_address> payment_address::from_string_cashaddr(std::str
     uint8_t version = data[0];
     if ((version & 0x80) != 0) {
         // First bit is reserved.
-        return kth::fail(kth::error::address_reserved_version);
+        return std::unexpected(kth::error::address_reserved_version);
     }
 
     // A token-aware address carries the same P2PKH or P2SH payload as its
@@ -126,7 +136,7 @@ constexpr expect<payment_address> payment_address::from_string_cashaddr(std::str
             is_script = true;
             break;
         default:
-            return kth::fail(kth::error::address_unsupported_type);
+            return std::unexpected(kth::error::address_unsupported_type);
     }
 
     uint32_t hash_size = 20 + 4 * (version & 0x03);
@@ -136,14 +146,14 @@ constexpr expect<payment_address> payment_address::from_string_cashaddr(std::str
 
     // Check that we decoded the exact number of bytes we expected.
     if (data.size() != hash_size + 1) {
-        return kth::fail(kth::error::address_invalid_hash_length);
+        return std::unexpected(kth::error::address_invalid_hash_length);
     }
 
     // P2PKH requires a 20-byte hash. P2SH also supports 32-byte hashes;
     // reject every other size before copying into the fixed-size storage.
     if (hash_size != short_hash_size &&
         (!is_script || hash_size != sizeof(hash_digest))) {
-        return kth::fail(kth::error::address_unsupported_hash_size);
+        return std::unexpected(kth::error::address_unsupported_hash_size);
     }
 
     if (data.size() == short_hash_size + 1) {
@@ -151,9 +161,9 @@ constexpr expect<payment_address> payment_address::from_string_cashaddr(std::str
         std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
         if (prefix == cashaddr_prefix_mainnet) {
-            return from_shorthash(hash, is_script ? mainnet_p2sh : mainnet_p2kh);
+            return payment_address{hash, is_script ? mainnet_p2sh : mainnet_p2kh};
         }
-        return from_shorthash(hash, is_script ? testnet_p2sh : testnet_p2kh);
+        return payment_address{hash, is_script ? testnet_p2sh : testnet_p2kh};
     }
 
     // 32-byte hash variant (BCH 2025 Leibniz `pay_script_hash_32`).
@@ -161,9 +171,9 @@ constexpr expect<payment_address> payment_address::from_string_cashaddr(std::str
     std::copy(std::begin(data) + 1, std::end(data), std::begin(hash));
 
     if (prefix == cashaddr_prefix_mainnet) {
-        return from_hash(hash, is_script ? mainnet_p2sh : mainnet_p2kh);
+        return payment_address{hash, is_script ? mainnet_p2sh : mainnet_p2kh};
     }
-    return from_hash(hash, is_script ? testnet_p2sh : testnet_p2kh);
+    return payment_address{hash, is_script ? testnet_p2sh : testnet_p2kh};
 }
 
 #endif  //KTH_CURRENCY_BCH
@@ -178,7 +188,9 @@ constexpr expect<payment_address> payment_address::parse_from(std::string_view a
 #if defined(KTH_CURRENCY_BCH)
     auto const net = detect_cashaddr_network(address);
     if (net) {
-        return from_string_cashaddr(address, *net);
+        auto parsed = parse_cashaddr(address, *net);
+        if (!parsed) return kth::fail(parsed.error());
+        return std::move(*parsed);
     }
 #endif
     if (address.find(':') != std::string_view::npos) {
@@ -196,7 +208,9 @@ constexpr expect<payment_address> payment_address::parse_from(std::string_view a
         return from_payment(*decoded);
     }
 #if defined(KTH_CURRENCY_BCH)
-    return from_string_cashaddr(address, net);
+    auto parsed = parse_cashaddr(address, net);
+    if (!parsed) return kth::fail(parsed.error());
+    return std::move(*parsed);
 #else
     (void)net;
     if (address.find(':') != std::string_view::npos) {
@@ -208,12 +222,12 @@ constexpr expect<payment_address> payment_address::parse_from(std::string_view a
 }
 
 // Checked component factories are the only entry to the private constructors.
-constexpr expect<payment_address> payment_address::from_shorthash(short_hash const& hash, uint8_t version) {
+constexpr expect<payment_address> payment_address::from_shorthash(short_hash const& hash, uint8_t version) noexcept {
     if (!is_supported_version(version)) return kth::fail(kth::error::address_unsupported_type);
     return payment_address{hash, version};
 }
 
-constexpr expect<payment_address> payment_address::from_hash(hash_digest const& hash, uint8_t version) {
+constexpr expect<payment_address> payment_address::from_hash(hash_digest const& hash, uint8_t version) noexcept {
     if (!is_supported_version(version)) return kth::fail(kth::error::address_unsupported_type);
     if (version != mainnet_p2sh && version != testnet_p2sh)
         return kth::fail(kth::error::address_unsupported_hash_size);
@@ -279,28 +293,64 @@ constexpr data_chunk pack_addr_data_(byte_span id, cashaddr_destination_type typ
     return converted;
 }
 
-constexpr std::string encode_cashaddr_(payment_address const& addr, bool token_aware) {
-    bool const mainnet = addr.version() == payment_address::mainnet_p2kh ||
-                         addr.version() == payment_address::mainnet_p2sh;
+constexpr std::string encode_cashaddr_(payment_address const& addr, std::string_view prefix, bool token_aware) {
     bool const is_script = addr.version() == payment_address::mainnet_p2sh ||
                            addr.version() == payment_address::testnet_p2sh;
     auto const type = is_script
         ? (token_aware ? cashaddr_destination_type::token_script_hash : cashaddr_destination_type::script_hash)
         : (token_aware ? cashaddr_destination_type::token_pubkey_hash : cashaddr_destination_type::pubkey_hash);
     auto const payload = pack_addr_data_(addr.hash_span(), type);
-    return cashaddr::encode(mainnet ? payment_address::cashaddr_prefix_mainnet
-                                   : payment_address::cashaddr_prefix_testnet,
-                            payload);
+    return cashaddr::encode(prefix, payload);
 }
 
 } // namespace payment_address_detail
 
 constexpr std::string payment_address::encoded_cashaddr(bool token_aware) const {
-    return payment_address_detail::encode_cashaddr_(*this, token_aware);
+    bool const mainnet = version_ == mainnet_p2kh || version_ == mainnet_p2sh;
+    return encoded_cashaddr(mainnet ? config::network::mainnet : config::network::testnet, token_aware);
+}
+
+constexpr std::string payment_address::encoded_cashaddr(config::network net, bool token_aware) const {
+    return payment_address_detail::encode_cashaddr_(*this, cashaddr_prefix_for(net), token_aware);
 }
 
 constexpr std::string payment_address::encoded_token() const {
-    return payment_address_detail::encode_cashaddr_(*this, true);
+    return encoded_cashaddr(true);
+}
+
+constexpr std::string payment_address::encoded_token(config::network net) const {
+    return encoded_cashaddr(net, true);
+}
+
+
+template <fixed_string Text, bool TokenAware>
+consteval payment_address payment_address::from_literal() noexcept {
+    constexpr std::string_view text{Text.content, Text.size()};
+    constexpr auto net = detect_cashaddr_network(text);
+    static_assert(net.has_value(), "address literal requires bitcoincash:, bchtest:, or bchreg: prefix");
+    if constexpr (net.has_value()) {
+        constexpr auto parsed = parse_cashaddr(text, *net);
+        static_assert(parsed.has_value(), "invalid CashAddr address literal");
+        if constexpr (parsed.has_value()) {
+            constexpr auto separator = payment_address_detail::find_cashaddr_separator(text);
+            // Full address validation above guarantees a nonempty valid payload.
+            // The first 5-bit symbol is the address type (0..3).
+            constexpr auto type = cashaddr::detail::CHARSET_REV[uint8_t(Text.content[separator + 1])];
+            static_assert(bool(type & 0x02) == TokenAware,
+                "address literal suffix does not match its normal/token-aware type");
+            return *parsed;
+        }
+    }
+}
+
+template <fixed_string Text>
+[[nodiscard]] consteval payment_address operator""_cashaddr() noexcept {
+    return payment_address::from_literal<Text, false>();
+}
+
+template <fixed_string Text>
+[[nodiscard]] consteval payment_address operator""_tokenaddr() noexcept {
+    return payment_address::from_literal<Text, true>();
 }
 
 #endif  //KTH_CURRENCY_BCH

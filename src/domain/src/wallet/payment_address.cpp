@@ -39,7 +39,7 @@ namespace kth::domain::wallet {
 // ----------------------------------------------------------------------------
 
 // static
-expect<payment_address> payment_address::from_payment(payment const& decoded) {
+expect<payment_address> payment_address::from_payment(payment const& decoded) noexcept {
     // The size guard is constant-evaluable without invoking the runtime hash.
     static_assert(!is_address(byte_span{}));
     static_assert([] { byte_array<payment_size - 1> bytes{}; return !is_address(bytes); }());

@@ -24,6 +24,7 @@
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/expect.hpp>
+#include <kth/infrastructure/utility/fixed_string.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 #include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/hash.hpp>
@@ -35,6 +36,23 @@ static constexpr
 size_t payment_size = 1U + short_hash_size + checksum_size;  // 1 + 20 + sizeof(uint32_t) = 1 + 20 + 4 = 25
 
 using payment = byte_array<payment_size>;
+
+struct KD_API payment_address;
+
+#if defined(KTH_CURRENCY_BCH)
+/// Checked normal CashAddr literal, including a known explicit network prefix.
+/// Returns payment_address (hash/type/legacy version); prefix and token signal
+/// are not stored. Pass the network explicitly when re-encoding regtest.
+template <fixed_string Text>
+[[nodiscard]] consteval payment_address operator""_cashaddr() noexcept;
+
+/// Checked token-aware CashAddr literal. Requires type 2 or 3; the returned
+/// payment_address has the same storage as the corresponding normal address.
+/// Re-encode with encoded_token(net) to retain the token-aware signal.
+template <fixed_string Text>
+[[nodiscard]] consteval payment_address operator""_tokenaddr() noexcept;
+#endif
+
 
 /// Non-stealth payment address (P2PKH, P2SH, or 32-byte hash variants).
 /// Valid-by-construction: every reachable instance was produced by a
@@ -60,7 +78,7 @@ struct KD_API payment_address {
     static constexpr std::string_view cashaddr_prefix_testnet = "bchtest";
     static constexpr std::string_view cashaddr_prefix_regtest = "bchreg";
 
-    static constexpr
+    [[nodiscard]] static constexpr
     std::string_view cashaddr_prefix_for(config::network net) noexcept {
         switch (net) {
             case config::network::mainnet:  return cashaddr_prefix_mainnet;
@@ -88,7 +106,7 @@ struct KD_API payment_address {
     /// Returns invalid_checksum if the checksum fails.
     [[nodiscard]]
     static
-    expect<payment_address> from_payment(payment const& decoded);
+    expect<payment_address> from_payment(payment const& decoded) noexcept;
 
     /// Derive from an EC private key.
     [[nodiscard]]
@@ -113,9 +131,9 @@ struct KD_API payment_address {
 
     /// Validate untrusted hash/version combinations before construction.
     [[nodiscard]] static constexpr
-    expect<payment_address> from_shorthash(short_hash const& hash, uint8_t version);
+    expect<payment_address> from_shorthash(short_hash const& hash, uint8_t version) noexcept;
     [[nodiscard]] static constexpr
-    expect<payment_address> from_hash(hash_digest const& hash, uint8_t version);
+    expect<payment_address> from_hash(hash_digest const& hash, uint8_t version) noexcept;
 
     /// Whether a version identifies a supported address network/type.
     [[nodiscard]] static constexpr bool is_supported_version(uint8_t version) noexcept {
@@ -124,7 +142,7 @@ struct KD_API payment_address {
     }
 
     [[nodiscard]]
-    friend auto operator<=>(payment_address const&, payment_address const&) = default;
+    friend constexpr auto operator<=>(payment_address const&, payment_address const&) noexcept = default;
 
     /// Canonical string form for this validated address.
     /// Cashaddr (token-unaware) under BCH; legacy base58 otherwise.
@@ -132,6 +150,7 @@ struct KD_API payment_address {
     constexpr std::string to_string() const;
 
     /// Legacy base58 encoding (`<version><20-byte hash><checksum>`).
+    /// Encoding a 20-byte hash requires the runtime SHA256 implementation.
     /// Only valid for 20-byte addresses (P2KH, P2SH). Returns an
     /// empty string when the address carries a 32-byte hash
     /// (`pay_script_hash_32`, BCH 2025 Leibniz) — that hash size
@@ -141,12 +160,23 @@ struct KD_API payment_address {
     constexpr std::string encoded_legacy() const;
 
 #if defined(KTH_CURRENCY_BCH)
-    [[nodiscard]]
-    /// Encode this validated address in CashAddr form.
-    constexpr std::string encoded_cashaddr(bool token_aware) const;
+    /// Encode the stored hash/type using the version's mainnet or testnet prefix.
+    /// Testnet and regtest share versions; use the network overload for regtest.
+    /// Allocates the result and payload; allocation failures may throw.
+    [[nodiscard]] constexpr std::string encoded_cashaddr(bool token_aware) const;
 
-    [[nodiscard]]
-    constexpr std::string encoded_token() const;
+    /// Encode directly from the stored hash and type under net's CashAddr prefix.
+    /// net selects the output prefix (and checksum), without changing this object
+    /// or enforcing that its legacy version belongs to net. token_aware selects
+    /// the plain or token-aware address type. No text encode/decode roundtrip.
+    /// Allocates the result and payload; allocation failures may throw.
+    [[nodiscard]] constexpr std::string encoded_cashaddr(config::network net, bool token_aware = false) const;
+
+    /// Token-aware encoding using the version's mainnet or testnet prefix.
+    [[nodiscard]] constexpr std::string encoded_token() const;
+
+    /// Token-aware encoding directly under net's CashAddr prefix.
+    [[nodiscard]] constexpr std::string encoded_token(config::network net) const;
 #endif  //KTH_CURRENCY_BCH
 
     [[nodiscard]] constexpr
@@ -184,6 +214,8 @@ struct KD_API payment_address {
     /// Only valid for 20-byte addresses. Returns a zero-initialised
     /// `payment` when the address carries a 32-byte hash — the
     /// `payment` byte_array has no representation for that size.
+    /// A 20-byte address needs runtime SHA256 and a temporary checksum buffer.
+    /// That path may throw; only the 32-byte zero-sentinel path is constant-evaluable.
     [[nodiscard]]
     constexpr payment to_payment() const;
 
@@ -217,15 +249,26 @@ private:
         , hash_size_(hash.size())
     {}
 
-    static constexpr
-    bool is_address(byte_span decoded);
+    [[nodiscard]] static constexpr
+    bool is_address(byte_span decoded) noexcept;
 
 #if defined(KTH_CURRENCY_BCH)
-    static constexpr
-    expect<payment_address> from_string_cashaddr(std::string_view address, config::network net);
+    // Enum errors keep validation constant-evaluable; public parsers map them to kth::code.
+    [[nodiscard]] static constexpr
+    std::expected<payment_address, kth::error::error_code_t> parse_cashaddr(std::string_view address, config::network net);
 
-    static constexpr
-    std::optional<config::network> detect_cashaddr_network(std::string_view address);
+    [[nodiscard]] static constexpr
+    std::optional<config::network> detect_cashaddr_network(std::string_view address) noexcept;
+
+    template <fixed_string Text, bool TokenAware>
+    [[nodiscard]] static consteval payment_address from_literal() noexcept;
+
+    template <fixed_string Text>
+    friend consteval payment_address operator""_cashaddr() noexcept;
+
+    template <fixed_string Text>
+    friend consteval payment_address operator""_tokenaddr() noexcept;
+
 #endif  //KTH_CURRENCY_BCH
 
     uint8_t version_{0};
@@ -248,7 +291,7 @@ struct KD_API wrapped_data {
 namespace std {
 template <>
 struct hash<kth::domain::wallet::payment_address> {
-    size_t operator()(kth::domain::wallet::payment_address const& address) const {
+    [[nodiscard]] size_t operator()(kth::domain::wallet::payment_address const& address) const noexcept {
         return std::hash<kth::byte_span>()(address.hash_span());
     }
 };
