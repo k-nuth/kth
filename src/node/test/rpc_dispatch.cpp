@@ -16,6 +16,7 @@
 
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/query.hpp>
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
 
 using namespace kth;
