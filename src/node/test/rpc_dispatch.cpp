@@ -394,3 +394,24 @@ TEST_CASE("estimatefee dispatch answers with or without a target", "[rpc dispatc
             "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
     }
 }
+
+TEST_CASE("estimatefee dispatch rejects non-array params", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_estimatefee_roots");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    for (auto const* params : {"null", "{}", R"({"nblocks":6})", R"("six")"}) {
+        CAPTURE(params);
+        auto const body = std::string(R"({"method":"estimatefee","params":)") + params + R"(,"id":8})";
+        ::asio::io_context io;
+        auto answer = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto const raw = answer.get();
+        CAPTURE(raw);
+        CHECK(raw == node::rpc::build_error("8", -32602,
+            "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    }
+}
