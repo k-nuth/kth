@@ -564,7 +564,104 @@ static void run_schnorr_bch_hash_context(void) {
     secp256k1_context_destroy(ctx);
 }
 
+#define BATCH_COUNT 40
+
+static void test_schnorr_batch_verify(void) {
+    unsigned char privkey[BATCH_COUNT][32];
+    unsigned char msg[BATCH_COUNT][32];
+    unsigned char sig[BATCH_COUNT][64];
+    secp256k1_pubkey pubkey[BATCH_COUNT];
+    const unsigned char *sigs[BATCH_COUNT];
+    const unsigned char *msgs[BATCH_COUNT];
+    const secp256k1_pubkey *pubs[BATCH_COUNT];
+    unsigned char seed[32];
+    size_t i, n;
+
+    testrand256(seed);
+    for (i = 0; i < BATCH_COUNT; i++) {
+        secp256k1_scalar key;
+        testutil_random_scalar_order_test(&key);
+        secp256k1_scalar_get_b32(privkey[i], &key);
+        testrand256_test(msg[i]);
+        CHECK(secp256k1_ec_pubkey_create(CTX, &pubkey[i], privkey[i]) == 1);
+        CHECK(secp256k1_schnorr_sign(CTX, sig[i], msg[i], privkey[i], NULL, NULL) == 1);
+        sigs[i] = sig[i];
+        msgs[i] = msg[i];
+        pubs[i] = &pubkey[i];
+    }
+
+    /* Every prefix verifies, with and without a seed. */
+    for (n = 0; n <= BATCH_COUNT; n++) {
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, n, seed) == 1);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, n, NULL) == 1);
+    }
+    CHECK(secp256k1_schnorr_verify_batch(CTX, NULL, NULL, NULL, 0, NULL) == 1);
+
+    /* One corrupted signature anywhere fails the batch. */
+    for (i = 0; i < BATCH_COUNT; i++) {
+        unsigned char backup[64];
+        size_t pos = testrand_bits(6);
+        memcpy(backup, sig[i], 64);
+        sig[i][pos] ^= (unsigned char)(1 + testrand_int(255));
+        CHECK(secp256k1_schnorr_verify(CTX, sig[i], msg[i], &pubkey[i]) == 0);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, i + 1, NULL) == 0);
+        memcpy(sig[i], backup, 64);
+    }
+    CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+
+    /* Wrong message, wrong key. */
+    {
+        const unsigned char *m = msgs[3];
+        msgs[3] = msg[4];
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        msgs[3] = m;
+        pubs[5] = &pubkey[6];
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        pubs[5] = &pubkey[5];
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+    }
+
+    /* s >= n, r >= p, r not on the curve, s = 0. */
+    {
+        unsigned char backup[64];
+        memcpy(backup, sig[7], 64);
+        memset(sig[7] + 32, 0xFF, 32);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memcpy(sig[7], backup, 64);
+        memset(sig[7], 0xFF, 32);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memcpy(sig[7], backup, 64);
+        /* x = 5 is not on secp256k1 (5^3 + 7 = 132 is a non-residue). */
+        memset(sig[7], 0, 32);
+        sig[7][31] = 5;
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memcpy(sig[7], backup, 64);
+        memset(sig[7] + 32, 0, 32);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memcpy(sig[7], backup, 64);
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+    }
+
+    /* Batch verdict equals the conjunction of the individual verdicts on a
+     * random mix of valid and invalid signatures. */
+    for (n = 0; n < 8; n++) {
+        int all_valid = 1;
+        for (i = 0; i < BATCH_COUNT; i++) {
+            if (testrand_bits(2) == 0) {
+                sig[i][testrand_bits(6)] ^= 0x20;
+            }
+            all_valid &= secp256k1_schnorr_verify(CTX, sig[i], msg[i], &pubkey[i]);
+        }
+        CHECK(secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, BATCH_COUNT, seed) == all_valid);
+        for (i = 0; i < BATCH_COUNT; i++) {
+            CHECK(secp256k1_schnorr_sign(CTX, sig[i], msg[i], privkey[i], NULL, NULL) == 1);
+        }
+    }
+}
+
 static const struct tf_test_entry tests_schnorr_bch[] = {
+    CASE1(test_schnorr_batch_verify),
     CASE1(run_schnorr_bch_hash_context),
     CASE1(run_schnorr_end_to_end_tests),
     CASE1(test_schnorr_sign_verify),

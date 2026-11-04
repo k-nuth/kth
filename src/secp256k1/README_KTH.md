@@ -15,6 +15,9 @@ upstream's BIP340 `schnorrsig` module:
 - `CMakeLists.txt` adds the `SECP256K1_ENABLE_MODULE_SCHNORR_BCH` option.
 - `src/secp256k1.c` includes the BCH implementation when enabled.
 - `src/tests.c` registers its tests with the upstream test framework.
+- `secp256k1_schnorr_verify_batch` (same header and module) verifies many BCH
+  Schnorr signatures with one random linear combination over the upstream
+  multi-scalar multiplication (`secp256k1_ecmult_multi_var`).
 
 The BCH module uses the context's SHA256 implementation for its challenge and
 built-in RFC6979 nonce generation. User-supplied nonce functions retain their
