@@ -36,6 +36,19 @@ else()
 endif()
 message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 
+# Signature verification: secp256k1 (libsecp256k1, one signature at a time,
+# inline in the script interpreter) | secp256k1_simd (the interpreters defer
+# the checks whose failure is final and the block validator verifies them in
+# lane-parallel batches with src/secp256k1-simd). Set at the root so the
+# define reaches every module that compiles the interpreters.
+set(KTH_SIGNATURE_VERIFICATION "secp256k1" CACHE STRING "Signature verification: secp256k1 | secp256k1_simd")
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_simd")
+    add_definitions(-DKTH_SIGVERIFY_SIMD_BATCH)
+elseif (NOT KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1")
+    message(FATAL_ERROR "Invalid signature verification: ${KTH_SIGNATURE_VERIFICATION} (expected secp256k1|secp256k1_simd)")
+endif()
+message(STATUS "Knuth: Signature verification: ${KTH_SIGNATURE_VERIFICATION}")
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

@@ -142,3 +142,58 @@ size. Where there is no AVX-512 IFMA the algebraic batch is the only
 speed-up available for Schnorr inputs. The two are not combined here: doing
 so would mean lifting the `R_i` with the vector field and vectorising the
 bucket accumulation, which is a separate piece of work.
+
+## Why there is no NEON or WebAssembly backend
+
+The lane kernel only pays off when a lane can multiply 52-bit limbs in one
+instruction. NEON and WASM SIMD128 have no 64x64 lane multiply, only
+32x32 -> 64 (`umull` / `i64x2.extmul_i32x4`), which forces radix 2^26 with
+ten limbs and 100 products per field multiplication. A probe of exactly that
+(`fe10x26`, two elements per `v128`, built with Emscripten 6.0.13 `-O3
+-msimd128`, run under node 24 / V8) against the same algorithm in scalar
+WASM gives, per field multiplication per element:
+
+| | scalar WASM | SIMD128, 2 lanes | ratio |
+|---|---:|---:|---:|
+| Apple M6 (V8 on arm64) | 33.9 ns | 36.2 ns | 0.94x |
+| Zen 5 (V8 on x64) | 61.5 ns | 50.1 ns | 1.23x |
+
+The kernel also does about 1.5x the field work of libsecp256k1's wNAF
+ladder per signature (fixed windows, complete additions, blended digit-0
+adds), which the IFMA backend repays with its 8 lanes and 52-bit
+multiplier; a 2-lane 32-bit backend cannot. On arm64 and in WASM the right
+tools are libsecp256k1's scalar code (13 us per ECDSA verification on the
+M6) and, for Schnorr, the algebraic batch below.
+
+## Using it in the node: deferred signature checks
+
+The conan option `signature_verification` selects how block validation
+verifies signatures:
+
+| value | behaviour |
+|---|---|
+| `secp256k1` (default) | libsecp256k1 inline in the script interpreter, one signature at a time |
+| `secp256k1_simd` | the interpreters defer the checks whose failure is final and the block validator verifies them in lane-parallel batches |
+
+It maps to the CMake variable `KTH_SIGNATURE_VERIFICATION` and the define
+`KTH_SIGVERIFY_SIMD_BATCH`, and applies to both script engines (the native
+VM in `domain` and the BCHN interpreter in `consensus`).
+
+A script interpreter cannot batch by itself: CHECKSIG needs its answer before
+the next opcode. Under NULLFAIL (every BCH block since November 2017) a
+non-empty signature that fails verification fails the whole script, so for
+those checks the interpreter may assume validity, record the check
+(`deferred::record_*`) and move on; the block validator (`batch_validate`)
+calls `deferred::begin()` on each worker before its transactions and
+`deferred::end()` after, which verifies everything the worker collected with
+`best_backend()`. A failing batch rejects the block exactly where a failing
+CHECKSIG would have, and the validator re-runs the transactions inline to
+report the culprit. The interpreters open the deferral scope only around
+CHECKSIG / CHECKSIGVERIFY, CHECKDATASIG / CHECKDATASIGVERIFY and Schnorr-mode
+CHECKMULTISIG, and only when NULLFAIL is active; legacy ECDSA CHECKMULTISIG
+(which tries keys in order and tolerates failed checks) and pre-NULLFAIL
+scripts always verify inline. SigChecks accounting is unchanged.
+
+The VMB test vectors run every script twice when the switch is on, inline
+and deferred, and require the same verdict. Mempool (per-transaction)
+validation stays inline.

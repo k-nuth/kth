@@ -22,6 +22,11 @@
 #include <kth/domain/constants.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
+#if defined(KTH_SIGVERIFY_SIMD_BATCH)
+#include <kth/secp256k1_simd/batch_verify.hpp>
+#include <kth/secp256k1_simd/deferred.hpp>
+#endif
+
 namespace kth::blockchain {
 
 using namespace kth::domain::chain;
@@ -449,39 +454,83 @@ code validate_block_batch(
     // Total SigChecks per transaction; each worker writes its own slot (no contention).
     std::vector<size_t> task_sigchecks(tasks.size(), 0);
 
+    // Records the first failing transaction (inline verification, so the
+    // diagnostic pinpoints the input) and sets the shared failure state.
+    auto report_failure = [&](verify_task const& task, code const& ec) {
+        std::lock_guard<std::mutex> lk(err_mutex);
+        if ( ! failed.exchange(true)) {
+            first_error = ec;
+            // Re-run per input to pinpoint the culprit and emit a decisive
+            // diagnostic (everything needed to reproduce it in a standalone
+            // verify_script test). Only on failure, so it is off the hot path.
+            auto const& inputs = task.tx->inputs();
+            for (uint32_t ii = 0; ii < inputs.size(); ++ii) {
+                if (validate_input::verify_script(*task.tx, ii, task.flags).first == error::success) {
+                    continue;
+                }
+                auto const& pv = inputs[ii].previous_output();
+                spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
+                    task.height, ec.message(),
+                    static_cast<uint64_t>(task.flags),
+                    encode_hash(task.tx->hash()), ii,
+                    encode_hash(pv.hash()), pv.index(),
+                    pv.validation.cache.value(),
+                    encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
+                    encode_base16(to_data_chunk(inputs[ii].script(), false)));
+                break;
+            }
+        }
+    };
+
     auto run_bucket = [&](size_t bucket) {
       try {
+#if defined(KTH_SIGVERIFY_SIMD_BATCH)
+        // Deferred signature checks: the interpreter records every check whose
+        // failure would be final instead of verifying it, and this worker
+        // verifies all of them in lane-parallel batches once its transactions
+        // are done. A failing batch rejects the block like a failing script.
+        {
+            static std::once_flag once;
+            std::call_once(once, [] {
+                spdlog::info("[batch_validate] deferred signature checks: {}",
+                    secp256k1_simd::backend_name(secp256k1_simd::best_backend()));
+            });
+        }
+        secp256k1_simd::deferred::begin();
+#endif
         for (size_t t = bucket; t < tasks.size() && ! failed.load(std::memory_order_relaxed); t += workers) {
             auto const& task = tasks[t];
             auto const res = validate_input::verify_transaction(*task.tx, task.flags);
             if (res.first != error::success) {
-                std::lock_guard<std::mutex> lk(err_mutex);
-                if ( ! failed.exchange(true)) {
-                    first_error = res.first;
-                    // Re-run per input to pinpoint the culprit and emit a decisive
-                    // diagnostic (everything needed to reproduce it in a standalone
-                    // verify_script test). Only on failure, so it is off the hot path.
-                    auto const& inputs = task.tx->inputs();
-                    for (uint32_t ii = 0; ii < inputs.size(); ++ii) {
-                        if (validate_input::verify_script(*task.tx, ii, task.flags).first == error::success) {
-                            continue;
-                        }
-                        auto const& pv = inputs[ii].previous_output();
-                        spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
-                            task.height, res.first.message(),
-                            static_cast<uint64_t>(task.flags),
-                            encode_hash(task.tx->hash()), ii,
-                            encode_hash(pv.hash()), pv.index(),
-                            pv.validation.cache.value(),
-                            encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
-                            encode_base16(to_data_chunk(inputs[ii].script(), false)));
-                        break;
-                    }
-                }
+#if defined(KTH_SIGVERIFY_SIMD_BATCH)
+                (void)secp256k1_simd::deferred::end();
+#endif
+                report_failure(task, res.first);
                 return;
             }
             task_sigchecks[t] = res.second;
         }
+#if defined(KTH_SIGVERIFY_SIMD_BATCH)
+        auto const deferred = secp256k1_simd::deferred::end();
+        if (deferred.invalid != 0 && ! failed.load(std::memory_order_relaxed)) {
+            // Find the culprit inline (no batch active now, so the interpreter
+            // verifies every signature itself).
+            for (size_t t = bucket; t < tasks.size(); t += workers) {
+                auto const& task = tasks[t];
+                auto const res = validate_input::verify_transaction(*task.tx, task.flags);
+                if (res.first != error::success) {
+                    report_failure(task, res.first);
+                    return;
+                }
+            }
+            std::lock_guard<std::mutex> lk(err_mutex);
+            if ( ! failed.exchange(true)) {
+                first_error = error::operation_failed;
+                spdlog::error("[batch_validate] deferred signature batch reported {} invalid of {} but inline verification passed",
+                    deferred.invalid, deferred.total);
+            }
+        }
+#endif
       } catch (std::exception const& e) {
         // A worker thread must not let an exception escape (std::terminate).
         std::lock_guard<std::mutex> lk(err_mutex);
