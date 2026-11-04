@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_SYNC_MESSAGES_HPP
 #define KTH_NODE_SYNC_MESSAGES_HPP
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <chrono>
 #include <cstdint>
 #include <variant>
@@ -355,7 +356,7 @@ template <typename Channel, typename Msg>
         }
         // Wait before retrying (except on last attempt)
         if (attempt + 1 < max_attempts) {
-            ::asio::steady_timer timer(executor);
+            ::kth::steady_timer timer(executor);
             timer.expires_after(retry_delay);
             co_await timer.async_wait(::asio::use_awaitable);
         }

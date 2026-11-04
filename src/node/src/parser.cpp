@@ -20,7 +20,7 @@
 #include <kth/domain/config/parser.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/network.hpp>
 #endif
 
@@ -158,7 +158,7 @@ void add_command_options(CLI::App& app, configuration& cfg) {
 // options via `--section.key` on the command line and via `[section]/key`
 // in the INI-style config file.
 void add_settings(CLI::App& app, configuration& cfg) {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     // [log]
     app.add_option("--log.debug_file",       cfg.network.debug_file);
     app.add_option("--log.error_file",       cfg.network.error_file);
@@ -269,7 +269,7 @@ void add_settings(CLI::App& app, configuration& cfg) {
             throw CLI::ValidationError("--node.require_standard_size",
                 "removed; use --node.acceptnonstdtxn (general standardness switch)");
         }, "Removed; use --node.acceptnonstdtxn.");
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     app.add_option("--node.relay_transactions", cfg.network.relay_transactions);
 #endif
     app.add_option("--node.refresh_transactions",           cfg.node.refresh_transactions);
@@ -353,12 +353,19 @@ parser::parser(domain::config::network context)
 void parser::set_default_configuration() {
     using serve = domain::message::version::service;
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
+#if defined(KTH_BROWSER_NODE)
+    // Browser sessions use one explicit peer through an operator-selected bridge.
+    configured.network.inbound_connections = 0;
+    configured.network.outbound_connections = 0;
+    configured.network.seeds.clear();
+#else
     configured.network.inbound_connections = 8;
-    configured.network.rotation_size = 10000000;
     // Headers-first sync allows parallel block downloads from multiple peers.
     // 2026-02-02: Increased from 8 to 32 for better sync performance.
     configured.network.outbound_connections = 32;
+#endif
+    configured.network.rotation_size = 10000000;
     configured.network.host_pool_capacity = 1000;
     configured.network.services = serve::node_network;
 #endif
@@ -443,7 +450,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             return false;
         }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
         if (configured.chain.fix_checkpoints) {
             domain::config::fix_checkpoints(configured.network.identifier,
                 configured.chain.checkpoints,
@@ -503,7 +510,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         return false;
     }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     if (configured.chain.fix_checkpoints) {
         domain::config::fix_checkpoints(configured.network.identifier,
             configured.chain.checkpoints,

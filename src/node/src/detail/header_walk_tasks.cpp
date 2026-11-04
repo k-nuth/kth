@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
 
 #include <algorithm>
@@ -116,7 +117,7 @@ struct walk_timer::arming {
         : timer(strand)
     {}
 
-    ::asio::steady_timer timer;
+    ::kth::steady_timer timer;
     bool cancelled{false};
 };
 

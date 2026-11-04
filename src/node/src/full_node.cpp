@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/blockchain/detail/block_chain_internal.hpp>
 
 #include <kth/node/full_node.hpp>
@@ -30,7 +31,7 @@ using namespace kth::domain::chain;
 using namespace kth::domain::config;
 using namespace ::asio::experimental::awaitable_operators;
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 using namespace kth::network;
 #endif
 
@@ -39,7 +40,7 @@ using namespace kth::network;
 // =============================================================================
 
 full_node::full_node(configuration const& configuration)
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
@@ -64,7 +65,7 @@ full_node::full_node(configuration const& configuration)
     , rpc_settings_(configuration.rpc)
 #endif
 {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     spdlog::debug("[full_node] configuration.network.threads = {}", configuration.network.threads);
     spdlog::debug("[full_node] network_settings_.threads = {}", network_settings_.threads);
 
@@ -93,7 +94,7 @@ full_node::~full_node() {
 // =============================================================================
 
 ::asio::awaitable<code> full_node::start() {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     if (!stopped()) {
         co_return error::operation_failed;
     }
@@ -121,7 +122,7 @@ full_node::~full_node() {
             co_return message_result::handled;
         });
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
@@ -150,7 +151,7 @@ full_node::~full_node() {
 }
 
 ::asio::awaitable<code> full_node::run() {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     if (stopped()) {
         co_return error::service_stopped;
     }
@@ -170,13 +171,13 @@ full_node::~full_node() {
         co_return error::operation_failed;
     }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     network_.set_top_block({*top_hash, block_height});
 #endif
 
     spdlog::info("[node] Node start heights: header-sync ({}), block-sync ({}).", header_height, block_height);
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     // Run all background tasks in parallel using structured concurrency.
     // This blocks until ALL tasks complete (i.e., until stop() is called).
     // No detached coroutines - everything is properly awaited.
@@ -215,8 +216,18 @@ full_node::~full_node() {
     }
     spdlog::debug("[full_node] run_blockchain_subscriber() - channel obtained, entering loop");
 
+#if defined(KTH_BROWSER_NODE)
+    browser_block_subscription_ = blockchain_channel;
+    while (!stopped()) {
+        auto [ec, fork_height, incoming, outgoing] = co_await blockchain_channel->async_receive(
+            ::asio::as_tuple(::asio::use_awaitable));
+        if (ec || !handle_reorganized(error::success, fork_height, incoming, outgoing)) break;
+    }
+    unsubscribe_blockchain(blockchain_channel);
+    browser_block_subscription_.reset();
+#else
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
 
     while (!stopped()) {
         // Non-blocking try_receive
@@ -249,10 +260,11 @@ full_node::~full_node() {
             }
         }
     }
+#endif
     spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 ::asio::awaitable<void> full_node::run_sync() {
     spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 
@@ -328,10 +340,15 @@ void full_node::notify_fatal(std::string const& reason) {
 }
 
 void full_node::stop() {
+#if defined(KTH_BROWSER_NODE)
+    // Closing only this subscription wakes its owner without stopping a chain
+    // operation that the sync nursery still owns. Covers stop before receive.
+    if (browser_block_subscription_) browser_block_subscription_->close();
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
     // run_sync() may still be inside chain.organize() when this is called.
@@ -341,7 +358,7 @@ void full_node::stop() {
 }
 
 void full_node::join() {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     network_.join();
 #endif
 
@@ -357,7 +374,7 @@ void full_node::join() {
 }
 
 bool full_node::stopped() const {
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     return network_.stopped();
 #else
     return true;  // In WASM, there's no network, always "stopped" from network perspective
@@ -376,7 +393,7 @@ blockchain::settings const& full_node::chain_settings() const {
     return chain_settings_;
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 kth::network::settings const& full_node::network_settings() const {
     return network_.network_settings();
 }
@@ -390,7 +407,7 @@ block_chain& full_node::chain_kth() {
     return chain_;
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 kth::node::p2p_node& full_node::network() {
     return network_;
 }
@@ -404,7 +421,7 @@ threadpool& full_node::chain_thread_pool() {
     return chain_.thread_pool();
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 threadpool& full_node::network_thread_pool() {
     return network_.thread_pool();
 }
@@ -470,7 +487,7 @@ bool full_node::handle_reorganized(
 
     auto const height = *safe_add(fork_height, incoming->size());
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     network_.set_top_block({incoming->back()->hash(), height});
 #endif
 

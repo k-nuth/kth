@@ -9,7 +9,7 @@
 
 #include <kth/blockchain.hpp>
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 #include <kth/network.hpp>
 #endif
 
@@ -57,7 +57,7 @@ struct KND_API configuration {
     node::rpc_settings rpc;
     blockchain::settings chain;
     database::settings database;
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
     network::settings network;
 #endif
 };

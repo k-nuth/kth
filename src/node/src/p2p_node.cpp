@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/node/p2p_node.hpp>
 
 #include <kth/node/detail/block_announcements.hpp>
@@ -59,6 +60,14 @@ p2p_node::~p2p_node() {
 }
 
 ::asio::awaitable<code> p2p_node::start() {
+#if defined(KTH_BROWSER_NODE)
+    if (settings_.browser_bridge_url.empty() || settings_.peers.size() != 1 ||
+        settings_.outbound_connections != 0 || settings_.inbound_connections != 0 ||
+        !settings_.seeds.empty() || settings_.channel_heartbeat_minutes == 0) {
+        spdlog::error("[p2p_node] Browser mode requires one manual bridge peer, no automatic peers/seeds/listener, and a positive heartbeat interval");
+        co_return error::operation_failed;
+    }
+#endif
     // One transition, and this object is single-use.
     //
     // A stop closes new_peer_channel_, stop_signal_ and peer_notification_channel_
@@ -165,9 +174,14 @@ p2p_node::~p2p_node() {
     });
 
     // Wait for supervisor to be ready before connecting manual peers
+#if defined(KTH_BROWSER_NODE)
+    auto [ready_ec] = co_await browser_supervisor_ready_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ready_ec || stopped()) { co_await network_tasks.join(); co_return error::service_stopped; }
+#else
     while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped()) {
         co_await ::asio::post(pool_.get_executor(), ::asio::use_awaitable);
     }
+#endif
 
     // Connect to configured manual peers (supervisor is now ready)
     if (!settings_.peers.empty()) {
@@ -209,6 +223,9 @@ void p2p_node::stop() {
     }
 
     supervisor_ready_ = false;  // Not for restart: see start(), which refuses one.
+#if defined(KTH_BROWSER_NODE)
+    browser_supervisor_ready_.close();
+#endif
 
     // Before the channel cancellations below, and after the stopped state is
     // published, so a wake
@@ -729,7 +746,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     // Wait for seeds with early exit conditions
     // We use a timer loop to check for early exit while tasks run
-    ::asio::steady_timer check_timer(executor);
+    ::kth::steady_timer check_timer(executor);
     auto const max_wait = std::chrono::seconds(settings_.connect_timeout_seconds + 35);
     auto const start_time = std::chrono::steady_clock::now();
 
@@ -821,7 +838,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
                 // Note: Some nodes send a small self-announcement addr (1-2 addresses)
                 // after handshake, before responding to getaddr with many addresses.
                 // We accumulate addresses and stop after getting enough or timeout.
-                ::asio::steady_timer timer(executor);
+                ::kth::steady_timer timer(executor);
                 timer.expires_after(30s);
                 size_t total_addresses = 0;
                 constexpr size_t minimum_useful_addresses = 10;
@@ -906,10 +923,16 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 }
 
 ::asio::awaitable<void> p2p_node::run_outbound() {
+#if defined(KTH_BROWSER_NODE)
+    co_return; // Bridge peers are explicit; native discovery never runs here.
+#endif
     co_await maintain_outbound_connections();
 }
 
 ::asio::awaitable<void> p2p_node::run_inbound() {
+#if defined(KTH_BROWSER_NODE)
+    co_return; // A browser Worker cannot listen on a TCP socket.
+#endif
     if (settings_.inbound_port == 0) {
         spdlog::info("[p2p_node] Inbound connections disabled (port 0)");
         co_return;
@@ -974,7 +997,7 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer check_timer(executor);
+    ::kth::steady_timer check_timer(executor);
     auto const ping_interval = std::chrono::seconds(settings_.channel_heartbeat_minutes * 60);
     auto const check_interval = std::chrono::seconds(5);  // Check stopped flag every 5s
 
@@ -984,7 +1007,13 @@ concurrent_channel<peer_notification>& p2p_node::peer_events() {
 
     while (!peer->stopped() && !stopped()) {
         // Use short check_interval for responsive shutdown, but track ping timing separately
+#if defined(KTH_BROWSER_NODE)
+        // Message closure wakes shutdown. The only scheduled wake is a real
+        // protocol heartbeat deadline, not a stopped-flag polling interval.
+        check_timer.expires_at(last_ping + ping_interval);
+#else
         check_timer.expires_after(check_interval);
+#endif
 
         // Wait for message or check timer
         // Using short timer ensures we detect stopped status promptly
@@ -1108,6 +1137,12 @@ void p2p_node::probe_status_task(status_probe_point point) const {
 }
 
 void p2p_node::wake_status_task() noexcept {
+#if defined(KTH_BROWSER_NODE)
+    // All callers and waits are owned by this Worker. Never enqueue a borrowed
+    // this that could survive the node's asynchronous stop/join.
+    status_timer_.cancel();
+    return;
+#endif
     // Posted to the STRAND, not to the pool. The wait runs on the pool and stop()
     // runs on whatever thread asked for it, and `pool_` has several threads — so
     // posting to its executor would put the cancellation on some thread while the
@@ -1136,7 +1171,7 @@ void p2p_node::wake_status_task() noexcept {
 
 ::asio::awaitable<void> p2p_node::maintain_outbound_connections() {
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
 
     // Wait for peer_supervisor to be ready (deterministic synchronization)
     // The && operator starts coroutines but doesn't guarantee execution order.
@@ -1392,6 +1427,9 @@ void p2p_node::wake_status_task() noexcept {
 
     // Signal that we're ready to receive peers (deterministic synchronization)
     supervisor_ready_.store(true, std::memory_order_release);
+#if defined(KTH_BROWSER_NODE)
+    browser_supervisor_ready_.try_send(std::error_code{});
+#endif
 
     while (!stopped()) {
         // Wait for new peer event
