@@ -12,7 +12,7 @@ using namespace kth::node::rpc;
 
 TEST_CASE("writer scalar number", "[rpc json]") {
     writer w;
-    w.value(static_cast<std::uint64_t>(42));
+    w.value(uint64_t(42));
     REQUIRE(w.str() == "42");
 }
 
@@ -20,7 +20,7 @@ TEST_CASE("writer object with mixed fields", "[rpc json]") {
     writer w;
     w.begin_object();
     w.field("name", "kth");
-    w.field("height", static_cast<std::int64_t>(7));
+    w.field("height", int64_t(7));
     w.field("ok", true);
     w.end_object();
     REQUIRE(w.str() == R"({"name":"kth","height":7,"ok":true})");
@@ -30,8 +30,8 @@ TEST_CASE("writer nested array of objects", "[rpc json]") {
     writer w;
     w.begin_object();
     w.key("items").begin_array();
-    w.begin_object().field("id", static_cast<std::int64_t>(1)).end_object();
-    w.begin_object().field("id", static_cast<std::int64_t>(2)).end_object();
+    w.begin_object().field("id", int64_t(1)).end_object();
+    w.begin_object().field("id", int64_t(2)).end_object();
     w.end_array();
     w.end_object();
     REQUIRE(w.str() == R"({"items":[{"id":1},{"id":2}]})");

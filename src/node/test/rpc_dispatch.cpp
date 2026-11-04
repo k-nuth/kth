@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <catch2/catch_approx.hpp>
 #include <optional>
 #include "sync_harness.hpp"
 
@@ -264,7 +265,7 @@ TEST_CASE("getblockheader dispatch counts confirmations from the connected tip",
         simdjson::padded_string padded(raw);
         simdjson::ondemand::document document;
         REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
-        std::int64_t value = 0;
+        int64_t value = 0;
         REQUIRE(document["result"]["confirmations"].get_int64().get(value) == simdjson::SUCCESS);
         return value;
     };
@@ -497,7 +498,7 @@ TEST_CASE("getnetworkhashps dispatch computes the rate over the connected chain"
         auto const time = [&](uint32_t h) {
             return h == 0 ? genesis.header().timestamp() : trunk[h - 1].header().timestamp();
         };
-        return static_cast<double>(time(last) - time(first));
+        return double(time(last) - time(first));
     };
 
     REQUIRE(rate("[2,5]") == Catch::Approx(2 * work / span(3, 5)));
@@ -507,6 +508,12 @@ TEST_CASE("getnetworkhashps dispatch computes the rate over the connected chain"
     REQUIRE(rate("[2,-1]") == rate("[2,5]"));
     REQUIRE(rate("[2,99]") == rate("[2,5]"));
     REQUIRE(rate("[]") == Catch::Approx(5 * work / span(0, 5)));
+    REQUIRE(rate("[null,null]") == rate("[]"));
+    REQUIRE(rate("[2,null]") == rate("[2]"));
+    // BCHN returns zero at genesis even for a non-positive lookup.
+    REQUIRE(rate("[1,0]") == 0.0);
+    REQUIRE(rate("[0,0]") == 0.0);
+    REQUIRE(rate("[-1,0]") == 0.0);
     for (auto const* params : {"[0]", "[-1]"}) {
         CAPTURE(params);
         CHECK(request(params) == node::rpc::build_error("4", -8,

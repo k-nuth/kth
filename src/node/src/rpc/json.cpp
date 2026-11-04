@@ -92,7 +92,7 @@ std::vector<std::string> params_strings(std::string_view params_json) {
     return out;
 }
 
-std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index) {
+std::optional<uint64_t> params_uint(std::string_view params_json, size_t index) {
     if (params_json.empty()) {
         return std::nullopt;
     }
@@ -110,7 +110,7 @@ std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size
         return std::nullopt;
     }
 
-    std::size_t i = 0;
+    size_t i = 0;
     for (auto element : arr) {
         if (i != index) {
             ++i;
@@ -127,7 +127,7 @@ std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size
         if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
             text = text.substr(1, text.size() - 2);
         }
-        std::uint64_t out = 0;
+        uint64_t out = 0;
         auto const [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
         if (ec == std::errc{} && ptr == text.data() + text.size()) {
             return out;
@@ -137,8 +137,8 @@ std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size
     return std::nullopt;
 }
 
-std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t index,
-                                       std::int64_t fallback) {
+std::optional<int64_t> params_int(std::string_view params_json, size_t index,
+                                       int64_t fallback) {
     if (params_json.empty()) {
         return fallback;
     }
@@ -156,7 +156,7 @@ std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t
         return fallback;
     }
 
-    std::size_t i = 0;
+    size_t i = 0;
     for (auto element : arr) {
         if (i != index) {
             ++i;
@@ -180,7 +180,7 @@ std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t
         if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
             text = text.substr(1, text.size() - 2);
         }
-        std::int64_t out = 0;
+        int64_t out = 0;
         auto const [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
         if (ec == std::errc{} && ptr == text.data() + text.size()) {
             return out;
@@ -190,7 +190,7 @@ std::optional<std::int64_t> params_int(std::string_view params_json, std::size_t
     return fallback;
 }
 
-std::optional<bool> params_bool(std::string_view params_json, std::size_t index, bool fallback) {
+std::optional<bool> params_bool(std::string_view params_json, size_t index, bool fallback) {
     if (params_json.empty()) {
         return fallback;
     }
@@ -208,7 +208,7 @@ std::optional<bool> params_bool(std::string_view params_json, std::size_t index,
         return fallback;
     }
 
-    std::size_t i = 0;
+    size_t i = 0;
     for (auto element : arr) {
         if (i != index) {
             ++i;
@@ -248,7 +248,7 @@ std::string build_error(std::string_view id_raw, int code, std::string_view mess
     w.begin_object();
     w.key("result").value_null();
     w.key("error").begin_object();
-    w.field("code", static_cast<std::int64_t>(code));
+    w.field("code", int64_t(code));
     w.field("message", message);
     w.end_object();
     w.field_raw("id", id_raw.empty() ? "null" : id_raw);
@@ -332,13 +332,13 @@ writer& writer::value(bool b) {
     return *this;
 }
 
-writer& writer::value(std::int64_t n) {
+writer& writer::value(int64_t n) {
     pre_value();
     b_.append(n);
     return *this;
 }
 
-writer& writer::value(std::uint64_t n) {
+writer& writer::value(uint64_t n) {
     pre_value();
     b_.append(n);
     return *this;

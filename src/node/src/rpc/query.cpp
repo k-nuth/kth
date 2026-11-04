@@ -39,14 +39,14 @@ std::string block_to_hex(domain::chain::block const& block) {
 }
 
 std::string render_blockchain_info(
-    std::string_view chain, std::size_t blocks, std::size_t headers,
+    std::string_view chain, size_t blocks, size_t headers,
     std::string_view best_block_hash, double difficulty) {
 
     writer w;
     w.begin_object();
     w.field("chain", chain);
-    w.field("blocks", static_cast<std::uint64_t>(blocks));
-    w.field("headers", static_cast<std::uint64_t>(headers));
+    w.field("blocks", uint64_t(blocks));
+    w.field("headers", uint64_t(headers));
     w.field("bestblockhash", best_block_hash);
     w.field("difficulty", difficulty);
     w.end_object();
@@ -56,7 +56,7 @@ std::string render_blockchain_info(
 namespace {
 
 // Compact nBits as an 8-char hex string (the getblockheader bits format).
-std::string bits_to_hex(std::uint32_t bits) {
+std::string bits_to_hex(uint32_t bits) {
     return fmt::format("{:08x}", bits);
 }
 
@@ -79,9 +79,9 @@ std::string render_hash_list(hash_list const& hashes) {
 std::string render_mempool_info(blockchain::mempool_totals const& totals) {
     writer w;
     w.begin_object();
-    w.field("size", static_cast<std::uint64_t>(totals.size));
-    w.field("bytes", static_cast<std::uint64_t>(totals.bytes));
-    w.field("total_fee", static_cast<std::uint64_t>(totals.total_fee));
+    w.field("size", uint64_t(totals.size));
+    w.field("bytes", uint64_t(totals.bytes));
+    w.field("total_fee", uint64_t(totals.total_fee));
     w.end_object();
     return w.str();
 }
@@ -90,9 +90,9 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby) {
     writer w;
     w.begin_object();
-    w.field("fee", static_cast<std::uint64_t>(entry.fee));
-    w.field("size", static_cast<std::uint64_t>(entry.size));
-    w.field("time", static_cast<std::uint64_t>(entry.time));
+    w.field("fee", uint64_t(entry.fee));
+    w.field("size", uint64_t(entry.size));
+    w.field("time", uint64_t(entry.time));
     w.key("depends");
     write_hash_array(w, depends);
     w.key("spentby");
@@ -109,13 +109,13 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
 }
 
 std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
-                                   std::uint32_t min_time, std::uint32_t max_time) {
+                                   uint32_t min_time, uint32_t max_time) {
     writer w;
     if (max_time <= min_time || work_at_end < work_before) {
         w.value(0.0);
     } else {
         uint256_t const work = work_at_end - work_before;
-        w.value(work.convert_to<double>() / static_cast<double>(max_time - min_time));
+        w.value(work.convert_to<double>() / double(max_time - min_time));
     }
     return w.str();
 }
@@ -127,7 +127,7 @@ namespace {
 // unspendable or unrecognized script.
 struct script_destination {
     std::string_view type;
-    std::size_t required = 0;
+    size_t required = 0;
     std::vector<std::string> addresses;
 };
 
@@ -155,7 +155,7 @@ script_destination describe_output_script(domain::chain::script const& script,
             // <m> <pubkey>... <n> checkmultisig
             out.type = "multisig";
             auto const ops = script.operations();
-            out.required = std::size_t(uint8_t(ops.front().code()) -
+            out.required = size_t(uint8_t(ops.front().code()) -
                                        uint8_t(domain::machine::opcode::push_positive_1) + 1);
             for (auto it = ops.begin() + 1; it + 2 < ops.end(); ++it) {
                 auto const address = payment_address::from_shorthash(bitcoin_short_hash(it->data()), p2kh);
@@ -198,9 +198,9 @@ std::string render_transaction(domain::chain::transaction const& tx,
     w.begin_object();
     w.field("txid", encode_hash(tx.hash()));
     w.field("hash", encode_hash(tx.hash()));
-    w.field("version", static_cast<std::int64_t>(tx.version()));
-    w.field("size", static_cast<std::uint64_t>(tx.serialized_size(true)));
-    w.field("locktime", static_cast<std::int64_t>(tx.locktime()));
+    w.field("version", int64_t(tx.version()));
+    w.field("size", uint64_t(tx.serialized_size(true)));
+    w.field("locktime", int64_t(tx.locktime()));
 
     w.key("vin").begin_array();
     for (auto const& input : tx.inputs()) {
@@ -209,19 +209,19 @@ std::string render_transaction(domain::chain::transaction const& tx,
             w.field("coinbase", encode_base16(input.script().bytes()));
         } else {
             w.field("txid", encode_hash(input.previous_output().hash()));
-            w.field("vout", static_cast<std::int64_t>(input.previous_output().index()));
+            w.field("vout", int64_t(input.previous_output().index()));
             w.key("scriptSig").begin_object();
             w.field("asm", input.script().to_string(flags));
             w.field("hex", encode_base16(input.script().bytes()));
             w.end_object();
         }
-        w.field("sequence", static_cast<std::int64_t>(input.sequence()));
+        w.field("sequence", int64_t(input.sequence()));
         w.end_object();
     }
     w.end_array();
 
     w.key("vout").begin_array();
-    std::uint64_t n = 0;
+    uint64_t n = 0;
     for (auto const& output : tx.outputs()) {
         w.begin_object();
         w.field_raw("value", satoshi_to_bitcoin(output.value()));
@@ -231,7 +231,7 @@ std::string render_transaction(domain::chain::transaction const& tx,
         w.field("asm", output.script().to_string(flags));
         w.field("hex", encode_base16(output.script().bytes()));
         if ( ! destination.addresses.empty()) {
-            w.field("reqSigs", static_cast<std::uint64_t>(destination.required));
+            w.field("reqSigs", uint64_t(destination.required));
         }
         w.field("type", destination.type);
         if ( ! destination.addresses.empty()) {
@@ -266,19 +266,19 @@ std::string header_to_hex(domain::chain::header const& header) {
 }
 
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash,
-                                std::int64_t confirmations) {
+                                size_t height, hash_digest const& hash,
+                                int64_t confirmations) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
     w.field("confirmations", confirmations);
-    w.field("height", static_cast<std::uint64_t>(height));
-    w.field("version", static_cast<std::int64_t>(header.version()));
+    w.field("height", uint64_t(height));
+    w.field("version", int64_t(header.version()));
     w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     w.field("merkleroot", encode_hash(header.merkle()));
-    w.field("time", static_cast<std::int64_t>(header.timestamp()));
+    w.field("time", int64_t(header.timestamp()));
     w.field("bits", bits_to_hex(header.bits()));
-    w.field("nonce", static_cast<std::int64_t>(header.nonce()));
+    w.field("nonce", int64_t(header.nonce()));
     w.end_object();
     return w.str();
 }
