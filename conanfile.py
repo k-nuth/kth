@@ -350,6 +350,12 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1"].names["cmake_find_package"] = "secp256k1"
         self.cpp_info.components["secp256k1"].names["cmake_find_package_multi"] = "secp256k1"
 
+        # Lane-parallel (SIMD) batch signature verification
+        self.cpp_info.components["secp256k1_simd"].libs = ["secp256k1-simd"]
+        self.cpp_info.components["secp256k1_simd"].names["cmake_find_package"] = "secp256k1-simd"
+        self.cpp_info.components["secp256k1_simd"].names["cmake_find_package_multi"] = "secp256k1-simd"
+        self.cpp_info.components["secp256k1_simd"].requires = ["secp256k1"]
+
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
@@ -489,7 +495,7 @@ class KthRecipe(KnuthConanFileV2):
         
         # Main target that includes all core components (equivalent to the old behavior)
         # This provides a convenient way to link against all of kth at once
-        main_requires = ["infrastructure", "domain", "database", "blockchain", "node", "secp256k1"]
+        main_requires = ["infrastructure", "domain", "database", "blockchain", "node", "secp256k1", "secp256k1_simd"]
         if self.options.consensus:
             main_requires.append("consensus")
         if self.settings.os != "Emscripten":
