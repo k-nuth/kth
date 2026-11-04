@@ -395,10 +395,30 @@ validate_address(method_context& ctx, request const& req) {
 // C-API counterpart: kth_blockchain_settings.byte_fee_satoshis.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 estimate_fee(method_context& ctx, request const& req) {
-    auto const args = params_strings(req.params);
-    if (args.size() > 1 || (args.size() == 1 && ! params_uint(req.params, 0))) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
             "estimatefee takes no argument or [nblocks] (a non-negative integer)"));
+    };
+    if ( ! req.params.empty()) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        size_t count = 0;
+        for (auto element : args) {
+            if (element.error() != simdjson::SUCCESS || ++count > 1) {
+                co_return invalid_params();
+            }
+        }
+        // Preserve the existing target conversion, but only after validating
+        // its container and arity; a non-array must never mean "no target".
+        if (count == 1 && ! params_uint(req.params, 0)) {
+            co_return invalid_params();
+        }
     }
     co_return render_estimate_fee(ctx.chain.chain_settings().byte_fee_satoshis);
 }
