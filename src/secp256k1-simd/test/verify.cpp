@@ -65,9 +65,15 @@ item make_valid(rng& r, scheme s, int pubkey_form) {
 std::vector<backend> backends() {
     std::vector<backend> b = {backend::scalar_portable};
     if (backend_available(backend::avx512_ifma)) b.push_back(backend::avx512_ifma);
+    for (backend g : {backend::cuda, backend::metal}) {
+        if (!backend_available(g)) continue;
+        set_gpu_min_batch(1);  // exercise the device for every batch size
+        b.push_back(g);
+    }
     return b;
 }
 
+std::size_t run_scheme(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b);
 std::size_t run(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b) {
     std::vector<signature_input> in;
     for (auto const& it : items) in.push_back(it.view());
@@ -91,6 +97,8 @@ void check_against_oracle(scheme s, std::vector<item> const& items) {
     }
 }
 
+std::size_t run_scheme(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b) { return run(s, items, results, b); }
+
 bytes32 n_minus(std::uint8_t const* s32) {
     mpz t = from_be32(s32);
     mpz_sub(t.v, N().v, t.v);
@@ -112,6 +120,31 @@ TEST_CASE("valid signatures verify on every backend", "[verify]") {
                 for (auto v : got) CHECK(v == 1);
             }
             check_against_oracle(s, items);
+        }
+    }
+}
+
+TEST_CASE("large batches verify on every backend", "[verify][large]") {
+    rng r(0x5eed0034);
+    for (scheme s : {scheme::ecdsa, scheme::schnorr}) {
+        std::size_t const n = 4096;
+        std::vector<item> items;
+        for (std::size_t i = 0; i < n; ++i) items.push_back(make_valid(r, s, static_cast<int>(i % 3)));
+        std::vector<std::size_t> corrupt;
+        for (std::size_t i = 0; i < n; i += 97) { items[i].sig[(i * 7) % 64] ^= 0x20; corrupt.push_back(i); }
+        for (backend b : backends()) {
+            for (int run = 0; run < 2; ++run) {  // twice: the device must be deterministic
+                std::vector<std::uint8_t> got;
+                std::size_t const count = run_scheme(s, items, got, b);
+                INFO("scheme " << (s == scheme::ecdsa ? "ecdsa" : "schnorr") << " backend " << backend_name(b) << " run " << run);
+                CHECK(count == n - corrupt.size());
+                std::size_t bad = 0;
+                for (std::size_t i = 0; i < n; ++i) {
+                    bool const expect = (i % 97) != 0;
+                    if ((got[i] == 1) != expect) ++bad;
+                }
+                CHECK(bad == 0);
+            }
         }
     }
 }

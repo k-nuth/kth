@@ -101,10 +101,44 @@ void bench_scheme(bool schnorr, std::size_t n) {
             ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::avx512_ifma));
         });
     }
+    for (backend g : {backend::cuda, backend::metal}) {
+        if (!backend_available(g)) continue;
+        b.run(std::string("secp256k1-simd, ") + std::string(backend_name(g)), [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, g));
+        });
+    }
     if (schnorr) {
         b.run("libsecp256k1, algebraic batch (ecmult_multi)", [&] {
             ankerl::nanobench::doNotOptimizeAway(verify_schnorr_bch_all(in, seed));
         });
+    }
+}
+
+// GPU cost per signature by batch size (end to end: preprocessing, upload,
+// kernel, download), next to the best CPU backend, to locate the crossover.
+void bench_gpu_sizes(bool schnorr) {
+    backend gpu_b = backend::secp256k1_fallback;
+    for (backend g : {backend::cuda, backend::metal}) if (backend_available(g)) gpu_b = g;
+    if (gpu_b == backend::secp256k1_fallback) return;
+    char const* name = schnorr ? "Schnorr (BCH)" : "ECDSA";
+    std::size_t const max_n = 65536;
+    auto const items = make_items(max_n, schnorr, 41);
+    backend const cpu_b = best_backend();
+    Bench b;
+    b.title(std::string(name) + ": " + std::string(backend_name(gpu_b)) + " vs " + std::string(backend_name(cpu_b)) + ", by batch size")
+        .unit("signature").relative(true).minEpochIterations(2);
+    for (std::size_t n : {std::size_t(64), std::size_t(256), std::size_t(1024), std::size_t(4096), std::size_t(16384), max_n}) {
+        std::vector<signature_input> in;
+        for (std::size_t i = 0; i < n; ++i) in.push_back(items[i].view());
+        std::vector<std::uint8_t> out(n);
+        b.batch(n).run("gpu batch of " + std::to_string(n), [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, gpu_b));
+        });
+        if (n <= 4096) {
+            b.batch(n).run("cpu batch of " + std::to_string(n), [&] {
+                ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, cpu_b));
+            });
+        }
     }
 }
 
@@ -147,11 +181,24 @@ void bench_batch_sizes(bool schnorr) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    bool const gpu_only = argc > 1 && std::string(argv[1]) == "gpu";
     std::printf("best backend: %s (%zu lanes)\n", std::string(backend_name(best_backend())).c_str(), lanes(best_backend()));
+    for (backend g : {backend::cuda, backend::metal}) {
+        if (backend_available(g)) std::printf("gpu backend: %s on %s\n", std::string(backend_name(g)).c_str(), device_name(g).c_str());
+    }
+    set_gpu_min_batch(1);
+    if (gpu_only) {
+        bench_gpu_sizes(false);
+        bench_gpu_sizes(true);
+        secp256k1_context_destroy(ctx);
+        return 0;
+    }
     bench_scheme(false, 2048);
     bench_scheme(true, 2048);
+    bench_gpu_sizes(false);
+    bench_gpu_sizes(true);
     bench_batch_sizes(false);
     bench_batch_sizes(true);
     bench_schnorr_algebraic_sizes();

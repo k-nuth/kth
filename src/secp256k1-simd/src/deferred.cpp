@@ -51,7 +51,8 @@ std::size_t verify_all(std::vector<item> const& items, bool schnorr) {
     in.reserve(items.size());
     for (auto const& it : items) in.push_back({it.sig, it.msg, it.pubkey, it.pubkey_size});
     std::vector<std::uint8_t> out(items.size());
-    std::size_t const valid = schnorr ? verify_schnorr_bch(in, out) : verify_ecdsa(in, out);
+    backend const b = best_backend(in.size());
+    std::size_t const valid = schnorr ? verify_schnorr_bch(in, out, b) : verify_ecdsa(in, out, b);
     return items.size() - valid;
 }
 
