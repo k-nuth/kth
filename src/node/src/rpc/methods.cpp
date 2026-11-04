@@ -47,10 +47,18 @@ std::int64_t confirmations(blockchain::block_chain const& chain,
     if ( ! view || height > view->connected_tip_height) {
         return -1;
     }
-    auto const on_chain = height == view->connected_tip_height
-        ? std::expected<hash_digest, database::result_code>{view->tip_hash}
-        : chain.get_block_hash(height);
-    if ( ! on_chain || *on_chain != hash) {
+    // The durable height table may already name a replacement branch while
+    // this publication still names the old connected tip. Walk that tip's
+    // immutable ancestry instead of mixing it with a newer height mapping.
+    auto const& index = chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    if (tip == blockchain::header_index::null_index ||
+        index.get_height(tip) < 0 ||
+        static_cast<size_t>(index.get_height(tip)) != view->connected_tip_height) {
+        return -1;
+    }
+    auto const ancestor = index.get_ancestor(tip, static_cast<int32_t>(height));
+    if (ancestor == blockchain::header_index::null_index || index.get_hash(ancestor) != hash) {
         return -1;
     }
     return static_cast<std::int64_t>(view->connected_tip_height - height + 1);
