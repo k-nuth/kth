@@ -1,106 +1,53 @@
-// /**
-//  * Copyright (c) 2016-present Knuth Project developers.
-//  *
-//  * This file is part of the Knuth Project.
-//  *
-//  * This program is free software: you can redistribute it and/or modify
-//  * it under the terms of the GNU Affero General Public License as published by
-//  * the Free Software Foundation, either version 3 of the License, or
-//  * (at your option) any later version.
-//  *
-//  * This program is distributed in the hope that it will be useful,
-//  * but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  * GNU Affero General Public License for more details.
-//  *
-//  * You should have received a copy of the GNU Affero General Public License
-//  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
-//  */
-// #include <boost/test/unit_test.hpp>
-// #include <kth/infrastructure.hpp>
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// using namespace kth;
+#include <test_helpers.hpp>
+#include <kth/infrastructure/formats/base_10.hpp>
+#include <limits>
+#include <string>
 
-// Start Test Suite: base 10 tests
+using namespace kth;
 
-// #define TEST_AMOUNT(NAME, EXPECTED, ...) \
-// BOOST_AUTO_TEST_CASE(parse_amount_##NAME##_test) \
-// { \
-//     uint64_t result, expected = EXPECTED; \
-//     REQUIRE(decode_base10(result, __VA_ARGS__));
-//     REQUIRE(result == expected);
-// }
+TEST_CASE("decimal formatting preserves exact units", "[infrastructure][base10]") {
+    CHECK(encode_base10(0, btc_decimal_places) == "0");
+    CHECK(encode_base10(1, btc_decimal_places) == "0.00000001");
+    CHECK(encode_base10(10, btc_decimal_places) == "0.0000001");
+    CHECK(encode_base10(100000000, btc_decimal_places) == "1");
+    CHECK(encode_base10(150000000, btc_decimal_places) == "1.5");
+    CHECK(encode_base10(5000000219, btc_decimal_places) == "50.00000219");
+    CHECK(encode_base10(2100000000000000, btc_decimal_places) == "21000000");
+    CHECK(encode_base10(std::numeric_limits<uint64_t>::max(), btc_decimal_places) == "184467440737.09551615");
+    CHECK(encode_base10(std::numeric_limits<uint64_t>::max(), 0) == "18446744073709551615");
+    CHECK(encode_base10(1000, 0) == "1000");
+    CHECK(encode_base10(101, 2) == "1.01");
+    CHECK(encode_base10(1, 255) == "0." + std::string(254, '0') + "1");
+    CHECK(satoshi_to_btc(150000000) == "1.5");
+}
 
-// #define TEST_AMOUNT_NEGATIVE(NAME, ...) \
-// BOOST_AUTO_TEST_CASE(parse_amount_##NAME##_test) \
-// { \
-//     uint64_t result; \
-     REQUIRE( ! decode_base10(result, __VA_ARGS__));
-// }
+TEST_CASE("decimal parsing preserves precision and rounding", "[infrastructure][base10]") {
+    uint64_t out = 42;
+    REQUIRE(decode_base10(out, "", 0)); CHECK(out == 0);
+    REQUIRE(decode_base10(out, ".", btc_decimal_places)); CHECK(out == 0);
+    REQUIRE(decode_base10(out, ".5", btc_decimal_places)); CHECK(out == 50000000);
+    REQUIRE(decode_base10(out, "0001.23000000", btc_decimal_places)); CHECK(out == 123000000);
+    REQUIRE(decode_base10(out, "18446744073709551615", 0)); CHECK(out == std::numeric_limits<uint64_t>::max());
+    REQUIRE(decode_base10(out, "184467440737.09551615", btc_decimal_places)); CHECK(out == std::numeric_limits<uint64_t>::max());
+    REQUIRE(decode_base10(out, "0.000000001", btc_decimal_places, false)); CHECK(out == 1);
+    REQUIRE(decode_base10(out, "0.999999999", btc_decimal_places, false)); CHECK(out == 100000000);
+    REQUIRE(decode_base10(out, "18446744073709551615.0", 0)); CHECK(out == std::numeric_limits<uint64_t>::max());
+    REQUIRE(btc_to_satoshi(out, "1.5")); CHECK(out == 150000000);
+}
 
-// #define TEST_FORMAT(NAME, EXPECTED, ...) \
-// BOOST_AUTO_TEST_CASE(format_amount_##NAME##_test) \
-// { \
-//     std::string expected = EXPECTED; \
-//     std::string result = encode_base10(__VA_ARGS__); \
-//     REQUIRE(result == expected);
-// }
-
-// // Limits:
-// TEST_AMOUNT(zero, 0, "0")
-// TEST_AMOUNT(max_uint64, max_uint64, "18446744073709551615")
-
-// // Max money (mainnet, testnet):
-// TEST_AMOUNT(max_money_retarget, max_money(), "20999999.9769", btc_decimal_places)
-// TEST_AMOUNT(overflow_max_money_retarget, max_money() + 1, "20999999.97690001", btc_decimal_places)
-
-// // Max money (regtest):
-// TEST_AMOUNT(max_money, max_money(false), "14999.99998350", btc_decimal_places)
-// TEST_AMOUNT(overflow_max_money, max_money(false) + 1, "14999.99998351", btc_decimal_places)
-
-// // Decimal points:
-// TEST_AMOUNT(pure_integer, 42, "42.0", 0)
-// TEST_AMOUNT(no_decimal, 1000000, "10", mbtc_decimal_places)
-// TEST_AMOUNT(normal_decimal, 420000, "4.2", mbtc_decimal_places)
-// TEST_AMOUNT(leading_decimal, 50000, ".5", mbtc_decimal_places)
-// TEST_AMOUNT(trailing_decial, 500000, "5.", mbtc_decimal_places)
-// TEST_AMOUNT(extra_zeros, 1002000, "010.020", mbtc_decimal_places)
-// TEST_AMOUNT(harmless_zeros, 1, "0.0000100", mbtc_decimal_places)
-// TEST_AMOUNT(decimal_point_only, 0, ".")
-
-// // Rounding:
-// TEST_AMOUNT(pure_integer_rounding, 1, ".1", 0, false)
-// TEST_AMOUNT(rounding, 11, "0.101", ubtc_decimal_places, false)
-// TEST_AMOUNT(rounding_carry, 1000, "9.991", ubtc_decimal_places, false)
-// TEST_AMOUNT(zero_past_max, max_uint64, "18446744073709551615.0")
-
-// // Format errors:
-// TEST_AMOUNT_NEGATIVE(lexical_cast_fail, "0.-1")
-// TEST_AMOUNT_NEGATIVE(extra_decimal, "0.0.0")
-// TEST_AMOUNT_NEGATIVE(bad_characters, "0x0ff")
-
-// // Numeric errors:
-// TEST_AMOUNT_NEGATIVE(overflow, "18446744073709551616")
-// TEST_AMOUNT_NEGATIVE(rounding_overflow, "18446744073709551615.1", 0, false)
-// TEST_AMOUNT_NEGATIVE(fractional_amount, "0.999999999", btc_decimal_places)
-
-// // Limits:
-// TEST_FORMAT(zero, "0", 0)
-// TEST_FORMAT(max_uint64, "18446744073709551615", max_uint64)
-
-// // Max money (mainnet, testnet):
-// TEST_FORMAT(max_money_retarget, "20999999.9769", max_money(), btc_decimal_places)
-// TEST_FORMAT(overflow_max_money_retarget, "20999999.97690001", max_money() + 1, btc_decimal_places)
-
-// // Max money (regtest):
-// TEST_FORMAT(max_money, "14999.9999835", max_money(false), btc_decimal_places)
-// TEST_FORMAT(overflow_max_money, "14999.99998351", max_money(false) + 1, btc_decimal_places)
-
-// // Decimal points:
-// TEST_FORMAT(pure_integer, "42", 42, 0)
-// TEST_FORMAT(no_decimal, "10", 1000000, mbtc_decimal_places)
-// TEST_FORMAT(normal_decimal, "4.2", 420000, mbtc_decimal_places)
-// TEST_FORMAT(leading_zero, "0.42", 42000, mbtc_decimal_places)
-// TEST_FORMAT(internal_leading_zero, "0.042", 4200, mbtc_decimal_places)
-
-// End Test Suite
+TEST_CASE("decimal parsing rejects invalid and overflowing amounts without changing output", "[infrastructure][base10]") {
+    for (auto const* input : {"-1", "+1", " 1", "1 ", "1.2.3", "1e2", "0x10", "18446744073709551616"}) {
+        CAPTURE(input); uint64_t out = 42;
+        CHECK_FALSE(decode_base10(out, input, 0)); CHECK(out == 42);
+    }
+    for (auto const* input : {"0.000000001", "184467440737.09551616"}) {
+        CAPTURE(input); uint64_t out = 42;
+        CHECK_FALSE(decode_base10(out, input, btc_decimal_places)); CHECK(out == 42);
+    }
+    uint64_t out = 42;
+    CHECK_FALSE(decode_base10(out, "18446744073709551615.1", 0, false)); CHECK(out == 42);
+}
