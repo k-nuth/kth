@@ -6,6 +6,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/node/rpc/query.hpp>
@@ -223,7 +224,7 @@ TEST_CASE("render_transaction decodes a spend with its inputs and outputs", "[rp
     CHECK(contains(json, R"("hex":"41a51a5935eb9d2b2c36aa9d1d1d855ee54fac0a1e8e3ef507a2f52eb4afa28997722a551b)"
         R"(5449824e7a9cd30a4630881969ad5cb0612a5a8a16d8db0451581a2f4121028cffeaef2d58730ff8f558425a0fd37d37db7b)"
         R"(7bf0679c4990581c4ea84389a6"},"sequence":4294967294}],)"));
-    CHECK(contains(json, R"("value":1.50000000,"n":0,)"));
+    CHECK(contains(json, R"("value":1.5,"n":0,)"));
     CHECK(contains(json, R"("addresses":["bchreg:qrl4arr0ul3d67gcyvhstfxmrlsj8xas05y033hq96"])"));
     CHECK(contains(json, R"("value":48.49999781,"n":1,)"));
     CHECK(contains(json, R"("addresses":["bchreg:qpc9pwf9s7x7hpwywylusjc2zewume9lsguuvvdnkl"])"));
@@ -247,7 +248,7 @@ TEST_CASE("render_transaction decodes token data and an OP_RETURN output", "[rpc
         R"("tokenData":{"category":"201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201",)"
         R"("amount":"1000","nft":{"capability":"mutable","commitment":"aabb"}}})"));
     // Unspendable: no reqSigs and no addresses.
-    CHECK(contains(json, R"("value":0.00000000,"n":1,)"));
+    CHECK(contains(json, R"("value":0,"n":1,)"));
     CHECK(contains(json, R"("hex":"6a0474657374","type":"nulldata"}})"));
 }
 
@@ -261,4 +262,19 @@ TEST_CASE("render_transaction lists each key of a bare multisig output", "[rpc q
         R"("bchreg:qpk2lvcmngg2vx5e90u547xmg27m8g3mzsj5p6rqer","bchreg:qr06s0d0ruqjds4r6aspsymzu3rhzzwh3gvt9sq7as"])"));
     // The same transaction on mainnet: the network's own prefix.
     CHECK(contains(render_transaction(tx, domain::config::network::mainnet, flags), R"("bitcoincash:)"));
+}
+
+TEST_CASE("decimal amount formatting preserves exact units", "[rpc query]") {
+    CHECK(satoshi_to_bitcoin(0) == "0");
+    CHECK(satoshi_to_bitcoin(1) == "0.00000001");
+    CHECK(satoshi_to_bitcoin(10) == "0.0000001");
+    CHECK(satoshi_to_bitcoin(100000000) == "1");
+    CHECK(satoshi_to_bitcoin(150000000) == "1.5");
+    CHECK(satoshi_to_bitcoin(5000000219) == "50.00000219");
+    CHECK(satoshi_to_bitcoin(2100000000000000) == "21000000");
+    CHECK(satoshi_to_bitcoin(max_uint64) == "184467440737.09551615");
+    CHECK(encode_base10(max_uint64, 0) == "18446744073709551615");
+    CHECK(encode_base10(1000, 0) == "1000");
+    CHECK(encode_base10(101, 2) == "1.01");
+    CHECK(encode_base10(1, 255) == "0." + std::string(254, '0') + "1");
 }

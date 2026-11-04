@@ -7,11 +7,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <iomanip>
 #include <span>
 #include <string_view>
 #include <vector>
-#include <sstream>
+
+#include <fmt/format.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
@@ -19,6 +19,7 @@
 #include <kth/domain/constants/common.hpp>
 #include <kth/domain/wallet/cashaddr.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
@@ -56,9 +57,7 @@ namespace {
 
 // Compact nBits as an 8-char hex string (the getblockheader bits format).
 std::string bits_to_hex(std::uint32_t bits) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(8) << bits;
-    return os.str();
+    return fmt::format("{:08x}", bits);
 }
 
 void write_hash_array(writer& w, hash_list const& hashes) {
@@ -110,15 +109,6 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
 }
 
 namespace {
-
-// Satoshis as an exact BCH amount, e.g. 150000000 -> 1.50000000.
-std::string satoshis_to_bch(std::uint64_t value) {
-    constexpr std::uint64_t satoshis_per_bch = 100'000'000;
-    std::ostringstream os;
-    os << value / satoshis_per_bch << '.'
-       << std::setfill('0') << std::setw(8) << value % satoshis_per_bch;
-    return os.str();
-}
 
 // The cashaddr form of `address` under `net`'s prefix. payment_address itself
 // encodes a regtest address under the testnet prefix.
@@ -231,7 +221,7 @@ std::string render_transaction(domain::chain::transaction const& tx,
     std::uint64_t n = 0;
     for (auto const& output : tx.outputs()) {
         w.begin_object();
-        w.field_raw("value", satoshis_to_bch(output.value()));
+        w.field_raw("value", satoshi_to_bitcoin(output.value()));
         w.field("n", n++);
         auto const destination = describe_output_script(output.script(), net);
         w.key("scriptPubKey").begin_object();
