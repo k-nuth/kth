@@ -18,6 +18,7 @@
 #ifndef SECP256K1_SCHNORR_IMPL_H
 #define SECP256K1_SCHNORR_IMPL_H
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "schnorr.h"
@@ -26,7 +27,10 @@
 #include "../../hash.h"
 #include "../../ecmult.h"
 #include "../../ecmult_gen.h"
+#include "../../ecmult_impl.h"
 #include "../../eckey.h"
+#include "../../scratch.h"
+#include "../../util.h"
 
 /**
  * Custom Schnorr-based signature scheme.
@@ -132,6 +136,153 @@ static int secp256k1_schnorr_sig_verify(
 
     /* All good, we have a valid signature. */
     return 1;
+}
+
+/*
+ * Batch verification.
+ *
+ * Each valid signature i satisfies R_i = s_i*G - e_i*P_i where R_i is the
+ * unique curve point with x = r_i and a square y (p = 3 mod 4, so exactly one
+ * of y, -y is a quadratic residue). With random 128-bit a_i (a_0 = 1):
+ *   sum_i a_i*(s_i*G - e_i*P_i - R_i) == infinity
+ * is checked with one multi-scalar multiplication. The a_i are derived from a
+ * hash of every input plus the caller's seed, so an attacker who fixes the
+ * inputs first succeeds with probability ~2^-128.
+ */
+typedef struct {
+    const secp256k1_scalar *scalars;
+    const secp256k1_ge *points;
+} secp256k1_schnorr_batch_data;
+
+static int secp256k1_schnorr_batch_cb(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    const secp256k1_schnorr_batch_data *d = (const secp256k1_schnorr_batch_data *)data;
+    *sc = d->scalars[idx];
+    *pt = d->points[idx];
+    return 1;
+}
+
+/* Lifts r to the point (r, y) with y a quadratic residue. Returns 0 if r is
+ * not a valid x coordinate. */
+static int secp256k1_schnorr_lift_x_quad(secp256k1_ge *r, const secp256k1_fe *x) {
+    if (!secp256k1_ge_set_xo_var(r, x, 0)) {
+        return 0;
+    }
+    secp256k1_fe_normalize_var(&r->y);
+    if (!secp256k1_fe_is_square_var(&r->y)) {
+        secp256k1_fe_negate(&r->y, &r->y, 1);
+        secp256k1_fe_normalize_var(&r->y);
+    }
+    return 1;
+}
+
+static int secp256k1_schnorr_sig_verify_batch(
+    const secp256k1_hash_ctx *hash_ctx,
+    const secp256k1_callback *error_callback,
+    const unsigned char *const *sig64s,
+    const unsigned char *const *msg32s,
+    const secp256k1_ge *pubkeys,
+    size_t n,
+    const unsigned char *seed32
+) {
+    secp256k1_scalar *scalars;
+    secp256k1_ge *points;
+    secp256k1_scalar g_sc;
+    secp256k1_gej res;
+    secp256k1_scratch *scratch;
+    secp256k1_schnorr_batch_data data;
+    secp256k1_sha256 sha;
+    unsigned char inputs_hash[32];
+    size_t i, n_points, sizing_points, scratch_size, strauss_size, pippenger_size;
+    int ret = 1;
+
+    if (n == 0) {
+        return 1;
+    }
+    n_points = 2 * n;
+    scalars = (secp256k1_scalar *)checked_malloc(error_callback, n_points * sizeof(secp256k1_scalar));
+    points = (secp256k1_ge *)checked_malloc(error_callback, n_points * sizeof(secp256k1_ge));
+
+    /* Randomizers depend on every input (and the caller's seed). */
+    secp256k1_sha256_initialize(&sha);
+    for (i = 0; i < n; i++) {
+        unsigned char buf[33];
+        secp256k1_ge p = pubkeys[i];
+        secp256k1_sha256_write(hash_ctx, &sha, sig64s[i], 64);
+        secp256k1_sha256_write(hash_ctx, &sha, msg32s[i], 32);
+        secp256k1_eckey_pubkey_serialize33(&p, buf);
+        secp256k1_sha256_write(hash_ctx, &sha, buf, 33);
+    }
+    secp256k1_sha256_finalize(hash_ctx, &sha, inputs_hash);
+
+    secp256k1_scalar_set_int(&g_sc, 0);
+    for (i = 0; i < n && ret; i++) {
+        secp256k1_scalar s, e, a, t;
+        secp256k1_fe rx;
+        secp256k1_ge p = pubkeys[i];
+        int overflow = 0;
+
+        /* Same structural checks as secp256k1_schnorr_sig_verify. */
+        secp256k1_scalar_set_b32(&s, sig64s[i] + 32, &overflow);
+        if (overflow || secp256k1_ge_is_infinity(&p) || !secp256k1_fe_set_b32_limit(&rx, sig64s[i])) {
+            ret = 0;
+            break;
+        }
+        secp256k1_schnorr_compute_e(hash_ctx, &e, sig64s[i], &p, msg32s[i]);
+        if (!secp256k1_schnorr_lift_x_quad(&points[2 * i + 1], &rx)) {
+            ret = 0;
+            break;
+        }
+        points[2 * i] = p;
+
+        /* a_i = SHA256(seed || H(inputs) || i)[0..16), a_0 = 1. */
+        if (i == 0) {
+            secp256k1_scalar_set_int(&a, 1);
+        } else {
+            unsigned char out[32], idx[8];
+            size_t k;
+            for (k = 0; k < 8; k++) {
+                idx[k] = (unsigned char)(((uint64_t)i) >> (8 * k));
+            }
+            secp256k1_sha256_initialize(&sha);
+            if (seed32 != NULL) {
+                secp256k1_sha256_write(hash_ctx, &sha, seed32, 32);
+            }
+            secp256k1_sha256_write(hash_ctx, &sha, inputs_hash, 32);
+            secp256k1_sha256_write(hash_ctx, &sha, idx, 8);
+            secp256k1_sha256_finalize(hash_ctx, &sha, out);
+            memset(out, 0, 16);
+            secp256k1_scalar_set_b32(&a, out, NULL);
+            if (secp256k1_scalar_is_zero(&a)) {
+                secp256k1_scalar_set_int(&a, 1);
+            }
+        }
+
+        /* g_sc += a_i * s_i ; Q_i scalar = -a_i * e_i ; R_i scalar = -a_i */
+        secp256k1_scalar_mul(&t, &a, &s);
+        secp256k1_scalar_add(&g_sc, &g_sc, &t);
+        secp256k1_scalar_mul(&t, &a, &e);
+        secp256k1_scalar_negate(&scalars[2 * i], &t);
+        secp256k1_scalar_negate(&scalars[2 * i + 1], &a);
+    }
+
+    if (ret) {
+        /* Size the scratch space for the batch (capped; ecmult_multi_var
+         * loops over sub-batches when the points do not all fit). */
+        sizing_points = n_points < 4096 ? n_points : 4096;
+        strauss_size = secp256k1_strauss_scratch_size(sizing_points < 88 ? sizing_points : 88) + STRAUSS_SCRATCH_OBJECTS * ALIGNMENT;
+        pippenger_size = secp256k1_pippenger_scratch_size(sizing_points, secp256k1_pippenger_bucket_window(sizing_points)) + PIPPENGER_SCRATCH_OBJECTS * ALIGNMENT;
+        scratch_size = strauss_size > pippenger_size ? strauss_size : pippenger_size;
+        scratch = secp256k1_scratch_create(error_callback, scratch_size);
+        data.scalars = scalars;
+        data.points = points;
+        ret = secp256k1_ecmult_multi_var(error_callback, scratch, &res, &g_sc, secp256k1_schnorr_batch_cb, &data, n_points)
+              && secp256k1_gej_is_infinity(&res);
+        secp256k1_scratch_destroy(error_callback, scratch);
+    }
+
+    free(scalars);
+    free(points);
+    return ret;
 }
 
 static int secp256k1_schnorr_compute_sig(

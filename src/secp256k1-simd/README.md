@@ -100,3 +100,45 @@ against libsecp256k1 on valid, corrupted and malformed inputs. The tests
 are built with `KTH_SECP256K1_SIMD_CHECK_LIMBS`, which asserts the 52-bit
 operand invariant in the portable backend. `kth_secp256k1_simd_bench`
 (nanobench) produces the table above.
+
+## Algebraic batch verification (BCH Schnorr only)
+
+`verify_schnorr_bch_all` wraps `secp256k1_schnorr_verify_batch`, a local
+addition to the vendored libsecp256k1 Schnorr module: with random 128-bit
+`a_i` it checks `sum a_i*(s_i*G - e_i*P_i - R_i) == infinity` with one
+multi-scalar multiplication (`secp256k1_ecmult_multi_var`, Strauss or
+Pippenger depending on the size), where `R_i` is `r_i` lifted to the point
+with a square `y`. It gives one verdict for the whole batch, not one per
+signature, and does not apply to ECDSA (the `y` of `R` cannot be recovered
+from `r` alone). The randomizers are derived from a hash of every input plus
+an optional caller seed.
+
+Zen 5, one core (same conditions as above):
+
+| batch size | libsecp256k1 one at a time | algebraic batch | AVX-512 IFMA lanes |
+|---:|---:|---:|---:|
+| 2 | 19,924 ns/sig | 19,501 | 23,073 |
+| 8 | | 16,357 | 6,071 |
+| 32 | | 16,008 | 6,066 |
+| 128 | | 14,216 | 6,080 |
+| 512 | | 12,603 | 6,075 |
+| 2048 | | 11,390 (1.75x) | 6,076 (3.3x) |
+
+Apple M6, one core (no vector backend):
+
+| batch size | libsecp256k1 one at a time | algebraic batch |
+|---:|---:|---:|
+| 2 | 13,803 ns/sig | 14,455 |
+| 8 | | 13,049 |
+| 32 | | 12,541 |
+| 128 | | 11,240 |
+| 512 | | 9,925 |
+| 2048 | | 9,282 (1.49x) |
+
+The algebraic batch only amortises slowly (Pippenger's bucket method still
+costs a few hundred field multiplications per point, plus a square root per
+signature to lift `R`), so on an IFMA machine the lane kernel wins at every
+size. Where there is no AVX-512 IFMA the algebraic batch is the only
+speed-up available for Schnorr inputs. The two are not combined here: doing
+so would mean lifting the `R_i` with the vector field and vectorising the
+bucket accumulation, which is a separate piece of work.
