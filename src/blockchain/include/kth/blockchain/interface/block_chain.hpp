@@ -772,6 +772,12 @@ struct KB_API block_chain {
     // has reopened before this notification is published.
     [[nodiscard]]
     block_channel_ptr subscribe_blockchain();
+
+    // Completions, including the close notice, run on the channel's executor.
+    // Chain stop closes subscribers and then stops this chain's executor, so a
+    // subscriber that must outlive that executor passes its own.
+    [[nodiscard]]
+    block_channel_ptr subscribe_blockchain(::asio::any_io_executor executor);
     [[nodiscard]]
     transaction_channel_ptr subscribe_transaction();
     [[nodiscard]]

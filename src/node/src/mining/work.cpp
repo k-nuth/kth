@@ -222,6 +222,54 @@ share_outcome rejected_share(share_request const& share, std::string_view code) 
 
 } // namespace
 
+std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
+    domain::chain::output::list const& outputs, uint32_t generation,
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size) {
+    auto const target = domain::chain::compact::from_compact(tmpl.bits);
+    // Coinbase prefix and suffix are B0_64K. The transaction list is not:
+    // this builder sends the merkle path. DeclareMiningJob's SEQ0_64K txid
+    // list is checked where that list is serialized.
+    if ( ! target || target->big() == 0 || tmpl.current_time < tmpl.min_time
+        || upstream_extranonce_size < jd_min_extranonce_size || upstream_extranonce_size > 32
+        || upstream_prefix.size() > 32 - size_t{upstream_extranonce_size}) {
+        return std::nullopt;
+    }
+    if (outputs.empty() || ! outputs_pay(outputs, tmpl.coinbase_value)
+        || outputs.front().value() != tmpl.coinbase_value) {
+        return std::nullopt;
+    }
+    for (auto const& tx : tmpl.selection.txs) {
+        if ( ! tx) return std::nullopt;
+    }
+    auto parts = split_coinbase(tmpl.height, generation, upstream_prefix,
+        upstream_extranonce_size, outputs);
+    if ( ! parts) return std::nullopt;
+    auto const overhead = domain::chain::header{}.serialized_size(true)
+        + infrastructure::message::variable_uint_size(tmpl.selection.txs.size() + 1);
+    if (overhead > tmpl.size_limit || parts->size > tmpl.size_limit - overhead
+        || tmpl.selection.total_size > tmpl.size_limit - overhead - parts->size) {
+        return std::nullopt;
+    }
+
+    declared_work work;
+    work.tmpl = tmpl;
+    work.outputs = outputs;
+    work.generation = generation;
+    work.coinbase_tx_prefix = std::move(parts->prefix);
+    work.coinbase_tx_suffix = std::move(parts->suffix);
+    // The split coinbase has one input and a one-byte scriptSig length. These
+    // are the same BIP34 bytes SetCustomMiningJob places before its extranonce.
+    constexpr size_t script_at = 4 + 1 + 36 + 1;
+    work.coinbase_prefix.assign(work.coinbase_tx_prefix.begin() + script_at,
+        work.coinbase_tx_prefix.end());
+    work.coinbase_tx_outputs.assign(work.coinbase_tx_suffix.begin() + 4,
+        work.coinbase_tx_suffix.end() - 4);
+    work.merkle_path = merkle_path_of(tmpl.selection.txs);
+    work.upstream_extranonce_prefix = upstream_prefix;
+    work.upstream_extranonce_size = upstream_extranonce_size;
+    return work;
+}
+
 std::string mining_startup_reason(sv2_settings const& settings, domain::config::network network) {
     if ( ! settings.mining.enabled) return {};
     if ( ! settings.enabled) return "sv2.mining.enabled requires sv2.enabled";
@@ -286,8 +334,9 @@ std::optional<payout> payout_from_address(std::string_view address,
 #endif
 }
 
-work_engine::work_engine(uint64_t connection_salt)
+work_engine::work_engine(uint64_t connection_salt, std::shared_ptr<uint64_t> pool_allocations)
     : salt_(connection_salt)
+    , pool_allocations_(std::move(pool_allocations))
 {}
 
 hash_digest work_engine::choose_target(float hashrate, hash_digest const& max_target) const {
@@ -344,8 +393,9 @@ opened_channel work_engine::open(open_request const& request) {
 
     uint16_t extranonce_size = 0;
     if (request.kind == channel_kind::extended) {
-        auto const size = std::max<size_t>(request.min_extranonce_size, extranonce_prefix_size);
-        if (request.min_extranonce_size > 32 || size > 32
+        auto const size = pool_allocations_ ? size_t{jd_downstream_extranonce_size}
+            : std::max<size_t>(request.min_extranonce_size, extranonce_prefix_size);
+        if (request.min_extranonce_size > size || size > 32
             || bip34_reserve + extranonce_prefix_size + size > coinbase_script_limit) {
             return rejected(error_extranonce_too_large);
         }
@@ -364,6 +414,14 @@ opened_channel work_engine::open(open_request const& request) {
     auto const id = to_little_endian(slot.id);
     slot.extranonce_prefix.assign(salt.begin(), salt.end());
     slot.extranonce_prefix.insert(slot.extranonce_prefix.end(), id.begin(), id.end());
+    // Remember the solo prefix even when this open already nests in a pool.
+    // Fallback restores it without inventing a new channel id.
+    slot.solo_prefix = slot.extranonce_prefix;
+    slot.announced_prefix = slot.extranonce_prefix;
+    if (pool_.active) {
+        if (assign_pool(slot)) slot.announced_prefix = slot.extranonce_prefix;
+        else if (pool_allocations_) return rejected(error_too_many_channels);
+    }
     channels_.push_back(std::move(slot));
     auto const& opened_slot = channels_.back();
 
@@ -433,23 +491,85 @@ void work_engine::invalidate(job& item) {
     item.stale = true;
 }
 
+bool work_engine::assign_pool(channel& slot) {
+    // P || N is the extranonce the pool reconstructs. The rollable width was
+    // fixed at Open*Success, so the channel id lives in the bytes between P
+    // and that roll. BCH has no witness commitment in this script.
+    if ( ! pool_.active || slot.extranonce_size > pool_.extranonce_size) return false;
+    auto const alloc = size_t{pool_.extranonce_size} - slot.extranonce_size;
+    if (alloc < jd_allocation_size || pool_.prefix.size() + size_t{pool_.extranonce_size} > 32) return false;
+    data_chunk prefix = pool_.prefix;
+    prefix.resize(pool_.prefix.size() + alloc, 0);
+    auto const at = pool_.prefix.size();
+    if (pool_allocations_) {
+        if ( ! slot.pool_allocation) {
+            // Connections share this counter: local channel ids alone collide.
+            // Stop allocating before the four-byte namespace can wrap.
+            if (*pool_allocations_ > std::numeric_limits<uint32_t>::max()) return false;
+            slot.pool_allocation = static_cast<uint32_t>((*pool_allocations_)++);
+        }
+        auto const bytes = to_little_endian(*slot.pool_allocation);
+        std::copy(bytes.begin(), bytes.end(), prefix.begin() + static_cast<std::ptrdiff_t>(at));
+    } else if (alloc >= 8) {
+        auto const id = to_little_endian(slot.id);
+        auto const roll = to_little_endian(slot.pool_roll);
+        std::copy(id.begin(), id.end(), prefix.begin() + static_cast<std::ptrdiff_t>(at));
+        std::copy(roll.begin(), roll.end(), prefix.end() - 4);
+    } else {
+        uint32_t const packed = (slot.id & 0xffffu) | (slot.pool_roll << 16);
+        auto const bytes = to_little_endian(packed);
+        auto const n = std::min<size_t>(alloc, bytes.size());
+        std::copy_n(bytes.begin(), n, prefix.begin() + static_cast<std::ptrdiff_t>(at));
+    }
+    slot.extranonce_prefix = std::move(prefix);
+    slot.pool_bound = true;
+    slot.pool_prefix_length = pool_.prefix.size();
+    slot.pool_extranonce_size = pool_.extranonce_size;
+    return true;
+}
+
+void work_engine::clear_pool_binding() {
+    if ( ! pool_.active) return;
+    pool_ = pool_state{};
+    for (auto& slot : channels_) {
+        slot.extranonce_prefix = slot.solo_prefix;
+        slot.pool_bound = false;
+        slot.pool_roll = 0;
+        slot.pool_allocation.reset();
+        slot.pool_prefix_length = 0;
+        slot.pool_extranonce_size = 0;
+    }
+}
+
 std::optional<work_job> work_engine::build(channel& slot,
     blockchain::mining_template const& tmpl, domain::chain::output::list const& outputs) {
     for (auto& item : slot.jobs) {
         invalidate(item);
     }
     slot.shares.clear();
+    bool const pooled = pool_.active && assign_pool(slot);
+    if (pool_.active && ! pooled && pool_allocations_) return std::nullopt;
+    if (pool_.active && ! pooled) {
+        slot.extranonce_prefix = slot.solo_prefix;
+        slot.pool_bound = false;
+        slot.pool_prefix_length = 0;
+        slot.pool_extranonce_size = 0;
+    }
+    // A pooled coinbase must keep the generation already declared upstream.
+    // Using the downstream job id would describe a different transaction.
+    auto const generation = pooled ? pool_.generation : next_job_;
+    auto const& paid = pooled ? pool_.outputs : outputs;
     auto const network_target = domain::chain::compact::from_compact(tmpl.bits);
     if ( ! network_target || network_target->big() == 0 || tmpl.current_time < tmpl.min_time) {
         return std::nullopt;
     }
-    if ( ! outputs_pay(outputs, tmpl.coinbase_value)) {
+    if ( ! outputs_pay(paid, tmpl.coinbase_value)) {
         spdlog::warn("[mining] Skipping channel {}: invalid coinbase outputs",
             slot.id);
         return std::nullopt;
     }
-    auto parts = split_coinbase(tmpl.height, next_job_, slot.extranonce_prefix,
-        slot.extranonce_size, outputs);
+    auto parts = split_coinbase(tmpl.height, generation, slot.extranonce_prefix,
+        slot.extranonce_size, paid);
     if ( ! parts) {
         spdlog::warn("[mining] Skipping channel {}: coinbase does not fit the Mining Protocol fields",
             slot.id);
@@ -486,6 +606,12 @@ std::optional<work_job> work_engine::build(channel& slot,
     created.coinbase_tx_suffix = std::move(parts->suffix);
     created.extranonce_prefix = slot.extranonce_prefix;
     created.extranonce_size = slot.extranonce_size;
+    created.pool = pooled;
+    created.pool_prefix_length = pooled ? slot.pool_prefix_length : 0;
+    created.pool_extranonce_size = pooled ? slot.pool_extranonce_size : 0;
+    // The value split_coinbase wrote. A later pool_.generation must not
+    // relabel a share mined on this coinbase.
+    created.generation = generation;
     created.txs = current_txs_;
     slot.jobs.push_back(std::move(created));
     auto const& stored = slot.jobs.back();
@@ -503,11 +629,20 @@ std::optional<work_job> work_engine::build(channel& slot,
     out.prev_hash = stored.prev_hash;
     out.ntime_start = stored.ntime_start;
     out.nbits = stored.bits;
+    // Open*Success already carried the previous prefix. Tell the miner before
+    // this job, which is the first one the new prefix applies to.
+    if (slot.extranonce_prefix != slot.announced_prefix) {
+        out.extranonce_prefix_update = slot.extranonce_prefix;
+        slot.announced_prefix = slot.extranonce_prefix;
+    }
     return out;
 }
 
 std::vector<work_job> work_engine::on_template(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs) {
+    // Solo replacement. A pool that was never active leaves prefixes alone, so
+    // this does not emit SetExtranoncePrefix for ordinary solo work.
+    clear_pool_binding();
     current_txs_ = std::make_shared<std::vector<transaction_const_ptr> const>(tmpl.selection.txs);
     std::vector<work_job> jobs;
     jobs.reserve(channels_.size());
@@ -515,6 +650,42 @@ std::vector<work_job> work_engine::on_template(blockchain::mining_template const
         if (auto job = build(slot, tmpl, outputs)) jobs.push_back(std::move(*job));
     }
     return jobs;
+}
+
+std::optional<std::vector<work_job>> work_engine::on_pool_template(
+    blockchain::mining_template const& tmpl, domain::chain::output::list const& pool_outputs,
+    domain::chain::output::list const& solo_outputs, pool_binding const& binding) {
+    if (binding.extranonce_size < (pool_allocations_ ? jd_min_extranonce_size : jd_allocation_size)
+        || binding.prefix.size() + size_t{binding.extranonce_size} > 32
+        || pool_outputs.empty() || pool_outputs.front().value() != tmpl.coinbase_value
+        || ! outputs_pay(pool_outputs, tmpl.coinbase_value)) {
+        return std::nullopt;
+    }
+    pool_.active = true;
+    pool_.prefix = binding.prefix;
+    pool_.extranonce_size = binding.extranonce_size;
+    pool_.generation = binding.generation;
+    pool_.outputs = pool_outputs;
+    current_txs_ = std::make_shared<std::vector<transaction_const_ptr> const>(tmpl.selection.txs);
+    std::vector<work_job> jobs;
+    jobs.reserve(channels_.size());
+    for (auto& slot : channels_) {
+        auto job = build(slot, tmpl, solo_outputs);
+        if ( ! job) return std::nullopt;
+        jobs.push_back(std::move(*job));
+    }
+    return jobs;
+}
+
+void work_engine::bump_pool_roll(uint32_t channel_id) {
+    if ( ! pool_.active) return;
+    auto* slot = find(channel_id);
+    if (slot == nullptr || ! slot->pool_bound) return;
+    if (pool_allocations_) {
+        slot->pool_allocation.reset();
+        return;
+    }
+    ++slot->pool_roll;
 }
 
 std::optional<work_job> work_engine::on_channel(uint32_t channel_id,
@@ -591,9 +762,33 @@ share_outcome work_engine::submit(share_request const& share) {
     outcome.accepted_count = 1;
     outcome.shares_sum = share_difficulty(job->share_target);
     outcome.renew = slot->shares.size() == max_remembered_shares;
+    if (job->pool) {
+        data_chunk full = job->extranonce_prefix;
+        full.insert(full.end(), share.extranonce.begin(), share.extranonce.end());
+        auto const width = job->pool_prefix_length + size_t{job->pool_extranonce_size};
+        if (full.size() == width && job->pool_prefix_length <= full.size()) {
+            pool_proof proof;
+            proof.header_hash = digest;
+            proof.full_extranonce = full;
+            proof.upstream_extranonce.assign(
+                full.begin() + static_cast<std::ptrdiff_t>(job->pool_prefix_length),
+                full.begin() + static_cast<std::ptrdiff_t>(width));
+            proof.prev_hash = job->prev_hash;
+            proof.version = share.version;
+            proof.ntime = share.ntime;
+            proof.nonce = share.nonce;
+            proof.bits = job->bits;
+            proof.generation = job->generation;
+            outcome.pool = std::move(proof);
+        } else {
+            spdlog::warn("[mining] Channel {} pool extranonce does not match the declared width",
+                slot->id);
+        }
+    }
     auto const network = domain::chain::compact::from_compact(job->bits);
     if (network && to_uint256(digest) <= network->big()) {
         outcome.status = share_status::block;
+        if (outcome.pool) outcome.pool->block = true;
         outcome.block = std::make_shared<domain::message::block>(
             assemble_block(solved, *coinbase, *job->txs));
         return outcome;

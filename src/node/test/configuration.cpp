@@ -127,6 +127,73 @@ TEST_CASE("sv2 mining enable option rejects an invalid boolean", "[configuration
     CHECK_FALSE(parser.parse(2, argv, error));
 }
 
+TEST_CASE("sv2 JD settings survive network selection config copying and command line overrides", "[configuration tests][parser][sv2 jd]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.jd.enabled=true",
+        "--sv2.jd.mining_address", "pool.example:3333",
+        "--sv2.jd.mining_authority_public_key", "pool-pin",
+        "--sv2.jd.jds_address", "[::1]:3334",
+        "--sv2.jd.jds_authority_public_key", "jds-pin",
+        "--sv2.jd.user_identity", "account.worker", "--sv2.jd.mode", "full-template",
+        "--sv2.jd.response_timeout_seconds", "12"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(18, argv, error));
+    auto const& selected = parser.configured.sv2.jd;
+    CHECK(selected.enabled);
+    CHECK(selected.mining_address == "pool.example:3333");
+    CHECK(selected.mining_authority_public_key == "pool-pin");
+    CHECK(selected.jds_address == "[::1]:3334");
+    CHECK(selected.jds_authority_public_key == "jds-pin");
+    CHECK(selected.user_identity == "account.worker");
+    CHECK(selected.mode == "full-template");
+    CHECK(selected.response_timeout_seconds == 12u);
+
+    config_file file("sv2_jd", "sv2.jd.enabled=true\nsv2.jd.mining_address=pool.example:4444\n"
+        "sv2.jd.mining_authority_public_key=configured-pool-pin\nsv2.jd.jds_address=jds.example:4445\n"
+        "sv2.jd.jds_authority_public_key=configured-jds-pin\nsv2.jd.user_identity=configured-worker\n"
+        "sv2.jd.mode=full-template\nsv2.jd.response_timeout_seconds=19");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.jd.enabled);
+    CHECK(copied.sv2.jd.mining_address == "pool.example:4444");
+    CHECK(copied.sv2.jd.mining_authority_public_key == "configured-pool-pin");
+    CHECK(copied.sv2.jd.jds_address == "jds.example:4445");
+    CHECK(copied.sv2.jd.jds_authority_public_key == "configured-jds-pin");
+    CHECK(copied.sv2.jd.user_identity == "configured-worker");
+    CHECK(copied.sv2.jd.mode == "full-template");
+    CHECK(copied.sv2.jd.response_timeout_seconds == 19u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* overrides[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.jd.enabled=false", "--sv2.jd.mode", "coinbase-only",
+        "--sv2.jd.user_identity", "selected-worker"};
+    REQUIRE(overridden.parse(10, overrides, error));
+    CHECK_FALSE(overridden.configured.sv2.jd.enabled);
+    CHECK(overridden.configured.sv2.jd.mode == "coinbase-only");
+    CHECK(overridden.configured.sv2.jd.user_identity == "selected-worker");
+    CHECK(overridden.configured.sv2.jd.mining_address == "pool.example:4444");
+    CHECK(overridden.configured.sv2.jd.response_timeout_seconds == 19u);
+
+    node::parser defaulted(domain::config::network::mainnet);
+    char const* enabled_only[]{"kth", "--network", "regtest", "--sv2.jd.enabled=true"};
+    REQUIRE(defaulted.parse(4, enabled_only, error));
+    CHECK(defaulted.configured.sv2.jd.mode == "coinbase-only");
+}
+
+TEST_CASE("sv2 JD parser refuses malformed enable and deadline values", "[configuration tests][parser][sv2 jd]") {
+    node::parser enabled(domain::config::network::regtest);
+    std::ostringstream error;
+    char const* invalid_bool[]{"kth", "--sv2.jd.enabled=invalid"};
+    CHECK_FALSE(enabled.parse(2, invalid_bool, error));
+    for (auto const* value : {"-1", "4294967296", "invalid"}) {
+        node::parser timeout(domain::config::network::regtest);
+        char const* argv[]{"kth", "--sv2.jd.response_timeout_seconds", value};
+        CHECK_FALSE(timeout.parse(3, argv, error));
+    }
+}
+
 TEST_CASE("sv2 Noise credentials survive config and command line parsing", "[configuration tests][parser][sv2 noise]") {
     config_file file("sv2_noise", "sv2.noise=false\nsv2.static_key_file=provider.key\n"
         "sv2.authority_key_file=authority.key\nsv2.certificate_file=provider.cert\n"

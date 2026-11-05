@@ -179,6 +179,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/template_provider.cpp
     src/sv2/mining_messages.cpp
     src/sv2/mining_session.cpp
+    src/sv2/jd_settings.cpp
+    src/sv2/jd_connection.cpp
+    src/sv2/jd_session.cpp
+    src/sv2/jd_messages.cpp
+    src/sv2/jd_declaration.cpp
+    src/sv2/jd_client.cpp
   )
 endif()
 
@@ -242,6 +248,12 @@ set(kth_headers
   include/kth/node/sv2/template_provider.hpp
   include/kth/node/sv2/mining_messages.hpp
   include/kth/node/sv2/mining_session.hpp
+  include/kth/node/sv2/jd_settings.hpp
+  include/kth/node/sv2/jd_connection.hpp
+  include/kth/node/sv2/jd_session.hpp
+  include/kth/node/sv2/jd_messages.hpp
+  include/kth/node/sv2/jd_declaration.hpp
+  include/kth/node/sv2/jd_client.hpp
 
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
@@ -366,6 +378,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_mining.cpp
           test/sv2_mining_session.cpp
           test/sv2_mining_work.cpp
+          test/sv2_jd_settings.cpp
+          test/sv2_jd_connection.cpp
+          test/sv2_jd_session.cpp
+          test/sv2_jd_messages.cpp
+          test/sv2_jd_work.cpp
+          test/sv2_jd_declaration.cpp
+          test/sv2_jd_client.cpp
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)

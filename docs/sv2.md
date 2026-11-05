@@ -203,5 +203,129 @@ specific codes):
 | | `share-limit` | The bounded share history is full; fresh work replaces this job. |
 
 Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
-zero), and server-only messages close the connection. Job Declaration, custom
-jobs, pool failover and Stratum V1 are separate features.
+zero), and server-only messages close the connection. Custom jobs, pool
+failover and Stratum V1 are separate features.
+
+## Job Declaration
+
+Job Declaration is off by default (`sv2.jd.enabled=false`). Enabling it requires
+the listener, Mining Protocol and its valid solo payout address, both upstream
+addresses and pinned Noise authority keys and a user identity. `sv2.jd.mode`
+defaults to `coinbase-only`, which sends the pool a merkle path instead of the
+transaction list, so no SV2 message limit bounds the template. Invalid enabled
+settings stop startup before the chain or listener starts.
+Dormant JD settings are ignored when JD is disabled. The solo fallback pays
+`sv2.mining.address`.
+
+For example, to negotiate full-template mode with a pool and its JDS:
+
+```ini
+sv2.enabled                        = true
+sv2.mining.enabled                 = true
+sv2.mining.address                 = <your-network-cashaddr>
+sv2.jd.enabled                     = true
+sv2.jd.mining_address              = pool.example:3333
+sv2.jd.mining_authority_public_key = <pool-noise-authority-key>
+sv2.jd.jds_address                 = jds.example:3334
+sv2.jd.jds_authority_public_key     = <jds-noise-authority-key>
+sv2.jd.user_identity               = account.worker
+sv2.jd.mode                        = full-template
+sv2.jd.response_timeout_seconds    = 10
+```
+
+Addresses are `host:port` or `[IPv6]:port`, with an explicit port from 1 to
+65535. DNS labels are at most 63 bytes and the whole hostname at most 253;
+URLs, paths, credentials and whitespace are refused. Identities are 1 to 255
+UTF-8 bytes. Authority keys use the same Base58Check encoding described above.
+Each upstream always uses Noise, including when the local listener explicitly
+uses plaintext. A different signing authority, a certificate outside its
+validity window or an unauthenticated frame ends that attempt.
+
+The Mining connection requests work selection and version rolling, then opens
+one extended channel with the configured identity. It requests eight extranonce
+bytes: four for local channel allocation and four reserved for downstream
+miners to roll. Grants of eight bytes, including behind a four-byte pool prefix,
+and larger grants are accepted when the prefix plus extranonce fits 32 bytes.
+A fixed-version upstream is refused.
+The node retains its own transaction selection; jobs supplied by the pool do
+not replace local work.
+
+`full-template` sets `DECLARE_TX_DATA` (specification section 6.2) on the JD
+connection. `coinbase-only` leaves that flag clear. For each new template the
+node asks the JDS for `AllocateMiningJobToken` and builds the coinbase from
+the allocation's `coinbase_tx_outputs`. Those outputs arrive with zero value;
+the whole coinbase revenue is then placed in the first output, which is the
+pool payout. `full-template` sends `DeclareMiningJob` with the coinbase prefix
+and suffix and the transaction list, answers `ProvideMissingTransactions` with
+the raw transactions, and uses the new token from `DeclareMiningJob.Success`.
+`coinbase-only` does not send `DeclareMiningJob` and uses the allocated token.
+Either mode then sends `SetCustomMiningJob` on the mining connection.
+
+Declarations wake on connected-tip notifications and upstream replies. Only
+an outstanding response arms a deadline; an idle client does not poll the chain.
+
+Bitcoin Cash differs from the parts of the specification written for Bitcoin.
+There is no segregated witness, so the declared "wtxid" list carries ordinary
+transaction ids in the template's CTOR order. The coinbase has no witness and
+no witness commitment. BIP34 stays in the coinbase script. `excess_data` is
+empty because there is no witness reserved value to carry.
+
+Downstream miners keep mining that same template through the Mining Protocol
+server. Until a pool coinbase is ready, and again after fallback, they are
+paid `sv2.mining.address`. With JD enabled, extended channels open with a fixed
+four-byte rollable reserve. When the pool coinbase is installed, each accepted
+channel nests inside the upstream extranonce and receives `SetExtranoncePrefix`
+before the next job. A downstream request for more than four rollable bytes is
+refused with `min-extranonce-size-too-large`, even before the upstream channel
+exists. Standard channels need no rollable bytes and also receive pool jobs.
+Any upstream space beyond the downstream roll is used for local allocation,
+so every accepted channel fits the grant. With JD disabled, the Mining Protocol
+sizes described above are unchanged. The scriptSig generation and the
+extranonce prefix return to the solo channel's own values on fallback; the
+template's transactions do not change.
+
+Pool and solo payout changes wake connected miners when they are published.
+The listener does not poll for those changes, and stopping it joins every
+connection even while the upstreams are quiet or Job Declaration is disabled.
+
+A share that meets the upstream channel's target is forwarded as
+`SubmitSharesExtended` with the custom job id and the extranonce bytes after
+the pool's prefix, using exactly the granted extranonce size. A share that does
+not meet that target is not forwarded.
+The target is the one the custom job was sent with; a later `SetTarget` does
+not retarget it. A share that meets the network target is submitted locally
+through the same block-connection path as solo mining. In `full-template`,
+after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
+JDS (specification section 6.4.9). `coinbase-only` has no declared job for
+`PushSolution` to name, so the block is connected locally and not pushed.
+
+Fallback follows specification section 6.2. The node returns downstream work
+to the solo payout, and logs why, when the JDS does not answer
+`AllocateMiningJobToken` within `sv2.jd.response_timeout_seconds`, the JDS
+sends `DeclareMiningJob.Error`, the pool refuses `SetCustomMiningJob`, the
+pool refuses a share on an accepted job, or either connection drops. The next
+job after the pool coinbase was in use pays `sv2.mining.address`. Setup and
+extended-channel refusals include the upstream's error code in the
+fallback log, bounded in length and restricted to printable ASCII.
+This PR does not reconnect and does not try another pool.
+
+Both connections run independently of the listener, the template build and
+downstream miners. A slow or silent upstream cannot hold those up: solo jobs
+are served while a token or declaration is outstanding, and a network-target
+share is connected without waiting for the pool or the JDS to accept it.
+Resolution, connection, handshake, partial-frame assembly and writes have
+deadlines using `sv2.handshake_timeout_seconds`; setup, the extended channel
+and each declaration step use `sv2.jd.response_timeout_seconds`. With JD
+enabled, both settings must be from 1 to 600 seconds. A healthy idle
+connection has no outstanding response deadline. OS DNS resolution
+cancellation still needs validation on Linux; numeric IP addresses avoid the
+resolver's OS lookup. Received payloads are at most 1 MiB. Sent messages may
+fill a whole SV2 frame, whose U24 length allows 2^24 - 1 bytes. In
+`full-template`, a template of more than 65,535 transactions (the SEQ0_64K
+list in `DeclareMiningJob`), or a `ProvideMissingTransactions.Success` larger
+than one frame, is not declared: that template is mined solo and the log says
+why. `coinbase-only` has neither limit. The output queue holds at most eight
+frames. Shares that arrive before the custom
+job id is known are retained up to 32 and then dropped. An output queue that
+refuses a declaration or a share ends the attempt and continues solo. No
+reconnect or alternate pool is tried.

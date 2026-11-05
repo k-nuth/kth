@@ -277,6 +277,20 @@ struct set_target {
     [[nodiscard]] static expect<set_target> from_data(byte_reader& source);
 };
 
+// Mining Protocol SetGroupChannel (0x25). The channel bit is clear: the
+// message regroups channels instead of addressing one (sv2-spec 5.3.22).
+struct set_group_channel {
+    static constexpr uint8_t message_type = 0x25;
+    static constexpr bool channel_message = false;
+
+    uint32_t group_channel_id = 0;
+    std::vector<uint32_t> channel_ids;
+
+    [[nodiscard]] size_t serialized_size() const;
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<set_group_channel> from_data(byte_reader& source);
+};
+
 } // namespace kth::node::sv2
 
 #endif

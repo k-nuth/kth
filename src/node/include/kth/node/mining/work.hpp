@@ -49,6 +49,12 @@ inline constexpr size_t max_remembered_requests = 1024;
 inline constexpr size_t extranonce_prefix_size = 12;
 inline constexpr size_t coinbase_script_limit = 100;
 
+// Four allocation bytes distinguish channels and renewals across connections;
+// four rollable bytes leave miners 2^32 coinbases and fit an eight-byte grant.
+inline constexpr uint16_t jd_allocation_size = 4;
+inline constexpr uint16_t jd_downstream_extranonce_size = 4;
+inline constexpr uint16_t jd_min_extranonce_size = jd_allocation_size + jd_downstream_extranonce_size;
+
 // Share and channel strings this server documents. sv2-spec 3.5 leaves the
 // text to the implementation and requires it to be printable ASCII.
 inline constexpr std::string_view error_invalid_channel_id = "invalid-channel-id";
@@ -120,7 +126,63 @@ struct work_job {
     hash_digest prev_hash{};
     uint32_t ntime_start = 0;
     uint32_t nbits = 0;
+    // Set when this job's extranonce prefix differs from the one last sent.
+    // Empty for ordinary solo jobs, whose prefix was fixed in Open*Success.
+    std::optional<data_chunk> extranonce_prefix_update;
 };
+
+// Proof fields a pool job share needs upstream. Absent unless the job's
+// coinbase is the one declared to the pool.
+struct pool_proof {
+    hash_digest header_hash{};
+    data_chunk upstream_extranonce;
+    data_chunk full_extranonce;
+    hash_digest prev_hash{};
+    uint32_t version = 0;
+    uint32_t ntime = 0;
+    uint32_t nonce = 0;
+    uint32_t bits = 0;
+    bool block = false;
+    // declared_work::generation of the coinbase this share was mined on.
+    // A pooled job keeps that generation; it is not the downstream job id.
+    // Flushing a cache under a later declaration would submit the old coinbase.
+    uint32_t generation = 0;
+};
+
+// One coinbase and transaction selection shared by every downstream channel.
+// The upstream channel reserves the complete extranonce between these parts.
+struct declared_work {
+    blockchain::mining_template tmpl{};
+    domain::chain::output::list outputs;
+    uint32_t generation = 0;
+    data_chunk coinbase_tx_prefix;
+    data_chunk coinbase_tx_suffix;
+    data_chunk coinbase_prefix;
+    data_chunk coinbase_tx_outputs;
+    std::vector<hash_digest> merkle_path;
+    data_chunk upstream_extranonce_prefix;
+    uint16_t upstream_extranonce_size = 0;
+    uint32_t upstream_channel_id = 0;
+    uint32_t upstream_job_id = 0;
+    // SetCustomMiningJob.Success may assign any job id, including zero.
+    // Zero is not "not yet accepted".
+    bool upstream_accepted = false;
+    hash_digest upstream_target{};
+};
+
+// Upstream extended-channel extranonce that downstream channels nest inside.
+// `generation` is the coinbase script generation already declared to the pool;
+// it is not the downstream job id.
+struct pool_binding {
+    data_chunk prefix;
+    uint16_t extranonce_size = 0;
+    uint32_t generation = 0;
+};
+
+[[nodiscard]]
+std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
+    domain::chain::output::list const& outputs, uint32_t generation,
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size);
 
 struct update_result {
     bool protocol_error = false;
@@ -152,13 +214,17 @@ struct share_outcome {
     block_const_ptr block;
     // Issue fresh work before the bounded duplicate history fills up.
     bool renew = false;
+    std::optional<pool_proof> pool;
 };
 
 class work_engine {
 public:
     // `connection_salt` keeps extranonce prefixes from colliding across
     // connections that would otherwise reuse channel ids.
-    explicit work_engine(uint64_t connection_salt);
+    // A shared allocation counter enables JD's fixed downstream reserve. Its
+    // users must run on the same strand, as the listener's connections do.
+    explicit work_engine(uint64_t connection_salt,
+        std::shared_ptr<uint64_t> pool_allocations = {});
 
     [[nodiscard]] opened_channel open(open_request const& request);
     [[nodiscard]] update_result update(uint32_t channel_id, float nominal_hash_rate,
@@ -172,9 +238,22 @@ public:
     [[nodiscard]] std::vector<work_job> on_template(blockchain::mining_template const& tmpl,
         domain::chain::output::list const& outputs);
 
+    // JD channels all use the pool coinbase or fail together. Without JD's
+    // reserve, channels that cannot fit keep `solo_outputs`. Nullopt when the
+    // binding or template cannot be represented.
+    [[nodiscard]] std::optional<std::vector<work_job>> on_pool_template(
+        blockchain::mining_template const& tmpl,
+        domain::chain::output::list const& pool_outputs,
+        domain::chain::output::list const& solo_outputs,
+        pool_binding const& binding);
+
     // The same for one channel that opened onto a template already in force.
     [[nodiscard]] std::optional<work_job> on_channel(uint32_t channel_id,
         blockchain::mining_template const& tmpl, domain::chain::output::list const& outputs);
+
+    // Give a pooled channel new extranonce space without changing the declared
+    // generation. Solo channels already get that from the next job id.
+    void bump_pool_roll(uint32_t channel_id);
 
     [[nodiscard]] share_outcome submit(share_request const& share);
 
@@ -199,6 +278,12 @@ private:
         data_chunk coinbase_tx_suffix;
         data_chunk extranonce_prefix;
         uint16_t extranonce_size = 0;
+        bool pool = false;
+        size_t pool_prefix_length = 0;
+        uint16_t pool_extranonce_size = 0;
+        // Coinbase generation this job was built with. For a pool job that is
+        // declared_work::generation, not `id`.
+        uint32_t generation = 0;
         std::shared_ptr<std::vector<transaction_const_ptr> const> txs;
     };
 
@@ -219,18 +304,37 @@ private:
         hash_digest max_target{};
         hash_digest share_target{};
         data_chunk extranonce_prefix;
+        data_chunk solo_prefix;
+        data_chunk announced_prefix;
+        bool pool_bound = false;
+        uint32_t pool_roll = 0;
+        std::optional<uint32_t> pool_allocation;
+        size_t pool_prefix_length = 0;
+        uint16_t pool_extranonce_size = 0;
         uint16_t extranonce_size = 0;
         std::vector<job> jobs;
         std::vector<share_key> shares;
     };
 
+    struct pool_state {
+        bool active = false;
+        data_chunk prefix;
+        uint16_t extranonce_size = 0;
+        uint32_t generation = 0;
+        domain::chain::output::list outputs;
+    };
+
     [[nodiscard]] hash_digest choose_target(float hashrate, hash_digest const& max_target) const;
     [[nodiscard]] std::optional<work_job> build(channel& slot, blockchain::mining_template const& tmpl,
         domain::chain::output::list const& outputs);
+    bool assign_pool(channel& slot);
+    void clear_pool_binding();
     static void invalidate(job& item);
     [[nodiscard]] channel* find(uint32_t channel_id);
 
     uint64_t const salt_;
+    std::shared_ptr<uint64_t> pool_allocations_;
+    pool_state pool_;
     uint32_t next_channel_ = 1;
     uint32_t next_job_ = 1;
     std::vector<uint32_t> requests_;

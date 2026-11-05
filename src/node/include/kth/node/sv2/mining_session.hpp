@@ -6,6 +6,7 @@
 #define KTH_NODE_SV2_MINING_SESSION_HPP
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -27,9 +28,12 @@ struct mining_session {
         bool close = false;
         bool wants_template = false;
         block_const_ptr solution;
+        // Set when the share's coinbase is the one declared to the pool.
+        std::optional<mining::pool_proof> pool;
     };
 
-    mining_session(uint64_t connection_salt, domain::chain::script payout);
+    mining_session(uint64_t connection_salt, domain::chain::script payout,
+        std::shared_ptr<uint64_t> pool_allocations = {});
 
     [[nodiscard]]
     result process(message_header const& header, byte_span payload);
@@ -37,6 +41,11 @@ struct mining_session {
     // Future job, then the Mining Protocol SetNewPrevHash, for every channel.
     [[nodiscard]]
     result apply(blockchain::mining_template value);
+
+    // With JD's downstream reserve every channel fits the declared extranonce.
+    // The template selection is the same one solo work uses.
+    [[nodiscard]]
+    result apply_pool(mining::declared_work const& work);
 
     // Drop work as soon as the published tip is no longer the one being mined.
     void note_tip(hash_digest const& tip);
@@ -60,6 +69,8 @@ private:
     [[nodiscard]] result close();
     [[nodiscard]] result finish_open(mining::open_request const& request);
     [[nodiscard]] result finish_share(uint8_t message_type, byte_span payload);
+    [[nodiscard]] result emit(std::vector<mining::work_job> const& jobs,
+        blockchain::mining_template value);
     [[nodiscard]] domain::chain::output::list coinbase_outputs(uint64_t value) const;
     [[nodiscard]] data_chunk job_frames(mining::work_job const& job) const;
 

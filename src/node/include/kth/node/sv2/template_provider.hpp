@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <system_error>
 
@@ -95,6 +96,8 @@ private:
     uint64_t stale_through_ = 0;
 };
 
+struct jd_client;
+
 // Accepts Template Distribution and Mining Protocol clients on sv2.bind:sv2.port.
 // Like the JSON-RPC server it runs on the node's executor, with one coroutine
 // per connection, and every socket is owned by one strand.
@@ -118,13 +121,15 @@ struct template_provider {
 
 private:
     ::asio::awaitable<void> run_owned();
-    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
+    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket,
+        jd_client* upstream);
 
     sv2_settings const settings_;
     domain::config::network const network_;
     blockchain::block_chain& chain_;
     std::optional<domain::chain::script> payout_;
     uint64_t next_salt_ = 1;
+    std::shared_ptr<uint64_t> pool_allocations_ = std::make_shared<uint64_t>(0);
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;

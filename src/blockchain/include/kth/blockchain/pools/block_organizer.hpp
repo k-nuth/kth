@@ -45,6 +45,11 @@ struct KB_API block_organizer {
 
     [[nodiscard]]
     block_broadcaster::channel_ptr subscribe();
+
+    // Completions, including the close notice, run on the channel executor.
+    // A subscriber that must outlive this organizer's executor passes its own.
+    [[nodiscard]]
+    block_broadcaster::channel_ptr subscribe(block_broadcaster::executor_type executor);
     void unsubscribe(block_broadcaster::channel_ptr const& channel);
 
     // Wake subscribers after a coherent connected tip is available. Empty

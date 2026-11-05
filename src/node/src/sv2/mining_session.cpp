@@ -63,14 +63,15 @@ void append_frame(data_chunk& bytes, Message const& message) {
 
 } // namespace
 
-mining_session::mining_session(uint64_t connection_salt, domain::chain::script payout)
-    : engine_(connection_salt)
+mining_session::mining_session(uint64_t connection_salt, domain::chain::script payout,
+    std::shared_ptr<uint64_t> pool_allocations)
+    : engine_(connection_salt, std::move(pool_allocations))
     , payout_(std::move(payout))
 {}
 
 mining_session::result mining_session::close() {
     state_ = state::closed;
-    return {{}, true, false, {}};
+    return {{}, true, false, {}, {}};
 }
 
 bool mining_session::ready() const {
@@ -89,6 +90,10 @@ domain::chain::output::list mining_session::coinbase_outputs(uint64_t value) con
 
 data_chunk mining_session::job_frames(mining::work_job const& job) const {
     data_chunk bytes;
+    // The prefix applies to jobs sent after this message (sv2-spec 5.3.10).
+    if (job.extranonce_prefix_update) {
+        append_frame(bytes, set_extranonce_prefix{job.channel_id, *job.extranonce_prefix_update});
+    }
     if (job.extended) {
         new_extended_mining_job message;
         message.channel_id = job.channel_id;
@@ -119,7 +124,7 @@ mining_session::result mining_session::finish_open(mining::open_request const& r
     if (opened.status == mining::open_status::protocol_error) return close();
     if (opened.status != mining::open_status::opened) {
         return {frame(open_mining_channel_error{request.request_id, opened.error_code}),
-            false, false, {}};
+            false, false, {}, {}};
     }
 
     result out;
@@ -174,21 +179,29 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     auto const outcome = engine_.submit(share);
     if (outcome.status == mining::share_status::rejected) {
         return {frame(submit_shares_error{outcome.channel_id, outcome.sequence_number,
-            outcome.error_code}), false, false, {}};
+            outcome.error_code}), false, false, {}, {}};
     }
     result out;
     out.response = frame(submit_shares_success{outcome.channel_id, outcome.sequence_number,
         outcome.accepted_count, outcome.shares_sum});
     out.solution = outcome.block;
+    out.pool = outcome.pool;
     if (outcome.renew) {
+        // A pooled channel cannot change the declared generation. Roll the
+        // bytes that identify it inside the upstream extranonce instead.
+        engine_.bump_pool_roll(share.channel_id);
         // Renew before duplicate history fills, so even a block found at the
         // limit still goes through the found-block path. Accepted work keeps
         // its validated template: note_tip stales jobs before clearing it.
         // Renewal changes only a fixed-width generation in the coinbase.
         auto const& current = current_.value();
         auto const job = engine_.on_channel(share.channel_id, current,
-            coinbase_outputs(current.coinbase_value)).value();
-        auto framed = job_frames(job);
+            coinbase_outputs(current.coinbase_value));
+        if ( ! job) {
+            out.close = true;
+            return out;
+        }
+        auto framed = job_frames(*job);
         out.response.insert(out.response.end(), framed.begin(), framed.end());
     }
     return out;
@@ -202,10 +215,8 @@ void mining_session::note_tip(hash_digest const& tip) {
     }
 }
 
-mining_session::result mining_session::apply(blockchain::mining_template value) {
-    if (state_ != state::ready) return close();
-    auto const outputs = coinbase_outputs(value.coinbase_value);
-    auto const jobs = engine_.on_template(value, outputs);
+mining_session::result mining_session::emit(std::vector<mining::work_job> const& jobs,
+    blockchain::mining_template value) {
     // An open channel must receive its first future job before any other
     // channel messages. Do not leave it waiting if this template cannot fit.
     if (jobs.size() != engine_.channel_count()) return close();
@@ -223,6 +234,25 @@ mining_session::result mining_session::apply(blockchain::mining_template value) 
     }
     pending_.clear();
     return out;
+}
+
+mining_session::result mining_session::apply(blockchain::mining_template value) {
+    if (state_ != state::ready) return close();
+    auto const outputs = coinbase_outputs(value.coinbase_value);
+    auto const jobs = engine_.on_template(value, outputs);
+    return emit(jobs, std::move(value));
+}
+
+mining_session::result mining_session::apply_pool(mining::declared_work const& work) {
+    if (state_ != state::ready) return close();
+    mining::pool_binding binding;
+    binding.prefix = work.upstream_extranonce_prefix;
+    binding.extranonce_size = work.upstream_extranonce_size;
+    binding.generation = work.generation;
+    auto const jobs = engine_.on_pool_template(work.tmpl, work.outputs,
+        coinbase_outputs(work.tmpl.coinbase_value), binding);
+    if ( ! jobs) return close();
+    return emit(*jobs, work.tmpl);
 }
 
 mining_session::result mining_session::process(message_header const& header, byte_span payload) {
@@ -250,13 +280,13 @@ mining_session::result mining_session::process(message_header const& header, byt
         }
         if ( ! error.error_code.empty()) {
             state_ = state::closed;
-            return {frame(error), true, false, {}};
+            return {frame(error), true, false, {}, {}};
         }
         state_ = state::ready;
         standard_only_ = (setup->flags & mining_flag_requires_standard_jobs) != 0;
         // Success flags are zero: version rolling is allowed and standard
         // channels are accepted (sv2-spec 5.3.1).
-        return {frame(setup_connection_success{protocol_version, 0}), false, false, {}};
+        return {frame(setup_connection_success{protocol_version, 0}), false, false, {}, {}};
     }
 
     if (header.extension() != 0) return {};
@@ -305,10 +335,10 @@ mining_session::result mining_session::process(message_header const& header, byt
             if (updated.protocol_error) return close();
             if (updated.unknown) {
                 return {frame(update_channel_error{message->channel_id,
-                    std::string(mining::error_invalid_channel_id)}), false, false, {}};
+                    std::string(mining::error_invalid_channel_id)}), false, false, {}, {}};
             }
             if ( ! updated.target) return {};
-            return {frame(set_target{updated.channel_id, *updated.target}), false, false, {}};
+            return {frame(set_target{updated.channel_id, *updated.target}), false, false, {}, {}};
         }
         case close_channel::message_type: {
             auto const message = parse<close_channel>(payload);

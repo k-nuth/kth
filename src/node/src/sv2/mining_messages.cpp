@@ -79,6 +79,32 @@ size_t option_u32_size(std::optional<uint32_t> const& value) {
     return 1 + (value ? 4 : 0);
 }
 
+// SEQ0_64K[U32]. Reject a count the unread bytes cannot hold before allocating.
+expect<void> write_u32_seq_u16(byte_writer& sink, std::vector<uint32_t> const& items) {
+    if (items.size() > b0_64k_max) return std::unexpected(error::operation_failed);
+    if (auto r = sink.write_little_endian<uint16_t>(static_cast<uint16_t>(items.size())); ! r) return r;
+    for (auto const id : items) {
+        if (auto r = sink.write_little_endian<uint32_t>(id); ! r) return r;
+    }
+    return {};
+}
+
+expect<std::vector<uint32_t>> read_u32_seq_u16(byte_reader& source) {
+    auto const count = source.read_little_endian<uint16_t>();
+    if ( ! count) return std::unexpected(count.error());
+    if (*count > source.remaining_size() / sizeof(uint32_t)) {
+        return std::unexpected(error::operation_failed);
+    }
+    std::vector<uint32_t> result;
+    result.reserve(*count);
+    for (size_t i = 0; i < *count; ++i) {
+        auto const id = source.read_little_endian<uint32_t>();
+        if ( ! id) return std::unexpected(id.error());
+        result.push_back(*id);
+    }
+    return result;
+}
+
 } // namespace
 
 size_t open_standard_mining_channel::serialized_size() const {
@@ -477,6 +503,23 @@ expect<set_target> set_target::from_data(byte_reader& source) {
     auto const target = source.read_array<hash_size>();
     if ( ! target) return std::unexpected(target.error());
     return set_target{*channel_id, *target};
+}
+
+size_t set_group_channel::serialized_size() const {
+    return 4 + 2 + 4 * channel_ids.size();
+}
+
+expect<void> set_group_channel::to_data(byte_writer& sink) const {
+    if (auto r = sink.write_little_endian<uint32_t>(group_channel_id); ! r) return r;
+    return write_u32_seq_u16(sink, channel_ids);
+}
+
+expect<set_group_channel> set_group_channel::from_data(byte_reader& source) {
+    auto const group_channel_id = source.read_little_endian<uint32_t>();
+    if ( ! group_channel_id) return std::unexpected(group_channel_id.error());
+    auto channel_ids = read_u32_seq_u16(source);
+    if ( ! channel_ids) return std::unexpected(channel_ids.error());
+    return set_group_channel{*group_channel_id, std::move(*channel_ids)};
 }
 
 } // namespace kth::node::sv2

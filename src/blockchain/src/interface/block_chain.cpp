@@ -2372,6 +2372,11 @@ block_chain::block_channel_ptr block_chain::subscribe_blockchain() {
     return block_organizer_.subscribe();
 }
 
+block_chain::block_channel_ptr block_chain::subscribe_blockchain(
+    ::asio::any_io_executor executor) {
+    return block_organizer_.subscribe(std::move(executor));
+}
+
 block_chain::transaction_channel_ptr block_chain::subscribe_transaction() {
     return transaction_organizer_.subscribe();
 }

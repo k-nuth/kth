@@ -41,6 +41,9 @@
 #include <kth/node/mining/block_submit.hpp>
 #include <kth/node/mining/work.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/jd_client.hpp>
+#include <kth/node/sv2/jd_settings.hpp>
+#include <kth/node/sv2/mining_messages.hpp>
 #include <kth/node/sv2/mining_session.hpp>
 
 namespace kth::node::sv2 {
@@ -316,7 +319,8 @@ template_provider::template_provider(sv2_settings const& settings,
     , listening_(owner_, 1)
 {}
 
-::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket) {
+::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket,
+    jd_client* upstream) {
     using namespace ::asio::experimental::awaitable_operators;
 
     // Taken before the first await so two connections cannot share a salt.
@@ -357,7 +361,7 @@ template_provider::template_provider(sv2_settings const& settings,
     auto tips = chain_.subscribe_blockchain();
     if ( ! tips) co_return;
 
-    enum class event_kind { frame, tip, end };
+    enum class event_kind { frame, tip, work, end };
     struct event {
         event_kind kind = event_kind::end;
         message_header header;
@@ -367,6 +371,7 @@ template_provider::template_provider(sv2_settings const& settings,
     // queue complete frames and tip wake-ups, so a tip cannot cancel a partial
     // read or interleave its messages with a transaction-data response.
     ::asio::experimental::channel<void(std::error_code, event)> inbox(owner_, 8);
+    auto publications = upstream ? upstream->subscribe_publications() : nullptr;
     // Closing a channel does not wake an operation already waiting on it in
     // the pinned Asio; cancelling first does.
     auto const end_inputs = [&] {
@@ -374,11 +379,16 @@ template_provider::template_provider(sv2_settings const& settings,
         socket.close(ignored);
         inbox.cancel();
         inbox.close();
+        if (publications) {
+            publications->cancel();
+            publications->close();
+        }
         tips->cancel();
         tips->close();
     };
     detail::scope_action cleanup([&] {
         end_inputs();
+        if (upstream) upstream->unsubscribe_publications(publications);
         chain_.unsubscribe_blockchain(tips);
     }, true);
 
@@ -458,7 +468,38 @@ template_provider::template_provider(sv2_settings const& settings,
         sent_previous = value->previous_block_hash;
         co_return session.set_template(std::move(*value));
     };
+    auto adopt = [](mining_session::result produced) {
+        template_provider_session::result out;
+        out.response = std::move(produced.response);
+        out.close = produced.close;
+        out.solution = std::move(produced.solution);
+        return out;
+    };
+    // Last publication generation applied on this connection. A second apply
+    // of that notice, pool or solo, assigns new job ids and clears share
+    // history while its template is still installed. A cleared template still
+    // takes the notice. The open path records the generation it binds.
+    uint64_t applied_generation = 0;
     auto refresh_mining = [&]() -> ::asio::awaitable<template_provider_session::result> {
+        if ( ! miner->ready()) co_return template_provider_session::result{};
+        // A pool or fallback notice for this tip replaces the coinbase without
+        // another template build. A notice for a different tip is ignored so a
+        // slow declaration cannot overwrite work for the block the chain is on.
+        if (upstream) {
+            auto const notice = upstream->notice();
+            auto const view = chain_.chain_view();
+            bool const installed = notice
+                && notice->generation == applied_generation
+                && ! miner->needs_template();
+            if (notice && notice->generation > 0 && view && notice->previous == view->tip_hash
+                && ! installed) {
+                auto produced = notice->pool ? miner->apply_pool(notice->pooled)
+                                              : miner->apply(notice->solo);
+                if ( ! produced.close) applied_generation = notice->generation;
+                co_return adopt(std::move(produced));
+            }
+        }
+        if ( ! miner->needs_template()) co_return template_provider_session::result{};
         // Outputs are outside the fixed coinbase reserve. One payout output is
         // what this connection will actually place in the coinbase.
         domain::chain::output const payout_output(0, *payout_, std::nullopt);
@@ -470,12 +511,18 @@ template_provider::template_provider(sv2_settings const& settings,
                 value.error().message());
             co_return template_provider_session::result{};
         }
-        auto produced = miner->apply(std::move(*value));
-        template_provider_session::result out;
-        out.response = std::move(produced.response);
-        out.close = produced.close;
-        out.solution = produced.solution;
-        co_return out;
+        // The declaration may have published this tip while the fetch ran.
+        if (upstream) {
+            auto const notice = upstream->notice();
+            if (notice && notice->generation > 0
+                && notice->previous == value->previous_block_hash) {
+                auto produced = notice->pool ? miner->apply_pool(notice->pooled)
+                                              : miner->apply(notice->solo);
+                if ( ! produced.close) applied_generation = notice->generation;
+                co_return adopt(std::move(produced));
+            }
+        }
+        co_return adopt(miner->apply(std::move(*value)));
     };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
         // Close both producers even when parsing, allocation or a chain call
@@ -492,7 +539,10 @@ template_provider::template_provider(sv2_settings const& settings,
             }
 
             template_provider_session::result result;
-            if (input.kind == event_kind::tip) {
+            if (input.kind == event_kind::work) {
+                if ( ! miner) continue;
+                result = co_await refresh_mining();
+            } else if (input.kind == event_kind::tip) {
                 if (miner) {
                     if ( ! miner->needs_template()) continue;
                     result = co_await refresh_mining();
@@ -502,20 +552,46 @@ template_provider::template_provider(sv2_settings const& settings,
                 }
             } else {
                 if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
-                    miner.emplace(connection_salt, *payout_);
+                    miner.emplace(connection_salt, *payout_,
+                        settings_.jd.enabled ? pool_allocations_ : std::shared_ptr<uint64_t>{});
                 }
                 decided = true;
                 if (miner) {
-                    auto produced = miner->process(input.header, input.payload);
-                    result.response = std::move(produced.response);
-                    result.close = produced.close;
-                    result.solution = produced.solution;
-                    if (produced.wants_template) {
-                        auto const jobs = co_await refresh_mining();
+                    // Bind the live pool coinbase before open() allocates the
+                    // channel prefix, so Open*Success carries that prefix and
+                    // the first job is not preceded by SetExtranoncePrefix.
+                    // Channels already open are updated by the frames this
+                    // apply returns, ahead of the Open reply.
+                    bool const opening = input.header.msg_type == open_standard_mining_channel::message_type
+                        || input.header.msg_type == open_extended_mining_channel::message_type;
+                    if (opening && miner->ready() && upstream) {
+                        auto const notice = upstream->notice();
+                        if (notice && notice->generation > 0 && notice->pool
+                            && notice->generation != applied_generation
+                            && view && notice->previous == view->tip_hash) {
+                            auto bound = miner->apply_pool(notice->pooled);
+                            if ( ! bound.close) applied_generation = notice->generation;
+                            result.response = std::move(bound.response);
+                            result.close = bound.close;
+                            if (bound.solution) result.solution = std::move(bound.solution);
+                        }
+                    }
+                    if ( ! result.close) {
+                        auto produced = miner->process(input.header, input.payload);
+                        // The pool send is queued on the declaration strand. organize()
+                        // below does not wait for the JDS or the pool to answer.
+                        if (produced.pool && upstream) upstream->observe_share(std::move(*produced.pool));
                         result.response.insert(result.response.end(),
-                            jobs.response.begin(), jobs.response.end());
-                        result.close = result.close || jobs.close;
-                        if (jobs.solution) result.solution = jobs.solution;
+                            produced.response.begin(), produced.response.end());
+                        result.close = produced.close;
+                        if (produced.solution) result.solution = std::move(produced.solution);
+                        if (produced.wants_template) {
+                            auto const jobs = co_await refresh_mining();
+                            result.response.insert(result.response.end(),
+                                jobs.response.begin(), jobs.response.end());
+                            result.close = result.close || jobs.close;
+                            if (jobs.solution) result.solution = jobs.solution;
+                        }
                     }
                 } else {
                     result = session.process(input.header, input.payload);
@@ -551,7 +627,30 @@ template_provider::template_provider(sv2_settings const& settings,
             if (result.close) co_return;
         }
     };
-    co_await (read_frames() && receive_tips() && dispatch());
+    // Publications wake only this connection. Its channel is ended with the
+    // other inputs, so the group also joins a quiet or stopped JD client.
+    // Setup reads the current notice; subscribe before remembering it so only
+    // later changes need to ask dispatch for another job.
+    uint64_t seen = 0;
+    if (upstream) {
+        if (auto const notice = upstream->notice()) seen = notice->generation;
+    }
+    auto watch_publication = [&]() -> ::asio::awaitable<void> {
+        if ( ! publications) co_return;
+        for (;;) {
+            auto [error, wake] = co_await publications->async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (error) co_return;
+            auto const notice = upstream->notice();
+            auto const generation = notice ? notice->generation : 0;
+            if (generation == seen) continue;
+            seen = generation;
+            auto [send_error] = co_await inbox.async_send(std::error_code{},
+                event{event_kind::work, {}, {}}, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_error) co_return;
+        }
+    };
+    co_await (read_frames() && receive_tips() && dispatch() && watch_publication());
 }
 
 void template_provider::stop() {
@@ -574,6 +673,13 @@ void template_provider::stop() {
 ::asio::awaitable<void> template_provider::run_owned() {
     using ::asio::ip::tcp;
     using namespace ::asio::experimental::awaitable_operators;
+
+    std::string jd_error;
+    if ( ! validate_jd_settings(settings_, jd_error)) {
+        spdlog::error("[sv2 jd] {}", jd_error);
+        (void)listening_.try_send(std::make_error_code(std::errc::invalid_argument), uint16_t{});
+        co_return;
+    }
 
     std::error_code ec;
     auto const address = ::asio::ip::make_address(settings_.bind, ec);
@@ -637,6 +743,8 @@ void template_provider::stop() {
         (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
+    std::unique_ptr<jd_client> upstream;
+    if (settings_.jd.enabled) upstream = std::make_unique<jd_client>(settings_, owner_, &chain_);
     (void)listening_.try_send(std::error_code{}, bound.port());
     spdlog::info("[sv2] {} listening on {}:{} ({})",
         settings_.mining.enabled ? "Template Provider and Mining Protocol" : "Template Provider",
@@ -653,6 +761,7 @@ void template_provider::stop() {
     std::exception_ptr failure;
     auto close_owned = [&] {
         stopping = true;
+        if (upstream) upstream->stop();
         std::error_code ignored;
         acceptor.close(ignored);
         try {
@@ -702,7 +811,7 @@ void template_provider::stop() {
                 // It runs on the same strand; its captures cannot outlive the
                 // drain below, even for partial frames or handler errors.
                 try {
-                    ::asio::co_spawn(owner_, serve_connection(*child),
+                    ::asio::co_spawn(owner_, serve_connection(*child, upstream.get()),
                         [&, child](std::exception_ptr error) {
                             std::error_code ignored;
                             child->close(ignored);
@@ -733,7 +842,16 @@ void template_provider::stop() {
         spdlog::info("[sv2] Stop received; closing listener and {} connections", connections.size());
         close_owned();
     };
-    co_await (accept_connections() && receive_stop());
+    auto run_upstreams = [&]() -> ::asio::awaitable<void> {
+        if ( ! upstream) co_return;
+        try {
+            co_await upstream->run();
+        } catch (std::exception const& e) {
+            upstream->stop();
+            spdlog::warn("[sv2 jd] Upstream stopped: {}; continuing solo mining", e.what());
+        }
+    };
+    co_await (accept_connections() && receive_stop() && run_upstreams());
     spdlog::info("[sv2] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }

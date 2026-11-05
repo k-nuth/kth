@@ -48,6 +48,19 @@ struct KND_API sv2_settings {
         std::string address;
     };
 
+    struct jd_settings {
+        jd_settings();
+
+        bool enabled;
+        std::string mining_address;
+        std::string mining_authority_public_key;
+        std::string jds_address;
+        std::string jds_authority_public_key;
+        std::string user_identity;
+        std::string mode;
+        uint32_t response_timeout_seconds;
+    };
+
     sv2_settings();
 
     bool enabled;
@@ -61,6 +74,7 @@ struct KND_API sv2_settings {
     uint32_t certificate_validity_seconds;
     uint32_t handshake_timeout_seconds;
     mining_settings mining;
+    jd_settings jd;
 };
 
 /// Common database configuration settings, properties not thread safe.

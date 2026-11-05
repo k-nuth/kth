@@ -32,6 +32,18 @@ TEST_CASE("sv2 mining defaults to disabled without a payout address", "[settings
     CHECK(configuration.mining.address.empty());
 }
 
+TEST_CASE("sv2 Job Declaration defaults to disabled without upstreams or a mode", "[settings tests][sv2 jd]") {
+    node::sv2_settings const configuration;
+    CHECK_FALSE(configuration.jd.enabled);
+    CHECK(configuration.jd.mining_address.empty());
+    CHECK(configuration.jd.mining_authority_public_key.empty());
+    CHECK(configuration.jd.jds_address.empty());
+    CHECK(configuration.jd.jds_authority_public_key.empty());
+    CHECK(configuration.jd.user_identity.empty());
+    CHECK(configuration.jd.mode == "coinbase-only");
+    CHECK(configuration.jd.response_timeout_seconds == 10u);
+}
+
 TEST_CASE("settings construct default context expected", "[settings tests]") {
     node::settings configuration;
     REQUIRE(configuration.sync_peers == 0u);

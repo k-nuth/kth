@@ -320,6 +320,22 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Accept Mining Protocol clients on the Stratum V2 listener.");
     app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
         "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
+    app.add_option("--sv2.jd.enabled", cfg.sv2.jd.enabled,
+        "Enable the Stratum V2 Job Declaration client (default false).");
+    app.add_option("--sv2.jd.mining_address", cfg.sv2.jd.mining_address,
+        "Pool Mining Protocol host:port, or [IPv6]:port.");
+    app.add_option("--sv2.jd.mining_authority_public_key", cfg.sv2.jd.mining_authority_public_key,
+        "Base58Check Noise authority key pinned for the pool Mining Protocol connection.");
+    app.add_option("--sv2.jd.jds_address", cfg.sv2.jd.jds_address,
+        "Job Declaration Server host:port, or [IPv6]:port.");
+    app.add_option("--sv2.jd.jds_authority_public_key", cfg.sv2.jd.jds_authority_public_key,
+        "Base58Check Noise authority key pinned for the Job Declaration Server.");
+    app.add_option("--sv2.jd.user_identity", cfg.sv2.jd.user_identity,
+        "Pool account identity (1 to 255 UTF-8 bytes).");
+    app.add_option("--sv2.jd.mode", cfg.sv2.jd.mode,
+        "Job Declaration mode: coinbase-only or full-template (default coinbase-only).");
+    app.add_option("--sv2.jd.response_timeout_seconds", cfg.sv2.jd.response_timeout_seconds,
+        "Upstream response deadline in seconds, from 1 to 600 (default 10).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

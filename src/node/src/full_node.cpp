@@ -16,6 +16,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/mining/work.hpp>
+#include <kth/node/sv2/jd_settings.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -103,6 +104,11 @@ full_node::~full_node() {
     if (auto const reason = mining::mining_startup_reason(sv2_settings_, network_type_);
             ! reason.empty()) {
         spdlog::error("[node] {}", reason);
+        co_return error::operation_failed;
+    }
+    std::string jd_error;
+    if ( ! sv2::validate_jd_settings(sv2_settings_, jd_error)) {
+        spdlog::error("[node] {}", jd_error);
         co_return error::operation_failed;
     }
 #endif
