@@ -8,9 +8,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,6 +29,7 @@
 #include <kth/node/settings.hpp>
 #include <kth/node/sv2/jd_connection.hpp>
 #include <kth/node/sv2/jd_declaration.hpp>
+#include <kth/node/sv2/jd_failover.hpp>
 #include <kth/node/sv2/jd_session.hpp>
 #include <kth/node/sv2/jd_settings.hpp>
 
@@ -48,8 +48,8 @@ struct jd_notice {
     blockchain::mining_template solo{};
 };
 
-// Own both upstreams together. A refusal or disconnect closes the other one;
-// the listener and its solo mining sessions have independent lifetimes.
+// Own each Mining/JDS pair together. Only the active pair publishes payouts;
+// one higher-priority pair may recover without disturbing downstream work.
 struct jd_client {
     // settings have passed validate_jd_settings and solo payout validation.
     jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
@@ -65,6 +65,7 @@ struct jd_client {
     // Empty until an allocation has been published, or until fallback republishes
     // the same template for the solo payout. Safe to call off this client's strand.
     [[nodiscard]] boost::shared_ptr<jd_notice const> notice() const;
+    [[nodiscard]] boost::shared_ptr<jd_status const> status() const;
 
     using publication_channel = broadcaster<int>::channel_type;
 
@@ -79,67 +80,47 @@ struct jd_client {
     void observe_share(mining::pool_proof proof);
 
 private:
+    struct attempt;
     ::asio::awaitable<void> run_owned();
-    ::asio::awaitable<void> serve(jd_connection& connection, jd_session& session,
-        char const* name);
-    ::asio::awaitable<void> declare_templates();
-    void wake_declarations();
-    bool dispatch(jd_declaration::result result);
-    void publish_pool();
-    void publish_solo();
-    void note_share(mining::pool_proof const& proof);
-    void forward_share(mining::pool_proof const& proof);
-    void remember_submitted(uint32_t sequence, uint32_t generation);
-    // A share reply names one submission. Success changes nothing. An error
-    // falls back only when that submission is still the accepted declaration
-    // (sv2-spec 6.2). nullopt leaves the mining connection up; a string closes it.
-    [[nodiscard]] std::optional<std::string> share_reply(message_header const& header,
-        byte_span payload);
-    // False when the JDS queue refuses the frame and this client is stopping.
-    [[nodiscard]] bool push_block(mining::pool_proof const& proof);
-    [[nodiscard]] bool flush_pending_solutions();
-    void flush_cached();
+    ::asio::awaitable<void> run_attempt(std::shared_ptr<attempt> value);
+    ::asio::awaitable<void> serve(attempt& value, jd_connection& connection,
+        jd_session& session, jd_peer peer);
+    ::asio::awaitable<void> declare_templates(attempt& value);
+    void start_attempt(size_t index, bool probe);
+    void fail(attempt& value, jd_failure kind, std::string reason);
+    void update_status();
+    void mark_ready(attempt& value);
+    bool recover_at_boundary();
+    bool dispatch(attempt& value, jd_declaration::result result);
+    bool share_response(attempt& value, message_header const& header, byte_span payload);
+    void publish_pool(attempt& value);
+    void publish_solo(attempt const& value);
+    void note_share(attempt& value, mining::pool_proof const& proof);
+    void forward_share(attempt& value, mining::pool_proof const& proof);
+    void remember_submitted(attempt& value, uint32_t sequence, uint32_t generation,
+        hash_digest const& previous, std::chrono::steady_clock::time_point sent);
+    // False when the JDS queue refuses the frame and this attempt is stopping.
+    [[nodiscard]] bool push_block(attempt& value, mining::pool_proof const& proof);
+    [[nodiscard]] bool flush_pending_solutions(attempt& value);
+    void flush_cached(attempt& value);
     // Drop shares and unpushed block proofs from a declaration being replaced.
-    void retire_cached();
+    void retire_cached(attempt& value);
 
     ::asio::strand<::asio::any_io_executor> owner_;
-    jd_connection mining_;
-    jd_connection declaration_;
-    jd_session mining_session_;
-    jd_session declaration_session_;
-    jd_declaration jobs_;
+    sv2_settings const settings_;
+    std::vector<sv2_settings::jd_upstream> const upstreams_;
+    jd_failover policy_;
+    std::shared_ptr<attempt> active_;
+    std::shared_ptr<attempt> probe_;
     blockchain::block_chain* const chain_;
     std::chrono::seconds const response_timeout_;
-    std::optional<std::chrono::steady_clock::time_point> job_deadline_;
-    ::asio::steady_timer declaration_wake_;
-    // Installed and cleared by run_owned(), and invoked only on owner_.
-    // Client stop has to finish a parked receive. The channel is created on
-    // owner_, so the close notice is posted there rather than on the chain
-    // executor that stop() then shuts down.
-    std::function<void()> cancel_tips_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> ready_;
+    ::asio::experimental::concurrent_channel<void(std::error_code, int)> wake_;
     boost::atomic_shared_ptr<jd_notice> notice_;
+    boost::atomic_shared_ptr<jd_status> status_;
     broadcaster<int> publications_;
-    // Proofs found before SetCustomMiningJob.Success. Each proof's generation
-    // is the declaration it was mined on; a replacement drops the vector.
-    std::vector<mining::pool_proof> cached_;
-    // sequence_number and declared_work::generation of each SubmitSharesExtended
-    // this channel sent. Bounded so a slow pool cannot pin every share. A reply
-    // for a sequence that has aged out is ignored, same as one never sent.
-    struct submitted_share {
-        uint32_t sequence = 0;
-        uint32_t generation = 0;
-    };
-    std::deque<submitted_share> submitted_;
-    // Full-template blocks found before DeclareMiningJob.Success. Sent once
-    // can_push_solution() is true for that generation. Two covers a pair found
-    // on the same coinbase; a later one is dropped rather than queued forever.
-    std::vector<mining::pool_proof> pending_solutions_;
-    uint32_t share_sequence_ = 0;
     std::atomic_bool stopped_{false};
     bool published_ = false;
-    bool pool_live_ = false;
-    bool declaration_changed_ = false;
 };
 
 } // namespace kth::node::sv2

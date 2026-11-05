@@ -194,6 +194,90 @@ TEST_CASE("sv2 JD parser refuses malformed enable and deadline values", "[config
     }
 }
 
+TEST_CASE("sv2 JD failover parser preserves typed priority config copying and CLI overrides", "[configuration tests][parser][sv2 jd]") {
+    std::string const first = "z-pool.example:3333|pool-key|[::1]:3334|jds-key|first.worker|full-template";
+    std::string const second = "a-pool.example:4444|backup-key|jds.example:4445|backup-jds-key|second.worker|coinbase-only";
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.jd.upstream", first.c_str(),
+        "--sv2.jd.upstream", second.c_str(), "--sv2.jd.retry_initial_seconds", "2",
+        "--sv2.jd.retry_max_seconds", "60", "--sv2.jd.authority_hold_seconds", "300",
+        "--sv2.jd.recovery_hold_seconds", "3", "--sv2.jd.probe_interval_seconds", "4",
+        "--sv2.jd.max_latency_milliseconds", "250", "--sv2.jd.max_stale_percent", "25",
+        "--sv2.jd.max_reject_percent", "15", "--sv2.jd.health_window", "40"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(static_cast<int>(sizeof(argv) / sizeof(argv[0])), argv, error));
+    auto const& selected = parser.configured.sv2.jd;
+    REQUIRE(selected.upstreams.size() == 2);
+    CHECK(selected.upstreams[0] == first);
+    CHECK(selected.upstreams[1] == second);
+    CHECK(selected.retry_initial_seconds == 2);
+    CHECK(selected.retry_max_seconds == 60);
+    CHECK(selected.authority_hold_seconds == 300);
+    CHECK(selected.recovery_hold_seconds == 3);
+    CHECK(selected.probe_interval_seconds == 4);
+    CHECK(selected.max_latency_milliseconds == 250);
+    CHECK(selected.max_stale_percent == 25);
+    CHECK(selected.max_reject_percent == 15);
+    CHECK(selected.health_window == 40);
+
+    config_file file("sv2_jd_failover", "sv2.jd.upstream=\"" + first + "\"\nsv2.jd.retry_initial_seconds=7\n"
+        "sv2.jd.upstream=\"" + second + "\"\nsv2.jd.retry_max_seconds=70\n"
+        "sv2.jd.authority_hold_seconds=600\nsv2.jd.recovery_hold_seconds=9\n"
+        "sv2.jd.probe_interval_seconds=8\nsv2.jd.max_latency_milliseconds=900\n"
+        "sv2.jd.max_stale_percent=30\nsv2.jd.max_reject_percent=40\nsv2.jd.health_window=50");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.jd.upstreams == selected.upstreams);
+    CHECK(copied.sv2.jd.retry_initial_seconds == 7);
+    CHECK(copied.sv2.jd.retry_max_seconds == 70);
+    CHECK(copied.sv2.jd.authority_hold_seconds == 600);
+    CHECK(copied.sv2.jd.recovery_hold_seconds == 9);
+    CHECK(copied.sv2.jd.probe_interval_seconds == 8);
+    CHECK(copied.sv2.jd.max_latency_milliseconds == 900);
+    CHECK(copied.sv2.jd.max_stale_percent == 30);
+    CHECK(copied.sv2.jd.max_reject_percent == 40);
+    CHECK(copied.sv2.jd.health_window == 50);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* overrides[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.jd.upstream", second.c_str(), "--sv2.jd.upstream", first.c_str(),
+        "--sv2.jd.health_window", "12"};
+    REQUIRE(overridden.parse(11, overrides, error));
+    REQUIRE(overridden.configured.sv2.jd.upstreams.size() == 2);
+    CHECK(overridden.configured.sv2.jd.upstreams[0] == second);
+    CHECK(overridden.configured.sv2.jd.upstreams[1] == first);
+    CHECK(overridden.configured.sv2.jd.health_window == 12);
+    CHECK(overridden.configured.sv2.jd.retry_initial_seconds == 7);
+
+    config_file array_file("sv2_jd_failover_array", "sv2.jd.upstream=[\"" + second
+        + "\", \"" + first + "\"]");
+    node::parser array_parser(domain::config::network::regtest);
+    REQUIRE(array_parser.parse_from_file(array_file.path(), error));
+    CHECK(array_parser.configured.sv2.jd.upstreams == overridden.configured.sv2.jd.upstreams);
+
+    config_file duplicate_scalar("sv2_jd_duplicate_scalar",
+        "sv2.jd.health_window=20\nsv2.jd.health_window=30");
+    node::parser strict_parser(domain::config::network::regtest);
+    CHECK_FALSE(strict_parser.parse_from_file(duplicate_scalar.path(), error));
+}
+
+TEST_CASE("sv2 JD failover parser refuses malformed unsigned thresholds", "[configuration tests][parser][sv2 jd]") {
+    for (auto const* option : {"--sv2.jd.retry_initial_seconds", "--sv2.jd.retry_max_seconds",
+        "--sv2.jd.authority_hold_seconds", "--sv2.jd.recovery_hold_seconds", "--sv2.jd.probe_interval_seconds",
+        "--sv2.jd.max_latency_milliseconds", "--sv2.jd.max_stale_percent", "--sv2.jd.max_reject_percent",
+        "--sv2.jd.health_window"}) {
+        INFO(option);
+        for (auto const* value : {"-1", "4294967296", "invalid"}) {
+            node::parser parser(domain::config::network::regtest);
+            std::ostringstream error;
+            char const* argv[]{"kth", option, value};
+            CHECK_FALSE(parser.parse(3, argv, error));
+        }
+    }
+}
+
 TEST_CASE("sv2 Noise credentials survive config and command line parsing", "[configuration tests][parser][sv2 noise]") {
     config_file file("sv2_noise", "sv2.noise=false\nsv2.static_key_file=provider.key\n"
         "sv2.authority_key_file=authority.key\nsv2.certificate_file=provider.cert\n"

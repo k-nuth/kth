@@ -607,6 +607,7 @@ std::optional<work_job> work_engine::build(channel& slot,
     created.extranonce_prefix = slot.extranonce_prefix;
     created.extranonce_size = slot.extranonce_size;
     created.pool = pooled;
+    created.pool_work_id = pooled ? pool_.work_id : 0;
     created.pool_prefix_length = pooled ? slot.pool_prefix_length : 0;
     created.pool_extranonce_size = pooled ? slot.pool_extranonce_size : 0;
     // The value split_coinbase wrote. A later pool_.generation must not
@@ -665,6 +666,7 @@ std::optional<std::vector<work_job>> work_engine::on_pool_template(
     pool_.prefix = binding.prefix;
     pool_.extranonce_size = binding.extranonce_size;
     pool_.generation = binding.generation;
+    pool_.work_id = binding.work_id;
     pool_.outputs = pool_outputs;
     current_txs_ = std::make_shared<std::vector<transaction_const_ptr> const>(tmpl.selection.txs);
     std::vector<work_job> jobs;
@@ -768,6 +770,7 @@ share_outcome work_engine::submit(share_request const& share) {
         auto const width = job->pool_prefix_length + size_t{job->pool_extranonce_size};
         if (full.size() == width && job->pool_prefix_length <= full.size()) {
             pool_proof proof;
+            proof.work_id = job->pool_work_id;
             proof.header_hash = digest;
             proof.full_extranonce = full;
             proof.upstream_extranonce.assign(

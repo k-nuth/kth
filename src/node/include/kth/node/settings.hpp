@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure/display_mode.hpp>
@@ -48,6 +49,15 @@ struct KND_API sv2_settings {
         std::string address;
     };
 
+    struct jd_upstream {
+        std::string mining_address;
+        std::string mining_authority_public_key;
+        std::string jds_address;
+        std::string jds_authority_public_key;
+        std::string user_identity;
+        std::string mode;
+    };
+
     struct jd_settings {
         jd_settings();
 
@@ -58,7 +68,17 @@ struct KND_API sv2_settings {
         std::string jds_authority_public_key;
         std::string user_identity;
         std::string mode;
+        std::vector<std::string> upstreams;
         uint32_t response_timeout_seconds;
+        uint32_t retry_initial_seconds;
+        uint32_t retry_max_seconds;
+        uint32_t authority_hold_seconds;
+        uint32_t recovery_hold_seconds;
+        uint32_t probe_interval_seconds;
+        uint32_t max_latency_milliseconds;
+        uint32_t max_stale_percent;
+        uint32_t max_reject_percent;
+        uint32_t health_window;
     };
 
     sv2_settings();

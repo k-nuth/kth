@@ -94,11 +94,11 @@ std::optional<open_extended_mining_channel_success> const& jd_session::channel()
     return channel_;
 }
 
-jd_session::result jd_session::fail(std::string error) {
+jd_session::result jd_session::fail(std::string error, bool incompatible) {
     state_ = state::closed;
     channel_.reset();
     error_ = std::move(error);
-    return {{}, true, false, error_};
+    return {{}, true, false, error_, incompatible};
 }
 
 jd_session::result jd_session::process_setup(message_header const& header, byte_span payload) {
@@ -106,15 +106,16 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     if (header.msg_type == setup_connection_error::message_type) {
         auto const error = parse<setup_connection_error>(payload);
         if ( ! error) return fail("malformed upstream setup error");
-        return fail("upstream refused setup (" + printable_error_code(error->error_code) + ")");
+        return fail("upstream refused setup (" + printable_error_code(error->error_code) + ")", true);
     }
     if (header.msg_type != setup_connection_success::message_type) {
         return fail("unexpected upstream setup message");
     }
     auto const success = parse<setup_connection_success>(payload);
-    if ( ! success || success->used_version != 2) return fail("invalid upstream setup version");
+    if ( ! success) return fail("malformed upstream setup success");
+    if (success->used_version != 2) return fail("invalid upstream setup version", true);
     uint32_t const allowed = peer_ == jd_peer::mining ? mining_flag_requires_extended_channels : 0;
-    if ((success->flags & ~allowed) != 0) return fail("unsupported upstream setup flags");
+    if ((success->flags & ~allowed) != 0) return fail("unsupported upstream setup flags", true);
     if (peer_ == jd_peer::declaration) {
         state_ = state::ready;
         return {{}, false, true, {}};

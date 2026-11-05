@@ -322,6 +322,7 @@ TEST_CASE("sv2 JD upstream authenticates the pinned authority and exchanges spli
     CHECK(fixture.received.front() == frame(setup_connection_success{2, 0}));
     fixture.client->stop();
     CHECK(fixture.finish() == "upstream stopped");
+    CHECK_FALSE(fixture.client->authentication_failed());
 }
 
 TEST_CASE("sv2 JD upstream refuses a wrong authority or an out of window certificate", "[sv2 jd]") {
@@ -335,6 +336,7 @@ TEST_CASE("sv2 JD upstream refuses a wrong authority or an out of window certifi
         fixture.start_client(1s, invalid == 0
             ? keypair(5).public_key() : fixture.authority.public_key());
         CHECK(fixture.finish() == "upstream Noise authentication failed");
+        CHECK(fixture.client->authentication_failed());
         CHECK_FALSE(fixture.ready);
         CHECK(fixture.received.empty());
     }
@@ -348,6 +350,7 @@ TEST_CASE("sv2 JD upstream bounds a silent or incomplete handshake", "[sv2 jd]")
         auto const reason = fixture.finish();
         CHECK(reason == (mode == behavior::silent_handshake
             ? "upstream connection or handshake timed out" : "upstream handshake ended early"));
+        CHECK(fixture.client->authentication_failed());
         CHECK_FALSE(fixture.ready);
     }
 }
@@ -359,6 +362,7 @@ TEST_CASE("sv2 JD upstream checks certificate validity when a slow handshake com
     fixture.start_server(behavior::delayed_certificate);
     fixture.start_client(3s);
     CHECK(fixture.finish() == "upstream Noise authentication failed");
+    CHECK(fixture.client->authentication_failed());
     CHECK_FALSE(fixture.ready);
 }
 
@@ -369,6 +373,7 @@ TEST_CASE("sv2 JD upstream refuses split authentication tags and oversized frame
         fixture.start_server(mode);
         fixture.start_client();
         CHECK(fixture.finish() == "upstream encrypted frame refused");
+        CHECK(fixture.client->authentication_failed());
         CHECK(fixture.ready);
         CHECK(fixture.received.empty());
     }
@@ -380,6 +385,7 @@ TEST_CASE("sv2 JD upstream bounds frame assembly without timing out a quiet conn
         fixture.start_server(behavior::partial_frame);
         fixture.start_client(100ms);
         CHECK(fixture.finish() == "upstream frame assembly timed out");
+        CHECK_FALSE(fixture.client->authentication_failed());
         CHECK(fixture.received.empty());
     }
     SECTION("idle time is left to the protocol request deadlines") {
@@ -414,6 +420,7 @@ TEST_CASE("sv2 JD upstream reports a dropped connection and protocol refusals", 
         fixture.start_server(behavior::drop);
         fixture.start_client();
         CHECK(fixture.finish() == "upstream connection dropped");
+        CHECK_FALSE(fixture.client->authentication_failed());
         CHECK(fixture.ready);
     }
     SECTION("setup cannot queue its request") {
@@ -487,6 +494,7 @@ TEST_CASE("sv2 JD upstream reports connection refusal and joins after handler ex
         REQUIRE_FALSE(error);
         fixture.start_client();
         CHECK(fixture.finish() == "upstream connection failed");
+        CHECK_FALSE(fixture.client->authentication_failed());
         CHECK_FALSE(fixture.ready);
     }
     SECTION("a protocol handler throws while processing a frame") {

@@ -41,7 +41,17 @@ TEST_CASE("sv2 Job Declaration defaults to disabled without upstreams or a mode"
     CHECK(configuration.jd.jds_authority_public_key.empty());
     CHECK(configuration.jd.user_identity.empty());
     CHECK(configuration.jd.mode == "coinbase-only");
+    CHECK(configuration.jd.upstreams.empty());
     CHECK(configuration.jd.response_timeout_seconds == 10u);
+    CHECK(configuration.jd.retry_initial_seconds == 5u);
+    CHECK(configuration.jd.retry_max_seconds == 300u);
+    CHECK(configuration.jd.authority_hold_seconds == 3600u);
+    CHECK(configuration.jd.recovery_hold_seconds == 60u);
+    CHECK(configuration.jd.probe_interval_seconds == 10u);
+    CHECK(configuration.jd.max_latency_milliseconds == 5000u);
+    CHECK(configuration.jd.max_stale_percent == 20u);
+    CHECK(configuration.jd.max_reject_percent == 10u);
+    CHECK(configuration.jd.health_window == 20u);
 }
 
 TEST_CASE("settings construct default context expected", "[settings tests]") {

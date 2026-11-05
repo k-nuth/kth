@@ -29,6 +29,7 @@ struct jd_session {
         bool close = false;
         bool ready = false;
         std::string error;
+        bool incompatible = false;
     };
 
     jd_session(jd_peer peer, std::string host, uint16_t port,
@@ -43,7 +44,7 @@ struct jd_session {
 private:
     enum class state { idle, awaiting_setup, awaiting_channel, ready, closed };
 
-    [[nodiscard]] result fail(std::string error);
+    [[nodiscard]] result fail(std::string error, bool incompatible = false);
     [[nodiscard]] result process_setup(message_header const& header, byte_span payload);
     [[nodiscard]] result process_channel(message_header const& header, byte_span payload);
     [[nodiscard]] result process_mining(message_header const& header, byte_span payload);

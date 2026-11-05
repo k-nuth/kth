@@ -134,6 +134,7 @@ struct work_job {
 // Proof fields a pool job share needs upstream. Absent unless the job's
 // coinbase is the one declared to the pool.
 struct pool_proof {
+    uint64_t work_id = 0;
     hash_digest header_hash{};
     data_chunk upstream_extranonce;
     data_chunk full_extranonce;
@@ -152,6 +153,7 @@ struct pool_proof {
 // One coinbase and transaction selection shared by every downstream channel.
 // The upstream channel reserves the complete extranonce between these parts.
 struct declared_work {
+    uint64_t work_id = 0;
     blockchain::mining_template tmpl{};
     domain::chain::output::list outputs;
     uint32_t generation = 0;
@@ -177,6 +179,7 @@ struct pool_binding {
     data_chunk prefix;
     uint16_t extranonce_size = 0;
     uint32_t generation = 0;
+    uint64_t work_id = 0;
 };
 
 [[nodiscard]]
@@ -279,6 +282,7 @@ private:
         data_chunk extranonce_prefix;
         uint16_t extranonce_size = 0;
         bool pool = false;
+        uint64_t pool_work_id = 0;
         size_t pool_prefix_length = 0;
         uint16_t pool_extranonce_size = 0;
         // Coinbase generation this job was built with. For a pool job that is
@@ -321,6 +325,7 @@ private:
         data_chunk prefix;
         uint16_t extranonce_size = 0;
         uint32_t generation = 0;
+        uint64_t work_id = 0;
         domain::chain::output::list outputs;
     };
 

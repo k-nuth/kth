@@ -249,6 +249,7 @@ mining_session::result mining_session::apply_pool(mining::declared_work const& w
     binding.prefix = work.upstream_extranonce_prefix;
     binding.extranonce_size = work.upstream_extranonce_size;
     binding.generation = work.generation;
+    binding.work_id = work.work_id;
     auto const jobs = engine_.on_pool_template(work.tmpl, work.outputs,
         coinbase_outputs(work.tmpl.coinbase_value), binding);
     if ( ! jobs) return close();

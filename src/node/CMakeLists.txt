@@ -180,6 +180,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/mining_messages.cpp
     src/sv2/mining_session.cpp
     src/sv2/jd_settings.cpp
+    src/sv2/jd_failover.cpp
     src/sv2/jd_connection.cpp
     src/sv2/jd_session.cpp
     src/sv2/jd_messages.cpp
@@ -249,6 +250,7 @@ set(kth_headers
   include/kth/node/sv2/mining_messages.hpp
   include/kth/node/sv2/mining_session.hpp
   include/kth/node/sv2/jd_settings.hpp
+  include/kth/node/sv2/jd_failover.hpp
   include/kth/node/sv2/jd_connection.hpp
   include/kth/node/sv2/jd_session.hpp
   include/kth/node/sv2/jd_messages.hpp
@@ -379,6 +381,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_mining_session.cpp
           test/sv2_mining_work.cpp
           test/sv2_jd_settings.cpp
+          test/sv2_jd_failover.cpp
           test/sv2_jd_connection.cpp
           test/sv2_jd_session.cpp
           test/sv2_jd_messages.cpp

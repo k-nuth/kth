@@ -203,16 +203,18 @@ specific codes):
 | | `share-limit` | The bounded share history is full; fresh work replaces this job. |
 
 Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
-zero), and server-only messages close the connection. Custom jobs, pool
-failover and Stratum V1 are separate features.
+zero), and server-only messages close the connection. Downstream custom jobs
+and Stratum V1 are separate features.
 
 ## Job Declaration
 
 Job Declaration is off by default (`sv2.jd.enabled=false`). Enabling it requires
-the listener, Mining Protocol and its valid solo payout address, both upstream
-addresses and pinned Noise authority keys and a user identity. `sv2.jd.mode`
-defaults to `coinbase-only`, which sends the pool a merkle path instead of the
-transaction list, so no SV2 message limit bounds the template. Invalid enabled
+the listener, Mining Protocol and its valid solo payout address, and at least
+one configured upstream. Each upstream has Mining and JDS addresses, pinned
+Noise authority keys, a user identity and a mode. The single-pool
+`sv2.jd.mode` defaults to `coinbase-only`, which sends the pool a merkle path
+instead of the transaction list, so no SV2 message limit bounds the template;
+each `sv2.jd.upstream` entry names its mode. Invalid enabled
 settings stop startup before the chain or listener starts.
 Dormant JD settings are ignored when JD is disabled. The solo fallback pays
 `sv2.mining.address`.
@@ -232,6 +234,29 @@ sv2.jd.user_identity               = account.worker
 sv2.jd.mode                        = full-template
 sv2.jd.response_timeout_seconds    = 10
 ```
+
+Those single-pool settings remain supported as a one-entry priority list. To
+configure several pools, use `sv2.jd.upstream` instead. Each quoted entry has
+exactly six nonempty fields, in this order:
+
+```text
+mining-address|mining-authority-key|jds-address|jds-authority-key|user-identity|mode
+```
+
+For example, replace the key placeholders with the pools' public keys:
+
+```ini
+sv2.jd.upstream = "pool.example:3333|<pool-key>|jds.example:3334|<jds-key>|account.worker|full-template"
+sv2.jd.upstream = "backup.example:4444|<backup-key>|backup-jds.example:4445|<backup-jds-key>|backup.worker|coinbase-only"
+```
+
+The first entry typed has the highest priority; entries are never sorted by
+address. A quoted array of entries is also accepted. On the command line,
+repeat `--sv2.jd.upstream` in priority order; an explicit command-line list
+replaces the file's list. A list cannot be combined with any of the six legacy
+single-pool fields. A list identity cannot contain `|`; the legacy identity
+setting still accepts it. No explicit solo entry is needed: the local solo
+payout is always the final fallback.
 
 Addresses are `host:port` or `[IPv6]:port`, with an explicit port from 1 to
 65535. DNS labels are at most 63 bytes and the whole hostname at most 253;
@@ -299,15 +324,62 @@ after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
 JDS (specification section 6.4.9). `coinbase-only` has no declared job for
 `PushSolution` to name, so the block is connected locally and not pushed.
 
-Fallback follows specification section 6.2. The node returns downstream work
-to the solo payout, and logs why, when the JDS does not answer
-`AllocateMiningJobToken` within `sv2.jd.response_timeout_seconds`, the JDS
-sends `DeclareMiningJob.Error`, the pool refuses `SetCustomMiningJob`, the
-pool refuses a share on an accepted job, or either connection drops. The next
-job after the pool coinbase was in use pays `sv2.mining.address`. Setup and
-extended-channel refusals include the upstream's error code in the
-fallback log, bounded in length and restricted to printable ASCII.
-This PR does not reconnect and does not try another pool.
+### Failover and recovery
+
+Only one upstream supplies the payout at a time. Knuth first connects the
+highest-priority eligible entry. A failed attempt immediately gives way to
+the next eligible entry; solo work continues while that entry connects and
+declares the local template. If every entry is unavailable, miners keep the
+solo payout while retry deadlines expire.
+
+Connection failures, dropped connections, token or message response timeouts,
+`DeclareMiningJob.Error` and `SetCustomMiningJob.Error` demote an entry for its
+retry delay. The delay doubles on repeated failures, from
+`sv2.jd.retry_initial_seconds` to `sv2.jd.retry_max_seconds`. A successful
+setup alone does not reset that history: the entry must remain healthy through
+the recovery hold. A Noise handshake or authentication failure flags the
+entry and holds it for at least `sv2.jd.authority_hold_seconds`. A refused
+`SetupConnection` or missing required feature disables that entry until node
+restart. Under specification section 6.2, refusing a valid share for an
+accepted job on the current tip flags the pool as dishonest and applies the
+same long hold. Refusals for older tips contribute to stale and reject rates.
+
+While a lower-priority entry is active, Knuth probes higher-priority entries
+in order, with at most one probe at a time. A probe keeps its Mining and JDS
+connections through the recovery hold and declares local work independently.
+It must accept a local custom job and remain healthy for
+`sv2.jd.recovery_hold_seconds` before it can replace the active entry. Recovery
+switches only when a new connected tip starts the next local job, including
+when recovering from solo after all entries failed. Probe attempts are spaced by
+`sv2.jd.probe_interval_seconds`. There are at most two upstream pairs open:
+the active pair and one probe pair.
+
+Response latency above `sv2.jd.max_latency_milliseconds` also demotes an
+entry. Share health uses a rolling window of `sv2.jd.health_window` results;
+once that window is full, a stale or reject percentage strictly above its
+threshold demotes the entry. A refusal of a valid current-tip share is flagged
+immediately, without waiting for a full window.
+
+| Setting (`sv2.jd.` prefix) | Default | Accepted range |
+|---|---|---|
+| `retry_initial_seconds` | 5 | 1 to 3600, no greater than `retry_max_seconds` |
+| `retry_max_seconds` | 300 | 1 to 3600 |
+| `authority_hold_seconds` | 3600 | 60 to 86400, at least `retry_max_seconds` |
+| `recovery_hold_seconds` | 60 | 1 to 3600 |
+| `probe_interval_seconds` | 10 | 1 to 600 |
+| `max_latency_milliseconds` | 5000 | 1 to 600000 |
+| `max_stale_percent` | 20 | 1 to 100 |
+| `max_reject_percent` | 10 | 1 to 100 |
+| `health_window` | 20 | 1 to 1024 |
+
+The existing `[sv2 jd]` log reports each entry by its one-based position in
+the configured list: connecting, probing, ready, recovered or demoted, with
+the last error and retry hold on failure. Authentication holds,
+disabled-until-restart entries and dishonest pools are distinguished. Payout
+fallback and an all-unavailable list are logged as solo. No new RPC method is
+required for this status. Setup and extended-channel refusals include the
+upstream's error code in that log, bounded in length and restricted to
+printable ASCII.
 
 Both connections run independently of the listener, the template build and
 downstream miners. A slow or silent upstream cannot hold those up: solo jobs
@@ -327,5 +399,7 @@ than one frame, is not declared: that template is mined solo and the log says
 why. `coinbase-only` has neither limit. The output queue holds at most eight
 frames. Shares that arrive before the custom
 job id is known are retained up to 32 and then dropped. An output queue that
-refuses a declaration or a share ends the attempt and continues solo. No
-reconnect or alternate pool is tried.
+refuses a declaration or a share ends the attempt and advances failover while
+solo work continues. Switching pools changes the payout and upstream share
+routing; it does not replace the node's transaction selection or stop its
+downstream listener.

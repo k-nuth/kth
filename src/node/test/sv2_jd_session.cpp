@@ -193,16 +193,24 @@ TEST_CASE("sv2 jd setup refuses wrong versions flags directions and malformed re
     for (auto const peer : {jd_peer::mining, jd_peer::declaration}) {
         for (uint16_t const version : {uint16_t{0}, uint16_t{1}, uint16_t{3}}) {
             auto session = waiting(peer);
-            require_closed(session, process(session, setup_connection_success{version, 0}));
+            auto const result = process(session, setup_connection_success{version, 0});
+            require_closed(session, result);
+            REQUIRE(result.incompatible);
         }
         for (uint32_t const flags : {mining_flag_requires_fixed_version, uint32_t{4}, uint32_t{0xffffffff}}) {
             auto session = waiting(peer);
-            require_closed(session, process(session, setup_connection_success{2, flags}));
+            auto const result = process(session, setup_connection_success{2, flags});
+            require_closed(session, result);
+            REQUIRE(result.incompatible);
         }
         auto rejected = waiting(peer);
-        require_closed(rejected, process(rejected, setup_connection_error{2, "unsupported-feature-flags"}));
+        auto const refusal = process(rejected, setup_connection_error{2, "unsupported-feature-flags"});
+        require_closed(rejected, refusal);
+        REQUIRE(refusal.incompatible);
         auto wrong_direction = waiting(peer);
-        require_closed(wrong_direction, process(wrong_direction, setup_connection{}));
+        auto const misplaced = process(wrong_direction, setup_connection{});
+        require_closed(wrong_direction, misplaced);
+        REQUIRE_FALSE(misplaced.incompatible);
         auto channel_flag = waiting(peer);
         require_closed(channel_flag, process(channel_flag, message_header::channel_msg_flag,
             setup_connection_success::message_type, to_data_chunk(setup_connection_success{2, 0})));
@@ -211,6 +219,31 @@ TEST_CASE("sv2 jd setup refuses wrong versions flags directions and malformed re
     }
     auto jd = waiting(jd_peer::declaration);
     require_closed(jd, process(jd, setup_connection_success{2, mining_flag_requires_extended_channels}));
+}
+
+TEST_CASE("sv2 jd malformed setup replies remain transient failures", "[sv2 jd]") {
+    for (auto const peer : {jd_peer::mining, jd_peer::declaration}) {
+        for (auto const& reply : {std::pair{setup_connection_success::message_type,
+                to_data_chunk(setup_connection_success{2, 0})},
+                std::pair{setup_connection_error::message_type,
+                to_data_chunk(setup_connection_error{0, "refused"})}}) {
+            for (size_t size = 0; size < reply.second.size(); ++size) {
+                CAPTURE(peer == jd_peer::mining, reply.first, size);
+                auto session = waiting(peer);
+                data_chunk const bytes(reply.second.begin(), reply.second.begin()
+                    + static_cast<std::ptrdiff_t>(size));
+                auto const result = process(session, 0, reply.first, bytes);
+                require_closed(session, result);
+                REQUIRE_FALSE(result.incompatible);
+            }
+            auto session = waiting(peer);
+            auto trailing = reply.second;
+            trailing.push_back(0);
+            auto const result = process(session, 0, reply.first, trailing);
+            require_closed(session, result);
+            REQUIRE_FALSE(result.incompatible);
+        }
+    }
 }
 
 TEST_CASE("sv2 jd extended channel replies must match and leave bounded extranonce space", "[sv2 jd]") {

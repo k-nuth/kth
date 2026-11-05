@@ -81,6 +81,10 @@ void jd_connection::stop() {
     (void)stopping_.try_send(std::error_code{}, 1);
 }
 
+bool jd_connection::authentication_failed() const {
+    return authentication_failed_;
+}
+
 ::asio::awaitable<std::string> jd_connection::run(
     std::function<bool()> ready, std::function<bool(data_chunk)> received) {
     if (started_.exchange(true)) co_return "upstream connection already started";
@@ -133,6 +137,8 @@ void jd_connection::stop() {
             co_return false;
         }
 
+        authentication_failed_ = true;
+
         auto ephemeral = noise_keypair::generate();
         auto [write_error, written] = co_await ::asio::async_write(socket,
             ::asio::buffer(ephemeral.ellswift()), ::asio::as_tuple(::asio::use_awaitable));
@@ -162,6 +168,7 @@ void jd_connection::stop() {
             co_return false;
         }
         transport.emplace(*initiator.keys(), true, max_payload_size);
+        authentication_failed_ = false;
         co_return true;
     };
     ::asio::steady_timer deadline(owner_);
@@ -225,6 +232,7 @@ void jd_connection::stop() {
             partial += size;
             auto frames = transport->feed(byte_span(encrypted).first(size));
             if ( ! frames) {
+                authentication_failed_ = true;
                 close("upstream encrypted frame refused");
                 co_return;
             }

@@ -4,11 +4,16 @@
 
 #include <kth/node/parser.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <istream>
+#include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -336,6 +341,27 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Job Declaration mode: coinbase-only or full-template (default coinbase-only).");
     app.add_option("--sv2.jd.response_timeout_seconds", cfg.sv2.jd.response_timeout_seconds,
         "Upstream response deadline in seconds, from 1 to 600 (default 10).");
+    app.add_option("--sv2.jd.upstream", cfg.sv2.jd.upstreams,
+        "Repeat in priority order: mining-address|mining-key|jds-address|jds-key|identity|mode.")
+        ->take_all();
+    app.add_option("--sv2.jd.retry_initial_seconds", cfg.sv2.jd.retry_initial_seconds,
+        "Initial retry delay, from 1 to 3600 seconds (default 5).");
+    app.add_option("--sv2.jd.retry_max_seconds", cfg.sv2.jd.retry_max_seconds,
+        "Maximum retry delay, from the initial delay to 3600 seconds (default 300).");
+    app.add_option("--sv2.jd.authority_hold_seconds", cfg.sv2.jd.authority_hold_seconds,
+        "Noise authentication hold, from 60 to 86400 seconds and at least the maximum retry (default 3600).");
+    app.add_option("--sv2.jd.recovery_hold_seconds", cfg.sv2.jd.recovery_hold_seconds,
+        "Healthy hold before returning to a higher priority pool, from 1 to 3600 seconds (default 60).");
+    app.add_option("--sv2.jd.probe_interval_seconds", cfg.sv2.jd.probe_interval_seconds,
+        "Background probe spacing, from 1 to 600 seconds (default 10).");
+    app.add_option("--sv2.jd.max_latency_milliseconds", cfg.sv2.jd.max_latency_milliseconds,
+        "Maximum upstream response latency, from 1 to 600000 milliseconds (default 5000).");
+    app.add_option("--sv2.jd.max_stale_percent", cfg.sv2.jd.max_stale_percent,
+        "Maximum stale share percentage, from 1 to 100 (default 20).");
+    app.add_option("--sv2.jd.max_reject_percent", cfg.sv2.jd.max_reject_percent,
+        "Maximum rejected share percentage, from 1 to 100 (default 10).");
+    app.add_option("--sv2.jd.health_window", cfg.sv2.jd.health_window,
+        "Share results per health window, from 1 to 1024 (default 20).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
@@ -351,6 +377,29 @@ void apply_environment(configuration& cfg) {
     }
 }
 
+struct flat_config : CLI::ConfigBase {
+    std::vector<CLI::ConfigItem> from_config(std::istream& input) const override {
+        auto parsed = CLI::ConfigBase::from_config(input);
+        std::vector<CLI::ConfigItem> result;
+        std::optional<size_t> upstream;
+        for (auto& item : parsed) {
+            if (item.parents.empty() && item.name == "sv2.jd.upstream") {
+                // CLI11 otherwise ignores repeated keys separated by another
+                // setting. Only this ordered list needs them combined.
+                if (upstream) {
+                    auto& first = result[*upstream];
+                    first.inputs.insert(first.inputs.end(), item.inputs.begin(), item.inputs.end());
+                    first.multiline = first.multiline || item.multiline;
+                    continue;
+                }
+                upstream = result.size();
+            }
+            result.push_back(std::move(item));
+        }
+        return result;
+    }
+};
+
 // Load a config file into `app`. KTH config files use flat, dotted keys
 // (`network.inbound_port = 8433`) that map one-to-one to the options registered
 // by add_settings. CLI11 treats a `.` in a config key as subcommand nesting by
@@ -359,6 +408,7 @@ void apply_environment(configuration& cfg) {
 // The loader option name is distinct from `--config,-c` (already registered by
 // add_command_options) to avoid an OptionAlreadyAdded clash.
 void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
+    app.config_formatter(std::make_shared<flat_config>());
     // '\x1f' (unit separator) never appears in an option name or value, so
     // section splitting is effectively turned off.
     app.get_config_formatter_base()->parentSeparator('\x1f');
