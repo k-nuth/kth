@@ -146,3 +146,39 @@ TEST_CASE("uri encode positive test", "[uri tests]") {
 }
 
 // End Test Suite
+
+TEST_CASE("uri percent encoding handles UTF-8 bytes", "[uri tests]") {
+    uri value; value.set_scheme("test");
+    auto const utf8 = std::string("caf\xC3\xA9");
+    value.set_path(utf8);
+    CHECK(value.encoded() == "test:caf%C3%A9");
+    CHECK(value.path() == utf8);
+}
+
+TEST_CASE("uri component setters roundtrip every byte", "[uri tests]") {
+    std::string bytes;
+    for (unsigned n = 0; n < 256; ++n) bytes.push_back(char(n));
+    uri value; value.set_scheme("test");
+    value.set_authority(bytes); value.set_path("/" + bytes);
+    value.set_query(bytes); value.set_fragment(bytes);
+    CHECK(value.authority() == bytes); CHECK(value.path() == "/" + bytes);
+    CHECK(value.query() == bytes); CHECK(value.fragment() == bytes);
+    uri parsed;
+    REQUIRE(parsed.decode(value.encoded()));
+    CHECK(parsed.authority() == bytes); CHECK(parsed.path() == "/" + bytes);
+    CHECK(parsed.query() == bytes); CHECK(parsed.fragment() == bytes);
+    uri::query_map const map{{bytes, bytes}, {"empty", ""}};
+    value.encode_query(map);
+    CHECK(value.decode_query() == map);
+}
+
+TEST_CASE("uri construction preserves empty components and ordered query terms", "[uri tests]") {
+    uri value; value.set_scheme("test"); value.set_authority("");
+    value.set_path("/"); value.set_query(""); value.set_fragment("");
+    CHECK(value.encoded() == "test:///?#");
+    value.encode_query({{"", ""}, {"a&b", "c=d"}, {"z", ""}});
+    CHECK(value.encoded() == "test:///?&a%26b=c%3Dd&z#");
+    value.encode_query({});
+    CHECK_FALSE(value.has_query());
+    CHECK(value.encoded() == "test:///#");
+}

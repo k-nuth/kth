@@ -42,7 +42,7 @@ full_node::full_node(configuration const& configuration)
 #if ! defined(__EMSCRIPTEN__)
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
-    , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
+    , network_type_(configuration.net)
     , network_settings_(configuration.network)
     , network_(network_settings_)
     , chain_(
@@ -55,7 +55,7 @@ full_node::full_node(configuration const& configuration)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
-    , network_type_(domain::config::network::mainnet)
+    , network_type_(configuration.net)
     , chain_(
         configuration.chain,
         configuration.database,
@@ -134,7 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor);
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_);
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -492,6 +492,7 @@ domain::chain::block full_node::get_genesis_block(domain::config::network networ
             return domain::chain::block::genesis_testnet4();
         case domain::config::network::scalenet:
             return domain::chain::block::genesis_scalenet();
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet:
             return domain::chain::block::genesis_chipnet();
 #endif

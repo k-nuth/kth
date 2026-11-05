@@ -169,6 +169,7 @@ endif()
 set(kth_sources_just_legacy
         ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
+        src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
@@ -364,6 +365,8 @@ set(kth_headers
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
+    include/kth/domain/chain/block_ticks.hpp
+    include/kth/domain/chain/faster_blocks.hpp
     include/kth/domain/chain/output.hpp
     include/kth/domain/chain/daa/aserti3_2d.hpp
     include/kth/domain/chain/token_data.hpp
@@ -418,6 +421,8 @@ set(kth_headers
     include/kth/domain/math/limits.hpp
     include/kth/domain/math/stealth.hpp
     include/kth/domain/impl/machine
+    include/kth/domain/impl/wallet/cashaddr.ipp
+    include/kth/domain/impl/wallet/payment_address.ipp
     include/kth/domain/impl/machine/program.ipp
     include/kth/domain/impl/machine/interpreter.ipp
     include/kth/domain/impl/machine/operation.ipp
@@ -571,6 +576,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/imported_vectors.cpp
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
+        test/chain/block_ticks.cpp
+        test/chain/abla_ticks.cpp
+        test/chain/asert_ticks.cpp
         test/chain/chain_state.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
@@ -664,6 +672,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   target_link_libraries(kth_domain_test PUBLIC ${PROJECT_NAME})
   target_link_libraries(kth_domain_test PRIVATE Catch2::Catch2WithMain)
+
+  if(Python3_FOUND AND CURRENCY STREQUAL "BCH")
+    set(kth_address_literal_options "${CMAKE_CURRENT_BINARY_DIR}/address_literal_options_$<CONFIG>.rsp")
+    include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthCompileTests.cmake")
+    kth_compile_test_options(kth_domain_test "${kth_address_literal_options}")
+    add_test(NAME kth_domain_address_literal_tests
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/test_address_literals.py
+        --compiler ${CMAKE_CXX_COMPILER}
+        --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/include
+        --compiler-options-file ${kth_address_literal_options})
+  endif()
 
   include(CTest)
   # Try to use Catch2 automatic test discovery

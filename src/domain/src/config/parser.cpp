@@ -12,6 +12,13 @@
 namespace kth::domain::config {
 
 kth::infrastructure::config::checkpoint::list default_checkpoints(config::network network) {
+#if defined(KTH_CURRENCY_BCH)
+    if (network == config::network::tempnet) {
+        auto checkpoints = default_checkpoints(config::network::chipnet);
+        checkpoints.emplace_back("00000000e18af2c66d44a1bbfe165acc4b87a625d211a09e33d5ee61d35dcb66"_hash, 327989);
+        return checkpoints;
+    }
+#endif
     kth::infrastructure::config::checkpoint::list checkpoints;
 
 #if defined(KTH_CURRENCY_BCH)

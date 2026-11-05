@@ -32,14 +32,26 @@ def _get_target_year(compile_year: int) -> int:
     return _BASE_PERIOD_YEAR + (periods_since_base + 1) * _PERIOD_LENGTH_YEARS
 
 
-def _calculate_header_capacity(compile_year: int) -> int:
+def _calculate_header_capacity(compile_year: int, currency: str = "BCH") -> int:
     """Calculate header index capacity aligned to 2^16 for a given compilation year."""
     target_year = _get_target_year(compile_year)
     target_date = datetime(target_year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
-    seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
-    blocks_exact = seconds_since_genesis / _SECONDS_PER_BLOCK
-    # Round up to nearest multiple of alignment
-    return ((int(blocks_exact) + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
+    if currency != "BCH":
+        seconds_since_genesis = (target_date - _GENESIS_TIMESTAMP).total_seconds()
+        blocks_exact = seconds_since_genesis / _SECONDS_PER_BLOCK
+        return ((int(blocks_exact) + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
+
+    # Plan for the earliest supported one-minute chain, tempnet. The index
+    # retains its 600-second history, then grows ten times faster from Oct 15.
+    # This is an allocation estimate, not a consensus activation-height rule.
+    faster_blocks = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
+    historical_seconds = int((min(target_date, faster_blocks) - _GENESIS_TIMESTAMP).total_seconds())
+    faster_seconds = max(0, int((target_date - faster_blocks).total_seconds()))
+    # Express both portions over the legacy 600-second denominator and round
+    # up, so neither the partial final block nor the alignment loses capacity.
+    weighted_seconds = historical_seconds + faster_seconds * (_SECONDS_PER_BLOCK // 60)
+    blocks = (weighted_seconds + _SECONDS_PER_BLOCK - 1) // _SECONDS_PER_BLOCK
+    return ((blocks + _BLOCK_ALIGNMENT - 1) // _BLOCK_ALIGNMENT) * _BLOCK_ALIGNMENT
 
 required_conan_version = ">=2.0"
 
@@ -74,6 +86,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": [True, False],
         "with_stats": [True, False],
         "rpc": [True, False],
+        "wasm_simd": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -112,6 +125,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_jemalloc": False,
         "with_stats": False,
         "rpc": True,
+        "wasm_simd": True,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -124,7 +138,7 @@ class KthRecipe(KnuthConanFileV2):
     # The bloom is consumed from `${CMAKE_SOURCE_DIR}/data/utxo_bloom.dat`
     # when present (CI / git-checkout builds embed it); source-tarball
     # rebuilds gracefully fall back to no-embed (slower IBD, still correct).
-    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*"
+    exports_sources = "src/*", "include/*", "CMakeLists.txt", "cmake/*", "ci_utils/cmake/*", "third_party/*", "scripts/test_header_capacity.py", "scripts/check_parser_currencies.py", "scripts/check_tick_accessor_currencies.py", "scripts/check_template_cancellation.py", "conanfile.py"
 
 
     @property
@@ -163,7 +177,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
         if self.settings.os != "Emscripten":
             self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
@@ -204,6 +218,9 @@ class KthRecipe(KnuthConanFileV2):
 
     def config_options(self):
         KnuthConanFileV2.config_options(self)
+
+        if self.settings.os != "Emscripten":
+            self.options.rm_safe("wasm_simd")
 
         # Disable tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
         # and force the JSON-RPC server off: it relies on the standalone-asio I/O
@@ -269,6 +286,8 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
         tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
         tc.variables["KTH_WITH_RPC"] = option_on_off(self.options.rpc)
+        if self.settings.os == "Emscripten":
+            tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -283,7 +302,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
 
         # Header index capacity based on compilation year
-        header_capacity = _calculate_header_capacity(datetime.now().year)
+        header_capacity = _calculate_header_capacity(datetime.now().year, str(self.options.currency))
         tc.variables["KTH_HEADER_INDEX_CAPACITY"] = header_capacity
         self.output.info(f"Header index capacity: {header_capacity:,} headers")
 
@@ -354,6 +373,9 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
         self.cpp_info.components["infrastructure"].names["cmake_find_package_multi"] = "infrastructure"
+        if self.settings.os == "Emscripten" and self.options.wasm_simd:
+            self.cpp_info.components["infrastructure"].exelinkflags.append("-msimd128")
+            self.cpp_info.components["infrastructure"].sharedlinkflags.append("-msimd128")
         infrastructure_defines = list(static_defines)
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
@@ -372,7 +394,7 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Add simdutf for SIMD-optimized operations (not available for WebAssembly)
+        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
         if self.settings.os != "Emscripten":
             self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
