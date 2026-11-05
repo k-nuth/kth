@@ -197,7 +197,9 @@ and `warnings`. `relayfee` is the size part of the node's transaction price,
 
 The server owns a copy of the advertised network configuration. Connection
 count and activity are obtained through an awaited status query; RPC handlers
-do not access the P2P node or its peer collection.
+do not access the P2P node or its peer collection. The concrete port has a
+bounded admission queue and one reply slot per request. Closing it wakes
+clients waiting for admission or replies; its service is joined with RPC.
 
 ## Mining: getblocktemplatelight
 

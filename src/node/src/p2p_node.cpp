@@ -311,6 +311,25 @@ size_t p2p_node::connection_count() const {
     co_return kth::network::status{active, active ? count : 0};
 }
 
+::asio::awaitable<void> p2p_node::serve_network_status(kth::network::status_port& port) const {
+    struct close_port {
+        kth::network::status_port& port;
+        ~close_port() { port.close(); }
+    } guard{port};
+    using namespace ::asio::experimental::awaitable_operators;
+    try {
+        for (;;) {
+            auto request = co_await port.receive();
+            if (request.abandoned()) continue;
+            auto reply = co_await (network_status() || port.wait_closed());
+            if (reply.index() != 0) co_return;
+            request.respond(std::get<0>(reply));
+        }
+    } catch (std::system_error const&) {
+        if (port.is_open()) throw;
+    }
+}
+
 threadpool& p2p_node::thread_pool() {
     return pool_;
 }

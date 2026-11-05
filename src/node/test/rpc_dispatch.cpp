@@ -803,32 +803,6 @@ TEST_CASE("getnetworkinfo dispatch needs the P2P node", "[rpc dispatch]") {
     REQUIRE(result.get() == node::rpc::build_error("8", -32603, "network unavailable"));
 }
 
-namespace {
-
-class p2p_status_source final : public network::status_source {
-public:
-    explicit p2p_status_source(node::p2p_node const& node) : node_(node) {}
-    ::asio::awaitable<network::status> read() const override {
-        co_return co_await node_.network_status();
-    }
-private:
-    node::p2p_node const& node_;
-};
-
-class channel_status_source final : public network::status_source {
-public:
-    explicit channel_status_source(::asio::any_io_executor executor)
-        : responses(executor, 1) {}
-    ::asio::awaitable<network::status> read() const override {
-        ++requests;
-        co_return co_await responses.async_receive(::asio::use_awaitable);
-    }
-    mutable ::asio::experimental::concurrent_channel<void(std::error_code, network::status)> responses;
-    mutable size_t requests = 0;
-};
-
-} // namespace
-
 TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_network_info_review");
     REQUIRE(fixture.created());
@@ -843,17 +817,26 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     node::p2p_node network(settings);
     REQUIRE(network.stopped());
     node::mining::job_store jobs(1, 60);
-    p2p_status_source status(network);
     node::rpc::network_configuration config{settings.user_agent, settings.protocol_maximum,
         settings.services, settings.relay_transactions};
-    node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
     node::rpc::dispatcher dispatcher;
     node::rpc::register_builtin_methods(dispatcher);
     auto request = [&](std::string_view params) {
         ::asio::io_context io;
+        network::status_port status(io.get_executor());
+        node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
         auto const body = std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
-        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        auto call = [&]() -> ::asio::awaitable<std::string> {
+            struct close_port {
+                network::status_port& port;
+                ~close_port() { port.close(); }
+            } guard{status};
+            co_return co_await dispatcher.handle(context, body);
+        };
+        auto result = ::asio::co_spawn(io, call(), ::asio::use_future);
+        auto service = ::asio::co_spawn(io, network.serve_network_status(status), ::asio::use_future);
         io.run();
+        service.get();
         return result.get();
     };
     auto const inactive = request("[]");
@@ -870,7 +853,7 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     REQUIRE(fixture.start());
     node::mining::job_store jobs(1, 60);
     ::asio::io_context io;
-    channel_status_source status(io.get_executor());
+    network::status_port status(io.get_executor());
     node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
     node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
     node::rpc::dispatcher dispatcher;
@@ -878,9 +861,14 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     constexpr auto body = R"({"method":"getnetworkinfo","params":[],"id":9})";
     for (auto const state : {network::status{true, 12}, network::status{false, 0}}) {
         io.restart();
-        REQUIRE(status.responses.try_send(std::error_code{}, state));
+        auto respond = [&]() -> ::asio::awaitable<void> {
+            auto request = co_await status.receive();
+            request.respond(state);
+        };
+        auto owner = ::asio::co_spawn(io, respond(), ::asio::use_future);
         auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
         io.run();
+        owner.get();
         auto const reply = result.get();
         CHECK(reply.find(state.active ? R"("networkactive":true)" : R"("networkactive":false)") != std::string::npos);
         CHECK(reply.find(state.active ? R"("connections":12)" : R"("connections":0)") != std::string::npos);
@@ -892,10 +880,14 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     auto result = ::asio::co_spawn(io, dispatcher.handle(context, body),
         ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
     io.poll();
-    REQUIRE(status.requests == 3);
+    auto received = ::asio::co_spawn(io, status.receive(), ::asio::use_future);
+    io.poll();
+    auto request = received.get();
+    REQUIRE_FALSE(request.abandoned());
     cancel.emit(::asio::cancellation_type::all);
     io.run();
     CHECK_THROWS_AS(result.get(), std::system_error);
+    CHECK(request.abandoned());
 
     // A cancellation arriving before the query starts must not wait for a reply.
     io.restart();
@@ -905,4 +897,88 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     early_cancel.emit(::asio::cancellation_type::all);
     io.run();
     CHECK_THROWS_AS(early.get(), std::system_error);
+    status.close();
+}
+
+TEST_CASE("network status port bounds admission and isolates cancelled replies", "[rpc dispatch][rpc status]") {
+    ::asio::io_context io;
+    network::status_port port(io.get_executor(), 1);
+    auto first = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    io.poll(); // first request occupies the only admission slot
+    ::asio::cancellation_signal cancel;
+    auto second = ::asio::co_spawn(io, port.read(),
+        ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+    io.poll(); // second request is waiting for admission
+    CHECK(second.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+    cancel.emit(::asio::cancellation_type::all);
+    io.poll();
+    CHECK_THROWS_AS(second.get(), std::system_error);
+    auto received = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    io.poll();
+    auto request = received.get();
+    REQUIRE_FALSE(request.abandoned());
+    request.respond({true, 17});
+    io.run();
+    auto const state = first.get();
+    CHECK(state.active);
+    CHECK(state.connections == 17);
+    port.close();
+}
+
+TEST_CASE("network status shutdown wakes admission and replies before owner starts", "[rpc dispatch][rpc status]") {
+    ::asio::io_context io;
+    network::status_port port(io.get_executor(), 1);
+    auto queued = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    io.poll();
+    auto waiting = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    io.poll();
+    port.close();
+    io.run();
+    CHECK_THROWS_AS(queued.get(), std::system_error);
+    CHECK_THROWS_AS(waiting.get(), std::system_error);
+    io.restart();
+    auto late = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    auto owner = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    io.run();
+    CHECK_THROWS_AS(late.get(), std::system_error);
+    CHECK_THROWS_AS(owner.get(), std::system_error);
+}
+
+TEST_CASE("network status shutdown abandons an in-flight reply", "[rpc dispatch][rpc status]") {
+    ::asio::io_context io;
+    network::status_port port(io.get_executor(), 1);
+    auto client = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    auto owner = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    io.poll();
+    auto request = owner.get();
+    REQUIRE_FALSE(request.abandoned());
+    port.close();
+    io.run();
+    CHECK_THROWS_AS(client.get(), std::system_error);
+    CHECK(request.abandoned());
+    request.respond({true, 99}); // late publication cannot resurrect the client
+}
+
+TEST_CASE("network status cancellation leaves another admitted client intact", "[rpc dispatch][rpc status]") {
+    ::asio::io_context io;
+    network::status_port port(io.get_executor(), 2);
+    ::asio::cancellation_signal cancel;
+    auto first = ::asio::co_spawn(io, port.read(),
+        ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+    auto second = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    auto receive_first = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    auto receive_second = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    io.poll();
+    auto abandoned = receive_first.get();
+    auto live = receive_second.get();
+    cancel.emit(::asio::cancellation_type::all);
+    io.poll();
+    CHECK_THROWS_AS(first.get(), std::system_error);
+    CHECK(abandoned.abandoned());
+    CHECK_FALSE(live.abandoned());
+    abandoned.respond({true, 99});
+    live.respond({true, 23});
+    io.run();
+    CHECK(second.get().connections == 23);
+    port.close();
 }

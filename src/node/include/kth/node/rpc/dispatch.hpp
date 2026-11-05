@@ -44,7 +44,7 @@ struct method_context {
     blockchain::block_chain& chain;
     mining::job_store& jobs;
     network_configuration const* network_config = nullptr;
-    network::status_source const* network_status = nullptr;
+    network::status_port const* network_status = nullptr;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or

@@ -34,24 +34,6 @@ using namespace ::asio::experimental::awaitable_operators;
 using namespace kth::network;
 #endif
 
-#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
-namespace {
-
-class rpc_network_status final : public kth::network::status_source {
-public:
-    explicit rpc_network_status(p2p_node const& node) : node_(node) {}
-
-    ::asio::awaitable<kth::network::status> read() const override {
-        co_return co_await node_.network_status();
-    }
-
-private:
-    p2p_node const& node_;
-};
-
-} // namespace
-#endif
-
 // =============================================================================
 // Construction
 // =============================================================================
@@ -152,7 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_network_status_ = std::make_unique<rpc_network_status>(network_);
+        rpc_network_status_ = std::make_unique<kth::network::status_port>(rpc_executor);
         rpc::network_configuration config{network_settings_.user_agent,
             network_settings_.protocol_maximum, network_settings_.services,
             network_settings_.relay_transactions};
@@ -209,6 +191,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
+        if (rpc_network_status_) rpc_network_status_->close();
         if (rpc_server_) rpc_server_->stop();
 #endif
     };
@@ -224,7 +207,18 @@ full_node::~full_node() {
 
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
-    if (rpc_server_) co_await rpc_server_->run();
+    if (rpc_server_) {
+        auto rpc = [this]() -> ::asio::awaitable<void> {
+            try {
+                co_await rpc_server_->run();
+            } catch (...) {
+                rpc_network_status_->close();
+                throw;
+            }
+            rpc_network_status_->close();
+        };
+        co_await (rpc() && network_.serve_network_status(*rpc_network_status_));
+    }
 #endif
     co_return;
 }
@@ -352,6 +346,7 @@ void full_node::notify_fatal(std::string const& reason) {
 
 void full_node::stop() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_network_status_) rpc_network_status_->close();
     if (rpc_server_) rpc_server_->stop();
 #endif
 #if ! defined(__EMSCRIPTEN__)

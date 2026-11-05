@@ -259,6 +259,9 @@ public:
     // Query the peer owner asynchronously; no synchronous count snapshot.
     [[nodiscard]] ::asio::awaitable<kth::network::status> network_status() const;
 
+    // Owned by full_node::run_rpc(); close the port before shutdown/join.
+    ::asio::awaitable<void> serve_network_status(kth::network::status_port& port) const;
+
     [[nodiscard]]
     infrastructure::config::checkpoint top_block() const;
 

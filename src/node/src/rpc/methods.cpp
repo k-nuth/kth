@@ -667,7 +667,13 @@ get_network_info(method_context& ctx, request const& /*req*/) {
             "network unavailable"));
     }
     auto const& config = *ctx.network_config;
-    auto const status = co_await ctx.network_status->read();
+    network::status status;
+    try {
+        status = co_await ctx.network_status->read();
+    } catch (std::system_error const&) {
+        if (ctx.network_status->is_open()) throw; // caller cancellation
+        co_return kth::fail(make_error(error_code::internal_error, "network unavailable"));
+    }
     co_return render_network_info({
         .version = kth::version,
         .subversion = config.subversion,
