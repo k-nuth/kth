@@ -109,7 +109,7 @@ using download_worker_launcher = std::function<void(
     blockchain::header_organizer& organizer,  // read-only for hashes
     fast_validation_input_channel* fast_val = nullptr,  // chunk-based fast validation (nullptr = old path)
     download_worker_launcher launcher = nullptr,  // test seam; null means the real worker
-    std::chrono::milliseconds timeout_tick = std::chrono::seconds(10)
+    std::chrono::milliseconds timeout_tick = std::chrono::seconds(10)  // tests shorten the cadence; the default is the production cadence
 );
 
 // =============================================================================

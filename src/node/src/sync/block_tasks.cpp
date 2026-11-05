@@ -925,7 +925,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 // Workers can all end while the range is unfinished, with
                 // nothing else arriving to start one again.
                 if ( ! coordinator->is_complete() && ownership.worker_count() == 0) {
-                    for (auto const& [nonce, peer] : known_peers) {
+                    for (auto const& [nonce, _] : known_peers) {
                         (void)spawn_known(nonce);
                     }
                 }
