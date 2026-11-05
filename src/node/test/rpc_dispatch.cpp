@@ -15,9 +15,9 @@
 #include <string>
 #include <type_traits>
 
-#include <fstream>
-#include <iomanip>
-#include <sstream>
+#include <cstdio>
+#include <memory>
+#include <fmt/format.h>
 
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -1177,14 +1177,15 @@ TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failu
     auto const overwrite = [&](domain::chain::block const& block, long offset, data_chunk const& bytes) {
         auto const idx = chain.headers().find(block.hash());
         REQUIRE(idx != blockchain::header_index::null_index);
-        std::ostringstream name;
-        name << "blk" << std::setw(5) << std::setfill('0') << chain.headers().get_file_number(idx) << ".dat";
-        std::fstream file(chain.data_dir() / "blocks" / name.str(),
-            std::ios::in | std::ios::out | std::ios::binary);
-        REQUIRE(file.is_open());
-        file.seekp(long(chain.headers().get_data_pos(idx)) + offset);
-        file.write(reinterpret_cast<char const*>(bytes.data()), std::streamsize(bytes.size()));
-        REQUIRE(file.good());
+        auto const name = fmt::format("blk{:05}.dat", chain.headers().get_file_number(idx));
+        auto const path = chain.data_dir() / "blocks" / name;
+        auto const close_file = [](FILE* handle) noexcept { std::fclose(handle); };
+        std::unique_ptr<FILE, decltype(close_file)> file(
+            std::fopen(path.string().c_str(), "r+b"), close_file);
+        REQUIRE(file);
+        REQUIRE(std::fseek(file.get(), long(chain.headers().get_data_pos(idx)) + offset, SEEK_SET) == 0);
+        REQUIRE(std::fwrite(bytes.data(), 1, bytes.size(), file.get()) == bytes.size());
+        REQUIRE(std::fflush(file.get()) == 0);
     };
 
     // The first block's magic is gone: the record cannot be read.

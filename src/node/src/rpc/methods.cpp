@@ -494,11 +494,11 @@ get_raw_transaction(method_context& ctx, request const& req) {
     if (args.size() > 2 && ! args[2].empty()) {
         auto const block_hash = decode_hash(args[2]);
         if ( ! block_hash) {
-            co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
+            co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
         }
         auto const block = co_await ctx.chain.fetch_block(*block_hash);
         if ( ! block) {
-            co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+            co_return kth::fail(make_error(error_code::invalid_address_or_key,
                 "Block hash not found"));
         }
         for (auto const& tx : std::get<0>(*block)->transactions()) {
@@ -508,7 +508,7 @@ get_raw_transaction(method_context& ctx, request const& req) {
                 co_return w.str();
             }
         }
-        co_return std::unexpected(make_error(error_code::invalid_address_or_key,
+        co_return kth::fail(make_error(error_code::invalid_address_or_key,
             "No such transaction found in the provided block"));
     }
 

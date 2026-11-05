@@ -2503,12 +2503,11 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// DEPRECATED: Block storage moved to flat files (blk*.dat)
-// These functions will return not_found until we implement reading from flat files
+// Read a stored block through its header-index record.
 std::expected<std::pair<block_const_ptr, size_t>, code>
 block_chain::read_indexed_block(header_index::index_t idx) const {
     if ( ! block_store_ || ! header_index_.has_block_data(idx)) {
-        return std::unexpected(error::not_found);
+        return kth::fail(error::not_found);
     }
 
     database::flat_file_pos const pos{
@@ -2519,7 +2518,7 @@ block_chain::read_indexed_block(header_index::index_t idx) const {
     if ( ! raw) {
         spdlog::error("[blockchain] cannot read block {} from the block files",
             encode_hash(header_index_.get_hash(idx)));
-        return std::unexpected(error::operation_failed);
+        return kth::fail(error::operation_failed);
     }
 
     byte_reader reader(*raw);
@@ -2527,7 +2526,7 @@ block_chain::read_indexed_block(header_index::index_t idx) const {
     if ( ! block) {
         spdlog::error("[blockchain] cannot parse block {} read from the block files",
             encode_hash(header_index_.get_hash(idx)));
-        return std::unexpected(error::operation_failed);
+        return kth::fail(error::operation_failed);
     }
     return std::pair{std::make_shared<domain::message::block const>(std::move(*block)),
                      size_t(header_index_.get_height(idx))};
@@ -2536,14 +2535,14 @@ block_chain::read_indexed_block(header_index::index_t idx) const {
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
     if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+        co_return kth::fail(error::service_stopped);
     }
 
     // The block on the active chain at that height. The index also holds side
     // branches, numbered in arrival order, so an entry's index is not its height.
-    auto const idx = header_index_.active_at(static_cast<int32_t>(height));
+    auto const idx = header_index_.active_at(int32_t(height));
     if (idx == header_index::null_index) {
-        co_return std::unexpected(error::not_found);
+        co_return kth::fail(error::not_found);
     }
     co_return read_indexed_block(idx);
 }
@@ -2551,12 +2550,12 @@ block_chain::fetch_block(size_t height) const {
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
     if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+        co_return kth::fail(error::service_stopped);
     }
 
     auto const idx = header_index_.find(hash);
     if (idx == header_index::null_index) {
-        co_return std::unexpected(error::not_found);
+        co_return kth::fail(error::not_found);
     }
     co_return read_indexed_block(idx);
 }
