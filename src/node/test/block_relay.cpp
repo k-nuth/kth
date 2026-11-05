@@ -36,6 +36,18 @@ using namespace kth::test;
 
 namespace {
 
+// Take one buffered message, if there is one, and hand it to `on_message`.
+// The inbound channel is a select_channel: try_receive(ec) returns the
+// message instead of calling back.
+template <typename Channel, typename Handler>
+bool take(Channel& channel, Handler&& on_message) {
+    std::error_code ec;
+    auto raw = channel.try_receive(ec);
+    if ( ! raw) return false;
+    on_message(ec, std::move(*raw));
+    return true;
+}
+
 constexpr uint32_t wire_version = 70015;
 constexpr uint32_t regtest_magic = 0xdab5bffa;
 using namespace std::chrono_literals;
@@ -154,7 +166,7 @@ struct wire_peer {
     network::raw_message received() {
         std::optional<network::raw_message> message;
         REQUIRE(wait_until([&] {
-            return session->messages().try_receive([&](std::error_code ec, network::raw_message raw) {
+            return take(session->messages(), [&](std::error_code ec, network::raw_message raw) {
                 REQUIRE_FALSE(ec);
                 message = std::move(raw);
             });
@@ -488,7 +500,7 @@ TEST_CASE("sendheaders split across reads still requires an empty payload", "[bl
     invalid.push_back(1);
     peer.write(invalid, 0, invalid.size() - 1);
     std::this_thread::sleep_for(20ms);
-    CHECK_FALSE(peer.session->messages().try_receive([](std::error_code, network::raw_message) {}));
+    CHECK_FALSE(take(peer.session->messages(), [](std::error_code, network::raw_message) {}));
     peer.write(invalid, invalid.size() - 1, invalid.size());
     REQUIRE(network.observe_block_message(peer.session, peer.received()));
     CHECK_FALSE(peer.session->wants_headers());
@@ -496,7 +508,7 @@ TEST_CASE("sendheaders split across reads still requires an empty payload", "[bl
     auto const valid = domain::message::serialize(wire_version, domain::message::send_headers{}, regtest_magic);
     peer.write(valid, 0, 12);
     std::this_thread::sleep_for(20ms);
-    CHECK_FALSE(peer.session->messages().try_receive([](std::error_code, network::raw_message) {}));
+    CHECK_FALSE(take(peer.session->messages(), [](std::error_code, network::raw_message) {}));
     peer.write(valid, 12, valid.size());
     REQUIRE(network.observe_block_message(peer.session, peer.received()));
     CHECK(peer.session->wants_headers());
