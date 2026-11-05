@@ -161,6 +161,18 @@ uint256_t header_index::get_chain_work(index_t idx) const {
     return chain_works_[idx];
 }
 
+std::optional<uint256_t> header_index::total_chain_work(hash_digest const& tip) const {
+    auto const idx = find(tip);
+    if (idx == null_index) {
+        return std::nullopt;
+    }
+    auto const root = get_ancestor(idx, 0);
+    if (root == null_index) {
+        return std::nullopt;
+    }
+    return get_chain_work(idx) + domain::chain::header::proof(get_bits(root));
+}
+
 header_status header_index::get_status(index_t idx) const {
     return header_status(statuses_[idx]);
 }

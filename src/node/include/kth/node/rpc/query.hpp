@@ -38,22 +38,17 @@ std::string block_to_hex(domain::chain::block const& block);
 // verbose=false).
 std::string header_to_hex(domain::chain::header const& header);
 
-// The `chain` value of getblockchaininfo and getmininginfo: main, test, test4,
-// scale, chip or regtest. Pools key the address prefix of their payout address
-// on it, so it is a short identifier rather than the display name.
-std::string_view chain_name(domain::config::network net);
-
 // The getblockchaininfo fields. The tip fields (blocks through chain_work) are
 // read from one published chain view, so that they describe one chain.
 struct blockchain_info {
     std::string_view chain;
-    std::size_t blocks;                  // connected tip height
-    std::size_t headers;
+    size_t blocks;                  // connected tip height
+    size_t headers;
     hash_digest best_block_hash;
     double difficulty;                   // of the next required work
-    std::uint32_t median_time;           // median time past of the connected tip
+    uint32_t median_time;           // median time past of the connected tip
     std::optional<uint256_t> chain_work; // absent while the header index cannot name the tip
-    std::uint64_t size_on_disk;          // block and undo files
+    uint64_t size_on_disk;          // block and undo files
     bool initial_block_download;         // the node is not yet synchronized
 };
 

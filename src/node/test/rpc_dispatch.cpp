@@ -5,8 +5,6 @@
 #include <test_helpers.hpp>
 #include <catch2/catch_approx.hpp>
 #include <optional>
-#include <iomanip>
-#include <sstream>
 #include "sync_harness.hpp"
 
 #include <algorithm>
@@ -564,7 +562,7 @@ TEST_CASE("getblockchaininfo dispatch reports the connected tip from one view", 
 
     auto const genesis = domain::chain::block::genesis_regtest();
     std::string_view text;
-    std::uint64_t number = 0;
+    uint64_t number = 0;
     bool flag = false;
     double progress = 0;
 
@@ -584,10 +582,8 @@ TEST_CASE("getblockchaininfo dispatch reports the connected tip from one view", 
     REQUIRE(result["initialblockdownload"].get_bool().get(flag) == simdjson::SUCCESS);
     REQUIRE(flag);
     REQUIRE(result["chainwork"].get_string().get(text) == simdjson::SUCCESS);
-    std::ostringstream work;
-    work << std::hex << std::setfill('0') << std::setw(64)
-         << domain::chain::header::proof(genesis.header().bits());
-    REQUIRE(text == work.str());
+    // Regtest genesis has proof 2, rendered as a padded 256-bit integer.
+    REQUIRE(text == std::string(63, '0') + "2");
     REQUIRE(result["size_on_disk"].get_uint64().get(number) == simdjson::SUCCESS);
     REQUIRE(result["warnings"].get_string().get(text) == simdjson::SUCCESS);
     REQUIRE(text.empty());

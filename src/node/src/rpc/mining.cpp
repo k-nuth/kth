@@ -5,9 +5,9 @@
 #include <kth/node/rpc/mining.hpp>
 
 #include <cstdint>
-#include <iomanip>
-#include <sstream>
 #include <utility>
+
+#include <fmt/format.h>
 
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/config/network.hpp>
@@ -21,18 +21,9 @@ namespace kth::node::rpc {
 
 namespace {
 
-// 256-bit value as a 64-char, zero-padded, big-endian hex string (GBT target).
-std::string to_hex256(uint256_t const& value) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(64) << value;
-    return os.str();
-}
-
 // Compact nBits as an 8-char hex string (GBT bits).
-std::string bits_to_hex(std::uint32_t bits) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(8) << bits;
-    return os.str();
+std::string bits_to_hex(uint32_t bits) {
+    return fmt::format("{:08x}", bits);
 }
 
 } // namespace
@@ -44,21 +35,21 @@ std::string render_mining_template(
     // overflowing encoding, which a chain-produced nBits never is.
     std::string target_hex(64, '0');
     if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
-        target_hex = to_hex256(target->big());
+        target_hex = encode_hash(to_hash_digest(target->big()));
     }
 
     writer w;
     w.begin_object();
-    w.field("version", static_cast<std::int64_t>(tmpl.version));
+    w.field("version", int64_t(tmpl.version));
     w.field("previousblockhash", encode_hash(tmpl.previous_block_hash));
-    w.field("height", static_cast<std::int64_t>(tmpl.height));
-    w.field("coinbasevalue", static_cast<std::uint64_t>(tmpl.coinbase_value));
+    w.field("height", int64_t(tmpl.height));
+    w.field("coinbasevalue", uint64_t(tmpl.coinbase_value));
     w.field("target", target_hex);
     w.field("bits", bits_to_hex(tmpl.bits));
-    w.field("mintime", static_cast<std::int64_t>(tmpl.min_time));
-    w.field("curtime", static_cast<std::int64_t>(tmpl.current_time));
-    w.field("sizelimit", static_cast<std::uint64_t>(tmpl.size_limit));
-    w.field("sigchecklimit", static_cast<std::uint64_t>(tmpl.sigchecks_limit));
+    w.field("mintime", int64_t(tmpl.min_time));
+    w.field("curtime", int64_t(tmpl.current_time));
+    w.field("sizelimit", uint64_t(tmpl.size_limit));
+    w.field("sigchecklimit", uint64_t(tmpl.sigchecks_limit));
     w.field("noncerange", "00000000ffffffff");
     w.key("mutable").begin_array()
         .value("time").value("transactions").value("prevblock")
@@ -78,10 +69,10 @@ std::string render_mining_template(
 std::string render_mining_info(blockchain::mining_info const& info) {
     writer w;
     w.begin_object();
-    w.field("blocks", static_cast<std::uint64_t>(info.blocks));
+    w.field("blocks", uint64_t(info.blocks));
     w.field("difficulty", info.difficulty);
-    w.field("pooledtx", static_cast<std::uint64_t>(info.pooled_tx));
-    w.field("chain", chain_name(info.chain));
+    w.field("pooledtx", uint64_t(info.pooled_tx));
+    w.field("chain", domain::config::chain_name(info.chain));
     // Why mining work may be refused, reported apart. A transition is a
     // correctness barrier and clears in milliseconds; the other two are
     // operational and clear when the node catches up.

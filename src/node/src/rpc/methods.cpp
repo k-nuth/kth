@@ -7,9 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
-#include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,7 +15,6 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
-#include <system_error>
 
 #include <asio/awaitable.hpp>
 #include <simdjson.h>
@@ -35,6 +32,7 @@
 #include <kth/node/mining/block_submit.hpp>
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/json.hpp>
+#include <kth/infrastructure/path.hpp>
 #include <kth/node/rpc/mining.hpp>
 #include <kth/node/rpc/query.hpp>
 
@@ -66,26 +64,6 @@ int64_t confirmations(blockchain::block_chain const& chain,
         return -1;
     }
     return int64_t(view->connected_tip_height - height + 1);
-}
-
-// The bytes the regular files in `dir` take (getblockchaininfo's size_on_disk,
-// over the block and undo files). That includes the space the files have
-// preallocated: block_store keeps the bytes written, but it is driven from
-// one thread and its bookkeeping is not for the RPC thread to read.
-std::uint64_t files_size(std::filesystem::path const& dir) {
-    std::uint64_t total = 0;
-    std::error_code ec;
-    std::filesystem::directory_iterator it(dir, ec);
-    for (std::filesystem::directory_iterator const end; ! ec && it != end; it.increment(ec)) {
-        std::error_code entry_ec;
-        if (it->is_regular_file(entry_ec)) {
-            auto const size = it->file_size(entry_ec);
-            if ( ! entry_ec) {
-                total += size;
-            }
-        }
-    }
-    return total;
 }
 
 // getblockcount -> the height of the most-work fully-validated block.
@@ -338,26 +316,14 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
             "chain height unavailable"));
     }
 
-    // The header index counts work from the genesis block's child on; the
-    // chain's work includes the genesis block's own.
-    std::optional<uint256_t> chain_work;
-    auto const& index = ctx.chain.headers();
-    if (auto const idx = index.find(view->tip_hash); idx != blockchain::header_index::null_index) {
-        auto const genesis = index.get_ancestor(idx, 0);
-        if (genesis != blockchain::header_index::null_index) {
-            chain_work = index.get_chain_work(idx) +
-                domain::chain::header::proof(index.get_bits(genesis));
-        }
-    }
-
     co_return render_blockchain_info({
-        .chain = chain_name(view->state->network()),
+        .chain = domain::config::chain_name(view->state->network()),
         .blocks = view->connected_tip_height,
         .headers = heights->header,
         .best_block_hash = view->tip_hash,
         .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
         .median_time = view->state->median_time_past(),
-        .chain_work = chain_work,
+        .chain_work = ctx.chain.headers().total_chain_work(view->tip_hash),
         .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
         .initial_block_download = ! ctx.chain.synchronization().synchronized()});
 }

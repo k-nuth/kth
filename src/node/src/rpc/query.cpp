@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <iomanip>
-#include <sstream>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -40,55 +38,23 @@ std::string block_to_hex(domain::chain::block const& block) {
     return encode_base16(to_data_chunk(block));
 }
 
-namespace {
-
-// 256-bit value as a 64-char, zero-padded, big-endian hex string (chainwork).
-std::string to_hex256(uint256_t const& value) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(64) << value;
-    return os.str();
-}
-
-} // namespace
-
-std::string_view chain_name(domain::config::network net) {
-    using domain::config::network;
-    switch (net) {
-        case network::testnet:
-            return "test";
-        case network::regtest:
-            return "regtest";
-#if defined(KTH_CURRENCY_BCH)
-        case network::testnet4:
-            return "test4";
-        case network::scalenet:
-            return "scale";
-        case network::chipnet:
-            return "chip";
-#endif
-        default:
-        case network::mainnet:
-            return "main";
-    }
-}
-
 std::string render_blockchain_info(blockchain_info const& info) {
     // By height: kth keeps no per-block transaction counts to weigh it by.
     auto const progress = info.headers == 0 ? 1.0
-        : std::min(1.0, static_cast<double>(info.blocks) / static_cast<double>(info.headers));
+        : std::min(1.0, double(info.blocks) / double(info.headers));
 
     writer w;
     w.begin_object();
     w.field("chain", info.chain);
-    w.field("blocks", static_cast<std::uint64_t>(info.blocks));
-    w.field("headers", static_cast<std::uint64_t>(info.headers));
+    w.field("blocks", uint64_t(info.blocks));
+    w.field("headers", uint64_t(info.headers));
     w.field("bestblockhash", encode_hash(info.best_block_hash));
     w.field("difficulty", info.difficulty);
-    w.field("mediantime", static_cast<std::int64_t>(info.median_time));
+    w.field("mediantime", int64_t(info.median_time));
     w.field("verificationprogress", progress);
     w.field("initialblockdownload", info.initial_block_download);
     if (info.chain_work) {
-        w.field("chainwork", to_hex256(*info.chain_work));
+        w.field("chainwork", encode_hash(to_hash_digest(*info.chain_work)));
     }
     w.field("size_on_disk", info.size_on_disk);
     w.field("warnings", "");

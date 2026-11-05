@@ -317,10 +317,28 @@ TEST_CASE("render_network_hash_ps divides the work by the time spanned", "[rpc q
 
 TEST_CASE("chain_name gives each network's short chain name", "[rpc query]") {
     using domain::config::network;
-    REQUIRE(chain_name(network::mainnet) == "main");
-    REQUIRE(chain_name(network::testnet) == "test");
-    REQUIRE(chain_name(network::testnet4) == "test4");
-    REQUIRE(chain_name(network::scalenet) == "scale");
-    REQUIRE(chain_name(network::chipnet) == "chip");
-    REQUIRE(chain_name(network::regtest) == "regtest");
+    static_assert(domain::config::chain_name(network::mainnet) == "main");
+    static_assert(domain::config::chain_name(network::regtest) == "regtest");
+    REQUIRE(domain::config::chain_name(network::mainnet) == "main");
+    REQUIRE(domain::config::chain_name(network::testnet) == "test");
+    REQUIRE(domain::config::chain_name(network::testnet4) == "test4");
+    REQUIRE(domain::config::chain_name(network::scalenet) == "scale");
+    REQUIRE(domain::config::chain_name(network::chipnet) == "chip");
+    REQUIRE(domain::config::chain_name(network::regtest) == "regtest");
+}
+
+TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
+    using domain::config::network;
+    using domain::config::chain_name;
+    using domain::config::chain_name_format;
+    static_assert(chain_name(network::mainnet) == "main");
+    static_assert(chain_name(network::mainnet, chain_name_format::display) == "Mainnet");
+    REQUIRE(chain_name(network::mainnet, chain_name_format::display) == "Mainnet");
+    REQUIRE(chain_name(network::testnet, chain_name_format::display) == "Testnet");
+    REQUIRE(chain_name(network::regtest, chain_name_format::display) == "Regtest");
+#if defined(KTH_CURRENCY_BCH)
+    REQUIRE(chain_name(network::testnet4, chain_name_format::display) == "Testnet4");
+    REQUIRE(chain_name(network::scalenet, chain_name_format::display) == "Scalenet");
+    REQUIRE(chain_name(network::chipnet, chain_name_format::display) == "Chipnet");
+#endif
 }

@@ -678,6 +678,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/math/hash.cpp
     test/math/uint256.cpp
 
+    test/path.cpp
     test/network_address.cpp
 
     test/unicode/unicode.cpp
