@@ -62,7 +62,8 @@ constexpr uint64_t reserve_pool_entries = 60000;
 // remain within the captured pool, so prevout refresh never invents funding.
 inline size_t seed_template_pool(blockchain::mempool& pool,
                                 domain::chain::transaction const& coinbase,
-                                uint64_t count, domain::script_flags_t flags) {
+                                uint64_t count, domain::script_flags_t flags,
+                                uint32_t sigchecks = 1u) {
     domain::machine::operation::list ops;
     for (size_t i = 0; i < 40; ++i) ops.emplace_back(domain::machine::opcode::nop);
     ops.emplace_back(domain::machine::opcode::push_positive_1);
@@ -96,7 +97,7 @@ inline size_t seed_template_pool(blockchain::mempool& pool,
         previous = tx.hash();
         admitted += pool.add(blockchain::mempool_entry{
             std::make_shared<domain::message::transaction>(tx), fee,
-            uint32_t(tx.serialized_size(true)), 1u, i});
+            uint32_t(tx.serialized_size(true)), sigchecks, i});
     }
     return admitted;
 }
@@ -247,17 +248,17 @@ TEST_CASE("tip subscribers wake only after template capture reopens", "[chain_vi
 }
 
 TEST_CASE("mining templates keep the caller's SigChecks reserve in the cache key", "[chain_view][sv2 template_provider]") {
-    built_chain built("view_sigchecks_reserve", 1);
+    // Templates refresh their prevouts, so the pool spends a mature coinbase.
+    // 100 entries of 3000 SigChecks each are more than one block may hold, so
+    // the SigChecks reserve decides how many are selected.
+    constexpr uint32_t chain_len = 140;
+    built_chain built("view_sigchecks_reserve", chain_len);
     built.add_headers(built.trunk, 1);
     connect_bodies(built.fixture, built.trunk, 1);
     auto& chain = built.chain();
 
-    for (uint64_t i = 0; i < 100; ++i) {
-        auto const tx = pooled_tx(i);
-        REQUIRE(chain.mempool_ref().add(blockchain::mempool_entry{
-            std::make_shared<domain::message::transaction>(tx),
-            1000u + i, uint32_t(tx.serialized_size(true)), 3000u, i}));
-    }
+    REQUIRE(seed_template_pool(chain.mempool_ref(), built.trunk.front().transactions().front(),
+        100, chain.chain_view()->state->enabled_flags(), 3000u) == 100);
 
     auto const fetch = [&](uint64_t reserve) {
         ::asio::io_context ctx;
