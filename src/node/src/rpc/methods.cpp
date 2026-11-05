@@ -24,6 +24,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/version.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -38,6 +39,7 @@
 #include <kth/infrastructure/path.hpp>
 #include <kth/node/rpc/mining.hpp>
 #include <kth/node/rpc/query.hpp>
+#include <kth/node/p2p_node.hpp>
 
 namespace kth::node::rpc {
 
@@ -654,6 +656,52 @@ get_tx_out(method_context& ctx, request const& req) {
         int64_t(tip - utxo->height + 1), utxo->output, utxo->coinbase, net, flags);
 }
 
+// getnetworkinfo -> this node's version and user agent, protocol version,
+// services, whether it relays transactions, its connection count, and the
+// relay fee (the size part of its transaction price) in BCH per kB.
+// C-API counterpart: kth_network_settings (user_agent, protocol_maximum,
+// services, relay_transactions) + kth_blockchain_settings.byte_fee_satoshis.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_network_info(method_context& ctx, request const& req) {
+    // Omitted parameters and an empty array are the only accepted forms.
+    if ( ! req.params.empty()) {
+        auto const invalid_params = [] {
+            return kth::fail(make_error(error_code::invalid_params,
+                "getnetworkinfo takes no arguments"));
+        };
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        for (auto element : args) {
+            (void)element;
+            co_return invalid_params();
+        }
+    }
+    if (ctx.network == nullptr) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "network unavailable"));
+    }
+    // Plain reads, no hop to the network's executors: the settings are fixed
+    // before the server starts, and the lifecycle and the connection count are
+    // atomics. The P2P node outlives the server (full_node destroys the server
+    // first).
+    auto const& settings = ctx.network->network_settings();
+    co_return render_network_info({
+        .version = kth::version,
+        .subversion = settings.user_agent,
+        .protocol_version = settings.protocol_maximum,
+        .services = settings.services,
+        .relay = settings.relay_transactions,
+        .connections = ctx.network->connection_count(),
+        .active = ! ctx.network->stopped(),
+        .byte_fee_satoshis = ctx.chain.chain_settings().byte_fee_satoshis});
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool -> the txids currently in the mempool.
@@ -782,6 +830,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblockchaininfo", get_blockchain_info);
     d.add("getnetworkhashps", get_network_hash_ps);
     d.add("getchaintips", get_chain_tips);
+    d.add("getnetworkinfo", get_network_info);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);

@@ -16,6 +16,7 @@
 #include <asio/use_future.hpp>
 
 #include <kth/node/mining/job_store.hpp>
+#include <kth/node/p2p_node.hpp>
 #include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/rpc/query.hpp>
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
@@ -778,4 +779,66 @@ TEST_CASE("gettxout dispatch reads the UTXO set and the mempool", "[rpc dispatch
         node::rpc::build_error("7", -32602, "gettxout requires [txid, n]"));
     CHECK(request("[" + quoted(coinbase) + R"(,0,"yes"])") ==
         node::rpc::build_error("7", -32602, "include_mempool must be a boolean"));
+}
+
+TEST_CASE("getnetworkinfo dispatch needs the P2P node", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_network_info");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    // No P2P node in this context, as when the server runs without one.
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getnetworkinfo","params":[],"id":8})"),
+        ::asio::use_future);
+    io.run();
+    REQUIRE(result.get() == node::rpc::build_error("8", -32603, "network unavailable"));
+}
+
+TEST_CASE("getnetworkinfo reads the P2P node and rejects arguments", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_network_info_node");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    network::settings settings;
+    settings.threads = 1;
+    settings.inbound_port = 0;
+    settings.outbound_connections = 0;
+    settings.user_agent = "/test:1/";
+    settings.hosts_file = fixture.dir() / "hosts.cache";
+    settings.banlist_file = fixture.dir() / "banlist.cache";
+    settings.peers_file = fixture.dir() / "peers.cache";
+    node::p2p_node network(settings);
+    REQUIRE(network.stopped());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs, &network};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string_view params) {
+        ::asio::io_context io;
+        auto const body = params.empty()
+            ? std::string(R"({"method":"getnetworkinfo","id":42})")
+            : std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // A node that has not started: inactive, no connections, its settings.
+    auto const reply = request("[]");
+    INFO(reply);
+    CHECK(reply.find(R"("subversion":"/test:1/")") != std::string::npos);
+    CHECK(reply.find(R"("networkactive":false)") != std::string::npos);
+    CHECK(reply.find(R"("connections":0)") != std::string::npos);
+    CHECK(reply.find(R"("error":null)") != std::string::npos);
+    CHECK(request("") == reply);
+    CHECK(request("[ ]") == reply);
+
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("42", -32602, "getnetworkinfo takes no arguments"));
+    }
 }

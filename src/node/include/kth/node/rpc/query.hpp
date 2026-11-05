@@ -99,6 +99,23 @@ std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
                           domain::chain::output const& output, bool coinbase,
                           domain::config::network net, domain::script_flags_t flags);
 
+// The getnetworkinfo fields.
+struct network_info {
+    std::string_view version;        // kth::version, e.g. "1.5.2"
+    std::string_view subversion;     // the user agent this node sends its peers
+    uint32_t protocol_version;
+    uint64_t services;
+    bool relay;                      // relays transactions to its peers
+    size_t connections;
+    bool active = false;
+    float byte_fee_satoshis;         // the size part of the transaction price
+};
+
+// Serialize the getnetworkinfo result object: `version` as one number,
+// major * 1000000 + minor * 10000 + patch * 100, the services as 16 hex digits
+// with their names, and `relayfee` in BCH per kB.
+std::string render_network_info(network_info const& info);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
