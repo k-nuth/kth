@@ -212,33 +212,28 @@ void benchmark_base64() {
     // Decoding benchmarks
     Bench().title("Base64 Decoding").relative(true)
         .run("decode 32B", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base64(result, small_encoded)
+                decode_base64(small_encoded)
             );
         })
         .run("decode 256B", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base64(result, medium_encoded)
+                decode_base64(medium_encoded)
             );
         })
         .run("decode 1KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base64(result, large_encoded)
+                decode_base64(large_encoded)
             );
         })
         .run("decode 16KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base64(result, xl_encoded)
+                decode_base64(xl_encoded)
             );
         })
         .run("decode 64KB", [&] {
-            data_chunk result;
             ankerl::nanobench::doNotOptimizeAway(
-                decode_base64(result, xxl_encoded)
+                decode_base64(xxl_encoded)
             );
         });
 }
@@ -334,8 +329,7 @@ void benchmark_cross_encoding() {
             ankerl::nanobench::doNotOptimizeAway(decode_base58(enc58));
         })
         .run("Base64", [&] {
-            data_chunk result;
-            ankerl::nanobench::doNotOptimizeAway(decode_base64(result, enc64));
+            ankerl::nanobench::doNotOptimizeAway(decode_base64(enc64));
         })
         .run("Base85", [&] {
             ankerl::nanobench::doNotOptimizeAway(decode_base85(enc85));

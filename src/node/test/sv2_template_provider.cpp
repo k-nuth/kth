@@ -847,7 +847,7 @@ TEST_CASE("sv2 constraints send the chain template and its transactions in block
     REQUIRE(fixture.execute(fixture.chain.chain().organize(
         std::make_shared<domain::message::transaction const>(child))) == error::success);
 
-    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(248 + 120, 3));
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));
     REQUIRE(expected.has_value());
     REQUIRE(expected->selection.txs.size() == 2);
     auto client = fixture.connect(fixture.start());

@@ -19,7 +19,7 @@
 #include <kth/domain/wallet/stealth_address.hpp>
 #include <kth/domain/wallet/uri_reader.hpp>
 #include <kth/infrastructure/error.hpp>
-#include <kth/infrastructure/formats/base_10.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 
 namespace kth::domain::wallet {
 
@@ -120,13 +120,13 @@ struct bitcoin_uri_reader : public uri_reader {
         };
 
         if (key == parameter_amount) {
-            uint64_t decoded;
-            if ( ! decode_base10(decoded, value, btc_decimal_places, strict)) {
+            auto const decoded = bitcoin_to_satoshi(value, strict);
+            if ( ! decoded) {
                 return false;
             }
             // Normalize the encoding so `parameter("amount")` reads
             // back the same string regardless of leading zeros.
-            query[parameter_amount] = encode_base10(decoded, btc_decimal_places);
+            query[parameter_amount] = satoshi_to_bitcoin(*decoded);
             return true;
         }
 
@@ -161,7 +161,7 @@ expect<bitcoin_uri> bitcoin_uri::from_parts(parts values) {
 
     query_map query;
     if (values.amount) {
-        query.emplace(parameter_amount, encode_base10(*values.amount, btc_decimal_places));
+        query.emplace(parameter_amount, satoshi_to_bitcoin(*values.amount));
     }
     if (values.label) {
         query.emplace(parameter_label, std::move(*values.label));
@@ -222,9 +222,8 @@ std::string bitcoin_uri::to_string() const {
 // ----------------------------------------------------------------------------
 
 uint64_t bitcoin_uri::amount() const {
-    uint64_t satoshis;
-    decode_base10(satoshis, parameter(parameter_amount), btc_decimal_places);
-    return satoshis;
+    // Construction validates/normalizes amounts; a missing amount is zero.
+    return bitcoin_to_satoshi(parameter(parameter_amount)).value_or(0);
 }
 
 std::string bitcoin_uri::label() const {

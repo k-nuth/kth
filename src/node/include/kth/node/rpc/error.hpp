@@ -25,6 +25,7 @@ enum class error_code : int {
     parse_error      = -32700,
     // Application-level (Bitcoin RPC_MISC_ERROR family).
     misc_error       = -1,
+    invalid_parameter = -8,
 };
 
 // A JSON-RPC error carried as data (not thrown): handlers return
@@ -36,13 +37,13 @@ struct rpc_error {
 
 // Build an rpc_error from a well-known JSON-RPC code.
 inline rpc_error make_error(error_code code, std::string message) {
-    return {static_cast<int>(code), std::move(message)};
+    return {int(code), std::move(message)};
 }
 
 // Bridge a system error (kth::code) to a JSON-RPC error at the RPC boundary: an
 // internal failure surfaces as internal_error carrying the system message.
 inline rpc_error from_code(kth::code const& ec) {
-    return {static_cast<int>(error_code::internal_error), ec.message()};
+    return {int(error_code::internal_error), ec.message()};
 }
 
 } // namespace kth::node::rpc

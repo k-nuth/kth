@@ -361,10 +361,10 @@ template_provider::template_provider(sv2_settings const& settings,
     std::optional<hash_digest> sent_previous;
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
         auto const& constraints = *session.constraints();
-        auto value = co_await chain_.fetch_mining_template(
+        auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{
             template_provider_session::coinbase_fixed_reserve
                 + uint64_t{constraints.coinbase_output_max_additional_size},
-            constraints.coinbase_output_max_additional_sigops);
+            constraints.coinbase_output_max_additional_sigops});
         if ( ! value) {
             // A node that has a new header but not yet its block, or is in a
             // chain transition, has no template for a moment; the tip wake-up
