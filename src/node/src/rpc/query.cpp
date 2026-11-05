@@ -11,8 +11,6 @@
 #include <string_view>
 #include <vector>
 
-#include <fmt/format.h>
-
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/chain/token_data.hpp>
@@ -63,11 +61,6 @@ std::string render_blockchain_info(blockchain_info const& info) {
 }
 
 namespace {
-
-// Compact nBits as an 8-char hex string (the getblockheader bits format).
-std::string bits_to_hex(uint32_t bits) {
-    return fmt::format("{:08x}", bits);
-}
 
 void write_hash_array(writer& w, hash_list const& hashes) {
     w.begin_array();
@@ -286,7 +279,7 @@ std::string render_block_header(domain::chain::header const& header,
     w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     w.field("merkleroot", encode_hash(header.merkle()));
     w.field("time", int64_t(header.timestamp()));
-    w.field("bits", bits_to_hex(header.bits()));
+    w.field("bits", encode_base16(header.bits()));
     w.field("nonce", int64_t(header.nonce()));
     w.end_object();
     return w.str();

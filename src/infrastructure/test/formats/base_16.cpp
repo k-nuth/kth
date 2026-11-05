@@ -219,3 +219,22 @@ TEST_CASE("encode_hash accepts numeric uint256 values", "[base16]") {
         REQUIRE(encode_hash(uint256_t(1) << bit) == expected);
     }
 }
+
+static_assert(encode_base16(uint32_t(0)) == "00000000");
+static_assert(encode_base16(uint32_t(1)) == "00000001");
+static_assert(encode_base16(uint32_t(0x1d00ffff)) == "1d00ffff");
+static_assert(encode_base16(uint32_t(0xffffffff)) == "ffffffff");
+
+TEST_CASE("encode_base16 encodes uint32 values with eight digits", "[base16]") {
+    REQUIRE(encode_base16(uint32_t(0)) == "00000000");
+    REQUIRE(encode_base16(uint32_t(1)) == "00000001");
+    REQUIRE(encode_base16(uint32_t(0x12345678)) == "12345678");
+    REQUIRE(encode_base16(uint32_t(0x1d00ffff)) == "1d00ffff");
+    REQUIRE(encode_base16(uint32_t(0xffffffff)) == "ffffffff");
+    constexpr std::string_view digits = "0123456789abcdef";
+    for (size_t bit = 0; bit < 32; ++bit) {
+        std::string expected(8, '0');
+        expected[7 - bit / 4] = digits[1u << (bit % 4)];
+        REQUIRE(encode_base16(uint32_t(1) << bit) == expected);
+    }
+}

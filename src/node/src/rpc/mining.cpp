@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <utility>
 
-#include <fmt/format.h>
-
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/config/network.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -18,15 +16,6 @@
 #include <kth/node/rpc/query.hpp>
 
 namespace kth::node::rpc {
-
-namespace {
-
-// Compact nBits as an 8-char hex string (GBT bits).
-std::string bits_to_hex(uint32_t bits) {
-    return fmt::format("{:08x}", bits);
-}
-
-} // namespace
 
 std::string render_mining_template(
     blockchain::mining_template const& tmpl, std::string_view job_id) {
@@ -45,7 +34,7 @@ std::string render_mining_template(
     w.field("height", int64_t(tmpl.height));
     w.field("coinbasevalue", uint64_t(tmpl.coinbase_value));
     w.field("target", target_hex);
-    w.field("bits", bits_to_hex(tmpl.bits));
+    w.field("bits", encode_base16(tmpl.bits));
     w.field("mintime", int64_t(tmpl.min_time));
     w.field("curtime", int64_t(tmpl.current_time));
     w.field("sizelimit", uint64_t(tmpl.size_limit));
