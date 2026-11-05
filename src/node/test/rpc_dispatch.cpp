@@ -17,6 +17,7 @@
 #include <asio/experimental/concurrent_channel.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/thread_pool.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
 
@@ -754,7 +755,7 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     node::rpc::register_builtin_methods(dispatcher);
     auto request = [&](std::string_view params) {
         ::asio::io_context io;
-        network::status_port status(io.get_executor());
+        network::status_port status;
         node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
         auto const body = std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
         auto call = [&]() -> ::asio::awaitable<std::string> {
@@ -784,7 +785,7 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     REQUIRE(fixture.start());
     node::mining::job_store jobs(1, 60);
     ::asio::io_context io;
-    network::status_port status(io.get_executor());
+    network::status_port status;
     node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
     node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
     node::rpc::dispatcher dispatcher;
@@ -833,7 +834,7 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
 
 TEST_CASE("network status port bounds admission and isolates cancelled replies", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(io.get_executor(), 1);
+    network::status_port port(1);
     auto first = ::asio::co_spawn(io, port.read(), ::asio::use_future);
     io.poll(); // first request occupies the only admission slot
     ::asio::cancellation_signal cancel;
@@ -858,7 +859,7 @@ TEST_CASE("network status port bounds admission and isolates cancelled replies",
 
 TEST_CASE("network status shutdown wakes admission and replies before owner starts", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(io.get_executor(), 1);
+    network::status_port port(1);
     size_t completed = 0;
     bool watchdog_fired = false;
     ::asio::cancellation_signal cancel_queued;
@@ -900,7 +901,7 @@ TEST_CASE("network status shutdown wakes admission and replies before owner star
 
 TEST_CASE("network status shutdown abandons an in-flight reply", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(io.get_executor(), 1);
+    network::status_port port(1);
     auto client = ::asio::co_spawn(io, port.read(), ::asio::use_future);
     auto owner = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
     io.poll();
@@ -915,7 +916,7 @@ TEST_CASE("network status shutdown abandons an in-flight reply", "[rpc dispatch]
 
 TEST_CASE("network status cancellation leaves another admitted client intact", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(io.get_executor(), 2);
+    network::status_port port(2);
     ::asio::cancellation_signal cancel;
     auto first = ::asio::co_spawn(io, port.read(),
         ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
@@ -942,7 +943,7 @@ TEST_CASE("network status service cancelled before startup closes its clients", 
     settings.threads = 1;
     node::p2p_node node(settings);
     ::asio::io_context io;
-    network::status_port port(io.get_executor(), 1);
+    network::status_port port(1);
     bool client_done = false;
     bool watchdog_fired = false;
     std::exception_ptr client_error;
@@ -969,4 +970,51 @@ TEST_CASE("network status service cancelled before startup closes its clients", 
     CHECK(bool(client_error));
     CHECK_FALSE(watchdog_fired);
     CHECK_FALSE(port.is_open());
+}
+
+TEST_CASE("network status service on a pool joins concurrent shutdown", "[rpc dispatch][rpc status][rpc status pool]") {
+    struct fixture {
+        network::settings settings;
+        ::asio::thread_pool workers{4};
+        node::p2p_node node;
+        network::status_port port{4};
+
+        fixture() : settings(make_settings()), node(settings) {}
+        static network::settings make_settings() {
+            network::settings result;
+            result.threads = 2;
+            return result;
+        }
+        ~fixture() {
+            port.close();
+            // Peer-manager executor (node) remains alive while the service and
+            // clients join. No pool.stop() may discard their continuations.
+            workers.join();
+        }
+    };
+    size_t completed = 0;
+    size_t invalid = 0;
+    for (size_t round = 0; round < 32; ++round) {
+        fixture state;
+        auto service = ::asio::co_spawn(state.workers, state.node.serve_network_status(state.port), ::asio::use_future);
+        std::vector<std::future<network::status>> clients;
+        for (size_t i = 0; i < 16; ++i) {
+            clients.push_back(::asio::co_spawn(state.workers, state.port.read(), ::asio::use_future));
+        }
+        // The synchronous driver closes from outside the four worker threads.
+        state.port.close();
+        for (auto& client : clients) {
+            try {
+                auto const result = client.get();
+                if (result.active || result.connections != 0) ++invalid;
+            } catch (std::system_error const& e) {
+                if (e.code() != ::asio::error::operation_aborted &&
+                    e.code() != ::asio::error::broken_pipe && e.code() != ::asio::error::eof) ++invalid;
+            }
+            ++completed;
+        }
+        service.get();
+    }
+    CHECK(completed == 32 * 16);
+    CHECK(invalid == 0);
 }

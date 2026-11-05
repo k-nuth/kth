@@ -134,7 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_network_status_ = std::make_unique<kth::network::status_port>(rpc_executor);
+        rpc_network_status_ = std::make_unique<kth::network::status_port>();
         rpc::network_configuration config{network_settings_.user_agent,
             network_settings_.protocol_maximum, network_settings_.services,
             network_settings_.relay_transactions};
@@ -208,16 +208,22 @@ full_node::~full_node() {
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) {
-        auto rpc = [this]() -> ::asio::awaitable<void> {
-            try {
-                co_await rpc_server_->run();
-            } catch (...) {
+        auto run_owned = [this]() -> ::asio::awaitable<void> {
+            auto rpc = [this]() -> ::asio::awaitable<void> {
+                try {
+                    co_await rpc_server_->run();
+                } catch (...) {
+                    rpc_network_status_->close();
+                    throw;
+                }
                 rpc_network_status_->close();
-                throw;
-            }
-            rpc_network_status_->close();
+            };
+            co_await (rpc() && network_.serve_network_status(*rpc_network_status_));
         };
-        co_await (rpc() && network_.serve_network_status(*rpc_network_status_));
+        // The remaining lifecycle group has one explicit serialized executor.
+        // Channel selections themselves are safe on multithreaded executors.
+        auto owner = ::asio::make_strand(co_await ::asio::this_coro::executor);
+        co_await ::asio::co_spawn(owner, run_owned(), ::asio::use_awaitable);
     }
 #endif
     co_return;

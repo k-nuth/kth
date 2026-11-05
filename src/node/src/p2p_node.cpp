@@ -317,14 +317,15 @@ size_t p2p_node::connection_count() const {
         kth::network::status_port& port;
         ~close_port() { port.close(); }
     } guard{port};
-    using namespace ::asio::experimental::awaitable_operators;
     try {
         for (;;) {
             auto request = co_await port.receive();
             if (request.abandoned()) continue;
-            auto reply = co_await (network_status() || port.wait_closed());
-            if (reply.index() != 0) co_return;
-            request.respond(std::get<0>(reply));
+            // One awaited owner query. The peer-manager executor remains alive
+            // until this service joins, so shutdown needs no parallel group.
+            auto reply = co_await network_status();
+            if (!port.is_open()) co_return;
+            request.respond(reply);
         }
     } catch (std::system_error const&) {
         if (port.is_open()) throw;
