@@ -116,6 +116,21 @@ struct network_info {
 // with their names, and `relayfee` in BCH per kB.
 std::string render_network_info(network_info const& info);
 
+// One transaction of verbose getrawmempool, with what the mempool knows about it.
+struct mempool_listing {
+    hash_digest txid;
+    uint64_t fee;      // satoshis
+    uint32_t size;     // serialized bytes
+    uint64_t time;     // first seen (unix seconds)
+    hash_list depends;
+    hash_list spentby;
+};
+
+// The verbose getrawmempool object: each transaction keyed by its txid, with
+// `fees` (`base` and `modified`, in BCH; the mempool keeps no fee deltas, so
+// they are equal), `size`, `time`, `depends` and `spentby`.
+std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listings);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
