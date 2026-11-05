@@ -680,6 +680,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     sync_status synchronization() const;
 
+    /// Evaluate an already captured tip/header height without loading another
+    /// publication. RPC responses can use the same snapshot for all tip fields.
+    [[nodiscard]]
+    sync_status synchronization(published_chain_view const& view, int32_t header_tip) const;
+
     /// The state for a branch under consideration, seeded from the published
     /// one. Block validation only; the published view is what everything else
     /// reads.

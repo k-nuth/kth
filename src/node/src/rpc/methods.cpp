@@ -73,6 +73,15 @@ std::expected<chain_progress, rpc_error> progress_for(
 }
 #endif
 
+// A block or undo file of the flat file store: blk/rev followed by at least
+// five digits (flat_file_seq's minimum, not a maximum) and `.dat`.
+bool is_block_file(std::string_view name) {
+    return name.size() >= 12 && name.ends_with(".dat") &&
+        (name.starts_with("blk") || name.starts_with("rev")) &&
+        std::ranges::all_of(name.substr(3, name.size() - 7),
+            [](char c) { return c >= '0' && c <= '9'; });
+}
+
 // How many blocks the connected chain has from the block at `height` with
 // `hash` up to its tip, that block included; -1 when that block is not on the
 // connected chain, including a header stored ahead of it.
@@ -414,11 +423,14 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
-    auto const heights = ctx.chain.get_last_heights();
-    if ( ! heights) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "chain height unavailable"));
+    auto const header_tip = ctx.chain.headers().active_tip_height();
+    if (header_tip < 0) {
+        co_return kth::fail(make_error(error_code::internal_error, "chain height unavailable"));
     }
+    auto const synced = ctx.chain.synchronization(*view, header_tip);
+
+    auto const chain_work = ctx.chain.headers().total_chain_work(view->tip_hash);
+
 
 #if defined(KTH_CURRENCY_BCH)
     auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height);
@@ -429,13 +441,13 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     co_return render_blockchain_info({
         .chain = domain::config::chain_name(view->state->network()),
         .blocks = view->connected_tip_height,
-        .headers = heights->header,
+        .headers = size_t(header_tip),
         .best_block_hash = view->tip_hash,
         .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
         .median_time = view->state->median_time_past(),
-        .chain_work = ctx.chain.headers().total_chain_work(view->tip_hash),
-        .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
-        .initial_block_download = ! ctx.chain.synchronization().synchronized()
+        .chain_work = chain_work,
+        .size_on_disk = files_size(ctx.chain.data_dir() / "blocks", is_block_file),
+        .initial_block_download = ! synced.synchronized()
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress
 #endif

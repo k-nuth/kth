@@ -2008,13 +2008,17 @@ block_chain::sync_status block_chain::synchronization() const {
         return {false, false};
     }
 
+    return synchronization(*view, header_index_.active_tip_height());
+}
+
+block_chain::sync_status block_chain::synchronization(
+    published_chain_view const& view, int32_t header_tip) const {
     // The connected tip against the header tip. The stored block marker is not
     // this: during a sync it runs thousands of blocks ahead of what is
     // connected, so a node with fresh headers and an unbuilt UTXO set would
     // read as caught up (#605 was the same confusion one level down).
-    auto const header_tip = header_index_.active_tip_height();
     bool const caught_up = header_tip >= 0 &&
-        view->connected_tip_height == size_t(header_tip);
+        view.connected_tip_height == size_t(header_tip);
 
     // A limit of zero disables the clock half. It does not say the node is at
     // the head — that is what caught_up is for, and it still has to hold.
@@ -2022,13 +2026,13 @@ block_chain::sync_status block_chain::synchronization() const {
         return {caught_up, true};
     }
 
-    auto const tip_header = get_header(view->connected_tip_height);
-    if ( ! tip_header) {
+    auto const idx = header_index_.find(view.tip_hash);
+    if (idx == header_index::null_index) {
         return {caught_up, false};
     }
 
-    auto const now = static_cast<uint32_t>(zulu_time());
-    auto const stamp = tip_header->timestamp();
+    auto const now = uint32_t(zulu_time());
+    auto const stamp = header_index_.get_timestamp(idx);
 
     // Subtract from now rather than add to the stamp. The sum is one addition
     // away from wrapping wherever it lands in 32 bits, and a wrapped sum reads
