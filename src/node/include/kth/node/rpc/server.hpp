@@ -6,7 +6,6 @@
 #define KTH_NODE_RPC_SERVER_HPP
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -24,6 +23,10 @@ namespace kth::blockchain {
 class block_chain;
 } // namespace kth::blockchain
 
+namespace kth::node {
+class p2p_node;
+} // namespace kth::node
+
 namespace kth::node::rpc {
 
 // A minimal JSON-RPC-over-HTTP/1.1 server. It runs on the node's existing
@@ -32,9 +35,7 @@ namespace kth::node::rpc {
 // and the build defines KTH_WITH_RPC.
 struct server {
     server(rpc_settings const& settings, blockchain::block_chain& chain,
-        ::asio::any_io_executor executor,
-        std::optional<network_configuration> network_config = std::nullopt,
-        node::network_status_port const* network_status = nullptr);
+        ::asio::any_io_executor executor, p2p_node const* network = nullptr);
 
     // Bind the listener and accept connections until the executor is stopped.
     // Intended to be co_spawned. Returns on a fatal bind error or shutdown.
@@ -55,8 +56,7 @@ private:
 
     rpc_settings const& settings_;
     blockchain::block_chain& chain_;
-    std::optional<network_configuration> const network_config_;
-    node::network_status_port const* const network_status_;
+    p2p_node const* network_;
     dispatcher dispatcher_;
     mining::job_store jobs_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header

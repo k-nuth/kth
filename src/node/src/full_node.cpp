@@ -134,12 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_network_status_ = std::make_unique<kth::node::network_status_port>();
-        rpc::network_configuration config{network_settings_.user_agent,
-            network_settings_.protocol_maximum, network_settings_.services,
-            network_settings_.relay_transactions};
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor,
-            std::move(config), rpc_network_status_.get());
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_);
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -191,7 +186,6 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
-        if (rpc_network_status_) rpc_network_status_->close();
         if (rpc_server_) rpc_server_->stop();
 #endif
     };
@@ -207,24 +201,7 @@ full_node::~full_node() {
 
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
-    if (rpc_server_) {
-        auto run_owned = [this]() -> ::asio::awaitable<void> {
-            auto rpc = [this]() -> ::asio::awaitable<void> {
-                try {
-                    co_await rpc_server_->run();
-                } catch (...) {
-                    rpc_network_status_->close();
-                    throw;
-                }
-                rpc_network_status_->close();
-            };
-            co_await (rpc() && network_.serve_network_status(*rpc_network_status_));
-        };
-        // The remaining lifecycle group has one explicit serialized executor.
-        // Channel selections themselves are safe on multithreaded executors.
-        auto owner = ::asio::make_strand(co_await ::asio::this_coro::executor);
-        co_await ::asio::co_spawn(owner, run_owned(), ::asio::use_awaitable);
-    }
+    if (rpc_server_) co_await rpc_server_->run();
 #endif
     co_return;
 }
@@ -308,7 +285,7 @@ full_node::~full_node() {
     // exactly the window where finalization is not protecting either, since it
     // needs headers older than the finalization delay to have any effect.
     if (auto const heights = chain_.get_last_heights(); heights) {
-        organizer.note_block_validated(int32_t(heights->block));
+        organizer.note_block_validated(static_cast<int32_t>(heights->block));
     } else {
         spdlog::error("[full_node] Could not read the validated height at startup; deep-reorg "
             "parking stays inactive until the first connected publication");
@@ -352,7 +329,6 @@ void full_node::notify_fatal(std::string const& reason) {
 
 void full_node::stop() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
-    if (rpc_network_status_) rpc_network_status_->close();
     if (rpc_server_) rpc_server_->stop();
 #endif
 #if ! defined(__EMSCRIPTEN__)

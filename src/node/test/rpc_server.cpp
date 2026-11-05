@@ -52,25 +52,19 @@ struct rpc_server_fixture {
     }
 
     ~rpc_server_fixture() {
-        network_status.close();
         if (server) server->stop();
         if (runner.joinable()) runner.join();
     }
 
     void finish() {
-        network_status.close();
         server->stop();
         if (runner.joinable()) runner.join();
         if (server_done.valid()) server_done.get();
-        if (status_done.valid()) status_done.get();
     }
 
-    [[nodiscard]] bool start(
-        std::optional<node::rpc::network_configuration> config = std::nullopt,
-        node::network_status_port const* status = nullptr) {
+    [[nodiscard]] bool start() {
         if ( ! chain.created() || ! chain.start()) return false;
-        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor(),
-            std::move(config), status);
+        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor());
         server_done = ::asio::co_spawn(io, server->run(), ::asio::use_future);
         auto started = ::asio::co_spawn(io, await_startup(), ::asio::use_future);
         runner = std::thread([this] { io.run(); });
@@ -182,11 +176,9 @@ struct rpc_server_fixture {
     test::chain_fixture chain;
     node::rpc_settings settings;
     ::asio::io_context io;
-    node::network_status_port network_status;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
     std::future<void> server_done;
-    std::future<void> status_done;
     std::error_code startup_error;
     uint16_t port = 0;
 };
@@ -429,47 +421,4 @@ TEST_CASE("rpc server accepts a later keep-alive request", "[rpc server]") {
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
     CHECK(answers[1].find(R"("result":0)") != std::string::npos);
     CHECK_NOTHROW(fixture.finish());
-}
-
-TEST_CASE("rpc server owns its network configuration copy", "[rpc server]") {
-    rpc_server_fixture fixture("rpc_server_network_config");
-    auto respond = [&]() -> ::asio::awaitable<void> {
-        auto request = co_await fixture.network_status.receive();
-        request.respond({true, 7});
-    };
-    fixture.status_done = ::asio::co_spawn(fixture.io, respond(), ::asio::use_future);
-    node::rpc::network_configuration config{"/original:1/", 70016, 1, true};
-    REQUIRE(fixture.start(config, &fixture.network_status));
-    config = {"/changed:2/", 42, 0, false};
-    std::string const body = R"({"method":"getnetworkinfo","params":[],"id":18})";
-    auto const wire = "POST / HTTP/1.1\r\nHost: localhost\r\n"
-        "Authorization: Basic dGVzdDp0ZXN0\r\nConnection: close\r\nContent-Length: "
-        + std::to_string(body.size()) + "\r\n\r\n" + body;
-    auto const replies = bodies(fixture.exchange(wire));
-    REQUIRE(replies.size() == 1);
-    CHECK(replies[0].find(R"("subversion":"/original:1/")") != std::string::npos);
-    CHECK(replies[0].find(R"("protocolversion":70016)") != std::string::npos);
-    CHECK(replies[0].find(R"("localservices":"0000000000000001")") != std::string::npos);
-    CHECK(replies[0].find(R"("localrelay":true)") != std::string::npos);
-    CHECK(replies[0].find(R"("connections":7)") != std::string::npos);
-    CHECK_NOTHROW(fixture.finish());
-}
-
-TEST_CASE("rpc server joins a status request during shutdown", "[rpc server]") {
-    rpc_server_fixture fixture("rpc_server_pending_network_status");
-    node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
-    REQUIRE(fixture.start(config, &fixture.network_status));
-    auto received = ::asio::co_spawn(fixture.io, fixture.network_status.receive(), ::asio::use_future);
-    ::asio::io_context client;
-    ::asio::ip::tcp::socket socket(client);
-    socket.connect({::asio::ip::make_address("127.0.0.1"), fixture.port});
-    std::string const body = R"({"method":"getnetworkinfo","params":[],"id":19})";
-    auto const wire = "POST / HTTP/1.1\r\nHost: localhost\r\n"
-        "Authorization: Basic dGVzdDp0ZXN0\r\nConnection: close\r\nContent-Length: "
-        + std::to_string(body.size()) + "\r\n\r\n" + body;
-    ::asio::write(socket, ::asio::buffer(wire));
-    auto request = received.get(); // owner has it, but deliberately sends no reply
-    REQUIRE_FALSE(request.abandoned());
-    CHECK_NOTHROW(fixture.finish());
-    CHECK(request.abandoned());
 }

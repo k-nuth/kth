@@ -204,8 +204,6 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
-  include/kth/node/query_port.hpp
-  include/kth/node/network_status.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp

@@ -92,8 +92,6 @@ public:
     ::asio::awaitable<code> start();
 
     /// Run the node (start P2P connections and protocol handlers).
-    /// The caller must use a strand or a single-thread executor for the composed
-    /// lifecycle tasks. The standard node executor supplies that context.
     [[nodiscard]]
     ::asio::awaitable<code> run();
 
@@ -224,8 +222,6 @@ private:
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
-    // Destroy RPC first; its awaited status queries borrow this bridge.
-    std::unique_ptr<kth::node::network_status_port> rpc_network_status_;
     std::unique_ptr<rpc::server> rpc_server_;
 #endif
 };
