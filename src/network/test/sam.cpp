@@ -560,6 +560,19 @@ TEST_CASE("SAM refuses invalid destination data and key file failures", "[sam]")
         CHECK( ! bridge.session->ready());
         CHECK( ! std::filesystem::exists(key.file));
     }
+    SECTION("public destination with a trailing byte is refused") {
+        // A private destination carries its secret after the destination
+        // bytes; a public one ends with its certificate, so a longer one is
+        // malformed. The reply is checked before the key is saved.
+        auto longer = bridge.destination;
+        longer.push_back(0);
+        bridge.public_key = i2p_base64(longer);
+        bridge.start(key.file);
+        REQUIRE(bridge.wait([&] { return bridge.connections_done > 0; }));
+        CHECK( ! bridge.session->ready());
+        CHECK(bridge.generated == 1);
+        CHECK( ! std::filesystem::exists(key.file));
+    }
     SECTION("private destination needs private bytes") {
         bridge.private_key = bridge.public_key;
         bridge.start(key.file);
@@ -635,6 +648,33 @@ TEST_CASE("SAM invalid session status recreates a control connection that is sti
     REQUIRE(bridge.wait([&] { return bridge.controls >= 2 && bridge.session->ready(); }, 3s));
     CHECK(bridge.generated == 1);
     CHECK(bridge.session->local_address() == own);
+}
+
+TEST_CASE("SAM refuses a bridge that is not a numeric endpoint before connecting", "[sam]") {
+    // A host name, port 0 and an I2P address are refused while the bridge
+    // address is parsed, before a socket is opened, and the run loop keeps
+    // retrying until stop.
+    std::string const b32 = std::string(52, 'a') + ".b32.i2p:1";
+    for (auto const& refused : {std::string("sam.invalid:1"), std::string("127.0.0.1:0"), b32}) {
+        CAPTURE(refused);
+        sam_key_file key;
+        fake_sam bridge;
+        bool run_done = false;
+        std::vector<std::exception_ptr> exceptions;
+        auto session = std::make_unique<sam_session>(bridge.ctx.get_executor(), refused, key.file, true, 100ms);
+        ::asio::co_spawn(bridge.ctx, session->run(), [&](std::exception_ptr e) {
+            if (e) exceptions.push_back(e);
+            run_done = true;
+        });
+        (void)bridge.wait([] { return false; }, 300ms);
+        CHECK( ! session->ready());
+        CHECK(bridge.controls == 0);
+        CHECK(bridge.generated == 0);
+        session->stop();
+        REQUIRE(bridge.wait([&] { return run_done; }));
+        CHECK(exceptions.empty());
+        bridge.finish();
+    }
 }
 
 TEST_CASE("SAM validates bridge endpoints and rejects use before readiness or after stop", "[sam]") {
