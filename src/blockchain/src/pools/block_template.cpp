@@ -42,6 +42,45 @@ bool canonical_less(transaction_const_ptr const& a, transaction_const_ptr const&
     return std::lexicographical_compare(ha.rbegin(), ha.rend(), hb.rbegin(), hb.rend());
 }
 
+// Re-check candidate-dependent rules against this immutable snapshot. A pooled
+// parent is mined in the same candidate as its child, so its relative age is
+// zero even if the input still carries metadata from an earlier admission.
+// Confirmed prevouts rely on the owner's fresh metadata (see the API contract).
+bool contextually_eligible(transaction const& tx, block_template_context const& ctx,
+                          std::unordered_map<hash_digest, uint32_t, digest_hasher> const& index) {
+    bool const sequence_locks = ctx.sequence_locks &&
+        tx.version() >= relative_locktime_min_version && ! tx.is_coinbase();
+
+    for (auto const& in : tx.inputs()) {
+        auto const& prevout = in.previous_output();
+        bool const pooled_parent = index.contains(prevout.hash());
+        if (!pooled_parent && ! prevout.is_mature(ctx.ticks, ctx.height)) {
+            return false;
+        }
+        if (!sequence_locks || (in.sequence() & relative_locktime_disabled) != 0) {
+            continue;
+        }
+        if (pooled_parent) {
+            if ((in.sequence() & relative_locktime_mask) != 0) {
+                return false;
+            }
+            continue;
+        }
+
+        // Guard the domain predicate's nonnegative-age preconditions. A cache
+        // from a future branch height or MTP cannot justify selection here.
+        if (prevout.validation.height > ctx.height ||
+            ((in.sequence() & relative_locktime_time_locked) != 0 &&
+             prevout.validation.median_time_past > ctx.median_time_past)) {
+            return false;
+        }
+        if (in.is_locked(ctx.ticks, ctx.height, ctx.median_time_past)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 block_template build_block_template(std::vector<mempool_entry> const& entries,
@@ -90,7 +129,7 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
     std::vector<double> feerate(n);
     for (uint32_t i = 0; i < n; ++i) {
         feerate[i] = entries[i].size != 0
-            ? static_cast<double>(entries[i].fee) / static_cast<double>(entries[i].size)
+            ? double(entries[i].fee) / double(entries[i].size)
             : 0.0;
     }
     std::vector<uint32_t> order(n);
@@ -114,7 +153,7 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
 
     std::vector<uint32_t> missing(n);   // in-mempool parents not yet added
     for (uint32_t i = 0; i < n; ++i) {
-        missing[i] = static_cast<uint32_t>(parents[i].size());
+        missing[i] = uint32_t(parents[i].size());
     }
     std::vector<char> included(n, 0);
     std::vector<char> skipped(n, 0);
@@ -158,7 +197,8 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
         }
 
         // Absolute finality at the template height (BIP113 uses the tip's MTP).
-        if ( ! e.tx->is_final(height, mtp)) {
+        if ( ! e.tx->is_final(ctx.ticks, height, mtp) ||
+             ! contextually_eligible(*e.tx, ctx, index)) {
             continue;
         }
 
@@ -188,16 +228,33 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
     }
     std::sort(result.txs.begin(), result.txs.end(), canonical_less);
 
+    // Match the final CTOR order using the existing snapshot index. Never
+    // consult the live pool after selection: the cached template owns both.
+    result.policy.reserve(result.txs.size());
+    for (auto const& tx : result.txs) {
+        auto const& entry = entries[index.find(tx->hash())->second];
+        result.policy.push_back({entry.fee, entry.sigchecks});
+    }
+
     return result;
 }
 
 mining_template make_mining_template(
     uint32_t version, hash_digest const& previous_block_hash, size_t height,
     uint32_t bits, uint32_t median_time_past, uint32_t now,
-    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection) {
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection, bool retarget) {
+    return make_mining_template(version, previous_block_hash, height, bits, median_time_past, now,
+        size_limit, sigchecks_limit, std::move(selection), domain::chain::block_ticks{}, retarget);
+}
+
+mining_template make_mining_template(
+    uint32_t version, hash_digest const& previous_block_hash, size_t height,
+    uint32_t bits, uint32_t median_time_past, uint32_t now,
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection,
+    domain::chain::block_ticks const& ticks, bool retarget) {
 
     auto const min_time = median_time_past + 1;
-    auto const coinbase_value = selection.total_fees + block::subsidy(height, true);
+    auto const coinbase_value = selection.total_fees + block::subsidy(ticks, height, retarget);
 
     return mining_template{
         version,
@@ -220,9 +277,9 @@ double difficulty_from_bits(uint32_t bits) {
 
     // Standard Bitcoin difficulty: the ratio of the difficulty-1 target
     // (0x1d00ffff) to this target, scaled by the exponent difference.
-    int shift = static_cast<int>((bits >> 24) & 0xffu);
-    double difficulty = static_cast<double>(0x0000ffff) /
-        static_cast<double>(mantissa);
+    int shift = int((bits >> 24) & 0xffu);
+    double difficulty = double(0x0000ffff) /
+        double(mantissa);
     while (shift < 29) {
         difficulty *= 256.0;
         ++shift;

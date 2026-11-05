@@ -20,13 +20,15 @@ reserve hosted runner slots after an external run has been approved.
    billing, or workflow write-token permissions.
 
 2. The metadata-only `Classify pull request` workflow assigns `maintainer-pr` to
-   authors whose GitHub association is `OWNER` or `MEMBER`, and `contribution` to
-   others. It never checks out PR code. CodeRabbit automatic review requires the
+   authors whose GitHub association is `OWNER` or `MEMBER`, or whose effective
+   repository permission is `admin`, `maintain`, or `write`. Other authors receive
+   `contribution`. Permission lookup errors fail the run without changing labels.
+   Classification removes the opposite label, repairing earlier misclassification. It never checks out PR code. CodeRabbit automatic review requires the
    positive `maintainer-pr` label, so a new external PR cannot race automatic
    contribution labeling. Do not manually assign this reserved label to external
-   PRs. Outside collaborators remain external for automatic review, even if they
-   have write permission; GitHub's native CI approval eligibility follows its own
-   permission rules.
+   PRs. Outside collaborators with write access are trusted for automatic review;
+   CodeRabbit comment access still requires organization membership. GitHub's
+   native CI approval eligibility follows its own permission rules.
 
 3. For already-open internal PRs, add `maintainer-pr` when an automatic review is
    wanted, or wait for the next synchronize/reopen/ready event. Existing external
