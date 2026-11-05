@@ -16,6 +16,7 @@
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/machine/script_flags.hpp>
 #include <kth/infrastructure/hash_define.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 // The pure (chain-free) serialization behind the blockchain query RPCs, split
 // out so it can be unit-tested without a live block_chain.
@@ -38,7 +39,7 @@ std::string header_to_hex(domain::chain::header const& header);
 
 // Serialize the getblockchaininfo result object.
 std::string render_blockchain_info(
-    std::string_view chain, std::size_t blocks, std::size_t headers,
+    std::string_view chain, size_t blocks, size_t headers,
     std::string_view best_block_hash, double difficulty);
 
 // A JSON array of display-order hashes (getrawmempool, getmempoolancestors,
@@ -58,6 +59,12 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 std::string render_transaction(domain::chain::transaction const& tx,
                                domain::config::network net, domain::script_flags_t flags);
 
+// The getnetworkhashps result: the work the blocks of a window add, from the
+// chain work before them to the chain work at its last block, over the time
+// the window's timestamps span. 0 when they span no time.
+std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
+                                   uint32_t min_time, uint32_t max_time);
+
 // The estimatefee result: `byte_fee_satoshis` per byte as BCH per kB, rounded
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
@@ -65,8 +72,8 @@ std::string render_estimate_fee(float byte_fee_satoshis);
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
-                                std::size_t height, hash_digest const& hash,
-                                std::int64_t confirmations);
+                                size_t height, hash_digest const& hash,
+                                int64_t confirmations);
 
 // validateaddress result object for `address` on network `net`: only
 // {"isvalid":false} unless it is a P2PKH or P2SH address of that network,

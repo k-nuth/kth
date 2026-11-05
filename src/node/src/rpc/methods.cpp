@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -41,8 +42,8 @@ namespace {
 // How many blocks the connected chain has from the block at `height` with
 // `hash` up to its tip, that block included; -1 when that block is not on the
 // connected chain, including a header stored ahead of it.
-std::int64_t confirmations(blockchain::block_chain const& chain,
-                           std::size_t height, hash_digest const& hash) {
+int64_t confirmations(blockchain::block_chain const& chain,
+                           size_t height, hash_digest const& hash) {
     auto const view = chain.chain_view();
     if ( ! view || height > view->connected_tip_height) {
         return -1;
@@ -54,14 +55,14 @@ std::int64_t confirmations(blockchain::block_chain const& chain,
     auto const tip = index.find(view->tip_hash);
     if (tip == blockchain::header_index::null_index ||
         index.get_height(tip) < 0 ||
-        static_cast<size_t>(index.get_height(tip)) != view->connected_tip_height) {
+        size_t(index.get_height(tip)) != view->connected_tip_height) {
         return -1;
     }
-    auto const ancestor = index.get_ancestor(tip, static_cast<int32_t>(height));
+    auto const ancestor = index.get_ancestor(tip, int32_t(height));
     if (ancestor == blockchain::header_index::null_index || index.get_hash(ancestor) != hash) {
         return -1;
     }
-    return static_cast<std::int64_t>(view->connected_tip_height - height + 1);
+    return int64_t(view->connected_tip_height - height + 1);
 }
 
 // getblockcount -> the height of the most-work fully-validated block.
@@ -74,7 +75,7 @@ get_block_count(method_context& ctx, request const& /*req*/) {
     }
 
     writer w;
-    w.value(static_cast<std::uint64_t>(heights->block));
+    w.value(uint64_t(heights->block));
     co_return w.str();
 }
 
@@ -182,7 +183,7 @@ get_block_hash(method_context& ctx, request const& req) {
         co_return std::unexpected(make_error(error_code::invalid_params,
             "getblockhash requires [height] (a non-negative integer)"));
     }
-    auto const hash = ctx.chain.get_block_hash(static_cast<std::size_t>(*height));
+    auto const hash = ctx.chain.get_block_hash(size_t(*height));
     if ( ! hash) {
         co_return std::unexpected(make_error(error_code::invalid_params,
             "block height out of range"));
@@ -203,6 +204,97 @@ get_difficulty(method_context& ctx, request const& /*req*/) {
     writer w;
     w.value(info->difficulty);
     co_return w.str();
+}
+
+// getnetworkhashps [nblocks=120] [height=-1] -> the hashes per second the
+// network did over the `nblocks` blocks ending at `height`, on the connected
+// chain: the work those blocks add, over the time their timestamps span (the
+// block before them included, as the first time). nblocks must be positive
+// except at genesis; a height of -1 or past the connected tip means the
+// connected tip. 0 when the window spans no time.
+// C-API counterpart: kth_chain_sync_block_header_by_height (each block's time
+// and bits, from which the work follows).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_network_hash_ps(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getnetworkhashps takes [nblocks, height] as integers"));
+    };
+    if ( ! req.params.empty()) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        size_t count = 0;
+        for (auto element : args) {
+            if (element.error() != simdjson::SUCCESS || ++count > 2) {
+                co_return invalid_params();
+            }
+        }
+    }
+    constexpr int64_t default_blocks = 120;
+    auto const nblocks = params_int(req.params, 0, default_blocks);
+    auto const height = params_int(req.params, 1, -1);
+    auto const fits_rpc_integer = [](auto const& value) {
+        return value && *value >= std::numeric_limits<int32_t>::min() &&
+            *value <= std::numeric_limits<int32_t>::max();
+    };
+    if ( ! fits_rpc_integer(nblocks) || ! fits_rpc_integer(height)) {
+        co_return invalid_params();
+    }
+
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const& index = ctx.chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    if (tip == blockchain::header_index::null_index) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "connected tip not in the header index"));
+    }
+
+    auto const tip_height = view->connected_tip_height;
+    auto const end_height = *height < 0 || uint64_t(*height) > tip_height
+        ? tip_height : size_t(*height);
+    // BCHN returns zero at genesis before validating a non-positive lookup.
+    if (end_height == 0) {
+        co_return render_network_hash_ps({}, {}, 0, 0);
+    }
+    if (*nblocks <= 0) {
+        co_return kth::fail(make_error(error_code::invalid_parameter,
+            "getnetworkhashps requires a positive number of blocks"));
+    }
+    auto const window = std::min(size_t(*nblocks), end_height);
+
+    auto const last = index.get_ancestor(tip, int32_t(end_height));
+    auto const first = index.get_ancestor(last, int32_t(end_height - window));
+    if (last == blockchain::header_index::null_index ||
+        first == blockchain::header_index::null_index) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "window not in the header index"));
+    }
+
+    // Block times need not increase, so take the extremes over the window.
+    auto min_time = std::numeric_limits<uint32_t>::max();
+    auto max_time = std::numeric_limits<uint32_t>::min();
+    for (auto idx = last; idx != blockchain::header_index::null_index;
+         idx = index.get_parent_index(idx)) {
+        auto const time = index.get_timestamp(idx);
+        min_time = std::min(min_time, time);
+        max_time = std::max(max_time, time);
+        if (idx == first) {
+            break;
+        }
+    }
+
+    co_return render_network_hash_ps(index.get_chain_work(first), index.get_chain_work(last),
+        min_time, max_time);
 }
 
 // getblockchaininfo -> chain, height, headers, best block hash, difficulty.
@@ -362,7 +454,7 @@ validate_address(method_context& ctx, request const& req) {
         co_return invalid_params();
     }
     std::string address;
-    std::size_t count = 0;
+    size_t count = 0;
     for (auto element : args) {
         if (count++ != 0) {
             co_return invalid_params();
@@ -578,6 +670,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblockheader", get_block_header);
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
+    d.add("getnetworkhashps", get_network_hash_ps);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);

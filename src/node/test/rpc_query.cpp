@@ -278,3 +278,10 @@ TEST_CASE("decimal amount formatting preserves exact units", "[rpc query]") {
     CHECK(encode_base10(101, 2) == "1.01");
     CHECK(encode_base10(1, 255) == "0." + std::string(254, '0') + "1");
 }
+
+TEST_CASE("render_network_hash_ps divides the work by the time spanned", "[rpc query]") {
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1600u)) == 2.0);
+    // No time spanned, or a window given backwards: 0.
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1000u)) == 0.0);
+    REQUIRE(std::stod(render_network_hash_ps(uint256_t{1300}, uint256_t{100}, 1000u, 1600u)) == 0.0);
+}
