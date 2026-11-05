@@ -942,3 +942,36 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     REQUIRE(request(R"([{"mode":"proposal","data":"00"}])") ==
         node::rpc::build_error("11", -32602, "only template mode is supported"));
 }
+
+TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long polling", "[rpc dispatch][rpc gbt validation]") {
+    test::chain_fixture fixture("rpc_block_template_validation", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblocktemplate","params":)" + params + R"(,"id":17})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const normal = request("[]");
+    REQUIRE(normal.find(R"("error":null)") != std::string::npos);
+    REQUIRE(request(R"([{"mode":"proposal"}])").find(R"("result":null)") != std::string::npos);
+    SECTION("invalid argument types and extra arguments are rejected") {
+        for (auto const* params : {"1", "{}", "[1]", R"([{"mode":3}])", R"([{"mode":false}])", "[{},{}]"}) {
+            CAPTURE(params);
+            auto const raw = request(params);
+            INFO(raw);
+            CHECK(raw.find(R"("result":null)") != std::string::npos);
+        }
+    }
+    // BIP22 requires omitting longpollid when long polling is unsupported.
+    SECTION("no longpollid when long polling is unsupported") {
+        INFO(normal);
+        CHECK(normal.find(R"("longpollid")") == std::string::npos);
+    }
+}
