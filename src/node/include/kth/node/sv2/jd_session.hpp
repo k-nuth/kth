@@ -41,9 +41,11 @@ struct jd_session {
     // True only after RequestExtensions.Success lists Requested Payout Outputs.
     [[nodiscard]] bool payout_outputs() const;
     [[nodiscard]] bool awaiting_extensions() const;
-    // The pool did not answer negotiation. Become ready without the extension.
-    // Returns false unless that wait was still open, so a setup timeout is unchanged.
-    bool abandon_extensions();
+    // RequestExtensions went unanswered. Return to idle so start() sends
+    // SetupConnection again, and leave negotiation off: the next success is
+    // ready and does not send RequestExtensions. Returns false unless that
+    // wait was still open, so a mining timeout is unchanged.
+    bool restart_without_extensions();
     [[nodiscard]] std::optional<open_extended_mining_channel_success> const& channel() const;
 
 private:
@@ -64,6 +66,9 @@ private:
     std::string identity_;
     bool full_template_;
     state state_ = state::idle;
+    // The first connection always asks. Cleared only for the one reconnect
+    // that proceeds without extensions.
+    bool negotiate_extensions_ = true;
     bool payout_outputs_ = false;
     std::string error_;
     std::optional<open_extended_mining_channel_success> channel_;

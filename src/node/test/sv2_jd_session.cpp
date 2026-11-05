@@ -184,7 +184,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE_FALSE(session.ready());
         REQUIRE_FALSE(session.awaiting_extensions());
         REQUIRE_FALSE(session.payout_outputs());
-        REQUIRE_FALSE(session.abandon_extensions());
+        REQUIRE_FALSE(session.restart_without_extensions());
         auto const request = single<open_extended_mining_channel>(result.response);
         REQUIRE(request.request_id == 1);
         REQUIRE(request.user_identity == "worker");
@@ -486,15 +486,24 @@ TEST_CASE("sv2 jd declaration negotiates requested payout outputs and a refusal 
         {requested_payout_outputs_extension}}));
     REQUIRE(unknown.payout_outputs());
 
-    auto abandoned = awaiting_extensions();
-    REQUIRE(abandoned.abandon_extensions());
-    REQUIRE(abandoned.ready());
-    REQUIRE_FALSE(abandoned.payout_outputs());
-    REQUIRE_FALSE(abandoned.abandon_extensions());
-    require_silent(process(abandoned, request_extensions_success{1,
-        {requested_payout_outputs_extension}}));
-    REQUIRE(abandoned.ready());
-    REQUIRE_FALSE(abandoned.payout_outputs());
+    auto restarted = awaiting_extensions();
+    REQUIRE(restarted.restart_without_extensions());
+    REQUIRE_FALSE(restarted.ready());
+    REQUIRE_FALSE(restarted.awaiting_extensions());
+    REQUIRE_FALSE(restarted.payout_outputs());
+    REQUIRE_FALSE(restarted.restart_without_extensions());
+    auto const setup = single<setup_connection>(restarted.start());
+    REQUIRE(setup.protocol == setup_connection::protocol_job_declaration);
+    REQUIRE(setup.flags == 1u);
+    auto const restarted_setup = process(restarted, setup_connection_success{2, 0});
+    REQUIRE_FALSE(restarted_setup.close);
+    REQUIRE(restarted_setup.ready);
+    REQUIRE(restarted_setup.response.empty());
+    REQUIRE(restarted_setup.error.empty());
+    REQUIRE(restarted.ready());
+    REQUIRE_FALSE(restarted.payout_outputs());
+    REQUIRE_FALSE(restarted.awaiting_extensions());
+    REQUIRE_FALSE(restarted.restart_without_extensions());
 
     refuse_incomplete(request_extensions_success{1, {requested_payout_outputs_extension}},
         awaiting_extensions);

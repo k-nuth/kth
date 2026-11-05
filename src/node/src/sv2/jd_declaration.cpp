@@ -387,6 +387,21 @@ jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_succ
         version = success.coinbase_tx_version;
         sequence = success.coinbase_tx_input_sequence;
         locktime = success.coinbase_tx_locktime;
+        // Any other version makes the block's coinbase invalid under BCH consensus.
+        if (version < kth::transaction_version_min || version > kth::transaction_version_max) {
+            return fail("coinbase_tx_version is outside 1..2");
+        }
+        // is_final's time is the previous block's median time past. min_time
+        // is that median plus one. One input is required: an empty input list
+        // would be vacuously final and would hide a non-final sequence.
+        domain::chain::transaction const coinbase{
+            version, locktime,
+            domain::chain::input::list{domain::chain::input{
+                domain::chain::output_point{}, domain::chain::script{}, sequence}},
+            domain::chain::output::list{}};
+        if ( ! coinbase.is_final(template_.height, template_.min_time - 1)) {
+            return fail("coinbase_tx_locktime and coinbase_tx_input_sequence are not final");
+        }
     } else if (success.coinbase_tx_version != 0 || success.coinbase_tx_input_sequence != 0
         || success.coinbase_tx_locktime != 0) {
         return fail("payout coinbase fields are not zero");
@@ -503,9 +518,10 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
             if ( ! message || message->request_id != request_id_) {
                 return fail("invalid missing transaction request");
             }
-            // The notice already retired this job. Do not supply its transactions
-            // and do not open a second request until the declaration itself ends.
-            if (restart_) return {};
+            // A stale notice can set restart_ while this declaration is still
+            // open on the JDS, which is waiting for these transactions. The
+            // reply is sent anyway. DeclareMiningJob.Success and .Error are
+            // what call retry_allocation() when restart_ is set.
             provide_missing_transactions_success response;
             response.request_id = request_id_;
             std::vector<bool> supplied(transactions_.size(), false);

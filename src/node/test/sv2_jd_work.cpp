@@ -448,6 +448,26 @@ TEST_CASE("sv2 JD pool work nests in the upstream extranonce and solo work resto
     REQUIRE_FALSE(engine.submit(restored_share).pool);
 }
 
+TEST_CASE("sv2 JD payout work accepts more than 65535 transactions", "[sv2 jd]") {
+    // Coinbase-only sends the merkle path, and full-template pages a longer
+    // list with BCH large templates, so payout work has no count limit.
+    auto tmpl = mining_template();
+    constexpr uint32_t tx_count = 65536;
+    tmpl.selection.txs.reserve(tx_count);
+    for (uint32_t i = 0; i < tx_count; ++i) {
+        tmpl.selection.txs.push_back(std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1, i, {}, {}}));
+    }
+    domain::chain::output::list const split{
+        {1, domain::chain::script(data_chunk{0x51}, false), std::nullopt},
+        {tmpl.coinbase_value - 1, domain::chain::script(data_chunk{0x52}, false), std::nullopt}};
+    auto const script_prefix = payout_coinbase_prefix(tmpl.height, 7, 0, 24);
+    REQUIRE(script_prefix);
+    auto const work = make_payout_work(tmpl, split, 7, {}, 24, *script_prefix, 2, 0xfffffffeu, 99);
+    REQUIRE(work.has_value());
+    REQUIRE(work->merkle_path.size() == 17);
+}
+
 TEST_CASE("sv2 JD payout work keeps a split coinbase and the committed script", "[sv2 jd]") {
     auto const tmpl = mining_template();
     domain::chain::output::list const split{

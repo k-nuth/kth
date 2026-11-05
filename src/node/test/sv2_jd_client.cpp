@@ -691,6 +691,48 @@ struct submission_pipeline {
     }
 };
 
+// A second JDS accept speaks Noise with the same authority as fake_upstream::handshake.
+noise_transport handshake_responder(io_driver& driver, ::asio::ip::tcp::socket& socket,
+    noise_keypair const& authority) {
+    auto const first = driver.read(socket, noise_initiator::flight_size);
+    auto const now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    auto const static_key = keypair(3);
+    auto const certificate = noise_certificate::sign(authority.secret(), static_key.public_key(),
+        now - 60, now + 600);
+    REQUIRE(certificate);
+    noise_responder responder(keypair(2), static_key, *certificate);
+    auto const second = responder.respond(first);
+    REQUIRE(second);
+    driver.write(socket, *second);
+    REQUIRE(responder.keys());
+    return noise_transport(*responder.keys(), false);
+}
+
+template <typename Message>
+Message receive_encrypted(io_driver& driver, ::asio::ip::tcp::socket& socket,
+    noise_transport& transport) {
+    std::deque<data_chunk> frames;
+    auto const end = std::chrono::steady_clock::now() + 5s;
+    while (frames.empty() && std::chrono::steady_clock::now() < end) {
+        auto const bytes = driver.read(socket, 8192, false);
+        auto parsed = transport.feed(bytes);
+        REQUIRE(parsed);
+        for (auto& message : *parsed) frames.push_back(std::move(message));
+    }
+    REQUIRE_FALSE(frames.empty());
+    return decode<Message>(frames.front());
+}
+
+void send_encrypted(io_driver& driver, ::asio::ip::tcp::socket& socket,
+    noise_transport& transport, data_chunk plain) {
+    auto const bytes = transport.encrypt_frame(plain);
+    REQUIRE(bytes);
+    // Same split as fake_upstream::send: a reply can straddle reads.
+    driver.write(socket, data_chunk(bytes->begin(), bytes->end() - 1));
+    driver.write(socket, data_chunk(bytes->end() - 1, bytes->end()));
+}
+
 void answer_extensions(client_fixture& fixture, bool grant) {
     auto const request = fixture.jds.receive<request_extensions>();
     REQUIRE(request.request_id == 1);
@@ -905,6 +947,19 @@ data_chunk truncated_share_success() {
     payload[0] = 7;
     auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
         submit_shares_success::message_type, static_cast<uint32_t>(payload.size())});
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+// SubmitShares.Error is two U32s and a U8 string, at least 9 bytes. Four bytes
+// is a complete frame whose body still fails from_data, so the close comes
+// from the parser rather than from the noise layer waiting for bytes that
+// were never declared.
+data_chunk truncated_share_error() {
+    data_chunk payload(4, 0);
+    payload[0] = 7;
+    auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
+        submit_shares_error::message_type, static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -1157,8 +1212,13 @@ TEST_CASE("sv2 JD silent setup or channel closes both upstreams while solo jobs 
     (void)fixture.jds.receive<setup_connection>();
     if (stage != silence::jds_setup) {
         fixture.jds.send(setup_connection_success{2, 0});
-        // The extension request is not a setup answer. Leave it unanswered so
-        // the setup or channel deadline is what closes the pair.
+        // Leave RequestExtensions unanswered. Pool setup's mining deadline was
+        // armed at SetupConnection and is not refreshed, so it fires first and
+        // no replacement JDS connection is opened. Pool channel refreshes both
+        // the channel request and RequestExtensions, so those deadlines are
+        // close: if negotiation wins, one replacement is opened and the pool
+        // deadline then stops it. The check after both sockets close only
+        // requires that replacement to be gone.
         auto const extensions = fixture.jds.receive<request_extensions>();
         REQUIRE(extensions.requested_extensions == std::vector<uint16_t>{requested_payout_outputs_extension});
     }
@@ -1182,6 +1242,32 @@ TEST_CASE("sv2 JD silent setup or channel closes both upstreams while solo jobs 
     REQUIRE(pool_closed->error == ::asio::error::eof);
     REQUIRE(jds_closed->size == 0);
     REQUIRE(jds_closed->error == ::asio::error::eof);
+    // The client has stopped. Either no second JDS connection was opened, or
+    // the negotiation deadline opened one and the pool deadline already closed
+    // it. Handshake bytes may already be buffered; the socket must not stay up.
+    // Which of the two deadlines fired first does not change this.
+    ::asio::ip::tcp::socket replacement(fixture.io);
+    auto accepted = std::make_shared<operation>();
+    fixture.jds.acceptor.async_accept(replacement, [accepted](std::error_code error) {
+        accepted->error = error;
+        accepted->done = true;
+    });
+    if ( ! fixture.wait_until([&] { return accepted->done; }, 50ms)) {
+        fixture.jds.acceptor.cancel();
+        REQUIRE(fixture.wait_until([&] { return accepted->done; }));
+    }
+    // An accept error means the reconnect is already gone. A socket that did
+    // arrive, including one with a handshake already buffered, must end.
+    if (accepted->done && ! accepted->error) {
+        auto const end = std::chrono::steady_clock::now() + 1s;
+        bool ended = false;
+        while ( ! ended && std::chrono::steady_clock::now() < end) {
+            auto const chunk = fixture.begin_read(replacement, 64, false);
+            if ( ! fixture.wait_until([&] { return chunk->done; }, 200ms)) break;
+            if (chunk->error) ended = true;
+        }
+        REQUIRE(ended);
+    }
     solo_job(fixture, port, payout->script);
     provider->stop();
     fixture.await(result);
@@ -1650,7 +1736,7 @@ TEST_CASE("sv2 JD granted payout outputs are what downstream miners and the pool
     CHECK_FALSE(fixture.wait_until([&] { return quiet->done; }, 300ms));
 }
 
-TEST_CASE("sv2 JD extension silence stays connected and then asks for a base token", "[sv2 jd]") {
+TEST_CASE("sv2 JD extension silence closes that JDS connection and asks for a base token on the next one", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_ext_quiet");
     client_fixture fixture;
     provider_run provider(fixture, settings(fixture.pool, fixture.jds), chain);
@@ -1665,12 +1751,35 @@ TEST_CASE("sv2 JD extension silence stays connected and then asks for a base tok
     auto const began = std::chrono::steady_clock::now();
     auto const channel = fixture.open();
     fixture.accept(channel);
-    auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
-    REQUIRE(std::chrono::steady_clock::now() - began >= 1s);
-    REQUIRE(allocation.user_identifier == "account.worker");
+    // Armed before the close. A pool frame, or the pool socket dropping, is
+    // the replacement taking the mining connection with it.
     auto pool_quiet = fixture.begin_read(fixture.pool.socket, 1);
-    auto jds_quiet = fixture.begin_read(fixture.jds.socket, 1);
-    CHECK_FALSE(fixture.wait_until([&] { return pool_quiet->done || jds_quiet->done; }, 300ms));
+    ::asio::ip::tcp::socket again(fixture.io);
+    auto accepted = std::make_shared<operation>();
+    fixture.jds.acceptor.async_accept(again, [accepted](std::error_code error) {
+        accepted->error = error;
+        accepted->done = true;
+    });
+    // The socket that received RequestExtensions carries no token. The close
+    // is the response deadline, so it is not immediate.
+    fixture.eof(fixture.jds.socket);
+    REQUIRE(std::chrono::steady_clock::now() - began >= 1s);
+    REQUIRE_FALSE(pool_quiet->done);
+    REQUIRE(fixture.wait_until([&] { return accepted->done; }));
+    REQUIRE_FALSE(accepted->error);
+    auto transport = handshake_responder(fixture, again, fixture.jds.authority);
+    auto const setup = receive_encrypted<setup_connection>(fixture, again, transport);
+    REQUIRE(setup.protocol == setup_connection::protocol_job_declaration);
+    REQUIRE(setup.flags == 1u);
+    REQUIRE(setup.endpoint_host == "127.0.0.1");
+    REQUIRE(setup.endpoint_port == fixture.jds.port);
+    send_encrypted(fixture, again, transport, frame(setup_connection_success{2, 0}));
+    // SetupConnection.Success is not followed by RequestExtensions. decode
+    // rejects that type; the next frame is the base-token request.
+    auto const allocation = receive_encrypted<allocate_mining_job_token>(fixture, again, transport);
+    REQUIRE(allocation.user_identifier == "account.worker");
+    REQUIRE(allocation.request_id != 0);
+    CHECK_FALSE(fixture.wait_until([&] { return pool_quiet->done; }, 300ms));
 }
 
 TEST_CASE("sv2 JD stale payout notice allocates a new token before declaring", "[sv2 jd]") {
@@ -2069,13 +2178,18 @@ TEST_CASE("sv2 JD falls back when the pool rejects a share on the accepted decla
 }
 
 TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]") {
-    enum class fault { truncated, success_channel, error_channel };
+    enum class fault { truncated, truncated_error, success_channel, error_channel };
     auto which = fault::truncated;
     SECTION("truncated SubmitShares.Success") {}
+    SECTION("truncated SubmitShares.Error") { which = fault::truncated_error; }
     SECTION("SubmitShares.Success for the group channel") { which = fault::success_channel; }
     SECTION("SubmitShares.Error for the group channel") { which = fault::error_channel; }
     char const* tag = "sv2_jd_bad_success";
     char const* phrase = "malformed share success";
+    if (which == fault::truncated_error) {
+        tag = "sv2_jd_truncated_share_error";
+        phrase = "malformed share error";
+    }
     if (which == fault::success_channel) {
         tag = "sv2_jd_bad_channel";
         phrase = "share success for another channel";
@@ -2102,6 +2216,7 @@ TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]"
     // upstream channel, even though mining updates accept either.
     captured_log log;
     if (which == fault::truncated) fixture.pool.send_plain(truncated_share_success());
+    else if (which == fault::truncated_error) fixture.pool.send_plain(truncated_share_error());
     else if (which == fault::success_channel) fixture.pool.send(submit_shares_success{8, 0, 1, 1});
     else fixture.pool.send(submit_shares_error{8, 0, "other-channel"});
     require_solo_again(miner, declared.pooled, payout->script);
@@ -2110,6 +2225,78 @@ TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]"
     fixture.eof(fixture.pool.socket);
     fixture.eof(fixture.jds.socket);
     require_no_reconnect(fixture);
+}
+
+TEST_CASE("sv2 JD falls back when the pool changes the extranonce prefix of declared work", "[sv2 jd]") {
+    bool group = false;
+    SECTION("channel prefix") {}
+    SECTION("group prefix") { group = true; }
+    auto chain = started_chain(group ? "sv2_jd_prefix_group" : "sv2_jd_prefix_channel");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    std::string error;
+    auto const payout = node::mining::payout_from_address(configuration.mining.address,
+        domain::config::network::regtest, error);
+    REQUIRE(payout);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+
+    // accept() stored an 8-byte prefix of 0x12 and an extranonce size of 8.
+    // Eight bytes of 0x34 still fit (8 + 8 <= 32) and are not that prefix.
+    data_chunk const prefix(8, 0x34);
+    captured_log log;
+    fixture.pool.send(set_extranonce_prefix{group ? uint32_t{8} : uint32_t{7}, prefix});
+    if ( ! group) {
+        require_solo_again(miner, declared.pooled, payout->script);
+        REQUIRE(fixture.wait_until([&] {
+            return log.count("pool changed the extranonce prefix of declared work") >= 1;
+        }));
+        fixture.eof(fixture.pool.socket);
+        fixture.eof(fixture.jds.socket);
+        require_no_reconnect(fixture);
+        return;
+    }
+
+    // A prefix addressed to the group is ignored, so this declaration keeps
+    // the prefix it was built with and neither upstream closes.
+    auto pool_quiet = fixture.begin_read(fixture.pool.socket, 1);
+    auto jds_quiet = fixture.begin_read(fixture.jds.socket, 1);
+    auto miner_quiet = fixture.begin_read(miner.socket, 1);
+    REQUIRE_FALSE(fixture.wait_until([&] {
+        return pool_quiet->done || jds_quiet->done || miner_quiet->done;
+    }, 300ms));
+    REQUIRE(log.count("pool changed the extranonce prefix of declared work") == 0);
+    // Cancel so the next read on each socket starts at a frame boundary.
+    std::error_code cancel_error;
+    fixture.pool.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    fixture.jds.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    miner.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    REQUIRE(fixture.wait_until([&] {
+        return pool_quiet->done && jds_quiet->done && miner_quiet->done;
+    }));
+
+    // The custom job is still in flight. Accepting it and forwarding a share
+    // is the declaration staying up after the ignored prefix.
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, false);
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const local = receive_plain<submit_shares_success>(fixture, miner.socket);
+    REQUIRE(local.channel_id == miner.opened.channel_id);
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.channel_id == 7);
+    REQUIRE(forwarded.sequence_number == 0);
+    REQUIRE(forwarded.job_id == 77);
+    REQUIRE(forwarded.nonce == nonce);
+    REQUIRE(log.count("pool changed the extranonce prefix of declared work") == 0);
 }
 
 TEST_CASE("sv2 JD pushes a block found before DeclareMiningJob.Success once", "[sv2 jd]") {

@@ -252,9 +252,9 @@ not replace local work.
 
 `full-template` sets `DECLARE_TX_DATA` (specification section 6.2) on the JD
 connection. `coinbase-only` leaves that flag clear. The Mining connection does
-not negotiate extensions. After `SetupConnection.Success` on the Job Declaration
-connection, and before any other Job Declaration message, the node sends
-`RequestExtensions` (extension 0x0001) asking for Requested Payout Outputs.
+not negotiate extensions. After `SetupConnection.Success` on the first Job
+Declaration connection, and before any other Job Declaration message, the node
+sends `RequestExtensions` (extension 0x0001) asking for Requested Payout Outputs.
 The identifier is `requested_payout_outputs_extension` (`0x5052`), an
 experimental identifier that is not in the SV2 extension registry. sv2-spec
 PR #249 proposed the extension as `0x0004` and was closed; changing the
@@ -262,10 +262,13 @@ constant is the whole switch if it is ever registered.
 
 `RequestExtensions.Success` that includes the identifier turns the extension
 on for every later declaration. `RequestExtensions.Error` with an empty
-required list, a success that omits the identifier, or no answer within
-`sv2.jd.response_timeout_seconds` leaves it off. That silence is not a refusal
-and does not close the connection. A required extension this node does not
-implement closes the attempt and falls back to solo.
+required list, or a success that omits the identifier, leaves it off on that
+same connection. No answer within `sv2.jd.response_timeout_seconds` is not a
+refusal and does not fall back to solo: that Job Declaration socket is closed
+and one new connection completes `SetupConnection` without sending
+`RequestExtensions`. The pool connection stays up, and declarations use the
+base coinbase. A required extension this node does not implement closes the
+attempt and falls back to solo.
 
 With the extension off, each new template asks the JDS for
 `AllocateMiningJobToken` and builds the coinbase from the allocation's
@@ -355,13 +358,15 @@ to the solo payout, and logs why, when the JDS does not answer
 `sv2.jd.response_timeout_seconds`, the JDS sends `DeclareMiningJob.Error` or
 any `RequestPayoutOutputs.Error` other than a bounded stale retry, the pool
 refuses `SetCustomMiningJob`, the pool refuses a share on an accepted job, or
-either connection drops. Negotiation silence is not one of these cases. The
-next job after the pool coinbase was in use pays `sv2.mining.address`. A
+either connection drops. Negotiation silence closes only the Job Declaration
+socket and opens one connection that does not negotiate. It is not one of
+these fallbacks when that connection comes up. The next job after the pool
+coinbase was in use pays `sv2.mining.address`. A
 payout refusal that arrives before that coinbase was published does not emit
 another downstream job; miners already on the solo payout keep it. Setup and
 extended-channel refusals include the upstream's error code in the fallback
-log, bounded in length and restricted to printable ASCII. This PR does not
-reconnect and does not try another pool.
+log, bounded in length and restricted to printable ASCII. The only reconnect
+is that one Job Declaration connection. This node does not try another pool.
 
 Both connections run independently of the listener, the template build and
 downstream miners. A slow or silent upstream cannot hold those up: solo jobs
@@ -383,4 +388,5 @@ why. `coinbase-only` has neither limit. The output queue holds at most eight
 frames. Shares that arrive before the custom
 job id is known are retained up to 32 and then dropped. An output queue that
 refuses a declaration or a share ends the attempt and continues solo. No
-reconnect or alternate pool is tried.
+reconnect or alternate pool is tried for that failure. The only reconnect is
+the Job Declaration connection opened when `RequestExtensions` goes unanswered.

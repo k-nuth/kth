@@ -98,16 +98,18 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         endpoint(settings.jd.mining_address).port,
         authority(settings.jd.mining_authority_public_key),
         std::chrono::seconds(settings.handshake_timeout_seconds))
-    , declaration_(owner_, endpoint(settings.jd.jds_address).host,
-        endpoint(settings.jd.jds_address).port,
-        authority(settings.jd.jds_authority_public_key),
-        std::chrono::seconds(settings.handshake_timeout_seconds))
+    , jds_host_(endpoint(settings.jd.jds_address).host)
+    , jds_port_(endpoint(settings.jd.jds_address).port)
+    , jds_authority_(authority(settings.jd.jds_authority_public_key))
+    , jds_handshake_timeout_(std::chrono::seconds(settings.handshake_timeout_seconds))
+    , declaration_(owner_, jds_host_, jds_port_, jds_authority_, jds_handshake_timeout_)
+    , jds_replacement_()
+    , declaration_io_(&declaration_)
     , mining_session_(jd_peer::mining, endpoint(settings.jd.mining_address).host,
         endpoint(settings.jd.mining_address).port, settings.jd.user_identity,
         settings.jd.mode == "full-template")
-    , declaration_session_(jd_peer::declaration, endpoint(settings.jd.jds_address).host,
-        endpoint(settings.jd.jds_address).port, settings.jd.user_identity,
-        settings.jd.mode == "full-template")
+    , declaration_session_(jd_peer::declaration, jds_host_, jds_port_,
+        settings.jd.user_identity, settings.jd.mode == "full-template")
     , jobs_(settings.jd.user_identity, settings.jd.mode == "full-template")
     , chain_(chain)
     , response_timeout_(settings.jd.response_timeout_seconds)
@@ -117,13 +119,14 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
 {}
 
 ::asio::awaitable<void> jd_client::serve(jd_connection& connection,
-    jd_session& session, char const* name) {
+    jd_session& session, char const* name, bool* negotiation_timeout) {
     using namespace ::asio::experimental::awaitable_operators;
 
     ::asio::steady_timer deadline(owner_);
     deadline.expires_at(std::chrono::steady_clock::time_point::max());
     bool done = false;
     bool timed_out = false;
+    bool replace_jds = false;
     std::string failure;
     auto connected = [&] {
         if (stopped_) return false;
@@ -145,10 +148,8 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             && header->extension() == 0
             && (header->msg_type == submit_shares_success::message_type
                 || header->msg_type == submit_shares_error::message_type)) {
-            if (header->msg_length != payload->size()) {
-                failure = "invalid share reply length";
-                return false;
-            }
+            // feed() delivers exactly the U24 payload_size bytes, and that U24
+            // is the msg_length just parsed. A short share body fails in share_reply.
             if (auto reason = share_reply(*header, *payload)) {
                 failure = std::move(*reason);
                 return false;
@@ -208,8 +209,11 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         } catch (std::exception const& e) {
             failure = e.what();
         }
-        // Stopping either side consumes this attempt. There is no retry or
-        // alternate pool in this PR, and no upstream can stall solo work.
+        // This close is the negotiation timeout, not a failed attempt. stop()
+        // would shut the pool before the replacement connection exists.
+        if (replace_jds) co_return;
+        // Stopping either side consumes this attempt. There is no other
+        // reconnect and no alternate pool, and no upstream can stall solo work.
         stop();
     };
     auto response_deadline = [&]() -> ::asio::awaitable<void> {
@@ -217,20 +221,15 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             auto [error] = co_await deadline.async_wait(::asio::as_tuple(::asio::use_awaitable));
             if (done || session.ready()) co_return;
             if (error == ::asio::error::operation_aborted) continue;
-            // Negotiation silence means the pool does not know the extension.
-            // The connection stays up and declarations use the base coinbase.
-            if (session.abandon_extensions()) {
-                if (&session == &declaration_session_) jobs_.use_payout_outputs(false);
-                if ( ! published_ && mining_session_.ready() && declaration_session_.ready()) {
-                    published_ = true;
-                    (void)ready_.try_send(std::error_code{}, 1);
-                    spdlog::info("[sv2 jd] Both upstreams ready; starting local declarations");
-                }
-                // Readiness or the switch to the base coinbase is new work for
-                // the declaration loop. Without a wake it sleeps until the
-                // next chain tip, though nothing else will wake it before then.
-                wake_declarations();
-                continue;
+            // Unanswered RequestExtensions must not be followed by a Job
+            // Declaration frame on this socket. Close only it. A null pointer
+            // is the replacement connection, which never negotiates, or the
+            // pool: both stay on the terminal path below.
+            if (negotiation_timeout && &session == &declaration_session_
+                && session.awaiting_extensions()) {
+                replace_jds = true;
+                connection.stop();
+                co_return;
             }
             timed_out = true;
             connection.stop();
@@ -238,12 +237,50 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         }
     };
     co_await (exchange() && response_deadline());
+    if (replace_jds) {
+        *negotiation_timeout = true;
+        co_return;
+    }
     if ( ! published_) {
         published_ = true;
         (void)ready_.try_send(std::make_error_code(std::errc::connection_aborted), 0);
     }
     spdlog::warn("[sv2 jd] {}: {}; continuing solo mining", name,
         timed_out ? "setup response deadline expired" : failure);
+}
+
+::asio::awaitable<void> jd_client::serve_declaration() {
+    // The first connection negotiates. Silence returns here with the pool still
+    // up and that run() already joined, so the JDS has seen the close.
+    bool negotiation_timeout = false;
+    co_await serve(declaration_, declaration_session_, "JDS", &negotiation_timeout);
+    if ( ! negotiation_timeout || stopped_) co_return;
+    if ( ! declaration_session_.restart_without_extensions()) {
+        stop();
+        if ( ! published_) {
+            published_ = true;
+            (void)ready_.try_send(std::make_error_code(std::errc::connection_aborted), 0);
+        }
+        spdlog::warn("[sv2 jd] JDS: negotiation timeout could not open a replacement; continuing solo mining");
+        co_return;
+    }
+    // Same endpoint as the connection that just closed. run() is one-shot, so
+    // this is a new object rather than a second run of declaration_.
+    jds_replacement_ = std::make_unique<jd_connection>(owner_, jds_host_, jds_port_,
+        jds_authority_, jds_handshake_timeout_);
+    declaration_io_.store(jds_replacement_.get());
+    // A pool stop() in this gap already ran, or runs after the store and closes
+    // the new socket. Either way the handshake must not proceed.
+    if (stopped_) {
+        jds_replacement_->stop();
+        co_return;
+    }
+    spdlog::info("[sv2 jd] No RequestExtensions answer within sv2.jd.response_timeout_seconds; replacing the JDS connection");
+    co_await serve(*jds_replacement_, declaration_session_, "JDS");
+}
+
+bool jd_client::send_declaration(data_chunk frame) {
+    return declaration_io_.load()->send(std::move(frame));
 }
 
 ::asio::awaitable<void> jd_client::run_owned() {
@@ -294,7 +331,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         co_await declare_templates();
     };
     co_await (serve(mining_, mining_session_, "pool")
-        && serve(declaration_, declaration_session_, "JDS")
+        && serve_declaration()
         && declarations() && receive_tips());
 }
 
@@ -314,7 +351,7 @@ bool jd_client::dispatch(jd_declaration::result result) {
         else job_deadline_.reset();
         wake_declarations();
     }
-    if (( ! result.declaration.empty() && ! declaration_.send(std::move(result.declaration)))
+    if (( ! result.declaration.empty() && ! send_declaration(std::move(result.declaration)))
         || ( ! result.mining.empty() && ! mining_.send(std::move(result.mining)))) {
         spdlog::warn("[sv2 jd] Upstream output queue refused declaration; continuing solo mining");
         stop();
@@ -420,7 +457,11 @@ void jd_client::stop() {
         }
     }
     mining_.stop();
-    declaration_.stop();
+    // declaration_io_ is declaration_ until the replacement is published.
+    // A pool stop() after that publish has to close the new socket too.
+    auto* const declaration = declaration_io_.load();
+    declaration->stop();
+    if (declaration != &declaration_) declaration_.stop();
     (void)ready_.try_send(std::make_error_code(std::errc::operation_canceled), 0);
     ready_.cancel();
     ready_.close();
@@ -558,7 +599,7 @@ std::optional<std::string> jd_client::share_reply(message_header const& header,
         }
         return std::nullopt;
     }
-    if (header.msg_type != submit_shares_error::message_type) return "unexpected share reply";
+    // The mining handler calls this only for Success or Error. Success returned above.
     auto const message = parse<submit_shares_error>(payload);
     if ( ! message) return "malformed share error";
     if ( ! upstream || message->channel_id != *upstream) return "share error for another channel";
@@ -599,7 +640,7 @@ bool jd_client::push_block(mining::pool_proof const& proof) {
     message.ntime = proof.ntime;
     message.nbits = proof.bits;
     message.version = proof.version;
-    if ( ! declaration_.send(frame(message))) {
+    if ( ! send_declaration(frame(message))) {
         spdlog::warn("[sv2 jd] JDS output queue refused PushSolution; continuing solo mining");
         stop();
         return false;
