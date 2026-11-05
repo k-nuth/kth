@@ -2220,6 +2220,30 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
     mempool_.remove_for_block(block);
 }
 
+code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected) {
+    // The same admission gate used by template capture keeps a chain transition
+    // from starting between the snapshot check and the mempool mutation.
+    captured_lease const capture(capture_gate_);
+    if ( ! capture || ! expected || chain_view() != expected) return error::stale_chain;
+    if (stopped()) return error::service_stopped;
+
+    struct unlock {
+        prioritized_mutex& mutex;
+        ~unlock() { mutex.unlock_low_priority(); }
+    };
+    validation_mutex_.lock_low_priority();
+    unlock const release{validation_mutex_};
+    // A pooled parent may have been removed while script validation was running.
+    // Its hash commits to the output, so presence is enough to recheck it here.
+    for (auto const& input : entry.tx->inputs()) {
+        auto const& point = input.previous_output();
+        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
+            return error::missing_previous_output;
+        }
+    }
+    return mempool_.add(std::move(entry)) ? error::success : error::double_spend_mempool;
+}
+
 blockchain::mempool& block_chain::mempool_ref() {
     return mempool_;
 }

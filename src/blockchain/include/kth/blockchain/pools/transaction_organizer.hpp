@@ -22,6 +22,7 @@
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 #include <kth/infrastructure/utility/broadcaster.hpp>
 
@@ -74,6 +75,8 @@ protected:
     uint64_t price(transaction_const_ptr tx) const;
 
 private:
+    ::asio::awaitable<code> organize_attempt(transaction_const_ptr tx);
+
     // Subscription.
     void notify(transaction_const_ptr tx);
     void notify_ds_proof(double_spend_proof_const_ptr tx);
@@ -87,6 +90,9 @@ private:
     settings const& settings_;
     executor_type executor_;
     size_t threads_;
+    // Transfer permission to use the validator through a channel. Waiting for
+    // another admission suspends the caller instead of occupying its executor.
+    mutable ::asio::experimental::concurrent_channel<void(std::error_code)> admission_;
     validate_transaction validator_;
     transaction_broadcaster broadcaster_;
     ds_proof_broadcaster ds_proof_broadcaster_;
