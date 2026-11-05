@@ -113,17 +113,30 @@ get_block_template(method_context& ctx, request const& req) {
     simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
     simdjson::ondemand::document doc;
     simdjson::ondemand::array params;
-    if (parser.iterate(padded).get(doc) == simdjson::SUCCESS && doc.get_array().get(params) == simdjson::SUCCESS) {
-        for (auto element : params) {
-            simdjson::ondemand::object request_object;
-            std::string_view mode;
-            if (element.get_object().get(request_object) == simdjson::SUCCESS &&
-                request_object["mode"].get_string().get(mode) == simdjson::SUCCESS &&
-                mode != "template") {
-                co_return std::unexpected(make_error(error_code::invalid_params,
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getblocktemplate requires [] or [template_request object]"));
+    };
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::object request_object;
+        if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        std::string_view mode;
+        auto const mode_error = request_object["mode"].get_string().get(mode);
+        if (mode_error != simdjson::NO_SUCH_FIELD) {
+            if (mode_error != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            if (mode != "template") {
+                co_return kth::fail(make_error(error_code::invalid_params,
                     "only template mode is supported"));
             }
-            break;
         }
     }
 
@@ -144,9 +157,7 @@ get_block_template(method_context& ctx, request const& req) {
             : std::nullopt);
     }
 
-    // Changes when the tip or the mempool does.
-    auto const longpollid = encode_hash(tmpl->previous_block_hash) + std::to_string(pool.generation());
-    co_return render_block_template(*tmpl, policy, longpollid);
+    co_return render_block_template(*tmpl, policy);
 }
 
 // getmininginfo -> height, difficulty, mempool size, and network.

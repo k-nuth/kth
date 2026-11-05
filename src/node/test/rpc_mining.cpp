@@ -155,7 +155,7 @@ TEST_CASE("render_block_template serializes the GBT fields with the transactions
         selection};
 
     // The child's entry has left the mempool: no fee or sigops for it.
-    auto const json = render_block_template(tmpl, {template_tx_policy{300u, 2u}, std::nullopt}, "lp");
+    auto const json = render_block_template(tmpl, {template_tx_policy{300u, 2u}, std::nullopt});
     auto const hex = [](transaction_const_ptr const& tx) {
         domain::chain::transaction const& chain_tx = *tx;
         return encode_base16(to_data_chunk(chain_tx, /*wire*/ true));
@@ -167,7 +167,7 @@ TEST_CASE("render_block_template serializes the GBT fields with the transactions
         R"(","hash":")" + encode_hash(parent->hash()) + R"(","fee":300,"sigops":2},)" +
         R"({"data":")" + hex(child) + R"(","txid":")" + encode_hash(child->hash()) +
         R"(","hash":")" + encode_hash(child->hash()) + R"(","depends":[1]}],)" +
-        R"("coinbaseaux":{"flags":""},"coinbasevalue":5000000300,"longpollid":"lp",)" +
+        R"("coinbaseaux":{"flags":""},"coinbasevalue":5000000300,)" +
         R"("target":"00000000ffff0000000000000000000000000000000000000000000000000000",)" +
         R"("mintime":1000,"mutable":["time","transactions","prevblock"],"noncerange":"00000000ffffffff",)" +
         R"("sigoplimit":226950,"sizelimit":32000000,"curtime":2000,"bits":"1d00ffff","height":5})");

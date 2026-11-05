@@ -38,11 +38,10 @@ struct template_tx_policy {
 // with the transactions in full): the transactions in template order with
 // their data, txid, the 1-based indexes of earlier template transactions they
 // spend from, and fee and sigchecks where `policy` knows them; then the header
-// fields, coinbase value, target, limits and `longpollid`.
+// fields, coinbase value, target and limits. Long polling is unsupported.
 std::string render_block_template(
     blockchain::mining_template const& tmpl,
-    std::vector<std::optional<template_tx_policy>> const& policy,
-    std::string_view longpollid);
+    std::vector<std::optional<template_tx_policy>> const& policy);
 
 // Serialize a mining_info as the getmininginfo "result" object.
 std::string render_mining_info(blockchain::mining_info const& info);

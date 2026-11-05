@@ -61,8 +61,7 @@ std::string render_mining_template(
 
 std::string render_block_template(
     blockchain::mining_template const& tmpl,
-    std::vector<std::optional<template_tx_policy>> const& policy,
-    std::string_view longpollid) {
+    std::vector<std::optional<template_tx_policy>> const& policy) {
 
     std::string target_hex(64, '0');
     if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
@@ -111,7 +110,6 @@ std::string render_block_template(
     w.end_array();
     w.key("coinbaseaux").begin_object().field("flags", "").end_object();
     w.field("coinbasevalue", uint64_t(tmpl.coinbase_value));
-    w.field("longpollid", longpollid);
     w.field("target", target_hex);
     w.field("mintime", int64_t(tmpl.min_time));
     w.key("mutable").begin_array()
