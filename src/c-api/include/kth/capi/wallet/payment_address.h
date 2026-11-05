@@ -17,37 +17,9 @@ extern "C" {
 
 // Constructors
 
-/**
- * @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`.
- * @param short_hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `short_hash` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version(kth_shorthash_t const* short_hash, uint8_t version);
-
-/**
- * @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`.
- * @warning `short_hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_short_hash_version_unsafe(uint8_t const* short_hash, uint8_t version);
-
-/**
- * @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`.
- * @param hash Borrowed input; must be non-null. Copied into the resulting object; ownership of `hash` stays with the caller.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version(kth_hash_t const* hash, uint8_t version);
-
-/**
- * @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`.
- * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
- */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_construct_from_hash_version_unsafe(uint8_t const* hash, uint8_t version);
-
-/** @return Owned `kth_payment_address_mut_t`. Caller must release with `kth_wallet_payment_address_destruct`. */
-KTH_EXPORT KTH_OWNED
-kth_payment_address_mut_t kth_wallet_payment_address_from_script(kth_script_const_t script, uint8_t version);
+/** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_script(kth_script_const_t script, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 /** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
 KTH_EXPORT
@@ -82,6 +54,34 @@ kth_error_code_t kth_wallet_payment_address_from_ec_private(kth_ec_private_const
 /** @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error. */
 KTH_EXPORT
 kth_error_code_t kth_wallet_payment_address_from_ec_public(kth_ec_public_const_t point, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_shorthash(kth_shorthash_t const* hash, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @warning `hash` MUST point to a buffer of at least 20 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_shorthash_t`.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_shorthash_unsafe(uint8_t const* hash, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @param hash Borrowed input; must be non-null. Read during the call; ownership of `hash` stays with the caller.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_hash(kth_hash_t const* hash, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
+
+/**
+ * @warning `hash` MUST point to a buffer of at least 32 bytes. Passing a shorter buffer is undefined behavior. Prefer the safe variant (without the `_unsafe` suffix) when your language can pass a pointer to `kth_hash_t`.
+ * @param[out] out Must point to a null `kth_payment_address_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_wallet_payment_address_destruct`. Untouched on error.
+ */
+KTH_EXPORT
+kth_error_code_t kth_wallet_payment_address_from_hash_unsafe(uint8_t const* hash, uint8_t version, KTH_OUT_OWNED kth_payment_address_mut_t* out);
 
 
 // Destructor
@@ -151,6 +151,12 @@ kth_payment_t kth_wallet_payment_address_to_payment(kth_payment_address_const_t 
 /** @return Owned C string. Caller must release with `kth_core_destruct_string`. */
 KTH_EXPORT KTH_OWNED
 char* kth_wallet_payment_address_to_string(kth_payment_address_const_t self);
+
+
+// Predicates
+
+KTH_EXPORT
+kth_bool_t kth_wallet_payment_address_is_supported_version(uint8_t version);
 
 
 // Operations

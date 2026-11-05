@@ -2,45 +2,38 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KTH_INFRASTUCTURE_BASE_10_HPP
-#define KTH_INFRASTUCTURE_BASE_10_HPP
+#ifndef KTH_INFRASTRUCTURE_FORMATS_BASE_10_HPP
+#define KTH_INFRASTRUCTURE_FORMATS_BASE_10_HPP
 
 #include <cstdint>
 #include <string>
-
-#include <kth/infrastructure/compat.hpp>
+#include <string_view>
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/utility/fixed_string.hpp>
+#include <expected>
 
 namespace kth {
 
-constexpr uint8_t btc_decimal_places = 8;
-constexpr uint8_t mbtc_decimal_places = 5;
-constexpr uint8_t ubtc_decimal_places = 2;
+enum class base10_errc {
+    invalid_format,
+    excess_precision,
+    overflow
+};
 
-/**
- * Validates and parses an amount string according to the BIP 21 grammar.
- * @param decmial_places the location of the decimal point.
- * The default is 0, which treats the input as a normal integer.
- * @param strict true to treat fractional results as an error,
- * or false to round them upwards.
- * @return false for failure.
- */
-KI_API bool decode_base10(uint64_t& out, std::string const& amount, uint8_t decimal_places=0, bool strict=true);
+/// Parse unsigned fixed-point decimal without allocation or floating point.
+/// Empty text and a lone point retain their historical zero value.
+/// strict=false rounds discarded nonzero fractions upward.
+/// if consteval selects exact compile-time arithmetic; runtime uses from_chars.
+[[nodiscard]] constexpr std::expected<uint64_t, base10_errc> decode_base10(
+    std::string_view amount, uint8_t decimal_places = 0, bool strict = true) noexcept;
 
-/**
- * Writes a Bitcoin amount to a string, following the BIP 21 grammar.
- * Avoids the rounding issues often seen with floating-point methods.
- * @param decmial_places the location of the decimal point.
- * The default is 0, which treats the input as a normal integer.
- */
-KI_API std::string encode_base10(uint64_t amount,
-    uint8_t decimal_places=0);
-
-// Old names:
-KI_API bool btc_to_satoshi(uint64_t& satoshi, std::string const& btc);
-KI_API std::string satoshi_to_btc(uint64_t satoshi);
+/// Exact decimal formatting with trimmed fractional zeros. All inputs are valid.
+/// Runtime uses to_chars; constant evaluation uses integer arithmetic.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] constexpr std::string encode_base10(uint64_t amount, uint8_t decimal_places = 0);
 
 } // namespace kth
 
-#endif
+#include <kth/infrastructure/impl/formats/base_10.ipp>
 
+#endif

@@ -4,11 +4,111 @@
 
 // #include <kth/domain/multi_crypto_support.hpp>
 #include <test_helpers.hpp>
+#include <kth/domain/wallet/cashaddr.hpp>
 
 using namespace kth;
 using namespace kd;
 using namespace kth::domain::chain;
 using namespace kth::domain::wallet;
+
+// Public APIs must be usable from a consumer translation unit in C++23.
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+constexpr auto compile_time_address = payment_address::parse_from("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl");
+static_assert(compile_time_address.has_value());
+static_assert(compile_time_address->version() == payment_address::mainnet_p2kh);
+static_assert(compile_time_address->hash_span().size() == short_hash_size);
+
+auto cashaddr_error(std::string_view text, domain::config::network net = domain::config::network::mainnet) {
+    auto const parsed = payment_address::parse_from(text, net);
+    CHECK_FALSE(parsed);
+    return parsed ? kth::code{} : parsed.error();
+}
+
+constexpr std::string address_payload(uint8_t version, size_t size) {
+    data_chunk raw(size + 1, 0x42);
+    raw.front() = version;
+    data_chunk payload;
+    payment_address_detail::convert_bits<8, 5, true>(payload, raw.begin(), raw.end());
+    return cashaddr::encode("bitcoincash", payload);
+}
+
+static_assert([] {
+    auto const plain = payment_address::parse_from("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl");
+    auto const token = payment_address::parse_from("bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v");
+    return plain && token && *plain == *token && plain->version() == payment_address::mainnet_p2kh
+        && plain->to_string() == "bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl"
+        && token->encoded_token() == "bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v";
+}());
+static_assert([] {
+    auto const upper = payment_address::parse_from("BITCOINCASH:QR7FZMEP8G7H7YMFXY74LGC0V950J3R2959LHTXXSL");
+    auto const prefixless = payment_address::parse_from("qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl", domain::config::network::mainnet);
+    return upper && prefixless && *upper == *prefixless;
+}());
+static_assert([] {
+    for (auto net : {domain::config::network::mainnet, domain::config::network::testnet, domain::config::network::regtest}) {
+        for (bool token : {false, true}) {
+            hash_digest hash{};
+            hash[0] = 0x42;
+            auto const source = payment_address::from_hash(hash, net == domain::config::network::mainnet
+                ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh).value();
+            auto const input = source.encoded_cashaddr(net, token);
+            auto const parsed = payment_address::parse_from(input, net);
+            if (!parsed || *parsed != source || !parsed->encoded_legacy().empty() || parsed->to_payment() != payment{}) return false;
+        }
+    }
+    return true;
+}());
+} // namespace
+
+TEST_CASE("payment_address discriminates validation failures", "[payment_address]") {
+    auto const address_error = [](std::string_view text) {
+        auto const parsed = payment_address::parse_from(text);
+        CHECK_FALSE(parsed);
+        return parsed ? kth::code{} : parsed.error();
+    };
+    CHECK(address_error("") == kth::error::address_empty_input);
+    CHECK(address_error("bogus") == kth::error::address_invalid_base58_length);
+    CHECK(address_error("!") == kth::error::address_invalid_character);
+    CHECK(address_error("unknown:qq") == kth::error::address_invalid_prefix);
+    CHECK(cashaddr_error("bitcoincash::qq") == kth::error::address_invalid_prefix);
+    CHECK(cashaddr_error("bitcoincash:!") == kth::error::address_invalid_character);
+    CHECK(cashaddr_error("bitcoincash:Qq") == kth::error::address_mixed_case);
+    CHECK(cashaddr_error("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsq") == kth::error::address_invalid_checksum);
+    CHECK(cashaddr_error("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl", domain::config::network::testnet) == kth::error::address_network_mismatch);
+    CHECK(cashaddr_error(address_payload(0x80, 20)) == kth::error::address_reserved_version);
+    CHECK(cashaddr_error(address_payload(0x20, 20)) == kth::error::address_unsupported_type);
+    CHECK(cashaddr_error(address_payload(0x00, 19)) == kth::error::address_invalid_hash_length);
+    CHECK(cashaddr_error(address_payload(0x01, 24)) == kth::error::address_unsupported_hash_size);
+    CHECK(cashaddr_error(address_payload(0x03, 32)) == kth::error::address_unsupported_hash_size);
+    CHECK(cashaddr_error(address_payload(0x13, 32)) == kth::error::address_unsupported_hash_size);
+    CHECK([] {
+        auto payload = cashaddr::decode(address_payload(0, 20), "").second;
+        payload.back() |= 1;
+        return cashaddr_error(cashaddr::encode("bitcoincash", payload)) == kth::error::address_invalid_padding;
+    }());
+    CHECK(cashaddr_error(cashaddr::encode("bitcoincash", data_chunk{0})) == kth::error::address_invalid_padding);
+    CHECK([] {
+        auto const parsed = payment_address::parse_from(cashaddr::encode("bitcoincash", {}));
+        return !parsed && parsed.error() == kth::error::address_invalid_hash_length;
+    }());
+}
+#endif
+
+TEST_CASE("payment_address errors retain their runtime category", "[payment_address]") {
+    auto const invalid = payment_address::parse_from("");
+    REQUIRE_FALSE(invalid);
+    kth::code const error = invalid.error();
+    CHECK(error.category().name() == std::string("bitcoin"));
+    CHECK(error.message() == "empty address");
+    payment bad_checksum{};
+    auto const result = payment_address::from_payment(bad_checksum);
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == kth::error::address_invalid_checksum);
+    auto const invalid_script = payment_address::from_pay_public_key_hash_script(chain::script{}, payment_address::mainnet_p2kh);
+    REQUIRE_FALSE(invalid_script);
+    CHECK(invalid_script.error() == kth::error::address_invalid_script);
+}
 
 // Start Test Suite: payment_address tests
 
@@ -32,12 +132,12 @@ constexpr hash_digest kFull = {{
     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
 }};
 
-constexpr payment_address kP2kh{kShort, payment_address::mainnet_p2kh};
+constexpr auto kP2kh = payment_address::from_shorthash(kShort, payment_address::mainnet_p2kh).value();
 static_assert(kP2kh.version() == payment_address::mainnet_p2kh);
 static_assert(kP2kh.hash20() == kShort);
 static_assert(kP2kh == kP2kh);
 
-constexpr payment_address kFullHash{kFull, payment_address::mainnet_p2kh};
+constexpr auto kFullHash = payment_address::from_hash(kFull, payment_address::mainnet_p2sh).value();
 static_assert(kFullHash.hash32() == kFull);
 // 32-byte hash carriers have no legal 20-byte representation — the
 // accessor surfaces `null_short_hash` sentinel rather than truncating.
@@ -164,14 +264,14 @@ TEST_CASE("payment_address construct public uncompressed from compressed testnet
 TEST_CASE("payment_address construct hash valid expected", "[payment_address]") {
     auto const hash = decode_base16<short_hash_size>(compressed_hash);
     REQUIRE(hash);
-    payment_address const address(*hash, payment_address::mainnet_p2kh);
+    auto const address = payment_address::from_shorthash(*hash, payment_address::mainnet_p2kh).value();
     REQUIRE(address.encoded_legacy() == address_compressed);
 }
 
 TEST_CASE("payment_address construct uncompressed hash testnet valid expected", "[payment_address]") {
     auto const hash = decode_base16<short_hash_size>(uncompressed_hash);
     REQUIRE(hash);
-    payment_address const address(*hash, 0x6f);
+    auto const address = payment_address::from_shorthash(*hash, 0x6f).value();
     REQUIRE(address.encoded_legacy() == address_uncompressed_testnet);
 }
 
@@ -180,14 +280,14 @@ TEST_CASE("payment_address construct uncompressed hash testnet valid expected", 
 TEST_CASE("payment_address construct script valid expected", "[payment_address]") {
     script ops;
     REQUIRE(ops.from_string(script_text));
-    payment_address const address = payment_address::from_script(ops, payment_address::mainnet_p2sh);
+    payment_address const address = payment_address::from_script(ops, payment_address::mainnet_p2sh).value();
     REQUIRE(address.encoded_legacy() == address_script);
 }
 
 TEST_CASE("payment_address construct script testnet valid expected", "[payment_address]") {
     script ops;
     REQUIRE(ops.from_string(script_text));
-    payment_address const address = payment_address::from_script(ops, 0xc4);
+    payment_address const address = payment_address::from_script(ops, 0xc4).value();
     REQUIRE(address.encoded_legacy() == address_script_testnet);
 }
 
@@ -233,7 +333,7 @@ TEST_CASE("payment_address version testnet testnet", "[payment_address]") {
 TEST_CASE("payment_address version script valid mainnet p2sh", "[payment_address]") {
     script ops;
     REQUIRE(ops.from_string(script_text));
-    payment_address const address = payment_address::from_script(ops, payment_address::mainnet_p2sh);
+    payment_address const address = payment_address::from_script(ops, payment_address::mainnet_p2sh).value();
     REQUIRE(address.version() == payment_address::mainnet_p2sh);
 }
 
@@ -279,6 +379,106 @@ TEST_CASE("payment_address token address from string", "[payment_address]") {
     REQUIRE(address.encoded_legacy().empty());
 }
 
+TEST_CASE("payment_address token-aware P2PKH cashAddr decodes as P2PKH", "[payment_address]") {
+    // The pair from the CashTokens specification's address examples.
+    auto const plain = payment_address::parse_from("bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl").value();
+    auto const token = payment_address::parse_from("bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v").value();
+    REQUIRE(token.version() == payment_address::mainnet_p2kh);
+    REQUIRE(token == plain);
+    REQUIRE(token.encoded_cashaddr(false) == "bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl");
+    REQUIRE(token.encoded_cashaddr(true) == "bitcoincash:zr7fzmep8g7h7ymfxy74lgc0v950j3r295z4y4gq0v");
+}
+
+TEST_CASE("payment_address token-aware cashAddr keeps the P2PKH or P2SH kind", "[payment_address]") {
+    // One hash under each of the four types, on each network's prefix.
+    auto const hash = decode_base16<short_hash_size>("4423cfd20e8f5f10863ae31df5634620d36b0fc3");
+    REQUIRE(hash);
+
+    struct address_case {
+        char const* address;
+        domain::config::network net;
+        uint8_t version;
+    };
+    for (auto const& v : {
+        address_case{"bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz", domain::config::network::mainnet, payment_address::mainnet_p2kh},
+        address_case{"bitcoincash:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvvwyry2nl", domain::config::network::mainnet, payment_address::mainnet_p2sh},
+        address_case{"bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3", domain::config::network::mainnet, payment_address::mainnet_p2kh},
+        address_case{"bitcoincash:rpzz8n7jp6847yyx8t33matrgcsdx6c0cvtyha2vvv", domain::config::network::mainnet, payment_address::mainnet_p2sh},
+        address_case{"bchtest:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvcnw40csd", domain::config::network::testnet, payment_address::testnet_p2kh},
+        address_case{"bchtest:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv0kn6gmts", domain::config::network::testnet, payment_address::testnet_p2sh},
+        address_case{"bchreg:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvz0c5vtnt", domain::config::network::regtest, payment_address::testnet_p2kh},
+        address_case{"bchreg:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv429mtggk", domain::config::network::regtest, payment_address::testnet_p2sh}}) {
+        CAPTURE(v.address);
+        auto const address = payment_address::parse_from(v.address, v.net);
+        REQUIRE(address);
+        REQUIRE(address->version() == v.version);
+        REQUIRE(address->hash20() == *hash);
+    }
+}
+
+TEST_CASE("payment_address cashAddr with an unknown type is rejected", "[payment_address]") {
+    // Type 4, otherwise well formed, with a valid checksum.
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:ypzz8n7jp6847yyx8t33matrgcsdx6c0cv4lkel9ld"));
+}
+
+TEST_CASE("payment_address cashAddr with a hash of neither 20 nor 32 bytes is rejected", "[payment_address]") {
+    // Well formed, with valid checksums: a 24-byte P2PKH and a 40-byte P2SH.
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:q9zz8n7jp6847yyx8t33matrgcsdx6c0cvqqqqqqs8e2yj0m"));
+    REQUIRE_FALSE(payment_address::parse_from("bitcoincash:p3zz8n7jp6847yyx8t33matrgcsdx6c0cvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkuv60mtm"));
+}
+
+TEST_CASE("payment_address rejects 32-byte P2PKH cashAddr hashes", "[payment_address]") {
+    struct address_case {
+        char const* address;
+        domain::config::network net;
+    };
+    for (auto const& v : {
+        address_case{"bitcoincash:qvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqjyfd3c20", domain::config::network::mainnet},
+        address_case{"bitcoincash:zvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqqh4vgeny", domain::config::network::mainnet},
+        address_case{"bchtest:qvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jq3rcnftla", domain::config::network::testnet},
+        address_case{"bchtest:zvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqrsyjs2xk", domain::config::network::testnet},
+        address_case{"bchreg:qvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqyf2ewug4", domain::config::network::regtest},
+        address_case{"bchreg:zvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqk6kcha37", domain::config::network::regtest}}) {
+        CAPTURE(v.address);
+        // The checksum is valid: rejection must come from the destination
+        // type/size combination, rather than a malformed CashAddr string.
+        REQUIRE_FALSE(cashaddr::decode(v.address, std::string(payment_address::cashaddr_prefix_for(v.net))).second.empty());
+        auto const detected = payment_address::parse_from(v.address);
+        auto const explicit_net = payment_address::parse_from(v.address, v.net);
+        CHECK_FALSE(detected);
+        CHECK_FALSE(explicit_net);
+        if (!detected) CHECK(detected.error() == kth::error::address_unsupported_hash_size);
+        if (!explicit_net) CHECK(explicit_net.error() == kth::error::address_unsupported_hash_size);
+    }
+}
+
+TEST_CASE("payment_address accepts plain and token-aware P2SH32 cashAddr hashes", "[payment_address]") {
+    auto const hash = decode_base16<hash_size>("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+    REQUIRE(hash);
+    struct address_case {
+        char const* address;
+        domain::config::network net;
+    };
+    for (auto const& v : {
+        address_case{"bitcoincash:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqme8efvj7", domain::config::network::mainnet},
+        address_case{"bitcoincash:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqf2mcsdt4", domain::config::network::mainnet},
+        address_case{"bchtest:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqc7k83l8v", domain::config::network::testnet},
+        address_case{"bchtest:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jq2d2xg778", domain::config::network::testnet},
+        address_case{"bchreg:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqd5ydkgsy", domain::config::network::regtest},
+        address_case{"bchreg:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jql8cv0ff0", domain::config::network::regtest}}) {
+        CAPTURE(v.address);
+        auto const detected = payment_address::parse_from(v.address);
+        auto const explicit_net = payment_address::parse_from(v.address, v.net);
+        REQUIRE(detected);
+        REQUIRE(explicit_net);
+        CHECK(*detected == *explicit_net);
+        CHECK(detected->version() == (v.net == domain::config::network::mainnet
+            ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh));
+        CHECK(detected->hash_span().size() == hash_size);
+        CHECK(detected->hash32() == *hash);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 32-byte hash truncation guards (`pay_script_hash_32`, BCH 2025 Leibniz)
 // ---------------------------------------------------------------------------
@@ -290,7 +490,7 @@ TEST_CASE("payment_address 32-byte hash20 returns null sentinel", "[payment_addr
     // that as the all-zeros sentinel so callers can detect it.
     hash_digest h32;
     for (size_t i = 0; i < h32.size(); ++i) h32[i] = static_cast<uint8_t>(i + 1);
-    payment_address const address(h32, payment_address::mainnet_p2sh);
+    auto const address = payment_address::from_hash(h32, payment_address::mainnet_p2sh).value();
     REQUIRE(address.hash20() == null_short_hash);
     REQUIRE(address.hash32() == h32);
 }
@@ -298,7 +498,7 @@ TEST_CASE("payment_address 32-byte hash20 returns null sentinel", "[payment_addr
 TEST_CASE("payment_address 32-byte to_payment returns zero sentinel", "[payment_address]") {
     hash_digest h32;
     for (size_t i = 0; i < h32.size(); ++i) h32[i] = static_cast<uint8_t>(i + 1);
-    payment_address const address(h32, payment_address::mainnet_p2sh);
+    auto const address = payment_address::from_hash(h32, payment_address::mainnet_p2sh).value();
     // `payment` is `byte_array<25>`; zero-initialised compares
     // equal against any other zero-initialised `payment`.
     payment const zero_payment{};
@@ -310,7 +510,7 @@ TEST_CASE("payment_address 20-byte accessors stay untouched on 20-byte hashes", 
     // common P2KH / P2SH case.
     auto const hash = decode_base16<short_hash_size>(compressed_hash);
     REQUIRE(hash);
-    payment_address const address(*hash, payment_address::mainnet_p2kh);
+    auto const address = payment_address::from_shorthash(*hash, payment_address::mainnet_p2kh).value();
     REQUIRE(address.hash20() == *hash);
     REQUIRE_FALSE(address.encoded_legacy().empty());
     REQUIRE(address.encoded_legacy() == address_compressed);
@@ -319,3 +519,294 @@ TEST_CASE("payment_address 20-byte accessors stay untouched on 20-byte hashes", 
 #endif
 
 // End Test Suite
+
+#if defined(KTH_CURRENCY_BCH)
+static_assert([] {
+    using type = payment_address_detail::cashaddr_destination_type;
+    for (auto kind : {type::pubkey_hash, type::script_hash, type::token_pubkey_hash, type::token_script_hash}) {
+        for (size_t size : {short_hash_size, hash_size}) {
+            if (size == hash_size && kind != type::script_hash &&
+                kind != type::token_script_hash) continue;
+            hash_digest hash{};
+            auto const packed = payment_address_detail::pack_addr_data_(byte_span{hash.data(), size}, kind);
+            if (packed.size() != (size == short_hash_size ? 34 : 53)) return false;
+        }
+    }
+    return true;
+}());
+TEST_CASE("payment_address rejects invalid components at construction", "[payment_address]") {
+    auto const unknown = payment_address::from_shorthash(short_hash{}, 0xff);
+    REQUIRE_FALSE(unknown);
+    CHECK(unknown.error() == kth::error::address_unsupported_type);
+    for (uint8_t version : {payment_address::mainnet_p2kh, payment_address::testnet_p2kh}) {
+        auto const invalid = payment_address::from_hash(hash_digest{}, version);
+        REQUIRE_FALSE(invalid);
+        CHECK(invalid.error() == kth::error::address_unsupported_hash_size);
+    }
+    for (uint8_t version : {payment_address::mainnet_p2sh, payment_address::testnet_p2sh}) {
+        auto const valid = payment_address::from_hash(hash_digest{}, version);
+        REQUIRE(valid);
+        CHECK_FALSE(valid->encoded_cashaddr(false).empty());
+        CHECK_FALSE(valid->encoded_token().empty());
+    }
+    auto const invalid_script_version = payment_address::from_script(chain::script{}, 0xff);
+    REQUIRE_FALSE(invalid_script_version);
+    CHECK(invalid_script_version.error() == kth::error::address_unsupported_type);
+}
+#endif
+
+TEST_CASE("common failed results preserve Knuth errors", "[payment_address]") {
+    expect<int> const from_enum = kth::fail(kth::error::address_invalid_checksum);
+    REQUIRE_FALSE(from_enum);
+    CHECK(from_enum.error() == kth::error::address_invalid_checksum);
+    expect<std::string> const propagated = kth::fail(from_enum.error());
+    REQUIRE_FALSE(propagated);
+    CHECK(propagated.error() == from_enum.error());
+    expect<void> const empty = kth::fail(from_enum.error());
+    REQUIRE_FALSE(empty);
+    CHECK(empty.error() == from_enum.error());
+}
+
+TEST_CASE("payment_address factories reject unsupported versions before construction", "[payment_address]") {
+    auto const public_key = ec_public::parse_from(compressed_pubkey);
+    REQUIRE(public_key);
+    auto const address = payment_address::from_ec_public(*public_key, 0xff);
+    CHECK_FALSE(address);
+    if (!address) CHECK(address.error() == kth::error::address_unsupported_type);
+    auto const wire = wrap(0xff, short_hash{});
+    auto const decoded = payment_address::from_payment(wire);
+    CHECK_FALSE(decoded);
+    if (!decoded) CHECK(decoded.error() == kth::error::address_unsupported_type);
+}
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("payment_address checked construction covers every version byte", "[payment_address]") {
+    for (unsigned version = 0; version <= 255; ++version) {
+        CAPTURE(version);
+        bool const supported = payment_address::is_supported_version(version);
+        bool const script = version == payment_address::mainnet_p2sh || version == payment_address::testnet_p2sh;
+        auto const small = payment_address::from_shorthash(short_hash{}, version);
+        auto const large = payment_address::from_hash(hash_digest{}, version);
+        CHECK(small.has_value() == supported);
+        CHECK(large.has_value() == script);
+        if (!small) CHECK(small.error() == kth::error::address_unsupported_type);
+        if (!large) CHECK(large.error() == (supported ? kth::error::address_unsupported_hash_size : kth::error::address_unsupported_type));
+        for (auto const* address : {&small, &large}) {
+            if (!*address) continue;
+            for (bool token : {false, true}) {
+                auto const encoded = (*address)->encoded_cashaddr(token);
+                auto const parsed = payment_address::parse_from(encoded);
+                REQUIRE(parsed);
+                CHECK(*parsed == **address);
+            }
+        }
+    }
+}
+#endif
+
+static_assert(!std::is_constructible_v<payment_address, short_hash const&, uint8_t>);
+static_assert(!std::is_constructible_v<payment_address, hash_digest const&, uint8_t>);
+static_assert(std::is_copy_constructible_v<payment_address>);
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("CashAddr decoding uses the common Knuth errors", "[payment_address]") {
+    struct invalid_case { char const* text; kth::error::error_code_t error; };
+    for (auto const& test : {
+        invalid_case{"bitcoincash::qq", kth::error::address_invalid_prefix},
+        invalid_case{"bitcoincash:!", kth::error::address_invalid_character},
+        invalid_case{"bitcoincash:Qq", kth::error::address_mixed_case},
+        invalid_case{"bitcoincash:qq", kth::error::address_invalid_checksum}}) {
+        expect<std::pair<std::string, data_chunk>> const decoded = cashaddr::decode_checked(test.text, "bitcoincash");
+        REQUIRE_FALSE(decoded);
+        CHECK(decoded.error() == test.error);
+    }
+    auto const parsed = payment_address::parse_from("bitcoincash::qq");
+    REQUIRE_FALSE(parsed);
+    CHECK(parsed.error() == cashaddr::decode_checked("bitcoincash::qq", "bitcoincash").error());
+}
+#endif
+
+TEST_CASE("payment_address extraction drops only invalid destination versions", "[payment_address]") {
+    chain::script script;
+    REQUIRE(script.from_string(script_text));
+    auto const valid = payment_address::extract_output(script, payment_address::mainnet_p2kh, payment_address::mainnet_p2sh);
+    REQUIRE(valid.size() == 1);
+    CHECK(valid.front().version() == payment_address::mainnet_p2kh);
+    CHECK(payment_address::extract_output(script, 0xff, payment_address::mainnet_p2sh).empty());
+    CHECK(payment_address::extract_output(script, payment_address::mainnet_p2kh, 0xff).size() == 1);
+    for (auto const& p2sh : {
+        chain::script{chain::script::to_pay_script_hash_pattern(short_hash{})},
+        chain::script{chain::script::to_pay_script_hash_32_pattern(hash_digest{})}}) {
+        CHECK(payment_address::extract_output(p2sh, 0xff, payment_address::mainnet_p2sh).size() == 1);
+        CHECK(payment_address::extract_output(p2sh, payment_address::mainnet_p2kh, 0xff).empty());
+    }
+}
+
+#if defined(KTH_CURRENCY_BCH)
+static_assert([] {
+    constexpr std::string_view framed = "xxBITCOINCASH:QR7FZMEP8G7H7YMFXY74LGC0V950J3R2959LHTXXSLyy";
+    auto const view = framed.substr(2, framed.size() - 4);
+    auto const address = payment_address::parse_from(view);
+    auto const decoded = cashaddr::decode_checked(view, std::string_view{"bitcoincash"});
+    return address && decoded && decoded->first == "bitcoincash" &&
+        address->to_string() == "bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl";
+}());
+TEST_CASE("payment_address parsing consumes bounded views without retaining input", "[payment_address]") {
+    std::string framed = "xxbitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxslyy";
+    auto const view = std::string_view{framed}.substr(2, framed.size() - 4);
+    auto const address = payment_address::parse_from(view);
+    auto const explicit_net = payment_address::parse_from(view, domain::config::network::mainnet);
+    auto const decoded = cashaddr::decode_checked(view, "bitcoincash");
+    REQUIRE(address);
+    REQUIRE(explicit_net);
+    REQUIRE(decoded);
+    framed.assign(framed.size(), '!');
+    CHECK(*address == *explicit_net);
+    CHECK(address->to_string() == "bitcoincash:qr7fzmep8g7h7ymfxy74lgc0v950j3r2959lhtxxsl");
+    CHECK(decoded->first == "bitcoincash");
+    CHECK(cashaddr::encode(decoded->first, decoded->second) == address->to_string());
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+static_assert(noexcept(payment_address::cashaddr_prefix_for(domain::config::network::regtest)));
+#endif
+static_assert(noexcept(payment_address::from_shorthash(short_hash{}, payment_address::mainnet_p2kh)));
+static_assert(noexcept(payment_address::from_hash(hash_digest{}, payment_address::mainnet_p2sh)));
+static_assert(noexcept(payment_address::from_payment(payment{})));
+static_assert(noexcept(std::hash<payment_address>{}(*payment_address::from_shorthash(short_hash{}, payment_address::mainnet_p2kh))));
+static_assert(!noexcept(std::declval<payment_address const&>().to_payment()));
+static_assert(!noexcept(std::declval<payment_address const&>().to_string()));
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+
+constexpr bool direct_cashaddr_control() {
+    constexpr auto hash = "4423cfd20e8f5f10863ae31df5634620d36b0fc3"_base16;
+    auto const address = payment_address::from_shorthash(hash, payment_address::mainnet_p2kh).value();
+    using network = domain::config::network;
+    if (address.encoded_cashaddr(network::mainnet) != "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz") return false;
+    if (address.encoded_cashaddr(network::testnet) != "bchtest:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvleatp707") return false;
+    if (address.encoded_cashaddr(network::regtest, true) != "bchreg:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvz0c5vtnt") return false;
+    if (address.encoded_token(network::regtest) != address.encoded_cashaddr(network::regtest, true)) return false;
+    for (auto net : {network::testnet4, network::scalenet, network::chipnet}) {
+        if (address.encoded_cashaddr(net) != address.encoded_cashaddr(network::testnet)) return false;
+    }
+    auto const script = payment_address::from_shorthash(hash, payment_address::mainnet_p2sh).value();
+    if (script.encoded_cashaddr(network::mainnet) != "bitcoincash:ppzz8n7jp6847yyx8t33matrgcsdx6c0cvvwyry2nl") return false;
+    constexpr auto large_hash = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"_base16;
+    auto const large = payment_address::from_hash(large_hash, payment_address::mainnet_p2sh).value();
+    if (large.encoded_cashaddr(network::regtest) != "bchreg:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqd5ydkgsy") return false;
+    if (large.encoded_token(network::regtest) != "bchreg:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jql8cv0ff0") return false;
+    return address.version() == payment_address::mainnet_p2kh && address.hash20() == hash &&
+        address.encoded_cashaddr(false) == address.encoded_cashaddr(network::mainnet) &&
+        address.encoded_token() == address.encoded_cashaddr(network::mainnet, true);
+}
+
+constexpr bool cashaddr_decode_contract_control() {
+    constexpr auto text = "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz";
+    auto const decoded = cashaddr::decode_checked(text, "bchreg");
+    if (!decoded || decoded->first != "bitcoincash" || decoded->second.size() != 34) return false;
+    for (auto symbol : decoded->second) if (symbol > 31) return false;
+    if (cashaddr::encode(decoded->first, decoded->second) != text) return false;
+    auto const without_prefix = std::string_view(text).substr(std::string_view(text).find(':') + 1);
+    auto const fallback = cashaddr::decode_checked(without_prefix, "bitcoincash");
+    if (!fallback || *fallback != *decoded) return false;
+    auto uppercase = std::string(text);
+    for (auto& c : uppercase) if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+    auto const normalized = cashaddr::decode_checked(uppercase, "");
+    return normalized && *normalized == *decoded;
+}
+
+static_assert(direct_cashaddr_control());
+static_assert(cashaddr_decode_contract_control());
+static_assert(!noexcept(cashaddr::encode("bitcoincash", data_chunk{})));
+static_assert(!noexcept(cashaddr::decode(std::string_view{}, std::string_view{})));
+static_assert(!noexcept(cashaddr::decode_checked(std::string_view{}, std::string_view{})));
+static_assert(!noexcept(std::declval<payment_address const&>().encoded_cashaddr(domain::config::network::regtest)));
+
+} // namespace
+
+TEST_CASE("payment_address encodes directly under an explicit network prefix", "[payment_address]") {
+    CHECK(direct_cashaddr_control());
+    short_hash small{}; small[0] = 0x42;
+    hash_digest large{}; large[0] = 0x42;
+    using network = domain::config::network;
+    for (auto net : {network::mainnet, network::testnet, network::regtest, network::testnet4, network::scalenet, network::chipnet}) {
+        auto const mainnet = net == network::mainnet;
+        for (auto const& address : {
+            payment_address::from_shorthash(small, mainnet ? payment_address::mainnet_p2kh : payment_address::testnet_p2kh).value(),
+            payment_address::from_shorthash(small, mainnet ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh).value(),
+            payment_address::from_hash(large, mainnet ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh).value()}) {
+            for (bool token : {false, true}) {
+                CAPTURE(net, token, address.hash_span().size(), address.version());
+                auto const legacy_wire = address.encoded_cashaddr(token);
+                auto const payload = cashaddr::decode(legacy_wire, "").second;
+                auto const expected = cashaddr::encode(payment_address::cashaddr_prefix_for(net), payload);
+                auto const direct = address.encoded_cashaddr(net, token);
+                CHECK(direct == expected);
+                auto const parsed = payment_address::parse_from(direct, net);
+                REQUIRE(parsed);
+                CHECK(*parsed == address);
+                if (token) CHECK(address.encoded_token(net) == direct);
+            }
+        }
+    }
+}
+
+TEST_CASE("cashaddr public decoding contract describes the returned symbols and failures", "[payment_address]") {
+    CHECK(cashaddr_decode_contract_control());
+    auto const bad = cashaddr::decode("bitcoincash:!", "");
+    CHECK(bad.first.empty());
+    CHECK(bad.second.empty());
+    auto const checked_bad = cashaddr::decode_checked("bitcoincash:!", "");
+    REQUIRE_FALSE(checked_bad);
+    CHECK(checked_bad.error() == kth::error::address_invalid_character);
+    auto const empty_wire = cashaddr::encode("bitcoincash", {});
+    auto const checked_empty = cashaddr::decode_checked(empty_wire, "");
+    REQUIRE(checked_empty);
+    CHECK(checked_empty->first == "bitcoincash");
+    CHECK(checked_empty->second.empty());
+    auto const compatible_empty = cashaddr::decode(empty_wire, "");
+    CHECK(compatible_empty == *checked_empty);
+    CHECK_FALSE(payment_address::parse_from(empty_wire));
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+
+constexpr auto normal_literal = "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz"_cashaddr;
+constexpr auto token_literal = "bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3"_tokenaddr;
+constexpr auto regtest_literal = "bchreg:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv429mtggk"_tokenaddr;
+constexpr auto large_literal = "bchreg:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqd5ydkgsy"_cashaddr;
+constexpr auto large_token_literal = "bchreg:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jql8cv0ff0"_tokenaddr;
+static_assert(std::is_same_v<std::remove_cv_t<decltype(normal_literal)>, payment_address>);
+static_assert(std::is_same_v<std::remove_cv_t<decltype(token_literal)>, payment_address>);
+static_assert(normal_literal == token_literal);
+static_assert(large_literal == large_token_literal);
+static_assert(normal_literal.hash20() == "4423cfd20e8f5f10863ae31df5634620d36b0fc3"_base16);
+static_assert(large_literal.hash32() == "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"_base16);
+static_assert(regtest_literal.version() == payment_address::testnet_p2sh);
+static_assert(regtest_literal.encoded_token(domain::config::network::regtest) == "bchreg:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv429mtggk");
+static_assert(normal_literal.encoded_cashaddr(false) == "bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz");
+static_assert(noexcept(operator""_cashaddr<"bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz">()));
+static_assert(noexcept(operator""_tokenaddr<"bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3">()));
+static_assert(cashaddr::decode("bitcoincash:!", "").first.empty());
+static_assert(cashaddr::decode("bitcoincash::qq", "").second.empty());
+static_assert(cashaddr::decode("bitcoincash:Qq", "").first.empty());
+static_assert(cashaddr::decode("bitcoincash:qqqqqqqq", "").second.empty());
+
+} // namespace
+
+TEST_CASE("CashAddr literals produce the same address values as runtime parsing", "[payment_address]") {
+    CHECK(normal_literal == payment_address::parse_from("bitcoincash:qpzz8n7jp6847yyx8t33matrgcsdx6c0cvmtevrfgz").value());
+    CHECK(token_literal == payment_address::parse_from("bitcoincash:zpzz8n7jp6847yyx8t33matrgcsdx6c0cvup2jd0h3").value());
+    CHECK(regtest_literal == payment_address::parse_from("bchreg:rpzz8n7jp6847yyx8t33matrgcsdx6c0cv429mtggk").value());
+    CHECK(large_literal == payment_address::parse_from("bchreg:pvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jqd5ydkgsy").value());
+    CHECK(large_token_literal.encoded_token(domain::config::network::regtest) == "bchreg:rvqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0jql8cv0ff0");
+    // payment_address intentionally stores neither regtest nor token-awareness.
+    CHECK(regtest_literal.encoded_cashaddr(false).starts_with("bchtest:"));
+    CHECK(token_literal.to_string() == normal_literal.to_string());
+}
+#endif

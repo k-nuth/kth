@@ -17,6 +17,8 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database/databases/generic_db.hpp>
+#include <span>
+
 #include <kth/database/databases/header_abla_entry.hpp>
 #include <kth/database/databases/property_code.hpp>
 #include <kth/database/databases/result_code.hpp>
@@ -223,6 +225,16 @@ struct KD_API internal_database_basis {
     [[nodiscard]]
     result_code publish_transition(transition_heights const& heights);
 
+    /// The same, and in the same transaction the ABLA state of every block the
+    /// transition connected. The header row of each named height is rewritten in
+    /// place (header bytes unchanged, state replaced), so the state that governs
+    /// a connected block becomes durable exactly when the height that says it is
+    /// connected does: no restart can find one without the other. Every record
+    /// must name an already stored header row; otherwise nothing is committed.
+    [[nodiscard]]
+    result_code publish_transition(transition_heights const& heights,
+                                   std::span<header_abla_record const> abla_records);
+
     /// Put every committed transaction on stable storage.
     ///
     /// The environment is opened MDB_NOSYNC, so a commit returns before
@@ -360,6 +372,9 @@ private:
 
     // Headers-first sync: store header with explicit ABLA state
     result_code push_header_with_abla(domain::chain::header const& header, uint32_t height, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size, KTH_DB_txn* db_txn);
+
+    // Replace the ABLA fields of an existing header row, keeping its header bytes.
+    result_code update_header_abla(header_abla_record const& record, KTH_DB_txn* db_txn);
 
     result_code remove_block_header(hash_digest const& hash, uint32_t height, KTH_DB_txn* db_txn);
 #endif

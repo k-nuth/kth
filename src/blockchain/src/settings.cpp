@@ -65,9 +65,12 @@ settings::settings(domain::config::network net) {
             abla_config = abla::default_config(default_consensus_block_size, false);
             break;
         }
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet: {
             easy_blocks = true;
             asert_half_life = 60ull * 60;   // one hour
+            cantor_activation_time = net == domain::config::network::tempnet
+                ? 1792065600ULL : 1794744000ULL;
             default_consensus_block_size = max_block_size::chipnet;
             abla_config = abla::default_config(default_consensus_block_size, false);
             break;

@@ -66,6 +66,7 @@ constexpr uint32_t get_disk_magic(domain::config::network net) {
         case domain::config::network::regtest: return diskmagic::bch_regtest;
         case domain::config::network::testnet4: return diskmagic::bch_testnet4;
         case domain::config::network::scalenet: return diskmagic::bch_scalenet;
+        case domain::config::network::tempnet:
         case domain::config::network::chipnet: return diskmagic::bch_chipnet;
 #else
         case domain::config::network::mainnet: return diskmagic::btc_mainnet;
