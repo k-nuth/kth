@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_SHARED "" OFF)
+option(KTH_WASM_SIMD "Enable SIMD128 Base64 kernels for WebAssembly" ON)
+option(KTH_WASM_CODEC_TESTS "Build standalone WebAssembly codec checks" OFF)
 option(GLOBAL_BUILD "" ON)
 option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE property" ON)
 option(WITH_EXAMPLES "Compile with examples." OFF)
@@ -104,12 +106,17 @@ include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
-# Find simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+# Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(simdutf REQUIRED)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  if(KTH_WASM_SIMD)
+    set_property(SOURCE src/formats/base_64.cpp APPEND PROPERTY COMPILE_OPTIONS "-msimd128")
+  else()
+    set_property(SOURCE src/formats/base_64.cpp APPEND PROPERTY COMPILE_DEFINITIONS KTH_DISABLE_WASM_SIMD)
+  endif()
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory")
   _add_cxx_compile_flag(-matomics _has_matomics_flag)
   _add_cxx_compile_flag(-mbulk-memory _has_mbulk_memory_flag)
@@ -288,6 +295,7 @@ set(kth_sources ${kth_sources} ${kth_sources_just_knuth})
 set(kth_headers
     include/kth/infrastructure/compiler_constraints.hpp
     include/kth/infrastructure/compat.h
+    include/kth/infrastructure/expect.hpp
     include/kth/infrastructure/compat.hpp
     include/kth/infrastructure/constants.hpp
     include/kth/infrastructure/concepts.hpp
@@ -312,6 +320,11 @@ set(kth_headers
     include/kth/infrastructure/config/hash256.hpp
     include/kth/infrastructure/config/sodium.hpp
 
+    include/kth/infrastructure/formats/bitcoin.hpp
+    include/kth/infrastructure/impl/formats/base_64_wasm.hpp
+    include/kth/infrastructure/impl/formats/base_64.ipp
+    include/kth/infrastructure/impl/formats/base_10.ipp
+    include/kth/infrastructure/utility/fixed_string.hpp
     include/kth/infrastructure/formats/base_10.hpp
     include/kth/infrastructure/formats/base_16.hpp
     include/kth/infrastructure/formats/base_58.hpp
@@ -574,6 +587,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 else()
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
   target_link_options(${PROJECT_NAME} PUBLIC "-pthread")
+  if(KTH_WASM_SIMD)
+    target_link_options(${PROJECT_NAME} INTERFACE "-msimd128")
+  endif()
   set_target_properties(${PROJECT_NAME} PROPERTIES
                           COMPILE_FLAGS "-pthread"
                           LINK_FLAGS "-pthread")
@@ -586,7 +602,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
 
-# Link simdutf for SIMD-optimized base64 encoding (not available for WebAssembly)
+# Link the native SIMD backend; WebAssembly uses the in-tree kernels.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
 endif()
@@ -623,6 +639,14 @@ _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
 
 # Tests
 # ------------------------------------------------------------------------------
+# The standalone codec checks do not require Catch2 or a browser.
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten" AND KTH_WASM_CODEC_TESTS)
+  enable_testing()
+  add_executable(kth_wasm_codec_test test/formats/codec_wasm.cpp)
+  target_link_libraries(kth_wasm_codec_test PRIVATE ${PROJECT_NAME})
+  add_test(NAME kth_wasm_codec_test COMMAND kth_wasm_codec_test)
+endif()
+
 # Skip tests for WebAssembly (Catch2 incompatible with shared-memory/threads)
 if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   enable_testing()
@@ -654,6 +678,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/math/hash.cpp
     test/math/uint256.cpp
 
+    test/path.cpp
     test/network_address.cpp
 
     test/unicode/unicode.cpp
@@ -731,12 +756,25 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Compile-time failure tests
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_FOUND)
+    # Use the same dependency headers/definitions as the real test target.
+    # Positive controls ensure missing dependencies cannot masquerade as a
+    # successful negative-literal test.
+    set(kth_literal_options "${CMAKE_CURRENT_BINARY_DIR}/literal_compile_options_$<CONFIG>.rsp")
+    include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthCompileTests.cmake")
+    kth_compile_test_options(kth_infrastructure_test "${kth_literal_options}")
+    add_test(
+      NAME kth_compile_check_driver_tests
+      COMMAND ${CMAKE_COMMAND} -E env "CMAKE_COMMAND=${CMAKE_COMMAND}"
+        ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../../cmake/tests/test_compile_checks.py
+    )
     add_test(
       NAME kth_infrastructure_compile_fail_tests
       COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/test_compile_failures.py
         --compiler ${CMAKE_CXX_COMPILER}
         --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/include
+        --compiler-options-file ${kth_literal_options}
+        --with-success-tests
     )
   endif()
 

@@ -15,6 +15,9 @@
 
 #include <future>
 #include <system_error>
+#include <stdexcept>
+#include <utility>
+#include <asio/this_coro.hpp>
 #include <variant>
 
 #include <asio/experimental/awaitable_operators.hpp>
@@ -104,6 +107,70 @@ struct rpc_server_fixture {
         std::error_code ec;
         ::asio::read(socket, ::asio::dynamic_buffer(reply), ec);
         return reply;
+    }
+
+    // A bounded conversation on one connection. The second write happens only
+    // after the first response's full Content-Length body has been received.
+    static ::asio::awaitable<std::string> read_response(::asio::ip::tcp::socket& socket) {
+        std::string reply;
+        co_await ::asio::async_read_until(socket, ::asio::dynamic_buffer(reply),
+            "\r\n\r\n", ::asio::use_awaitable);
+        auto const head_end = reply.find("\r\n\r\n") + 4;
+        auto const field = reply.find("Content-Length: ");
+        if (field == std::string::npos || field >= head_end) {
+            throw std::runtime_error("response lacks Content-Length");
+        }
+        auto const length = std::stoul(reply.substr(field + 16));
+        if (reply.size() < head_end + length) {
+            co_await ::asio::async_read(socket, ::asio::dynamic_buffer(reply),
+                ::asio::transfer_exactly(head_end + length - reply.size()),
+                ::asio::use_awaitable);
+        }
+        if (reply.size() != head_end + length) {
+            throw std::runtime_error("unsolicited response bytes");
+        }
+        co_return reply;
+    }
+
+    static ::asio::awaitable<std::string> sequence(
+        ::asio::ip::tcp::socket& socket, uint16_t port,
+        std::string const& first, std::string const& second) {
+        co_await socket.async_connect(
+            {::asio::ip::make_address("127.0.0.1"), port}, ::asio::use_awaitable);
+        co_await ::asio::async_write(socket, ::asio::buffer(first), ::asio::use_awaitable);
+        auto reply = co_await read_response(socket);
+        co_await ::asio::async_write(socket, ::asio::buffer(second), ::asio::use_awaitable);
+        socket.shutdown(::asio::ip::tcp::socket::shutdown_send);
+        reply += co_await read_response(socket);
+        std::string tail;
+        auto [ec, size] = co_await ::asio::async_read(socket, ::asio::dynamic_buffer(tail),
+            ::asio::as_tuple(::asio::use_awaitable));
+        if (ec != ::asio::error::eof || size != 0) {
+            throw std::runtime_error("unexpected bytes or missing EOF after second response");
+        }
+        co_return reply;
+    }
+
+    static ::asio::awaitable<std::string> timed_sequence(
+        uint16_t port, std::string first, std::string second) {
+        using namespace ::asio::experimental::awaitable_operators;
+        auto executor = co_await ::asio::this_coro::executor;
+        ::asio::ip::tcp::socket socket(executor);
+        ::asio::steady_timer deadline(executor, std::chrono::seconds(5));
+        auto result = co_await (sequence(socket, port, first, second)
+            || deadline.async_wait(::asio::use_awaitable));
+        if (result.index() != 0) {
+            throw std::system_error(::asio::error::timed_out);
+        }
+        co_return std::get<0>(std::move(result));
+    }
+
+    [[nodiscard]] std::string exchange_after_response(std::string first, std::string second) const {
+        ::asio::io_context client;
+        auto done = ::asio::co_spawn(client,
+            timed_sequence(port, std::move(first), std::move(second)), ::asio::use_future);
+        client.run();
+        return done.get();
     }
 
     test::chain_fixture chain;
@@ -312,5 +379,46 @@ TEST_CASE("rpc server refuses an unfinished CR at head EOF", "[rpc server]") {
     REQUIRE(fixture.start());
     auto const reply = fixture.exchange("POST / HTTP/1.1\r\nAuthorization: Basic dGVzdDp0ZXN0\r\nContent-Length: 0\r\n\r");
     CHECK(reply.starts_with("HTTP/1.1 400 Bad Request\r\n"));
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server replies end their headers with Content-Length and their body with LF", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_reply_framing");
+    REQUIRE(fixture.start());
+
+    // The header line right before the blank line, as a line reader sees it.
+    auto last_header = [](std::string_view reply) {
+        auto const end = reply.find("\r\n\r\n");
+        auto const head = reply.substr(0, end);
+        return std::string(head.substr(head.rfind("\r\n") + 2));
+    };
+
+    auto const ok = fixture.exchange(request(1, "close"));
+    auto const answers = bodies(ok);
+    REQUIRE(answers.size() == 1);
+    CHECK(last_header(ok).starts_with("Content-Length: "));
+    CHECK(answers[0].ends_with("}\n"));
+
+    // An error reply with an extra header is framed the same way.
+    auto unauthorized = request(2, "close");
+    unauthorized.erase(unauthorized.find("Authorization:"), std::string("Authorization: Basic dGVzdDp0ZXN0\r\n").size());
+    auto const denied = fixture.exchange(unauthorized);
+    REQUIRE(denied.starts_with("HTTP/1.1 401 "));
+    CHECK(last_header(denied).starts_with("Content-Length: "));
+    REQUIRE(bodies(denied).size() == 1);
+    CHECK(bodies(denied)[0].ends_with("}\n"));
+}
+
+TEST_CASE("rpc server accepts a later keep-alive request", "[rpc server]") {
+    rpc_server_fixture fixture("rpc_server_sequential_keep_alive");
+    REQUIRE(fixture.start());
+    auto const reply = fixture.exchange_after_response(
+        request(41, "keep-alive"), request(42, "close"));
+    auto const answers = bodies(reply);
+    REQUIRE(answers.size() == 2);
+    CHECK(answers[0].find(R"("id":41)") != std::string::npos);
+    CHECK(answers[1].find(R"("id":42)") != std::string::npos);
+    CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK(answers[1].find(R"("result":0)") != std::string::npos);
     CHECK_NOTHROW(fixture.finish());
 }

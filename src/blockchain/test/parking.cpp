@@ -5,6 +5,9 @@
 #include <test_helpers.hpp>
 
 #include <kth/blockchain.hpp>
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+#include <kth/domain/chain/block_ticks.hpp>
+#endif
 
 using namespace kth;
 using namespace kth::blockchain;
@@ -265,3 +268,93 @@ TEST_CASE("nothing is parked before the first block is validated", "[parking][fo
     CHECK(result.reorg_candidate);
     CHECK(result.reorg_fork_height == 22);
 }
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("parking uses tick depth on the defending faster branch", "[parking][faster_blocks]") {
+    header_index index(200);
+    (void)build_chain(index, 101);
+    auto const tip = header_index::index_t(100);
+    auto const fork = header_index::index_t(80);
+    uint256_t const defending_work = index.get_chain_work(tip) - index.get_chain_work(fork);
+    uint256_t const expected = index.get_chain_work(tip) + defending_work / 4;
+
+    // Preserve this scenario on the original API: without an interval schedule
+    // it charges the old full-work penalty instead of the 1200-tick ramp value.
+    // The assertion always observes the actual chain-selection threshold.
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+    auto const required = parking::required_work(index, fork, tip,
+        domain::chain::block_ticks::activated_at(0));
+#else
+    auto const required = parking::required_work(index, fork, tip);
+#endif
+    CHECK(required == expected);
+    CHECK(required < index.get_chain_work(tip) + defending_work);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH) && __has_include(<kth/domain/chain/block_ticks.hpp>)
+TEST_CASE("parking tick ramp has exact floor anchors and saturation", "[parking][faster_blocks]") {
+    header_index index(100);
+    (void)build_chain(index, 61);
+    auto const schedule = domain::chain::block_ticks::activated_at(0);
+    auto const tip = header_index::index_t(60);
+    uint256_t const tip_work = index.get_chain_work(tip);
+    struct anchor { uint32_t depth; uint64_t numerator; uint64_t denominator; };
+    for (auto const& point : {anchor{2, 1, 16}, anchor{10, 1, 16}, anchor{20, 1, 4},
+                              anchor{30, 9, 16}, anchor{40, 1, 1}, anchor{50, 1, 1}}) {
+        auto const fork = header_index::index_t(60 - point.depth);
+        uint256_t const work = tip_work - index.get_chain_work(fork);
+        uint256_t const penalty = work * point.numerator / point.denominator;
+        CHECK(parking::required_work(index, fork, tip, schedule) == tip_work + penalty);
+    }
+}
+
+TEST_CASE("parking switches at the defending activation successor and measures a mixed span", "[parking][faster_blocks]") {
+    header_index index(100);
+    (void)build_chain(index, 62);
+    auto const schedule = domain::chain::block_ticks::activated_at(60);
+
+    // H_a is not a short block: retain the pre-upgrade count-keyed policy.
+    CHECK(parking::required_work(index, 58, 60, schedule) == parking::required_work(index, 58, 60));
+
+    // The first short block switches the policy. Fork59 -> tip61 spans one
+    // 600-tick interval plus one 60-tick interval, not two equal intervals.
+    uint256_t const work = index.get_chain_work(61) - index.get_chain_work(59);
+    uint256_t const penalty = work * 660 * 660 / 5'760'000;
+    CHECK(parking::required_work(index, 59, 61, schedule) == index.get_chain_work(61) + penalty);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("header organizer unparks only after exceeding the defending tick ramp", "[parking][faster_blocks][header_organizer]") {
+    header_index index(128);
+    (void)build_chain(index, 61);
+    auto configuration = make_test_settings();
+    configuration.max_reorg_depth = -1;  // isolate parking from finalization
+#if __has_include(<kth/domain/chain/block_ticks.hpp>)
+    configuration.cantor_activation_time = 0;
+#endif
+    header_organizer organizer(index, configuration, domain::config::network::mainnet);
+    REQUIRE(organizer.start());
+    organizer.sync_tip();
+    organizer.note_block_validated(60);
+
+    // Reannounce stored branch headers so this control exercises only chain
+    // selection. Header-validity and PoW tests have their own mined fixtures.
+    // Defending20 * 60 ticks => penalty5 blocks; equal25 stays parked.
+    auto branch = make_branch(index.get_hash(40), 25, 1000);
+    for (auto const& header : branch) {
+        REQUIRE(index.add(domain::chain::hash(header), header).inserted);
+    }
+    CHECK_FALSE(organizer.add_headers(branch).reorg_candidate);
+
+    // The 26th work unit crosses the strict threshold. Legacy policy would
+    // still demand more than40, the regression this scenario discriminates.
+    auto const parent = domain::chain::hash(branch.back());
+    branch.push_back(make_header(parent, 1025));
+    REQUIRE(index.add(domain::chain::hash(branch.back()), branch.back()).inserted);
+    auto const result = organizer.add_headers(branch);
+    CHECK(result.reorg_candidate);
+    CHECK(result.reorg_fork_height == 40);
+}
+#endif

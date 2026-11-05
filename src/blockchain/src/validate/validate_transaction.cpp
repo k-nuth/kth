@@ -130,6 +130,9 @@ code validate_transaction::check_standardness(transaction_const_ptr const& tx) c
 
     // Run contextual tx checks.
     co_return tx->accept(
+#if defined(KTH_CURRENCY_BCH)
+        state.ticks(),
+#endif
         state.enabled_flags(),
         state.height(),
         state.median_time_past(),

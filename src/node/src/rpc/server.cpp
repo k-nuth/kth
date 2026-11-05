@@ -29,6 +29,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/cancellation_state.hpp>
 
+#include <fmt/format.h>
 #include <llhttp.h>
 #include <spdlog/spdlog.h>
 
@@ -175,20 +176,18 @@ void init_parser(llhttp_t& parser, llhttp_settings_t& settings, parse_ctx& ctx) 
     bool keep_alive,
     std::string_view extra_headers = {}) {
 
-    std::string out;
-    out.reserve(body.size() + 160);
-    out += "HTTP/1.1 ";
-    out += std::to_string(status);
-    out += ' ';
-    out += reason;
-    out += "\r\nContent-Type: application/json\r\nContent-Length: ";
-    out += std::to_string(body.size());
-    out += "\r\nConnection: ";
-    out += keep_alive ? "keep-alive" : "close";
-    out += "\r\n";
-    out += extra_headers;
-    out += "\r\n";
-    out += body;
+    // Pool software in the ckpool family reads a reply line by line: it takes
+    // the line after Content-Length as the end of the headers, and the body as
+    // one JSON line. So Content-Length comes last and the body ends in LF.
+    auto out = fmt::format(
+        "HTTP/1.1 {} {}\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: {}\r\n"
+        "{}"
+        "Content-Length: {}\r\n\r\n"
+        "{}\n",
+        status, reason, keep_alive ? "keep-alive" : "close",
+        extra_headers, body.size() + 1, body);
 
     co_await ::asio::async_write(socket, ::asio::buffer(out),
         ::asio::as_tuple(::asio::use_awaitable));
@@ -210,9 +209,10 @@ std::string random_token() {
 } // namespace
 
 server::server(rpc_settings const& settings, blockchain::block_chain& chain,
-    ::asio::any_io_executor executor)
+    ::asio::any_io_executor executor, p2p_node const* network)
     : settings_(settings)
     , chain_(chain)
+    , network_(network)
     , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
     , owner_(::asio::make_strand(std::move(executor)))
     , stop_requests_(owner_, 1)
@@ -235,12 +235,12 @@ bool server::authorized(std::string_view authorization_header) const {
     if ( ! authorization_header.starts_with(prefix)) {
         return false;
     }
-    data_chunk decoded;
-    if ( ! decode_base64(decoded, authorization_header.substr(prefix.size()))) {
+    auto const decoded = decode_base64(authorization_header.substr(prefix.size()));
+    if ( ! decoded) {
         return false;
     }
     std::string_view const got(
-        reinterpret_cast<char const*>(decoded.data()), decoded.size());
+        reinterpret_cast<char const*>(decoded->data()), decoded->size());
     return got == expected_credentials_;
 }
 
@@ -305,7 +305,7 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_};
+        method_context mctx{chain_, jobs_, network_};
         std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {
