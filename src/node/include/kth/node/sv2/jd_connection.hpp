@@ -46,7 +46,9 @@ struct jd_connection {
 
     // Neither the template producer nor a downstream miner waits for socket
     // space. A full queue is a terminal failure for the caller to handle.
-    [[nodiscard]] bool send(data_chunk frame);
+    // `frames` is one or more complete plaintext frames, queued as one entry
+    // and written in order.
+    [[nodiscard]] bool send(data_chunk frames);
     void stop();
 
 private:

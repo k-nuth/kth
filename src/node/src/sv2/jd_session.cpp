@@ -96,6 +96,10 @@ bool jd_session::payout_outputs() const {
     return payout_outputs_;
 }
 
+bool jd_session::large_templates() const {
+    return large_templates_;
+}
+
 bool jd_session::awaiting_extensions() const {
     return state_ == state::awaiting_extensions;
 }
@@ -103,6 +107,7 @@ bool jd_session::awaiting_extensions() const {
 bool jd_session::abandon_extensions() {
     if (state_ != state::awaiting_extensions) return false;
     payout_outputs_ = false;
+    large_templates_ = false;
     state_ = state::ready;
     return true;
 }
@@ -138,8 +143,11 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
         request_extensions request;
         request.request_id = extensions_request_id;
         request.requested_extensions.push_back(requested_payout_outputs_extension);
+        // Coinbase-only sends no transaction list, so it has nothing to page.
+        if (full_template_) request.requested_extensions.push_back(large_templates_extension);
         state_ = state::awaiting_extensions;
         payout_outputs_ = false;
+        large_templates_ = false;
         return {frame(request), false, false, {}};
     }
     open_extended_mining_channel request;
@@ -166,9 +174,13 @@ jd_session::result jd_session::process_extensions(message_header const& header, 
         if ( ! success || success->request_id != extensions_request_id) {
             return fail("invalid extension negotiation success");
         }
-        payout_outputs_ = std::find(success->supported_extensions.begin(),
-            success->supported_extensions.end(), requested_payout_outputs_extension)
-            != success->supported_extensions.end();
+        auto const supported = [&](uint16_t extension) {
+            return std::find(success->supported_extensions.begin(),
+                success->supported_extensions.end(), extension)
+                != success->supported_extensions.end();
+        };
+        payout_outputs_ = supported(requested_payout_outputs_extension);
+        large_templates_ = full_template_ && supported(large_templates_extension);
         state_ = state::ready;
         return {{}, false, true, {}};
     }
@@ -180,6 +192,7 @@ jd_session::result jd_session::process_extensions(message_header const& header, 
         // An extension this node does not implement, and the pool requires it.
         if ( ! error->required_extensions.empty()) return fail("upstream requires an unsupported extension");
         payout_outputs_ = false;
+        large_templates_ = false;
         state_ = state::ready;
         return {{}, false, true, {}};
     }

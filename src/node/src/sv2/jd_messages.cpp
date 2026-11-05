@@ -70,6 +70,31 @@ size_t u16_seq_size(std::vector<uint16_t> const& items) {
     return 2 + 2 * items.size();
 }
 
+expect<void> write_u32_seq_u16(byte_writer& sink, std::vector<uint32_t> const& items) {
+    if (items.size() > b0_64k_max) return std::unexpected(error::operation_failed);
+    if (auto r = sink.write_little_endian<uint16_t>(static_cast<uint16_t>(items.size())); ! r) return r;
+    for (auto const item : items) {
+        if (auto r = sink.write_little_endian<uint32_t>(item); ! r) return r;
+    }
+    return {};
+}
+
+expect<std::vector<uint32_t>> read_u32_seq_u16(byte_reader& source) {
+    auto const count = source.read_little_endian<uint16_t>();
+    if ( ! count) return std::unexpected(count.error());
+    if (*count > source.remaining_size() / sizeof(uint32_t)) {
+        return std::unexpected(error::operation_failed);
+    }
+    std::vector<uint32_t> items;
+    items.reserve(*count);
+    for (size_t i = 0; i < *count; ++i) {
+        auto const item = source.read_little_endian<uint32_t>();
+        if ( ! item) return std::unexpected(item.error());
+        items.push_back(*item);
+    }
+    return items;
+}
+
 } // namespace
 
 expect<void> allocate_mining_job_token::to_data(byte_writer& sink) const {
@@ -468,6 +493,33 @@ expect<void> payout_outputs_stale::to_data(byte_writer& /*sink*/) const {
 
 expect<payout_outputs_stale> payout_outputs_stale::from_data(byte_reader& source) {
     return complete(source, payout_outputs_stale{});
+}
+
+expect<void> declare_mining_job_transactions::to_data(byte_writer& sink) const {
+    if (auto r = sink.write_little_endian<uint32_t>(request_id); ! r) return r;
+    return write_hash_seq_u16(sink, txid_list);
+}
+
+expect<declare_mining_job_transactions> declare_mining_job_transactions::from_data(byte_reader& source) {
+    auto const request_id = source.read_little_endian<uint32_t>();
+    if ( ! request_id) return std::unexpected(request_id.error());
+    auto txids = read_hash_seq_u16(source);
+    if ( ! txids) return std::unexpected(txids.error());
+    return complete(source, declare_mining_job_transactions{*request_id, std::move(*txids)});
+}
+
+expect<void> provide_missing_transactions_positions::to_data(byte_writer& sink) const {
+    if (auto r = sink.write_little_endian<uint32_t>(request_id); ! r) return r;
+    return write_u32_seq_u16(sink, unknown_tx_position_list);
+}
+
+expect<provide_missing_transactions_positions> provide_missing_transactions_positions::from_data(
+    byte_reader& source) {
+    auto const request_id = source.read_little_endian<uint32_t>();
+    if ( ! request_id) return std::unexpected(request_id.error());
+    auto positions = read_u32_seq_u16(source);
+    if ( ! positions) return std::unexpected(positions.error());
+    return complete(source, provide_missing_transactions_positions{*request_id, std::move(*positions)});
 }
 
 expect<void> set_custom_mining_job_error::to_data(byte_writer& sink) const {

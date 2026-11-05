@@ -10,6 +10,7 @@
 #include <deque>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <kth/node/mining/work.hpp>
 #include <kth/node/sv2/jd_messages.hpp>
@@ -36,6 +37,9 @@ struct jd_declaration {
     [[nodiscard]] result process(jd_peer peer, message_header const& header, byte_span payload);
     // Ignored once a declaration is in flight. The attempt keeps the choice it started with.
     void use_payout_outputs(bool enabled);
+    // BCH large templates (0x4C54), negotiated on the JDS connection. Ignored
+    // once a declaration is in flight, like use_payout_outputs.
+    void use_large_templates(bool enabled);
     [[nodiscard]] bool pending() const;
     [[nodiscard]] std::optional<mining::declared_work> const& work() const;
     // The template last given to start(), kept across a refusal so fallback
@@ -65,6 +69,7 @@ private:
     [[nodiscard]] result declare_work(data_chunk token);
     [[nodiscard]] result note_stale(byte_span payload);
     [[nodiscard]] result process_payout(jd_peer peer, message_header const& header, byte_span payload);
+    [[nodiscard]] result supply(std::vector<uint32_t> const& positions);
     [[nodiscard]] result accept_payout(request_payout_outputs_success const& success);
     [[nodiscard]] result refuse_payout(request_payout_outputs_error const& error);
     [[nodiscard]] bool retired(uint32_t id) const;
@@ -77,6 +82,7 @@ private:
     bool full_template_;
     bool has_template_ = false;
     bool payout_outputs_ = false;
+    bool large_templates_ = false;
     bool restart_ = false;
     state state_ = state::idle;
     uint32_t request_id_ = 0;

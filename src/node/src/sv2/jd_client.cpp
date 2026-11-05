@@ -157,11 +157,13 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         }
         bool const payout = header->extension() == requested_payout_outputs_extension
             && peer == jd_peer::declaration;
+        bool const large = header->extension() == large_templates_extension
+            && peer == jd_peer::declaration;
         if (session.ready() && ((header->extension() == 0
                 && (peer == jd_peer::declaration
                     || header->msg_type == set_custom_mining_job_success::message_type
                     || header->msg_type == set_custom_mining_job_error::message_type))
-            || payout)) {
+            || payout || large)) {
             return dispatch(jobs_.process(peer, *header, *payload));
         }
         auto const previous_prefix = mining_session_.channel()
@@ -169,6 +171,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         auto result = session.process(*header, *payload);
         if (peer == jd_peer::declaration && session.ready()) {
             jobs_.use_payout_outputs(session.payout_outputs());
+            jobs_.use_large_templates(session.large_templates());
         }
         if (result.close) {
             failure = result.error;
@@ -220,7 +223,10 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             // Negotiation silence means the pool does not know the extension.
             // The connection stays up and declarations use the base coinbase.
             if (session.abandon_extensions()) {
-                if (&session == &declaration_session_) jobs_.use_payout_outputs(false);
+                if (&session == &declaration_session_) {
+                    jobs_.use_payout_outputs(false);
+                    jobs_.use_large_templates(false);
+                }
                 if ( ! published_ && mining_session_.ready() && declaration_session_.ready()) {
                     published_ = true;
                     (void)ready_.try_send(std::error_code{}, 1);

@@ -125,15 +125,19 @@ void finish_extensions(jd_session& session, bool grant) {
     REQUIRE_FALSE(session.channel());
 }
 
-jd_session awaiting_extensions() {
-    auto session = waiting(jd_peer::declaration);
+jd_session awaiting_extensions(bool full_template = true) {
+    auto session = waiting(jd_peer::declaration, full_template);
     auto const asked = process(session, setup_connection_success{2, 0});
     REQUIRE_FALSE(asked.close);
     REQUIRE_FALSE(asked.ready);
     REQUIRE(session.awaiting_extensions());
     auto const request = single<request_extensions>(asked.response);
     REQUIRE(request.request_id == 1);
-    REQUIRE(request.requested_extensions == std::vector<uint16_t>{requested_payout_outputs_extension});
+    // Only full-template has a transaction list for BCH large templates to page.
+    auto const expected = full_template
+        ? std::vector<uint16_t>{requested_payout_outputs_extension, large_templates_extension}
+        : std::vector<uint16_t>{requested_payout_outputs_extension};
+    REQUIRE(request.requested_extensions == expected);
     return session;
 }
 
@@ -501,4 +505,39 @@ TEST_CASE("sv2 jd SetGroupChannel regroups this extended channel and ignores the
     auto flagged = ready();
     require_closed(flagged, process(flagged, message_header::channel_msg_flag,
         set_group_channel::message_type, to_data_chunk(set_group_channel{42, {7}})));
+}
+
+TEST_CASE("sv2 jd declaration negotiates BCH large templates in full-template only", "[sv2 jd]") {
+    auto granted = awaiting_extensions();
+    require_silent(process(granted, request_extensions_success{1, {large_templates_extension}}));
+    REQUIRE(granted.ready());
+    REQUIRE(granted.large_templates());
+    REQUIRE_FALSE(granted.payout_outputs());
+
+    auto both = awaiting_extensions();
+    require_silent(process(both, request_extensions_success{1,
+        {requested_payout_outputs_extension, large_templates_extension}}));
+    REQUIRE(both.payout_outputs());
+    REQUIRE(both.large_templates());
+
+    auto omitted = awaiting_extensions();
+    require_silent(process(omitted, request_extensions_success{1, {requested_payout_outputs_extension}}));
+    REQUIRE(omitted.payout_outputs());
+    REQUIRE_FALSE(omitted.large_templates());
+
+    auto refused = awaiting_extensions();
+    require_silent(process(refused, request_extensions_error{1, {large_templates_extension}, {}}));
+    REQUIRE(refused.ready());
+    REQUIRE_FALSE(refused.large_templates());
+
+    auto abandoned = awaiting_extensions();
+    REQUIRE(abandoned.abandon_extensions());
+    REQUIRE_FALSE(abandoned.large_templates());
+
+    // Coinbase-only does not ask, and a pool that lists it anyway does not
+    // turn it on.
+    auto coinbase_only = awaiting_extensions(false);
+    require_silent(process(coinbase_only, request_extensions_success{1, {large_templates_extension}}));
+    REQUIRE(coinbase_only.ready());
+    REQUIRE_FALSE(coinbase_only.large_templates());
 }

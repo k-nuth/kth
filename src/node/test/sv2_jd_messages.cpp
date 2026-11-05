@@ -384,3 +384,34 @@ TEST_CASE("sv2 jd extension negotiation and payout output messages keep their fi
     require_refused(request_payout_outputs_success{1, 0, 0, 0, 0, data_chunk(b0_64k_max + 1)});
     require_refused(request_payout_outputs_error{1, std::string(b0_255_max + 1, 'e')});
 }
+
+TEST_CASE("sv2 jd BCH large template messages keep their field order", "[sv2 jd]") {
+    REQUIRE(large_templates_extension == 0x4C54);
+    REQUIRE(declare_mining_job_transactions::extension_id == large_templates_extension);
+    REQUIRE(declare_mining_job_transactions::message_type == 0x01);
+    REQUIRE(provide_missing_transactions_positions::extension_id == large_templates_extension);
+    REQUIRE(provide_missing_transactions_positions::message_type == 0x02);
+    REQUIRE_FALSE(declare_mining_job_transactions::channel_message);
+    REQUIRE_FALSE(provide_missing_transactions_positions::channel_message);
+
+    // U32 request id, then SEQ0_64K[U256] transaction ids.
+    declare_mining_job_transactions const page{0x04030201u, {marked_hash(1), marked_hash(0x40)}};
+    auto const page_bytes = to_data_chunk(page);
+    REQUIRE(page_bytes.size() == 4 + 2 + 2 * hash_size);
+    REQUIRE(data_chunk(page_bytes.begin(), page_bytes.begin() + 6)
+        == data_chunk{0x01, 0x02, 0x03, 0x04, 0x02, 0x00});
+    REQUIRE(require_codec(page).txid_list == page.txid_list);
+    REQUIRE(require_codec(declare_mining_job_transactions{}).txid_list.empty());
+    declare_mining_job_transactions over_page;
+    over_page.txid_list.resize(b0_64k_max + 1);
+    require_refused(over_page);
+
+    // U32 request id, then SEQ0_64K[U32]: positions past U16 stay exact.
+    provide_missing_transactions_positions const ask{7, {0x00010000u, 3}};
+    REQUIRE(to_data_chunk(ask) == data_chunk{0x07, 0x00, 0x00, 0x00, 0x02, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00});
+    REQUIRE(require_codec(ask).unknown_tx_position_list == ask.unknown_tx_position_list);
+    provide_missing_transactions_positions over_ask;
+    over_ask.unknown_tx_position_list.resize(b0_64k_max + 1);
+    require_refused(over_ask);
+}

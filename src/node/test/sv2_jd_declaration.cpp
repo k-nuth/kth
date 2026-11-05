@@ -260,6 +260,44 @@ blockchain::mining_template template_with_script(size_t script_size) {
     return value;
 }
 
+// `count` distinct transactions, each paying one output of `script_size`
+// raw script bytes (none when zero).
+blockchain::mining_template template_with_transactions(size_t count, size_t script_size = 0) {
+    auto value = mining_template();
+    value.selection.txs.clear();
+    value.selection.total_size = 0;
+    value.selection.txs.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        domain::chain::output::list paid;
+        if (script_size != 0) {
+            paid = outputs();
+            paid.resize(1);
+            paid.front().set_value(1);
+            paid.front().set_script(domain::chain::script(data_chunk(script_size, 0x51), false));
+        }
+        value.selection.txs.push_back(std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1, static_cast<uint32_t>(index), {}, std::move(paid)}));
+        value.selection.total_size += transaction_bytes(value.selection.txs.back()).size();
+    }
+    return value;
+}
+
+// The complete frames one result carries, in order.
+std::vector<data_chunk> split_frames(data_chunk const& bytes) {
+    std::vector<data_chunk> frames;
+    for (size_t offset = 0; offset < bytes.size();) {
+        REQUIRE(bytes.size() - offset >= message_header::size);
+        byte_reader source(byte_span(bytes).subspan(offset, message_header::size));
+        auto const header = message_header::from_data(source);
+        REQUIRE(header);
+        auto const size = message_header::size + size_t{header->msg_length};
+        REQUIRE(size <= bytes.size() - offset);
+        frames.emplace_back(bytes.begin() + offset, bytes.begin() + offset + size);
+        offset += size;
+    }
+    return frames;
+}
+
 } // namespace
 
 TEST_CASE("sv2 JD modes install the same local template and whole-revenue pool coinbase", "[sv2 jd]") {
@@ -1120,4 +1158,155 @@ TEST_CASE("sv2 JD full-template declines a list above SEQ0_64K and a reply above
     REQUIRE(missing.error.find("ProvideMissingTransactions.Success exceeds the SV2 frame maximum")
         != std::string::npos);
     REQUIRE(state.has_template());
+}
+
+TEST_CASE("sv2 JD pages a full-template list above SEQ0_64K with BCH large templates", "[sv2 jd]") {
+    // Two full pages and five ids in DeclareMiningJob itself.
+    auto const tmpl = template_with_transactions(2 * b0_64k_max + 5);
+    jd_declaration state("worker", true);
+    state.use_large_templates(true);
+    REQUIRE(state.start(tmpl, channel()).error.empty());
+    auto const declared = process(state, jd_peer::declaration, allocation());
+    REQUIRE(declared.error.empty());
+    REQUIRE(declared.progress);
+    auto const frames = split_frames(declared.declaration);
+    REQUIRE(frames.size() == 3);
+    auto const first = decode<declare_mining_job_transactions>(frames[0]);
+    auto const second = decode<declare_mining_job_transactions>(frames[1]);
+    auto const job = decode<declare_mining_job>(frames[2]);
+    REQUIRE(first.request_id == 1);
+    REQUIRE(second.request_id == 1);
+    REQUIRE(job.request_id == 1);
+    REQUIRE(first.txid_list.size() == b0_64k_max);
+    REQUIRE(second.txid_list.size() == b0_64k_max);
+    REQUIRE(job.wtxid_list.size() == 5);
+    std::vector<hash_digest> declared_ids = first.txid_list;
+    declared_ids.insert(declared_ids.end(), second.txid_list.begin(), second.txid_list.end());
+    declared_ids.insert(declared_ids.end(), job.wtxid_list.begin(), job.wtxid_list.end());
+    std::vector<hash_digest> template_ids;
+    for (auto const& tx : tmpl.selection.txs) template_ids.push_back(tx->hash());
+    REQUIRE(declared_ids == template_ids);
+
+    // U32 positions index the whole list and are answered in request order.
+    uint32_t const last = 2 * b0_64k_max + 4;
+    auto const missing = process(state, jd_peer::declaration,
+        provide_missing_transactions_positions{1, {last, 0x10000u, 0}});
+    REQUIRE(missing.error.empty());
+    REQUIRE_FALSE(missing.progress);
+    REQUIRE(decode<provide_missing_transactions_success>(missing.declaration).transaction_list
+        == std::vector<data_chunk>{transaction_bytes(tmpl.selection.txs[last]),
+            transaction_bytes(tmpl.selection.txs[0x10000u]),
+            transaction_bytes(tmpl.selection.txs[0])});
+    // The JDS asks in batches: a later core request is answered too.
+    auto const again = process(state, jd_peer::declaration, provide_missing_transactions{1, {1}});
+    REQUIRE(again.error.empty());
+    REQUIRE(decode<provide_missing_transactions_success>(again.declaration).transaction_list
+        == std::vector<data_chunk>{transaction_bytes(tmpl.selection.txs[1])});
+    auto const installed = process(state, jd_peer::declaration, declare_mining_job_success{1, {9}});
+    REQUIRE(installed.error.empty());
+    REQUIRE(installed.progress);
+    REQUIRE(state.can_push_solution());
+
+    // A position past the declared list stays terminal.
+    jd_declaration bounded("worker", true);
+    bounded.use_large_templates(true);
+    REQUIRE(bounded.start(tmpl, channel()).error.empty());
+    REQUIRE(process(bounded, jd_peer::declaration, allocation()).error.empty());
+    require_failure(bounded, process(bounded, jd_peer::declaration,
+        provide_missing_transactions_positions{1, {last + 1}}));
+}
+
+TEST_CASE("sv2 JD sends a standard DeclareMiningJob when the list fits SEQ0_64K", "[sv2 jd]") {
+    auto const tmpl = template_with_transactions(b0_64k_max);
+    jd_declaration state("worker", true);
+    state.use_large_templates(true);
+    REQUIRE(state.start(tmpl, channel()).error.empty());
+    auto const declared = process(state, jd_peer::declaration, allocation());
+    REQUIRE(declared.error.empty());
+    auto const frames = split_frames(declared.declaration);
+    REQUIRE(frames.size() == 1);
+    REQUIRE(decode<declare_mining_job>(frames.front()).wtxid_list.size() == b0_64k_max);
+}
+
+TEST_CASE("sv2 JD splits a reply above one frame under BCH large templates", "[sv2 jd]") {
+    // Seventeen transactions near BCH's 1,000,000-byte maximum: one reply
+    // cannot carry them all in a U24 frame, but every one fits on its own.
+    constexpr size_t count = 17;
+    auto const tmpl = template_with_transactions(count, 999900);
+    size_t total = 0;
+    for (auto const& tx : tmpl.selection.txs) {
+        auto const raw = transaction_bytes(tx).size();
+        REQUIRE(raw <= 1000000);
+        total += 3 + raw;
+    }
+    REQUIRE(4 + 2 + total > jd_frame_max_payload);
+    REQUIRE(tmpl.selection.total_size <= tmpl.size_limit);
+    std::vector<uint32_t> everything(count);
+    for (uint32_t index = 0; index < count; ++index) everything[index] = index;
+
+    jd_declaration state("worker", true);
+    state.use_large_templates(true);
+    REQUIRE(state.start(tmpl, channel()).error.empty());
+    REQUIRE(process(state, jd_peer::declaration, allocation()).error.empty());
+    auto const first = process(state, jd_peer::declaration,
+        provide_missing_transactions_positions{1, everything});
+    REQUIRE(first.error.empty());
+    auto const prefix = decode<provide_missing_transactions_success>(first.declaration);
+    REQUIRE(prefix.serialized_size() <= jd_frame_max_payload);
+    REQUIRE_FALSE(prefix.transaction_list.empty());
+    REQUIRE(prefix.transaction_list.size() < count);
+    for (size_t index = 0; index < prefix.transaction_list.size(); ++index) {
+        REQUIRE(prefix.transaction_list[index] == transaction_bytes(tmpl.selection.txs[index]));
+    }
+    // The JDS asks again for the rest, and that reply completes the list.
+    std::vector<uint32_t> const rest(everything.begin() + prefix.transaction_list.size(), everything.end());
+    auto const second = process(state, jd_peer::declaration, provide_missing_transactions_positions{1, rest});
+    REQUIRE(second.error.empty());
+    auto const remainder = decode<provide_missing_transactions_success>(second.declaration);
+    REQUIRE(prefix.transaction_list.size() + remainder.transaction_list.size() == count);
+    REQUIRE(remainder.transaction_list.back() == transaction_bytes(tmpl.selection.txs.back()));
+
+    // Without the extension the same request cannot be answered in one frame.
+    jd_declaration standard("worker", true);
+    REQUIRE(standard.start(tmpl, channel()).error.empty());
+    REQUIRE(process(standard, jd_peer::declaration, allocation()).error.empty());
+    std::vector<uint16_t> core;
+    for (auto const index : everything) core.push_back(static_cast<uint16_t>(index));
+    auto const refused = process(standard, jd_peer::declaration, provide_missing_transactions{1, core});
+    require_failure(standard, refused);
+    REQUIRE(refused.error.find("exceeds the SV2 frame maximum") != std::string::npos);
+}
+
+TEST_CASE("sv2 JD keeps BCH large template frames inert until negotiated", "[sv2 jd]") {
+    auto state = declaring();
+    auto const ignored = process(state, jd_peer::declaration, provide_missing_transactions_positions{1, {0}});
+    REQUIRE(ignored.error.empty());
+    REQUIRE(ignored.declaration.empty());
+    REQUIRE(state.pending());
+
+    jd_declaration negotiated("worker", true);
+    negotiated.use_large_templates(true);
+    REQUIRE(negotiated.start(mining_template(), channel()).error.empty());
+    // Before DeclareMiningJob there is nothing to supply.
+    require_failure(negotiated, process(negotiated, jd_peer::declaration,
+        provide_missing_transactions_positions{1, {0}}));
+
+    jd_declaration direction("worker", true);
+    direction.use_large_templates(true);
+    REQUIRE(direction.start(mining_template(), channel()).error.empty());
+    REQUIRE(process(direction, jd_peer::declaration, allocation()).error.empty());
+    require_failure(direction, process(direction, jd_peer::mining,
+        provide_missing_transactions_positions{1, {0}}));
+
+    // A replaced declaration's request is ignored after the next start.
+    jd_declaration replaced("worker", true);
+    replaced.use_large_templates(true);
+    REQUIRE(replaced.start(mining_template(), channel()).error.empty());
+    REQUIRE(process(replaced, jd_peer::declaration, allocation()).error.empty());
+    replaced.supersede();
+    REQUIRE(replaced.start(mining_template(), channel()).error.empty());
+    auto const late = process(replaced, jd_peer::declaration, provide_missing_transactions_positions{1, {0}});
+    REQUIRE(late.error.empty());
+    REQUIRE(late.declaration.empty());
+    REQUIRE(replaced.pending());
 }

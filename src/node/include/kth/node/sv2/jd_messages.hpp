@@ -300,6 +300,47 @@ struct payout_outputs_stale {
     [[nodiscard]] static expect<payout_outputs_stale> from_data(byte_reader& source);
 };
 
+// BCH large templates, experimental identifier 0x4C54 ("LT"), not yet in the
+// SV2 extension registry. Standard Job Declaration bounds the declared list at
+// SEQ0_64K and names missing transactions by U16 position, sizes that fit
+// Bitcoin blocks. Bitcoin Cash's adaptive block size limit (ABLA) admits more
+// transactions than that, so this extension pages the list, names positions
+// with U32, and lets a reply that would exceed one frame carry a prefix.
+inline constexpr uint16_t large_templates_extension = 0x4C54;
+
+// DeclareMiningJob.Transactions. One page of the declared transaction ids,
+// sent before the DeclareMiningJob with the same request_id. The declared
+// list is every page in order followed by DeclareMiningJob's own list.
+struct declare_mining_job_transactions {
+    static constexpr uint8_t message_type = 0x01;
+    static constexpr bool channel_message = false;
+    static constexpr uint16_t extension_id = large_templates_extension;
+
+    uint32_t request_id = 0;
+    // BCH has no witness: transaction ids in the template's CTOR order.
+    std::vector<hash_digest> txid_list;
+
+    [[nodiscard]] size_t serialized_size() const { return 4 + 2 + hash_size * txid_list.size(); }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<declare_mining_job_transactions> from_data(byte_reader& source);
+};
+
+// ProvideMissingTransactions.Positions. The core request with U32 positions
+// into the whole declared list, 0-based, without the coinbase. It is answered
+// with the core ProvideMissingTransactions.Success.
+struct provide_missing_transactions_positions {
+    static constexpr uint8_t message_type = 0x02;
+    static constexpr bool channel_message = false;
+    static constexpr uint16_t extension_id = large_templates_extension;
+
+    uint32_t request_id = 0;
+    std::vector<uint32_t> unknown_tx_position_list;
+
+    [[nodiscard]] size_t serialized_size() const { return 4 + 2 + 4 * unknown_tx_position_list.size(); }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<provide_missing_transactions_positions> from_data(byte_reader& source);
+};
+
 } // namespace kth::node::sv2
 
 #endif // KTH_NODE_SV2_JD_MESSAGES_HPP

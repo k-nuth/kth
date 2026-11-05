@@ -40,6 +40,9 @@ struct jd_session {
     [[nodiscard]] bool ready() const;
     // True only after RequestExtensions.Success lists Requested Payout Outputs.
     [[nodiscard]] bool payout_outputs() const;
+    // Full-template only, and only after RequestExtensions.Success lists
+    // BCH large templates (0x4C54).
+    [[nodiscard]] bool large_templates() const;
     [[nodiscard]] bool awaiting_extensions() const;
     // The pool did not answer negotiation. Become ready without the extension.
     // Returns false unless that wait was still open, so a setup timeout is unchanged.
@@ -65,6 +68,7 @@ private:
     bool full_template_;
     state state_ = state::idle;
     bool payout_outputs_ = false;
+    bool large_templates_ = false;
     std::string error_;
     std::optional<open_extended_mining_channel_success> channel_;
 };

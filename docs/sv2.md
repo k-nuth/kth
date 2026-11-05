@@ -254,11 +254,33 @@ not replace local work.
 connection. `coinbase-only` leaves that flag clear. The Mining connection does
 not negotiate extensions. After `SetupConnection.Success` on the Job Declaration
 connection, and before any other Job Declaration message, the node sends
-`RequestExtensions` (extension 0x0001) asking for Requested Payout Outputs.
+`RequestExtensions` (extension 0x0001) asking for Requested Payout Outputs
+and, in `full-template`, BCH large templates.
 The identifier is `requested_payout_outputs_extension` (`0x5052`), an
 experimental identifier that is not in the SV2 extension registry. sv2-spec
 PR #249 proposed the extension as `0x0004` and was closed; changing the
 constant is the whole switch if it is ever registered.
+
+BCH large templates (`large_templates_extension`, `0x4C54`) lift the two
+transaction-list limits standard Job Declaration has. Those limits fit Bitcoin
+blocks; Bitcoin Cash's adaptive block size limit (ABLA) admits more. With the
+extension on:
+
+- A template of more than 65,535 transactions is declared in pages.
+  `DeclareMiningJob.Transactions` (`0x01`: request id, then `SEQ0_64K[U256]`)
+  carries the first ids in pages of 65,535 before the `DeclareMiningJob` with
+  the same request id, and `DeclareMiningJob` carries the last 1 to 65,535.
+  A template that fits one list sends a standard `DeclareMiningJob` alone.
+- `ProvideMissingTransactions.Positions` (`0x02`: request id, then
+  `SEQ0_64K[U32]`) names positions in the whole declared list, pages first.
+  It is answered with the core `ProvideMissingTransactions.Success`.
+- When the named transactions do not fit one frame, the reply carries the
+  longest prefix that does, and the JDS asks again for the rest. A Bitcoin
+  Cash transaction is at most 1,000,000 bytes, so every reply carries at
+  least one.
+
+The extension's frames have the channel bit clear and are ignored until it is
+negotiated. Coinbase-only does not ask for it: it sends no transaction list.
 
 `RequestExtensions.Success` that includes the identifier turns the extension
 on for every later declaration. `RequestExtensions.Error` with an empty
@@ -376,10 +398,10 @@ connection has no outstanding response deadline. OS DNS resolution
 cancellation still needs validation on Linux; numeric IP addresses avoid the
 resolver's OS lookup. Received payloads are at most 1 MiB. Sent messages may
 fill a whole SV2 frame, whose U24 length allows 2^24 - 1 bytes. In
-`full-template`, a template of more than 65,535 transactions (the SEQ0_64K
-list in `DeclareMiningJob`), or a `ProvideMissingTransactions.Success` larger
-than one frame, is not declared: that template is mined solo and the log says
-why. `coinbase-only` has neither limit. The output queue holds at most eight
+`full-template` without BCH large templates, a template of more than 65,535
+transactions (the SEQ0_64K list in `DeclareMiningJob`), or a
+`ProvideMissingTransactions.Success` larger than one frame, is not declared:
+that template is mined solo and the log says why. `coinbase-only` has neither limit. The output queue holds at most eight
 frames. Shares that arrive before the custom
 job id is known are retained up to 32 and then dropped. An output queue that
 refuses a declaration or a share ends the attempt and continues solo. No

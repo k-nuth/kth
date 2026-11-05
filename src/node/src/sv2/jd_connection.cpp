@@ -60,19 +60,28 @@ jd_connection::jd_connection(::asio::any_io_executor executor, std::string host,
     , stopping_(owner_, 1)
 {}
 
-bool jd_connection::send(data_chunk frame) {
+bool jd_connection::send(data_chunk frames) {
     if ( ! accepting_) return false;
     auto const refuse = [this] {
         accepting_ = false;
         (void)stopping_.try_send(std::error_code{}, 2);
         return false;
     };
-    if (frame.size() < message_header::size
-        || frame.size() > message_header::size + max_send_payload_size) return refuse();
-    byte_reader source(byte_span(frame).first(message_header::size));
-    auto const header = message_header::from_data(source);
-    if ( ! header || header->msg_length != frame.size() - message_header::size) return refuse();
-    if ( ! outgoing_.try_send(std::error_code{}, std::move(frame))) return refuse();
+    // One entry may hold several frames: BCH large templates (0x4C54) send
+    // DeclareMiningJob.Transactions pages ahead of DeclareMiningJob, and a
+    // large template's pages must not fill the bounded queue one by one.
+    if (frames.empty()) return refuse();
+    for (size_t offset = 0; offset < frames.size();) {
+        if (frames.size() - offset < message_header::size) return refuse();
+        byte_reader source(byte_span(frames).subspan(offset, message_header::size));
+        auto const header = message_header::from_data(source);
+        if ( ! header || header->msg_length > max_send_payload_size
+            || header->msg_length > frames.size() - offset - message_header::size) {
+            return refuse();
+        }
+        offset += message_header::size + header->msg_length;
+    }
+    if ( ! outgoing_.try_send(std::error_code{}, std::move(frames))) return refuse();
     return true;
 }
 
@@ -243,10 +252,21 @@ void jd_connection::stop() {
     auto write_frames = [&]() -> ::asio::awaitable<void> {
         detail::scope_action finish([&] { close("upstream write ended"); }, true);
         for (;;) {
-            auto [error, frame] = co_await outgoing_.async_receive(
+            auto [error, frames] = co_await outgoing_.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
             if (error) co_return;
-            auto const encrypted = transport->encrypt_frame(frame);
+            // Noise encrypts each SV2 frame on its own. send() checked that
+            // the entry is a whole number of frames.
+            std::optional<data_chunk> encrypted = data_chunk{};
+            for (size_t offset = 0; encrypted && offset < frames.size();) {
+                byte_reader source(byte_span(frames).subspan(offset, message_header::size));
+                auto const header = message_header::from_data(source);
+                auto const size = message_header::size + size_t{header->msg_length};
+                auto const bytes = transport->encrypt_frame(byte_span(frames).subspan(offset, size));
+                if (bytes) encrypted->insert(encrypted->end(), bytes->begin(), bytes->end());
+                else encrypted.reset();
+                offset += size;
+            }
             if ( ! encrypted) {
                 close("upstream outgoing frame refused");
                 co_return;

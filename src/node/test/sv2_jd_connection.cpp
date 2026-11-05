@@ -93,6 +93,9 @@ struct upstream_fixture {
     std::future<std::string> result;
     std::vector<data_chunk> sent;
     std::vector<data_chunk> received;
+    // What the client sends once ready, and how many frames the server reads.
+    data_chunk ready_frames = frame(setup());
+    size_t expected_sent = 1;
     uint16_t port = 0;
     bool ready = false;
     bool allow_ready = true;
@@ -161,7 +164,7 @@ struct upstream_fixture {
     void run_client() {
         result = ::asio::co_spawn(io, client->run([this] {
             ready = true;
-            return allow_ready && client->send(frame(setup()));
+            return allow_ready && client->send(ready_frames);
         }, [this](data_chunk bytes) {
             received.push_back(std::move(bytes));
             if (throw_frame) throw std::runtime_error("test response failure");
@@ -212,7 +215,7 @@ struct upstream_fixture {
 
         noise_transport transport(*responder.keys(), false);
         std::array<uint8_t, 8192> encrypted{};
-        while (sent.empty()) {
+        while (sent.size() < expected_sent) {
             auto [read_error, size] = co_await peer.async_read_some(
                 ::asio::buffer(encrypted), ::asio::as_tuple(::asio::use_awaitable));
             if (read_error) co_return;
@@ -320,6 +323,24 @@ TEST_CASE("sv2 JD upstream authenticates the pinned authority and exchanges spli
     CHECK(fixture.sent.front() == frame(setup()));
     REQUIRE(fixture.received.size() == 1);
     CHECK(fixture.received.front() == frame(setup_connection_success{2, 0}));
+    fixture.client->stop();
+    CHECK(fixture.finish() == "upstream stopped");
+}
+
+TEST_CASE("sv2 JD upstream writes several frames queued as one entry in order", "[sv2 jd]") {
+    // BCH large templates queue DeclareMiningJob.Transactions pages and the
+    // DeclareMiningJob together. Each still reaches the peer as its own frame.
+    upstream_fixture fixture;
+    auto const second = frame(setup_connection_success{2, 0});
+    fixture.ready_frames = frame(setup());
+    fixture.ready_frames.insert(fixture.ready_frames.end(), second.begin(), second.end());
+    fixture.expected_sent = 2;
+    fixture.start_server(behavior::exchange);
+    fixture.start_client();
+    REQUIRE(fixture.wait_until([&] { return ! fixture.received.empty(); }));
+    REQUIRE(fixture.sent.size() == 2);
+    CHECK(fixture.sent.front() == frame(setup()));
+    CHECK(fixture.sent.back() == second);
     fixture.client->stop();
     CHECK(fixture.finish() == "upstream stopped");
 }
@@ -450,8 +471,12 @@ TEST_CASE("sv2 JD upstream refuses malformed output and bounded queue overflow",
             auto large = to_data_chunk(message_header{0, 1, jd_connection::max_payload_size + 1});
             large.resize(message_header::size + jd_connection::max_payload_size + 1);
             CHECK(fixture.client->send(std::move(large)));
-            CHECK_FALSE(fixture.client->send(data_chunk(message_header::size
-                + jd_connection::max_send_payload_size + 1)));
+            // A frame cut short, after a whole one, is still refused.
+            auto truncated = frame(setup());
+            auto const cut = to_data_chunk(message_header{0, 1, 10});
+            truncated.insert(truncated.end(), cut.begin(), cut.end());
+            truncated.resize(truncated.size() + 9);
+            CHECK_FALSE(fixture.client->send(std::move(truncated)));
         } else {
             for (size_t i = 0; i < jd_connection::max_queued_frames; ++i) {
                 CHECK(fixture.client->send(frame(setup())));
