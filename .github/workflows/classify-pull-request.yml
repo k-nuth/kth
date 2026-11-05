@@ -23,15 +23,21 @@ jobs:
               owner, repo, pull_number: context.issue.number
             });
             if (pr.state !== 'open') return;
-            const internal = ['OWNER', 'MEMBER'].includes(pr.author_association);
+            // Association alone can miss maintainers when read by the app token.
+            // Query the PR author's access, never the actor who triggered the run.
+            const {data: access} = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner, repo, username: pr.user.login
+            });
+            const internal = ['OWNER', 'MEMBER'].includes(pr.author_association)
+              || ['admin', 'maintain', 'write'].includes(access.permission);
             const label = internal ? 'maintainer-pr' : 'contribution';
-            const reserved = 'maintainer-pr';
+            const opposite = internal ? 'contribution' : 'maintainer-pr';
             const labels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
               owner, repo, issue_number: pr.number, per_page: 100
             });
-            if (!internal && labels.some(item => item.name === reserved)) {
+            if (labels.some(item => item.name === opposite)) {
               await github.rest.issues.removeLabel({
-                owner, repo, issue_number: pr.number, name: reserved
+                owner, repo, issue_number: pr.number, name: opposite
               });
             }
             // Create missing labels without modifying existing descriptions/colors.
@@ -44,7 +50,7 @@ jobs:
                   owner, repo, name: label,
                   color: internal ? '0E8A16' : '5319E7',
                   description: internal
-                    ? 'Organization-authored PR eligible for automatic review'
+                    ? 'Maintainer-authored PR eligible for automatic review'
                     : 'External contribution'
                 });
               } catch (createError) {

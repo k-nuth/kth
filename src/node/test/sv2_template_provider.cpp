@@ -744,7 +744,7 @@ TEST_CASE("sv2 does not advertise templates outside coinbase or TDP limits", "[s
 TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted frames", "[sv2 noise]") {
     noise_listener_fixture fixture;
     auto const trunk = seed_chain(fixture, 5);
-    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(248 + 120, 3));
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));
     REQUIRE(expected.has_value());
     auto client = fixture.connect(fixture.start());
     auto transport = fixture.handshake(*client);
@@ -1114,7 +1114,7 @@ TEST_CASE("sv2 constraints send the chain template and its transactions in block
     REQUIRE(fixture.execute(fixture.chain.chain().organize(
         std::make_shared<domain::message::transaction const>(child))) == error::success);
 
-    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(248 + 120, 3));
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));
     REQUIRE(expected.has_value());
     REQUIRE(expected->selection.txs.size() == 2);
     auto client = fixture.connect(fixture.start());

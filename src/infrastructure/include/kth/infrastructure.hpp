@@ -17,6 +17,7 @@
 
 #include <kth/infrastructure/compat.h>
 #include <kth/infrastructure/compat.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/error.hpp>
@@ -39,6 +40,7 @@
 #include <kth/infrastructure/config/sodium.hpp>
 
 #include <kth/infrastructure/formats/base_10.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/formats/base_58.hpp>
 #include <kth/infrastructure/formats/base_64.hpp>

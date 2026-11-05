@@ -46,8 +46,8 @@ using kth::awaitable_expected;
 //   // Send a message
 //   co_await session->send(version_message);
 //
-//   // Receive messages via channel
-//   auto [ec, msg] = co_await session->messages().async_receive(...);
+//   // Receive the next message, or give up at a deadline
+//   auto msg = co_await session->receive(std::chrono::steady_clock::now() + 5s);
 //
 // =============================================================================
 
@@ -71,8 +71,16 @@ public:
     /// Messages the outbound queue holds before a send has to wait.
     static constexpr size_t outbound_capacity = 100;
 
-    // Channel for inbound messages (raw message with heading + payload)
-    using inbound_channel = concurrent_channel<raw_message>;
+    // Inbound messages (heading + payload). A select_channel (see
+    // async_channel.hpp): the read loop hands messages in with a suspended
+    // send, consumers take them with receive(deadline), one selection with an
+    // `after` case instead of `receive || timer`. A parallel group emits the
+    // cancellation of its losing branch from the winning branch's completion
+    // handler, unsynchronised with the other branch's completion on another
+    // thread; that race freed a cancellation handler while it was being read
+    // (SIGBUS in cancellation_slot::clear). A selection commits one case
+    // under the channel's lock and has no such cancellation.
+    using inbound_channel = select_channel<raw_message>;
 
     /// Construct a peer session from an established socket
     /// @param socket The connected socket
@@ -98,6 +106,14 @@ public:
     /// Check if the session is stopped
     [[nodiscard]]
     bool stopped() const;
+
+    /// The strand all of this session's I/O completes on. The peer's whole
+    /// lifecycle (handshake, protocols) runs on it, so what remains of
+    /// `operator||` in that code (run()'s own loops) completes on one strand.
+    [[nodiscard]]
+    executor_type get_executor() const {
+        return strand_;
+    }
 
     // -------------------------------------------------------------------------
     // Messaging
@@ -125,9 +141,18 @@ public:
     /// Send raw bytes to the peer (coroutine version)
     ::asio::awaitable<code> send_raw(data_chunk data);
 
-    /// Get the inbound message channel for receiving messages
+    /// The inbound message channel (for try_receive and selections of
+    /// several cases; plain consumers use receive()).
     [[nodiscard]]
     inbound_channel& messages();
+
+    /// The next inbound message, or by `deadline`: error::channel_timeout
+    /// when the deadline passes first, error::channel_stopped once the
+    /// session has closed the channel. A deadline that wins leaves the
+    /// message in the channel.
+    [[nodiscard]]
+    awaitable_expected<raw_message> receive(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     // -------------------------------------------------------------------------
     // Direct I/O (for handshake before run() starts)
@@ -136,9 +161,11 @@ public:
     // Use ONLY before calling run() - after run() starts, use send() and messages().
 
     /// Read a message directly from the socket (bypasses inbound channel)
-    /// Use this for handshake before run() is started
+    /// Use this for handshake before run() is started. The reads are
+    /// cancelled at `deadline` (error::channel_timeout).
     [[nodiscard]]
-    awaitable_expected<raw_message> read_message_direct();
+    awaitable_expected<raw_message> read_message_direct(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     /// Send a message directly to the socket (bypasses outbound channel)
     /// Use this for handshake before run() is started
@@ -352,7 +379,8 @@ private:
     ::asio::awaitable<void> expiration_timer();
 
     /// Read a complete message (heading + payload)
-    awaitable_expected<raw_message> read_message();
+    awaitable_expected<raw_message> read_message(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     /// Signal activity (resets inactivity timer)
     void signal_activity();
