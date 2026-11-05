@@ -121,7 +121,7 @@ void add_command_options(CLI::App& app, configuration& cfg) {
     add_enum_option(app, "--" KTH_NETWORK_VARIABLE ",-n",
         cfg.net, parse_network,
 #if defined(KTH_CURRENCY_BCH)
-        "Specify the network (mainnet, testnet, regtest, testnet4, scalenet, chipnet).");
+        "Specify the network (mainnet, testnet, regtest, testnet4, scalenet, chipnet, tempnet).");
 #else
         "Specify the network (mainnet, testnet, regtest).");
 #endif

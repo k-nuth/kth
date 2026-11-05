@@ -468,6 +468,12 @@ result_code internal_database_basis<Clock>::set_heights(transition_heights const
 
 template <typename Clock>
 result_code internal_database_basis<Clock>::publish_transition(transition_heights const& heights) {
+    return publish_transition(heights, std::span<header_abla_record const>{});
+}
+
+template <typename Clock>
+result_code internal_database_basis<Clock>::publish_transition(transition_heights const& heights,
+                                                               std::span<header_abla_record const> abla_records) {
     // write_heights treats two absent members as a no-op, and the clear below
     // would then run on its own — which is a transition declared finished
     // without publishing where it finished. That is the one thing this
@@ -486,6 +492,18 @@ result_code internal_database_basis<Clock>::publish_transition(transition_height
     if (res != result_code::success) {
         kth_db_txn_abort(db_txn);
         return res;
+    }
+
+    // The state that governs each connected block, in the transaction that
+    // declares those blocks connected. A record naming a missing row aborts the
+    // whole publication: a height without the state behind it is the gap this
+    // exists to close.
+    for (auto const& record : abla_records) {
+        auto const updated = update_header_abla(record, db_txn);
+        if (updated != result_code::success) {
+            kth_db_txn_abort(db_txn);
+            return updated;
+        }
     }
 
     // Last inside the transaction, and inseparable from the heights above it.

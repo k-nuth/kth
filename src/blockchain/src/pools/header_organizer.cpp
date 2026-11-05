@@ -11,6 +11,7 @@
 
 #include <kth/blockchain/parking.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/domain.hpp>
 
@@ -34,7 +35,25 @@ void header_organizer::note_block_validated(int32_t block_valid_height) {
     block_valid_height_.store(block_valid_height, std::memory_order_release);
 
     auto const before = finalizer_.finalized_height();
-    finalizer_.maybe_advance(tip_index(), block_valid_height, static_cast<int64_t>(zulu_time()));
+    // The active height map names the branch whose blocks are connected. The
+    // best header tip can be ahead or on a different unconnected branch.
+    auto const validated_tip = block_valid_height < 0
+        ? header_index::null_index : index_.active_at(block_valid_height);
+    if (validated_tip == header_index::null_index) {
+        return;
+    }
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = tick_schedule_for_tip(validator_, index_, validated_tip);
+    if (!schedule) {
+        spdlog::warn("[header_organizer] Finalization deferred: no schedule for validated height {}",
+            block_valid_height);
+        return;
+    }
+    finalizer_.maybe_advance(validated_tip, block_valid_height,
+        static_cast<int64_t>(zulu_time()), *schedule);
+#else
+    finalizer_.maybe_advance(validated_tip, block_valid_height, static_cast<int64_t>(zulu_time()));
+#endif
     auto const after = finalizer_.finalized_height();
     if (after != before) {
         spdlog::info("[header_organizer] Finalized block advanced to height {}", after);
@@ -362,13 +381,23 @@ bool header_organizer::parked(index_t fork_idx, int32_t fork_height, uint256_t c
         return true;
     }
 
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = tick_schedule_for_tip(validator_, index_, validated_tip_idx);
+    if (!schedule) {
+        spdlog::warn("[header_organizer] Parking branch: no schedule for validated height {}",
+            validated_height);
+        return true;
+    }
+    auto const required = parking::required_work(index_, fork_idx, validated_tip_idx, *schedule);
+#else
     auto const required = parking::required_work(index_, fork_idx, validated_tip_idx);
+#endif
     if (branch_work > required) {
         return false;
     }
 
     spdlog::warn("[header_organizer] Parking branch forking at height {}: it would rewind {} validated "
-        "blocks and has not accumulated twice the work the active chain gained since the fork",
+        "blocks and has not exceeded the defending chain's work threshold",
         fork_height, validated_height - fork_height);
     return true;
 }

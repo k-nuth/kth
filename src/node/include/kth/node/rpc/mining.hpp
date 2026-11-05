@@ -7,6 +7,8 @@
 
 #include <cstdint>
 #include <string>
+#include <optional>
+#include <kth/node/rpc/chain_progress.hpp>
 #include <string_view>
 
 #include <kth/blockchain/pools/block_template.hpp>
@@ -22,7 +24,8 @@ namespace kth::node::rpc {
 // (compact bits expanded to the 256-bit target, hashes in display order),
 // tagged with `job_id` and carrying the coinbase's merkle branch.
 std::string render_mining_template(
-    blockchain::mining_template const& tmpl, std::string_view job_id);
+    blockchain::mining_template const& tmpl, std::string_view job_id,
+    std::optional<chain_progress> progress = std::nullopt);
 
 // Serialize a mining template as the getblocktemplate "result" object (BIP22,
 // with the transactions in full): the transactions in template order with
@@ -32,7 +35,8 @@ std::string render_mining_template(
 std::string render_block_template(blockchain::mining_template const& tmpl);
 
 // Serialize a mining_info as the getmininginfo "result" object.
-std::string render_mining_info(blockchain::mining_info const& info);
+std::string render_mining_info(blockchain::mining_info const& info,
+    std::optional<chain_progress> progress = std::nullopt);
 
 } // namespace kth::node::rpc
 

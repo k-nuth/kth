@@ -29,10 +29,10 @@ namespace kth::database {
 //   - Fork tracking and reorganization
 //   - Headers-first sync
 //
-// Memory layout (SoA — one vector per field). At default capacity (~1.18M
+// Memory layout (SoA — one vector per field). At the BCH default (~3.21M
 // entries) the footprint is dominated by the four 32-byte vectors — hashes,
-// prev_block_hashes, chain_works (uint256), merkle_roots (~37.7 MB each) — plus
-// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 205 MB total, plus the
+// prev_block_hashes, chain_works (uint256), merkle_roots (~102.8 MB each) — plus
+// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 559 MB total, plus the
 // hash->index concurrent map. See the private members below for the full set.
 //
 // Thread safety:
@@ -41,10 +41,15 @@ namespace kth::database {
 //   - Traversal: safe via happens-before transitivity through ancestor chain
 // =============================================================================
 
-// Default capacity - enough for ~2030 (aligned to 2^20 + buffer)
+// Default: one-minute tempnet through 2030 after its 600-second history.
+// Aligned to 2^16; deployments can override this allocation bound.
 // Defined via CMake/Conan as KTH_HEADER_INDEX_CAPACITY
 #ifndef KTH_HEADER_INDEX_CAPACITY
+#if defined(KTH_CURRENCY_BCH)
+#define KTH_HEADER_INDEX_CAPACITY 3211264
+#else
 #define KTH_HEADER_INDEX_CAPACITY 1179648
+#endif
 #endif
 
 /// Status flags for indexed headers (similar to BCHN's BlockStatus)
