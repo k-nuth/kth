@@ -328,6 +328,24 @@ enum error_code_t {
     standardness_datacarrier_size,
     standardness_inputs,
 
+    // Address validation. Append to preserve existing C API error values.
+    address_empty_input,
+    address_invalid_character,
+    address_invalid_base58_length,
+    address_invalid_prefix,
+    address_mixed_case,
+    address_network_mismatch,
+    address_invalid_checksum,
+    address_invalid_padding,
+    address_reserved_version,
+    address_unsupported_type,
+    address_invalid_hash_length,
+    address_unsupported_hash_size,
+    address_invalid_script,
+    // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
+    // Appended last so no existing code is renumbered.
+    coinbase_shape,
+
     // Last error code.
     last_error_code
 };

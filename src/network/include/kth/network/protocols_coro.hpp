@@ -98,28 +98,13 @@ awaitable_expected<Message> wait_for_message(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
-    using namespace ::asio::experimental::awaitable_operators;
-
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
-
-    // Race between message receive and timeout
-    auto result = co_await (
-        peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-
-    // Check which completed first
-    if (result.index() == 1) {
-        // Timeout won
-        co_return std::unexpected(error::channel_timeout);
+    // One selection: the message, or the deadline (channel_timeout), or the
+    // session closing the channel (channel_stopped).
+    auto received = co_await peer.receive(std::chrono::steady_clock::now() + timeout);
+    if (!received) {
+        co_return std::unexpected(received.error());
     }
-
-    // Message received
-    auto& [ec, raw] = std::get<0>(result);
-    if (ec) {
-        co_return std::unexpected(error::channel_stopped);
-    }
+    auto& raw = *received;
 
     // Check command matches expected type
     if (raw.heading.command() != Message::command) {

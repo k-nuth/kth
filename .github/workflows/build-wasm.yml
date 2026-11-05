@@ -84,6 +84,9 @@ jobs:
       - name: 📥 Clone conan-toolchains (emsdk recipe)
         run: |
           git clone https://github.com/conan-io/conan-toolchains.git ~/conan-toolchains
+          # Match the emsdk recipe revision fixed in conan-wasm.lock. The
+          # local-recipes-index remote cannot serve historical revisions.
+          git -C ~/conan-toolchains checkout --detach 11b83330cdeb20622fe4b097dccb254969639a54
           conan remote add conan-toolchains ~/conan-toolchains
 
       - name: 🔐 Add Conan remote

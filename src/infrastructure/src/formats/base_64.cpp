@@ -4,175 +4,102 @@
 
 #include <kth/infrastructure/formats/base_64.hpp>
 
-#include <cstdint>
-#include <string>
-
-#include <kth/infrastructure/utility/data.hpp>
-
 #ifndef __EMSCRIPTEN__
-// Use SIMD-optimized simdutf library when not compiling for WebAssembly
 #include <simdutf.h>
+#elif defined(__wasm_simd128__) && !defined(KTH_DISABLE_WASM_SIMD)
+#include <kth/infrastructure/impl/formats/base_64_wasm.hpp>
+#endif
 
-namespace kth {
+namespace kth::detail {
 
-std::string encode_base64(byte_span unencoded) {
-    auto const input = reinterpret_cast<char const*>(unencoded.data());
-    auto const size = unencoded.size();
-    auto const output_size = simdutf::base64_length_from_binary(size);
-
-    std::string result(output_size, '\0');
-    simdutf::binary_to_base64(input, size, result.data());
-    return result;
-}
-
-bool decode_base64(data_chunk& out, std::string_view in) {
-    auto const max_size = simdutf::maximal_binary_length_from_base64(in.data(), in.size());
-    data_chunk decoded(max_size);
-
-    auto result = simdutf::base64_to_binary(
-        in.data(),
-        in.size(),
-        reinterpret_cast<char*>(decoded.data())
-    );
-
-    if (result.error != simdutf::error_code::SUCCESS) {
-        return false;
-    }
-
-    decoded.resize(result.count);
-    out = std::move(decoded);
-    return true;
-}
-
-} // namespace kth
-
+std::string encode_base64_runtime(byte_span input) {
+#ifndef __EMSCRIPTEN__
+    if (input.empty())
+        return {};
+    std::string out;
+    out.resize_and_overwrite(simdutf::base64_length_from_binary(input.size()), [input](char *bytes, size_t) noexcept {
+        return simdutf::binary_to_base64(reinterpret_cast<char const *>(input.data()), input.size(), bytes);
+    });
+    return out;
+#elif defined(__wasm_simd128__) && !defined(KTH_DISABLE_WASM_SIMD)
+    std::string out;
+    auto const size = (input.size() / 3 + size_t(input.size() % 3 != 0)) * 4;
+    out.resize_and_overwrite(size, [input, size](char *bytes, size_t) noexcept {
+        auto output = std::span(bytes, size);
+        auto const consumed = detail::base64_wasm_encode_prefix(input, output);
+        detail::base64_encode_into(input.subspan(consumed), output.subspan((consumed / 3) * 4));
+        return size;
+    });
+    return out;
 #else
-// Fallback implementation for WebAssembly
-// This implementation derived from public domain:
-// en.wikibooks.org/wiki/Algorithm_Implementation/Miscellaneous/Base64
+    std::string out;
+    auto const size = (input.size() / 3 + size_t(input.size() % 3 != 0)) * 4;
+    out.resize_and_overwrite(size, [input, size](char *bytes, size_t) noexcept {
+        detail::base64_encode_into(input, std::span(bytes, size));
+        return size;
+    });
+    return out;
+#endif
+}
 
-namespace kth {
-
-constexpr char pad = '=';
-
-constexpr char table[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string encode_base64(byte_span unencoded)
-{
-    std::string encoded;
-    auto const size = unencoded.size();
-    encoded.reserve(((size / 3) + static_cast<unsigned long>(size % 3 > 0)) * 4);
-
-    uint32_t value;
-    auto cursor = unencoded.begin();
-    for (size_t position = 0; position < size / 3; position++) {
-        // Convert to big endian.
-        value = (*cursor++) << 16;
-
-        value += (*cursor++) << 8;
-        value += (*cursor++);
-        encoded.append(1, table[(value & 0x00FC0000) >> 18]);
-        encoded.append(1, table[(value & 0x0003F000) >> 12]);
-        encoded.append(1, table[(value & 0x00000FC0) >> 6]);
-        encoded.append(1, table[(value & 0x0000003F) >> 0]);
+std::expected<size_t, base64_errc> decode_base64_runtime(std::string_view input, std::span<uint8_t> output) noexcept {
+#ifndef __EMSCRIPTEN__
+    if (input.empty())
+        return size_t(0);
+    // simdutf's safe API accepts exact-sized buffers and never writes past them.
+    size_t size = output.size();
+    char empty = 0;
+    auto const result = simdutf::base64_to_binary_safe(
+        input.data(), input.size(), output.empty() ? &empty : reinterpret_cast<char *>(output.data()), size);
+    if (result.error == simdutf::error_code::OUTPUT_BUFFER_TOO_SMALL)
+        return std::unexpected(base64_errc::output_too_small);
+    if (result.error == simdutf::error_code::BASE64_INPUT_REMAINDER)
+        return std::unexpected(base64_errc::invalid_length);
+    if (result.error != simdutf::error_code::SUCCESS) {
+        // Only invalid input takes this scalar classification path; valid data
+        // stays on the SIMD fast path.
+        auto const scalar = decode_base64_scalar(input, output);
+        if (!scalar)
+            return std::unexpected(scalar.error());
+        return std::unexpected(base64_errc::invalid_character);
     }
+    return size;
+#else
+    size_t consumed = 0;
+#if defined(__wasm_simd128__) && !defined(KTH_DISABLE_WASM_SIMD)
+    consumed = detail::base64_wasm_decode_prefix(input, output);
+#endif
+    auto const written = (consumed / 4) * 3;
+    auto const result = decode_base64_scalar(input.substr(consumed), output.subspan(written));
+    if (!result)
+        return std::unexpected(result.error());
+    return written + *result;
+#endif
+}
 
-    switch (size % 3) {
-        case 1:
-            // Convert to big endian.
-            value = (*cursor++) << 16;
-
-            encoded.append(1, table[(value & 0x00FC0000) >> 18]);
-            encoded.append(1, table[(value & 0x0003F000) >> 12]);
-            encoded.append(2, pad);
-            break;
-        case 2:
-            // Convert to big endian.
-            value = (*cursor++) << 16;
-
-            value += (*cursor++) << 8;
-            encoded.append(1, table[(value & 0x00FC0000) >> 18]);
-            encoded.append(1, table[(value & 0x0003F000) >> 12]);
-            encoded.append(1, table[(value & 0x00000FC0) >> 6]);
-            encoded.append(1, pad);
-            break;
+std::expected<data_chunk, base64_errc> decode_base64_runtime(std::string_view input) {
+#ifndef __EMSCRIPTEN__
+    if (input.size() < 4)
+        return decode_base64_scalar(input);
+    // Owning buffers use simdutf's fastest API with its documented upper bound.
+    // The caller-provided span overload above must instead use the safe API.
+    auto const capacity = simdutf::maximal_binary_length_from_base64(input.data(), input.size());
+    data_chunk out(std::max(size_t(1), capacity));
+    auto const result = simdutf::base64_to_binary(input.data(), input.size(), reinterpret_cast<char *>(out.data()));
+    if (result.error != simdutf::error_code::SUCCESS) {
+        auto const scalar = decode_base64_scalar(input, out);
+        if (!scalar)
+            return std::unexpected(scalar.error());
+        return std::unexpected(base64_errc::invalid_character);
     }
-
-    return encoded;
+    out.erase(out.begin() + result.count, out.end());
+#else
+    data_chunk out(detail::base64_capacity(input.size()));
+    auto const result = decode_base64_runtime(input, out);
+    if (!result)
+        return std::unexpected(result.error());
+    out.erase(out.begin() + *result, out.end());
+#endif
+    return out;
 }
-
-bool decode_base64(data_chunk& out, std::string_view in)
-{
-    constexpr uint32_t mask = 0x000000FF;
-
-    auto const length = in.length();
-    if ((length % 4) != 0) {
-        return false;
-}
-
-    size_t padding = 0;
-    if (length > 0) {
-        if (in[length - 1] == pad) {
-            padding++;
-}
-        if (in[length - 2] == pad) {
-            padding++;
-}
-    }
-
-    data_chunk decoded;
-    decoded.reserve(((length / 4) * 3) - padding);
-
-    uint32_t value = 0;
-    for (auto cursor = in.begin(); cursor < in.end();) {
-        for (size_t position = 0; position < 4; position++)
-        {
-            value <<= 6;
-            if (*cursor >= 0x41 && *cursor <= 0x5A) {
-                value |= *cursor - 0x41;
-            } else if (*cursor >= 0x61 && *cursor <= 0x7A) {
-                value |= *cursor - 0x47;
-            } else if (*cursor >= 0x30 && *cursor <= 0x39) {
-                value |= *cursor + 0x04;
-            } else if (*cursor == 0x2B) {
-                value |= 0x3E;
-            } else if (*cursor == 0x2F) {
-                value |= 0x3F;
-            } else if (*cursor == pad)
-            {
-                // Handle 1 or 2 pad characters.
-                switch (in.end() - cursor)
-                {
-                    case 1:
-                        decoded.push_back((value >> 16) & mask);
-                        decoded.push_back((value >> 8) & mask);
-                        out = decoded;
-                        return true;
-                    case 2:
-                        decoded.push_back((value >> 10) & mask);
-                        out = decoded;
-                        return true;
-                    default:
-                        return false;
-                }
-            }
-            else {
-                return false;
-}
-
-            cursor++;
-        }
-
-        decoded.push_back((value >> 16) & mask);
-        decoded.push_back((value >> 8) & mask);
-        decoded.push_back((value >> 0) & mask);
-    }
-
-    out = decoded;
-    return true;
-}
-
-} // namespace kth
-
-#endif // __EMSCRIPTEN__
+} // namespace kth::detail

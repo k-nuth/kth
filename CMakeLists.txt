@@ -103,11 +103,41 @@ find_package(gmp REQUIRED)
 if(ENABLE_TEST)
     message(STATUS "Knuth: Enabling CTest (ENABLE_TEST=${ENABLE_TEST})")
     enable_testing()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME kth_header_capacity
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_header_capacity.py)
+    endif()
 endif()
 
 add_subdirectory(src)
 
+# Exercise the real parser translation unit's currency selection with the
+# generated target flags. flags.make is provided by the Makefiles generator.
+if(ENABLE_TEST AND Python3_Interpreter_FOUND AND TARGET node
+   AND CMAKE_GENERATOR STREQUAL "Unix Makefiles"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_test(NAME kth_parser_currency_options
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_parser_currencies.py ${CMAKE_BINARY_DIR})
+    set_tests_properties(kth_parser_currency_options PROPERTIES TIMEOUT 120)
+endif()
 
+
+
+# Scoped executable linkage control for the actual public tick definitions.
+# Full non-BCH builds currently have unrelated baseline errors; this Linux
+# static-library fixture isolates the currency guard using configured binutils.
+if(ENABLE_TEST AND Python3_Interpreter_FOUND AND TARGET kth_domain_test
+   AND CURRENCY STREQUAL "BCH" AND NOT ENABLE_SHARED
+   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_GENERATOR STREQUAL "Unix Makefiles"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_test(NAME kth_tick_accessor_currencies
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_tick_accessor_currencies.py ${CMAKE_BINARY_DIR})
+    set_tests_properties(kth_tick_accessor_currencies PROPERTIES TIMEOUT 120)
+endif()
 
 # Install the main kth CMake configuration file
 # ------------------------------------------------------------------------------
