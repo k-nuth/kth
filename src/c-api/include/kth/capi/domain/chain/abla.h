@@ -45,6 +45,13 @@ kth_abla_state_mut_t kth_domain_chain_abla_lookahead(kth_abla_state_const_t st, 
 KTH_EXPORT
 kth_abla_state_validity_t kth_domain_chain_abla_validate_state(kth_abla_state_const_t st, kth_abla_config_const_t cfg);
 
+/** @return Owned `kth_abla_state_mut_t`. Caller must release with `kth_domain_chain_abla_state_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_abla_state_mut_t kth_domain_chain_abla_next_with_interval(kth_abla_state_const_t st, kth_abla_config_const_t cfg, uint64_t next_block_size, uint64_t next_interval);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_abla_block_size_limit_with_interval(kth_abla_state_const_t st, uint64_t interval, kth_size_t* out);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

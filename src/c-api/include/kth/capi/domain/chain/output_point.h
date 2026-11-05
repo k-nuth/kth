@@ -9,6 +9,7 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/domain/chain/block_ticks.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -117,6 +118,9 @@ kth_bool_t kth_domain_chain_output_point_is_mature(kth_output_point_const_t self
 
 KTH_EXPORT
 kth_bool_t kth_domain_chain_output_point_is_null(kth_output_point_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_output_point_is_mature_with_ticks(kth_output_point_const_t self, kth_block_ticks_const_t ticks, kth_size_t height);
 
 
 // Static utilities
