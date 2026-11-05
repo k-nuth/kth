@@ -78,7 +78,7 @@ int64_t confirmations(blockchain::block_chain const& chain,
 get_block_count(method_context& ctx, request const& /*req*/) {
     auto const heights = co_await ctx.chain.fetch_last_height();
     if ( ! heights) {
-        co_return std::unexpected(from_code(heights.error()));
+        co_return kth::fail(from_code(heights.error()));
     }
 
     writer w;
@@ -94,7 +94,7 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
     auto const tmpl = co_await ctx.chain.fetch_mining_template(
         blockchain::default_coinbase_reserve_size);
     if ( ! tmpl) {
-        co_return std::unexpected(from_code(tmpl.error()));
+        co_return kth::fail(from_code(tmpl.error()));
     }
 
     auto const job_id = ctx.jobs.add(tmpl->selection.txs);
@@ -107,7 +107,7 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 get_mining_info(method_context& ctx, request const& /*req*/) {
     auto const info = co_await ctx.chain.fetch_mining_info();
     if ( ! info) {
-        co_return std::unexpected(from_code(info.error()));
+        co_return kth::fail(from_code(info.error()));
     }
     co_return render_mining_info(*info);
 }
@@ -120,13 +120,13 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
 submit_block_light(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.size() < 2 || args[0].empty() || args[1].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "submitblocklight requires [hexdata, job_id]"));
     }
 
     auto const raw = decode_base16(args[0]);
     if ( ! raw) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "hexdata is not valid hex"));
     }
 
@@ -134,13 +134,13 @@ submit_block_light(method_context& ctx, request const& req) {
     byte_reader reader(*raw);
     auto header_and_coinbase = domain::message::block::from_data(reader, 0u);
     if ( ! header_and_coinbase || header_and_coinbase->transactions().empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "hexdata is not a decodable block with a coinbase"));
     }
 
     auto const job = ctx.jobs.get(args[1]);
     if ( ! job) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "job_id not found or expired"));
     }
 
@@ -168,12 +168,12 @@ submit_block_light(method_context& ctx, request const& req) {
 get_best_block_hash(method_context& ctx, request const& /*req*/) {
     auto const heights = ctx.chain.get_last_heights();
     if ( ! heights) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain height unavailable"));
     }
     auto const hash = ctx.chain.get_block_hash(heights->block);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "best block hash unavailable"));
     }
     writer w;
@@ -187,12 +187,12 @@ get_best_block_hash(method_context& ctx, request const& /*req*/) {
 get_block_hash(method_context& ctx, request const& req) {
     auto const height = params_uint(req.params, 0);
     if ( ! height) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getblockhash requires [height] (a non-negative integer)"));
     }
     auto const hash = ctx.chain.get_block_hash(size_t(*height));
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "block height out of range"));
     }
     writer w;
@@ -206,7 +206,7 @@ get_block_hash(method_context& ctx, request const& req) {
 get_difficulty(method_context& ctx, request const& /*req*/) {
     auto const info = co_await ctx.chain.fetch_mining_info();
     if ( ! info) {
-        co_return std::unexpected(from_code(info.error()));
+        co_return kth::fail(from_code(info.error()));
     }
     writer w;
     w.value(info->difficulty);
@@ -256,13 +256,13 @@ get_network_hash_ps(method_context& ctx, request const& req) {
 
     auto const view = ctx.chain.chain_view();
     if ( ! view) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     auto const& index = ctx.chain.headers();
     auto const tip = index.find(view->tip_hash);
     if (tip == blockchain::header_index::null_index) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "connected tip not in the header index"));
     }
 
@@ -283,7 +283,7 @@ get_network_hash_ps(method_context& ctx, request const& req) {
     auto const first = index.get_ancestor(last, int32_t(end_height - window));
     if (last == blockchain::header_index::null_index ||
         first == blockchain::header_index::null_index) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "window not in the header index"));
     }
 
@@ -313,12 +313,12 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     // can describe two different tips.
     auto const view = ctx.chain.chain_view();
     if ( ! view || ! view->state) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     auto const heights = ctx.chain.get_last_heights();
     if ( ! heights) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain height unavailable"));
     }
 
@@ -343,7 +343,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 get_chain_tips(method_context& ctx, request const& /*req*/) {
     auto const view = ctx.chain.chain_view();
     if ( ! view) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash);
@@ -360,16 +360,16 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
 get_raw_transaction(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getrawtransaction requires [txid]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
     auto const result = co_await ctx.chain.fetch_transaction(*hash, /*require_confirmed*/ false);
     if ( ! result) {
-        co_return std::unexpected(from_code(result.error()));
+        co_return kth::fail(from_code(result.error()));
     }
     auto const& tx = std::get<0>(*result);
     writer w;
@@ -383,16 +383,16 @@ get_raw_transaction(method_context& ctx, request const& req) {
 get_block(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getblock requires [blockhash]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
     }
     auto const result = co_await ctx.chain.fetch_block(*hash);
     if ( ! result) {
-        co_return std::unexpected(from_code(result.error()));
+        co_return kth::fail(from_code(result.error()));
     }
     auto const& block = std::get<0>(*result);
     writer w;
@@ -408,21 +408,21 @@ get_block(method_context& ctx, request const& req) {
 get_block_header(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getblockheader requires [blockhash]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid block hash"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
     }
     auto const verbose = params_bool(req.params, 1, /*fallback*/ true);
     if ( ! verbose) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "verbose must be a boolean"));
     }
     auto const result = co_await ctx.chain.fetch_block_header(*hash);
     if ( ! result) {
-        co_return std::unexpected(from_code(result.error()));
+        co_return kth::fail(from_code(result.error()));
     }
     if ( ! *verbose) {
         writer w;
@@ -441,18 +441,18 @@ get_block_header(method_context& ctx, request const& req) {
 send_raw_transaction(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "sendrawtransaction requires [hexstring]"));
     }
     auto const raw = decode_base16(args[0]);
     if ( ! raw) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "hexstring is not valid hex"));
     }
     byte_reader reader(*raw);
     auto tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
     if ( ! tx) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "transaction decode failed"));
     }
 
@@ -460,7 +460,7 @@ send_raw_transaction(method_context& ctx, request const& req) {
     auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
     auto const ec = co_await ctx.chain.organize(pooled);
     if (ec) {
-        co_return std::unexpected(make_error(error_code::misc_error, ec.message()));
+        co_return kth::fail(make_error(error_code::misc_error, ec.message()));
     }
 
     writer w;
@@ -474,7 +474,7 @@ send_raw_transaction(method_context& ctx, request const& req) {
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 validate_address(method_context& ctx, request const& req) {
     auto const invalid_params = [] {
-        return std::unexpected(make_error(error_code::invalid_params,
+        return kth::fail(make_error(error_code::invalid_params,
             "validateaddress requires [address]"));
     };
     // An empty string is an invalid address, not a missing argument. Parse
@@ -506,7 +506,7 @@ validate_address(method_context& ctx, request const& req) {
     }
     auto const view = ctx.chain.chain_view();
     if ( ! view || ! view->state) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     co_return render_validate_address(address, view->state->network());
@@ -556,23 +556,23 @@ estimate_fee(method_context& ctx, request const& req) {
 decode_raw_transaction(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "decoderawtransaction requires [hexstring]"));
     }
     auto const raw = decode_base16(args[0]);
     if ( ! raw) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "hexstring is not valid hex"));
     }
     byte_reader reader(*raw);
     auto const tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
     if ( ! tx || ! reader.is_exhausted()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "transaction decode failed"));
     }
     auto const view = ctx.chain.chain_view();
     if ( ! view || ! view->state) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     co_return render_transaction(*tx, view->state->network(), view->state->enabled_flags());
@@ -588,21 +588,21 @@ get_tx_out(method_context& ctx, request const& req) {
     auto const index = params_uint(req.params, 1);
     if (args.empty() || args[0].empty() || ! index ||
         *index > std::numeric_limits<uint32_t>::max()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "gettxout requires [txid, n]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
     auto const include_mempool = params_bool(req.params, 2, /*fallback*/ true);
     if ( ! include_mempool) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "include_mempool must be a boolean"));
     }
     auto const view = ctx.chain.chain_view();
     if ( ! view || ! view->state) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
     auto const net = view->state->network();
@@ -629,7 +629,7 @@ get_tx_out(method_context& ctx, request const& req) {
     if ( ! utxo && utxo.error() == database::result_code::not_resolved) {
         auto const height = database::to_store_height(tip);
         if ( ! height) {
-            co_return std::unexpected(make_error(error_code::internal_error,
+            co_return kth::fail(make_error(error_code::internal_error,
                 "tip height does not fit the UTXO store"));
         }
         auto const& txid = outpoint.hash();
@@ -638,7 +638,7 @@ get_tx_out(method_context& ctx, request const& req) {
             *height}};
         auto const resolved = ctx.chain.utxo_resolve(own);
         if ( ! resolved) {
-            co_return std::unexpected(make_error(error_code::internal_error,
+            co_return kth::fail(make_error(error_code::internal_error,
                 "the UTXO store could not be read"));
         }
         auto const it = resolved->found.find(own[0].key);
@@ -650,7 +650,7 @@ get_tx_out(method_context& ctx, request const& req) {
             it->second.median_time_past(), it->second.coinbase()};
     }
     if ( ! utxo) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "the UTXO store could not be read"));
     }
     co_return render_tx_out(view->tip_hash,
@@ -684,7 +684,7 @@ get_network_info(method_context& ctx, request const& req) {
         }
     }
     if (ctx.network == nullptr) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "network unavailable"));
     }
     // Plain reads, no hop to the network's executors: the settings are fixed
@@ -710,13 +710,35 @@ get_network_info(method_context& ctx, request const& req) {
 // C-API counterpart: kth_chain_get_mempool_txids (+ kth_chain_get_mempool_entry).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_mempool(method_context& ctx, request const& req) {
-    auto const verbose = params_bool(req.params, 0, /*fallback*/ false);
-    if ( ! verbose) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
             "verbose must be a boolean"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    bool verbose = false;
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::value value;
+        simdjson::ondemand::json_type type;
+        if (count++ != 0 || element.get(value) != simdjson::SUCCESS ||
+            value.type().get(type) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        // A null optional argument retains the existing default.
+        if (type != simdjson::ondemand::json_type::null &&
+            value.get_bool().get(verbose) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
     }
     auto const txids = ctx.chain.get_mempool_txids();
-    if ( ! *verbose) {
+    if ( ! verbose) {
         co_return render_hash_list(txids);
     }
 
@@ -748,16 +770,16 @@ get_mempool_info(method_context& ctx, request const& /*req*/) {
 get_mempool_entry(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getmempoolentry requires [txid]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
     auto const entry = ctx.chain.get_mempool_entry(*hash);
     if ( ! entry) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "transaction not in mempool"));
     }
     co_return render_mempool_entry(*entry,
@@ -770,12 +792,12 @@ get_mempool_entry(method_context& ctx, request const& req) {
 get_mempool_ancestors(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getmempoolancestors requires [txid]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
     co_return render_hash_list(ctx.chain.get_mempool_ancestors(*hash));
 }
@@ -786,12 +808,12 @@ get_mempool_ancestors(method_context& ctx, request const& req) {
 get_mempool_descendants(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
     if (args.empty() || args[0].empty()) {
-        co_return std::unexpected(make_error(error_code::invalid_params,
+        co_return kth::fail(make_error(error_code::invalid_params,
             "getmempooldescendants requires [txid]"));
     }
     auto const hash = decode_hash(args[0]);
     if ( ! hash) {
-        co_return std::unexpected(make_error(error_code::invalid_params, "invalid txid"));
+        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
     co_return render_hash_list(ctx.chain.get_mempool_descendants(*hash));
 }

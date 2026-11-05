@@ -890,4 +890,10 @@ TEST_CASE("getrawmempool dispatch lists entries keyed by txid when verbose", "[r
     CHECK(request("[]") == request("[false]"));
     CHECK(request("[]").find(R"("result":[)") != std::string::npos);
     CHECK(request(R"(["yes"])") == node::rpc::build_error("14", -32602, "verbose must be a boolean"));
+    for (auto const* params : {"{}", "null", "1", "[true,false]", "[false,{}]"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("14", -32602, "verbose must be a boolean"));
+    }
+    CHECK(request("[null]") == request("[]"));
+
 }

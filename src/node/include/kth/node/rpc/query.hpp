@@ -119,9 +119,9 @@ std::string render_network_info(network_info const& info);
 // One transaction of verbose getrawmempool, with what the mempool knows about it.
 struct mempool_listing {
     hash_digest txid;
-    std::uint64_t fee;      // satoshis
-    std::uint32_t size;     // serialized bytes
-    std::uint64_t time;     // first seen (unix seconds)
+    uint64_t fee;      // satoshis
+    uint32_t size;     // serialized bytes
+    uint64_t time;     // first seen (unix seconds)
     hash_list depends;
     hash_list spentby;
 };

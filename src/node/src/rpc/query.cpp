@@ -412,7 +412,7 @@ std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listi
         w.field_raw("base", fee);
         w.field_raw("modified", fee);
         w.end_object();
-        w.field("size", static_cast<std::uint64_t>(listing.size));
+        w.field("size", uint64_t(listing.size));
         w.field("time", listing.time);
         w.key("depends");
         write_hash_array(w, listing.depends);
