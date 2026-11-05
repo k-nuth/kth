@@ -34,6 +34,24 @@ using namespace ::asio::experimental::awaitable_operators;
 using namespace kth::network;
 #endif
 
+#if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+namespace {
+
+class rpc_network_status final : public kth::network::status_source {
+public:
+    explicit rpc_network_status(p2p_node const& node) : node_(node) {}
+
+    ::asio::awaitable<kth::network::status> read() const override {
+        co_return co_await node_.network_status();
+    }
+
+private:
+    p2p_node const& node_;
+};
+
+} // namespace
+#endif
+
 // =============================================================================
 // Construction
 // =============================================================================
@@ -134,7 +152,12 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_);
+        rpc_network_status_ = std::make_unique<rpc_network_status>(network_);
+        rpc::network_configuration config{network_settings_.user_agent,
+            network_settings_.protocol_maximum, network_settings_.services,
+            network_settings_.relay_transactions};
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor,
+            std::move(config), rpc_network_status_.get());
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }

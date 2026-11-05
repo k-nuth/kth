@@ -29,6 +29,7 @@
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/status.hpp>
 
 #include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
@@ -254,6 +255,9 @@ public:
 
     [[nodiscard]]
     size_t connection_count() const;
+
+    // Query the peer owner asynchronously; no synchronous count snapshot.
+    [[nodiscard]] ::asio::awaitable<kth::network::status> network_status() const;
 
     [[nodiscard]]
     infrastructure::config::checkpoint top_block() const;

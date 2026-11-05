@@ -222,6 +222,8 @@ private:
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    // Destroy RPC first; its awaited status queries borrow this bridge.
+    std::unique_ptr<kth::network::status_source> rpc_network_status_;
     std::unique_ptr<rpc::server> rpc_server_;
 #endif
 };

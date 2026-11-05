@@ -360,6 +360,7 @@ TEST_CASE("render_network_info serializes the getnetworkinfo fields", "[rpc quer
         .services = services,
         .relay = true,
         .connections = 8u,
+        .active = true,
         .byte_fee_satoshis = 0.1f});
     auto const fee = json.find(R"("relayfee":)");
     REQUIRE(fee != std::string::npos);

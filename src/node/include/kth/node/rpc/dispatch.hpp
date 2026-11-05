@@ -6,6 +6,7 @@
 #define KTH_NODE_RPC_DISPATCH_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <string>
@@ -16,15 +17,12 @@
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/node/rpc/error.hpp>
+#include <kth/network/status.hpp>
 #include <kth/node/rpc/json.hpp>
 
 namespace kth::blockchain {
 class block_chain;
 } // namespace kth::blockchain
-
-namespace kth::node {
-class p2p_node;
-} // namespace kth::node
 
 namespace kth::node::mining {
 struct job_store;
@@ -32,15 +30,21 @@ struct job_store;
 
 namespace kth::node::rpc {
 
-// Shared state a handler may reach: the chain, the getblocktemplatelight job
-// cache and the P2P node. Passed by reference; owned by the server for the
-// connection's lifetime.
+// Immutable configuration copied into the server before it starts.
+struct network_configuration {
+    std::string subversion;
+    uint32_t protocol_version;
+    uint64_t services;
+    bool relay;
+};
+
+// Borrowed dependencies outlive all server connections. Only the narrow status
+// interface crosses into networking; peer state stays with its owner.
 struct method_context {
     blockchain::block_chain& chain;
     mining::job_store& jobs;
-    // Null when the server runs without one (tests); the network methods then
-    // report it as unavailable.
-    p2p_node const* network = nullptr;
+    network_configuration const* network_config = nullptr;
+    network::status_source const* network_status = nullptr;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
