@@ -187,6 +187,7 @@ struct KD_API header_index {
         hash_digest hash;
         size_t branch_length;
         tip_status status;
+        uint64_t ticks = 0;
     };
 
     /// Owned tip records, highest first, relative to the supplied connected tip.
@@ -196,6 +197,11 @@ struct KD_API header_index {
     /// concurrent snapshot; callers must honor the index's ownership contract.
     [[nodiscard]] std::optional<std::vector<chain_tip>>
     get_chain_tips(hash_digest const& connected_tip) const;
+
+    /// Branch-local tick heights under the supplied network activation time.
+    /// The one-argument overload keeps a uniform schedule. No context is cached.
+    [[nodiscard]] std::optional<std::vector<chain_tip>>
+    get_chain_tips(hash_digest const& connected_tip, uint64_t activation_time) const;
     [[nodiscard]] header_status get_status(index_t idx) const;
     [[nodiscard]] uint32_t get_version(index_t idx) const;
     [[nodiscard]] hash_digest get_merkle(index_t idx) const;
