@@ -15,6 +15,12 @@
 
 namespace kth::blockchain {
 
+// Policy captured from the same coherent mempool view as a selected transaction.
+struct template_transaction_policy {
+    uint64_t fee;
+    uint32_t sigchecks;
+};
+
 // The transactions selected for the next block plus the totals a caller needs
 // to finish the block. `txs` excludes the coinbase and is CTOR-ordered (txid
 // ascending), so the caller prepends its own coinbase at index 0. `total_fees`
@@ -26,6 +32,9 @@ struct block_template {
     uint64_t total_fees;
     uint64_t total_size;
     uint64_t total_sigchecks;
+    // Parallel to txs in CTOR order. Owned by the selection and retained by the
+    // mining-template cache even after the corresponding mempool entries change.
+    std::vector<template_transaction_policy> policy;
 };
 
 // Everything the builder needs about the block being assembled, taken from the

@@ -143,21 +143,10 @@ get_block_template(method_context& ctx, request const& req) {
     auto const tmpl = co_await ctx.chain.fetch_mining_template(
         blockchain::default_coinbase_reserve_size);
     if ( ! tmpl) {
-        co_return std::unexpected(from_code(tmpl.error()));
+        co_return kth::fail(from_code(tmpl.error()));
     }
 
-    // Fee and sigchecks per transaction, from the mempool entries.
-    auto const& pool = ctx.chain.mempool_ref();
-    std::vector<std::optional<template_tx_policy>> policy;
-    policy.reserve(tmpl->selection.txs.size());
-    for (auto const& tx : tmpl->selection.txs) {
-        auto const entry = pool.entry(tx->hash());
-        policy.push_back(entry
-            ? std::optional<template_tx_policy>{{entry->fee, entry->sigchecks}}
-            : std::nullopt);
-    }
-
-    co_return render_block_template(*tmpl, policy);
+    co_return render_block_template(*tmpl);
 }
 
 // getmininginfo -> height, difficulty, mempool size, and network.

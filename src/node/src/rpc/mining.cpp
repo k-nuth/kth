@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 #include <boost/unordered/unordered_flat_map.hpp>
 
@@ -59,9 +60,7 @@ std::string render_mining_template(
     return w.str();
 }
 
-std::string render_block_template(
-    blockchain::mining_template const& tmpl,
-    std::vector<std::optional<template_tx_policy>> const& policy) {
+std::string render_block_template(blockchain::mining_template const& tmpl) {
 
     std::string target_hex(64, '0');
     if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
@@ -71,6 +70,9 @@ std::string render_block_template(
     auto const& txs = tmpl.selection.txs;
     boost::unordered_flat_map<hash_digest, size_t> position;
     position.reserve(txs.size());
+    // One generation mark per possible parent, reused for every transaction.
+    // No per-input scan or per-transaction clearing of the whole table.
+    std::vector<size_t> last_dependency(txs.size(), txs.size());
 
     writer w;
     w.begin_object();
@@ -89,7 +91,8 @@ std::string render_block_template(
         std::vector<uint64_t> depends;
         for (auto const& input : tx.inputs()) {
             auto const it = position.find(input.previous_output().hash());
-            if (it != position.end() && std::ranges::find(depends, it->second) == depends.end()) {
+            if (it != position.end() && last_dependency[it->second - 1] != i) {
+                last_dependency[it->second - 1] = i;
                 depends.push_back(it->second);
             }
         }
@@ -100,9 +103,10 @@ std::string render_block_template(
             }
             w.end_array();
         }
-        if (i < policy.size() && policy[i]) {
-            w.field("fee", policy[i]->fee);
-            w.field("sigops", uint64_t(policy[i]->sigchecks));
+        if (i < tmpl.selection.policy.size()) {
+            auto const& policy = tmpl.selection.policy[i];
+            w.field("fee", policy.fee);
+            w.field("sigops", uint64_t(policy.sigchecks));
         }
         w.end_object();
         position.emplace(txid, i + 1);

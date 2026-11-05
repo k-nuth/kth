@@ -903,6 +903,7 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     // serves mining work.
     test::chain_fixture fixture("rpc_block_template", /*notify_limit_hours*/ 0);
     REQUIRE(fixture.created());
+    fixture.settings().gbt_template_refresh_seconds = max_uint32;
     REQUIRE(fixture.start());
 
     // One pooled transaction; the template builder takes the pool as given.
@@ -941,6 +942,18 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);
     REQUIRE(request(R"([{"mode":"proposal","data":"00"}])") ==
         node::rpc::build_error("11", -32602, "only template mode is supported"));
+
+    // A cache hit must retain metadata from the same capture as its selection.
+    // Change only the pool, leaving the template's parent and refresh budget intact.
+    domain::chain::block removed;
+    removed.set_transactions({*tx});
+    fixture.chain().mempool_remove_for_block(removed);
+    REQUIRE_FALSE(fixture.chain().mempool_ref().entry(tx->hash()));
+    CHECK(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"],"rules":[]}])") == reply);
+    REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
+        tx, 900u, uint32_t(tx->serialized_size(true)), 7u, 0u}));
+    CHECK(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"],"rules":[]}])") == reply);
+
 }
 
 TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long polling", "[rpc dispatch][rpc gbt validation]") {

@@ -46,10 +46,10 @@ std::vector<mempool_entry> view_of(mempool const& pool) {
 hash_digest make_hash(uint64_t seed) {
     hash_digest h{};
     for (int i = 0; i < 8; ++i) {
-        h[i] = static_cast<uint8_t>(seed >> (8 * i));
+        h[i] = uint8_t(seed >> (8 * i));
     }
-    h[16] = static_cast<uint8_t>(seed >> 5);
-    h[31] = static_cast<uint8_t>(seed >> 11);
+    h[16] = uint8_t(seed >> 5);
+    h[31] = uint8_t(seed >> 11);
     return h;
 }
 
@@ -429,4 +429,30 @@ TEST_CASE("a coherent view keeps the child with its parent", "[block_template][c
     }
     CHECK(selected.contains(parent->hash()));
     CHECK(selected.contains(child->hash()));
+}
+
+TEST_CASE("block_template retains selected policy in CTOR order", "[block_template][template policy]") {
+    auto const a = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    auto const b = as_ptr(make_tx({op(2, 0)}, 1, 2));
+    auto const nonfinal = as_ptr(make_tx({op(3, 0)}, 1, 3, 101u, 0u));
+    std::vector<mempool_entry> entries{
+        make_entry(a, 700u, 100u, 7u), make_entry(b, 300u, 100u, 3u),
+        make_entry(nonfinal, 999u, 100u, 99u)};
+    std::sort(entries.begin(), entries.end(), [](auto const& x, auto const& y) {
+        return canonical_less(y.tx, x.tx);
+    });
+    auto const selection = build_block_template(entries, unlimited_ctx());
+    REQUIRE(selection.txs.size() == 2);
+    REQUIRE(selection.policy.size() == selection.txs.size());
+    REQUIRE(selection.total_fees == 1000u);
+    REQUIRE(selection.total_sigchecks == 10u);
+    for (size_t i = 0; i < selection.txs.size(); ++i) {
+        auto const is_a = selection.txs[i]->hash() == a->hash();
+        CHECK(selection.policy[i].fee == (is_a ? 700u : 300u));
+        CHECK(selection.policy[i].sigchecks == (is_a ? 7u : 3u));
+    }
+    // The result owns its values, not references into the captured entries.
+    for (auto& entry : entries) { entry.fee = 1; entry.sigchecks = 1; }
+    CHECK(selection.policy.front().fee != 1);
+    CHECK(selection.policy.front().sigchecks != 1);
 }

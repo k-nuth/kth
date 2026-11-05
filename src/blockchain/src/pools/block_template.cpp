@@ -90,7 +90,7 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
     std::vector<double> feerate(n);
     for (uint32_t i = 0; i < n; ++i) {
         feerate[i] = entries[i].size != 0
-            ? static_cast<double>(entries[i].fee) / static_cast<double>(entries[i].size)
+            ? double(entries[i].fee) / double(entries[i].size)
             : 0.0;
     }
     std::vector<uint32_t> order(n);
@@ -114,7 +114,7 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
 
     std::vector<uint32_t> missing(n);   // in-mempool parents not yet added
     for (uint32_t i = 0; i < n; ++i) {
-        missing[i] = static_cast<uint32_t>(parents[i].size());
+        missing[i] = uint32_t(parents[i].size());
     }
     std::vector<char> included(n, 0);
     std::vector<char> skipped(n, 0);
@@ -188,6 +188,14 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
     }
     std::sort(result.txs.begin(), result.txs.end(), canonical_less);
 
+    // Match the final CTOR order using the existing snapshot index. Never
+    // consult the live pool after selection: the cached template owns both.
+    result.policy.reserve(result.txs.size());
+    for (auto const& tx : result.txs) {
+        auto const& entry = entries[index.find(tx->hash())->second];
+        result.policy.push_back({entry.fee, entry.sigchecks});
+    }
+
     return result;
 }
 
@@ -220,9 +228,9 @@ double difficulty_from_bits(uint32_t bits) {
 
     // Standard Bitcoin difficulty: the ratio of the difficulty-1 target
     // (0x1d00ffff) to this target, scaled by the exponent difference.
-    int shift = static_cast<int>((bits >> 24) & 0xffu);
-    double difficulty = static_cast<double>(0x0000ffff) /
-        static_cast<double>(mantissa);
+    int shift = int((bits >> 24) & 0xffu);
+    double difficulty = double(0x0000ffff) /
+        double(mantissa);
     while (shift < 29) {
         difficulty *= 256.0;
         ++shift;
