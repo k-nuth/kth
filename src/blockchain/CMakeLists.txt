@@ -202,6 +202,7 @@ set(kth_sources_just_legacy
   src/validate/validate_input.cpp
   src/validate/validate_transaction.cpp
   src/settings.cpp
+  src/chain_mmr.cpp
   src/finalization.cpp
   src/parking.cpp
   src/utxo_builder.cpp
@@ -229,6 +230,7 @@ set(kth_headers
   include/kth/blockchain/interface/block_chain.hpp
   include/kth/blockchain/define.hpp
   include/kth/blockchain/header_index.hpp
+  include/kth/blockchain/chain_mmr.hpp
   include/kth/blockchain/abla_pipeline.hpp
   include/kth/blockchain/tick_schedule.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
@@ -310,6 +312,7 @@ if (ENABLE_TEST)
     set(kth_blockchain_test_sources
         test/header_abla_persistence.cpp
         test/header_index.cpp
+        test/chain_mmr.cpp
         test/header_organizer.cpp
         test/block_entry.cpp
         test/block_pool.cpp

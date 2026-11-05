@@ -54,6 +54,7 @@ struct blockchain_info {
     uint64_t size_on_disk;          // block and undo files
     bool initial_block_download;         // the node is not yet synchronized
     std::optional<chain_progress> progress = std::nullopt;
+    std::optional<hash_digest> shv_root = std::nullopt; // connected tip, when the index has it
 };
 
 // Serialize the getblockchaininfo result object. verificationprogress is the
@@ -138,7 +139,12 @@ std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listi
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
-                                std::optional<chain_progress> progress = std::nullopt);
+                                std::optional<chain_progress> progress = std::nullopt,
+                                std::optional<hash_digest> shv_root = std::nullopt);
+
+// SHV hashes use display order; the header retains its 80-byte wire encoding.
+[[nodiscard]] std::string render_shv(domain::chain::header const& header,
+    hash_list const& proof, hash_digest const& target, bool to_root);
 
 // validateaddress result object for `address` on network `net`: only
 // {"isvalid":false} unless it is a P2PKH or P2SH address of that network,

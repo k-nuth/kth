@@ -412,7 +412,8 @@ get_network_hash_ps(method_context& ctx, request const& req) {
 }
 
 // getblockchaininfo -> chain, heights, best block hash, difficulty, median time
-// past, sync state, chain work, and the size of the block and undo files.
+// past, sync state, chain work, the size of the block and undo files, and
+// shvroot when the connected-chain index has that tip.
 // C-API counterpart: kth_chain_sync_mining_info (+ sync_block_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_blockchain_info(method_context& ctx, request const& /*req*/) {
@@ -451,7 +452,65 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress
 #endif
+        , .shv_root = ctx.chain.shv_root(view->connected_tip_height, view->tip_hash)
     });
+}
+
+// getshv <type> <commitment_height> <block_height> -> a header inclusion proof.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_shv(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.size() != 3) {
+        co_return std::unexpected(make_error(error_code::invalid_params,
+            "getshv requires [type, commitment_height, block_height]"));
+    }
+    if ( ! ctx.chain.shv_enabled()) {
+        co_return std::unexpected(make_error(error_code::misc_error,
+            "MMR index is not enabled. Start with --node.mmr_index=true"));
+    }
+
+    auto const type = params_string(req.params, 0);
+    if ( ! type) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "type must be a string"));
+    }
+    auto const commitment_height = params_int32(req.params, 1);
+    if ( ! commitment_height) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "commitment_height must be a 32-bit integer"));
+    }
+    auto const block_height = params_int32(req.params, 2);
+    if ( ! block_height) {
+        co_return std::unexpected(make_error(error_code::type_error,
+            "block_height must be a 32-bit integer"));
+    }
+    if (*commitment_height < 0) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "commitment_height must be non-negative"));
+    }
+    if (*block_height < 0) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "block_height must be non-negative"));
+    }
+    if (*block_height > *commitment_height) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "block_height cannot exceed commitment_height"));
+    }
+    if ( ! ctx.chain.shv_root(*block_height)) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Block not found"));
+    }
+    if (*type != "root" && *type != "peak") {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Unknown type. Use: root, peak"));
+    }
+
+    auto const proof = ctx.chain.shv_proof(uint64_t(*block_height), uint64_t(*commitment_height), *type == "root");
+    if ( ! proof) {
+        co_return std::unexpected(make_error(error_code::invalid_parameter,
+            "Failed to generate proof"));
+    }
+    co_return render_shv(proof->header, proof->proof, proof->target, *type == "root");
 }
 
 // getchaintips -> every chain tip the header index knows, highest first: the
@@ -555,14 +614,15 @@ get_block_header(method_context& ctx, request const& req) {
     }
 
     auto const& [header, height] = *result;
+    auto const root = ctx.chain.shv_root(height, *hash);
 #if defined(KTH_CURRENCY_BCH)
     auto const progress = progress_for(ctx.chain, *hash, height);
     if (!progress) {
         co_return std::unexpected(progress.error());
     }
-    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash), *progress);
+    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash), *progress, root);
 #else
-    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash));
+    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash), std::nullopt, root);
 #endif
 }
 
@@ -1005,6 +1065,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblockheader", get_block_header);
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
+    d.add("getshv", get_shv);
     d.add("getnetworkhashps", get_network_hash_ps);
     d.add("getchaintips", get_chain_tips);
     d.add("getnetworkinfo", get_network_info);

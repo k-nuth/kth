@@ -25,6 +25,7 @@ enum class error_code : int {
     parse_error      = -32700,
     // Application-level (Bitcoin RPC_MISC_ERROR family).
     misc_error       = -1,
+    type_error       = -3,
     invalid_parameter = -8,
 };
 

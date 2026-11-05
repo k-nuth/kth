@@ -25,6 +25,18 @@ TEST_CASE("parser retains explicit settings after network defaults are rebuilt",
     CHECK(parser.configured.network.outbound_connections == 0);
 }
 
+TEST_CASE("the SHV index is opt-in and survives network settings reconstruction", "[configuration tests][parser][shv]") {
+    node::parser parser(domain::config::network::mainnet);
+    REQUIRE_FALSE(parser.configured.chain.mmr_index);
+    char const* enabled[]{"kth", "--network", "regtest", "--node.mmr_index=true"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(4, enabled, error));
+    REQUIRE(parser.configured.chain.mmr_index);
+    char const* disabled[]{"kth", "--network", "mainnet", "--node.mmr_index=false"};
+    REQUIRE(parser.parse(4, disabled, error));
+    REQUIRE_FALSE(parser.configured.chain.mmr_index);
+}
+
 namespace {
 
 int process_id() {

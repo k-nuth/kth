@@ -115,6 +115,42 @@ TEST_CASE("render_block_header serializes the verbose header fields", "[rpc quer
         R"("time":1000,"bits":"1d00ffff","nonce":42})");
 }
 
+TEST_CASE("SHV RPC results preserve wire headers and display hash order", "[rpc query][shv]") {
+    auto const header = domain::chain::block::genesis_regtest().header();
+    auto const root = domain::chain::hash(header);
+    hash_digest sibling{};
+    sibling.front() = 0x12;
+    sibling.back() = 0xab;
+    auto const branch = render_hash_list({sibling});
+    auto const base = std::string(R"({"branch":)") + branch + R"(,"header":")"
+        + header_to_hex(header);
+    REQUIRE(render_shv(header, {sibling}, root, true) ==
+        base + R"(","root":")" + encode_hash(root) + R"("})");
+    REQUIRE(render_shv(header, {sibling}, root, false) ==
+        base + R"(","peak":")" + encode_hash(root) + R"("})");
+    REQUIRE(branch == std::string("[\"ab") + std::string(60, '0') + "12\"]");
+
+    auto const shv_field = std::string(R"(,"shvroot":")") + encode_hash(root) + '"';
+    REQUIRE(render_blockchain_info({
+                .chain = "regtest",
+                .blocks = 2u,
+                .headers = 2u,
+                .best_block_hash = root,
+                .difficulty = 1.0,
+                .median_time = 0u,
+                .chain_work = std::nullopt,
+                .size_on_disk = 0u,
+                .initial_block_download = false,
+                .shv_root = root}) ==
+        std::string(R"({"chain":"regtest","blocks":2,"headers":2,"bestblockhash":")")
+            + encode_hash(root) + R"(","difficulty":1.0)" + shv_field +
+            R"(,"mediantime":0,"verificationprogress":1.0,"initialblockdownload":false,"size_on_disk":0,"warnings":""})");
+    auto expected_header = render_block_header(header, 0, root, /*confirmations*/ 1);
+    expected_header.pop_back();
+    REQUIRE(render_block_header(header, 0, root, /*confirmations*/ 1, std::nullopt, root) ==
+        expected_header + shv_field + "}");
+}
+
 namespace {
 // One hash, 4423cfd2...0fc3, under each address form used below.
 constexpr auto pkh_script = "76a9144423cfd20e8f5f10863ae31df5634620d36b0fc388ac";

@@ -26,6 +26,7 @@ struct KB_API settings {
     /// Properties.
     uint32_t cores = 0;
     bool priority = true;
+    bool mmr_index = false;
     float byte_fee_satoshis = 0.1f;
     float sigop_fee_satoshis= 100.0f;
 #if defined(KTH_CURRENCY_BCH)

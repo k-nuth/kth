@@ -270,6 +270,10 @@ public:
         dispatcher_.register_handler<Message>(std::move(handler));
     }
 
+    void register_message_handler(std::string const& command, message_handler_fn handler) {
+        dispatcher_.register_handler(command, std::move(handler));
+    }
+
     // Manual connections
     // -------------------------------------------------------------------------
 
