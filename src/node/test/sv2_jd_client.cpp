@@ -1002,6 +1002,19 @@ data_chunk truncated_share_success() {
     return bytes;
 }
 
+// SubmitShares.Error is two U32s and a U8 string, at least 9 bytes. Four bytes
+// is a complete frame whose body still fails from_data, so the close comes
+// from the parser rather than from the noise layer waiting for bytes that
+// were never declared.
+data_chunk truncated_share_error() {
+    data_chunk payload(4, 0);
+    payload[0] = 7;
+    auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
+        submit_shares_error::message_type, static_cast<uint32_t>(payload.size())});
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 void require_solo_again(miner_link& miner, downstream_work const& pooled,
     domain::chain::script const& solo) {
     // The selection stays. The scriptSig does not: solo work puts the channel
@@ -2077,6 +2090,104 @@ TEST_CASE("sv2 JD flags valid share refusals and demotes invalid acknowledgement
     REQUIRE_NOTHROW(fixture.result.get());
 }
 
+TEST_CASE("sv2 JD accepts a batched share success that counts fewer than the submits it covers", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_batched_share_success");
+    client_fixture fixture;
+    fake_upstream backup_pool(fixture, 6);
+    fake_upstream backup_jds(fixture, 7);
+    auto const configuration = settings(fixture.pool, fixture.jds, backup_pool, backup_jds, "coinbase-only");
+    fixture.start(configuration, &chain->chain());
+    handshake_upstreams(fixture, false);
+    (void)accept_coinbase_template(fixture.pool, fixture.jds);
+    REQUIRE(fixture.wait_until([&] {
+        return fixture.client->status()->entries[0].health == jd_health::healthy;
+    }));
+    auto const notice = fixture.client->notice();
+    REQUIRE(notice);
+    auto proof = proof_for(*notice);
+    fixture.client->observe_share(proof);
+    auto const first = fixture.pool.receive<submit_shares_extended>();
+    ++proof.nonce;
+    fixture.client->observe_share(proof);
+    auto const second = fixture.pool.receive<submit_shares_extended>();
+    ++proof.nonce;
+    fixture.client->observe_share(proof);
+    auto const third = fixture.pool.receive<submit_shares_extended>();
+    auto const channel = first.channel_id;
+    auto const s0 = first.sequence_number;
+    auto const s1 = second.sequence_number;
+    auto const s2 = third.sequence_number;
+    REQUIRE(second.channel_id == channel);
+    REQUIRE(third.channel_id == channel);
+    REQUIRE(s1 == s0 + 1);
+    REQUIRE(s2 == s1 + 1);
+    // sv2-spec 5.3.13: last_sequence_number is the newest correct submit.
+    // The accepted count may be smaller than that prefix. The sum is not checked.
+    captured_log log;
+    fixture.pool.send(submit_shares_success{channel, s2, 2, 2});
+    ++proof.nonce;
+    fixture.client->observe_share(proof);
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.channel_id == channel);
+    REQUIRE(forwarded.sequence_number == s2 + 1);
+    REQUIRE(forwarded.nonce == proof.nonce);
+    CHECK_FALSE(fixture.wait_until([&] {
+        return fixture.client->status()->entries[0].health != jd_health::healthy;
+    }, 100ms));
+    auto const staying = fixture.client->status();
+    REQUIRE(staying->entries[0].health == jd_health::healthy);
+    REQUIRE(staying->active == std::optional<size_t>{0});
+    REQUIRE(log.count("invalid upstream share") == 0);
+    // The uncounted submit stays in the refusal record: a later SubmitShares.Error
+    // for it (5.3.14) is judged by the error path, as a current-tip refusal here.
+    REQUIRE(fixture.result.wait_for(0s) != std::future_status::ready);
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
+}
+
+TEST_CASE("sv2 JD still refuses a share success with a zero count or a count past its sequence", "[sv2 jd]") {
+    uint32_t count = 0;
+    SECTION("zero count") {}
+    SECTION("count past its sequence") { count = 2; }
+    auto chain = started_chain("sv2_jd_share_success_count");
+    client_fixture fixture;
+    fake_upstream backup_pool(fixture, 6);
+    fake_upstream backup_jds(fixture, 7);
+    auto const configuration = settings(fixture.pool, fixture.jds, backup_pool, backup_jds, "coinbase-only");
+    fixture.start(configuration, &chain->chain());
+    handshake_upstreams(fixture, false);
+    (void)accept_coinbase_template(fixture.pool, fixture.jds);
+    REQUIRE(fixture.wait_until([&] {
+        return fixture.client->status()->entries[0].health == jd_health::healthy;
+    }));
+    auto const notice = fixture.client->notice();
+    REQUIRE(notice);
+    fixture.client->observe_share(proof_for(*notice));
+    auto const share = fixture.pool.receive<submit_shares_extended>();
+    // Built in share_response as "invalid upstream share " + kind + ": " + detail.
+    char const* const acknowledgement =
+        "invalid upstream share acknowledgement: share success does not match the outstanding submits";
+    captured_log log;
+    fixture.pool.send(submit_shares_success{share.channel_id, share.sequence_number, count, 1});
+    REQUIRE(fixture.wait_until([&] { return log.count(acknowledgement) >= 1; }));
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    handshake_upstreams(backup_pool, backup_jds, false);
+    (void)accept_coinbase_template(backup_pool, backup_jds, 88);
+    REQUIRE(fixture.wait_until([&] {
+        auto const status = fixture.client->status();
+        return status && status->active == std::optional<size_t>{1}
+            && status->entries[1].health == jd_health::healthy;
+    }));
+    auto const failed = fixture.client->status()->entries[0];
+    REQUIRE(failed.health == jd_health::backoff);
+    REQUIRE(failed.last_error == acknowledgement);
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
+}
+
 TEST_CASE("sv2 JD bounds unacknowledged shares and a cached flush cannot block failover", "[sv2 jd]") {
     enum class bound { history, cached, solutions };
     auto which = bound::history;
@@ -2623,13 +2734,18 @@ TEST_CASE("sv2 JD falls back when the pool rejects a share on the accepted decla
 }
 
 TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]") {
-    enum class fault { truncated, success_channel, error_channel };
+    enum class fault { truncated, truncated_error, success_channel, error_channel };
     auto which = fault::truncated;
     SECTION("truncated SubmitShares.Success") {}
+    SECTION("truncated SubmitShares.Error") { which = fault::truncated_error; }
     SECTION("SubmitShares.Success for the group channel") { which = fault::success_channel; }
     SECTION("SubmitShares.Error for the group channel") { which = fault::error_channel; }
     char const* tag = "sv2_jd_bad_success";
     char const* phrase = "malformed share success";
+    if (which == fault::truncated_error) {
+        tag = "sv2_jd_truncated_share_error";
+        phrase = "malformed share error";
+    }
     if (which == fault::success_channel) {
         tag = "sv2_jd_bad_channel";
         phrase = "share success for another channel";
@@ -2660,6 +2776,7 @@ TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]"
     // upstream channel, even though mining updates accept either.
     captured_log log;
     if (which == fault::truncated) fixture.pool.send_plain(truncated_share_success());
+    else if (which == fault::truncated_error) fixture.pool.send_plain(truncated_share_error());
     else if (which == fault::success_channel) fixture.pool.send(submit_shares_success{8, 0, 1, 1});
     else fixture.pool.send(submit_shares_error{8, 0, "other-channel"});
     require_solo_again(miner, declared.pooled, payout->script);

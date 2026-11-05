@@ -450,8 +450,19 @@ TEST_CASE("sv2 JD bounds local input and refuses replacing an outstanding declar
     REQUIRE(installed.declaration.empty());
     REQUIRE_FALSE(installed.mining.empty());
 
+    // A limit below the retained transactions is refused before allocation:
+    // the template could never be answered within its own consensus limit.
+    auto tiny = mining_template();
+    tiny.size_limit = 1;
+    jd_declaration refused("worker", true);
+    auto const refused_start = refused.start(tiny, channel());
+    require_failure(refused, refused_start);
+    REQUIRE(refused_start.error.find("consensus block size limit") != std::string::npos);
+
+    // A limit that holds the transactions but not the coinbase as well is
+    // refused when the coinbase is built from the allocation.
     auto small = mining_template();
-    small.size_limit = 1;
+    small.size_limit = small.selection.total_size;
     jd_declaration state("worker", true);
     REQUIRE(state.start(small, channel()).error.empty());
     require_failure(state, process(state, jd_peer::declaration, allocation()));
@@ -716,6 +727,55 @@ TEST_CASE("sv2 JD still rejects a request id that is neither current nor retired
     REQUIRE(process(declaring_state, jd_peer::declaration, allocation(2)).error.empty());
     require_failure(declaring_state, process(declaring_state, jd_peer::declaration,
         declare_mining_job_success{99, {9}}));
+}
+
+TEST_CASE("sv2 JD fails a reply for the request id dropped after eight retired ids", "[sv2 jd]") {
+    // allocating() issues request id 1. Each supersede records that id, and
+    // the following start() issues the next one. The record keeps eight ids,
+    // so the ninth replacement forgets id 1. A reply for it is then a request
+    // this declaration does not have in flight.
+    SECTION("ninth replacement drops request id 1") {
+        auto dropped = allocating();
+        for (uint32_t replacement = 0; replacement < 9; ++replacement) {
+            dropped.supersede();
+            auto const restarted = dropped.start(mining_template(), channel());
+            REQUIRE(restarted.error.empty());
+            REQUIRE(restarted.progress);
+            REQUIRE(decode<allocate_mining_job_token>(restarted.declaration).request_id
+                == replacement + 2);
+        }
+        require_failure(dropped, process(dropped, jd_peer::declaration, allocation(1)));
+    }
+
+    // Eight replacements still remember request id 2. The reply is ignored
+    // and the declaration now in flight stays allocating.
+    SECTION("eight replacements still ignore request id 2") {
+        auto kept = allocating();
+        for (uint32_t replacement = 0; replacement < 8; ++replacement) {
+            kept.supersede();
+            auto const restarted = kept.start(mining_template(), channel());
+            REQUIRE(restarted.error.empty());
+            REQUIRE(restarted.progress);
+            REQUIRE(decode<allocate_mining_job_token>(restarted.declaration).request_id
+                == replacement + 2);
+        }
+        auto const late = process(kept, jd_peer::declaration, allocation(2));
+        REQUIRE(late.error.empty());
+        REQUIRE(late.declaration.empty());
+        REQUIRE(late.mining.empty());
+        REQUIRE_FALSE(late.progress);
+        REQUIRE_FALSE(late.accepted);
+        REQUIRE(kept.pending());
+        REQUIRE_FALSE(kept.work());
+        // The id still in flight is 9. The ignored reply must not have taken it.
+        auto const current = process(kept, jd_peer::declaration, allocation(9));
+        REQUIRE(current.error.empty());
+        REQUIRE(current.progress);
+        REQUIRE(decode<declare_mining_job>(current.declaration).request_id == 9);
+        REQUIRE(kept.pending());
+        REQUIRE(kept.work());
+        REQUIRE_FALSE(kept.work()->upstream_accepted);
+    }
 }
 
 TEST_CASE("sv2 JD full-template sends a missing-transaction response above 1 MiB and under the frame maximum", "[sv2 jd]") {

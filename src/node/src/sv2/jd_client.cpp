@@ -616,14 +616,28 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
         }
         auto const last = std::find_if(value.submitted.begin(), value.submitted.end(),
             [&](auto const& share) { return share.sequence == message->last_sequence_number; });
-        // The count has to name the same prefix the health window is about to
-        // sample. A gap would score the wrong shares, or none.
-        if (last == value.submitted.end()
-            || message->new_submits_accepted_count
-                != static_cast<size_t>(last - value.submitted.begin()) + 1) {
+        // sv2-spec 5.3.13: one Success may acknowledge a batch, and a submit
+        // the pool refuses is its own SubmitShares.Error (5.3.14), which can
+        // arrive later. The count is how many of the prefix ending at
+        // last_sequence_number were accepted. Zero, a count past that prefix,
+        // or an unknown sequence is not that batch.
+        if (last == value.submitted.end()) {
             return refuse("share success does not match the outstanding submits");
         }
+        auto const prefix = static_cast<size_t>(last - value.submitted.begin()) + 1;
         auto const count = message->new_submits_accepted_count;
+        if (count == 0 || static_cast<size_t>(count) > prefix) {
+            return refuse("share success does not match the outstanding submits");
+        }
+        // last_sequence_number is the newest correct submit, so the accepted
+        // ones are the newest `count` of the prefix. The older ones are not
+        // accepted and not refused yet: `tracked` keeps them for their error
+        // reply. A reject sample here would demote a pool that has not
+        // refused current work.
+        auto const skipped = prefix - static_cast<size_t>(count);
+        for (size_t i = 0; i < skipped; ++i) {
+            value.submitted.pop_front();
+        }
         for (uint32_t i = 0; i < count; ++i) {
             auto const latency = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - value.submitted.front().sent);
@@ -691,7 +705,9 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
         spdlog::debug("[sv2 jd] share error {} for the block found by sequence {} counts as stale",
             code, message->sequence_number);
     }
-    bool const stale = message->error_code == "stale-share"
+    // The share that found a block is stale once its own block is the tip,
+    // whatever code the pool chose.
+    bool const stale = block || message->error_code == "stale-share"
         || message->error_code == "invalid-job-id";
     auto const latency = std::chrono::duration_cast<std::chrono::milliseconds>(now - sent);
     if (auto const reason = value.health.sample(stale, true, latency)) {
