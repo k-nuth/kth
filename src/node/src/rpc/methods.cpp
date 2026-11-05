@@ -32,6 +32,7 @@
 #include <kth/node/mining/block_submit.hpp>
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/json.hpp>
+#include <kth/infrastructure/path.hpp>
 #include <kth/node/rpc/mining.hpp>
 #include <kth/node/rpc/query.hpp>
 
@@ -297,27 +298,34 @@ get_network_hash_ps(method_context& ctx, request const& req) {
         min_time, max_time);
 }
 
-// getblockchaininfo -> chain, height, headers, best block hash, difficulty.
+// getblockchaininfo -> chain, heights, best block hash, difficulty, median time
+// past, sync state, chain work, and the size of the block and undo files.
 // C-API counterpart: kth_chain_sync_mining_info (+ sync_block_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_blockchain_info(method_context& ctx, request const& /*req*/) {
-    auto const info = co_await ctx.chain.fetch_mining_info();
-    if ( ! info) {
-        co_return std::unexpected(from_code(info.error()));
+    // The tip fields from one published view: a height and a hash read apart
+    // can describe two different tips.
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
     }
     auto const heights = ctx.chain.get_last_heights();
     if ( ! heights) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "chain height unavailable"));
     }
-    auto const best = ctx.chain.get_block_hash(info->blocks);
-    if ( ! best) {
-        co_return std::unexpected(make_error(error_code::internal_error,
-            "best block hash unavailable"));
-    }
-    co_return render_blockchain_info(
-        domain::config::name(info->chain), info->blocks, heights->header,
-        encode_hash(*best), info->difficulty);
+
+    co_return render_blockchain_info({
+        .chain = domain::config::chain_name(view->state->network()),
+        .blocks = view->connected_tip_height,
+        .headers = heights->header,
+        .best_block_hash = view->tip_hash,
+        .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
+        .median_time = view->state->median_time_past(),
+        .chain_work = ctx.chain.headers().total_chain_work(view->tip_hash),
+        .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
+        .initial_block_download = ! ctx.chain.synchronization().synchronized()});
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.

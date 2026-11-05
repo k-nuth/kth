@@ -11,8 +11,6 @@
 #include <string_view>
 #include <vector>
 
-#include <fmt/format.h>
-
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/chain/token_data.hpp>
@@ -38,27 +36,31 @@ std::string block_to_hex(domain::chain::block const& block) {
     return encode_base16(to_data_chunk(block));
 }
 
-std::string render_blockchain_info(
-    std::string_view chain, size_t blocks, size_t headers,
-    std::string_view best_block_hash, double difficulty) {
+std::string render_blockchain_info(blockchain_info const& info) {
+    // By height: kth keeps no per-block transaction counts to weigh it by.
+    auto const progress = info.headers == 0 ? 1.0
+        : std::min(1.0, double(info.blocks) / double(info.headers));
 
     writer w;
     w.begin_object();
-    w.field("chain", chain);
-    w.field("blocks", uint64_t(blocks));
-    w.field("headers", uint64_t(headers));
-    w.field("bestblockhash", best_block_hash);
-    w.field("difficulty", difficulty);
+    w.field("chain", info.chain);
+    w.field("blocks", uint64_t(info.blocks));
+    w.field("headers", uint64_t(info.headers));
+    w.field("bestblockhash", encode_hash(info.best_block_hash));
+    w.field("difficulty", info.difficulty);
+    w.field("mediantime", int64_t(info.median_time));
+    w.field("verificationprogress", progress);
+    w.field("initialblockdownload", info.initial_block_download);
+    if (info.chain_work) {
+        w.field("chainwork", encode_hash(*info.chain_work));
+    }
+    w.field("size_on_disk", info.size_on_disk);
+    w.field("warnings", "");
     w.end_object();
     return w.str();
 }
 
 namespace {
-
-// Compact nBits as an 8-char hex string (the getblockheader bits format).
-std::string bits_to_hex(uint32_t bits) {
-    return fmt::format("{:08x}", bits);
-}
 
 void write_hash_array(writer& w, hash_list const& hashes) {
     w.begin_array();
@@ -277,7 +279,7 @@ std::string render_block_header(domain::chain::header const& header,
     w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     w.field("merkleroot", encode_hash(header.merkle()));
     w.field("time", int64_t(header.timestamp()));
-    w.field("bits", bits_to_hex(header.bits()));
+    w.field("bits", encode_base16(header.bits()));
     w.field("nonce", int64_t(header.nonce()));
     w.end_object();
     return w.str();

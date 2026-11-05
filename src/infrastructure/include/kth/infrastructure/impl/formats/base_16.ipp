@@ -114,9 +114,17 @@ constexpr std::expected<hash_digest, base16_errc> decode_hash(std::string_view i
     return result;
 }
 
+constexpr std::string encode_base16(uint32_t value) {
+    return encode_base16(to_big_endian(value));
+}
+
 constexpr std::string encode_hash(hash_digest hash) {
     std::reverse(hash.begin(), hash.end());
     return encode_base16(hash);
+}
+
+inline std::string encode_hash(uint256_t const& value) {
+    return encode_hash(to_hash_digest(value));
 }
 
 namespace detail {

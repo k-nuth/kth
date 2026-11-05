@@ -170,6 +170,11 @@ struct KD_API header_index {
     [[nodiscard]] index_t get_skip_index(index_t idx) const;
     [[nodiscard]] int32_t get_height(index_t idx) const;
     [[nodiscard]] uint256_t get_chain_work(index_t idx) const;
+
+    /// Cumulative proof including genesis, or nullopt for an unknown root/tip.
+    /// Unlike get_chain_work(), this includes the root's own proof. Call from
+    /// the index owner's context or under its existing traversal contract.
+    [[nodiscard]] std::optional<uint256_t> total_chain_work(hash_digest const& tip) const;
     [[nodiscard]] header_status get_status(index_t idx) const;
     [[nodiscard]] uint32_t get_version(index_t idx) const;
     [[nodiscard]] hash_digest get_merkle(index_t idx) const;

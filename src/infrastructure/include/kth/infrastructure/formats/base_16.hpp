@@ -35,6 +35,11 @@ enum class base16_errc {
 /// Allocates the result; allocation failures may throw.
 [[nodiscard]] constexpr std::string encode_base16(byte_span data);
 
+/// Encode a 32-bit unsigned integer as exactly eight lowercase hexadecimal
+/// digits, most significant digit first, including leading zeroes.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] constexpr std::string encode_base16(uint32_t value);
+
 /// Decode base16 into a caller-provided buffer.
 /// Zero allocation.
 /// @return the number of bytes written, or an error code.
@@ -55,6 +60,11 @@ template <size_t Size>
 /// Converts a bitcoin_hash to a string.
 /// The bitcoin_hash format is like base16, but with the bytes reversed.
 [[nodiscard]] constexpr std::string encode_hash(hash_digest hash);
+
+/// Encode an unsigned 256-bit integer as 64 lowercase hexadecimal digits,
+/// most significant digit first, including leading zeroes.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] inline std::string encode_hash(uint256_t const& value);
 
 /// Convert a string into a bitcoin_hash.
 /// The bitcoin_hash format is like base16, but with the bytes reversed.
