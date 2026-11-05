@@ -105,7 +105,7 @@ void require_silent(jd_session::result const& result, bool is_ready = true) {
 
 // SetupConnection.Success on the declaration peer asks for Requested Payout
 // Outputs before any Job Declaration message. `grant` lists that extension.
-void finish_extensions(jd_session& session, bool grant) {
+void finish_extensions(jd_session& session, bool grant, bool full_template = true) {
     auto const asked = process(session, setup_connection_success{2, 0});
     REQUIRE_FALSE(asked.close);
     REQUIRE_FALSE(asked.ready);
@@ -113,7 +113,10 @@ void finish_extensions(jd_session& session, bool grant) {
     REQUIRE_FALSE(session.payout_outputs());
     auto const request = single<request_extensions>(asked.response);
     REQUIRE(request.request_id == 1);
-    REQUIRE(request.requested_extensions == std::vector<uint16_t>{requested_payout_outputs_extension});
+    // Full-template also asks for BCH large templates; coinbase-only has no list to page.
+    REQUIRE(request.requested_extensions == (full_template
+        ? std::vector<uint16_t>{requested_payout_outputs_extension, large_templates_extension}
+        : std::vector<uint16_t>{requested_payout_outputs_extension}));
     if (grant) {
         require_silent(process(session, request_extensions_success{1,
             {requested_payout_outputs_extension}}));
@@ -125,7 +128,7 @@ void finish_extensions(jd_session& session, bool grant) {
     REQUIRE_FALSE(session.channel());
 }
 
-jd_session awaiting_extensions(bool full_template = true) {
+jd_session awaiting_extensions_in(bool full_template) {
     auto session = waiting(jd_peer::declaration, full_template);
     auto const asked = process(session, setup_connection_success{2, 0});
     REQUIRE_FALSE(asked.close);
@@ -139,6 +142,11 @@ jd_session awaiting_extensions(bool full_template = true) {
         : std::vector<uint16_t>{requested_payout_outputs_extension};
     REQUIRE(request.requested_extensions == expected);
     return session;
+}
+
+// No parameter, so refuse_incomplete can take it as a factory.
+jd_session awaiting_extensions() {
+    return awaiting_extensions_in(true);
 }
 
 template <typename Message, typename Factory>
@@ -170,7 +178,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(setup.endpoint_host == "jds.example");
         REQUIRE(setup.endpoint_port == 8443);
         REQUIRE(setup.vendor == "Knuth");
-        finish_extensions(session, false);
+        finish_extensions(session, false, full_template);
     }
     for (uint32_t const flags : {0u, mining_flag_requires_extended_channels}) {
         CAPTURE(flags);
@@ -188,7 +196,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE_FALSE(session.ready());
         REQUIRE_FALSE(session.awaiting_extensions());
         REQUIRE_FALSE(session.payout_outputs());
-        REQUIRE_FALSE(session.abandon_extensions());
+        REQUIRE_FALSE(session.restart_without_extensions());
         auto const request = single<open_extended_mining_channel>(result.response);
         REQUIRE(request.request_id == 1);
         REQUIRE(request.user_identity == "worker");
@@ -490,15 +498,24 @@ TEST_CASE("sv2 jd declaration negotiates requested payout outputs and a refusal 
         {requested_payout_outputs_extension}}));
     REQUIRE(unknown.payout_outputs());
 
-    auto abandoned = awaiting_extensions();
-    REQUIRE(abandoned.abandon_extensions());
-    REQUIRE(abandoned.ready());
-    REQUIRE_FALSE(abandoned.payout_outputs());
-    REQUIRE_FALSE(abandoned.abandon_extensions());
-    require_silent(process(abandoned, request_extensions_success{1,
-        {requested_payout_outputs_extension}}));
-    REQUIRE(abandoned.ready());
-    REQUIRE_FALSE(abandoned.payout_outputs());
+    auto restarted = awaiting_extensions();
+    REQUIRE(restarted.restart_without_extensions());
+    REQUIRE_FALSE(restarted.ready());
+    REQUIRE_FALSE(restarted.awaiting_extensions());
+    REQUIRE_FALSE(restarted.payout_outputs());
+    REQUIRE_FALSE(restarted.restart_without_extensions());
+    auto const setup = single<setup_connection>(restarted.start());
+    REQUIRE(setup.protocol == setup_connection::protocol_job_declaration);
+    REQUIRE(setup.flags == 1u);
+    auto const restarted_setup = process(restarted, setup_connection_success{2, 0});
+    REQUIRE_FALSE(restarted_setup.close);
+    REQUIRE(restarted_setup.ready);
+    REQUIRE(restarted_setup.response.empty());
+    REQUIRE(restarted_setup.error.empty());
+    REQUIRE(restarted.ready());
+    REQUIRE_FALSE(restarted.payout_outputs());
+    REQUIRE_FALSE(restarted.awaiting_extensions());
+    REQUIRE_FALSE(restarted.restart_without_extensions());
 
     refuse_incomplete(request_extensions_success{1, {requested_payout_outputs_extension}},
         awaiting_extensions);
@@ -548,13 +565,18 @@ TEST_CASE("sv2 jd declaration negotiates BCH large templates in full-template on
     REQUIRE(refused.ready());
     REQUIRE_FALSE(refused.large_templates());
 
-    auto abandoned = awaiting_extensions();
-    REQUIRE(abandoned.abandon_extensions());
-    REQUIRE_FALSE(abandoned.large_templates());
+    // Silence replaces the connection with one that never negotiates.
+    auto restarted = awaiting_extensions();
+    REQUIRE(restarted.restart_without_extensions());
+    REQUIRE_FALSE(restarted.large_templates());
+    (void)restarted.start();
+    require_silent(process(restarted, setup_connection_success{2, 0}));
+    REQUIRE(restarted.ready());
+    REQUIRE_FALSE(restarted.large_templates());
 
     // Coinbase-only does not ask, and a pool that lists it anyway does not
     // turn it on.
-    auto coinbase_only = awaiting_extensions(false);
+    auto coinbase_only = awaiting_extensions_in(false);
     require_silent(process(coinbase_only, request_extensions_success{1, {large_templates_extension}}));
     REQUIRE(coinbase_only.ready());
     REQUIRE_FALSE(coinbase_only.large_templates());

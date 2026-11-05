@@ -104,11 +104,14 @@ bool jd_session::awaiting_extensions() const {
     return state_ == state::awaiting_extensions;
 }
 
-bool jd_session::abandon_extensions() {
+bool jd_session::restart_without_extensions() {
     if (state_ != state::awaiting_extensions) return false;
+    // Idle lets start() send SetupConnection again. Negotiation stays off, so
+    // this session cannot sit in awaiting_extensions a second time.
     payout_outputs_ = false;
     large_templates_ = false;
-    state_ = state::ready;
+    negotiate_extensions_ = false;
+    state_ = state::idle;
     return true;
 }
 
@@ -144,9 +147,18 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     if ( ! success || success->used_version != 2) return fail("invalid upstream setup version");
     uint32_t const allowed = peer_ == jd_peer::mining ? mining_flag_requires_extended_channels : 0;
     if ((success->flags & ~allowed) != 0) return fail("unsupported upstream setup flags");
+    if (peer_ == jd_peer::declaration && ! negotiate_extensions_) {
+        // The previous connection already sent RequestExtensions and was closed
+        // when that response did not arrive. This one must not send it again.
+        payout_outputs_ = false;
+        large_templates_ = false;
+        state_ = state::ready;
+        return {{}, false, true, {}};
+    }
     if (peer_ == jd_peer::declaration) {
-        // Negotiation has to finish, or time out, before any Job Declaration
-        // message. Silence is not a pool refusal: the caller abandons the wait.
+        // The response has to arrive before any Job Declaration message.
+        // Silence is not a refusal: the caller closes this socket and opens
+        // one that does not negotiate.
         request_extensions request;
         request.request_id = extensions_request_id;
         request.requested_extensions.push_back(requested_payout_outputs_extension);

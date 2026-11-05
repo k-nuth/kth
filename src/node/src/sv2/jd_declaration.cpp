@@ -422,6 +422,21 @@ jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_succ
         version = success.coinbase_tx_version;
         sequence = success.coinbase_tx_input_sequence;
         locktime = success.coinbase_tx_locktime;
+        // Any other version makes the block's coinbase invalid under BCH consensus.
+        if (version < kth::transaction_version_min || version > kth::transaction_version_max) {
+            return fail("coinbase_tx_version is outside 1..2");
+        }
+        // is_final's time is the previous block's median time past. min_time
+        // is that median plus one. One input is required: an empty input list
+        // would be vacuously final and would hide a non-final sequence.
+        domain::chain::transaction const coinbase{
+            version, locktime,
+            domain::chain::input::list{domain::chain::input{
+                domain::chain::output_point{}, domain::chain::script{}, sequence}},
+            domain::chain::output::list{}};
+        if ( ! coinbase.is_final(template_.height, template_.min_time - 1)) {
+            return fail("coinbase_tx_locktime and coinbase_tx_input_sequence are not final");
+        }
     } else if (success.coinbase_tx_version != 0 || success.coinbase_tx_input_sequence != 0
         || success.coinbase_tx_locktime != 0) {
         return fail("payout coinbase fields are not zero");
@@ -474,9 +489,9 @@ jd_declaration::result jd_declaration::process_payout(jd_peer peer,
 }
 
 jd_declaration::result jd_declaration::supply(std::vector<uint32_t> const& positions) {
-    // The notice already retired this job. Do not supply its transactions
-    // and do not open a second request until the declaration itself ends.
-    if (restart_) return {};
+    // A stale notice can set restart_ while this declaration is still open on
+    // the JDS, which is waiting for these transactions. The reply is sent
+    // anyway; DeclareMiningJob.Success and .Error call retry_allocation().
     provide_missing_transactions_success response;
     response.request_id = request_id_;
     std::vector<bool> supplied(transactions_.size(), false);
@@ -485,6 +500,7 @@ jd_declaration::result jd_declaration::supply(std::vector<uint32_t> const& posit
     // U24 frame: the request id, the SEQ0_64K count, and a B0_16M length
     // before each transaction.
     size_t size = 4 + 2;
+    bool partial = false;
     for (auto const index : positions) {
         if (index >= transactions_.size() || supplied[index]) {
             return fail("invalid missing transaction position");
@@ -495,7 +511,10 @@ jd_declaration::result jd_declaration::supply(std::vector<uint32_t> const& posit
             // With 0x4C54 the reply carries the longest prefix that fits and
             // the JDS asks again for the rest. A BCH transaction is at most
             // 1,000,000 bytes, so the prefix is never empty for a valid block.
-            if (large_templates_ && ! response.transaction_list.empty()) break;
+            if (large_templates_ && ! response.transaction_list.empty()) {
+                partial = true;
+                break;
+            }
             return fail("ProvideMissingTransactions.Success exceeds the SV2 frame maximum");
         }
         size += 3 + transaction.size();
@@ -503,7 +522,10 @@ jd_declaration::result jd_declaration::supply(std::vector<uint32_t> const& posit
     }
     result out;
     out.declaration = frame(response);
-    // Supplying data does not renew the declaration's response deadline.
+    // A complete reply does not renew the declaration's response deadline.
+    // A prefix does: the JDS has to ask again, and every round of a large
+    // template would otherwise share one deadline.
+    out.progress = partial;
     return out;
 }
 

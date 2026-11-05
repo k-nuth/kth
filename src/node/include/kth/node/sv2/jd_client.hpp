@@ -48,8 +48,10 @@ struct jd_notice {
     blockchain::mining_template solo{};
 };
 
-// Own both upstreams together. A refusal or disconnect closes the other one;
-// the listener and its solo mining sessions have independent lifetimes.
+// Own both upstreams together. A refusal or disconnect closes the other one.
+// One exception: unanswered RequestExtensions closes only that JDS socket and
+// replaces it once, and does not close the pool. The listener and its solo
+// mining sessions have independent lifetimes.
 struct jd_client {
     // settings have passed validate_jd_settings and solo payout validation.
     jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
@@ -80,8 +82,16 @@ struct jd_client {
 
 private:
     ::asio::awaitable<void> run_owned();
+    // negotiation_timeout is set only when this JDS socket was closed because
+    // RequestExtensions went unanswered. The caller then opens one replacement.
+    // A null pointer means a later deadline is terminal, so the replacement
+    // itself cannot open a third connection.
     ::asio::awaitable<void> serve(jd_connection& connection, jd_session& session,
-        char const* name);
+        char const* name, bool* negotiation_timeout = nullptr);
+    ::asio::awaitable<void> serve_declaration();
+    // Frames go to the socket declaration_io_ names: declaration_ until
+    // negotiation silence publishes the replacement.
+    [[nodiscard]] bool send_declaration(data_chunk frame);
     ::asio::awaitable<void> declare_templates();
     void wake_declarations();
     bool dispatch(jd_declaration::result result);
@@ -104,7 +114,18 @@ private:
 
     ::asio::strand<::asio::any_io_executor> owner_;
     jd_connection mining_;
+    // jd_connection keeps these private. The replacement is built from them
+    // after the first JDS run() has returned.
+    std::string jds_host_;
+    uint16_t jds_port_;
+    hash_digest jds_authority_;
+    std::chrono::milliseconds jds_handshake_timeout_;
     jd_connection declaration_;
+    // Empty until negotiation silence. Not a second run of declaration_.
+    std::unique_ptr<jd_connection> jds_replacement_;
+    // declaration_ until that replacement is published. Later frames and stop()
+    // follow it, including a pool stop() from another thread.
+    std::atomic<jd_connection*> declaration_io_;
     jd_session mining_session_;
     jd_session declaration_session_;
     jd_declaration jobs_;

@@ -272,7 +272,10 @@ void jd_connection::stop() {
                 co_return;
             }
             ::asio::steady_timer writing(owner_);
-            writing.expires_after(timeout_);
+            // A frame may be as large as the U24 maximum. Allow one more second
+            // per MiB on top of the deadline so a slow link is not cut off
+            // while it is still moving a large ProvideMissingTransactions reply.
+            writing.expires_after(timeout_ + std::chrono::seconds(encrypted->size() >> 20));
             auto const result = co_await (::asio::async_write(socket,
                 ::asio::buffer(*encrypted), ::asio::as_tuple(::asio::use_awaitable))
                 || writing.async_wait(::asio::as_tuple(::asio::use_awaitable)));

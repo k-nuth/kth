@@ -365,8 +365,9 @@ std::optional<declared_work> make_payout_work(blockchain::mining_template const&
     auto const target = domain::chain::compact::from_compact(tmpl.bits);
     if ( ! target || target->big() == 0 || tmpl.current_time < tmpl.min_time
         || upstream_extranonce_size < jd_min_extranonce_size || upstream_extranonce_size > 32
-        || upstream_prefix.size() > 32 - size_t{upstream_extranonce_size}
-        || tmpl.selection.txs.size() > 65535) {
+        || upstream_prefix.size() > 32 - size_t{upstream_extranonce_size}) {
+        // No transaction count limit here: coinbase-only sends the merkle
+        // path, and full-template's SEQ0_64K list is checked where it is built.
         return std::nullopt;
     }
     if (outputs.empty() || ! outputs_pay(outputs, tmpl.coinbase_value)) return std::nullopt;
