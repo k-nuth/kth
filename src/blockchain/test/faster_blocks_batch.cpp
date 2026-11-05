@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <algorithm>
 #include <vector>
 
 #include <kth/infrastructure/utility/timer.hpp>
@@ -158,6 +159,15 @@ std::vector<domain::message::block::const_ptr> build_chain(spec const& sp, uint3
             cb = transaction(cb.version(), cb.locktime(), input::list(cb.inputs()), std::move(outs));
         }
         txs.push_back(std::move(cb));
+        // Canonical transaction order (CTOR): every transaction after the
+        // coinbase sorted by txid as displayed, the comparison
+        // block::is_canonical_ordered makes. Unsorted, the block fails before
+        // its size is checked.
+        std::ranges::sort(extra, [](transaction const& a, transaction const& b) {
+            auto const x = a.hash();
+            auto const y = b.hash();
+            return std::lexicographical_compare(x.rbegin(), x.rend(), y.rbegin(), y.rend());
+        });
         for (auto& tx : extra) txs.push_back(std::move(tx));
 
         if (sp.padded_block_size != 0 && h == sp.padding_height) {
