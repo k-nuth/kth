@@ -70,20 +70,26 @@ counterpart.
 | `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
 | `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
-| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `fetch_mining_info()` + `get_last_heights()` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
+| `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
+| `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
+| `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
+
+| `getrawmempool` (`verbose=true`: entries keyed by txid) | `kth_chain_get_mempool_txids` (+ `kth_chain_get_mempool_entry`) | `get_mempool_txids()` (+ `get_mempool_entry()`) |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `estimatefee` | `kth_blockchain_settings.byte_fee_satoshis` | `chain_settings().byte_fee_satoshis` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
+| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
@@ -140,6 +146,75 @@ when those timestamps span no time, or when the selected block is genesis.
 Parameters must be an array with at most two integers (or null for defaults);
 values outside the signed 32-bit range are rejected.
 
+## getblockchaininfo
+
+Returns `chain` (`main`, `test`, `test4`, `scale`, `chip` or `regtest`), `blocks`
+(connected tip height), `headers`, `bestblockhash`,
+`difficulty` (of the next required work), `mediantime` (median time past of the
+connected tip), `verificationprogress`, `initialblockdownload`, `chainwork`,
+`size_on_disk` and `warnings`. The tip fields come from one published chain
+view, so they always describe the same tip.
+
+- `verificationprogress` is the connected tip's share of the header chain by
+  height, `1.0` once they meet.
+- `initialblockdownload` is `true` until the node is synchronized: its connected
+  tip has reached the header tip, and that tip is within
+  `chain.notify_limit_hours` of now. These are the two conditions
+  `getmininginfo` reports as `caughtup` and `fresh`.
+- `chainwork` is the connected tip's cumulative work, as 64 hex digits. It is
+  left out while the header index cannot name the tip.
+- `size_on_disk` is the size of the block and undo files as they are on disk,
+  including the space each file has preallocated for the blocks to come (block
+  files grow in 128 MiB chunks). Only `blk`/`rev` files with numbered `.dat`
+  names count, symlinked ones included. A file that cannot be read is skipped;
+  it never turns the whole call into an error.
+- `pruned` is not reported.
+
+## getchaintips
+
+`getchaintips` returns every chain tip the header index knows, highest first,
+each with `height`, `hash`, `branchlen` (blocks from the connected chain to the
+tip) and `status`: `active` for the connected tip, `valid-headers` for a branch
+whose blocks the node all holds, and `headers-only` for one it does not. The
+header index does not record whether a block failed validation, so `invalid`
+and `valid-fork` are not reported.
+
+## gettxout
+
+`gettxout "<txid>" <n> [include_mempool=true]` returns the output if it is
+unspent and `null` otherwise: `bestblock` (the connected tip it was read
+against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
+`decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
+output that a mempool transaction spends is `null`, and an output of a mempool
+transaction is returned with `0` confirmations.
+## Mining: getblocktemplate
+
+`getblocktemplate [template_request]` returns the next-block template with its
+transactions in full, as BIP22 describes, for pools that build the coinbase and
+submit the whole block: `capabilities`, `version`, `previousblockhash`,
+`transactions` (each with `data`, `txid`, `hash`, `depends` when it spends an
+earlier template transaction, and `fee` and `sigops`, the transaction's
+sigchecks, from the captured selection), `coinbaseaux`, `coinbasevalue`,
+`target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
+block's sigchecks limit), `sizelimit`, `curtime`, `bits` and `height`. It is the
+same template `getblocktemplatelight` serves, so the two agree on the selection.
+Only `template` mode is supported; long polling is unsupported, so `longpollid`
+is omitted. Fees and sigchecks are captured with the selected transactions and
+remain unchanged when a cached template is served after mempool changes.
+
+## getnetworkinfo
+
+`getnetworkinfo` returns `version`, `subversion` (the user agent the node sends
+its peers), `protocolversion`, `localservices` (16 hex digits) with
+`localservicesnames`, `localrelay`, `networkactive`, `connections`, `relayfee`
+and `warnings`. `version` is `kth::version` as one number:
+`major * 1000000 + minor * 10000 + patch * 100`, so 1.5.2 is 1050200.
+`networkactive` is false while the P2P node is not running. `relayfee` is the
+size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
+BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
+operation. The method takes no arguments: anything other than omitted params or
+an empty array is a `-32602` error.
+
 ## Mining: getblocktemplatelight
 
 Returns the next-block template **without** the transaction list. The selected
@@ -173,7 +248,7 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 
 Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
 required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
-(network name), and `warnings`. `networkhashps` is not reported yet — it needs a
+(the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
 ## Mining: submitblocklight

@@ -678,6 +678,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/math/hash.cpp
     test/math/uint256.cpp
 
+    test/path.cpp
     test/network_address.cpp
 
     test/unicode/unicode.cpp
@@ -759,9 +760,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Positive controls ensure missing dependencies cannot masquerade as a
     # successful negative-literal test.
     set(kth_literal_options "${CMAKE_CURRENT_BINARY_DIR}/literal_compile_options_$<CONFIG>.rsp")
-    file(GENERATE OUTPUT "${kth_literal_options}"
-      CONTENT "-I\"$<JOIN:$<TARGET_PROPERTY:kth_infrastructure_test,INCLUDE_DIRECTORIES>,\"\n-I\">\"\n-D\"$<JOIN:$<TARGET_PROPERTY:kth_infrastructure_test,COMPILE_DEFINITIONS>,\"\n-D\">\"\n"
-      TARGET kth_infrastructure_test)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthCompileTests.cmake")
+    kth_compile_test_options(kth_infrastructure_test "${kth_literal_options}")
+    add_test(
+      NAME kth_compile_check_driver_tests
+      COMMAND ${CMAKE_COMMAND} -E env "CMAKE_COMMAND=${CMAKE_COMMAND}"
+        ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../../cmake/tests/test_compile_checks.py
+    )
     add_test(
       NAME kth_infrastructure_compile_fail_tests
       COMMAND ${Python3_EXECUTABLE}

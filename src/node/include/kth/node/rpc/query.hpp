@@ -7,9 +7,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <kth/node/rpc/chain_progress.hpp>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <kth/blockchain/header_index.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -37,10 +41,24 @@ std::string block_to_hex(domain::chain::block const& block);
 // verbose=false).
 std::string header_to_hex(domain::chain::header const& header);
 
-// Serialize the getblockchaininfo result object.
-std::string render_blockchain_info(
-    std::string_view chain, size_t blocks, size_t headers,
-    std::string_view best_block_hash, double difficulty);
+// The connected tip fields use one published chain view. The header height
+// is captured separately from the active header chain.
+struct blockchain_info {
+    std::string_view chain;
+    size_t blocks;                  // connected tip height
+    size_t headers;
+    hash_digest best_block_hash;
+    double difficulty;                   // of the next required work
+    uint32_t median_time;           // median time past of the connected tip
+    std::optional<uint256_t> chain_work; // absent while the header index cannot name the tip
+    uint64_t size_on_disk;          // block and undo files
+    bool initial_block_download;         // the node is not yet synchronized
+    std::optional<chain_progress> progress = std::nullopt;
+};
+
+// Serialize the getblockchaininfo result object. verificationprogress is the
+// connected tip's share of the header chain, by height.
+std::string render_blockchain_info(blockchain_info const& info);
 
 // A JSON array of display-order hashes (getrawmempool, getmempoolancestors,
 // getmempooldescendants).
@@ -69,11 +87,58 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
 
+// Owned records from the header index; RPC only renders their wire format.
+using chain_tip = blockchain::header_index::chain_tip;
+
+// Serialize the getchaintips result array, in the order given.
+std::string render_chain_tips(std::vector<chain_tip> const& tips);
+
+// The gettxout result object for an unspent output: the tip it was read
+// against, its confirmations (0 for an output of a mempool transaction), its
+// value in BCH, its scriptPubKey and token data as decoderawtransaction shows
+// them, and whether a coinbase created it.
+std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
+                          domain::chain::output const& output, bool coinbase,
+                          domain::config::network net, domain::script_flags_t flags);
+
+// The getnetworkinfo fields.
+struct network_info {
+    std::string_view version;        // kth::version, e.g. "1.5.2"
+    std::string_view subversion;     // the user agent this node sends its peers
+    uint32_t protocol_version;
+    uint64_t services;
+    bool relay;                      // relays transactions to its peers
+    size_t connections;
+    bool active = false;
+    float byte_fee_satoshis;         // the size part of the transaction price
+};
+
+// Serialize the getnetworkinfo result object: `version` as one number,
+// major * 1000000 + minor * 10000 + patch * 100, the services as 16 hex digits
+// with their names, and `relayfee` in BCH per kB.
+std::string render_network_info(network_info const& info);
+
+// One transaction of verbose getrawmempool, with what the mempool knows about it.
+struct mempool_listing {
+    hash_digest txid;
+    uint64_t fee;      // satoshis
+    uint32_t size;     // serialized bytes
+    uint64_t time;     // first seen (unix seconds)
+    hash_list depends;
+    hash_list spentby;
+};
+
+// The verbose getrawmempool object: each transaction keyed by its txid, with
+// `fees` (`base` and `modified`, in BCH; the mempool keeps no fee deltas, so
+// they are equal), `size`, `time`, `depends` and `spentby`.
+std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listings);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
-                                int64_t confirmations);
+                                int64_t confirmations,
+                                std::optional<chain_progress> progress = std::nullopt);
 
 // validateaddress result object for `address` on network `net`: only
 // {"isvalid":false} unless it is a P2PKH or P2SH address of that network,

@@ -25,27 +25,37 @@ enum class network {
     , testnet4
     , scalenet
     , chipnet
+    , tempnet
 #endif
 };
 
-inline constexpr
-std::string_view name(network net) {
+enum class chain_name_format {
+    rpc,
+    display,
+};
+
+/// Network identifier (RPC by default) or human-readable display name.
+[[nodiscard]] inline constexpr
+std::string_view chain_name(network net, chain_name_format format = chain_name_format::rpc) noexcept {
+    auto const display = format == chain_name_format::display;
     switch (net) {
         case network::testnet:
-            return "Testnet";
+            return display ? "Testnet" : "test";
         case network::regtest:
-            return "Regtest";
+            return display ? "Regtest" : "regtest";
 #if defined(KTH_CURRENCY_BCH)
         case network::testnet4:
-            return "Testnet4";
+            return display ? "Testnet4" : "test4";
         case network::scalenet:
-            return "Scalenet";
+            return display ? "Scalenet" : "scale";
         case network::chipnet:
-            return "Chipnet";
+            return display ? "Chipnet" : "chip";
+        case network::tempnet:
+            return display ? "Tempnet" : "temp";
 #endif
         default:
         case network::mainnet:
-            return "Mainnet";
+            return display ? "Mainnet" : "main";
     }
 }
 
@@ -58,7 +68,7 @@ std::expected<network, kth::code> parse_network(std::string_view text) {
     std::string upper;
     upper.reserve(text.size());
     std::transform(text.begin(), text.end(), std::back_inserter(upper),
-        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        [](unsigned char c) { return char(std::toupper(c)); });
 
     if (upper == "MAINNET") return network::mainnet;
     if (upper == "TESTNET") return network::testnet;
@@ -67,6 +77,7 @@ std::expected<network, kth::code> parse_network(std::string_view text) {
     if (upper == "TESTNET4") return network::testnet4;
     if (upper == "SCALENET") return network::scalenet;
     if (upper == "CHIPNET")  return network::chipnet;
+    if (upper == "TEMPNET")  return network::tempnet;
 #endif
     return std::unexpected(kth::error::illegal_value);
 }

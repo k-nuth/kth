@@ -169,6 +169,7 @@ endif()
 set(kth_sources_just_legacy
         ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
+        src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
@@ -364,6 +365,8 @@ set(kth_headers
     include/kth/domain/chain/input_point.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
+    include/kth/domain/chain/block_ticks.hpp
+    include/kth/domain/chain/faster_blocks.hpp
     include/kth/domain/chain/output.hpp
     include/kth/domain/chain/daa/aserti3_2d.hpp
     include/kth/domain/chain/token_data.hpp
@@ -573,6 +576,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/imported_vectors.cpp
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
+        test/chain/block_ticks.cpp
+        test/chain/abla_ticks.cpp
+        test/chain/asert_ticks.cpp
         test/chain/chain_state.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
@@ -669,9 +675,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   if(Python3_FOUND AND CURRENCY STREQUAL "BCH")
     set(kth_address_literal_options "${CMAKE_CURRENT_BINARY_DIR}/address_literal_options_$<CONFIG>.rsp")
-    file(GENERATE OUTPUT "${kth_address_literal_options}"
-      CONTENT "-I\"$<JOIN:$<TARGET_PROPERTY:kth_domain_test,INCLUDE_DIRECTORIES>,\"\n-I\">\"\n-D\"$<JOIN:$<TARGET_PROPERTY:kth_domain_test,COMPILE_DEFINITIONS>,\"\n-D\">\"\n"
-      TARGET kth_domain_test)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthCompileTests.cmake")
+    kth_compile_test_options(kth_domain_test "${kth_address_literal_options}")
     add_test(NAME kth_domain_address_literal_tests
       COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/test_address_literals.py

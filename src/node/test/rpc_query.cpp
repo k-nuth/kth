@@ -22,10 +22,39 @@ constexpr auto zeros = "00000000000000000000000000000000000000000000000000000000
 // Start Test Suite: rpc query tests
 
 TEST_CASE("render_blockchain_info serializes the getblockchaininfo fields", "[rpc query]") {
-    REQUIRE(render_blockchain_info(
-                "Mainnet", /*blocks*/ 10u, /*headers*/ 12u,
-                "00ff", /*difficulty*/ 1.0) ==
-        R"({"chain":"Mainnet","blocks":10,"headers":12,"bestblockhash":"00ff","difficulty":1.0})");
+    REQUIRE(render_blockchain_info({
+                .chain = "Mainnet",
+                .blocks = 12u,
+                .headers = 12u,
+                .best_block_hash = null_hash,
+                .difficulty = 1.0,
+                .median_time = 1000u,
+                .chain_work = uint256_t{0x1234},
+                .size_on_disk = 4096u,
+                .initial_block_download = false}) ==
+        std::string(R"({"chain":"Mainnet","blocks":12,"headers":12,"bestblockhash":")") + zeros +
+        R"(","difficulty":1.0,"mediantime":1000,"verificationprogress":1.0,)"
+        R"("initialblockdownload":false,)"
+        R"("chainwork":"0000000000000000000000000000000000000000000000000000000000001234",)"
+        R"("size_on_disk":4096,"warnings":""})");
+}
+
+TEST_CASE("render_blockchain_info reports a node still syncing", "[rpc query]") {
+    // A quarter of the header chain connected, and a tip the header index
+    // cannot name yet: no chainwork rather than a made-up one.
+    REQUIRE(render_blockchain_info({
+                .chain = "Regtest",
+                .blocks = 25u,
+                .headers = 100u,
+                .best_block_hash = null_hash,
+                .difficulty = 2.5,
+                .median_time = 7u,
+                .chain_work = std::nullopt,
+                .size_on_disk = 0u,
+                .initial_block_download = true}) ==
+        std::string(R"({"chain":"Regtest","blocks":25,"headers":100,"bestblockhash":")") + zeros +
+        R"(","difficulty":2.5,"mediantime":7,"verificationprogress":0.25,)"
+        R"("initialblockdownload":true,"size_on_disk":0,"warnings":""})");
 }
 
 TEST_CASE("transaction_to_hex round-trips through the wire format", "[rpc query]") {
@@ -285,3 +314,127 @@ TEST_CASE("render_network_hash_ps divides the work by the time spanned", "[rpc q
     REQUIRE(std::stod(render_network_hash_ps(uint256_t{100}, uint256_t{1300}, 1000u, 1000u)) == 0.0);
     REQUIRE(std::stod(render_network_hash_ps(uint256_t{1300}, uint256_t{100}, 1000u, 1600u)) == 0.0);
 }
+
+TEST_CASE("chain_name gives each network's short chain name", "[rpc query]") {
+    using domain::config::network;
+    static_assert(domain::config::chain_name(network::mainnet) == "main");
+    static_assert(domain::config::chain_name(network::regtest) == "regtest");
+    REQUIRE(domain::config::chain_name(network::mainnet) == "main");
+    REQUIRE(domain::config::chain_name(network::testnet) == "test");
+    REQUIRE(domain::config::chain_name(network::testnet4) == "test4");
+    REQUIRE(domain::config::chain_name(network::scalenet) == "scale");
+    REQUIRE(domain::config::chain_name(network::chipnet) == "chip");
+    REQUIRE(domain::config::chain_name(network::tempnet) == "temp");
+    REQUIRE(domain::config::chain_name(network::regtest) == "regtest");
+}
+
+TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
+    using domain::config::network;
+    using domain::config::chain_name;
+    using domain::config::chain_name_format;
+    static_assert(chain_name(network::mainnet) == "main");
+    static_assert(chain_name(network::mainnet, chain_name_format::display) == "Mainnet");
+    REQUIRE(chain_name(network::mainnet, chain_name_format::display) == "Mainnet");
+    REQUIRE(chain_name(network::testnet, chain_name_format::display) == "Testnet");
+    REQUIRE(chain_name(network::regtest, chain_name_format::display) == "Regtest");
+#if defined(KTH_CURRENCY_BCH)
+    REQUIRE(chain_name(network::testnet4, chain_name_format::display) == "Testnet4");
+    REQUIRE(chain_name(network::scalenet, chain_name_format::display) == "Scalenet");
+    REQUIRE(chain_name(network::chipnet, chain_name_format::display) == "Chipnet");
+    REQUIRE(chain_name(network::tempnet, chain_name_format::display) == "Tempnet");
+#endif
+}
+
+TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]") {
+    REQUIRE(render_chain_tips({}) == "[]");
+    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active}}) ==
+        std::string(R"([{"height":7,"hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
+        R"({"height":5,"hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
+}
+
+TEST_CASE("render_tx_out serializes the gettxout fields", "[rpc query]") {
+    // The token output of the transaction decoded above.
+    auto const tx = parse_tx(
+        "020000000122222222222222222222222222222222222222222222222222222222222222220000000000ffffffff02e80300"
+        "000000000041ef0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f207102aabbfde80376a91411"
+        "1111111111111111111111111111111111111188ac0000000000000000066a047465737400000000");
+    auto const json = render_tx_out(null_hash, 3, tx.outputs().front(), /*coinbase*/ false, regtest, flags);
+    CHECK(json.starts_with(std::string(R"({"bestblock":")") + zeros +
+        R"(","confirmations":3,"value":0.00001,"scriptPubKey":{"asm":")"));
+    CHECK(json.ends_with(
+        R"("hex":"76a914111111111111111111111111111111111111111188ac","reqSigs":1,"type":"pubkeyhash",)"
+        R"("addresses":["bchreg:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zy8lyg7mcr"]},)"
+        R"("tokenData":{"category":"201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201",)"
+        R"("amount":"1000","nft":{"capability":"mutable","commitment":"aabb"}},"coinbase":false})"));
+}
+
+TEST_CASE("render_network_info serializes the getnetworkinfo fields", "[rpc query]") {
+    // NETWORK, BITCOIN_CASH and NETWORK_LIMITED, plus bit 30, which has no name.
+    auto const services = uint64_t((1u << 0) | (1u << 5) | (1u << 10) | (1u << 30));
+    auto const json = render_network_info({
+        .version = "1.5.2",
+        .subversion = "/Knuth:1.5.2(EB32.0)/",
+        .protocol_version = 70016u,
+        .services = services,
+        .relay = true,
+        .connections = 8u,
+        .active = true,
+        .byte_fee_satoshis = 0.1f});
+    auto const fee = json.find(R"("relayfee":)");
+    REQUIRE(fee != std::string::npos);
+    REQUIRE(json.substr(0, fee) ==
+        R"({"version":1050200,"subversion":"/Knuth:1.5.2(EB32.0)/","protocolversion":70016,)"
+        R"("localservices":"0000000040000421",)"
+        R"("localservicesnames":["NETWORK","BITCOIN_CASH","NETWORK_LIMITED","UNKNOWN[2^30]"],)"
+        R"("localrelay":true,"networkactive":true,"connections":8,)");
+    // 0.1 satoshi per byte is 100 satoshis per kB.
+    REQUIRE(std::stod(json.substr(fee + 11)) == 0.000001);
+    REQUIRE(json.ends_with(R"(,"warnings":""})"));
+}
+
+TEST_CASE("render_network_info reads the version number part by part", "[rpc query]") {
+    auto const version = [](std::string_view text) {
+        auto const json = render_network_info({.version = text, .subversion = "", .protocol_version = 0u,
+            .services = 0u, .relay = false, .connections = 0u, .byte_fee_satoshis = 0.0f});
+        return json.substr(0, json.find(','));
+    };
+    REQUIRE(version("1.5.2") == R"({"version":1050200)");
+    REQUIRE(version("12.0.7") == R"({"version":12000700)");
+    REQUIRE(version("2.1") == R"({"version":2010000)");
+    REQUIRE(version("1.5.2-rc1") == R"({"version":1050200)");
+    REQUIRE(version("unknown") == R"({"version":0)");
+}
+
+TEST_CASE("render_raw_mempool_verbose keys each entry by its txid", "[rpc query]") {
+    REQUIRE(render_raw_mempool_verbose({}) == "{}");
+    REQUIRE(render_raw_mempool_verbose({{null_hash, /*fee*/ 219u, /*size*/ 219u, /*time*/ 42u, {}, {null_hash}}}) ==
+        std::string(R"({")") + zeros + R"(":{"fees":{"base":0.00000219,"modified":0.00000219},)" +
+        R"("size":219,"time":42,"depends":[],"spentby":[")" + zeros + R"("]}})");
+}
+#if defined(KTH_CURRENCY_BCH)
+#if __has_include(<kth/node/rpc/chain_progress.hpp>)
+#include <kth/node/rpc/chain_progress.hpp>
+#endif
+TEST_CASE("blockchain RPC exposes tick height and both boundary intervals", "[rpc query][faster_blocks]") {
+    auto const text = render_blockchain_info({
+        .chain = "chip", .blocks = 100, .headers = 100,
+        .best_block_hash = null_hash, .difficulty = 1.0,
+        .median_time = 0, .chain_work = std::nullopt, .size_on_disk = 0,
+        .initial_block_download = false, .progress = chain_progress{60000, 600, 60}});
+    CHECK(text.find("\"ticks\":60000") != std::string::npos);
+    CHECK(text.find("\"target_time\":600") != std::string::npos);
+    CHECK(text.find("\"next_target_time\":60") != std::string::npos);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("header RPC distinguishes the boundary block from its successor", "[rpc query][faster_blocks]") {
+    domain::chain::header const header{4, null_hash, null_hash, 1000, 0x1d00ffff, 0};
+    auto const before = render_block_header(header, 100, null_hash, 1, chain_progress{60000, 600, 60});
+    CHECK(before.find("\"ticks\":60000") != std::string::npos);
+    CHECK(before.find("\"target_time\":600") != std::string::npos);
+    CHECK(before.find("\"next_target_time\":60") != std::string::npos);
+    auto const after = render_block_header(header, 101, null_hash, 1, chain_progress{60060, 60, 60});
+    CHECK(after.find("\"ticks\":60060") != std::string::npos);
+}
+#endif

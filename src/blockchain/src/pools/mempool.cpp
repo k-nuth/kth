@@ -206,6 +206,14 @@ void mempool::update_for_reorg(block_const_ptr_list_const_ptr /*outgoing*/,
     // the rare path and the common flow does not depend on it. See issue #498.
 }
 
+std::optional<hash_digest> mempool::spender(point const& outpoint) const {
+    std::optional<hash_digest> result;
+    spent_by_.visit(outpoint_key{outpoint.hash(), outpoint.index()}, [&](hash_digest const& txid) {
+        result = txid;
+    });
+    return result;
+}
+
 std::optional<output> mempool::resolve(point const& outpoint) const {
     KTH_STATS_INCREMENT(stats_, resolve_calls);
 

@@ -17,6 +17,8 @@ import os
 import sys
 import argparse
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import List, Optional
 
 
@@ -107,7 +109,12 @@ CODEC_SUCCESS_TESTS = [
 def generate_test_file(expression: str, include_dir: str) -> str:
     """Generate a temporary C++ file with the test expression."""
     return f'''
-#include <kth/infrastructure.hpp>
+#include <kth/infrastructure/formats/base_10.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/formats/base_58.hpp>
+#include <kth/infrastructure/formats/base_64.hpp>
+#include <kth/infrastructure/formats/base_85.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 using namespace kth;
 
 int main() {{
@@ -117,29 +124,32 @@ int main() {{
 '''
 
 
-def try_compile(source: str, compiler: str, include_dir: str, std: str = "c++23", compiler_options_file: Optional[str] = None) -> tuple[bool, str]:
+def try_compile(source: str, compiler: str, include_dir: str, std: str = "c++23", compiler_options_file: Optional[str] = None) -> tuple[Optional[bool], str]:
     """
     Try to compile the source code.
-    Returns (success, error_message).
+    Returns (compiled, diagnostics); compiled is None for driver failures.
     """
     with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
         f.write(source)
         temp_file = f.name
 
     try:
+        msvc = Path(compiler).stem.lower() in ('cl', 'clang-cl')
+        options = ['/std:c++latest', '/Zs', '/I' + include_dir] if msvc else [f'-std={std}', '-fsyntax-only', '-I' + include_dir]
         result = subprocess.run(
-            [compiler, *(["@" + compiler_options_file] if compiler_options_file else []), f"-std={std}", "-fsyntax-only", f"-I{include_dir}", temp_file],
+            [compiler, *(["@" + compiler_options_file] if compiler_options_file else []), *options, temp_file],
             capture_output=True,
             text=True,
             timeout=30
         )
-        success = result.returncode == 0
-        error_msg = result.stderr if not success else ""
-        return success, error_msg
+        diagnostics = result.stdout + result.stderr
+        if result.returncode < 0:
+            return None, f"Compiler terminated by signal {-result.returncode}\n{diagnostics}"
+        return result.returncode == 0, diagnostics
     except subprocess.TimeoutExpired:
-        return False, "Compilation timed out"
+        return None, "Compilation timed out"
     except Exception as e:
-        return False, str(e)
+        return None, str(e)
     finally:
         os.unlink(temp_file)
 
@@ -150,7 +160,8 @@ def run_tests(
     compiler: str,
     include_dir: str,
     verbose: bool = False,
-    compiler_options_file: Optional[str] = None
+    compiler_options_file: Optional[str] = None,
+    jobs: int = 2
 ) -> tuple[int, int]:
     """
     Run all tests and return (passed, failed) counts.
@@ -158,41 +169,29 @@ def run_tests(
     passed = 0
     failed = 0
 
-    # Test cases that should FAIL to compile
-    print("\n=== Testing expressions that should FAIL to compile ===")
-    for test in fail_tests:
+    def compile_case(test):
         source = generate_test_file(test.expression, include_dir)
-        compiles, error = try_compile(source, compiler, include_dir, compiler_options_file=compiler_options_file)
+        return try_compile(source, compiler, include_dir, compiler_options_file=compiler_options_file)
 
-        if not compiles:
-            print(f"  PASS: {test.name} - {test.description}")
-            if verbose:
-                print(f"        Expression: {test.expression}")
-            passed += 1
-        else:
-            print(f"  FAIL: {test.name} - {test.description}")
-            print(f"        Expected compilation to FAIL but it SUCCEEDED")
-            print(f"        Expression: {test.expression}")
-            failed += 1
-
-    # Test cases that should SUCCEED to compile (sanity checks)
-    print("\n=== Testing expressions that should SUCCEED to compile ===")
-    for test in success_tests:
-        source = generate_test_file(test.expression, include_dir)
-        compiles, error = try_compile(source, compiler, include_dir, compiler_options_file=compiler_options_file)
-
-        if compiles:
-            print(f"  PASS: {test.name} - {test.description}")
-            if verbose:
-                print(f"        Expression: {test.expression}")
-            passed += 1
-        else:
-            print(f"  FAIL: {test.name} - {test.description}")
-            print(f"        Expected compilation to SUCCEED but it FAILED")
-            print(f"        Expression: {test.expression}")
-            if verbose:
-                print(f"        Error: {error[:200]}...")
-            failed += 1
+    # Validate the compiler environment first: a missing header must not make
+    # every negative literal appear to pass. Independent compilations have a
+    # small fixed concurrency bound and never share temporary source files.
+    with ThreadPoolExecutor(max_workers=jobs) as workers:
+        for expected, cases in [(True, success_tests), (False, fail_tests)]:
+            print(f"\n=== Expressions that should {'SUCCEED' if expected else 'FAIL'} to compile ===", flush=True)
+            for test, (compiles, error) in zip(cases, workers.map(compile_case, cases)):
+                good = compiles is expected
+                print(f"  {'PASS' if good else 'FAIL'}: {test.name} - {test.description}", flush=True)
+                if good:
+                    passed += 1
+                else:
+                    failed += 1
+                    print(f"        Expression: {test.expression}\n{error}", flush=True)
+                if verbose and good:
+                    print(f"        Expression: {test.expression}", flush=True)
+            if expected and failed:
+                print("Negative checks not run: positive compiler controls failed.", flush=True)
+                break
 
     return passed, failed
 
@@ -205,13 +204,14 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--with-success-tests", action="store_true",
                         help="Also run success tests (requires full build environment)")
+    parser.add_argument('--jobs', type=int, default=2, choices=range(1, 9), help='Bound independent compiler processes (default: 2)')
     args = parser.parse_args()
 
     print(f"Using compiler: {args.compiler}")
     print(f"Include directory: {args.include_dir}")
 
     all_fail_tests = BASE16_FAIL_TESTS + HASH_FAIL_TESTS + AMOUNT_FAIL_TESTS + CODEC_FAIL_TESTS
-    all_success_tests = BASE16_SUCCESS_TESTS + HASH_SUCCESS_TESTS + AMOUNT_SUCCESS_TESTS + CODEC_SUCCESS_TESTS if args.with_success_tests else []
+    all_success_tests = BASE16_SUCCESS_TESTS + HASH_SUCCESS_TESTS + AMOUNT_SUCCESS_TESTS + CODEC_SUCCESS_TESTS if args.with_success_tests else BASE16_SUCCESS_TESTS[:1]
 
     passed, failed = run_tests(
         all_fail_tests,
@@ -219,7 +219,8 @@ def main():
         args.compiler,
         args.include_dir,
         args.verbose,
-        args.compiler_options_file
+        args.compiler_options_file,
+        args.jobs
     )
 
     print(f"\n=== Summary ===")

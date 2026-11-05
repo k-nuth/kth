@@ -5,6 +5,7 @@
 #ifndef KTH_DOMAIN_CHAIN_ABLA_HPP
 #define KTH_DOMAIN_CHAIN_ABLA_HPP
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdio>
 #include <limits>
@@ -203,41 +204,75 @@ struct state {
     uint64_t block_size {};
     uint64_t control_block_size {};
     uint64_t elastic_buffer_size {};
+    uint64_t block_interval {600};
 
     state() = default;
 
     constexpr
-    state(config const& cfg, uint64_t block_size)
-        : block_size(block_size), control_block_size(cfg.epsilon0), elastic_buffer_size(cfg.beta0)
+    state(config const& cfg, uint64_t block_size, uint64_t block_interval = 600)
+        : block_size(block_size), control_block_size(cfg.epsilon0), elastic_buffer_size(cfg.beta0), block_interval(block_interval)
     {}
 };
+
+// CHIP-2025-03: every quantity the algorithm tracks is "per 600 ticks". A block
+// of interval tau (ticks) sees limits and rates scaled by tau / 600, with
+// INTERNAL_SCALING_FACTOR = 1. 600 is the interval the legacy functions assume.
+inline constexpr uint64_t base_interval = 600;
 
 // Calculate the limit for the block to which the algorithm's state
 // applies, given algorithm state
 inline constexpr
 uint64_t block_size_limit(state const& st) {
-    return st.control_block_size + st.elastic_buffer_size;
+    // A valid state's internal sum fits uint64; the widened intermediate is
+    // essential even at that bound because sum * interval need not fit.
+    return uint64_t(uint128_t(st.control_block_size + st.elastic_buffer_size)
+                    * st.block_interval / base_interval);
+}
+
+// The same limit for a block of `interval` ticks: (epsilon + beta) * tau / 600,
+// exact integer arithmetic. Returns nullopt only if it does not fit 64 bits.
+inline constexpr
+std::optional<uint64_t> block_size_limit(state const& st, uint64_t interval) {
+    return muldiv(st.control_block_size + st.elastic_buffer_size, interval, base_interval);
 }
 
 // Calculate algorithm's state for the next block (n), given
 // current blockchain tip (n-1) block size, algorithm state, and
 // algorithm configuration.
+//
+// The transition responds to the previous state's stored size AND interval.
+// next_interval only describes the returned block: using it for the rates or
+// normalization would mis-evaluate the first transition across activation.
+// With both intervals 600 this is bit-for-bit the pre-CHIP transition.
 inline constexpr
-std::optional<state> next(state const& st, config const& cfg, uint64_t next_block_size) {
+std::optional<state> next(state const& st, config const& cfg, uint64_t next_block_size, uint64_t next_interval) {
+    auto const interval = st.block_interval;
+    if (interval == 0 || interval > base_interval || next_interval == 0 || next_interval > base_interval) {
+        return std::nullopt;
+    }
+
     state ret;
     ret.block_size = next_block_size;  // save the blocksize for the next block to its State
+    ret.block_interval = next_interval;
 
-    // For safety: we clamp this current block's blocksize to the maximum value this algorithm expects. Normally this
-    // won't happen unless the node is run with some -excessiveblocksize parameter that permits larger blocks than this
-    // algo's current state expects.
-    // current_block_size = std::min(current_block_size, st.control_block_size + st.elastic_buffer_size);
-    uint64_t const clamped_block_size = std::min(st.block_size, st.control_block_size + st.elastic_buffer_size);
+    // For safety: we clamp this current block's blocksize to the maximum value this algorithm expects, scaled to
+    // the block's interval. Normally this won't happen unless the node is run with some -excessiveblocksize
+    // parameter that permits larger blocks than this algo's current state expects.
+    auto const scaled_limit_opt = muldiv(st.control_block_size + st.elastic_buffer_size, interval, base_interval);
+    if ( ! scaled_limit_opt) {
+        return std::nullopt;
+    }
+    uint64_t const clamped_block_size = std::min(st.block_size, *scaled_limit_opt);
 
     // algorithmic limit
     // control function
 
-    // zeta * x_{n-1}
-    auto const amplified_current_block_size_opt = muldiv(cfg.zeta_xB7, clamped_block_size, cfg.B7);
+    // zeta * x_{n-1}, with the size taken back to a 600-tick rate
+    auto const normalized_block_size_opt = muldiv(clamped_block_size, base_interval, interval);
+    if ( ! normalized_block_size_opt) {
+        return std::nullopt;
+    }
+    auto const amplified_current_block_size_opt = muldiv(cfg.zeta_xB7, *normalized_block_size_opt, cfg.B7);
     if ( ! amplified_current_block_size_opt) {
         return std::nullopt;
     }
@@ -270,7 +305,12 @@ std::optional<state> next(state const& st, config const& cfg, uint64_t next_bloc
         uint64_t const scaling_offset = *scaling_offset_opt;
 
         // epsilon_n = epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1} - zeta * beta_{n-1} * (zeta * x_{n-1} - epsilon_{n-1}) / (zeta * y_{n-1} - epsilon_{n-1}))
-        ret.control_block_size = st.control_block_size + (bytes_to_add - scaling_offset) / cfg.gamma_reciprocal;
+        // with gamma scaled by the block's interval.
+        auto const increase_opt = muldiv(bytes_to_add - scaling_offset, interval, cfg.gamma_reciprocal * base_interval);
+        if ( ! increase_opt) {
+            return std::nullopt;
+        }
+        ret.control_block_size = st.control_block_size + *increase_opt;
     } else {
         // if zeta * x_{n-1} <= epsilon_{n-1} then decrease or no change
         // epsilon_{n-1} - zeta * x_{n-1}
@@ -279,7 +319,11 @@ std::optional<state> next(state const& st, config const& cfg, uint64_t next_bloc
         // epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1})
         // rearranged to:
         // epsilon_{n-1} - gamma * (epsilon_{n-1} - zeta * x_{n-1})
-        ret.control_block_size = st.control_block_size - bytes_to_remove / cfg.gamma_reciprocal;
+        auto const decrease_opt = muldiv(bytes_to_remove, interval, cfg.gamma_reciprocal * base_interval);
+        if ( ! decrease_opt) {
+            return std::nullopt;
+        }
+        ret.control_block_size = st.control_block_size - *decrease_opt;
 
         // epsilon_n = max(epsilon_{n-1} + gamma * (zeta * x_{n-1} - epsilon_{n-1}), epsilon_0)
         ret.control_block_size = std::max(ret.control_block_size, cfg.epsilon0);
@@ -287,8 +331,12 @@ std::optional<state> next(state const& st, config const& cfg, uint64_t next_bloc
 
     // elastic buffer function
 
-    // beta_{n-1} * theta
-    uint64_t const buffer_decay = st.elastic_buffer_size / cfg.theta_reciprocal;
+    // beta_{n-1} * theta, theta scaled by the block's interval
+    auto const buffer_decay_opt = muldiv(st.elastic_buffer_size, interval, cfg.theta_reciprocal * base_interval);
+    if ( ! buffer_decay_opt) {
+        return std::nullopt;
+    }
+    uint64_t const buffer_decay = *buffer_decay_opt;
 
     // if zeta * x_{n-1} > epsilon_{n-1} then increase
     if (amplified_current_block_size > st.control_block_size) {
@@ -315,6 +363,12 @@ std::optional<state> next(state const& st, config const& cfg, uint64_t next_bloc
     return ret;
 }
 
+// The pre-CHIP transition: every block has the 600-tick interval.
+inline constexpr
+std::optional<state> next(state const& st, config const& cfg, uint64_t next_block_size) {
+    return next(st, cfg, next_block_size, base_interval);
+}
+
 // Calculate algorithm's look-ahead block size limit, for a block N blocks ahead of current one.
 // Returns the limit for block with current+N height, assuming all blocks 100% full.
 inline constexpr
@@ -322,7 +376,7 @@ std::optional<state> lookahead(state const& st, config const& cfg, size_t count)
     state ret = st;
     for (size_t i = 0; i < count; ++i) {
         uint64_t const max_size = block_size_limit(ret);
-        auto const opt = next(ret, cfg, max_size);
+        auto const opt = next(ret, cfg, max_size, ret.block_interval);
         if ( ! opt) {
             return std::nullopt;
         }
@@ -334,13 +388,15 @@ std::optional<state> lookahead(state const& st, config const& cfg, size_t count)
 enum class state_validity {
     valid,
     error_control_block_size,
-    error_elastic_buffer_size
+    error_elastic_buffer_size,
+    error_block_interval
 };
 
 inline constexpr
 std::string_view to_string(state_validity validity) {
     switch (validity) {
         case state_validity::valid: return "Valid state";
+        case state_validity::error_block_interval: return "Error, block interval must be in [1, 600].";
         case state_validity::error_control_block_size: return "Error, invalid control_block_size state. Can't be below initialization value or above epsilonMax.";
         case state_validity::error_elastic_buffer_size: return "Error, invalid elastic_buffer_size state. Can't be below initialization value or above betaMax.";
         default: return "Unknown error";
@@ -351,6 +407,9 @@ std::string_view to_string(state_validity validity) {
 // to point to a constant string explaining the reason that this state is invalid.
 inline constexpr
 state_validity validate(state const& st, config const& cfg) {
+    if (st.block_interval == 0 || st.block_interval > base_interval) {
+        return state_validity::error_block_interval;
+    }
     if (st.control_block_size < cfg.epsilon0 || st.control_block_size > cfg.epsilon_max) {
         return state_validity::error_control_block_size;
     }

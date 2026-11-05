@@ -3,6 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <algorithm>
+#include <optional>
+#include <utility>
 
 #include <kth/blockchain.hpp>
 
@@ -532,3 +535,122 @@ TEST_CASE("header_index orphan header (parent not found)", "[header_index]") {
     REQUIRE(index.get_parent_index(result.index) == header_index::null_index);
     REQUIRE(index.get_height(result.index) == 0);  // Height is 0 because no parent found
 }
+
+TEST_CASE("header_index total chain work includes genesis once", "[header_index]") {
+    header_index index(8);
+    auto const genesis = make_header_at(0, null_hash);
+    auto const root_hash = kth::domain::chain::hash(genesis);
+    auto const root = index.add(root_hash, genesis);
+    auto const child = make_header_at(1, root_hash);
+    auto const child_hash = kth::domain::chain::hash(child);
+    auto const added = index.add(child_hash, child);
+    REQUIRE(root.index != header_index::null_index);
+    REQUIRE(added.index != header_index::null_index);
+    auto const root_proof = header::proof(genesis.bits());
+    REQUIRE(index.get_chain_work(root.index) == 0);
+    REQUIRE(index.total_chain_work(root_hash) == root_proof);
+    REQUIRE(index.total_chain_work(child_hash) == root_proof + header::proof(child.bits()));
+    REQUIRE_FALSE(index.total_chain_work(make_hash(999999)));
+}
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+template <typename Index>
+auto tick_tip_records(Index const& index, hash_digest const& tip, uint64_t activation) {
+    // Keep the public query and observations on the unmodified interface.
+    if constexpr (requires { index.get_chain_tips(tip, activation); }) {
+        return index.get_chain_tips(tip, activation);
+    } else {
+        return index.get_chain_tips(tip);
+    }
+}
+template <typename Tip>
+std::optional<uint64_t> returned_ticks(Tip const& tip) {
+    if constexpr (requires { tip.ticks; }) return tip.ticks;
+    return std::nullopt;
+}
+}
+
+TEST_CASE("header-index tip records carry each branch's own cumulative ticks", "[header_index][tip ticks]") {
+    header_index index(64);
+    auto const root_header = make_header_at(0, null_hash);
+    auto const root = kth::domain::chain::hash(root_header);
+    REQUIRE(index.add(root, root_header).inserted);
+    std::vector<hash_digest> a{root}, b{root};
+    for (uint32_t height = 1; height <= 15; ++height) {
+        auto const first = make_header(4, a.back(), make_hash(height), height * 600, 0x207fffff, 1);
+        a.push_back(kth::domain::chain::hash(first));
+        REQUIRE(index.add(a.back(), first).inserted);
+        auto const second = make_header(4, b.back(), make_hash(height), (height + 1) * 600, 0x207fffff, 2);
+        b.push_back(kth::domain::chain::hash(second));
+        REQUIRE(index.add(b.back(), second).inserted);
+    }
+    // Same activation time, different own MTP: A activates at 12, B at 11.
+    for (auto const [height, ticks] : {std::pair{11u, 6600u}, {12u, 7200u}, {13u, 7260u}, {15u, 7380u}}) {
+        auto const tips = tick_tip_records(index, a[height], 4200);
+        REQUIRE(tips);
+        auto const active = std::ranges::find(*tips, a[height], &header_index::chain_tip::hash);
+        REQUIRE(active != tips->end());
+        CHECK(active->height == height);
+        CHECK(active->status == header_index::tip_status::active);
+        CHECK(active->branch_length == 0);
+        CHECK(returned_ticks(*active) == std::optional<uint64_t>{ticks});
+        auto const side = std::ranges::find(*tips, b.back(), &header_index::chain_tip::hash);
+        REQUIRE(side != tips->end());
+        CHECK(side->height == 15);
+        CHECK(side->branch_length == 15);
+        CHECK(side->status == header_index::tip_status::headers_only);
+        CHECK(returned_ticks(*side) == std::optional<uint64_t>{6840});
+    }
+    // A second context cannot inherit cached activation from the first query.
+    for (auto const disabled : {max_uint64, uint64_t(max_uint32) + 1}) {
+        auto const legacy = tick_tip_records(index, a.back(), disabled);
+        REQUIRE(legacy);
+        for (auto const& tip : *legacy) CHECK(returned_ticks(tip) == std::optional<uint64_t>{9000});
+    }
+    auto const uniform = index.get_chain_tips(a.back());
+    REQUIRE(uniform);
+    for (auto const& tip : *uniform) CHECK(returned_ticks(tip) == std::optional<uint64_t>{9000});
+    CHECK_FALSE(tick_tip_records(index, make_hash(999999), 4200));
+}
+
+TEST_CASE("header-index tick activation uses upper median and retains the boundary interval", "[header_index][tip ticks]") {
+    header_index index(16);
+    auto const genesis = make_header_at(0, null_hash);
+    auto const root = kth::domain::chain::hash(genesis);
+    REQUIRE(index.add(root, genesis).inserted);
+    auto const first = make_header_at(1, root);
+    auto const one = kth::domain::chain::hash(first);
+    REQUIRE(index.add(one, first).inserted);
+    auto const second = make_header_at(2, one);
+    auto const two = kth::domain::chain::hash(second);
+    REQUIRE(index.add(two, second).inserted);
+    for (auto const [activation, expected] : {std::pair{0u, 120u}, {600u, 660u}, {601u, 1200u}}) {
+        auto const tips = tick_tip_records(index, two, activation);
+        REQUIRE(tips);
+        REQUIRE(tips->size() == 1);
+        CHECK(returned_ticks(tips->front()) == std::optional<uint64_t>{expected});
+    }
+    auto const boundary = tick_tip_records(index, one, 600);
+    REQUIRE(boundary);
+    auto const active = std::ranges::find(*boundary, one, &header_index::chain_tip::hash);
+    REQUIRE(active != boundary->end());
+    CHECK(returned_ticks(*active) == std::optional<uint64_t>{600});
+}
+
+TEST_CASE("header-index ticks do not activate on a single high timestamp", "[header_index][tip ticks]") {
+    header_index index(16);
+    auto const genesis = make_header_at(0, null_hash);
+    auto previous = kth::domain::chain::hash(genesis);
+    REQUIRE(index.add(previous, genesis).inserted);
+    for (uint32_t h = 1; h <= 11; ++h) {
+        auto const head = make_header(4, previous, make_hash(h), h == 10 ? 100000 : h * 600, 0x207fffff, h);
+        previous = kth::domain::chain::hash(head);
+        REQUIRE(index.add(previous, head).inserted);
+    }
+    auto const tips = tick_tip_records(index, previous, 10000);
+    REQUIRE(tips);
+    REQUIRE(tips->size() == 1);
+    CHECK(returned_ticks(tips->front()) == std::optional<uint64_t>{6600});
+}
+#endif
