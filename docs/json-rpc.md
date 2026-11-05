@@ -72,10 +72,8 @@ counterpart.
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `get_last_heights()` + `synchronization()` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
-
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
-
-| `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` |
+| `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -187,22 +185,16 @@ transaction is returned with `0` confirmations.
 
 ## getnetworkinfo
 
-`getnetworkinfo` returns `version` (`kth::version` as one number, major × 1000000
-+ minor × 10000 + patch × 100), `subversion` (the user agent the node sends its
-peers), `protocolversion`, `localservices` (16 hex digits) with
+`getnetworkinfo` returns `version`, `subversion` (the user agent the node sends
+its peers), `protocolversion`, `localservices` (16 hex digits) with
 `localservicesnames`, `localrelay`, `networkactive`, `connections`, `relayfee`
-and `warnings`. `relayfee` is the size part of the node's transaction price,
-`node.byte_fee_satoshis` per byte, in BCH per kB; the price also charges
-`node.sigop_fee_satoshis` per signature operation.
-
-The server owns a copy of the advertised network configuration. Connection
-count and activity are obtained through an awaited status query; RPC handlers
-do not access the P2P node or its peer collection. The concrete port has a
-bounded select-channel admission queue and one select-channel reply slot per
-request. The fork's selection operations handle cancellation without racing
-channel operations in parallel groups. Closing the port requests its stop
-token and closes admission, waking clients waiting for admission or replies;
-its service is joined with RPC.
+and `warnings`. `version` is `kth::version` as one number:
+`major * 1000000 + minor * 10000 + patch * 100`, so 1.5.2 is 1050200.
+`networkactive` is false while the P2P node is not running. `relayfee` is the
+size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
+BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
+operation. The method takes no arguments: anything other than omitted params or
+an empty array is a `-32602` error.
 
 ## Mining: getblocktemplatelight
 
@@ -249,18 +241,3 @@ reconstructed block to the chain. Returns the Bitcoin `submitblock` result: `nul
 when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
 `"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
 or expired `job_id`) is a JSON-RPC `-32602` error instead.
-
-### Runtime query ownership
-
-Node runtime queries use `node::query_port<Query, Reply>` from
-`kth/node/query_port.hpp`. The port transports owned, typed messages; it exposes
-no node object, member pointer or callback. The state owner receives requests in
-its execution context and decides when to return a copied or moved reply.
-`network_status_port` is the parameterless network-status specialization.
-
-Use separate bounded ports for different owners or admission policies. A query
-payload can describe several operations owned by the same service, but there is
-no global queue that serializes every subsystem behind an unrelated slow query.
-Cancellation abandons only the caller's reply; closing a port wakes admission
-and reply waits. The lifecycle coordinator stops producers and joins clients and
-services before destroying their ports or dependencies.
