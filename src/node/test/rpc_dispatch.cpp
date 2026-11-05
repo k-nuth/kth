@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <catch2/catch_approx.hpp>
 #include <optional>
+#include <boost/make_shared.hpp>
 #include "sync_harness.hpp"
 
 #include <algorithm>
@@ -649,9 +650,9 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
     io.run();
 
     REQUIRE(result.get() == node::rpc::build_success("3", node::rpc::render_chain_tips({
-        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only},
-        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only},
-        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active}})));
+        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only, 3000},
+        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only, 2400},
+        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active, 1800}})));
 }
 
 TEST_CASE("getchaintips shares ancestry across many tips without stale availability", "[rpc dispatch][rpc chain tips]") {
@@ -703,6 +704,7 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
         io.run();
         return result.get();
     };
+    for (auto& tip : expected) tip.ticks = uint64_t(tip.height) * 600;
     REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
     REQUIRE_FALSE(index.get_chain_tips(null_hash));
     auto const previous_tips = index.get_chain_tips(genesis);
@@ -751,7 +753,7 @@ TEST_CASE("gettxout dispatch reads the UTXO set and the mempool", "[rpc dispatch
     auto const coinbase = trunk[1].transactions().front().hash();
     auto const reply = request("[" + quoted(coinbase) + ",0]");
     CHECK(reply.find(R"("bestblock":)" + quoted(trunk[4].hash())) != std::string::npos);
-    CHECK(reply.find(R"("confirmations":4,"value":50,)") != std::string::npos);
+    CHECK(reply.find(R"("confirmations":4,"confirmations_ticks":2400,"value":50,)") != std::string::npos);
     CHECK(reply.find(R"("coinbase":true})") != std::string::npos);
 
     // No such output, and no such transaction.
@@ -775,7 +777,7 @@ TEST_CASE("gettxout dispatch reads the UTXO set and the mempool", "[rpc dispatch
     CHECK(request("[" + quoted(coinbase) + ",0,true]") == none);
     CHECK(request("[" + quoted(coinbase) + ",0,false]") == reply);
     auto const pooled = request("[" + quoted(spend->hash()) + ",0]");
-    CHECK(pooled.find(R"("confirmations":0,"value":49.9999,)") != std::string::npos);
+    CHECK(pooled.find(R"("confirmations":0,"confirmations_ticks":0,"value":49.9999,)") != std::string::npos);
     CHECK(pooled.find(R"("coinbase":false})") != std::string::npos);
     CHECK(request("[" + quoted(spend->hash()) + ",0,false]") == none);
 
@@ -952,7 +954,7 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     REQUIRE(reply.find(R"("fee":500,"sigops":3})") != std::string::npos);
     REQUIRE(reply.find(R"("previousblockhash":")" + encode_hash(trunk.back().hash()) + '"') !=
         std::string::npos);
-    REQUIRE(reply.find(R"("height":102})") != std::string::npos);
+    REQUIRE(reply.find(R"("height":102,"ticks":61200,"target_time":600})") != std::string::npos);
     REQUIRE(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"]}])").find(R"("error":null)") !=
         std::string::npos);
     REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);
@@ -1093,3 +1095,252 @@ TEST_CASE("getblockchaininfo uses the active header tip while blocks are behind"
     REQUIRE(progress == 0.0);
     REQUIRE(raw.find(R"("initialblockdownload":true)") != std::string::npos);
 }
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("RPC tick metadata extends existing replies without replacing block counts", "[rpc dispatch][rpc ticks]") {
+    test::chain_fixture fixture("rpc_tick_metadata", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":31}";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto reply = result.get();
+        REQUIRE(reply.find("\"error\":null") != std::string::npos);
+        return reply;
+    };
+    auto const hash = encode_hash(domain::chain::block::genesis_regtest().hash());
+    auto const header = request("getblockheader", "[\"" + hash + "\"]");
+    CHECK(header.find("\"confirmations\":1") != std::string::npos);
+    CHECK(header.find("\"confirmations_ticks\":600") != std::string::npos);
+    auto const tips = request("getchaintips", "[]");
+    CHECK(tips.find("\"height\":0") != std::string::npos);
+    CHECK(tips.find("\"ticks\":0") != std::string::npos);
+    for (auto const* method : {"getblocktemplate", "getblocktemplatelight"}) {
+        auto const candidate = request(method, "[]");
+        CAPTURE(method, candidate);
+        CHECK(candidate.find("\"height\":1") != std::string::npos);
+        CHECK(candidate.find("\"ticks\":600") != std::string::npos);
+        CHECK(candidate.find("\"target_time\":600") != std::string::npos);
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+domain::chain::block mine_tick_block(hash_digest const& previous, uint32_t height,
+                                     uint32_t timestamp, uint64_t coinbase_value) {
+    domain::chain::transaction::list txs{test::coinbase_tx(height, 0, coinbase_value)};
+    domain::chain::block candidate(domain::chain::header{0x20000000, previous, null_hash,
+        timestamp, test::regtest_bits, 0}, txs);
+    auto const merkle = candidate.generate_merkle_root();
+    std::optional<domain::chain::block> mined;
+    for (uint64_t nonce = 0; nonce <= max_uint32; ++nonce) {
+        domain::chain::header header{0x20000000, previous, merkle, timestamp,
+            test::regtest_bits, uint32_t(nonce)};
+        if (header.is_valid_proof_of_work(domain::chain::hash(header), false)) {
+            mined.emplace(std::move(header), txs);
+            break;
+        }
+    }
+    REQUIRE(mined);
+    return *mined;
+}
+
+std::vector<domain::chain::block> mixed_tick_chain(hash_digest previous, uint32_t count,
+                                                 uint32_t activation_height, uint32_t base_time) {
+    std::vector<domain::chain::block> blocks;
+    blocks.reserve(count);
+    for (uint32_t height = 1; height <= count; ++height) {
+        auto const shorter = height > activation_height;
+        auto const timestamp = shorter
+            ? base_time + activation_height * 600 + (height - activation_height) * 60
+            : base_time + height * 600;
+        blocks.push_back(mine_tick_block(previous, height, timestamp,
+            uint64_t(shorter ? 5 : 50) * 100'000'000));
+        previous = blocks.back().hash();
+    }
+    return blocks;
+}
+} // namespace
+
+TEST_CASE("RPC tick fields follow mixed intervals and the candidate branch", "[rpc dispatch][rpc ticks]") {
+    constexpr uint32_t activation_height = 12;
+    constexpr uint32_t base_time = 1'700'000'000;
+    test::chain_fixture fixture("rpc_mixed_tick_metadata", /*notify_limit_hours*/ 0);
+    fixture.settings().cantor_activation_time = base_time + (activation_height - 5) * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const trunk = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(),
+        15, activation_height, base_time);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 15);
+
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":41}";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto reply = result.get();
+        REQUIRE(reply.find("\"error\":null") != std::string::npos);
+        return reply;
+    };
+    for (auto const item : {std::pair{11u, 1380}, std::pair{12u, 780}, std::pair{13u, 180}}) {
+        auto const text = request("getblockheader", "[\"" + encode_hash(trunk[item.first-1].hash()) + "\"]");
+        CAPTURE(item.first, text);
+        CHECK(text.find("\"confirmations_ticks\":" + std::to_string(item.second)) != std::string::npos);
+    }
+    auto const coinbase = trunk[11].transactions().front().hash();
+    auto const output = request("gettxout", "[\"" + encode_hash(coinbase) + "\",0]");
+    CHECK(output.find("\"confirmations\":4") != std::string::npos);
+    CHECK(output.find("\"confirmations_ticks\":780") != std::string::npos);
+    auto const boundary = request("getblockheader", "[\"" + encode_hash(trunk[11].hash()) + "\"]");
+    CHECK(boundary.find("\"ticks\":7200") != std::string::npos);
+    CHECK(boundary.find("\"target_time\":600") != std::string::npos);
+    CHECK(boundary.find("\"next_target_time\":60") != std::string::npos);
+    for (auto const* method : {"getblocktemplate", "getblocktemplatelight"}) {
+        auto const candidate = request(method, "[]");
+        CAPTURE(method, candidate);
+        CHECK(candidate.find("\"height\":16") != std::string::npos);
+        CHECK(candidate.find("\"ticks\":7440") != std::string::npos);
+        CHECK(candidate.find("\"target_time\":60") != std::string::npos);
+    }
+    CHECK(request("getchaintips", "[]").find("\"ticks\":7380") != std::string::npos);
+}
+
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("block progress captures mixed intervals and preserves a supplied publication", "[chain progress][faster_blocks]") {
+    constexpr uint32_t activation_height = 12;
+    constexpr uint32_t base_time = 1'700'000'000;
+    test::chain_fixture fixture("rpc_verbose_tick_depth", /*notify_limit_hours*/ 0);
+    fixture.settings().cantor_activation_time = base_time + (activation_height - 5) * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const trunk = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(),
+        15, activation_height, base_time);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 15);
+
+    auto const captured = fixture.chain().chain_view();
+    auto missing_tip = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    missing_tip->tip_hash = null_hash;
+    auto wrong_height = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    ++wrong_height->connected_tip_height;
+    for (auto const& unavailable : {blockchain::block_chain::chain_view_ptr{},
+            blockchain::block_chain::chain_view_ptr{missing_tip},
+            blockchain::block_chain::chain_view_ptr{wrong_height}}) {
+        auto const progress = fixture.chain().get_block_progress(trunk[12].hash(), unavailable);
+        CHECK(progress);
+        if (!progress) continue;
+        CHECK(progress->confirmations == -1);
+        CHECK(progress->confirmations_ticks == -1);
+        CHECK(progress->ticks == 7260);
+        CHECK(progress->target_time == 60);
+        CHECK(progress->next_target_time == 60);
+    }
+    auto no_state = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    no_state->state.reset();
+    auto const indexed_depth = fixture.chain().get_block_progress(trunk[12].hash(), no_state);
+    REQUIRE(indexed_depth);
+    CHECK(indexed_depth->confirmations == 3);
+    CHECK(indexed_depth->confirmations_ticks == 180);
+    for (auto const test : {std::pair{11u, 1380}, std::pair{12u, 780}, std::pair{13u, 180}}) {
+        auto const progress = fixture.chain().get_block_progress(trunk[test.first - 1].hash(), captured);
+        REQUIRE(progress);
+        CHECK(progress->height == test.first);
+        CHECK(progress->confirmations_ticks == test.second);
+    }
+    auto const boundary = fixture.chain().get_block_progress(trunk[11].hash(), captured);
+    REQUIRE(boundary);
+    CHECK(boundary->ticks == 7200);
+    CHECK(boundary->target_time == 600);
+    CHECK(boundary->next_target_time == 60);
+    auto const short_block = fixture.chain().get_block_progress(trunk[12].hash(), captured);
+    REQUIRE(short_block);
+    CHECK(short_block->ticks == 7260);
+    CHECK(short_block->target_time == 60);
+    CHECK(short_block->next_target_time == 60);
+    CHECK_FALSE(fixture.chain().get_block_progress(null_hash, captured));
+
+    // Extend through the real header, persistence and connect boundaries.
+    auto const timestamp = base_time + activation_height * 600 + 4 * 60;
+    std::vector<domain::chain::block> next{mine_tick_block(trunk.back().hash(), 16,
+        timestamp, 5 * uint64_t(100'000'000))};
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(next)).headers_added == 1);
+    test::persist_headers(fixture, next, 16);
+    test::connect_bodies(fixture, next, 16);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 16);
+    auto const still_captured = fixture.chain().get_block_progress(trunk[11].hash(), captured);
+    auto const current = fixture.chain().get_block_progress(trunk[11].hash());
+    REQUIRE(still_captured);
+    REQUIRE(current);
+    CHECK(still_captured->confirmations == 4);
+    CHECK(still_captured->confirmations_ticks == 780);
+    CHECK(current->confirmations == 5);
+    CHECK(current->confirmations_ticks == 840);
+
+    // A stored side branch activates one height sooner. Its own tick height
+    // must not be borrowed from the active chain's schedule at the same height.
+    std::vector<domain::chain::block> side;
+    auto side_previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 15; ++height) {
+        side.push_back(test::mine_block(side_previous, height, base_time + (height + 1) * 600, 1, {}, 0));
+        side_previous = side.back().hash();
+    }
+    static_cast<void>(fixture.organizer().add_headers(test::headers_of(side)));
+    auto const stale = fixture.chain().get_block_progress(side.back().hash(), captured);
+    REQUIRE(stale);
+    CHECK(stale->height == 15);
+    CHECK(stale->ticks == 6840);
+    CHECK(stale->target_time == 60);
+    CHECK(stale->next_target_time == 60);
+    CHECK(stale->confirmations == -1);
+    CHECK(stale->confirmations_ticks == -1);
+}
+
+TEST_CASE("getblockheader returns unknown depth for a stored unconnected header", "[rpc dispatch][rpc ticks]") {
+    test::chain_fixture fixture("rpc_header_unconnected_ticks", 0);
+    constexpr uint32_t base = 1'700'000'000;
+    fixture.settings().cantor_activation_time = base + 7 * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const blocks = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(), 15, 12, base);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
+    test::persist_headers(fixture, blocks, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 0);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = "{\"method\":\"getblockheader\",\"params\":[\"" +
+        encode_hash(blocks.back().hash()) + "\"],\"id\":51}";
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.run();
+    auto const reply = result.get();
+    CHECK(reply.find("\"error\":null") != std::string::npos);
+    CHECK(reply.find("\"confirmations\":-1") != std::string::npos);
+    CHECK(reply.find("\"confirmations_ticks\":-1") != std::string::npos);
+    CHECK(reply.find("\"ticks\":7380") != std::string::npos);
+    CHECK(reply.find("\"target_time\":60") != std::string::npos);
+    CHECK(reply.find("\"next_target_time\":60") != std::string::npos);
+}
+
+#endif

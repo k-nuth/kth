@@ -347,9 +347,17 @@ TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
 
 TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]") {
     REQUIRE(render_chain_tips({}) == "[]");
-    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active}}) ==
-        std::string(R"([{"height":7,"hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
-        R"({"height":5,"hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
+    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only, 4200}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active, 3000}}) ==
+        std::string(R"([{"height":7,)"
+#if defined(KTH_CURRENCY_BCH)
+        R"("ticks":4200,)"
+#endif
+        R"("hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
+        R"({"height":5,)"
+#if defined(KTH_CURRENCY_BCH)
+        R"("ticks":3000,)"
+#endif
+        R"("hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
 }
 
 TEST_CASE("render_tx_out serializes the gettxout fields", "[rpc query]") {
