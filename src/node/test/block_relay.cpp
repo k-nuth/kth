@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -28,6 +29,7 @@
 #include <kth/node/block_relay.hpp>
 #include <kth/node/block_serving.hpp>
 #include <kth/node/detail/block_relay.hpp>
+#include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/p2p_node_test_seam.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
@@ -659,6 +661,16 @@ TEST_CASE("a cmpctblock is offered once whole after a split read, and never with
     trailing.payload = std::move(payload);
     CHECK_FALSE(network.observe_block_message(peer.session, trailing));
     CHECK(offered == 1);
+
+    // That header was queued for ingest, holding the session. No ingest task
+    // runs here, so drain the queue before the peer's socket context goes.
+    size_t headers_queued = 0;
+    while (network.header_ingest().commands.try_receive(
+               [&](std::error_code, kth::node::detail::ingest_command command) {
+                   if (std::holds_alternative<kth::node::detail::ingest_submit>(command)) ++headers_queued;
+               })) {
+    }
+    CHECK(headers_queued == 1);
     network.stop();
     network.join();
 }
