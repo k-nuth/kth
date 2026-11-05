@@ -525,7 +525,11 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
         co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
-    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash);
+    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash
+#if defined(KTH_CURRENCY_BCH)
+        , ctx.chain.chain_settings().cantor_activation_time
+#endif
+    );
     if (!tips) {
         co_return kth::fail(make_error(error_code::internal_error,
             "connected tip not in the header index"));

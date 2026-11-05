@@ -429,6 +429,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(fmt REQUIRED)
   find_package(Boost REQUIRED)
 
+  add_executable(kth_blockchain_bench_chain_tips bench/chain_tips/benchmarks.cpp)
+  target_link_libraries(kth_blockchain_bench_chain_tips PRIVATE ${PROJECT_NAME})
+
   # ==========================================================================
   # 0. block_pool store: bimap + mutex vs concurrent_flat_map
   # ==========================================================================

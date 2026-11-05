@@ -13,11 +13,13 @@
 #include <kth/blockchain/abla_pipeline.hpp>
 
 #include <chrono>
+#include <future>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
 
 #include <kth/node/sync/block_tasks.hpp>
 #include <kth/node/sync/messages.hpp>
@@ -28,6 +30,77 @@
 using namespace kth;
 using namespace kth::node::sync;
 using namespace kth::test;
+
+TEST_CASE("returning to a previously connected branch survives a second restart",
+          "[reorg][cycle][replayed_undo]") {
+    test::chain_fixture fixture("replayed_undo_restart");
+    REQUIRE(fixture.created());
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t fork_height = 12;
+    auto const base = uint32_t(zulu_time()) - 60 * block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= fork_height; ++h) {
+        trunk.push_back(test::mine_block(previous, h, base + h * block_spacing, 0, {}, 0));
+        previous = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    auto const make_branch = [&](uint32_t count, uint32_t salt) {
+        std::vector<domain::chain::block> blocks;
+        auto parent = trunk.back().hash();
+        for (uint32_t n = 1; n <= count; ++n) {
+            auto const h = fork_height + n;
+            blocks.push_back(test::mine_block(parent, h, base + h * block_spacing, salt, {}, 0));
+            parent = blocks.back().hash();
+        }
+        return blocks;
+    };
+    auto const a = make_branch(7, 1);
+    std::vector<domain::chain::block> const a_first{a.front()};
+    auto const b = make_branch(3, 2);
+    REQUIRE(fixture.organizer().add_headers(headers_of(a_first)).headers_added == 1);
+    persist_headers(fixture, a_first, fork_height + 1);
+    connect_bodies(fixture, a_first, fork_height + 1);
+
+    auto const adopt = [&](std::vector<domain::chain::block> const& branch) {
+        auto const added = fixture.organizer().add_headers(headers_of(branch));
+        REQUIRE(added.reorg_candidate);
+        auto& chain = fixture.chain();
+        ::asio::io_context io;
+        auto switched = ::asio::co_spawn(io,
+            execute_reorg(chain, fixture.organizer(), chain.headers().find(branch.back().hash()),
+                fork_height, [] { return false; }, real_persister(chain)), ::asio::use_future);
+        io.run();
+        auto const outcome = switched.get();
+        REQUIRE_FALSE(outcome.fatal);
+        REQUIRE(outcome.result.ok);
+        connect_bodies(fixture, branch, fork_height + 1);
+        REQUIRE(chain.chain_view()->tip_hash == branch.back().hash());
+    };
+    adopt(b);
+    REQUIRE(fixture.restart());
+    // Startup restored only B's index. The bytes of A's first undo record
+    // remain on disk, but replaying A can append the same record again.
+    adopt(a);
+    REQUIRE(utxo_present(fixture.chain(), a.front().transactions().front().hash(), 0, 19));
+    REQUIRE_FALSE(utxo_present(fixture.chain(), b.front().transactions().front().hash(), 0, 19));
+    REQUIRE(fixture.restart());
+    auto const restored = fixture.chain().chain_view();
+    REQUIRE(restored);
+    CHECK(restored->tip_hash == a.back().hash());
+    auto const heights = fixture.chain().get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->block == 19);
+    CHECK(utxo_present(fixture.chain(), a.front().transactions().front().hash(), 0, 19));
+    CHECK_FALSE(utxo_present(fixture.chain(), b.front().transactions().front().hash(), 0, 19));
+    auto const count = fixture.chain().utxo_count();
+    REQUIRE(count);
+    CHECK(*count == 19);
+}
 
 // =============================================================================
 // The reorganization, end to end
