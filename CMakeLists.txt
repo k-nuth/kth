@@ -103,9 +103,21 @@ find_package(gmp REQUIRED)
 if(ENABLE_TEST)
     message(STATUS "Knuth: Enabling CTest (ENABLE_TEST=${ENABLE_TEST})")
     enable_testing()
+    find_package(Python3 COMPONENTS Interpreter QUIET)
 endif()
 
 add_subdirectory(src)
+
+# Exercise the real parser translation unit's currency selection with the
+# generated target flags. flags.make is provided by the Makefiles generator.
+if(ENABLE_TEST AND Python3_Interpreter_FOUND AND TARGET node
+   AND CMAKE_GENERATOR STREQUAL "Unix Makefiles"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_test(NAME kth_parser_currency_options
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_parser_currencies.py ${CMAKE_BINARY_DIR})
+    set_tests_properties(kth_parser_currency_options PROPERTIES TIMEOUT 120)
+endif()
 
 
 

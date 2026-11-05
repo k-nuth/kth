@@ -42,7 +42,7 @@ full_node::full_node(configuration const& configuration)
 #if ! defined(__EMSCRIPTEN__)
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
-    , network_type_(get_network(configuration.network.identifier, configuration.network.inbound_port == 48333))
+    , network_type_(configuration.net)
     , network_settings_(configuration.network)
     , network_(network_settings_)
     , chain_(
@@ -55,7 +55,7 @@ full_node::full_node(configuration const& configuration)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
-    , network_type_(domain::config::network::mainnet)
+    , network_type_(configuration.net)
     , chain_(
         configuration.chain,
         configuration.database,

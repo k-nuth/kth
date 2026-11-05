@@ -64,6 +64,7 @@ settings::settings()
 settings::settings(domain::config::network context)
     : settings() {
     // Handle deviations from common defaults.
+    this->context = context;
     switch (context) {
         case domain::config::network::mainnet: {
 // #ifdef LITECOIN
