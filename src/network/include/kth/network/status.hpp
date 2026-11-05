@@ -57,6 +57,9 @@ public:
     // waiting for replies wake without waiting for the owner to drain the queue.
     void close() {
         requests_.close();
+        // close preserves buffered requests in Asio. Cancel after closing
+        // admission as well, so a sender blocked behind that buffer wakes.
+        requests_.cancel();
         closed_.close();
     }
 
