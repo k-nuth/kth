@@ -285,7 +285,7 @@ full_node::~full_node() {
     // exactly the window where finalization is not protecting either, since it
     // needs headers older than the finalization delay to have any effect.
     if (auto const heights = chain_.get_last_heights(); heights) {
-        organizer.note_block_validated(static_cast<int32_t>(heights->block));
+        organizer.note_block_validated(int32_t(heights->block));
     } else {
         spdlog::error("[full_node] Could not read the validated height at startup; deep-reorg "
             "parking stays inactive until the first connected publication");

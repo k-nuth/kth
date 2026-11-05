@@ -48,9 +48,9 @@ bool iequals(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
         return false;
     }
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        if (std::tolower(static_cast<unsigned char>(a[i])) !=
-            std::tolower(static_cast<unsigned char>(b[i]))) {
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(uint8_t(a[i])) !=
+            std::tolower(uint8_t(b[i]))) {
             return false;
         }
     }
@@ -76,7 +76,7 @@ struct parse_ctx {
     }
 };
 
-int on_header_field(llhttp_t* p, char const* at, std::size_t len) {
+int on_header_field(llhttp_t* p, char const* at, size_t len) {
     auto* c = static_cast<parse_ctx*>(p->data);
     if (c->reading_value) {
         c->commit_header();
@@ -86,7 +86,7 @@ int on_header_field(llhttp_t* p, char const* at, std::size_t len) {
     return 0;
 }
 
-int on_header_value(llhttp_t* p, char const* at, std::size_t len) {
+int on_header_value(llhttp_t* p, char const* at, size_t len) {
     auto* c = static_cast<parse_ctx*>(p->data);
     c->value.append(at, len);
     c->reading_value = true;
@@ -102,7 +102,7 @@ int on_headers_complete(llhttp_t* p) {
     return 0;
 }
 
-int on_body(llhttp_t* p, char const* at, std::size_t len) {
+int on_body(llhttp_t* p, char const* at, size_t len) {
     static_cast<parse_ctx*>(p->data)->body.append(at, len);
     return 0;
 }
@@ -126,7 +126,7 @@ struct head_line_normalizer {
     bool saw_request_line = false;
 
     [[nodiscard]] bool append(std::string_view input, std::string& output) {
-        for (std::size_t i = 0; i < input.size(); ++i) {
+        for (size_t i = 0; i < input.size(); ++i) {
             if (complete) {
                 output.append(input.substr(i));
                 return true;
@@ -376,10 +376,10 @@ void server::stop() {
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.
-    constexpr std::size_t capacity = 64;
+    constexpr size_t capacity = 64;
     ::asio::experimental::channel<void(std::error_code, std::exception_ptr)> ended(owner_, capacity);
     std::unordered_set<std::shared_ptr<tcp::socket>> connections;
-    std::size_t pending = 0;
+    size_t pending = 0;
     bool stopping = false;
     ::asio::steady_timer accept_retry(owner_);
     std::exception_ptr failure;

@@ -352,7 +352,7 @@ TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]"
 
 TEST_CASE("render_network_info serializes the getnetworkinfo fields", "[rpc query]") {
     // NETWORK, BITCOIN_CASH and NETWORK_LIMITED, plus bit 30, which has no name.
-    auto const services = std::uint64_t((1u << 0) | (1u << 5) | (1u << 10) | (1u << 30));
+    auto const services = uint64_t((1u << 0) | (1u << 5) | (1u << 10) | (1u << 30));
     auto const json = render_network_info({
         .version = "1.5.2",
         .subversion = "/Knuth:1.5.2(EB32.0)/",
