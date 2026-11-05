@@ -460,18 +460,18 @@ struct overlay_address_result {
     peer_session::ptr receiver, infrastructure::message::network_address::list addresses,
     std::shared_ptr<overlay_address_result> state)
 {
-    auto [request_ec, request] = co_await sender->messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
-    if (request_ec) co_return error::channel_stopped;
-    state->request_command = request.heading.command();
+    auto request = co_await sender->receive();
+    if ( ! request) co_return error::channel_stopped;
+    state->request_command = request->heading.command();
     if (state->request_command != "getaddr") co_return error::bad_stream;
     state->send_result = co_await send_addresses_auto(*sender, addresses);
     if (state->send_result != error::success) co_return state->send_result;
-    auto [response_ec, response] = co_await receiver->messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
-    if (response_ec) co_return error::channel_stopped;
-    state->command = response.heading.command();
+    auto response = co_await receiver->receive();
+    if ( ! response) co_return error::channel_stopped;
+    state->command = response->heading.command();
     auto executor = co_await ::asio::this_coro::executor;
     auto delivered = co_await ::asio::experimental::make_select(
-        ::asio::experimental::send(receiver->addr_responses(), std::move(response)),
+        ::asio::experimental::send(receiver->addr_responses(), std::move(*response)),
         ::asio::experimental::after(std::chrono::steady_clock::now() + 1s)
     ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
     auto& [ec, selected] = delivered;

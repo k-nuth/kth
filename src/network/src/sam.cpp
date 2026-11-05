@@ -70,9 +70,9 @@ data_chunk decode_destination(std::string const& text) {
         else if ( ! ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
                      (c >= '0' && c <= '9') || c == '=')) invalid_reply();
     }
-    data_chunk bytes;
-    if ( ! decode_base64(bytes, base64) || encode_base64(bytes) != base64) invalid_reply();
-    return bytes;
+    auto bytes = decode_base64(base64);
+    if ( ! bytes || encode_base64(*bytes) != base64) invalid_reply();
+    return std::move(*bytes);
 }
 
 size_t destination_size(data_chunk const& bytes) {
