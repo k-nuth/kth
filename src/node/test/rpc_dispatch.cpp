@@ -648,3 +648,59 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
         {4u, side[1].hash(), 2u, "headers-only"},
         {3u, trunk[2].hash(), 0u, "active"}})));
 }
+
+TEST_CASE("getchaintips shares ancestry across many tips without stale availability", "[rpc dispatch][rpc chain tips]") {
+    test::chain_fixture fixture("rpc_chain_tips_shared");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& index = fixture.chain().headers();
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    auto add = [&](hash_digest const& parent, uint32_t nonce) {
+        domain::chain::header header{1, parent, null_hash, 1700000000u + nonce, 0x207fffffu, nonce};
+        auto const hash = domain::chain::hash(header);
+        auto const result = index.add(hash, header);
+        REQUIRE(result.inserted);
+        index.add_status(result.index, blockchain::header_status::have_data);
+        return std::pair{hash, result.index};
+    };
+
+    constexpr size_t shared_length = 512;
+    constexpr size_t leaves = 64;
+    auto parent = genesis;
+    auto missing = blockchain::header_index::null_index;
+    for (size_t i = 0; i < shared_length; ++i) {
+        auto const [hash, idx] = add(parent, uint32_t(i + 1));
+        if (i == 0) missing = idx;
+        parent = hash;
+    }
+    index.set_status(missing, blockchain::header_status::none);
+    std::vector<node::rpc::chain_tip> expected;
+    for (size_t i = 0; i < leaves; ++i) {
+        auto const [hash, idx] = add(parent, uint32_t(shared_length + i + 1));
+        expected.push_back({shared_length + 1, hash, shared_length + 1, "headers-only"});
+    }
+    auto const [available, available_idx] = add(genesis, 9000);
+    expected.push_back({1, available, 1, "valid-headers"});
+    expected.push_back({0, genesis, 0, "active"});
+    // An unlinked root must not appear as a branch of the connected chain.
+    auto const [unlinked, unlinked_idx] = add(null_hash, 10000);
+    REQUIRE(index.get_parent_index(unlinked_idx) == blockchain::header_index::null_index);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto query = [&] {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            dispatcher.handle(context, R"({"method":"getchaintips","params":[],"id":3})"),
+            ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
+    // Data appearing on a shared ancestor changes every descendant's status.
+    index.add_status(missing, blockchain::header_status::have_data);
+    for (size_t i = 0; i < leaves; ++i) expected[i].status = "valid-headers";
+    REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
+}

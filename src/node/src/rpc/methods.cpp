@@ -349,18 +349,42 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
             "connected tip not in the header index"));
     }
 
-    // A tip is an entry no other entry names as its parent. Entries are only
-    // appended, so reading the count once gives a consistent prefix.
+    // Index entries are append-only and a parent is published before its
+    // children. Compute each branch's fork and data availability once, instead
+    // of walking the same shared ancestry again for every leaf.
     auto const count = index.size();
-    std::vector<bool> has_child(count, false);
-    for (size_t i = 0; i < count; ++i) {
-        auto const parent = index.get_parent_index(header_index::index_t(i));
-        if (parent != header_index::null_index && parent < count) {
-            has_child[parent] = true;
-        }
+    if (active >= count) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected tip outside the header index prefix"));
+    }
+    struct branch_state {
+        int32_t fork_height = -1; // -1: not connected to the published chain
+        bool all_data = false;
+        bool has_child = false;
+    };
+    std::vector<branch_state> branches(count);
+    for (auto idx = active; idx != header_index::null_index;
+         idx = index.get_parent_index(idx)) {
+        branches[idx].fork_height = index.get_height(idx);
+        branches[idx].all_data = true;
     }
 
-    auto const connected_height = int32_t(view->connected_tip_height);
+    for (size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        auto const parent = index.get_parent_index(idx);
+        if (parent != header_index::null_index && parent < count) {
+            branches[parent].has_child = true;
+        }
+        auto& branch = branches[i];
+        if (branch.fork_height >= 0) continue; // already on the connected chain
+        if (parent == header_index::null_index || parent >= i) continue;
+        auto const& previous = branches[parent];
+        if (previous.fork_height < 0) continue; // a disconnected root
+        branch.fork_height = previous.fork_height;
+        branch.all_data = previous.all_data &&
+            index.has_status(idx, blockchain::header_status::have_data);
+    }
+
     std::vector<chain_tip> tips;
     for (size_t i = 0; i < count; ++i) {
         auto const idx = header_index::index_t(i);
@@ -368,28 +392,14 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
             tips.push_back({view->connected_tip_height, view->tip_hash, 0, "active"});
             continue;
         }
-        if (has_child[i]) {
-            continue;
-        }
-        // Down the branch to the connected chain, noting any block not held.
+        auto const& branch = branches[i];
+        if (branch.has_child || branch.fork_height < 0) continue;
         auto const height = index.get_height(idx);
-        auto fork = idx;
-        bool all_data = true;
-        while (fork != header_index::null_index) {
-            auto const fork_height = index.get_height(fork);
-            if (fork_height <= connected_height && index.get_ancestor(active, fork_height) == fork) {
-                break;
-            }
-            all_data = all_data && index.has_status(fork, blockchain::header_status::have_data);
-            fork = index.get_parent_index(fork);
-        }
-        if (fork == header_index::null_index) {
-            continue;
-        }
         tips.push_back({size_t(height), index.get_hash(idx),
-            size_t(height - index.get_height(fork)),
-            all_data ? "valid-headers" : "headers-only"});
+            size_t(height - branch.fork_height),
+            branch.all_data ? "valid-headers" : "headers-only"});
     }
+    // O(N + T log T) time, O(N + T) storage for N headers and T tips.
     std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);
     co_return render_chain_tips(tips);
 }
