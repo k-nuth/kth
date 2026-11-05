@@ -80,6 +80,7 @@ counterpart.
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
+| `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `estimatefee` | `kth_blockchain_settings.byte_fee_satoshis` | `chain_settings().byte_fee_satoshis` |
@@ -172,6 +173,15 @@ tip) and `status`: `active` for the connected tip, `valid-headers` for a branch
 whose blocks the node all holds, and `headers-only` for one it does not. The
 header index does not record whether a block failed validation, so `invalid`
 and `valid-fork` are not reported.
+
+## gettxout
+
+`gettxout "<txid>" <n> [include_mempool=true]` returns the output if it is
+unspent and `null` otherwise: `bestblock` (the connected tip it was read
+against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
+`decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
+output that a mempool transaction spends is `null`, and an output of a mempool
+transaction is returned with `0` confirmations.
 
 ## Mining: getblocktemplatelight
 
