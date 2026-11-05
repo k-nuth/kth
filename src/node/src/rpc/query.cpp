@@ -7,16 +7,21 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <iomanip>
 #include <span>
-#include <sstream>
+#include <string_view>
+#include <vector>
+
+#include <fmt/format.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/constants/common.hpp>
 #include <kth/domain/wallet/cashaddr.hpp>
 #include <kth/domain/wallet/payment_address.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/units.hpp>
@@ -52,9 +57,7 @@ namespace {
 
 // Compact nBits as an 8-char hex string (the getblockheader bits format).
 std::string bits_to_hex(std::uint32_t bits) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(8) << bits;
-    return os.str();
+    return fmt::format("{:08x}", bits);
 }
 
 void write_hash_array(writer& w, hash_list const& hashes) {
@@ -102,6 +105,147 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
     auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
     writer w;
     w.value(double(std::max(per_kb, 0LL)) / double(kth::satoshi_per_bitcoin));
+    return w.str();
+}
+
+namespace {
+
+// An output script's kind as the scriptPubKey "type", and the addresses it
+// pays with the number of signatures that takes; no addresses for an
+// unspendable or unrecognized script.
+struct script_destination {
+    std::string_view type;
+    std::size_t required = 0;
+    std::vector<std::string> addresses;
+};
+
+script_destination describe_output_script(domain::chain::script const& script,
+                                          domain::config::network net) {
+    using domain::machine::script_pattern;
+    using domain::wallet::payment_address;
+    auto const mainnet = net == domain::config::network::mainnet;
+    auto const p2kh = mainnet ? payment_address::mainnet_p2kh : payment_address::testnet_p2kh;
+    auto const p2sh = mainnet ? payment_address::mainnet_p2sh : payment_address::testnet_p2sh;
+
+    script_destination out;
+    switch (script.output_pattern()) {
+        case script_pattern::pay_to_public_key_hash:
+            out.type = "pubkeyhash";
+            break;
+        case script_pattern::pay_to_script_hash:
+        case script_pattern::pay_to_script_hash_32:
+            out.type = "scripthash";
+            break;
+        case script_pattern::pay_to_public_key:
+            out.type = "pubkey";
+            break;
+        case script_pattern::pay_to_multisig: {
+            // <m> <pubkey>... <n> checkmultisig
+            out.type = "multisig";
+            auto const ops = script.operations();
+            out.required = std::size_t(uint8_t(ops.front().code()) -
+                                       uint8_t(domain::machine::opcode::push_positive_1) + 1);
+            for (auto it = ops.begin() + 1; it + 2 < ops.end(); ++it) {
+                auto const address = payment_address::from_shorthash(bitcoin_short_hash(it->data()), p2kh);
+                if (address) {
+                    out.addresses.push_back(address->encoded_cashaddr(net));
+                }
+            }
+            return out;
+        }
+        case script_pattern::null_data:
+            out.type = "nulldata";
+            return out;
+        default:
+            out.type = "nonstandard";
+            return out;
+    }
+    for (auto const& address : payment_address::extract_output(script, p2kh, p2sh)) {
+        out.addresses.push_back(address.encoded_cashaddr(net));
+    }
+    out.required = out.addresses.empty() ? 0 : 1;
+    return out;
+}
+
+std::string_view capability_name(domain::chain::capability_t capability) {
+    switch (capability) {
+        case domain::chain::capability_t::mut:
+            return "mutable";
+        case domain::chain::capability_t::minting:
+            return "minting";
+        default:
+            return "none";
+    }
+}
+
+} // namespace
+
+std::string render_transaction(domain::chain::transaction const& tx,
+                               domain::config::network net, domain::script_flags_t flags) {
+    writer w;
+    w.begin_object();
+    w.field("txid", encode_hash(tx.hash()));
+    w.field("hash", encode_hash(tx.hash()));
+    w.field("version", static_cast<std::int64_t>(tx.version()));
+    w.field("size", static_cast<std::uint64_t>(tx.serialized_size(true)));
+    w.field("locktime", static_cast<std::int64_t>(tx.locktime()));
+
+    w.key("vin").begin_array();
+    for (auto const& input : tx.inputs()) {
+        w.begin_object();
+        if (tx.is_coinbase()) {
+            w.field("coinbase", encode_base16(input.script().bytes()));
+        } else {
+            w.field("txid", encode_hash(input.previous_output().hash()));
+            w.field("vout", static_cast<std::int64_t>(input.previous_output().index()));
+            w.key("scriptSig").begin_object();
+            w.field("asm", input.script().to_string(flags));
+            w.field("hex", encode_base16(input.script().bytes()));
+            w.end_object();
+        }
+        w.field("sequence", static_cast<std::int64_t>(input.sequence()));
+        w.end_object();
+    }
+    w.end_array();
+
+    w.key("vout").begin_array();
+    std::uint64_t n = 0;
+    for (auto const& output : tx.outputs()) {
+        w.begin_object();
+        w.field_raw("value", satoshi_to_bitcoin(output.value()));
+        w.field("n", n++);
+        auto const destination = describe_output_script(output.script(), net);
+        w.key("scriptPubKey").begin_object();
+        w.field("asm", output.script().to_string(flags));
+        w.field("hex", encode_base16(output.script().bytes()));
+        if ( ! destination.addresses.empty()) {
+            w.field("reqSigs", static_cast<std::uint64_t>(destination.required));
+        }
+        w.field("type", destination.type);
+        if ( ! destination.addresses.empty()) {
+            w.key("addresses").begin_array();
+            for (auto const& address : destination.addresses) {
+                w.value(address);
+            }
+            w.end_array();
+        }
+        w.end_object();
+        if (auto const& token = output.token_data()) {
+            w.key("tokenData").begin_object();
+            w.field("category", encode_hash(token->id));
+            w.field("amount", std::to_string(domain::chain::get_amount(*token)));
+            if (domain::chain::has_nft(*token)) {
+                w.key("nft").begin_object();
+                w.field("capability", capability_name(domain::chain::get_nft_capability(*token)));
+                w.field("commitment", encode_base16(domain::chain::get_nft_commitment(*token)));
+                w.end_object();
+            }
+            w.end_object();
+        }
+        w.end_object();
+    }
+    w.end_array();
+    w.end_object();
     return w.str();
 }
 

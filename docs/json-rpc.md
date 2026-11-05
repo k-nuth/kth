@@ -76,6 +76,7 @@ counterpart.
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
+| `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 | `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
 | `estimatefee` | `kth_blockchain_settings.byte_fee_satoshis` | `chain_settings().byte_fee_satoshis` |
@@ -113,6 +114,18 @@ satoshis per kB (`0.000001` with the default `0.1`). The price also charges
 carry, so a transaction pays that on top. The node has no fee estimator: the
 target-blocks argument older clients send is accepted and does not change the
 answer.
+
+## decoderawtransaction
+
+`decoderawtransaction "<hex>"` decodes a serialized transaction without looking
+anything up: `txid`, `hash`, `version`, `size`, `locktime`, `vin` (for a coinbase
+just `coinbase` and `sequence`) and `vout`. Each output has `value` in BCH, `n`,
+`scriptPubKey` (`asm`, `hex`, `type`: `pubkeyhash`, `scripthash`, `pubkey`,
+`multisig`, `nulldata` or `nonstandard`, and for a spendable kind `reqSigs` and
+`addresses` as cashaddr under the node's network prefix) and, when it carries
+CashTokens, `tokenData` (`category`, `amount` as a string, and `nft` with
+`capability` and `commitment`). `scriptPubKey.hex` leaves out the token prefix.
+`asm` is kth's own script notation, under the node's current script rules.
 
 ## Mining: getblocktemplatelight
 
