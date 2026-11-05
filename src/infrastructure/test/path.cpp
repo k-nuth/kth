@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <random>
 #include <stdexcept>
+#include <string_view>
 
 TEST_CASE("files_size counts only immediate regular files", "[path]") {
     struct directory {
@@ -30,4 +31,9 @@ TEST_CASE("files_size counts only immediate regular files", "[path]") {
     REQUIRE(kth::files_size(dir.value) == 20);
     // Preserve the best-effort contract when the directory is absent.
     REQUIRE(kth::files_size(dir.value / "missing") == 0);
+
+    // A name filter selects which files count.
+    REQUIRE(kth::files_size(dir.value, [](std::string_view name) { return name.starts_with("blk"); }) == 13);
+    REQUIRE(kth::files_size(dir.value, [](std::string_view) { return false; }) == 0);
+    REQUIRE(kth::files_size(dir.value / "missing", [](std::string_view) { return true; }) == 0);
 }

@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <array>
 #include <expected>
-#include <filesystem>
-#include <system_error>
 #include <limits>
 #include <memory>
 #include <span>
@@ -25,7 +23,6 @@
 
 #include <asio/awaitable.hpp>
 #include <simdjson.h>
-#include <spdlog/spdlog.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #if defined(KTH_CURRENCY_BCH)
@@ -76,42 +73,13 @@ std::expected<chain_progress, rpc_error> progress_for(
 }
 #endif
 
-// The size of the block and undo files in `dir`: blk/rev followed by at least
-// five digits (flat_file_seq's minimum, not a maximum) and `.dat`. Symlinks are
-// followed, so files moved to another disk still count. size_on_disk is
-// informational: an unreadable file is skipped and a listing error stops the
-// scan with what was counted, both logged, and getblockchaininfo still answers.
-uint64_t block_files_size(std::filesystem::path const& dir) {
-    uint64_t total = 0;
-    std::error_code ec;
-    std::filesystem::directory_iterator it(dir, ec);
-    for (std::filesystem::directory_iterator const end; ! ec && it != end; it.increment(ec)) {
-        auto const name = it->path().filename().string();
-        std::string_view const file{name};
-        if (file.size() < 12 || ! file.ends_with(".dat") ||
-            (! file.starts_with("blk") && ! file.starts_with("rev")) ||
-            ! std::ranges::all_of(file.substr(3, file.size() - 7),
-                [](char c) { return c >= '0' && c <= '9'; })) {
-            continue;
-        }
-        std::error_code file_ec;
-        if ( ! std::filesystem::is_regular_file(it->status(file_ec)) || file_ec) {
-            if (file_ec) {
-                spdlog::warn("[rpc] size_on_disk skips {}: {}", it->path().string(), file_ec.message());
-            }
-            continue;
-        }
-        auto const size = it->file_size(file_ec);
-        if (file_ec) {
-            spdlog::warn("[rpc] size_on_disk skips {}: {}", it->path().string(), file_ec.message());
-            continue;
-        }
-        total += size;
-    }
-    if (ec) {
-        spdlog::warn("[rpc] size_on_disk could not list {}: {}", dir.string(), ec.message());
-    }
-    return total;
+// A block or undo file of the flat file store: blk/rev followed by at least
+// five digits (flat_file_seq's minimum, not a maximum) and `.dat`.
+bool is_block_file(std::string_view name) {
+    return name.size() >= 12 && name.ends_with(".dat") &&
+        (name.starts_with("blk") || name.starts_with("rev")) &&
+        std::ranges::all_of(name.substr(3, name.size() - 7),
+            [](char c) { return c >= '0' && c <= '9'; });
 }
 
 // How many blocks the connected chain has from the block at `height` with
@@ -478,7 +446,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
         .median_time = view->state->median_time_past(),
         .chain_work = chain_work,
-        .size_on_disk = block_files_size(ctx.chain.data_dir() / "blocks"),
+        .size_on_disk = files_size(ctx.chain.data_dir() / "blocks", is_block_file),
         .initial_block_download = ! synced.synchronized()
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress

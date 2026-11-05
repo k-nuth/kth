@@ -166,8 +166,8 @@ view, so they always describe the same tip.
 - `size_on_disk` is the size of the block and undo files as they are on disk,
   including the space each file has preallocated for the blocks to come (block
   files grow in 128 MiB chunks). Only `blk`/`rev` files with numbered `.dat`
-  names count, symlinked ones included. A file that cannot be read is skipped
-  and logged; it never turns the whole call into an error.
+  names count, symlinked ones included. A file that cannot be read is skipped;
+  it never turns the whole call into an error.
 - `pruned` is not reported.
 
 ## getchaintips
