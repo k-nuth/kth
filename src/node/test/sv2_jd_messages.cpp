@@ -262,3 +262,125 @@ TEST_CASE("sv2 jd declaration and transaction response respect the upstream fram
     require_refused(declare_mining_job_error{1, {}, data_chunk(b0_64k_max + 1)});
     require_refused(set_custom_mining_job_error{1, 2, std::string(b0_255_max + 1, 'x')});
 }
+
+TEST_CASE("sv2 jd extension negotiation and payout output messages keep their field order", "[sv2 jd]") {
+    REQUIRE(extensions_negotiation_type == 0x0001);
+    REQUIRE(requested_payout_outputs_extension == 0x5052);
+    REQUIRE(exact_outputs_flag == 1u);
+    REQUIRE(error_stale_payout_outputs == "stale-payout-outputs");
+    REQUIRE(request_extensions::extension_id == extensions_negotiation_type);
+    REQUIRE(request_extensions::message_type == 0x00);
+    REQUIRE(request_extensions_success::message_type == 0x01);
+    REQUIRE(request_extensions_error::message_type == 0x02);
+    REQUIRE_FALSE(request_extensions::channel_message);
+    REQUIRE(request_payout_outputs::extension_id == requested_payout_outputs_extension);
+    REQUIRE(request_payout_outputs::message_type == 0x00);
+    REQUIRE(request_payout_outputs_success::message_type == 0x01);
+    REQUIRE(request_payout_outputs_error::message_type == 0x02);
+    REQUIRE(payout_outputs_stale::message_type == 0x03);
+    REQUIRE_FALSE(request_payout_outputs::channel_message);
+    REQUIRE_FALSE(payout_outputs_stale::channel_message);
+
+    // U16 request id, then SEQ0_64K[U16]: count, then one extension id.
+    request_extensions const ask{1, {requested_payout_outputs_extension}};
+    REQUIRE(to_data_chunk(ask) == data_chunk{0x01, 0x00, 0x01, 0x00, 0x52, 0x50});
+    auto const asked = require_codec(ask);
+    REQUIRE(asked.request_id == 1);
+    REQUIRE(asked.requested_extensions == ask.requested_extensions);
+    REQUIRE(require_codec(request_extensions{}).requested_extensions.empty());
+    REQUIRE(require_codec(request_extensions_success{7, {0x0004, requested_payout_outputs_extension}})
+        .supported_extensions.size() == 2);
+    auto const negotiation_error = require_codec(request_extensions_error{4, {0x0004}, {0x00ab}});
+    REQUIRE(negotiation_error.unsupported_extensions == std::vector<uint16_t>{0x0004});
+    REQUIRE(negotiation_error.required_extensions == std::vector<uint16_t>{0x00ab});
+    REQUIRE(require_codec(request_extensions_error{}).required_extensions.empty());
+
+    request_extensions full;
+    full.requested_extensions.resize(b0_64k_max, requested_payout_outputs_extension);
+    REQUIRE(full.serialized_size() == 2 + 2 + 2 * b0_64k_max);
+    REQUIRE(from_data_chunk<request_extensions>(to_data_chunk(full)).has_value());
+    request_extensions over;
+    over.requested_extensions.resize(b0_64k_max + 1);
+    REQUIRE(over.serialized_size() == 2 + 2 + 2 * (b0_64k_max + 1));
+    require_refused(over);
+
+    // request id, token, value, height, prev hash, nbits, coinbase prefix.
+    request_payout_outputs request;
+    request.request_id = 0x04030201u;
+    request.mining_job_token = {0xaa, 0xbb};
+    request.available_payout_value = 0x0807060504030201ull;
+    request.height = 101;
+    request.prev_hash = marked_hash(1);
+    request.nbits = 0x207fffffu;
+    request.coinbase_prefix = {0x03, 0x65};
+    data_chunk const payout_bytes{
+        0x01, 0x02, 0x03, 0x04,
+        0x02, 0xaa, 0xbb,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x65, 0x00, 0x00, 0x00,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+        0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+        0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        0xff, 0xff, 0x7f, 0x20,
+        0x02, 0x03, 0x65};
+    REQUIRE(to_data_chunk(request) == payout_bytes);
+    auto const payout = require_codec(request);
+    REQUIRE(payout.request_id == request.request_id);
+    REQUIRE(payout.mining_job_token == request.mining_job_token);
+    REQUIRE(payout.available_payout_value == request.available_payout_value);
+    REQUIRE(payout.height == 101);
+    REQUIRE(payout.prev_hash == request.prev_hash);
+    REQUIRE(payout.nbits == request.nbits);
+    REQUIRE(payout.coinbase_prefix == request.coinbase_prefix);
+
+    // Five U32 fields, then a U16 length and the output bytes.
+    request_payout_outputs_success success;
+    success.request_id = 7;
+    success.flags = exact_outputs_flag;
+    success.coinbase_tx_version = 2;
+    success.coinbase_tx_input_sequence = 0xfffffffeu;
+    success.coinbase_tx_locktime = 100;
+    success.coinbase_tx_outputs = {0x51};
+    REQUIRE(to_data_chunk(success) == data_chunk{
+        0x07, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00,
+        0xfe, 0xff, 0xff, 0xff,
+        0x64, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x51});
+    auto const paid = require_codec(success);
+    REQUIRE(paid.flags == exact_outputs_flag);
+    REQUIRE(paid.coinbase_tx_version == 2);
+    REQUIRE(paid.coinbase_tx_input_sequence == 0xfffffffeu);
+    REQUIRE(paid.coinbase_tx_locktime == 100);
+    REQUIRE(paid.coinbase_tx_outputs == success.coinbase_tx_outputs);
+
+    auto const stale_error = require_codec(request_payout_outputs_error{7,
+        std::string(error_stale_payout_outputs)});
+    REQUIRE(stale_error.request_id == 7);
+    REQUIRE(stale_error.error_code == error_stale_payout_outputs);
+    REQUIRE(to_data_chunk(stale_error) == data_chunk{0x07, 0x00, 0x00, 0x00, 20,
+        's', 't', 'a', 'l', 'e', '-', 'p', 'a', 'y', 'o', 'u', 't', '-',
+        'o', 'u', 't', 'p', 'u', 't', 's'});
+    REQUIRE(require_codec(payout_outputs_stale{}).serialized_size() == 0);
+    REQUIRE(to_data_chunk(payout_outputs_stale{}).empty());
+
+    auto maximum_request = request;
+    maximum_request.mining_job_token.resize(b0_255_max);
+    maximum_request.coinbase_prefix.resize(b0_255_max);
+    REQUIRE(from_data_chunk<request_payout_outputs>(to_data_chunk(maximum_request)).has_value());
+    auto maximum_success = success;
+    maximum_success.coinbase_tx_outputs.resize(b0_64k_max);
+    REQUIRE(from_data_chunk<request_payout_outputs_success>(to_data_chunk(maximum_success)).has_value());
+    REQUIRE(from_data_chunk<request_payout_outputs_error>(to_data_chunk(
+        request_payout_outputs_error{1, std::string(b0_255_max, 'e')})).has_value());
+
+    auto invalid_request = request;
+    SECTION("oversized token") { invalid_request.mining_job_token.resize(b0_255_max + 1); }
+    SECTION("oversized prefix") { invalid_request.coinbase_prefix.resize(b0_255_max + 1); }
+    require_refused(invalid_request);
+    require_refused(request_payout_outputs_success{1, 0, 0, 0, 0, data_chunk(b0_64k_max + 1)});
+    require_refused(request_payout_outputs_error{1, std::string(b0_255_max + 1, 'e')});
+}

@@ -49,9 +49,8 @@ hash_digest authority(std::string const& text) {
 template <typename Message>
 data_chunk frame(Message const& message) {
     auto const payload = to_data_chunk(message);
-    auto bytes = to_data_chunk(message_header{Message::channel_message
-        ? message_header::channel_msg_flag : uint16_t{0}, Message::message_type,
-        static_cast<uint32_t>(payload.size())});
+    auto bytes = to_data_chunk(message_header{framed_extension_type<Message>(),
+        Message::message_type, static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -156,15 +155,21 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             }
             return true;
         }
-        if (session.ready() && header->extension() == 0
-            && (peer == jd_peer::declaration
-                || header->msg_type == set_custom_mining_job_success::message_type
-                || header->msg_type == set_custom_mining_job_error::message_type)) {
+        bool const payout = header->extension() == requested_payout_outputs_extension
+            && peer == jd_peer::declaration;
+        if (session.ready() && ((header->extension() == 0
+                && (peer == jd_peer::declaration
+                    || header->msg_type == set_custom_mining_job_success::message_type
+                    || header->msg_type == set_custom_mining_job_error::message_type))
+            || payout)) {
             return dispatch(jobs_.process(peer, *header, *payload));
         }
         auto const previous_prefix = mining_session_.channel()
             ? mining_session_.channel()->extranonce_prefix : data_chunk{};
         auto result = session.process(*header, *payload);
+        if (peer == jd_peer::declaration && session.ready()) {
+            jobs_.use_payout_outputs(session.payout_outputs());
+        }
         if (result.close) {
             failure = result.error;
             return false;
@@ -212,6 +217,21 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             auto [error] = co_await deadline.async_wait(::asio::as_tuple(::asio::use_awaitable));
             if (done || session.ready()) co_return;
             if (error == ::asio::error::operation_aborted) continue;
+            // Negotiation silence means the pool does not know the extension.
+            // The connection stays up and declarations use the base coinbase.
+            if (session.abandon_extensions()) {
+                if (&session == &declaration_session_) jobs_.use_payout_outputs(false);
+                if ( ! published_ && mining_session_.ready() && declaration_session_.ready()) {
+                    published_ = true;
+                    (void)ready_.try_send(std::error_code{}, 1);
+                    spdlog::info("[sv2 jd] Both upstreams ready; starting local declarations");
+                }
+                // Readiness or the switch to the base coinbase is new work for
+                // the declaration loop. Without a wake it sleeps until the
+                // next chain tip, though nothing else will wake it before then.
+                wake_declarations();
+                continue;
+            }
             timed_out = true;
             connection.stop();
             co_return;

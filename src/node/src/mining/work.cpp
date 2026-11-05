@@ -220,6 +220,94 @@ share_outcome rejected_share(share_request const& share, std::string_view code) 
     return result;
 }
 
+// Padding is chosen for one minimal output so the prefix can be sent before
+// the pool's outputs exist. Larger outputs only make the transaction longer.
+std::optional<data_chunk> script_prefix_for(size_t height, uint32_t generation,
+    size_t extranonce_prefix_size, uint16_t extranonce_size) {
+    if (extranonce_size > 32 || extranonce_prefix_size > 32
+        || extranonce_prefix_size + size_t{extranonce_size} > 32) {
+        return std::nullopt;
+    }
+    if (height > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) return std::nullopt;
+    auto const number = infrastructure::machine::number::from_int(static_cast<int64_t>(height));
+    if ( ! number) return std::nullopt;
+    auto bip34 = domain::machine::operation(number->data()).to_data();
+    if (bip34.empty() || bip34.size() > bip34_reserve) return std::nullopt;
+    auto const job = to_little_endian(generation);
+    // 4 version + 1 input count + 36 outpoint + 1 script length + 4 sequence
+    // + 1 output count + 9 minimal output + 4 locktime.
+    constexpr size_t fixed_min = 4 + 1 + 36 + 1 + 4 + 1 + 9 + 4;
+    auto const unpadded = fixed_min + bip34.size() + job.size()
+        + extranonce_prefix_size + size_t{extranonce_size};
+    size_t const pad = unpadded < 100 ? 100 - unpadded : 0;
+    auto const body = bip34.size() + job.size() + pad + extranonce_prefix_size
+        + size_t{extranonce_size};
+    if (body > coinbase_script_limit || body >= 253) return std::nullopt;
+    data_chunk prefix;
+    prefix.reserve(bip34.size() + job.size() + pad);
+    prefix.insert(prefix.end(), bip34.begin(), bip34.end());
+    prefix.insert(prefix.end(), job.begin(), job.end());
+    prefix.insert(prefix.end(), pad, uint8_t{0});
+    return prefix;
+}
+
+std::optional<coinbase_parts> assemble_fixed_coinbase(data_chunk const& script_prefix,
+    data_chunk const& extranonce_prefix, uint16_t extranonce_size,
+    domain::chain::output::list const& outputs, uint32_t version, uint32_t sequence,
+    uint32_t locktime) {
+    if (outputs.empty() || outputs.size() > max_coinbase_outputs) return std::nullopt;
+    uint64_t output_bytes = 0;
+    for (auto const& output : outputs) {
+        output_bytes += output.serialized_size(true);
+        if (output_bytes > max_output_bytes) return std::nullopt;
+    }
+    auto const middle = extranonce_prefix.size() + size_t{extranonce_size};
+    auto const body = script_prefix.size() + middle;
+    if (body == 0 || body > coinbase_script_limit || body >= 253) return std::nullopt;
+
+    data_chunk script_bytes;
+    script_bytes.reserve(body);
+    script_bytes.insert(script_bytes.end(), script_prefix.begin(), script_prefix.end());
+    script_bytes.insert(script_bytes.end(), extranonce_prefix.begin(), extranonce_prefix.end());
+    script_bytes.insert(script_bytes.end(), size_t{extranonce_size}, uint8_t{0});
+    domain::chain::script script(std::move(script_bytes), false);
+    domain::chain::input input(domain::chain::output_point::null(), std::move(script), sequence);
+    domain::chain::transaction transaction(version, locktime, {std::move(input)}, outputs);
+    auto const raw = to_data_chunk(transaction, true);
+
+    constexpr size_t length_at = 4 + 1 + 36;
+    if (raw.size() < length_at + 1 + body || raw[4] != 1 || raw[length_at] != body) {
+        return std::nullopt;
+    }
+    auto const head = length_at + 1 + script_prefix.size();
+    if (raw.size() < head + middle) return std::nullopt;
+    if ( ! std::equal(extranonce_prefix.begin(), extranonce_prefix.end(),
+            raw.begin() + static_cast<std::ptrdiff_t>(head))) {
+        return std::nullopt;
+    }
+    if ( ! std::all_of(raw.begin() + static_cast<std::ptrdiff_t>(head + extranonce_prefix.size()),
+            raw.begin() + static_cast<std::ptrdiff_t>(head + middle),
+            [](uint8_t byte) { return byte == 0; })) {
+        return std::nullopt;
+    }
+    auto const tail = head + middle;
+    if (head > b0_64k_limit || raw.size() - tail > b0_64k_limit) return std::nullopt;
+
+    coinbase_parts parts;
+    parts.prefix.assign(raw.begin(), raw.begin() + static_cast<std::ptrdiff_t>(head));
+    parts.suffix.assign(raw.begin() + static_cast<std::ptrdiff_t>(tail), raw.end());
+    parts.txid = transaction.hash();
+    parts.size = raw.size();
+    return parts;
+}
+
+bool within_template(blockchain::mining_template const& tmpl, size_t coinbase_size) {
+    auto const overhead = domain::chain::header{}.serialized_size(true)
+        + infrastructure::message::variable_uint_size(tmpl.selection.txs.size() + 1);
+    return overhead <= tmpl.size_limit && coinbase_size <= tmpl.size_limit - overhead
+        && tmpl.selection.total_size <= tmpl.size_limit - overhead - coinbase_size;
+}
+
 } // namespace
 
 std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
@@ -243,13 +331,7 @@ std::optional<declared_work> make_declared_work(blockchain::mining_template cons
     }
     auto parts = split_coinbase(tmpl.height, generation, upstream_prefix,
         upstream_extranonce_size, outputs);
-    if ( ! parts) return std::nullopt;
-    auto const overhead = domain::chain::header{}.serialized_size(true)
-        + infrastructure::message::variable_uint_size(tmpl.selection.txs.size() + 1);
-    if (overhead > tmpl.size_limit || parts->size > tmpl.size_limit - overhead
-        || tmpl.selection.total_size > tmpl.size_limit - overhead - parts->size) {
-        return std::nullopt;
-    }
+    if ( ! parts || ! within_template(tmpl, parts->size)) return std::nullopt;
 
     declared_work work;
     work.tmpl = tmpl;
@@ -264,6 +346,58 @@ std::optional<declared_work> make_declared_work(blockchain::mining_template cons
         work.coinbase_tx_prefix.end());
     work.coinbase_tx_outputs.assign(work.coinbase_tx_suffix.begin() + 4,
         work.coinbase_tx_suffix.end() - 4);
+    work.merkle_path = merkle_path_of(tmpl.selection.txs);
+    work.upstream_extranonce_prefix = upstream_prefix;
+    work.upstream_extranonce_size = upstream_extranonce_size;
+    return work;
+}
+
+std::optional<data_chunk> payout_coinbase_prefix(size_t height, uint32_t generation,
+    size_t extranonce_prefix_size, uint16_t extranonce_size) {
+    return script_prefix_for(height, generation, extranonce_prefix_size, extranonce_size);
+}
+
+std::optional<declared_work> make_payout_work(blockchain::mining_template const& tmpl,
+    domain::chain::output::list const& outputs, uint32_t generation,
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
+    data_chunk const& script_prefix, uint32_t version, uint32_t input_sequence,
+    uint32_t locktime) {
+    auto const target = domain::chain::compact::from_compact(tmpl.bits);
+    if ( ! target || target->big() == 0 || tmpl.current_time < tmpl.min_time
+        || upstream_extranonce_size < jd_min_extranonce_size || upstream_extranonce_size > 32
+        || upstream_prefix.size() > 32 - size_t{upstream_extranonce_size}
+        || tmpl.selection.txs.size() > 65535) {
+        return std::nullopt;
+    }
+    if (outputs.empty() || ! outputs_pay(outputs, tmpl.coinbase_value)) return std::nullopt;
+    for (auto const& tx : tmpl.selection.txs) {
+        if ( ! tx) return std::nullopt;
+    }
+    auto const expected = script_prefix_for(tmpl.height, generation, upstream_prefix.size(),
+        upstream_extranonce_size);
+    if ( ! expected || *expected != script_prefix) return std::nullopt;
+    auto parts = assemble_fixed_coinbase(script_prefix, upstream_prefix, upstream_extranonce_size,
+        outputs, version, input_sequence, locktime);
+    if ( ! parts || ! within_template(tmpl, parts->size)) return std::nullopt;
+
+    declared_work work;
+    work.tmpl = tmpl;
+    work.outputs = outputs;
+    work.generation = generation;
+    work.coinbase_tx_prefix = std::move(parts->prefix);
+    work.coinbase_tx_suffix = std::move(parts->suffix);
+    constexpr size_t script_at = 4 + 1 + 36 + 1;
+    if (work.coinbase_tx_prefix.size() < script_at) return std::nullopt;
+    work.coinbase_prefix.assign(work.coinbase_tx_prefix.begin() + script_at,
+        work.coinbase_tx_prefix.end());
+    if (work.coinbase_prefix != script_prefix) return std::nullopt;
+    if (work.coinbase_tx_suffix.size() < 8) return std::nullopt;
+    work.coinbase_tx_outputs.assign(work.coinbase_tx_suffix.begin() + 4,
+        work.coinbase_tx_suffix.end() - 4);
+    work.coinbase_version = version;
+    work.coinbase_input_sequence = input_sequence;
+    work.coinbase_locktime = locktime;
+    work.fixed_script = true;
     work.merkle_path = merkle_path_of(tmpl.selection.txs);
     work.upstream_extranonce_prefix = upstream_prefix;
     work.upstream_extranonce_size = upstream_extranonce_size;
@@ -568,19 +702,23 @@ std::optional<work_job> work_engine::build(channel& slot,
             slot.id);
         return std::nullopt;
     }
-    auto parts = split_coinbase(tmpl.height, generation, slot.extranonce_prefix,
-        slot.extranonce_size, paid);
+    // The payout request already committed the bytes before the extranonce.
+    // Rebuilding them from the returned outputs would move that split.
+    std::optional<coinbase_parts> parts;
+    if (pooled && pool_.fixed_script) {
+        parts = assemble_fixed_coinbase(pool_.script_prefix, slot.extranonce_prefix,
+            slot.extranonce_size, paid, pool_.coinbase_version,
+            pool_.coinbase_input_sequence, pool_.coinbase_locktime);
+    } else {
+        parts = split_coinbase(tmpl.height, generation, slot.extranonce_prefix,
+            slot.extranonce_size, paid);
+    }
     if ( ! parts) {
         spdlog::warn("[mining] Skipping channel {}: coinbase does not fit the Mining Protocol fields",
             slot.id);
         return std::nullopt;
     }
-    auto const overhead = domain::chain::header{}.serialized_size(true)
-        + infrastructure::message::variable_uint_size(tmpl.selection.txs.size() + 1);
-    if (overhead > tmpl.size_limit || parts->size > tmpl.size_limit - overhead
-        || tmpl.selection.total_size > tmpl.size_limit - overhead - parts->size) {
-        return std::nullopt;
-    }
+    if ( ! within_template(tmpl, parts->size)) return std::nullopt;
     auto path = merkle_path_of(tmpl.selection.txs);
     if (path.size() > 255) {
         spdlog::warn("[mining] Skipping channel {}: merkle path exceeds SEQ0_255", slot.id);
@@ -657,8 +795,14 @@ std::optional<std::vector<work_job>> work_engine::on_pool_template(
     domain::chain::output::list const& solo_outputs, pool_binding const& binding) {
     if (binding.extranonce_size < (pool_allocations_ ? jd_min_extranonce_size : jd_allocation_size)
         || binding.prefix.size() + size_t{binding.extranonce_size} > 32
-        || pool_outputs.empty() || pool_outputs.front().value() != tmpl.coinbase_value
-        || ! outputs_pay(pool_outputs, tmpl.coinbase_value)) {
+        || pool_outputs.empty() || ! outputs_pay(pool_outputs, tmpl.coinbase_value)) {
+        return std::nullopt;
+    }
+    // Row 25 puts the whole coinbase value in the first output. A payout set
+    // may split that value; its script prefix was fixed before the outputs arrived.
+    if (binding.fixed_script) {
+        if (binding.script_prefix.empty()) return std::nullopt;
+    } else if (pool_outputs.front().value() != tmpl.coinbase_value) {
         return std::nullopt;
     }
     pool_.active = true;
@@ -666,6 +810,11 @@ std::optional<std::vector<work_job>> work_engine::on_pool_template(
     pool_.extranonce_size = binding.extranonce_size;
     pool_.generation = binding.generation;
     pool_.outputs = pool_outputs;
+    pool_.fixed_script = binding.fixed_script;
+    pool_.script_prefix = binding.script_prefix;
+    pool_.coinbase_version = binding.coinbase_version;
+    pool_.coinbase_input_sequence = binding.coinbase_input_sequence;
+    pool_.coinbase_locktime = binding.coinbase_locktime;
     current_txs_ = std::make_shared<std::vector<transaction_const_ptr> const>(tmpl.selection.txs);
     std::vector<work_job> jobs;
     jobs.reserve(channels_.size());

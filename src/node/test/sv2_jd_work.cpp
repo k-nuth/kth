@@ -448,6 +448,89 @@ TEST_CASE("sv2 JD pool work nests in the upstream extranonce and solo work resto
     REQUIRE_FALSE(engine.submit(restored_share).pool);
 }
 
+TEST_CASE("sv2 JD payout work keeps a split coinbase and the committed script", "[sv2 jd]") {
+    auto const tmpl = mining_template();
+    domain::chain::output::list const split{
+        {1, domain::chain::script(data_chunk{0x51}, false), std::nullopt},
+        {tmpl.coinbase_value - 1, domain::chain::script(data_chunk{0x52}, false), std::nullopt}};
+    data_chunk const pool_prefix(8, 0x12);
+    REQUIRE_FALSE(make_declared_work(tmpl, split, 7, pool_prefix, 24));
+    auto const script_prefix = payout_coinbase_prefix(tmpl.height, 7, pool_prefix.size(), 24);
+    REQUIRE(script_prefix);
+    auto const declared = make_payout_work(tmpl, split, 7, pool_prefix, 24, *script_prefix,
+        2, 0xfffffffeu, 99);
+    REQUIRE(declared);
+    REQUIRE(declared->fixed_script);
+    REQUIRE(declared->coinbase_prefix == *script_prefix);
+    REQUIRE(declared->coinbase_version == 2);
+    REQUIRE(declared->coinbase_input_sequence == 0xfffffffeu);
+    REQUIRE(declared->coinbase_locktime == 99);
+    REQUIRE(declared->outputs == split);
+    REQUIRE(declared->outputs.front().value() != tmpl.coinbase_value);
+
+    hash_digest const target = [] {
+        hash_digest value;
+        value.fill(0xff);
+        return value;
+    }();
+    open_request request;
+    request.request_id = 1;
+    request.kind = channel_kind::extended;
+    request.max_target = target;
+    request.min_extranonce_size = 12;
+    work_engine engine(0x0102030405060708ull);
+    auto const opened = engine.open(request);
+    REQUIRE(opened.status == open_status::opened);
+    short_hash solo_hash{};
+    solo_hash.fill(0x43);
+    domain::chain::output::list const solo{{tmpl.coinbase_value,
+        domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern(solo_hash)),
+        std::nullopt}};
+    pool_binding plain{pool_prefix, 24, 7};
+    REQUIRE_FALSE(engine.on_pool_template(tmpl, split, solo, plain));
+    plain.fixed_script = true;
+    plain.script_prefix = *script_prefix;
+    plain.coinbase_version = 2;
+    plain.coinbase_input_sequence = 0xfffffffeu;
+    plain.coinbase_locktime = 99;
+    auto const jobs = engine.on_pool_template(tmpl, split, solo, plain);
+    REQUIRE(jobs);
+    REQUIRE(jobs->size() == 1);
+    auto const& nested = jobs->front();
+    REQUIRE(nested.channel_id == opened.channel_id);
+    REQUIRE(nested.coinbase_tx_prefix == declared->coinbase_tx_prefix);
+    REQUIRE(nested.coinbase_tx_suffix == declared->coinbase_tx_suffix);
+    REQUIRE(nested.extranonce_prefix_update);
+    auto raw = nested.coinbase_tx_prefix;
+    raw.insert(raw.end(), nested.extranonce_prefix_update->begin(),
+        nested.extranonce_prefix_update->end());
+    raw.insert(raw.end(), opened.extranonce_size, uint8_t{0});
+    raw.insert(raw.end(), nested.coinbase_tx_suffix.begin(), nested.coinbase_tx_suffix.end());
+    byte_reader source(raw);
+    auto const tx = domain::chain::transaction::from_data(source, true);
+    REQUIRE(tx);
+    REQUIRE(source.is_exhausted());
+    REQUIRE(tx->version() == 2);
+    REQUIRE(tx->locktime() == 99);
+    REQUIRE(tx->inputs().size() == 1);
+    REQUIRE(tx->inputs().front().sequence() == 0xfffffffeu);
+    REQUIRE(tx->outputs() == split);
+    auto const& script = tx->inputs().front().script().bytes();
+    REQUIRE(script.size() >= script_prefix->size());
+    REQUIRE(std::equal(script_prefix->begin(), script_prefix->end(), script.begin()));
+
+    share_request share;
+    share.extended = true;
+    share.channel_id = nested.channel_id;
+    share.job_id = nested.job_id;
+    share.ntime = nested.ntime_start;
+    share.version = nested.version;
+    share.extranonce.assign(opened.extranonce_size, 0x44);
+    auto const proof = engine.submit(share);
+    REQUIRE(proof.status != share_status::rejected);
+    REQUIRE(proof.pool);
+}
+
 TEST_CASE("sv2 JD downstream reserve fits an eight-byte pool grant", "[sv2 jd]") {
     // Four pool-prefix bytes plus an eight-byte grant, as P2Pool sends, leave
     // four bytes of shared allocation and four bytes for the miner to roll.

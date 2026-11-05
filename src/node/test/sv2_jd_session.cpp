@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/jd_session.hpp>
 
 using namespace kth;
@@ -21,11 +22,7 @@ namespace {
 
 template <typename Message>
 constexpr uint16_t extension() {
-    if constexpr (requires { Message::channel_message; }) {
-        return Message::channel_message ? message_header::channel_msg_flag : 0;
-    } else {
-        return 0;
-    }
+    return framed_extension_type<Message>();
 }
 
 jd_session::result process(jd_session& session, uint16_t extension_type,
@@ -106,6 +103,40 @@ void require_silent(jd_session::result const& result, bool is_ready = true) {
     REQUIRE(result.error.empty());
 }
 
+// SetupConnection.Success on the declaration peer asks for Requested Payout
+// Outputs before any Job Declaration message. `grant` lists that extension.
+void finish_extensions(jd_session& session, bool grant) {
+    auto const asked = process(session, setup_connection_success{2, 0});
+    REQUIRE_FALSE(asked.close);
+    REQUIRE_FALSE(asked.ready);
+    REQUIRE(session.awaiting_extensions());
+    REQUIRE_FALSE(session.payout_outputs());
+    auto const request = single<request_extensions>(asked.response);
+    REQUIRE(request.request_id == 1);
+    REQUIRE(request.requested_extensions == std::vector<uint16_t>{requested_payout_outputs_extension});
+    if (grant) {
+        require_silent(process(session, request_extensions_success{1,
+            {requested_payout_outputs_extension}}));
+    } else {
+        require_silent(process(session, request_extensions_error{1, {}, {}}));
+    }
+    REQUIRE(session.ready());
+    REQUIRE(session.payout_outputs() == grant);
+    REQUIRE_FALSE(session.channel());
+}
+
+jd_session awaiting_extensions() {
+    auto session = waiting(jd_peer::declaration);
+    auto const asked = process(session, setup_connection_success{2, 0});
+    REQUIRE_FALSE(asked.close);
+    REQUIRE_FALSE(asked.ready);
+    REQUIRE(session.awaiting_extensions());
+    auto const request = single<request_extensions>(asked.response);
+    REQUIRE(request.request_id == 1);
+    REQUIRE(request.requested_extensions == std::vector<uint16_t>{requested_payout_outputs_extension});
+    return session;
+}
+
 template <typename Message, typename Factory>
 void refuse_incomplete(Message const& message, Factory factory) {
     auto const bytes = to_data_chunk(message);
@@ -135,9 +166,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(setup.endpoint_host == "jds.example");
         REQUIRE(setup.endpoint_port == 8443);
         REQUIRE(setup.vendor == "Knuth");
-        require_silent(process(session, setup_connection_success{2, 0}));
-        REQUIRE(session.ready());
-        REQUIRE_FALSE(session.channel());
+        finish_extensions(session, false);
     }
     for (uint32_t const flags : {0u, mining_flag_requires_extended_channels}) {
         CAPTURE(flags);
@@ -153,6 +182,9 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE_FALSE(result.close);
         REQUIRE_FALSE(result.ready);
         REQUIRE_FALSE(session.ready());
+        REQUIRE_FALSE(session.awaiting_extensions());
+        REQUIRE_FALSE(session.payout_outputs());
+        REQUIRE_FALSE(session.abandon_extensions());
         auto const request = single<open_extended_mining_channel>(result.response);
         REQUIRE(request.request_id == 1);
         REQUIRE(request.user_identity == "worker");
@@ -347,7 +379,7 @@ TEST_CASE("sv2 jd ready upstream refuses malformed misplaced and unsolicited bas
     auto duplicate_open = ready();
     require_closed(duplicate_open, process(duplicate_open, opened()));
     auto jd = waiting(jd_peer::declaration);
-    require_silent(process(jd, setup_connection_success{2, 0}));
+    finish_extensions(jd, false);
     require_closed(jd, process(jd, 0, 0x51, {}));
 }
 
@@ -368,7 +400,13 @@ TEST_CASE("sv2 jd extensions are discarded only within the frame length bound", 
     auto active = ready();
     require_silent(process(active, 0xc000, 0x21, {1}));
     auto jd = waiting(jd_peer::declaration);
-    require_silent(process(jd, setup_connection_success{2, 0}));
+    auto const asked = process(jd, setup_connection_success{2, 0});
+    REQUIRE_FALSE(asked.close);
+    REQUIRE_FALSE(asked.ready);
+    REQUIRE(single<request_extensions>(asked.response).request_id == 1);
+    require_silent(process(jd, 0x4000, 0x51, {}), false);
+    REQUIRE(jd.awaiting_extensions());
+    require_silent(process(jd, request_extensions_error{1, {}, {}}));
     require_silent(process(jd, 0x4000, 0x51, {}));
     auto wrong_length = waiting();
     require_closed(wrong_length, wrong_length.process({0x4000, 0xff, 2}, data_chunk{1}));
@@ -377,6 +415,73 @@ TEST_CASE("sv2 jd extensions are discarded only within the frame length bound", 
     require_closed(oversized, process(oversized, 0x4000, 0xff, large));
     auto undefined = ready();
     require_closed(undefined, process(undefined, message_header::channel_msg_flag, 0xff, {}));
+}
+
+TEST_CASE("sv2 jd declaration negotiates requested payout outputs and a refusal keeps the session open", "[sv2 jd]") {
+    auto granted = awaiting_extensions();
+    require_silent(process(granted, request_extensions_success{1,
+        {0x00aa, requested_payout_outputs_extension}}));
+    REQUIRE(granted.ready());
+    REQUIRE(granted.payout_outputs());
+    REQUIRE_FALSE(granted.channel());
+
+    auto omitted = awaiting_extensions();
+    require_silent(process(omitted, request_extensions_success{1, {0x00aa}}));
+    REQUIRE(omitted.ready());
+    REQUIRE_FALSE(omitted.payout_outputs());
+
+    auto refused = awaiting_extensions();
+    require_silent(process(refused, request_extensions_error{1,
+        {requested_payout_outputs_extension}, {}}));
+    REQUIRE(refused.ready());
+    REQUIRE_FALSE(refused.payout_outputs());
+
+    auto required = awaiting_extensions();
+    auto const closed = process(required, request_extensions_error{1, {}, {0x0002}});
+    require_closed(required, closed);
+    REQUIRE(closed.error == "upstream requires an unsupported extension");
+
+    auto wrong_id = awaiting_extensions();
+    require_closed(wrong_id, process(wrong_id, request_extensions_success{2,
+        {requested_payout_outputs_extension}}));
+    auto wrong_error = awaiting_extensions();
+    require_closed(wrong_error, process(wrong_error, request_extensions_error{9, {}, {}}));
+
+    auto channel_bit = awaiting_extensions();
+    auto const payload = to_data_chunk(request_extensions_success{1,
+        {requested_payout_outputs_extension}});
+    require_closed(channel_bit, process(channel_bit,
+        static_cast<uint16_t>(extensions_negotiation_type | message_header::channel_msg_flag),
+        request_extensions_success::message_type, payload));
+
+    auto unexpected = awaiting_extensions();
+    require_closed(unexpected, process(unexpected, extensions_negotiation_type, 0x7f, {}));
+
+    auto early = awaiting_extensions();
+    require_closed(early, process(early, allocate_mining_job_token_success{1, {1}, {}}));
+
+    auto unknown = awaiting_extensions();
+    require_silent(process(unknown, 0x4000, 0x01, {1, 2, 3}), false);
+    REQUIRE(unknown.awaiting_extensions());
+    REQUIRE_FALSE(unknown.payout_outputs());
+    require_silent(process(unknown, request_extensions_success{1,
+        {requested_payout_outputs_extension}}));
+    REQUIRE(unknown.payout_outputs());
+
+    auto abandoned = awaiting_extensions();
+    REQUIRE(abandoned.abandon_extensions());
+    REQUIRE(abandoned.ready());
+    REQUIRE_FALSE(abandoned.payout_outputs());
+    REQUIRE_FALSE(abandoned.abandon_extensions());
+    require_silent(process(abandoned, request_extensions_success{1,
+        {requested_payout_outputs_extension}}));
+    REQUIRE(abandoned.ready());
+    REQUIRE_FALSE(abandoned.payout_outputs());
+
+    refuse_incomplete(request_extensions_success{1, {requested_payout_outputs_extension}},
+        awaiting_extensions);
+    refuse_incomplete(request_extensions_error{1, {requested_payout_outputs_extension}, {0x0002}},
+        awaiting_extensions);
 }
 
 TEST_CASE("sv2 jd SetGroupChannel regroups this extended channel and ignores the rest", "[sv2 jd]") {

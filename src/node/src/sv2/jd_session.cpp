@@ -8,6 +8,7 @@
 #include <utility>
 
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/primitives.hpp>
 
 namespace kth::node::sv2 {
@@ -15,13 +16,14 @@ namespace kth::node::sv2 {
 namespace {
 
 constexpr uint32_t channel_request_id = 1;
+constexpr uint16_t extensions_request_id = 1;
 constexpr uint32_t jd_flag_declare_tx_data = 1u << 0;
 
 template <typename Message>
 data_chunk frame(Message const& message) {
     auto const payload = to_data_chunk(message);
-    auto bytes = to_data_chunk(message_header{0, Message::message_type,
-        static_cast<uint32_t>(payload.size())});
+    auto bytes = to_data_chunk(message_header{framed_extension_type<Message>(),
+        Message::message_type, static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -90,6 +92,21 @@ bool jd_session::ready() const {
     return state_ == state::ready;
 }
 
+bool jd_session::payout_outputs() const {
+    return payout_outputs_;
+}
+
+bool jd_session::awaiting_extensions() const {
+    return state_ == state::awaiting_extensions;
+}
+
+bool jd_session::abandon_extensions() {
+    if (state_ != state::awaiting_extensions) return false;
+    payout_outputs_ = false;
+    state_ = state::ready;
+    return true;
+}
+
 std::optional<open_extended_mining_channel_success> const& jd_session::channel() const {
     return channel_;
 }
@@ -116,8 +133,14 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     uint32_t const allowed = peer_ == jd_peer::mining ? mining_flag_requires_extended_channels : 0;
     if ((success->flags & ~allowed) != 0) return fail("unsupported upstream setup flags");
     if (peer_ == jd_peer::declaration) {
-        state_ = state::ready;
-        return {{}, false, true, {}};
+        // Negotiation has to finish, or time out, before any Job Declaration
+        // message. Silence is not a pool refusal: the caller abandons the wait.
+        request_extensions request;
+        request.request_id = extensions_request_id;
+        request.requested_extensions.push_back(requested_payout_outputs_extension);
+        state_ = state::awaiting_extensions;
+        payout_outputs_ = false;
+        return {frame(request), false, false, {}};
     }
     open_extended_mining_channel request;
     request.request_id = channel_request_id;
@@ -126,6 +149,41 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     request.min_extranonce_size = min_extranonce_size;
     state_ = state::awaiting_channel;
     return {frame(request), false, false, {}};
+}
+
+jd_session::result jd_session::process_extensions(message_header const& header, byte_span payload) {
+    if (header.extension() != extensions_negotiation_type) {
+        // A base message before negotiation finishes is out of order. Any other
+        // extension is not this request's answer and must not end the wait.
+        if (header.extension() == 0 || header.channel_msg()) {
+            return fail("unexpected message during extension negotiation");
+        }
+        return {{}, false, false, {}};
+    }
+    if (header.channel_msg()) return fail("invalid extension negotiation frame");
+    if (header.msg_type == request_extensions_success::message_type) {
+        auto const success = parse<request_extensions_success>(payload);
+        if ( ! success || success->request_id != extensions_request_id) {
+            return fail("invalid extension negotiation success");
+        }
+        payout_outputs_ = std::find(success->supported_extensions.begin(),
+            success->supported_extensions.end(), requested_payout_outputs_extension)
+            != success->supported_extensions.end();
+        state_ = state::ready;
+        return {{}, false, true, {}};
+    }
+    if (header.msg_type == request_extensions_error::message_type) {
+        auto const error = parse<request_extensions_error>(payload);
+        if ( ! error || error->request_id != extensions_request_id) {
+            return fail("invalid extension negotiation error");
+        }
+        // An extension this node does not implement, and the pool requires it.
+        if ( ! error->required_extensions.empty()) return fail("upstream requires an unsupported extension");
+        payout_outputs_ = false;
+        state_ = state::ready;
+        return {{}, false, true, {}};
+    }
+    return fail("unexpected extension negotiation message");
 }
 
 jd_session::result jd_session::process_channel(message_header const& header, byte_span payload) {
@@ -226,6 +284,7 @@ jd_session::result jd_session::process(message_header const& header, byte_span p
     if (header.msg_length != payload.size() || payload.size() > max_payload_size) {
         return fail("invalid upstream frame length");
     }
+    if (state_ == state::awaiting_extensions) return process_extensions(header, payload);
     if (header.extension() != 0) return {{}, false, ready(), {}};
     if (state_ == state::awaiting_setup) return process_setup(header, payload);
     if (state_ == state::awaiting_channel) return process_channel(header, payload);

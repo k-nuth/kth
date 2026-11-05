@@ -251,15 +251,63 @@ The node retains its own transaction selection; jobs supplied by the pool do
 not replace local work.
 
 `full-template` sets `DECLARE_TX_DATA` (specification section 6.2) on the JD
-connection. `coinbase-only` leaves that flag clear. For each new template the
-node asks the JDS for `AllocateMiningJobToken` and builds the coinbase from
-the allocation's `coinbase_tx_outputs`. Those outputs arrive with zero value;
-the whole coinbase revenue is then placed in the first output, which is the
-pool payout. `full-template` sends `DeclareMiningJob` with the coinbase prefix
-and suffix and the transaction list, answers `ProvideMissingTransactions` with
-the raw transactions, and uses the new token from `DeclareMiningJob.Success`.
-`coinbase-only` does not send `DeclareMiningJob` and uses the allocated token.
-Either mode then sends `SetCustomMiningJob` on the mining connection.
+connection. `coinbase-only` leaves that flag clear. The Mining connection does
+not negotiate extensions. After `SetupConnection.Success` on the Job Declaration
+connection, and before any other Job Declaration message, the node sends
+`RequestExtensions` (extension 0x0001) asking for Requested Payout Outputs.
+The identifier is `requested_payout_outputs_extension` (`0x5052`), an
+experimental identifier that is not in the SV2 extension registry. sv2-spec
+PR #249 proposed the extension as `0x0004` and was closed; changing the
+constant is the whole switch if it is ever registered.
+
+`RequestExtensions.Success` that includes the identifier turns the extension
+on for every later declaration. `RequestExtensions.Error` with an empty
+required list, a success that omits the identifier, or no answer within
+`sv2.jd.response_timeout_seconds` leaves it off. That silence is not a refusal
+and does not close the connection. A required extension this node does not
+implement closes the attempt and falls back to solo.
+
+With the extension off, each new template asks the JDS for
+`AllocateMiningJobToken` and builds the coinbase from the allocation's
+`coinbase_tx_outputs`. Those outputs arrive with zero value; the whole coinbase
+revenue is then placed in the first output, which is the pool payout.
+
+With the extension on, the same token is allocated first. The length of its
+`coinbase_tx_outputs` is only a reservation. Before `DeclareMiningJob`
+(full-template) or `SetCustomMiningJob` (coinbase-only) the node sends
+`RequestPayoutOutputs` with that token, `available_payout_value` equal to the
+template's `coinbase_tx_value_remaining`, the template height, previous hash
+and nbits, and `coinbase_prefix` (the coinbase scriptSig bytes before the
+extranonce, the same bytes the job will declare). At most one such request is
+in flight.
+
+`RequestPayoutOutputs.Success` with `EXACT_OUTPUTS` set (flag bit 0; every
+other bit must be clear) makes the coinbase outputs exactly the returned
+outputs, in that order, and no others. The coinbase uses the returned version,
+input sequence and lock time, and its scriptSig is `coinbase_prefix` followed
+by the extranonce. Without the flag, the returned version, sequence and lock
+time must be zero and are ignored. The coinbase then uses version 1, sequence
+`0xffffffff` and lock time 0, and it includes every returned output. In both
+cases those outputs already sum to the template revenue, so the node does not
+move that revenue into the first output. The serialized outputs must fit the
+token's reservation and must not carry token data. A malformed success falls
+back to solo rather than retrying.
+
+`PayoutOutputsStale` means tokens allocated before the notice are stale. The
+reply already in flight is consumed, then the node allocates a new token and
+requests again. `stale-payout-outputs` on a token from before that notice is
+the same race. One such answer for a token allocated after the latest notice
+is retried; a second is a refusal. A notice on every reply cannot allocate
+forever: eight restarts are allowed and the next one falls back to solo. Any
+other `RequestPayoutOutputs.Error`, or no answer within
+`sv2.jd.response_timeout_seconds`, also falls back to solo.
+
+Either way, `full-template` then sends `DeclareMiningJob` with the coinbase
+prefix and suffix and the transaction list, answers `ProvideMissingTransactions`
+with the raw transactions, and uses the new token from
+`DeclareMiningJob.Success`. `coinbase-only` does not send `DeclareMiningJob`
+and uses the token already allocated. Either mode then sends
+`SetCustomMiningJob` on the mining connection.
 
 Declarations wake on connected-tip notifications and upstream replies. Only
 an outstanding response arms a deadline; an idle client does not poll the chain.
@@ -272,7 +320,9 @@ empty because there is no witness reserved value to carry.
 
 Downstream miners keep mining that same template through the Mining Protocol
 server. Until a pool coinbase is ready, and again after fallback, they are
-paid `sv2.mining.address`. With JD enabled, extended channels open with a fixed
+paid `sv2.mining.address`. When the extension supplies the outputs, the pool
+coinbase those miners receive is that returned coinbase, including a split of
+the revenue. With JD enabled, extended channels open with a fixed
 four-byte rollable reserve. When the pool coinbase is installed, each accepted
 channel nests inside the upstream extranonce and receives `SetExtranoncePrefix`
 before the next job. A downstream request for more than four rollable bytes is
@@ -301,18 +351,23 @@ JDS (specification section 6.4.9). `coinbase-only` has no declared job for
 
 Fallback follows specification section 6.2. The node returns downstream work
 to the solo payout, and logs why, when the JDS does not answer
-`AllocateMiningJobToken` within `sv2.jd.response_timeout_seconds`, the JDS
-sends `DeclareMiningJob.Error`, the pool refuses `SetCustomMiningJob`, the
-pool refuses a share on an accepted job, or either connection drops. The next
-job after the pool coinbase was in use pays `sv2.mining.address`. Setup and
-extended-channel refusals include the upstream's error code in the
-fallback log, bounded in length and restricted to printable ASCII.
-This PR does not reconnect and does not try another pool.
+`AllocateMiningJobToken` or `RequestPayoutOutputs` within
+`sv2.jd.response_timeout_seconds`, the JDS sends `DeclareMiningJob.Error` or
+any `RequestPayoutOutputs.Error` other than a bounded stale retry, the pool
+refuses `SetCustomMiningJob`, the pool refuses a share on an accepted job, or
+either connection drops. Negotiation silence is not one of these cases. The
+next job after the pool coinbase was in use pays `sv2.mining.address`. A
+payout refusal that arrives before that coinbase was published does not emit
+another downstream job; miners already on the solo payout keep it. Setup and
+extended-channel refusals include the upstream's error code in the fallback
+log, bounded in length and restricted to printable ASCII. This PR does not
+reconnect and does not try another pool.
 
 Both connections run independently of the listener, the template build and
 downstream miners. A slow or silent upstream cannot hold those up: solo jobs
-are served while a token or declaration is outstanding, and a network-target
-share is connected without waiting for the pool or the JDS to accept it.
+are served while a token, a payout-output request or a declaration is
+outstanding, and a network-target share is connected without waiting for the
+pool or the JDS to accept it.
 Resolution, connection, handshake, partial-frame assembly and writes have
 deadlines using `sv2.handshake_timeout_seconds`; setup, the extended channel
 and each declaration step use `sv2.jd.response_timeout_seconds`. With JD

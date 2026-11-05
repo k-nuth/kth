@@ -249,6 +249,11 @@ mining_session::result mining_session::apply_pool(mining::declared_work const& w
     binding.prefix = work.upstream_extranonce_prefix;
     binding.extranonce_size = work.upstream_extranonce_size;
     binding.generation = work.generation;
+    binding.fixed_script = work.fixed_script;
+    binding.script_prefix = work.coinbase_prefix;
+    binding.coinbase_version = work.coinbase_version;
+    binding.coinbase_input_sequence = work.coinbase_input_sequence;
+    binding.coinbase_locktime = work.coinbase_locktime;
     auto const jobs = engine_.on_pool_template(work.tmpl, work.outputs,
         coinbase_outputs(work.tmpl.coinbase_value), binding);
     if ( ! jobs) return close();

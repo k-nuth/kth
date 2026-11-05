@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,7 +29,7 @@ namespace {
 
 template <typename Message>
 constexpr uint16_t extension() {
-    return Message::channel_message ? message_header::channel_msg_flag : 0;
+    return framed_extension_type<Message>();
 }
 
 template <typename Message>
@@ -178,6 +179,55 @@ jd_declaration installing(bool full = true) {
     REQUIRE(result.progress);
     REQUIRE_FALSE(result.mining.empty());
     return state;
+}
+
+jd_declaration requesting(bool full = true) {
+    jd_declaration state("account.worker", full);
+    state.use_payout_outputs(true);
+    auto const started = state.start(mining_template(), channel());
+    REQUIRE(started.error.empty());
+    REQUIRE(decode<allocate_mining_job_token>(started.declaration).request_id == 1);
+    auto const allocated = process(state, jd_peer::declaration, allocation());
+    REQUIRE(allocated.error.empty());
+    REQUIRE(allocated.mining.empty());
+    REQUIRE(allocated.progress);
+    REQUIRE(state.pending());
+    REQUIRE_FALSE(state.work());
+    REQUIRE(decode<request_payout_outputs>(allocated.declaration).request_id == 1);
+    return state;
+}
+
+domain::chain::output::list paid_outputs(bool larger_first = false) {
+    domain::chain::output low{1, domain::chain::script(data_chunk{0x51}, false), std::nullopt};
+    domain::chain::output high{mining_template().coinbase_value - 1,
+        domain::chain::script(data_chunk{0x52}, false), std::nullopt};
+    if (larger_first) return {std::move(high), std::move(low)};
+    return {std::move(low), std::move(high)};
+}
+
+request_payout_outputs_success payout_success(uint32_t id,
+    domain::chain::output::list const& paid, bool exact) {
+    request_payout_outputs_success success;
+    success.request_id = id;
+    success.flags = exact ? exact_outputs_flag : 0;
+    success.coinbase_tx_version = exact ? 2u : 0u;
+    success.coinbase_tx_input_sequence = exact ? 0xfffffffeu : 0u;
+    success.coinbase_tx_locktime = exact ? 100u : 0u;
+    success.coinbase_tx_outputs = output_bytes(paid);
+    return success;
+}
+
+domain::chain::transaction declared_coinbase(data_chunk const& prefix, data_chunk const& suffix) {
+    auto const upstream = channel();
+    auto raw = prefix;
+    raw.insert(raw.end(), upstream.extranonce_prefix.begin(), upstream.extranonce_prefix.end());
+    raw.insert(raw.end(), upstream.extranonce_size, uint8_t{0});
+    raw.insert(raw.end(), suffix.begin(), suffix.end());
+    byte_reader source(raw);
+    auto tx = domain::chain::transaction::from_data(source, true);
+    REQUIRE(tx);
+    REQUIRE(source.is_exhausted());
+    return std::move(*tx);
 }
 
 template <typename Message, typename Factory>
@@ -621,6 +671,289 @@ TEST_CASE("sv2 JD superseded declaration ignores a late reply and PushSolution f
     REQUIRE(refused.template_value().previous_block_hash == mining_template().previous_block_hash);
     REQUIRE_FALSE(refused.work());
     REQUIRE_FALSE(refused.can_push_solution());
+}
+
+TEST_CASE("sv2 JD payout request carries the token, template and coinbase prefix", "[sv2 jd]") {
+    auto const tmpl = mining_template();
+    auto const upstream = channel();
+    jd_declaration state("account.worker", true);
+    state.use_payout_outputs(true);
+    auto const started = state.start(tmpl, upstream);
+    REQUIRE(started.error.empty());
+    auto const allocated = process(state, jd_peer::declaration, allocation());
+    REQUIRE(allocated.error.empty());
+    REQUIRE(allocated.mining.empty());
+    REQUIRE_FALSE(state.work());
+    auto const request = decode<request_payout_outputs>(allocated.declaration);
+    REQUIRE(request.request_id == 1);
+    REQUIRE(request.mining_job_token == data_chunk{1, 2, 3});
+    REQUIRE(request.available_payout_value == tmpl.coinbase_value);
+    REQUIRE(request.height == 101);
+    REQUIRE(request.prev_hash == tmpl.previous_block_hash);
+    REQUIRE(request.nbits == tmpl.bits);
+    auto const prefix = node::mining::payout_coinbase_prefix(tmpl.height, request.request_id,
+        upstream.extranonce_prefix.size(), upstream.extranonce_size);
+    REQUIRE(prefix);
+    REQUIRE(request.coinbase_prefix == *prefix);
+    REQUIRE(allocation().coinbase_tx_outputs.size() >= output_bytes(paid_outputs()).size());
+}
+
+TEST_CASE("sv2 JD exact payout outputs are the declared coinbase, in order", "[sv2 jd]") {
+    auto const paid = paid_outputs();
+    auto const prefix = node::mining::payout_coinbase_prefix(101, 1, 2,
+        jd_session::min_extranonce_size);
+    REQUIRE(prefix);
+    for (bool const full : {false, true}) {
+        CAPTURE(full);
+        auto state = requesting(full);
+        auto const success = payout_success(1, paid, true);
+        auto const result = process(state, jd_peer::declaration, success);
+        REQUIRE(result.error.empty());
+        REQUIRE(result.progress);
+        REQUIRE(state.work());
+        REQUIRE(state.work()->fixed_script);
+        REQUIRE(state.work()->coinbase_version == 2);
+        REQUIRE(state.work()->coinbase_input_sequence == 0xfffffffeu);
+        REQUIRE(state.work()->coinbase_locktime == 100);
+        REQUIRE(state.work()->coinbase_prefix == *prefix);
+        REQUIRE(state.work()->outputs == paid);
+        declare_mining_job declaration{};
+        if (full) {
+            REQUIRE(result.mining.empty());
+            declaration = decode<declare_mining_job>(result.declaration);
+            REQUIRE(declaration.request_id == 1);
+            REQUIRE(declaration.mining_job_token == data_chunk{1, 2, 3});
+            auto const tx = declared_coinbase(declaration.coinbase_tx_prefix,
+                declaration.coinbase_tx_suffix);
+            REQUIRE(tx.version() == 2);
+            REQUIRE(tx.locktime() == 100);
+            REQUIRE(tx.inputs().size() == 1);
+            REQUIRE(tx.inputs().front().sequence() == 0xfffffffeu);
+            REQUIRE(tx.outputs() == paid);
+            auto const script = tx.inputs().front().script().bytes();
+            auto const upstream = channel();
+            REQUIRE(script.size() == prefix->size() + upstream.extranonce_prefix.size()
+                + upstream.extranonce_size);
+            REQUIRE(std::equal(prefix->begin(), prefix->end(), script.begin()));
+            REQUIRE(std::equal(upstream.extranonce_prefix.begin(), upstream.extranonce_prefix.end(),
+                script.begin() + static_cast<std::ptrdiff_t>(prefix->size())));
+            auto const installed = process(state, jd_peer::declaration,
+                declare_mining_job_success{1, {9, 8}});
+            REQUIRE(installed.error.empty());
+            declaration = {};
+            auto const custom = decode<set_custom_mining_job>(installed.mining);
+            REQUIRE(custom.coinbase_tx_version == 2);
+            REQUIRE(custom.coinbase_tx_input_sequence == 0xfffffffeu);
+            REQUIRE(custom.coinbase_tx_locktime == 100);
+            REQUIRE(custom.coinbase_prefix == *prefix);
+            REQUIRE(read_outputs(custom.coinbase_tx_outputs) == paid);
+        } else {
+            REQUIRE(result.declaration.empty());
+            auto const custom = decode<set_custom_mining_job>(result.mining);
+            REQUIRE(custom.request_id == 1);
+            REQUIRE(custom.mining_job_token == data_chunk{1, 2, 3});
+            REQUIRE(custom.coinbase_tx_version == 2);
+            REQUIRE(custom.coinbase_tx_input_sequence == 0xfffffffeu);
+            REQUIRE(custom.coinbase_tx_locktime == 100);
+            REQUIRE(custom.coinbase_prefix == *prefix);
+            REQUIRE(read_outputs(custom.coinbase_tx_outputs) == paid);
+            auto const tx = declared_coinbase(state.work()->coinbase_tx_prefix,
+                state.work()->coinbase_tx_suffix);
+            REQUIRE(tx.version() == 2);
+            REQUIRE(tx.locktime() == 100);
+            REQUIRE(tx.inputs().front().sequence() == 0xfffffffeu);
+            REQUIRE(tx.outputs() == paid);
+        }
+    }
+}
+
+TEST_CASE("sv2 JD payout outputs without the exact flag keep every output", "[sv2 jd]") {
+    auto const paid = paid_outputs(true);
+    REQUIRE(paid.front().value() != mining_template().coinbase_value);
+    auto state = requesting();
+    auto const success = payout_success(1, paid, false);
+    REQUIRE(success.flags == 0);
+    REQUIRE(success.coinbase_tx_version == 0);
+    REQUIRE(success.coinbase_tx_input_sequence == 0);
+    REQUIRE(success.coinbase_tx_locktime == 0);
+    auto const result = process(state, jd_peer::declaration, success);
+    REQUIRE(result.error.empty());
+    auto const declaration = decode<declare_mining_job>(result.declaration);
+    auto const tx = declared_coinbase(declaration.coinbase_tx_prefix, declaration.coinbase_tx_suffix);
+    REQUIRE(tx.version() == 1);
+    REQUIRE(tx.locktime() == 0);
+    REQUIRE(tx.inputs().front().sequence() == 0xffffffffu);
+    REQUIRE(tx.outputs() == paid);
+    REQUIRE(state.work()->coinbase_version == 1);
+    REQUIRE(state.work()->coinbase_input_sequence == 0xffffffffu);
+    REQUIRE(state.work()->coinbase_locktime == 0);
+    REQUIRE(state.work()->fixed_script);
+    uint64_t sum = 0;
+    for (auto const& output : tx.outputs()) sum += output.value();
+    REQUIRE(sum == mining_template().coinbase_value);
+}
+
+TEST_CASE("sv2 JD rejects a payout success that is not the reserved revenue", "[sv2 jd]") {
+    auto nonzero = requesting();
+    auto bad_fields = payout_success(1, paid_outputs(), false);
+    bad_fields.coinbase_tx_version = 2;
+    require_failure(nonzero, process(nonzero, jd_peer::declaration, bad_fields));
+    REQUIRE(nonzero.has_template());
+
+    auto flags = requesting();
+    auto unknown = payout_success(1, paid_outputs(), true);
+    unknown.flags = 2;
+    auto const flagged = process(flags, jd_peer::declaration, unknown);
+    require_failure(flags, flagged);
+    REQUIRE(flagged.error.find("unknown flags") != std::string::npos);
+
+    jd_declaration reserved("account.worker", true);
+    reserved.use_payout_outputs(true);
+    REQUIRE(reserved.start(mining_template(), channel()).error.empty());
+    auto const reserved_request = process(reserved, jd_peer::declaration,
+        allocate_mining_job_token_success{1, {1, 2, 3}, data_chunk{0}});
+    REQUIRE(reserved_request.error.empty());
+    REQUIRE(decode<request_payout_outputs>(reserved_request.declaration).request_id == 1);
+    auto const overflow = process(reserved, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    require_failure(reserved, overflow);
+    REQUIRE(overflow.error.find("reservation") != std::string::npos);
+
+    auto mismatch = requesting();
+    auto wrong = outputs();
+    wrong.front().set_value(1);
+    wrong.back().set_value(1);
+    auto const unequal = process(mismatch, jd_peer::declaration, payout_success(1, wrong, true));
+    require_failure(mismatch, unequal);
+    REQUIRE(unequal.error.find("invalid payout outputs") != std::string::npos);
+
+    jd_declaration tokens("account.worker", true);
+    tokens.use_payout_outputs(true);
+    REQUIRE(tokens.start(mining_template(), channel()).error.empty());
+    REQUIRE(process(tokens, jd_peer::declaration,
+        allocate_mining_job_token_success{1, {1, 2, 3}, data_chunk(400, 0x11)}).error.empty());
+    auto cashtoken = paid_outputs();
+    cashtoken.front().set_token_data(domain::chain::make_fungible(null_hash, 7));
+    REQUIRE(output_bytes(cashtoken).size() <= 400);
+    auto const with_token = process(tokens, jd_peer::declaration, payout_success(1, cashtoken, true));
+    require_failure(tokens, with_token);
+    REQUIRE(with_token.error.find("invalid payout outputs") != std::string::npos);
+
+    auto tall = mining_template();
+    tall.height = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
+    jd_declaration height("account.worker", true);
+    height.use_payout_outputs(true);
+    REQUIRE(height.start(tall, channel()).error.empty());
+    auto const unfit = process(height, jd_peer::declaration, allocation());
+    require_failure(height, unfit);
+    REQUIRE(unfit.error.find("height") != std::string::npos);
+
+    refuse_incomplete(payout_success(1, paid_outputs(), true), jd_peer::declaration, [] { return requesting(); });
+    refuse_incomplete(request_payout_outputs_error{1, "invalid-request"}, jd_peer::declaration, [] { return requesting(); });
+    refuse_incomplete(payout_outputs_stale{}, jd_peer::declaration, [] { return requesting(); });
+}
+
+TEST_CASE("sv2 JD stale payout outputs allocate again until the race repeats", "[sv2 jd]") {
+    auto noticed = requesting();
+    auto const notice = process(noticed, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(notice.error.empty());
+    REQUIRE(notice.declaration.empty());
+    REQUIRE(notice.mining.empty());
+    REQUIRE(noticed.pending());
+    auto const consumed = process(noticed, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    REQUIRE(consumed.error.empty());
+    REQUIRE(decode<allocate_mining_job_token>(consumed.declaration).request_id == 2);
+    REQUIRE_FALSE(noticed.work());
+
+    auto raced = requesting();
+    auto const first = process(raced, jd_peer::declaration,
+        request_payout_outputs_error{1, std::string(error_stale_payout_outputs)});
+    REQUIRE(first.error.empty());
+    REQUIRE(decode<allocate_mining_job_token>(first.declaration).request_id == 2);
+    auto const second_request = process(raced, jd_peer::declaration, allocation(2));
+    REQUIRE(decode<request_payout_outputs>(second_request.declaration).request_id == 2);
+    auto const repeated = process(raced, jd_peer::declaration,
+        request_payout_outputs_error{2, std::string(error_stale_payout_outputs)});
+    require_failure(raced, repeated);
+    REQUIRE(repeated.error.find("repeated stale") != std::string::npos);
+    REQUIRE(raced.has_template());
+    REQUIRE_FALSE(raced.work());
+
+    // A notice clears the unexplained count, including one that arrives while
+    // the replacement token is still being allocated.
+    auto reset = requesting();
+    auto const counted = process(reset, jd_peer::declaration,
+        request_payout_outputs_error{1, std::string(error_stale_payout_outputs)});
+    REQUIRE(counted.error.empty());
+    REQUIRE(decode<allocate_mining_job_token>(counted.declaration).request_id == 2);
+    auto const while_allocating = process(reset, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(while_allocating.error.empty());
+    REQUIRE(while_allocating.declaration.empty());
+    auto const discarded = process(reset, jd_peer::declaration, allocation(2));
+    REQUIRE(decode<allocate_mining_job_token>(discarded.declaration).request_id == 3);
+    REQUIRE(decode<request_payout_outputs>(
+        process(reset, jd_peer::declaration, allocation(3)).declaration).request_id == 3);
+    REQUIRE(decode<allocate_mining_job_token>(process(reset, jd_peer::declaration,
+        request_payout_outputs_error{3, std::string(error_stale_payout_outputs)}).declaration)
+        .request_id == 4);
+    REQUIRE(decode<request_payout_outputs>(
+        process(reset, jd_peer::declaration, allocation(4)).declaration).request_id == 4);
+    auto const again = process(reset, jd_peer::declaration,
+        request_payout_outputs_error{4, std::string(error_stale_payout_outputs)});
+    require_failure(reset, again);
+    REQUIRE(again.error.find("repeated stale") != std::string::npos);
+
+    jd_declaration capped("account.worker", true);
+    capped.use_payout_outputs(true);
+    REQUIRE(decode<allocate_mining_job_token>(
+        capped.start(mining_template(), channel()).declaration).request_id == 1);
+    for (uint32_t i = 0; i < 8; ++i) {
+        CAPTURE(i);
+        auto const stale = process(capped, jd_peer::declaration, payout_outputs_stale{});
+        REQUIRE(stale.error.empty());
+        REQUIRE(stale.declaration.empty());
+        auto const retried = process(capped, jd_peer::declaration, allocation(i + 1));
+        REQUIRE(retried.error.empty());
+        REQUIRE(decode<allocate_mining_job_token>(retried.declaration).request_id == i + 2);
+    }
+    REQUIRE(process(capped, jd_peer::declaration, payout_outputs_stale{}).error.empty());
+    auto const unsettled = process(capped, jd_peer::declaration, allocation(9));
+    require_failure(capped, unsettled);
+    REQUIRE(unsettled.error.find("not settled") != std::string::npos);
+}
+
+TEST_CASE("sv2 JD other payout refusals fall back and leave the base path alone", "[sv2 jd]") {
+    for (char const* code : {"invalid-mining-job-token", "invalid-request",
+            "payout-outputs-too-large", "payout-outputs-unavailable"}) {
+        CAPTURE(code);
+        auto state = requesting();
+        auto const refused = process(state, jd_peer::declaration,
+            request_payout_outputs_error{1, code});
+        require_failure(state, refused);
+        REQUIRE(refused.error.find(code) != std::string::npos);
+        REQUIRE(state.has_template());
+        REQUIRE_FALSE(state.work());
+    }
+
+    auto wrong = requesting();
+    require_failure(wrong, process(wrong, jd_peer::declaration, payout_success(2, paid_outputs(), true)));
+    auto mining = requesting();
+    require_failure(mining, process(mining, jd_peer::mining, payout_success(1, paid_outputs(), true)));
+
+    auto base = allocating();
+    base.use_payout_outputs(true);
+    auto const declared = process(base, jd_peer::declaration, allocation());
+    REQUIRE(declared.error.empty());
+    REQUIRE_FALSE(decode<declare_mining_job>(declared.declaration).mining_job_token.empty());
+    REQUIRE(base.work());
+    REQUIRE_FALSE(base.work()->fixed_script);
+    REQUIRE(base.work()->outputs.front().value() == mining_template().coinbase_value);
+
+    auto idle = allocating();
+    auto const ignored = process(idle, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(ignored.error.empty());
+    REQUIRE(ignored.declaration.empty());
+    REQUIRE(idle.pending());
+    REQUIRE_FALSE(idle.work());
 }
 
 TEST_CASE("sv2 JD ignores a superseded reply after the next declaration starts", "[sv2 jd]") {

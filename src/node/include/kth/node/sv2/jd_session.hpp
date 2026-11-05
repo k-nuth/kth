@@ -38,13 +38,22 @@ struct jd_session {
     [[nodiscard]] data_chunk start();
     [[nodiscard]] result process(message_header const& header, byte_span payload);
     [[nodiscard]] bool ready() const;
+    // True only after RequestExtensions.Success lists Requested Payout Outputs.
+    [[nodiscard]] bool payout_outputs() const;
+    [[nodiscard]] bool awaiting_extensions() const;
+    // The pool did not answer negotiation. Become ready without the extension.
+    // Returns false unless that wait was still open, so a setup timeout is unchanged.
+    bool abandon_extensions();
     [[nodiscard]] std::optional<open_extended_mining_channel_success> const& channel() const;
 
 private:
-    enum class state { idle, awaiting_setup, awaiting_channel, ready, closed };
+    enum class state {
+        idle, awaiting_setup, awaiting_extensions, awaiting_channel, ready, closed
+    };
 
     [[nodiscard]] result fail(std::string error);
     [[nodiscard]] result process_setup(message_header const& header, byte_span payload);
+    [[nodiscard]] result process_extensions(message_header const& header, byte_span payload);
     [[nodiscard]] result process_channel(message_header const& header, byte_span payload);
     [[nodiscard]] result process_mining(message_header const& header, byte_span payload);
     [[nodiscard]] bool matches_channel(uint32_t id) const;
@@ -55,6 +64,7 @@ private:
     std::string identity_;
     bool full_template_;
     state state_ = state::idle;
+    bool payout_outputs_ = false;
     std::string error_;
     std::optional<open_extended_mining_channel_success> channel_;
 };

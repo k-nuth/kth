@@ -159,6 +159,14 @@ struct declared_work {
     data_chunk coinbase_tx_suffix;
     data_chunk coinbase_prefix;
     data_chunk coinbase_tx_outputs;
+    // Row 25 leaves these at a version-1, final-sequence, lock-time-0 coinbase.
+    // Requested Payout Outputs with EXACT_OUTPUTS replaces them.
+    uint32_t coinbase_version = 1;
+    uint32_t coinbase_input_sequence = 0xffffffffu;
+    uint32_t coinbase_locktime = 0;
+    // The script bytes before the extranonce are coinbase_prefix exactly, and
+    // the outputs may split the coinbase value. Clear for row 25.
+    bool fixed_script = false;
     std::vector<hash_digest> merkle_path;
     data_chunk upstream_extranonce_prefix;
     uint16_t upstream_extranonce_size = 0;
@@ -177,12 +185,33 @@ struct pool_binding {
     data_chunk prefix;
     uint16_t extranonce_size = 0;
     uint32_t generation = 0;
+    bool fixed_script = false;
+    data_chunk script_prefix;
+    uint32_t coinbase_version = 1;
+    uint32_t coinbase_input_sequence = 0xffffffffu;
+    uint32_t coinbase_locktime = 0;
 };
 
 [[nodiscard]]
 std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs, uint32_t generation,
     data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size);
+
+// ScriptSig bytes before the extranonce for a payout request. BIP34, the
+// generation, and enough padding that the smallest one-output coinbase is 100
+// bytes. The same bytes are declared after the outputs come back.
+[[nodiscard]]
+std::optional<data_chunk> payout_coinbase_prefix(size_t height, uint32_t generation,
+    size_t extranonce_prefix_size, uint16_t extranonce_size);
+
+// Outputs may split the coinbase value. `script_prefix` must be the value
+// `payout_coinbase_prefix` returns for this height, generation and extranonce.
+[[nodiscard]]
+std::optional<declared_work> make_payout_work(blockchain::mining_template const& tmpl,
+    domain::chain::output::list const& outputs, uint32_t generation,
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
+    data_chunk const& script_prefix, uint32_t version, uint32_t input_sequence,
+    uint32_t locktime);
 
 struct update_result {
     bool protocol_error = false;
@@ -322,6 +351,13 @@ private:
         uint16_t extranonce_size = 0;
         uint32_t generation = 0;
         domain::chain::output::list outputs;
+        // Set with a payout output set so the script prefix committed in the
+        // request is not rebuilt around the real output sizes.
+        bool fixed_script = false;
+        data_chunk script_prefix;
+        uint32_t coinbase_version = 1;
+        uint32_t coinbase_input_sequence = 0xffffffffu;
+        uint32_t coinbase_locktime = 0;
     };
 
     [[nodiscard]] hash_digest choose_target(float hashrate, hash_digest const& max_target) const;
