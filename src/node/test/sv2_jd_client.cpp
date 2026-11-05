@@ -2138,8 +2138,27 @@ TEST_CASE("sv2 JD accepts a batched share success that counts fewer than the sub
     REQUIRE(staying->entries[0].health == jd_health::healthy);
     REQUIRE(staying->active == std::optional<size_t>{0});
     REQUIRE(log.count("invalid upstream share") == 0);
-    // The uncounted submit stays in the refusal record: a later SubmitShares.Error
-    // for it (5.3.14) is judged by the error path, as a current-tip refusal here.
+    // A count of 2 accepts the newest submits in the prefix and leaves the
+    // older one, s0, in the refusal record. The tip and this declaration are
+    // still the ones that share was mined on, so its error is a refusal of
+    // current work (sv2-spec 5.3.14), not the stale race.
+    fixture.pool.send(submit_shares_error{channel, s0, "difficulty-too-low"});
+    REQUIRE(fixture.wait_until([&] {
+        return log.count("pool refused a valid share on an accepted job (difficulty-too-low)") >= 1;
+    }));
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    handshake_upstreams(backup_pool, backup_jds, false);
+    (void)accept_coinbase_template(backup_pool, backup_jds, 88);
+    REQUIRE(fixture.wait_until([&] {
+        auto const status = fixture.client->status();
+        return status && status->active == std::optional<size_t>{1}
+            && status->entries[1].health == jd_health::healthy;
+    }));
+    auto const failed = fixture.client->status()->entries[0];
+    REQUIRE(failed.health == jd_health::dishonest);
+    REQUIRE(failed.last_error.find("pool refused a valid share") != std::string::npos);
+    REQUIRE(failed.retry_at > std::chrono::steady_clock::now());
     REQUIRE(fixture.result.wait_for(0s) != std::future_status::ready);
     fixture.client->stop();
     fixture.await(fixture.result);
@@ -2693,6 +2712,96 @@ TEST_CASE("sv2 JD ignores a share error for a replaced declaration", "[sv2 jd]")
     REQUIRE(again.sequence_number == 1);
     REQUIRE(again.job_id == accepted_job_id);
     REQUIRE(again.nonce == nonce);
+}
+
+TEST_CASE("sv2 JD demotes an entry when a replaced declaration's share error fills the stale window", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_stale_window");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    // The accepted declaration has to survive connect_bodies, which publishes
+    // the tip that replaces it. This test does not wait that deadline out.
+    configuration.jd.response_timeout_seconds = 30;
+    // The default window is 20, so one stale sample returns before the rate
+    // check. One sample is the whole window, and one percent is under it.
+    configuration.jd.health_window = 1;
+    configuration.jd.max_stale_percent = 1;
+    // The hold has to outlast the close observed below. The default retry
+    // could open this entry again while that read is still running.
+    configuration.jd.retry_initial_seconds = 3600;
+    configuration.jd.retry_max_seconds = 3600;
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const first = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{first.custom.channel_id,
+        first.custom.request_id, 77});
+
+    data_chunk const first_extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const first_nonce = find_nonce(first.pooled, first_extranonce, false);
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        first.pooled.job.job_id, first_nonce, first.pooled.prev.ntime_start,
+        first.pooled.job.version, first_extranonce}));
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.channel_id == 7);
+    REQUIRE(forwarded.sequence_number == 0);
+    REQUIRE(forwarded.job_id == 77);
+    fixture.pool.send(submit_shares_success{forwarded.channel_id,
+        forwarded.sequence_number, 1, 1});
+
+    auto const block = test::mine_block(first.pooled.prev.prev_hash, 2,
+        uint32_t(zulu_time()), 0, {}, 0);
+    std::vector<domain::chain::block> const blocks{block};
+    REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
+    test::persist_headers(*chain, blocks, 2);
+    test::connect_bodies(*chain, blocks, 2);
+    auto const view = chain->chain().chain_view();
+    REQUIRE(view);
+    REQUIRE(view->tip_hash == block.hash());
+
+    auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
+    REQUIRE(allocation.request_id != first.custom.request_id);
+    fixture.jds.send(allocate_mining_job_token_success{allocation.request_id,
+        {1, 2, 3}, output_bytes(pool_output_list())});
+    auto const declaration = fixture.jds.receive<declare_mining_job>();
+    REQUIRE(declaration.request_id == allocation.request_id);
+    fixture.jds.send(provide_missing_transactions{declaration.request_id, {}});
+    auto const supplied = fixture.jds.receive<provide_missing_transactions_success>();
+    REQUIRE(supplied.request_id == declaration.request_id);
+    REQUIRE(supplied.transaction_list.empty());
+    fixture.jds.send(declare_mining_job_success{declaration.request_id, {9, 8, 7}});
+    auto const custom = fixture.pool.receive<set_custom_mining_job>();
+    REQUIRE(custom.channel_id == 7);
+    REQUIRE(custom.request_id == allocation.request_id);
+    REQUIRE(custom.prev_hash == block.hash());
+
+    std::optional<downstream_work> accepted_work;
+    for (int attempt = 0; attempt < 3 && ! accepted_work; ++attempt) {
+        auto const job = miner.next();
+        if (pays(coinbase_from(job), pool_script(), 2) && job.prev.prev_hash == block.hash()) {
+            accepted_work = job;
+        }
+    }
+    REQUIRE(accepted_work);
+    constexpr uint32_t accepted_job_id = 91;
+    fixture.pool.send(set_custom_mining_job_success{custom.channel_id,
+        custom.request_id, accepted_job_id});
+
+    // The success above filled the window with one accepted sample. This error
+    // replaces that sample. The share belongs to the declaration just replaced,
+    // so the sample is stale, and one stale sample is over the one percent cap.
+    captured_log log;
+    fixture.pool.send(submit_shares_error{forwarded.channel_id,
+        forwarded.sequence_number, "replaced-job"});
+    REQUIRE(fixture.wait_until([&] {
+        return log.count("Entry 1 backoff: upstream stale share rate exceeded threshold") >= 1;
+    }));
+    REQUIRE(log.count("stale share error replaced-job for sequence 0 on a replaced declaration") >= 1);
+    REQUIRE(log.count("pool refused a valid share") == 0);
+    REQUIRE(log.count("upstream rejected share rate exceeded threshold") == 0);
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    require_no_immediate_retry(fixture);
+    REQUIRE(provider.result.wait_for(0s) != std::future_status::ready);
 }
 
 TEST_CASE("sv2 JD falls back when the pool rejects a share on the accepted declaration", "[sv2 jd]") {

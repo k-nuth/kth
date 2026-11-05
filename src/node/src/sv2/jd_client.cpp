@@ -602,9 +602,9 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
             std::string("invalid upstream share ") + kind + ": " + detail);
         return false;
     };
-    // The noise frame is one SV2 message. A length that does not match the
-    // header was not parsed, whatever from_data would have done with the bytes.
-    if (header.msg_length != payload.size()) return refuse("invalid share reply length");
+    // feed() emits a frame only after copying payload_size() bytes, and
+    // from_data reads that same U24. The bytes after the header are that
+    // payload, so a length mismatch cannot arrive here.
     auto const upstream = value.mining_session.channel()
         ? std::optional<uint32_t>{value.mining_session.channel()->channel_id} : std::nullopt;
     auto const now = std::chrono::steady_clock::now();
@@ -650,7 +650,8 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
         value.wake_declarations();
         return true;
     }
-    if (header.msg_type != submit_shares_error::message_type) return refuse("unexpected share reply");
+    // serve() forwards only SubmitShares.Success, which returned above, or
+    // SubmitShares.Error. The reply left here is the error.
     auto const message = parse<submit_shares_error>(payload);
     if ( ! message) return refuse("malformed share error");
     if ( ! upstream || message->channel_id != *upstream) return refuse("share error for another channel");
