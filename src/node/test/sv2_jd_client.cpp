@@ -898,6 +898,19 @@ data_chunk truncated_share_success() {
     return bytes;
 }
 
+// SubmitShares.Error is two U32s and a U8 string, at least 9 bytes. Four bytes
+// is a complete frame whose body still fails from_data, so the close comes
+// from the parser rather than from the noise layer waiting for bytes that
+// were never declared.
+data_chunk truncated_share_error() {
+    data_chunk payload(4, 0);
+    payload[0] = 7;
+    auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
+        submit_shares_error::message_type, static_cast<uint32_t>(payload.size())});
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 void require_solo_again(miner_link& miner, downstream_work const& pooled,
     domain::chain::script const& solo) {
     // The selection stays. The scriptSig does not: solo work puts the channel
@@ -1794,13 +1807,18 @@ TEST_CASE("sv2 JD falls back when the pool rejects a share on the accepted decla
 }
 
 TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]") {
-    enum class fault { truncated, success_channel, error_channel };
+    enum class fault { truncated, truncated_error, success_channel, error_channel };
     auto which = fault::truncated;
     SECTION("truncated SubmitShares.Success") {}
+    SECTION("truncated SubmitShares.Error") { which = fault::truncated_error; }
     SECTION("SubmitShares.Success for the group channel") { which = fault::success_channel; }
     SECTION("SubmitShares.Error for the group channel") { which = fault::error_channel; }
     char const* tag = "sv2_jd_bad_success";
     char const* phrase = "malformed share success";
+    if (which == fault::truncated_error) {
+        tag = "sv2_jd_truncated_share_error";
+        phrase = "malformed share error";
+    }
     if (which == fault::success_channel) {
         tag = "sv2_jd_bad_channel";
         phrase = "share success for another channel";
@@ -1827,6 +1845,7 @@ TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]"
     // upstream channel, even though mining updates accept either.
     captured_log log;
     if (which == fault::truncated) fixture.pool.send_plain(truncated_share_success());
+    else if (which == fault::truncated_error) fixture.pool.send_plain(truncated_share_error());
     else if (which == fault::success_channel) fixture.pool.send(submit_shares_success{8, 0, 1, 1});
     else fixture.pool.send(submit_shares_error{8, 0, "other-channel"});
     require_solo_again(miner, declared.pooled, payout->script);
@@ -1835,6 +1854,78 @@ TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]"
     fixture.eof(fixture.pool.socket);
     fixture.eof(fixture.jds.socket);
     require_no_reconnect(fixture);
+}
+
+TEST_CASE("sv2 JD falls back when the pool changes the extranonce prefix of declared work", "[sv2 jd]") {
+    bool group = false;
+    SECTION("channel prefix") {}
+    SECTION("group prefix") { group = true; }
+    auto chain = started_chain(group ? "sv2_jd_prefix_group" : "sv2_jd_prefix_channel");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    std::string error;
+    auto const payout = node::mining::payout_from_address(configuration.mining.address,
+        domain::config::network::regtest, error);
+    REQUIRE(payout);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+
+    // accept() stored an 8-byte prefix of 0x12 and an extranonce size of 8.
+    // Eight bytes of 0x34 still fit (8 + 8 <= 32) and are not that prefix.
+    data_chunk const prefix(8, 0x34);
+    captured_log log;
+    fixture.pool.send(set_extranonce_prefix{group ? uint32_t{8} : uint32_t{7}, prefix});
+    if ( ! group) {
+        require_solo_again(miner, declared.pooled, payout->script);
+        REQUIRE(fixture.wait_until([&] {
+            return log.count("pool changed the extranonce prefix of declared work") >= 1;
+        }));
+        fixture.eof(fixture.pool.socket);
+        fixture.eof(fixture.jds.socket);
+        require_no_reconnect(fixture);
+        return;
+    }
+
+    // A prefix addressed to the group is ignored, so this declaration keeps
+    // the prefix it was built with and neither upstream closes.
+    auto pool_quiet = fixture.begin_read(fixture.pool.socket, 1);
+    auto jds_quiet = fixture.begin_read(fixture.jds.socket, 1);
+    auto miner_quiet = fixture.begin_read(miner.socket, 1);
+    REQUIRE_FALSE(fixture.wait_until([&] {
+        return pool_quiet->done || jds_quiet->done || miner_quiet->done;
+    }, 300ms));
+    REQUIRE(log.count("pool changed the extranonce prefix of declared work") == 0);
+    // Cancel so the next read on each socket starts at a frame boundary.
+    std::error_code cancel_error;
+    fixture.pool.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    fixture.jds.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    miner.socket.cancel(cancel_error);
+    REQUIRE_FALSE(cancel_error);
+    REQUIRE(fixture.wait_until([&] {
+        return pool_quiet->done && jds_quiet->done && miner_quiet->done;
+    }));
+
+    // The custom job is still in flight. Accepting it and forwarding a share
+    // is the declaration staying up after the ignored prefix.
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, false);
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const local = receive_plain<submit_shares_success>(fixture, miner.socket);
+    REQUIRE(local.channel_id == miner.opened.channel_id);
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.channel_id == 7);
+    REQUIRE(forwarded.sequence_number == 0);
+    REQUIRE(forwarded.job_id == 77);
+    REQUIRE(forwarded.nonce == nonce);
+    REQUIRE(log.count("pool changed the extranonce prefix of declared work") == 0);
 }
 
 TEST_CASE("sv2 JD pushes a block found before DeclareMiningJob.Success once", "[sv2 jd]") {

@@ -146,10 +146,8 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             && header->extension() == 0
             && (header->msg_type == submit_shares_success::message_type
                 || header->msg_type == submit_shares_error::message_type)) {
-            if (header->msg_length != payload->size()) {
-                failure = "invalid share reply length";
-                return false;
-            }
+            // feed() delivers exactly the U24 payload_size bytes, and that U24
+            // is the msg_length just parsed. A short share body fails in share_reply.
             if (auto reason = share_reply(*header, *payload)) {
                 failure = std::move(*reason);
                 return false;
@@ -538,7 +536,7 @@ std::optional<std::string> jd_client::share_reply(message_header const& header,
         }
         return std::nullopt;
     }
-    if (header.msg_type != submit_shares_error::message_type) return "unexpected share reply";
+    // The mining handler calls this only for Success or Error. Success returned above.
     auto const message = parse<submit_shares_error>(payload);
     if ( ! message) return "malformed share error";
     if ( ! upstream || message->channel_id != *upstream) return "share error for another channel";
