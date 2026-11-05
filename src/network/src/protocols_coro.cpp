@@ -29,24 +29,7 @@ awaitable_expected<raw_message> wait_for_any_message(
     peer_session& peer,
     std::chrono::seconds timeout)
 {
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor, timeout);
-
-    auto result = co_await (
-        peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-
-    if (result.index() == 1) {
-        co_return std::unexpected(error::channel_timeout);
-    }
-
-    auto& [ec, raw] = std::get<0>(result);
-    if (ec) {
-        co_return std::unexpected(error::channel_stopped);
-    }
-
-    co_return raw;
+    co_return co_await peer.receive(std::chrono::steady_clock::now() + timeout);
 }
 
 // =============================================================================
@@ -289,38 +272,22 @@ awaitable_expected<handshake_result> perform_handshake_direct(
     domain::message::version::const_ptr peer_version;
 
     auto deadline = std::chrono::steady_clock::now() + config.timeout;
-    auto executor = co_await ::asio::this_coro::executor;
 
     while (!got_version || !got_verack) {
-        auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
-            deadline - std::chrono::steady_clock::now());
-
-        if (remaining <= 0s) {
+        if (std::chrono::steady_clock::now() >= deadline) {
             spdlog::debug("[protocol] Handshake timeout with [{}]", authority);
             co_return std::unexpected(error::channel_timeout);
         }
 
-        // Read message directly from socket with timeout
-        // Use racing pattern with timer
-        ::asio::steady_timer timer(executor, remaining);
-
-        auto result = co_await (
-            peer.read_message_direct() ||
-            timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
-
-        // Check which completed first
-        if (result.index() == 1) {
-            // Timer won - timeout
-            spdlog::debug("[protocol] Handshake timeout with [{}]", authority);
-            co_return std::unexpected(error::channel_timeout);
-        }
-
-        // Message received
-        auto& msg_result = std::get<0>(result);
+        // Read directly from the socket; the reads are cancelled at the deadline.
+        auto msg_result = co_await peer.read_message_direct(deadline);
         if (!msg_result) {
-            spdlog::debug("[protocol] Failed to receive message from [{}]: {}",
-                authority, msg_result.error().message());
+            if (msg_result.error() == error::channel_timeout) {
+                spdlog::debug("[protocol] Handshake timeout with [{}]", authority);
+            } else {
+                spdlog::debug("[protocol] Failed to receive message from [{}]: {}",
+                    authority, msg_result.error().message());
+            }
             co_return std::unexpected(msg_result.error());
         }
 
@@ -414,48 +381,35 @@ handshake_config make_handshake_config(
     spdlog::trace("[protocol] Starting ping/pong loop for [{}] with interval {}s",
         peer.authority(), ping_interval.count());
 
-    auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer ping_timer(executor);
-
     uint64_t last_ping_nonce = 0;
 
     while (!peer.stopped()) {
-        // Wait for either:
-        // 1. Ping interval expires -> send ping
-        // 2. Message received -> check if it's ping/pong
-        ping_timer.expires_after(ping_interval);
-
-        auto result = co_await (
-            peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable)) ||
-            ping_timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-        );
+        // The next message, or the ping interval: one selection.
+        auto received = co_await peer.receive(std::chrono::steady_clock::now() + ping_interval);
 
         if (peer.stopped()) {
             break;
         }
 
-        if (result.index() == 1) {
-            // Timer expired - send ping
-            auto [timer_ec] = std::get<1>(result);
-            if (!timer_ec) {
-                last_ping_nonce = pseudo_random::generate<uint64_t>();
-                domain::message::ping ping_msg(last_ping_nonce);
-
-                auto ec = co_await peer.send(ping_msg);
-                if (ec != error::success) {
-                    spdlog::debug("[protocol] Failed to send ping to [{}]", peer.authority());
-                    co_return ec;
-                }
-
-                spdlog::trace("[protocol] Sent ping to [{}]", peer.authority());
+        if (!received) {
+            if (received.error() != error::channel_timeout) {
+                co_return error::channel_stopped;
             }
+            // Interval expired - send ping
+            last_ping_nonce = pseudo_random::generate<uint64_t>();
+            domain::message::ping ping_msg(last_ping_nonce);
+
+            auto ec = co_await peer.send(ping_msg);
+            if (ec != error::success) {
+                spdlog::debug("[protocol] Failed to send ping to [{}]", peer.authority());
+                co_return ec;
+            }
+
+            spdlog::trace("[protocol] Sent ping to [{}]", peer.authority());
         }
         else {
             // Message received
-            auto& [ec, raw] = std::get<0>(result);
-            if (ec) {
-                co_return error::channel_stopped;
-            }
+            auto& raw = *received;
 
             auto const& command = raw.heading.command();
 
@@ -967,13 +921,11 @@ template awaitable_expected<std::vector<block_result<sync_mode::slow>>> request_
 {
     while (!peer.stopped()) {
         // Wait for next message (no timeout - runs until stopped)
-        auto result = co_await peer.messages().async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        auto& [ec, raw] = result;
-        if (ec) {
+        auto received = co_await peer.receive();
+        if (!received) {
             co_return error::channel_stopped;
         }
+        auto& raw = *received;
 
         // Dispatch to handler
         bool continue_loop = co_await handler(raw);

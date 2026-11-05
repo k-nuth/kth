@@ -541,8 +541,9 @@ struct remote_peer {
 // `ping` is observed. Everything else is dropped.
 ::asio::awaitable<void> route_messages(network::peer_session& peer, std::atomic<size_t>& pings_seen) {
     while (true) {
-        auto [ec, raw] = co_await peer.messages().async_receive(::asio::as_tuple(::asio::use_awaitable));
-        if (ec) co_return;
+        auto received = co_await peer.receive();
+        if (!received) co_return;
+        auto raw = std::move(*received);
         if (raw.heading.command() == domain::message::block::command) {
             auto ex = co_await ::asio::this_coro::executor;
             auto handed = co_await ::asio::experimental::make_select(
