@@ -91,7 +91,14 @@ slow_sync_admission may_start_slow_sync(
     uint32_t start_height,
     std::expected<uint32_t, database::result_code> const& built);
 
-/// One tick of the builder-progress bridge.
+/// Refresh validation/finality from the current connected publication. Called
+/// by the coordinator, which also owns reorganization finality updates. A view
+/// for an abandoned branch is ignored. Queued progress heights are never used.
+KND_API bool refresh_validated_tip(blockchain::block_chain const& chain,
+                                  blockchain::header_organizer& organizer);
+
+/// Legacy timer-bridge decision, retained for API compatibility. Production
+/// progress now comes from the builder channel, without polling.
 struct utxo_progress_step {
     /// The height to announce, or nullopt to stay quiet.
     std::optional<uint32_t> announce;

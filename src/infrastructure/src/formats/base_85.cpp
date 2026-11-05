@@ -33,125 +33,18 @@
 
 #include <kth/infrastructure/formats/base_85.hpp>
 
-#include <cstddef>
-#include <cstdint>
-#include <string>
+namespace kth::detail {
 
-#include <kth/infrastructure/utility/assert.hpp>
-#include <kth/infrastructure/utility/data.hpp>
-
-namespace kth {
-
-// Maps binary to base 85.
-static char encoder[85 + 1] =
-{
-    "0123456789"
-    "abcdefghij"
-    "klmnopqrst"
-    "uvwxyzABCD"
-    "EFGHIJKLMN"
-    "OPQRSTUVWX"
-    "YZ.-:+=^!/"
-    "*?&<>()[]{"
-    "}@%$#"
-};
-
-// Maps base 85 to binary.
-static uint8_t decoder[96] =
-{
-    0x00, 0x44, 0x00, 0x54, 0x53, 0x52, 0x48, 0x00,
-    0x4B, 0x4C, 0x46, 0x41, 0x00, 0x3F, 0x3E, 0x45,
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    0x08, 0x09, 0x40, 0x00, 0x49, 0x42, 0x4A, 0x47,
-    0x51, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A,
-    0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32,
-    0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A,
-    0x3B, 0x3C, 0x3D, 0x4D, 0x00, 0x4E, 0x43, 0x00,
-    0x00, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-    0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
-    0x21, 0x22, 0x23, 0x4F, 0x00, 0x50, 0x00, 0x00
-};
-
-// Accepts only byte arrays bounded to 4 bytes.
-std::expected<std::string, base85_errc> encode_base85(byte_span in)
-{
-    size_t const size = in.size();
-    if (size % 4 != 0) {
-        return std::unexpected(base85_errc::invalid_length);
-    }
-
-    size_t const encoded_size = size * 5 / 4;
-    std::string encoded;
-    encoded.reserve(encoded_size);
-    size_t byte_index = 0;
-    uint32_t accumulator = 0;
-
-    for (uint8_t const unencoded_byte : in) {
-        accumulator = accumulator * 256 + unencoded_byte;
-        if (++byte_index % 4 == 0) {
-            for (uint32_t divise = 85 * 85 * 85 * 85; divise > 0; divise /= 85) {
-                encoded.push_back(encoder[accumulator / divise % 85]);
-            }
-            accumulator = 0;
-        }
-    }
-
-    KTH_ASSERT(encoded.size() == encoded_size);
-    return encoded;
+std::expected<std::string, base85_errc> encode_base85_runtime(byte_span input) {
+    return encode_base85_scalar(input);
 }
 
-// Accepts only strings bounded to 5 characters.
-// Span-based primary — zero allocation.
-std::expected<size_t, base85_errc>
-decode_base85(std::string_view in, std::span<uint8_t> out) {
-    size_t const length = in.size();
-    if (length % 5 != 0) {
-        return std::unexpected(base85_errc::invalid_length);
-    }
-
-    size_t const decoded_size = length * 4 / 5;
-    if (out.size() < decoded_size) {
-        return std::unexpected(base85_errc::invalid_length);
-    }
-
-    size_t write_index = 0;
-    size_t char_index = 0;
-    uint32_t accumulator = 0;
-
-    for (uint8_t const encoded_character : in) {
-        auto const position = encoded_character - 32;
-        // `decoder` has 96 entries (indices 0..95). `position == 96`
-        // (input byte 128) previously slipped through and read OOB.
-        if (position < 0 || position >= 96) {
-            return std::unexpected(base85_errc::invalid_character);
-        }
-
-        accumulator = accumulator * 85 + decoder[position];
-        if (++char_index % 5 == 0) {
-            for (uint32_t divise = 256 * 256 * 256; divise > 0; divise /= 256) {
-                out[write_index++] = accumulator / divise % 256;
-            }
-            accumulator = 0;
-        }
-    }
-
-    KTH_ASSERT(write_index == decoded_size);
-    return decoded_size;
+std::expected<size_t, base85_errc> decode_base85_runtime(std::string_view input, std::span<uint8_t> output) noexcept {
+    return decode_base85_scalar(input, output);
 }
 
-// Allocating overload — delegates to the span form.
-std::expected<data_chunk, base85_errc> decode_base85(std::string_view in) {
-    size_t const length = in.size();
-    if (length % 5 != 0) {
-        return std::unexpected(base85_errc::invalid_length);
-    }
-    data_chunk out(length * 4 / 5);
-    auto const written = decode_base85(in, out);
-    if ( ! written) {
-        return std::unexpected(written.error());
-    }
-    return out;
+std::expected<data_chunk, base85_errc> decode_base85_runtime(std::string_view input) {
+    return decode_base85_scalar(input);
 }
 
-} // namespace kth
+} // namespace kth::detail

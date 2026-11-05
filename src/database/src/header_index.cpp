@@ -5,6 +5,8 @@
 #include <kth/database/header_index.hpp>
 
 #include <cstring>
+#include <algorithm>
+#include <functional>
 
 #include <spdlog/spdlog.h>
 
@@ -159,6 +161,75 @@ int32_t header_index::get_height(index_t idx) const {
 
 uint256_t header_index::get_chain_work(index_t idx) const {
     return chain_works_[idx];
+}
+
+std::optional<uint256_t> header_index::total_chain_work(hash_digest const& tip) const {
+    auto const idx = find(tip);
+    if (idx == null_index) {
+        return std::nullopt;
+    }
+    auto const root = get_ancestor(idx, 0);
+    if (root == null_index) {
+        return std::nullopt;
+    }
+    return get_chain_work(idx) + domain::chain::header::proof(get_bits(root));
+}
+
+std::optional<std::vector<header_index::chain_tip>>
+header_index::get_chain_tips(hash_digest const& connected_tip) const {
+    auto const active = find(connected_tip);
+    if (active == null_index) return std::nullopt;
+
+    // Index entries are append-only and a parent is published before its
+    // children. Compute each branch's fork and data availability once, instead
+    // of walking the same shared ancestry again for every leaf.
+    auto const count = size();
+    if (active >= count) return std::nullopt;
+    struct branch_state {
+        int32_t fork_height = -1; // -1: not connected to the published chain
+        bool all_data = false;
+        bool has_child = false;
+    };
+    std::vector<branch_state> branches(count);
+    for (auto idx = active; idx != header_index::null_index;
+         idx = get_parent_index(idx)) {
+        branches[idx].fork_height = get_height(idx);
+        branches[idx].all_data = true;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        auto const parent = get_parent_index(idx);
+        if (parent != header_index::null_index && parent < count) {
+            branches[parent].has_child = true;
+        }
+        auto& branch = branches[i];
+        if (branch.fork_height >= 0) continue; // already on the connected chain
+        if (parent == header_index::null_index || parent >= i) continue;
+        auto const& previous = branches[parent];
+        if (previous.fork_height < 0) continue; // a disconnected root
+        branch.fork_height = previous.fork_height;
+        branch.all_data = previous.all_data &&
+            has_status(idx, header_status::have_data);
+    }
+
+    std::vector<chain_tip> tips;
+    for (size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        if (idx == active) {
+            tips.push_back({size_t(get_height(active)), connected_tip, 0, tip_status::active});
+            continue;
+        }
+        auto const& branch = branches[i];
+        if (branch.has_child || branch.fork_height < 0) continue;
+        auto const height = get_height(idx);
+        tips.push_back({size_t(height), get_hash(idx),
+            size_t(height - branch.fork_height),
+            branch.all_data ? tip_status::valid_headers : tip_status::headers_only});
+    }
+    // O(N + T log T) time, O(N + T) storage for N headers and T tips.
+    std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);
+    return tips;
 }
 
 header_status header_index::get_status(index_t idx) const {

@@ -546,7 +546,7 @@ TEST_CASE("stimulus sender: taken by the queue is reported as accepted",
     started_tasks group{ioc, {}};
     stimulus_sender sender(ioc.get_executor(), events, group.spawn());
 
-    sender.send(live, null_hash, 7);
+    sender.send(live, hash_list{null_hash}, 7);
     drain(ioc);
     auto const accepted = next_event<sync::header_stimulus_accepted>(events);
     REQUIRE(accepted.has_value());
@@ -564,7 +564,7 @@ TEST_CASE("stimulus sender: a stopped session is reported as failed",
     started_tasks group{ioc, {}};
     stimulus_sender sender(ioc.get_executor(), events, group.spawn());
 
-    sender.send(stopped, null_hash, 8);
+    sender.send(stopped, hash_list{null_hash}, 8);
     drain(ioc);
     auto const failed = next_event<sync::header_stimulus_failed>(events);
     REQUIRE(failed.has_value());
@@ -585,7 +585,7 @@ TEST_CASE("stimulus sender: withdrawn while it waits for room, it is never sent"
     started_tasks group{ioc, {}};
     stimulus_sender sender(ioc.get_executor(), events, group.spawn());
 
-    sender.send(session, hash_of(1), 9);
+    sender.send(session, hash_list{hash_of(1)}, 9);
     drain(ioc);
     REQUIRE_FALSE(group.all_ended());               // waiting for room
 
@@ -615,7 +615,7 @@ TEST_CASE("stimulus sender: withdrawn before its task starts, it does not send",
     held_tasks group;
     stimulus_sender sender(ioc.get_executor(), events, group.spawn());
 
-    sender.send(session, hash_of(2), 10);
+    sender.send(session, hash_list{hash_of(2)}, 10);
     REQUIRE(group.held.size() == 1u);
     sender.cancel();
     drain(ioc);                                     // the withdrawal, and nothing else
@@ -650,9 +650,9 @@ TEST_CASE("stimulus sender: a replaced stimulus is withdrawn, and room completes
     started_tasks group{ioc, {}};
     stimulus_sender sender(ioc.get_executor(), events, group.spawn());
 
-    sender.send(session, hash_of(5), 11);           // waits for room
+    sender.send(session, hash_list{hash_of(5)}, 11);           // waits for room
     drain(ioc);
-    sender.send(session, hash_of(6), 12);           // replaces it, also waits
+    sender.send(session, hash_list{hash_of(6)}, 12);           // replaces it, also waits
     drain(ioc);
     REQUIRE(group.futures.size() == 2u);
     CHECK(group.futures[0].wait_for(std::chrono::seconds(0)) == std::future_status::ready);
@@ -815,7 +815,7 @@ TEST_CASE("header tasks: shutdown with operations armed and batches waiting ends
     auto forwarder = ::asio::co_spawn(ioc,
         header_ingest_forwarder(channels, handoff, validation), ::asio::use_future);
 
-    sender.send(session, hash_of(9), 1);
+    sender.send(session, hash_list{hash_of(9)}, 1);
     deadline.arm(10min, sync::header_walk_timeout{.seq = 1});
     retry.arm(10min, sync::header_walk_retry{.generation = 3});
     REQUIRE(channels.submit(a, batch(1, 1)));

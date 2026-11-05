@@ -131,9 +131,9 @@ public:
     stimulus_sender(stimulus_sender const&) = delete;
     stimulus_sender& operator=(stimulus_sender const&) = delete;
 
-    /// Send stimulus `seq` — a getheaders from `from_hash` — to `peer`,
+    /// Send stimulus `seq` with an owned ancestry locator to `peer`,
     /// withdrawing whatever was being sent.
-    void send(network::peer_session::ptr peer, hash_digest const& from_hash, uint64_t seq);
+    void send(network::peer_session::ptr peer, hash_list locator, uint64_t seq);
 
     /// Withdraw the send in progress, if it is still waiting.
     void cancel();

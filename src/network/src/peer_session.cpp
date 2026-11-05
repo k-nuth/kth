@@ -4,6 +4,10 @@
 
 #include <kth/network/peer_session.hpp>
 
+#include <asio/cancel_after.hpp>
+#include <asio/cancel_at.hpp>
+#include <asio/experimental/channel_select.hpp>
+
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -80,7 +84,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
     , outbound_(strand_, outbound_capacity)
-    , inbound_(strand_, 100)   // Buffer up to 100 inbound messages
+    , inbound_(100)            // Buffer up to 100 inbound messages
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -113,7 +117,6 @@ peer_session::~peer_session() {
 
     // Cancel before close to ensure any pending async ops are woken up
     outbound_.cancel();
-    inbound_.cancel();
 
     outbound_.close();
     inbound_.close();
@@ -251,13 +254,13 @@ void peer_session::stop(code const& ec) {
     // - outbound_: Used by write_loop() and send operations
     // - block_responses_, addr_responses_: Used by request protocols
     spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
-    inbound_.cancel();
     outbound_.cancel();
     spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
-    inbound_.close();
     outbound_.close();
-    // The response channels are select_channels: close() completes a pending
-    // receive with eof and a pending send with broken_pipe, from any thread.
+    // inbound_ and the response channels are select_channels: close()
+    // completes a pending receive with eof and a pending send with
+    // broken_pipe, from any thread.
+    inbound_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -278,6 +281,7 @@ void peer_session::drain_response_channels() {
         while (channel.try_receive(ec)) {
         }
     };
+    drain(inbound_);
     drain(block_responses_);
     drain(addr_responses_);
 }
@@ -308,6 +312,24 @@ bool peer_session::stopped() const {
 
 peer_session::inbound_channel& peer_session::messages() {
     return inbound_;
+}
+
+awaitable_expected<raw_message> peer_session::receive(std::chrono::steady_clock::time_point deadline) {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(inbound_),
+        ::asio::experimental::after(deadline)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec) {
+        // eof: stop() closed the channel; anything else is the wait itself
+        // being cancelled. Neither is a message.
+        co_return std::unexpected(error::channel_stopped);
+    }
+    if (selected.index == 1) {
+        co_return std::unexpected(error::channel_timeout);
+    }
+    co_return std::move(*selected.value<0>());
 }
 
 peer_session::response_channel& peer_session::block_responses() {
@@ -539,11 +561,14 @@ void peer_session::set_wants_addrv2(bool value) {
         // Signal activity to reset inactivity timer
         signal_activity();
 
-        // Send message to inbound channel
-        auto [ec] = co_await inbound_.async_send(
-            std::error_code{},
-            std::move(*result),
-            ::asio::as_tuple(::asio::use_awaitable));
+        // Hand the message to the inbound channel: a suspended send that
+        // waits while the channel is full and completes with broken_pipe once
+        // stop() has closed it.
+        auto handed = co_await ::asio::experimental::make_select(
+            ::asio::experimental::send(inbound_, std::move(*result))
+        ).async_wait(strand_, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, handed_case] = handed;
+        (void)handed_case;
 
         if (ec) {
             spdlog::debug("[peer_session] Failed to enqueue message [{}]", authority());
@@ -631,14 +656,30 @@ void peer_session::set_wants_addrv2(bool value) {
     stop(error::channel_timeout);
 }
 
-awaitable_expected<raw_message> peer_session::read_message() {
+awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_clock::time_point deadline) {
+    // With a deadline, every read is cancelled at it (asio::cancel_at, one
+    // operation with its own cancellation, not a race against a timer).
+    bool const timed = deadline != std::chrono::steady_clock::time_point::max();
+    auto read = [&](auto buffer) -> ::asio::awaitable<std::error_code> {
+        if (timed) {
+            auto [ec, n] = co_await ::asio::async_read(socket_, buffer,
+                ::asio::cancel_at(deadline, ::asio::as_tuple(::asio::use_awaitable)));
+            (void)n;
+            if (ec == ::asio::error::operation_aborted && std::chrono::steady_clock::now() >= deadline) {
+                co_return make_error_code(error::channel_timeout);
+            }
+            co_return ec;
+        }
+        auto [ec, n] = co_await ::asio::async_read(socket_, buffer, ::asio::as_tuple(::asio::use_awaitable));
+        (void)n;
+        co_return ec;
+    };
+
     // Read heading (24 bytes)
-    auto [head_ec, head_bytes] = co_await ::asio::async_read(
-        socket_,
-        ::asio::buffer(heading_buffer_),
-        ::asio::as_tuple(::asio::use_awaitable));
+    auto const head_ec = co_await read(::asio::buffer(heading_buffer_));
 
     if (head_ec) {
+        if (head_ec == error::channel_timeout) co_return std::unexpected(error::channel_timeout);
         co_return std::unexpected(error::boost_to_error_code(head_ec));
     }
 
@@ -668,12 +709,10 @@ awaitable_expected<raw_message> peer_session::read_message() {
     data_chunk payload(head.payload_size());
 
     if (head.payload_size() > 0) {
-        auto [payload_ec, payload_bytes] = co_await ::asio::async_read(
-            socket_,
-            ::asio::buffer(payload),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto const payload_ec = co_await read(::asio::buffer(payload));
 
         if (payload_ec) {
+            if (payload_ec == error::channel_timeout) co_return std::unexpected(error::channel_timeout);
             co_return std::unexpected(error::boost_to_error_code(payload_ec));
         }
     }
@@ -698,9 +737,14 @@ awaitable_expected<raw_message> peer_session::read_message() {
 // Direct I/O (for handshake before run() starts)
 // =============================================================================
 
-awaitable_expected<raw_message> peer_session::read_message_direct() {
-    // Just delegate to the private read_message() implementation
-    return read_message();
+awaitable_expected<raw_message> peer_session::read_message_direct(std::chrono::steady_clock::time_point deadline) {
+    // The timed reads (asio::cancel_at) must complete on a strand, and the
+    // caller may be running on the pool, so run them on the session's strand.
+    co_return co_await ::asio::co_spawn(strand_,
+        [this, deadline]() -> awaitable_expected<raw_message> {
+            co_return co_await read_message(deadline);
+        },
+        ::asio::use_awaitable);
 }
 
 void peer_session::signal_activity() {
@@ -806,24 +850,26 @@ awaitable_expected<peer_session::ptr> async_connect(
         direct_endpoint = *endpoints.begin();
     }
 
-    // Create socket and timer for connection timeout
+    // Connect with a timeout: one operation cancelled by its own timer
+    // (asio::cancel_after), not a parallel group racing a timer. The timer
+    // wait and the connect complete without synchronisation between them,
+    // so asio requires both to run on a strand; the caller's executor is
+    // usually the thread pool, so the connect gets its own strand here.
     ::asio::ip::tcp::socket socket(executor);
-    ::asio::steady_timer timer(executor);
-    timer.expires_after(timeout);
+    ::asio::strand<::asio::any_io_executor> connect_strand(executor);
+    auto const connect_ec = co_await ::asio::co_spawn(connect_strand,
+        [&]() -> ::asio::awaitable<std::error_code> {
+            auto [ec] = co_await socket.async_connect(direct_endpoint,
+                ::asio::cancel_after(timeout, ::asio::as_tuple(::asio::use_awaitable)));
+            co_return ec;
+        },
+        ::asio::use_awaitable);
 
-    // Race: connect vs timeout (use single endpoint connect)
-    auto connect_result = co_await (
-        socket.async_connect(direct_endpoint, ::asio::as_tuple(::asio::use_awaitable)) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-
-    if (connect_result.index() == 1) {
-        // Timeout won
+    if (connect_ec == ::asio::error::operation_aborted) {
         spdlog::debug("[async_connect] Connection to {}:{} timed out", hostname, port);
         co_return std::unexpected(error::channel_timeout);
     }
 
-    auto [connect_ec] = std::get<0>(connect_result);
     if (connect_ec) {
         spdlog::debug("[async_connect] Failed to connect to {}:{}: {}",
             hostname, port, connect_ec.message());
