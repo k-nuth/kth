@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_RPC_MINING_HPP
 #define KTH_NODE_RPC_MINING_HPP
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -22,6 +23,13 @@ namespace kth::node::rpc {
 // tagged with `job_id` and carrying the coinbase's merkle branch.
 std::string render_mining_template(
     blockchain::mining_template const& tmpl, std::string_view job_id);
+
+// Serialize a mining template as the getblocktemplate "result" object (BIP22,
+// with the transactions in full): the transactions in template order with
+// their data, txid, the 1-based indexes of earlier template transactions they
+// spend from, and fee and sigchecks captured with the selection; then the header
+// fields, coinbase value, target and limits. Long polling is unsupported.
+std::string render_block_template(blockchain::mining_template const& tmpl);
 
 // Serialize a mining_info as the getmininginfo "result" object.
 std::string render_mining_info(blockchain::mining_info const& info);

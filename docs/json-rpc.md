@@ -89,6 +89,7 @@ counterpart.
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
+| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
@@ -184,6 +185,20 @@ against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
 `decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
 output that a mempool transaction spends is `null`, and an output of a mempool
 transaction is returned with `0` confirmations.
+## Mining: getblocktemplate
+
+`getblocktemplate [template_request]` returns the next-block template with its
+transactions in full, as BIP22 describes, for pools that build the coinbase and
+submit the whole block: `capabilities`, `version`, `previousblockhash`,
+`transactions` (each with `data`, `txid`, `hash`, `depends` when it spends an
+earlier template transaction, and `fee` and `sigops`, the transaction's
+sigchecks, from the captured selection), `coinbaseaux`, `coinbasevalue`,
+`target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
+block's sigchecks limit), `sizelimit`, `curtime`, `bits` and `height`. It is the
+same template `getblocktemplatelight` serves, so the two agree on the selection.
+Only `template` mode is supported; long polling is unsupported, so `longpollid`
+is omitted. Fees and sigchecks are captured with the selected transactions and
+remain unchanged when a cached template is served after mempool changes.
 
 ## getnetworkinfo
 

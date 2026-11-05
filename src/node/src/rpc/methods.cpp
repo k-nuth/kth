@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -99,6 +100,53 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 
     auto const job_id = ctx.jobs.add(tmpl->selection.txs);
     co_return render_mining_template(*tmpl, job_id);
+}
+
+// getblocktemplate [template_request] -> the next-block template with its
+// transactions in full (BIP22), for pools that build and submit whole blocks.
+// Only "template" mode; "proposal" is refused. The request's capabilities and
+// rules ask for nothing this template leaves out.
+// C-API counterpart: kth_chain_async_fetch_mining_template.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_block_template(method_context& ctx, request const& req) {
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getblocktemplate requires [] or [template_request object]"));
+    };
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::object request_object;
+        if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        std::string_view mode;
+        auto const mode_error = request_object["mode"].get_string().get(mode);
+        if (mode_error != simdjson::NO_SUCH_FIELD) {
+            if (mode_error != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            if (mode != "template") {
+                co_return kth::fail(make_error(error_code::invalid_params,
+                    "only template mode is supported"));
+            }
+        }
+    }
+
+    auto const tmpl = co_await ctx.chain.fetch_mining_template(
+        blockchain::default_coinbase_reserve_size);
+    if ( ! tmpl) {
+        co_return kth::fail(from_code(tmpl.error()));
+    }
+
+    co_return render_block_template(*tmpl);
 }
 
 // getmininginfo -> height, difficulty, mempool size, and network.
@@ -889,6 +937,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmempoolentry", get_mempool_entry);
     d.add("getmempoolancestors", get_mempool_ancestors);
     d.add("getmempooldescendants", get_mempool_descendants);
+    d.add("getblocktemplate", get_block_template);
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
     d.add("submitblocklight", submit_block_light);
