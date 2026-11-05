@@ -222,6 +222,11 @@ returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
 Confirmed transactions are not indexed by txid (#491), so for one of those pass
 the block hash as the third parameter: `getrawtransaction "<txid>" false
 "<blockhash>"`. A block or transaction the node does not have is error `-5`.
+An empty optional block hash is treated as omitted. KTH currently has neither a
+confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
+therefore require the block hash. Verbose transaction responses are tracked in
+#789 rather than silently returning hex for a verbose request.
+
 
 `fetch_block` keeps both original overloads. The chain captures hash, height and
 file position before returning an owning awaitable endpoint. A single disk owner

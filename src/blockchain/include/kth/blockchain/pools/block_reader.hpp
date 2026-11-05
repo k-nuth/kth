@@ -23,8 +23,7 @@ namespace kth::blockchain {
 // Cancellation withdraws a reply and skips queued work. An already-started
 // portable file read finishes on the disk thread; destruction joins it rather
 // than abandoning work or destroying its storage underneath it.
-class KB_API block_reader {
-public:
+struct KB_API block_reader {
     using result = expect<std::pair<block_const_ptr, size_t>>;
     struct limits {
         size_t requests = 32;

@@ -2509,18 +2509,24 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// Error results also own their data before the lazy awaitable is returned.
+// fetch_block captures synchronously; this adapts its error paths to awaitable
+// results without turning those wrappers back into lazy coroutines.
 static awaitable_expected<std::pair<block_const_ptr, size_t>> block_fetch_failure(code ec) {
     co_return kth::fail(ec);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
-    if (stopped() || !block_reads_) return block_fetch_failure(error::service_stopped);
-    if (height > size_t(max_int32)) return block_fetch_failure(error::not_found);
-    auto const idx = header_index_.active_at(int32_t(height));
-    if (idx == header_index::null_index || !header_index_.has_block_data(idx))
+    if (stopped() || !block_reads_) {
+        return block_fetch_failure(error::service_stopped);
+    }
+    if (height > size_t(max_int32)) {
         return block_fetch_failure(error::not_found);
+    }
+    auto const idx = header_index_.active_at(int32_t(height));
+    if (idx == header_index::null_index || !header_index_.has_block_data(idx)) {
+        return block_fetch_failure(error::not_found);
+    }
     // Freeze the descriptor before suspension. The disk owner needs no index,
     // chain, or store pointer: hash, height and position are independent values.
     auto const hash = header_index_.get_hash(idx);
@@ -2530,10 +2536,13 @@ block_chain::fetch_block(size_t height) const {
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped() || !block_reads_) return block_fetch_failure(error::service_stopped);
+    if (stopped() || !block_reads_) {
+        return block_fetch_failure(error::service_stopped);
+    }
     auto const idx = header_index_.find(hash);
-    if (idx == header_index::null_index || !header_index_.has_block_data(idx))
+    if (idx == header_index::null_index || !header_index_.has_block_data(idx)) {
         return block_fetch_failure(error::not_found);
+    }
     auto const height = size_t(header_index_.get_height(idx));
     database::flat_file_pos const pos{header_index_.get_file_number(idx), header_index_.get_data_pos(idx)};
     return block_reads_->fetch_block(hash, height, pos);

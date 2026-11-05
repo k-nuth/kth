@@ -829,9 +829,10 @@ struct KB_API block_chain {
     // FETCH OPERATIONS (Thread safe, coroutine-based)
     // =========================================================================
 
-    // Fetch immutable blocks through the bounded disk owner/cache. File I/O
-    // and parsing run outside the caller executor. Both overloads preserve
-    // the original API; missing data and damaged records remain distinct.
+    // Return an immutable block and its indexed height through the disk owner/cache. File I/O
+    // and parsing run outside the caller executor. Returns not_found when the
+    // index has no stored block; operation_failed when reading or validating
+    // a stored record fails (including a wrong hash or merkle root).
     // Endpoint/descriptor capture is immediate, so a lazy read never borrows
     // this object across suspension or after close().
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>

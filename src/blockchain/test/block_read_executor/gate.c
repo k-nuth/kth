@@ -16,7 +16,9 @@ static atomic_int armed;
 static int entered_fd, release_fd;
 static struct stat target;
 void kth_arm_block_read_gate(char const *path) {
-    if (stat(path, &target) != 0) abort();
+    if (stat(path, &target) != 0) {
+        abort();
+    }
     entered_fd = atoi(getenv("KTH_BLOCK_READ_ENTERED_FD"));
     release_fd = atoi(getenv("KTH_BLOCK_READ_RELEASE_FD"));
     atomic_store_explicit(&armed, 1, memory_order_release);

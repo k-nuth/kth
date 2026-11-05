@@ -20,7 +20,9 @@ using namespace kth;
 
 TEST_CASE("fetch_block leaves its caller executor responsive during disk I/O", "[.disk executor]") {
     auto const* descriptor = std::getenv("KTH_BLOCK_READ_PROGRESS_FD");
-    if (!descriptor) SKIP("run through kth_block_read_executor_test to install the disk gate");
+    if (!descriptor) {
+        SKIP("run through kth_block_read_executor_test to install the disk gate");
+    }
     auto const arm = reinterpret_cast<void (*)(char const*)>(dlsym(RTLD_DEFAULT, "kth_arm_block_read_gate"));
     REQUIRE(arm != nullptr);
     auto const progress = int(std::strtol(descriptor, nullptr, 10));
@@ -57,7 +59,9 @@ TEST_CASE("fetch_block leaves its caller executor responsive during disk I/O", "
     });
     caller.run();
     auto const fetched = result.get();
-    if (!fetched) INFO(fetched.error().message());
+    if (!fetched) {
+        INFO(fetched.error().message());
+    }
     REQUIRE(fetched);
     CHECK(fetched->first->hash() == block.hash());
 }

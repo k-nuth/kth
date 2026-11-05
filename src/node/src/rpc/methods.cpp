@@ -126,33 +126,59 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     simdjson::ondemand::document doc;
     simdjson::ondemand::array args;
     if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
-        doc.get_array().get(args) != simdjson::SUCCESS) return invalid();
+        doc.get_array().get(args) != simdjson::SUCCESS) {
+        return invalid();
+    }
     raw_read_arguments result{};
     size_t count = 0;
     for (auto element : args) {
         simdjson::ondemand::value value;
         simdjson::ondemand::json_type type;
         if (count >= (transaction ? 3u : 2u) || element.get(value) != simdjson::SUCCESS ||
-            value.type().get(type) != simdjson::SUCCESS) return invalid();
+            value.type().get(type) != simdjson::SUCCESS) {
+            return invalid();
+        }
         if (count == 0 || count == 2) {
-            if (count == 2 && type == simdjson::ondemand::json_type::null) { ++count; continue; }
+            if (count == 2 && type == simdjson::ondemand::json_type::null) {
+                ++count;
+                continue;
+            }
             std::string_view text;
-            if (value.get_string().get(text) != simdjson::SUCCESS) return invalid();
+            if (value.get_string().get(text) != simdjson::SUCCESS) {
+                return invalid();
+            }
+            if (count == 2 && text.empty()) {
+                ++count;
+                continue;
+            }
             auto hash = decode_hash(text);
-            if (!hash) return kth::fail(make_error(error_code::invalid_params,
-                transaction && count == 0 ? "invalid txid" : "invalid block hash"));
-            if (count == 0) result.hash = *hash;
-            else result.block_hash = *hash;
+            if (!hash) {
+                return kth::fail(make_error(error_code::invalid_params,
+                    transaction && count == 0 ? "invalid txid" : "invalid block hash"));
+            }
+            if (count == 0) {
+                result.hash = *hash;
+            } else {
+                result.block_hash = *hash;
+            }
         } else if (type == simdjson::ondemand::json_type::boolean) {
             bool verbose;
-            if (value.get_bool().get(verbose) != simdjson::SUCCESS || verbose) return invalid();
+            if (value.get_bool().get(verbose) != simdjson::SUCCESS || verbose) {
+                return invalid();
+            }
         } else if (type == simdjson::ondemand::json_type::number) {
             int64_t verbose;
-            if (value.get_int64().get(verbose) != simdjson::SUCCESS || verbose != 0) return invalid();
-        } else if (type != simdjson::ondemand::json_type::null) return invalid();
+            if (value.get_int64().get(verbose) != simdjson::SUCCESS || verbose != 0) {
+                return invalid();
+            }
+        } else if (type != simdjson::ondemand::json_type::null) {
+            return invalid();
+        }
         ++count;
     }
-    if (count == 0) return invalid();
+    if (count == 0) {
+        return invalid();
+    }
     return result;
 }
 
@@ -530,12 +556,16 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
     auto const args = raw_read_params(req, true);
-    if (!args) co_return kth::fail(args.error());
+    if (!args) {
+        co_return kth::fail(args.error());
+    }
     auto const& hash = args->hash;
     if (args->block_hash) {
         auto const block = co_await ctx.chain.fetch_block(*args->block_hash);
         if (!block) {
-            if (block.error() != error::not_found) co_return kth::fail(from_code(block.error()));
+            if (block.error() != error::not_found) {
+                co_return kth::fail(from_code(block.error()));
+            }
             co_return kth::fail(make_error(error_code::invalid_address_or_key,
                 "Block hash not found"));
         }
@@ -569,7 +599,9 @@ get_raw_transaction(method_context& ctx, request const& req) {
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
     auto const args = raw_read_params(req, false);
-    if (!args) co_return kth::fail(args.error());
+    if (!args) {
+        co_return kth::fail(args.error());
+    }
     auto const result = co_await ctx.chain.fetch_block(args->hash);
     if ( ! result) {
         if (result.error() == error::not_found) {

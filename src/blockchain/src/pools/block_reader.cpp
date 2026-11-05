@@ -44,7 +44,9 @@ struct block_reader::state {
         stopping.close();
         requests.close();
         std::error_code ec;
-        while (auto item = requests.try_receive(ec)) item->reply->close();
+        while (auto item = requests.try_receive(ec)) {
+            item->reply->close();
+        }
     }
 
     result read(request const& item) {
@@ -53,12 +55,15 @@ struct block_reader::state {
             return std::pair{hit->second->block, item.height};
         }
         auto raw = store.read_block_raw(item.pos);
-        if (!raw) return kth::fail(error::operation_failed);
+        if (!raw) {
+            return kth::fail(error::operation_failed);
+        }
         byte_reader reader(*raw);
         auto parsed = domain::message::block::from_data(reader, 0u);
         if (!parsed || !reader.is_exhausted() || parsed->hash() != item.hash ||
-            !parsed->is_valid_merkle_root())
+            !parsed->is_valid_merkle_root()) {
             return kth::fail(error::operation_failed);
+        }
         block_const_ptr block = std::make_shared<domain::message::block const>(std::move(*parsed));
         if (budget.cache_entries != 0 && raw->size() <= budget.cache_bytes) {
             while (!recent.empty() && (recent.size() >= budget.cache_entries ||
@@ -79,7 +84,9 @@ block_reader::block_reader(std::filesystem::path path, database::block_store::ma
     : state_(std::make_shared<state>(std::move(path), magic, budget)) {}
 
 void block_reader::start() {
-    if (started_) return;
+    if (started_) {
+        return;
+    }
     started_ = true;
     // An owned root task. Completion closes all endpoints, including on an
     // exceptional exit. Destruction closes admission and joins its executor.
@@ -107,23 +114,31 @@ void block_reader::stop() {
     for (;;) {
         std::error_code ec;
         (void)owned->stopping.try_receive(ec);
-        if (ec == ::asio::error::eof) break;
+        if (ec == ::asio::error::eof) {
+            break;
+        }
         auto [receive_error, selected] = co_await ::asio::experimental::make_select(
             ::asio::experimental::receive(owned->stopping),
             ::asio::experimental::receive(owned->requests)
         ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-        if (receive_error || selected.index == 0) break;
+        if (receive_error || selected.index == 0) {
+            break;
+        }
         auto item = std::move(*selected.value<1>());
         struct reply_scope {
             std::shared_ptr<state::response> reply;
             ~reply_scope() { reply->close(); }
         } scope{item.reply};
         (void)owned->stopping.try_receive(ec);
-        if (ec == ::asio::error::eof) break;
+        if (ec == ::asio::error::eof) {
+            break;
+        }
         // An empty reply channel is reserved until publication; closure means
         // the requester has cancelled, so queued work can be skipped.
         (void)item.reply->try_receive(ec);
-        if (ec == ::asio::error::eof) continue;
+        if (ec == ::asio::error::eof) {
+            continue;
+        }
         try {
             auto answer = owned->read(item);
             item.reply->try_send(std::move(answer));
@@ -147,8 +162,9 @@ void block_reader::stop() {
     co_await ::asio::this_coro::throw_if_cancelled(false);
     auto executor = co_await ::asio::this_coro::executor;
     auto cancellation = co_await ::asio::this_coro::cancellation_state;
-    if (cancellation.cancelled() != ::asio::cancellation_type::none)
+    if (cancellation.cancelled() != ::asio::cancellation_type::none) {
         co_return kth::fail(error::channel_stopped);
+    }
     auto reply = std::make_shared<state::response>(1);
     struct reply_scope {
         std::shared_ptr<state::response> reply;
@@ -159,17 +175,21 @@ void block_reader::stop() {
         ::asio::experimental::send(owned->requests, std::move(request)),
         ::asio::experimental::receive(owned->stopping)
     ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-    if (send_error == ::asio::error::no_buffer_space) co_return kth::fail(error::oversubscribed);
-    if (send_error || sent.index != 0)
+    if (send_error == ::asio::error::no_buffer_space) {
+        co_return kth::fail(error::oversubscribed);
+    }
+    if (send_error || sent.index != 0) {
         co_return kth::fail(cancellation.cancelled() != ::asio::cancellation_type::none ?
             error::channel_stopped : error::service_stopped);
+    }
     auto [receive_error, received] = co_await ::asio::experimental::make_select(
         ::asio::experimental::receive(*reply),
         ::asio::experimental::receive(owned->stopping)
     ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-    if (receive_error || received.index != 0)
+    if (receive_error || received.index != 0) {
         co_return kth::fail(cancellation.cancelled() != ::asio::cancellation_type::none ?
             error::channel_stopped : error::service_stopped);
+    }
     co_return std::move(*received.value<0>());
 }
 

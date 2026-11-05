@@ -679,7 +679,9 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
     auto missing = blockchain::header_index::null_index;
     for (size_t i = 0; i < shared_length; ++i) {
         auto const [hash, idx] = add(parent, uint32_t(i + 1));
-        if (i == 0) missing = idx;
+        if (i == 0) {
+            missing = idx;
+        }
         parent = hash;
     }
     index.set_status(missing, blockchain::header_status::none);
@@ -1142,6 +1144,8 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
     REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
         pooled, 1000u, uint32_t(pooled->serialized_size(true)), 1u, 0u}));
     REQUIRE(request("getrawtransaction", "[" + quoted(pooled->hash()) + "]") ==
+        node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
+    CHECK(request("getrawtransaction", "[" + quoted(pooled->hash()) + ",false,\"\"]") ==
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
 }
 
