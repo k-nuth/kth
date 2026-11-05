@@ -353,16 +353,16 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
     // appended, so reading the count once gives a consistent prefix.
     auto const count = index.size();
     std::vector<bool> has_child(count, false);
-    for (std::size_t i = 0; i < count; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         auto const parent = index.get_parent_index(header_index::index_t(i));
         if (parent != header_index::null_index && parent < count) {
             has_child[parent] = true;
         }
     }
 
-    auto const connected_height = std::int32_t(view->connected_tip_height);
+    auto const connected_height = int32_t(view->connected_tip_height);
     std::vector<chain_tip> tips;
-    for (std::size_t i = 0; i < count; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         auto const idx = header_index::index_t(i);
         if (idx == active) {
             tips.push_back({view->connected_tip_height, view->tip_hash, 0, "active"});
@@ -386,8 +386,8 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
         if (fork == header_index::null_index) {
             continue;
         }
-        tips.push_back({std::size_t(height), index.get_hash(idx),
-            std::size_t(height - index.get_height(fork)),
+        tips.push_back({size_t(height), index.get_hash(idx),
+            size_t(height - index.get_height(fork)),
             all_data ? "valid-headers" : "headers-only"});
     }
     std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);

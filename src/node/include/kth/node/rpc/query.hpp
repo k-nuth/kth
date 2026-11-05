@@ -86,9 +86,9 @@ std::string render_estimate_fee(float byte_fee_satoshis);
 
 // One getchaintips entry.
 struct chain_tip {
-    std::size_t height;
+    size_t height;
     hash_digest hash;
-    std::size_t branch_length;   // blocks from the connected chain to this tip
+    size_t branch_length;   // blocks from the connected chain to this tip
     std::string_view status;     // "active", "valid-headers" or "headers-only"
 };
 
