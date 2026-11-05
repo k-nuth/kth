@@ -8,12 +8,14 @@
 // #include <cstddef>
 // #include <cstdint>
 // #include <expected>
+#include <kth/infrastructure/expect.hpp>
 
 // #include <memory>
 // #include <string>
 // #include <vector>
 
 #include <expected>
+#include <kth/infrastructure/expect.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -23,8 +25,6 @@
 
 namespace kth {
 
-template <typename T>
-using expect = std::expected<T, code>;
 
 // using hash_digest = byte_array<hash_size>;
 // using half_hash = byte_array<half_hash_size>;

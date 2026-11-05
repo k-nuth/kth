@@ -9,6 +9,9 @@
 
 #include <kth/blockchain/define.hpp>
 #include <kth/database/header_index.hpp>
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/domain/chain/block_ticks.hpp>
+#endif
 
 namespace kth::blockchain::parking {
 
@@ -54,6 +57,17 @@ constexpr bool is_deep_reorg(int32_t fork_height, int32_t validated_tip_height) 
 uint256_t required_work(database::header_index const& index,
                         index_t fork_idx,
                         index_t validated_tip_idx);
+
+#if defined(KTH_CURRENCY_BCH)
+// After the defending branch connects its first shorter-interval block, the
+// penalty is D * clamp(tick_depth, 600, 2400)^2 / 5760000. The owner supplies
+// that branch's schedule; the competing branch never determines the penalty.
+[[nodiscard]]
+uint256_t required_work(database::header_index const& index,
+                        index_t fork_idx,
+                        index_t validated_tip_idx,
+                        domain::chain::block_ticks const& schedule);
+#endif
 
 } // namespace kth::blockchain::parking
 

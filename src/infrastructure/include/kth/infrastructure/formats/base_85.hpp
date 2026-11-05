@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include <kth/infrastructure/define.hpp>
+#include <kth/infrastructure/utility/fixed_string.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth {
@@ -21,42 +22,32 @@ enum class base85_errc {
     invalid_character
 };
 
-/**
- * Encode data as base85 (Z85).
- * @return the encoded string, or `invalid_length` if the input size
- * is not a multiple of 4.
- */
-[[nodiscard]]
-KI_API std::expected<std::string, base85_errc> encode_base85(byte_span in);
+/// Encode data as base85 (Z85).
+/// @return the encoded string, or `invalid_length` if the input size
+/// is not a multiple of 4.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] constexpr std::expected<std::string, base85_errc> encode_base85(byte_span in);
 
-/**
- * Decode base85 (Z85) into a caller-provided buffer.
- * Zero allocation.
- * @return the number of bytes written, or an error code.
- *   `invalid_length`    — input size is not a multiple of 5, or `out`
- *                         is smaller than the expected `in.size() * 4 / 5`.
- *   `invalid_character` — input contains a non-base85 character.
- */
-[[nodiscard]]
-KI_API std::expected<size_t, base85_errc>
-decode_base85(std::string_view in, std::span<uint8_t> out);
+/// Decode base85 (Z85) into a caller-provided buffer.
+/// Zero allocation.
+/// @return the number of bytes written, or an error code.
+/// `invalid_length`    — input size is not a multiple of 5, or `out`
+/// is smaller than the expected `in.size() * 4 / 5`.
+/// `invalid_character` — input contains a non-base85 character.
+[[nodiscard]] constexpr std::expected<size_t, base85_errc> decode_base85(
+    std::string_view in, std::span<uint8_t> out) noexcept;
 
-/**
- * Decode base85 (Z85) into a freshly-allocated `data_chunk`.
- * @return the decoded bytes, or an error code.
- */
-[[nodiscard]]
-KI_API std::expected<data_chunk, base85_errc> decode_base85(std::string_view in);
+/// Decode base85 (Z85) into a freshly-allocated `data_chunk`.
+/// @return the decoded bytes, or an error code.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] constexpr std::expected<data_chunk, base85_errc> decode_base85(std::string_view in);
 
-/**
- * Decode base85 (Z85) into a fixed-size `byte_array<Size>`.
- * Zero allocation — the byte_array lives on the caller's stack.
- * @return the decoded array, or an error code if the input does not
- * produce exactly `Size` bytes.
- */
+/// Decode base85 (Z85) into a fixed-size `byte_array<Size>`.
+/// Zero allocation — the byte_array lives on the caller's stack.
+/// @return the decoded array, or an error code if the input does not
+/// produce exactly `Size` bytes.
 template <size_t Size>
-[[nodiscard]]
-std::expected<byte_array<Size>, base85_errc> decode_base85(std::string_view in);
+[[nodiscard]] constexpr std::expected<byte_array<Size>, base85_errc> decode_base85(std::string_view in) noexcept;
 
 } // namespace kth
 

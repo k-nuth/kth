@@ -532,3 +532,20 @@ TEST_CASE("header_index orphan header (parent not found)", "[header_index]") {
     REQUIRE(index.get_parent_index(result.index) == header_index::null_index);
     REQUIRE(index.get_height(result.index) == 0);  // Height is 0 because no parent found
 }
+
+TEST_CASE("header_index total chain work includes genesis once", "[header_index]") {
+    header_index index(8);
+    auto const genesis = make_header_at(0, null_hash);
+    auto const root_hash = kth::domain::chain::hash(genesis);
+    auto const root = index.add(root_hash, genesis);
+    auto const child = make_header_at(1, root_hash);
+    auto const child_hash = kth::domain::chain::hash(child);
+    auto const added = index.add(child_hash, child);
+    REQUIRE(root.index != header_index::null_index);
+    REQUIRE(added.index != header_index::null_index);
+    auto const root_proof = header::proof(genesis.bits());
+    REQUIRE(index.get_chain_work(root.index) == 0);
+    REQUIRE(index.total_chain_work(root_hash) == root_proof);
+    REQUIRE(index.total_chain_work(child_hash) == root_proof + header::proof(child.bits()));
+    REQUIRE_FALSE(index.total_chain_work(make_hash(999999)));
+}

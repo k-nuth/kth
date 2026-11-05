@@ -395,7 +395,7 @@ bool jd_client::dispatch(jd_declaration::result result) {
                 // Allocation outputs fit B0_64K. Reserve their maximum size
                 // before selecting transactions; the builder checks the exact
                 // completed coinbase against the returned block limit.
-                auto value = co_await chain_->fetch_mining_template(248 + uint64_t{0xffff}, 0);
+                auto value = co_await chain_->fetch_mining_template(blockchain::coinbase_reserve{248 + uint64_t{0xffff}, 0});
                 if (stopped_) co_return;
                 auto const latest = chain_->chain_view();
                 // The tip can move while the template is built. Do not declare

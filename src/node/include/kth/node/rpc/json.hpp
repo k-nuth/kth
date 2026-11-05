@@ -38,12 +38,19 @@ std::vector<std::string> params_strings(std::string_view params_json);
 // The positional param at `index` as an unsigned integer. Accepts a JSON number
 // (e.g. getblockhash's `[0]`) or a numeric string (`["0"]`); nullopt when absent
 // or not a non-negative integer.
-std::optional<std::uint64_t> params_uint(std::string_view params_json, std::size_t index);
+std::optional<uint64_t> params_uint(std::string_view params_json, size_t index);
+
+// The positional param at `index` as a signed integer (e.g. getnetworkhashps's
+// `height`, where -1 means the tip). Accepts a JSON number or a numeric string.
+// `fallback` when the param is absent or null; nullopt when it is present but
+// not an integer, so the handler can report invalid params.
+std::optional<int64_t> params_int(std::string_view params_json, size_t index,
+                                       int64_t fallback);
 
 // The positional param at `index` as a boolean (e.g. getblockheader's
 // `verbose`). `fallback` when the param is absent or null; nullopt when it is
 // present but not a JSON boolean, so the handler can report invalid params.
-std::optional<bool> params_bool(std::string_view params_json, std::size_t index, bool fallback);
+std::optional<bool> params_bool(std::string_view params_json, size_t index, bool fallback);
 
 // Build the response envelopes. `result_raw` / `id_raw` are already-serialized
 // JSON fragments and are emitted verbatim.
@@ -68,8 +75,8 @@ struct writer {
     writer& value(std::string_view s);
     writer& value(char const* s);
     writer& value(bool b);
-    writer& value(std::int64_t n);
-    writer& value(std::uint64_t n);
+    writer& value(int64_t n);
+    writer& value(uint64_t n);
     writer& value(double d);
     writer& value_raw(std::string_view raw_json);
     writer& value_null();
