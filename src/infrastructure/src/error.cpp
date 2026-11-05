@@ -49,6 +49,7 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::standardness_dust, "dust" },
         { error::standardness_datacarrier_size, "oversize-op-return" },
         { error::standardness_inputs, "bad-txns-nonstandard-inputs" },
+        { error::coinbase_shape, "bad-cb-shape" },
         { error::not_implemented, "feature not implemented" },
         { error::oversubscribed, "service oversubscribed" },
 
@@ -299,6 +300,21 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::transition_in_progress, "a batch or reorganization is in progress" },
         { error::node_behind, "the connected chain has not caught up with its headers" },
         { error::node_stale, "the chain tip is older than the configured limit" },
+
+        { error::address_empty_input, "empty address" },
+        { error::address_invalid_character, "invalid address character" },
+        { error::address_invalid_base58_length, "invalid legacy address length" },
+        { error::address_invalid_prefix, "invalid CashAddr prefix" },
+        { error::address_mixed_case, "mixed-case CashAddr" },
+        { error::address_network_mismatch, "CashAddr network mismatch" },
+        { error::address_invalid_checksum, "invalid address checksum" },
+        { error::address_invalid_padding, "invalid CashAddr padding" },
+        { error::address_reserved_version, "reserved CashAddr version bit" },
+        { error::address_unsupported_type, "unsupported CashAddr type" },
+        { error::address_invalid_hash_length, "CashAddr hash length does not match version" },
+        { error::address_unsupported_hash_size, "unsupported address hash size" },
+        { error::address_invalid_script, "script is not P2PKH" },
+
     };
 
     auto const message = messages.find(ev);

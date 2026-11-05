@@ -99,6 +99,8 @@ TEST_CASE("generated discrete enum conversions fall back to their default",
     REQUIRE(network_to_c(dconfig::network::regtest) == kth_network_regtest);
 #if defined(KTH_CURRENCY_BCH)
     REQUIRE(network_to_cpp(kth_network_chipnet) == dconfig::network::chipnet);
+    REQUIRE(network_to_cpp(kth_network_tempnet) == dconfig::network::tempnet);
+    REQUIRE(network_to_c(dconfig::network::tempnet) == kth_network_tempnet);
     REQUIRE(network_to_c(dconfig::network::scalenet) == kth_network_scalenet);
 #endif
 

@@ -562,9 +562,11 @@ bool jd_client::dispatch(attempt& value, jd_declaration::result result) {
         if (chain_ && value.ready && ! value.jobs.pending()) {
             auto const view = chain_->chain_view();
             if (view && previous != view->tip_hash && value.mining_session.channel()) {
-                // Reserve the largest token output vector before selection.
+                // Allocation outputs fit B0_64K. Reserve their maximum size
+                // before selecting transactions; the builder checks the exact
+                // completed coinbase against the returned block limit.
                 // Each pair declares only the latest local connected template.
-                auto tmpl = co_await chain_->fetch_mining_template(248 + uint64_t{0xffff}, 0);
+                auto tmpl = co_await chain_->fetch_mining_template(blockchain::coinbase_reserve{248 + uint64_t{0xffff}, 0});
                 if (stopped_ || value.stopped) co_return;
                 auto const latest = chain_->chain_view();
                 // The tip can move while the template is built. Do not declare
