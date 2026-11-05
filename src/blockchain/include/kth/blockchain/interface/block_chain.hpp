@@ -371,6 +371,14 @@ struct KB_API block_chain {
     [[nodiscard]]
     database::result_code publish_transition(database::transition_heights const& heights);
 
+    /// Step 10 with the ABLA state of every block the transition connected, in
+    /// the same transaction (see internal_database::publish_transition). The
+    /// state that governs a connected block is durable exactly when the height
+    /// that declares it connected is.
+    [[nodiscard]]
+    database::result_code publish_transition(database::transition_heights const& heights,
+                                             std::span<database::header_abla_record const> abla_records);
+
     /// Steps 3 and 11. The LMDB environment is opened MDB_NOSYNC, so a commit
     /// that returned success has not necessarily reached the disk.
     [[nodiscard]]
@@ -719,6 +727,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     sync_status synchronization() const;
 
+    /// Evaluate an already captured tip/header height without loading another
+    /// publication. RPC responses can use the same snapshot for all tip fields.
+    [[nodiscard]]
+    sync_status synchronization(published_chain_view const& view, int32_t header_tip) const;
+
     /// The state for a branch under consideration, seeded from the published
     /// one. Block validation only; the published view is what everything else
     /// reads.
@@ -948,6 +961,10 @@ struct KB_API block_chain {
     [[nodiscard]] awaitable_expected<blockchain::mining_template>
     fetch_mining_template(uint64_t coinbase_reserve_size) const;
 
+    // Optional request clock for deterministic callers; nullopt samples wall time.
+    awaitable_expected<blockchain::mining_template>
+    fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const;
+
     // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
     // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
     [[nodiscard]] awaitable_expected<blockchain::mining_info>
@@ -1124,20 +1141,10 @@ private:
 
     blockchain::mempool mempool_;
 
-    // Block-template cache: fetch_mining_template() serves this while the tip
-    // and mempool are unchanged (a mempool-only change within the refresh window
-    // is also served). Lives in the core so both the JSON-RPC and C-API frontends
-    // share it.
-    //
-    // Published as an immutable snapshot through an atomic shared_ptr: readers
-    // load() it lock-free and serve a copy, so a GBT request never blocks on
-    // another GBT request. The rebuild is coalesced by template_rebuild_mutex_
-    // (try_lock), so at most one thread rebuilds; a concurrent caller whose
-    // snapshot is stale only for the mempool (same tip) serves that snapshot
-    // instead of blocking, while a tip change waits for the rebuild (a
-    // wrong-parent template would orphan the miner's block). Insertion into the
-    // mempool never touches either of these — it is a separate lock-free
-    // structure.
+    // Immutable template publication. A one-token channel serializes rebuilds
+    // across asynchronous input refresh without holding a thread-affine mutex.
+    // Requests first try the published cache; after obtaining the token they
+    // recapture and check it again. Closing the channel wakes queued requests.
     //
     // boost::atomic_shared_ptr (not std::atomic<std::shared_ptr>): the latter is
     // unsupported on macOS libc++.
@@ -1175,7 +1182,8 @@ private:
     std::atomic<bool> hydrating_{true};
     std::mutex header_persist_mutex_;
     uint32_t headers_persisted_through_{0};
-    mutable std::mutex template_rebuild_mutex_;
+    // One rebuild owner; queued callers suspend and shutdown wakes them.
+    mutable ::asio::experimental::concurrent_channel<void(std::error_code)> template_rebuild_gate_;
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;

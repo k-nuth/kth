@@ -425,7 +425,7 @@ struct node_run {
     void connect(peer_ptr const& peer) {
         connected.push_back(peer);
         REQUIRE(wait_until([&] {
-            return network.peer_events().try_send(std::error_code{},
+            return network.peer_events().try_send(
                 peer_notification{peer, peer_event_type::connected});
         }, std::chrono::seconds(10)));
     }
@@ -1775,10 +1775,10 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
     CHECK(log.count("block_range_request") == size_t(recover));
 }
 
-// =============================================================================
 // A block handed to the node at its tip (#563)
 // =============================================================================
 
+=======
 namespace {
 
 // block_chain::organize on a thread of its own, as the RPC server calls it.

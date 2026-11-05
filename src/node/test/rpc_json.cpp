@@ -12,7 +12,7 @@ using namespace kth::node::rpc;
 
 TEST_CASE("writer scalar number", "[rpc json]") {
     writer w;
-    w.value(static_cast<std::uint64_t>(42));
+    w.value(uint64_t(42));
     REQUIRE(w.str() == "42");
 }
 
@@ -20,7 +20,7 @@ TEST_CASE("writer object with mixed fields", "[rpc json]") {
     writer w;
     w.begin_object();
     w.field("name", "kth");
-    w.field("height", static_cast<std::int64_t>(7));
+    w.field("height", int64_t(7));
     w.field("ok", true);
     w.end_object();
     REQUIRE(w.str() == R"({"name":"kth","height":7,"ok":true})");
@@ -30,8 +30,8 @@ TEST_CASE("writer nested array of objects", "[rpc json]") {
     writer w;
     w.begin_object();
     w.key("items").begin_array();
-    w.begin_object().field("id", static_cast<std::int64_t>(1)).end_object();
-    w.begin_object().field("id", static_cast<std::int64_t>(2)).end_object();
+    w.begin_object().field("id", int64_t(1)).end_object();
+    w.begin_object().field("id", int64_t(2)).end_object();
     w.end_array();
     w.end_object();
     REQUIRE(w.str() == R"({"items":[{"id":1},{"id":2}]})");
@@ -131,4 +131,17 @@ TEST_CASE("params_bool rejects a param that is not a boolean", "[rpc json]") {
     REQUIRE_FALSE(params_bool(R"(["00ff", "false"])", 1, true).has_value());
     REQUIRE_FALSE(params_bool(R"(["00ff", 0])", 1, true).has_value());
     REQUIRE_FALSE(params_bool(R"(["00ff", {}])", 1, true).has_value());
+}
+
+TEST_CASE("params_int reads signed integers and falls back when absent", "[rpc json]") {
+    REQUIRE(params_int("[-1]", 0, 7) == -1);
+    REQUIRE(params_int("[120,42]", 1, 7) == 42);
+    REQUIRE(params_int(R"(["-3"])", 0, 7) == -3);
+    REQUIRE(params_int("[]", 0, 7) == 7);
+    REQUIRE(params_int("[1]", 1, 7) == 7);
+    REQUIRE(params_int("[null]", 0, 7) == 7);
+    REQUIRE(params_int("", 0, 7) == 7);
+    REQUIRE_FALSE(params_int("[1.5]", 0, 7).has_value());
+    REQUIRE_FALSE(params_int(R"(["x"])", 0, 7).has_value());
+    REQUIRE_FALSE(params_int("[true]", 0, 7).has_value());
 }
