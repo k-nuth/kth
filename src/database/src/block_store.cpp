@@ -11,7 +11,7 @@
 #include <cstring>
 #include <optional>
 
-#include <boost/unordered/unordered_flat_set.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <spdlog/spdlog.h>
 #include <kth/database/native_file.hpp>
@@ -639,7 +639,11 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
     // Collected, not published. A caller applies these only once every file has
     // been read without incident; a record rejected in the last file must not
     // leave the ones before it already in the index.
-    boost::unordered_flat_set<hash_digest> seen;
+    // A replay after a restart can append the same undo again, so a block may
+    // own several records. Each is identified by its stored checksum: it is
+    // seeded with the parent and covers the payload, so for one block equal
+    // content means an equal checksum.
+    boost::unordered_flat_map<hash_digest, hash_digest> seen;
 
     auto fail = [&result](undo_scan_status status, int32_t file_num, uint32_t offset,
                           hash_digest const& hash) {
@@ -754,32 +758,22 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                 return fail(undo_scan_status::truncated_record, file_num, offset, block_hash);
             }
 
-            // Uniqueness first, because it does not depend on knowing the
-            // block: two records claiming one block are wrong whether or not the
-            // index still holds it, and checking after the owner is resolved
-            // would let a duplicate pair from a forgotten branch pass as two
-            // ordinary unattributed records.
-            if ( ! seen.insert(block_hash).second) {
-                std::fclose(file);
-                return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
-            }
-
             // The block this claims to belong to gives the parent hash the
             // checksum was seeded with. Not having it is not a failure: a
             // restart rebuilds the index from the active chain, so a branch that
-            // lost a reorganization is gone while its undo records remain. Skip
-            // the record — its size is known, so the walk continues — and count
-            // it, rather than refuse a database that is merely older than its
-            // last reorganization.
+            // lost a reorganization is gone while its undo records remain. Its
+            // payload is not read, only its checksum, which still takes part in
+            // the duplicate check.
             auto const prev_hash = parent_of(block_hash);
-            if ( ! prev_hash) {
-                ++result.unattributed;
-                offset += static_cast<uint32_t>(record_size);
-                continue;
-            }
 
-            data_chunk undo_data(undo_size);
-            if (std::fread(undo_data.data(), 1, undo_size, file) != undo_size) {
+            data_chunk undo_data;
+            if (prev_hash) {
+                undo_data.resize(undo_size);
+                if (std::fread(undo_data.data(), 1, undo_size, file) != undo_size) {
+                    std::fclose(file);
+                    return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+                }
+            } else if (std::fseek(file, static_cast<long>(undo_size), SEEK_CUR) != 0) {
                 std::fclose(file);
                 return fail(undo_scan_status::io_error, file_num, offset, block_hash);
             }
@@ -791,15 +785,29 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                 return fail(undo_scan_status::io_error, file_num, offset, block_hash);
             }
 
-            if (undo_checksum(*prev_hash, undo_data) != stored_checksum) {
+            // Every record of a known block is validated, the repeats included.
+            if (prev_hash && undo_checksum(*prev_hash, undo_data) != stored_checksum) {
                 std::fclose(file);
                 return fail(undo_scan_status::invalid_checksum, file_num, offset, block_hash);
             }
 
-            // The position handed back is what read_undo expects: just past the
-            // header, since it seeks backwards from there.
-            result.found.push_back({file_num, offset + static_cast<uint32_t>(undo_header_size),
-                block_hash});
+            // Two records of one block with different checksums disagree about
+            // its undo, whether or not the index still holds the block.
+            auto const [existing, inserted] = seen.emplace(block_hash, stored_checksum);
+            if ( ! inserted && existing->second != stored_checksum) {
+                std::fclose(file);
+                return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+            }
+
+            if ( ! prev_hash) {
+                ++result.unattributed;
+            } else if (inserted) {
+                // Keep the first occurrence; a replay wrote the same bytes. The
+                // position handed back is what read_undo expects: just past the
+                // header, since it seeks backwards from there.
+                result.found.push_back({file_num,
+                    offset + static_cast<uint32_t>(undo_header_size), block_hash});
+            }
 
             offset += static_cast<uint32_t>(record_size);
         }
