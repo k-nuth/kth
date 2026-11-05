@@ -89,7 +89,7 @@ private:
     void publish_solo();
     void note_share(mining::pool_proof const& proof);
     void forward_share(mining::pool_proof const& proof);
-    void remember_submitted(uint32_t sequence, uint32_t generation);
+    void remember_submitted(uint32_t sequence, uint32_t generation, bool block);
     // A share reply names one submission. Success changes nothing. An error
     // falls back only when that submission is still the accepted declaration
     // (sv2-spec 6.2). nullopt leaves the mining connection up; a string closes it.
@@ -129,6 +129,8 @@ private:
     struct submitted_share {
         uint32_t sequence = 0;
         uint32_t generation = 0;
+        // The share also met the network target, so its block ends this job.
+        bool block = false;
     };
     std::deque<submitted_share> submitted_;
     // Full-template blocks found before DeclareMiningJob.Success. Sent once
