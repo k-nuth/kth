@@ -134,7 +134,8 @@ struct KB_API settings {
     // 2026-May-15 network upgrade, defaults to 1778846400: May 15, 2026 12:00:00 UTC protocol upgrade
     uint64_t leibniz_activation_time = std::to_underlying(bch_leibniz_activation_time);
 
-    // 2027-May-15 network upgrade, defaults to xxxxxxxxxx: May 15, 2027 12:00:00 UTC protocol upgrade
+    // Cantor: Faster Blocks activation MTP (2027-May-15 12:00 UTC by default).
+    // Chipnet activates 2026-Nov-15; tempnet activates 2026-Oct-15.
     uint64_t cantor_activation_time = std::to_underlying(bch_cantor_activation_time);
 
     // //????-???-?? network upgrade, defaults to 9999999999: ??? ??, ???? 12:00:00 UTC protocol upgrade
