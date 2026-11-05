@@ -342,3 +342,10 @@ TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
     REQUIRE(chain_name(network::chipnet, chain_name_format::display) == "Chipnet");
 #endif
 }
+
+TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]") {
+    REQUIRE(render_chain_tips({}) == "[]");
+    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active}}) ==
+        std::string(R"([{"height":7,"hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
+        R"({"height":5,"hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
+}

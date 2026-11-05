@@ -600,3 +600,112 @@ TEST_CASE("getblockchaininfo dispatch leaves initial download once synchronized"
     auto const raw = blockchain_info(fixture.chain());
     REQUIRE(raw.find(R"("initialblockdownload":false)") != std::string::npos);
 }
+
+TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyond it", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_chain_tips");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    // A two-block side branch off block 2, headers only, with less work than the
+    // trunk. The organizer stores it and reports the batch as not advancing the
+    // tip (`stale_chain`, nothing added), which is the contract for a side branch.
+    std::vector<domain::chain::block> side;
+    prev = trunk[1].hash();
+    for (uint32_t h = 3; h <= 4; ++h) {
+        side.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing + 60, /*salt*/ 1, {}, 0));
+        prev = side.back().hash();
+    }
+    auto const added = fixture.organizer().add_headers(test::headers_of(side));
+    REQUIRE(added.headers_added == 0u);
+    REQUIRE(added.error == error::stale_chain);
+    REQUIRE(fixture.chain().headers().find(side[1].hash()) != blockchain::header_index::null_index);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getchaintips","params":[],"id":3})"),
+        ::asio::use_future);
+    io.run();
+
+    REQUIRE(result.get() == node::rpc::build_success("3", node::rpc::render_chain_tips({
+        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only},
+        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only},
+        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active}})));
+}
+
+TEST_CASE("getchaintips shares ancestry across many tips without stale availability", "[rpc dispatch][rpc chain tips]") {
+    test::chain_fixture fixture("rpc_chain_tips_shared");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& index = fixture.chain().headers();
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    auto add = [&](hash_digest const& parent, uint32_t nonce) {
+        domain::chain::header header{1, parent, null_hash, 1700000000u + nonce, 0x207fffffu, nonce};
+        auto const hash = domain::chain::hash(header);
+        auto const result = index.add(hash, header);
+        REQUIRE(result.inserted);
+        index.add_status(result.index, blockchain::header_status::have_data);
+        return std::pair{hash, result.index};
+    };
+
+    constexpr size_t shared_length = 512;
+    constexpr size_t leaves = 64;
+    auto parent = genesis;
+    auto missing = blockchain::header_index::null_index;
+    for (size_t i = 0; i < shared_length; ++i) {
+        auto const [hash, idx] = add(parent, uint32_t(i + 1));
+        if (i == 0) missing = idx;
+        parent = hash;
+    }
+    index.set_status(missing, blockchain::header_status::none);
+    std::vector<node::rpc::chain_tip> expected;
+    for (size_t i = 0; i < leaves; ++i) {
+        auto const [hash, idx] = add(parent, uint32_t(shared_length + i + 1));
+        expected.push_back({shared_length + 1, hash, shared_length + 1, blockchain::header_index::tip_status::headers_only});
+    }
+    auto const [available, available_idx] = add(genesis, 9000);
+    expected.push_back({1, available, 1, blockchain::header_index::tip_status::valid_headers});
+    expected.push_back({0, genesis, 0, blockchain::header_index::tip_status::active});
+    // An unlinked root must not appear as a branch of the connected chain.
+    auto const [unlinked, unlinked_idx] = add(null_hash, 10000);
+    REQUIRE(index.get_parent_index(unlinked_idx) == blockchain::header_index::null_index);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto query = [&] {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            dispatcher.handle(context, R"({"method":"getchaintips","params":[],"id":3})"),
+            ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
+    REQUIRE_FALSE(index.get_chain_tips(null_hash));
+    auto const previous_tips = index.get_chain_tips(genesis);
+    REQUIRE(previous_tips);
+    // Data appearing on a shared ancestor changes every descendant's status.
+    index.add_status(missing, blockchain::header_status::have_data);
+    for (size_t i = 0; i < leaves; ++i) expected[i].status = blockchain::header_index::tip_status::valid_headers;
+    // Returned records own their values; a later mutation cannot alter them.
+    REQUIRE(previous_tips->front().status == blockchain::header_index::tip_status::headers_only);
+    REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
+}

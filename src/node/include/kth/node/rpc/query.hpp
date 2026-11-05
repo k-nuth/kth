@@ -10,7 +10,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <kth/blockchain/header_index.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -82,6 +84,12 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // The estimatefee result: `byte_fee_satoshis` per byte as BCH per kB, rounded
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
+
+// Owned records from the header index; RPC only renders their wire format.
+using chain_tip = blockchain::header_index::chain_tip;
+
+// Serialize the getchaintips result array, in the order given.
+std::string render_chain_tips(std::vector<chain_tip> const& tips);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.

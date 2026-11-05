@@ -175,6 +175,22 @@ struct KD_API header_index {
     /// Unlike get_chain_work(), this includes the root's own proof. Call from
     /// the index owner's context or under its existing traversal contract.
     [[nodiscard]] std::optional<uint256_t> total_chain_work(hash_digest const& tip) const;
+
+    enum class tip_status { active, valid_headers, headers_only };
+    struct chain_tip {
+        size_t height;
+        hash_digest hash;
+        size_t branch_length;
+        tip_status status;
+    };
+
+    /// Owned tip records, highest first, relative to the supplied connected tip.
+    /// Returns nullopt when that tip is not in the indexed prefix. Computes
+    /// branch metadata once per entry: O(N + T log T) time, O(N + T) storage.
+    /// This synchronous query does not establish execution affinity or a
+    /// concurrent snapshot; callers must honor the index's ownership contract.
+    [[nodiscard]] std::optional<std::vector<chain_tip>>
+    get_chain_tips(hash_digest const& connected_tip) const;
     [[nodiscard]] header_status get_status(index_t idx) const;
     [[nodiscard]] uint32_t get_version(index_t idx) const;
     [[nodiscard]] hash_digest get_merkle(index_t idx) const;

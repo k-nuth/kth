@@ -15,6 +15,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <functional>
 
 #include <asio/awaitable.hpp>
 #include <simdjson.h>
@@ -326,6 +327,26 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         .chain_work = ctx.chain.headers().total_chain_work(view->tip_hash),
         .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
         .initial_block_download = ! ctx.chain.synchronization().synchronized()});
+}
+
+// getchaintips -> every chain tip the header index knows, highest first: the
+// connected tip as "active", and each other header without children with its
+// branch length from the connected chain, as "valid-headers" when the node
+// holds every block of the branch and "headers-only" otherwise.
+// C-API counterpart: none yet; the C-API does not expose the header index.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_chain_tips(method_context& ctx, request const& /*req*/) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash);
+    if (!tips) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected tip not in the header index"));
+    }
+    co_return render_chain_tips(*tips);
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.
@@ -679,6 +700,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getdifficulty", get_difficulty);
     d.add("getblockchaininfo", get_blockchain_info);
     d.add("getnetworkhashps", get_network_hash_ps);
+    d.add("getchaintips", get_chain_tips);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);

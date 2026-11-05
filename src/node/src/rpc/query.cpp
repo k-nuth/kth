@@ -10,6 +10,7 @@
 #include <span>
 #include <string_view>
 #include <vector>
+#include <utility>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
@@ -260,6 +261,35 @@ std::string render_transaction(domain::chain::transaction const& tx,
     }
     w.end_array();
     w.end_object();
+    return w.str();
+}
+
+namespace {
+
+constexpr std::string_view tip_status_name(blockchain::header_index::tip_status status) noexcept {
+    using enum blockchain::header_index::tip_status;
+    switch (status) {
+        case active: return "active";
+        case valid_headers: return "valid-headers";
+        case headers_only: return "headers-only";
+    }
+    std::unreachable();
+}
+
+} // namespace
+
+std::string render_chain_tips(std::vector<chain_tip> const& tips) {
+    writer w;
+    w.begin_array();
+    for (auto const& tip : tips) {
+        w.begin_object();
+        w.field("height", uint64_t(tip.height));
+        w.field("hash", encode_hash(tip.hash));
+        w.field("branchlen", uint64_t(tip.branch_length));
+        w.field("status", tip_status_name(tip.status));
+        w.end_object();
+    }
+    w.end_array();
     return w.str();
 }
 
