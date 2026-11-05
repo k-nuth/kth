@@ -75,7 +75,7 @@ typedef struct {
     // 2026-May-15 hard fork, defaults to 1778846400: May 15, 2026 12:00:00 UTC protocol upgrade
     uint64_t leibniz_activation_time;
 
-    // 2027-May-15 hard fork, defaults to xxxxxxxxx: May 15, 2027 12:00:00 UTC protocol upgrade
+    // Cantor activation MTP, with network-specific defaults.
     uint64_t cantor_activation_time;
 
     // The half life for the ASERTi3-2d DAA. For every (asert_half_life) seconds behind schedule the blockchain gets, difficulty is cut in half.
