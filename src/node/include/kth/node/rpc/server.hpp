@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_RPC_SERVER_HPP
 #define KTH_NODE_RPC_SERVER_HPP
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -22,6 +23,10 @@ namespace kth::blockchain {
 class block_chain;
 } // namespace kth::blockchain
 
+namespace kth::node {
+class p2p_node;
+} // namespace kth::node
+
 namespace kth::node::rpc {
 
 // A minimal JSON-RPC-over-HTTP/1.1 server. It runs on the node's existing
@@ -30,7 +35,7 @@ namespace kth::node::rpc {
 // and the build defines KTH_WITH_RPC.
 struct server {
     server(rpc_settings const& settings, blockchain::block_chain& chain,
-        ::asio::any_io_executor executor);
+        ::asio::any_io_executor executor, p2p_node const* network = nullptr);
 
     // Bind the listener and accept connections until the executor is stopped.
     // Intended to be co_spawned. Returns on a fatal bind error or shutdown.
@@ -40,6 +45,10 @@ struct server {
     // Socket cancellation itself is performed only by the RPC owner strand.
     void stop();
 
+    // One startup outcome: the actual bound port, or the listener's error.
+    // May be awaited before run() starts. Cancellation wakes the waiter.
+    [[nodiscard]] ::asio::awaitable<uint16_t> wait_until_listening();
+
 private:
     ::asio::awaitable<void> run_owned();
     ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
@@ -47,6 +56,7 @@ private:
 
     rpc_settings const& settings_;
     blockchain::block_chain& chain_;
+    p2p_node const* network_;
     dispatcher dispatcher_;
     mining::job_store jobs_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header
@@ -54,6 +64,7 @@ private:
     std::string expected_credentials_;
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
+    ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
 };
 
 } // namespace kth::node::rpc

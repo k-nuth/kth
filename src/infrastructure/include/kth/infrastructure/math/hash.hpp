@@ -49,6 +49,14 @@ uint256_t to_uint256(hash_digest const& hash) {
     return result;
 }
 
+/// Little-endian bytes of a 256-bit integer, inverse of to_uint256.
+[[nodiscard]] inline
+hash_digest to_hash_digest(uint256_t const& value) {
+    hash_digest result{};
+    export_bits(value, result.begin(), 8, false);
+    return result;
+}
+
 /// Generate a scrypt hash to fill a byte array.
 template <size_t Size>
 byte_array<Size> scrypt(byte_span data, byte_span salt, uint64_t N, uint32_t p, uint32_t r);
