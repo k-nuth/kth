@@ -399,8 +399,9 @@ TEST_CASE("peer_session receive message", "[peer_session]") {
 
     // Start the session and receiver
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
-        auto [ec, msg] = co_await session->messages().async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
 
         if (!ec) {
             message_received = true;
@@ -442,8 +443,9 @@ TEST_CASE("peer_session receive multiple messages", "[peer_session]") {
     // Start receiver
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         while (!session->stopped() && messages_received < 5) {
-            auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
             if (!ec) {
                 ++messages_received;
             } else {
@@ -484,8 +486,9 @@ TEST_CASE("peer_session receive message with payload", "[peer_session]") {
     data_chunk received_payload;
 
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
-        auto [ec, msg] = co_await session->messages().async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
         if (!ec) {
             message_received = true;
             received_payload = std::move(msg.payload);
@@ -733,8 +736,9 @@ TEST_CASE("peer_session bidirectional communication", "[peer_session]") {
     // Receiver coroutine - receives pings and sends pongs back
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         while (!session->stopped() && messages_received < 3) {
-            auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
             if (!ec) {
                 ++messages_received;
                 // Echo back a pong for each ping
@@ -1736,8 +1740,9 @@ TEST_CASE("peer_session slow shutdown with pending messages channel wait",
 
         // This is the pattern from run_peer_protocols() that causes slow shutdown:
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
             co_return;
         };
 
@@ -1972,8 +1977,8 @@ TEST_CASE("peer_session shutdown with multi-threaded executor",
         // - ping_timer is on pool_executor
         // This cross-executor || operation may have issues.
         auto receive_op = [&fx]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await fx.session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await fx.session->receive();
+            (void)received;
             co_return;
         };
 
@@ -2144,8 +2149,9 @@ TEST_CASE("peer_session check_interval responsive to peer death",
             ::asio::steady_timer check_timer(executor, check_interval);
 
             auto receive_op = [&]() -> ::asio::awaitable<void> {
-                auto [ec, msg] = co_await session->messages().async_receive(
-                    ::asio::as_tuple(::asio::use_awaitable));
+                auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
                 co_return;
             };
 
@@ -2272,8 +2278,9 @@ TEST_CASE("peer_session channel cancel before close prevents deadlock",
         ::asio::steady_timer check_timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
             // This should return with error::channel_cancelled when cancel() is called
             co_return;
         };
@@ -2368,8 +2375,9 @@ TEST_CASE("peer_session all channels cancelled on stop",
         ::asio::steady_timer timer(executor, 30s);
 
         auto receive_op = [&]() -> ::asio::awaitable<void> {
-            auto [ec, msg] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
             co_return;
         };
         auto timer_op = [&]() -> ::asio::awaitable<void> {
@@ -2516,8 +2524,9 @@ TEST_CASE("peer_session OLD pattern without check_interval is slow",
             ::asio::steady_timer ping_timer(executor, ping_interval);
 
             auto receive_op = [&]() -> ::asio::awaitable<void> {
-                auto [ec, msg] = co_await session->messages().async_receive(
-                    ::asio::as_tuple(::asio::use_awaitable));
+                auto received = co_await session->receive();
+        auto const ec = received ? error::success : received.error();
+        raw_message msg = received ? std::move(*received) : raw_message{};
                 co_return;
             };
 
@@ -2623,9 +2632,9 @@ TEST_CASE("peer_session inbound block is rejected by request_blocks_batch withou
     //     from messages() to the block_responses() channel.
     ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         for (;;) {
-            auto [ec, raw] = co_await session->messages().async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) co_return;
+            auto received = co_await session->receive();
+            if (!received) co_return;
+            auto raw = std::move(*received);
             if (raw.heading.command() == domain::message::block::command) {
                 block_routed.store(true, std::memory_order_release);
                 auto ex = co_await ::asio::this_coro::executor;

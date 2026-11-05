@@ -572,7 +572,7 @@ jobs:
           # through ctest so we keep its environment exactly as defined in
           # src/infrastructure/CMakeLists.txt.
           rc=0
-          timeout --kill-after=30 120 ctest --output-on-failure -R '^kth_infrastructure_compile_fail_tests$' || rc=$?
+          timeout --kill-after=30 120 ctest --output-on-failure -R '^(kth_infrastructure_compile_fail_tests|kth_compile_check_driver_tests)$' || rc=$?
           if [ "$rc" != 0 ]; then
             echo "::error::kth_infrastructure_compile_fail_tests failed or timed out (exit=$rc)"
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"

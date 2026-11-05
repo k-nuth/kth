@@ -882,3 +882,23 @@ TEST_CASE("a leased view is closed under in-mempool parents while admissions run
     CHECK_FALSE(handshake_timed_out.load());
     CHECK(partial > 0);
 }
+
+TEST_CASE("mempool spender names the pool transaction that spends an outpoint", "[mempool][serial]") {
+    mempool mp{0x1111u, 0x2222u};
+
+    auto const parent = make_tx({op(1, 0)}, 2, /*tag*/ 1);
+    auto const child = make_tx({output_point{parent.hash(), 1}}, 1, /*tag*/ 2);
+    REQUIRE(mp.add(entry_for(parent, 1)));
+    REQUIRE(mp.add(entry_for(child, 2)));
+
+    // A confirmed outpoint and a pool output, each spent by a pool transaction.
+    CHECK(mp.spender(point{make_hash(1), 0}) == parent.hash());
+    CHECK(mp.spender(point{parent.hash(), 1}) == child.hash());
+    // Unspent: the parent's other output, and the child's own.
+    CHECK_FALSE(mp.spender(point{parent.hash(), 0}).has_value());
+    CHECK_FALSE(mp.spender(point{child.hash(), 0}).has_value());
+
+    // Gone with the transaction that spent it.
+    mp.remove_for_block(make_block({child}));
+    CHECK_FALSE(mp.spender(point{parent.hash(), 1}).has_value());
+}

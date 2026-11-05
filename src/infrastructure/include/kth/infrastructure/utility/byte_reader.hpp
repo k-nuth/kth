@@ -16,6 +16,7 @@
 
 #include <kth/infrastructure/concepts.hpp>
 #include <kth/infrastructure/constants.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -23,8 +24,6 @@ namespace kth {
 
 using byte = byte_span::value_type;
 
-template <typename T>
-using expect = std::expected<T, code>;
 
 struct byte_reader {
     constexpr explicit
