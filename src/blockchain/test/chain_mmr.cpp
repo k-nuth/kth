@@ -223,24 +223,6 @@ TEST_CASE("chain SHV is opt-in and unavailable during a connected-chain transiti
     }
 }
 
-TEST_CASE("a rejected MMR update turns SHV off and still publishes the chain view", "[shv][chain_mmr]") {
-    test::chain_fixture fixture("shv_failed_publish");
-    fixture.settings().mmr_index = true;
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-    auto& chain = fixture.chain();
-    auto const previous = chain.chain_view();
-    REQUIRE(previous);
-    auto const unrelated = add_header(chain.headers(), null_hash, 100);
-    chain.headers().active_set_tip(unrelated);
-    REQUIRE(chain.begin_transition());
-    REQUIRE(chain.publish_chain_view(0) == error::success);
-    REQUIRE(chain.chain_view() != previous);
-    chain.end_transition();
-    REQUIRE_FALSE(chain.shv_root(0));
-    REQUIRE_FALSE(chain.shv_proof(0, 0, true));
-}
-
 TEST_CASE("MMR update failures turn SHV off without stopping the chain", "[shv][chain_mmr]") {
     for (auto fault : {chain_detail::mmr_update_fault::reject_tip, chain_detail::mmr_update_fault::allocation}) {
         {
