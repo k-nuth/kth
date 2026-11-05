@@ -223,6 +223,26 @@ Confirmed transactions are not indexed by txid (#491), so for one of those pass
 the block hash as the third parameter: `getrawtransaction "<txid>" false
 "<blockhash>"`. A block or transaction the node does not have is error `-5`.
 
+`fetch_block` keeps both original overloads. The chain captures hash, height and
+file position before returning an owning awaitable endpoint. A single disk owner
+reads and parses misses on its own executor; RPC receives an immutable block and
+its height. Its LRU retains at most 8 blocks and 64 MiB of serialized block data
+(parsed objects are also bounded by the entry count). The request queue and its
+pending-admission queue each hold at most 32 requests; excess admission returns
+`oversubscribed`, not a dropped request or `not_found`.
+
+Cancellation closes the caller's reply and queued cancelled work is skipped.
+Shutdown closes admission and outstanding waits, then joins the disk owner before
+releasing storage. A portable stdio read already in progress finishes on that
+owner; cancellation does not claim to interrupt the underlying system call.
+Cache entries are admitted only after parsing the complete record, checking the
+requested hash and verifying its merkle commitment. Missing indexed data remains
+`-5`; a damaged or unreadable stored record is an internal error, including through
+`getrawtransaction` with an explicit block hash. Until verbose forms arrive in
+#789, these endpoints accept only raw verbosity (`false` or `0`, with null using
+the default) and reject unsupported verbosity, wrong types and extra arguments.
+
+
 ## Mining: getblocktemplatelight
 
 Returns the next-block template **without** the transaction list. The selected

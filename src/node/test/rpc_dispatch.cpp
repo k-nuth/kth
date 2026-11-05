@@ -1161,15 +1161,17 @@ TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failu
     test::persist_headers(fixture, trunk, 1);
     test::connect_bodies(fixture, trunk, 1);
 
-    auto& chain = fixture.chain();
     auto const fetch = [&](hash_digest const& hash) {
         ::asio::io_context io;
-        auto result = ::asio::co_spawn(io, chain.fetch_block(hash), ::asio::use_future);
+        auto result = ::asio::co_spawn(io, fixture.chain().fetch_block(hash), ::asio::use_future);
         io.run();
         return result.get();
     };
     REQUIRE(fetch(trunk[0].hash()));
     REQUIRE(fetch(trunk[1].hash()));
+    // Corruption must exercise a cache miss, not the immutable block just read.
+    REQUIRE(fixture.restart());
+    auto& chain = fixture.chain();
 
     // Overwrite bytes of a block's record in its block file, relative to the
     // start of the block itself. The record opens with an 8-byte header: the
@@ -1200,4 +1202,106 @@ TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failu
     auto const unparsable = fetch(trunk[1].hash());
     REQUIRE_FALSE(unparsable);
     CHECK(unparsable.error() == error::operation_failed);
+}
+
+TEST_CASE("block reads validate identity, bounds, errors and request parameters", "[rpc dispatch][rpc block read review]") {
+    test::chain_fixture fixture("rpc_block_read_review");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    auto& chain = fixture.chain();
+    auto const fetch = [&](hash_digest const& hash) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, chain.fetch_block(hash), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(fetch(trunk[1].hash()));
+
+    // Overwrite bytes of a block's record in its block file, relative to the
+    // start of the block itself. The record opens with an 8-byte header: the
+    // network magic, then the block's size.
+    auto const overwrite = [&](domain::chain::block const& block, long offset, data_chunk const& bytes) {
+        auto const idx = chain.headers().find(block.hash());
+        REQUIRE(idx != blockchain::header_index::null_index);
+        auto const name = fmt::format("blk{:05}.dat", chain.headers().get_file_number(idx));
+        auto const path = chain.data_dir() / "blocks" / name;
+        auto const close_file = [](FILE* handle) noexcept { std::fclose(handle); };
+        std::unique_ptr<FILE, decltype(close_file)> file(
+            std::fopen(path.string().c_str(), "r+b"), close_file);
+        REQUIRE(file);
+        REQUIRE(std::fseek(file.get(), long(chain.headers().get_data_pos(idx)) + offset, SEEK_SET) == 0);
+        REQUIRE(std::fwrite(bytes.data(), 1, bytes.size(), file.get()) == bytes.size());
+        REQUIRE(std::fflush(file.get()) == 0);
+    };
+
+
+    auto request = [&](std::string_view method, std::string const& params) {
+        node::mining::job_store jobs(1, 60);
+        node::rpc::method_context context{chain, jobs};
+        node::rpc::dispatcher dispatcher;
+        node::rpc::register_builtin_methods(dispatcher);
+        auto const body = std::string(R"({"method":")") + std::string(method) + R"(","params":)" + params + R"(,"id":99})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& h) { return '"' + encode_hash(h) + '"'; };
+    SECTION("parseable records must match the indexed block hash") {
+        overwrite(trunk[0], 76, {uint8_t(trunk[0].header().nonce() ^ 1u)});
+        auto const changed = fetch(trunk[0].hash());
+        REQUIRE_FALSE(changed);
+        CHECK(changed.error() == error::operation_failed);
+    }
+    SECTION("disk failures are not missing transactions") {
+        overwrite(trunk[0], -8, data_chunk(4, 0x00));
+        auto const params = "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + "]";
+        auto const raw = request("getrawtransaction", params);
+        INFO(raw);
+        CHECK(raw == node::rpc::build_error("99", -32603, code(error::operation_failed).message()));
+    }
+    SECTION("block contents must match the header merkle commitment") {
+        overwrite(trunk[0], long(trunk[0].serialized_size()) - 1, {1});
+        CHECK_FALSE(fetch(trunk[0].hash()));
+    }
+    SECTION("an unstarted fetch retains no borrowed chain after shutdown") {
+        auto operation = chain.fetch_block(trunk[0].hash());
+        fixture.close();
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, std::move(operation), ::asio::use_future);
+        io.run();
+        auto const closed = result.get();
+        REQUIRE_FALSE(closed);
+        CHECK(closed.error() == error::service_stopped);
+    }
+    SECTION("heights must not wrap to a different existing block") {
+        if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
+            ::asio::io_context io;
+            auto result = ::asio::co_spawn(io, chain.fetch_block(size_t(max_uint32) + 2), ::asio::use_future);
+            io.run();
+            CHECK_FALSE(result.get());
+        }
+    }
+    SECTION("malformed optional parameters and extra arguments are rejected") {
+        for (auto const& params : {"[" + quoted(trunk[0].hash()) + ",false,1]", "[" + quoted(trunk[0].hash()) + R"(,"wrong-type"])"}) {
+            auto const raw = request("getblock", params);
+            INFO(raw);
+            CHECK(raw.find(R"("code":-32602)") != std::string::npos);
+        }
+        auto const raw = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + ",1]");
+        INFO(raw);
+        CHECK(raw.find(R"("code":-32602)") != std::string::npos);
+    }
 }

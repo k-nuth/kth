@@ -545,6 +545,8 @@ bool block_chain::start(uint32_t disk_magic) {
     spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
+    block_reads_ = std::make_unique<block_reader>(blocks_path, magic, block_reader::limits{});
+    block_reads_->start();
     return true;
 }
 
@@ -553,6 +555,9 @@ bool block_chain::stop() {
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
+    if (block_reads_) {
+        block_reads_->stop();
+    }
 
     validation_mutex_.lock_high_priority();
     auto result = transaction_organizer_.stop() && block_organizer_.stop();
@@ -564,6 +569,7 @@ bool block_chain::stop() {
 
 bool block_chain::close() {
     auto const result = stop();
+    block_reads_.reset(); // joins the owned disk task before releasing storage
     // Persist the mempool now that admission is quiesced and before the DB dir
     // is torn down (the path is a plain sibling of the DB, still valid here).
     dump_mempool_to_disk();
@@ -2503,61 +2509,34 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// Read a stored block through its header-index record.
-std::expected<std::pair<block_const_ptr, size_t>, code>
-block_chain::read_indexed_block(header_index::index_t idx) const {
-    if ( ! block_store_ || ! header_index_.has_block_data(idx)) {
-        return kth::fail(error::not_found);
-    }
-
-    database::flat_file_pos const pos{
-        header_index_.get_file_number(idx),
-        header_index_.get_data_pos(idx)
-    };
-    auto const raw = block_store_->read_block_raw(pos);
-    if ( ! raw) {
-        spdlog::error("[blockchain] cannot read block {} from the block files",
-            encode_hash(header_index_.get_hash(idx)));
-        return kth::fail(error::operation_failed);
-    }
-
-    byte_reader reader(*raw);
-    auto block = domain::message::block::from_data(reader, 0u);
-    if ( ! block) {
-        spdlog::error("[blockchain] cannot parse block {} read from the block files",
-            encode_hash(header_index_.get_hash(idx)));
-        return kth::fail(error::operation_failed);
-    }
-    return std::pair{std::make_shared<domain::message::block const>(std::move(*block)),
-                     size_t(header_index_.get_height(idx))};
+// Error results also own their data before the lazy awaitable is returned.
+static awaitable_expected<std::pair<block_const_ptr, size_t>> block_fetch_failure(code ec) {
+    co_return kth::fail(ec);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
-    if (stopped()) {
-        co_return kth::fail(error::service_stopped);
-    }
-
-    // The block on the active chain at that height. The index also holds side
-    // branches, numbered in arrival order, so an entry's index is not its height.
+    if (stopped() || !block_reads_) return block_fetch_failure(error::service_stopped);
+    if (height > size_t(max_int32)) return block_fetch_failure(error::not_found);
     auto const idx = header_index_.active_at(int32_t(height));
-    if (idx == header_index::null_index) {
-        co_return kth::fail(error::not_found);
-    }
-    co_return read_indexed_block(idx);
+    if (idx == header_index::null_index || !header_index_.has_block_data(idx))
+        return block_fetch_failure(error::not_found);
+    // Freeze the descriptor before suspension. The disk owner needs no index,
+    // chain, or store pointer: hash, height and position are independent values.
+    auto const hash = header_index_.get_hash(idx);
+    database::flat_file_pos const pos{header_index_.get_file_number(idx), header_index_.get_data_pos(idx)};
+    return block_reads_->fetch_block(hash, height, pos);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return kth::fail(error::service_stopped);
-    }
-
+    if (stopped() || !block_reads_) return block_fetch_failure(error::service_stopped);
     auto const idx = header_index_.find(hash);
-    if (idx == header_index::null_index) {
-        co_return kth::fail(error::not_found);
-    }
-    co_return read_indexed_block(idx);
+    if (idx == header_index::null_index || !header_index_.has_block_data(idx))
+        return block_fetch_failure(error::not_found);
+    auto const height = size_t(header_index_.get_height(idx));
+    database::flat_file_pos const pos{header_index_.get_file_number(idx), header_index_.get_data_pos(idx)};
+    return block_reads_->fetch_block(hash, height, pos);
 }
 
 std::expected<domain::chain::block::list, database::result_code>

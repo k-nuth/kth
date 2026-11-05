@@ -589,6 +589,13 @@ jobs:
             echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
           fi
 
+          rc=0
+          timeout --kill-after=30 90 ctest --no-tests=error --output-on-failure -R '^kth_block_read_executor_test$' || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::block-read executor control failed or timed out (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
       - name: 🧪 kth_node_test
         if: ${{ inputs.skip-tests != true && inputs.upload != true }}
         working-directory: build/build/Release

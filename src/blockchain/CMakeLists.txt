@@ -191,6 +191,7 @@ set(kth_sources_just_legacy
   src/pools/mempool.cpp
   src/pools/block_template.cpp
   src/pools/template_prevouts.cpp
+  src/pools/block_reader.cpp
   src/pools/capture_gate.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
@@ -321,6 +322,7 @@ if (ENABLE_TEST)
         test/mempool_test.cpp
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
+        test/block_reader.cpp
         test/utxoz_roundtrip.cpp
         test/utxo_gate.cpp
           test/utxo_gate_bench.cpp
@@ -363,6 +365,16 @@ if (ENABLE_TEST)
     target_include_directories(kth_blockchain_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_blockchain_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_blockchain_test PRIVATE Catch2::Catch2WithMain)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      target_sources(kth_blockchain_test PRIVATE test/block_read_executor.cpp)
+      target_link_libraries(kth_blockchain_test PRIVATE ${CMAKE_DL_LIBS})
+      find_package(Python3 COMPONENTS Interpreter REQUIRED)
+      add_test(NAME kth_block_read_executor_test
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/block_read_executor/run.py
+          --compiler ${CMAKE_C_COMPILER} --binary $<TARGET_FILE:kth_blockchain_test>)
+      set_tests_properties(kth_block_read_executor_test PROPERTIES TIMEOUT 60)
+    endif()
 
     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
 

@@ -39,6 +39,7 @@
 #include <kth/blockchain/pools/branch.hpp>
 #include <kth/blockchain/pools/capture_gate.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
+#include <kth/blockchain/pools/block_reader.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
@@ -828,7 +829,11 @@ struct KB_API block_chain {
     // FETCH OPERATIONS (Thread safe, coroutine-based)
     // =========================================================================
 
-    // Block fetching
+    // Fetch immutable blocks through the bounded disk owner/cache. File I/O
+    // and parsing run outside the caller executor. Both overloads preserve
+    // the original API; missing data and damaged records remain distinct.
+    // Endpoint/descriptor capture is immediate, so a lazy read never borrows
+    // this object across suspension or after close().
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(size_t height) const;
 
@@ -965,11 +970,6 @@ struct KB_API block_chain {
 
 private:
     using handle = database::data_base::handle;
-
-    // The block at header-index entry `idx`, read from the flat-file store,
-    // with its height. not_found when the node does not hold its data.
-    [[nodiscard]] std::expected<std::pair<block_const_ptr, size_t>, code>
-    read_indexed_block(header_index::index_t idx) const;
 
     template <typename R>
     void read_serial(R const& reader) const;
@@ -1151,6 +1151,9 @@ private:
     // the store and therefore be declared before it.
     mutable utxo_gate utxo_gate_;
     guarded_store<database::utxoz_database> utxoz_db_;
+
+    // Closed and joined before close() releases storage; requests own replies.
+    std::unique_ptr<block_reader> block_reads_;
 };
 
 } // namespace kth::blockchain
