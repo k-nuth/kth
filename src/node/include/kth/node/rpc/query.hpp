@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include <kth/blockchain/header_index.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -84,13 +85,8 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
 
-// One getchaintips entry.
-struct chain_tip {
-    size_t height;
-    hash_digest hash;
-    size_t branch_length;   // blocks from the connected chain to this tip
-    std::string_view status;     // "active", "valid-headers" or "headers-only"
-};
+// Owned records from the header index; RPC only renders their wire format.
+using chain_tip = blockchain::header_index::chain_tip;
 
 // Serialize the getchaintips result array, in the order given.
 std::string render_chain_tips(std::vector<chain_tip> const& tips);

@@ -336,72 +336,17 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 // C-API counterpart: none yet; the C-API does not expose the header index.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_chain_tips(method_context& ctx, request const& /*req*/) {
-    using blockchain::header_index;
     auto const view = ctx.chain.chain_view();
     if ( ! view) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
-    auto const& index = ctx.chain.headers();
-    auto const active = index.find(view->tip_hash);
-    if (active == header_index::null_index) {
-        co_return std::unexpected(make_error(error_code::internal_error,
+    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash);
+    if (!tips) {
+        co_return kth::fail(make_error(error_code::internal_error,
             "connected tip not in the header index"));
     }
-
-    // Index entries are append-only and a parent is published before its
-    // children. Compute each branch's fork and data availability once, instead
-    // of walking the same shared ancestry again for every leaf.
-    auto const count = index.size();
-    if (active >= count) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "connected tip outside the header index prefix"));
-    }
-    struct branch_state {
-        int32_t fork_height = -1; // -1: not connected to the published chain
-        bool all_data = false;
-        bool has_child = false;
-    };
-    std::vector<branch_state> branches(count);
-    for (auto idx = active; idx != header_index::null_index;
-         idx = index.get_parent_index(idx)) {
-        branches[idx].fork_height = index.get_height(idx);
-        branches[idx].all_data = true;
-    }
-
-    for (size_t i = 0; i < count; ++i) {
-        auto const idx = header_index::index_t(i);
-        auto const parent = index.get_parent_index(idx);
-        if (parent != header_index::null_index && parent < count) {
-            branches[parent].has_child = true;
-        }
-        auto& branch = branches[i];
-        if (branch.fork_height >= 0) continue; // already on the connected chain
-        if (parent == header_index::null_index || parent >= i) continue;
-        auto const& previous = branches[parent];
-        if (previous.fork_height < 0) continue; // a disconnected root
-        branch.fork_height = previous.fork_height;
-        branch.all_data = previous.all_data &&
-            index.has_status(idx, blockchain::header_status::have_data);
-    }
-
-    std::vector<chain_tip> tips;
-    for (size_t i = 0; i < count; ++i) {
-        auto const idx = header_index::index_t(i);
-        if (idx == active) {
-            tips.push_back({view->connected_tip_height, view->tip_hash, 0, "active"});
-            continue;
-        }
-        auto const& branch = branches[i];
-        if (branch.has_child || branch.fork_height < 0) continue;
-        auto const height = index.get_height(idx);
-        tips.push_back({size_t(height), index.get_hash(idx),
-            size_t(height - branch.fork_height),
-            branch.all_data ? "valid-headers" : "headers-only"});
-    }
-    // O(N + T log T) time, O(N + T) storage for N headers and T tips.
-    std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);
-    co_return render_chain_tips(tips);
+    co_return render_chain_tips(*tips);
 }
 
 // getrawtransaction <txid> -> the wire-serialized transaction as hex.

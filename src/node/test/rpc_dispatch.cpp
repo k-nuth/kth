@@ -644,9 +644,9 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
     io.run();
 
     REQUIRE(result.get() == node::rpc::build_success("3", node::rpc::render_chain_tips({
-        {5u, trunk[4].hash(), 2u, "headers-only"},
-        {4u, side[1].hash(), 2u, "headers-only"},
-        {3u, trunk[2].hash(), 0u, "active"}})));
+        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only},
+        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only},
+        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active}})));
 }
 
 TEST_CASE("getchaintips shares ancestry across many tips without stale availability", "[rpc dispatch][rpc chain tips]") {
@@ -677,11 +677,11 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
     std::vector<node::rpc::chain_tip> expected;
     for (size_t i = 0; i < leaves; ++i) {
         auto const [hash, idx] = add(parent, uint32_t(shared_length + i + 1));
-        expected.push_back({shared_length + 1, hash, shared_length + 1, "headers-only"});
+        expected.push_back({shared_length + 1, hash, shared_length + 1, blockchain::header_index::tip_status::headers_only});
     }
     auto const [available, available_idx] = add(genesis, 9000);
-    expected.push_back({1, available, 1, "valid-headers"});
-    expected.push_back({0, genesis, 0, "active"});
+    expected.push_back({1, available, 1, blockchain::header_index::tip_status::valid_headers});
+    expected.push_back({0, genesis, 0, blockchain::header_index::tip_status::active});
     // An unlinked root must not appear as a branch of the connected chain.
     auto const [unlinked, unlinked_idx] = add(null_hash, 10000);
     REQUIRE(index.get_parent_index(unlinked_idx) == blockchain::header_index::null_index);
@@ -699,8 +699,13 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
         return result.get();
     };
     REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
+    REQUIRE_FALSE(index.get_chain_tips(null_hash));
+    auto const previous_tips = index.get_chain_tips(genesis);
+    REQUIRE(previous_tips);
     // Data appearing on a shared ancestor changes every descendant's status.
     index.add_status(missing, blockchain::header_status::have_data);
-    for (size_t i = 0; i < leaves; ++i) expected[i].status = "valid-headers";
+    for (size_t i = 0; i < leaves; ++i) expected[i].status = blockchain::header_index::tip_status::valid_headers;
+    // Returned records own their values; a later mutation cannot alter them.
+    REQUIRE(previous_tips->front().status == blockchain::header_index::tip_status::headers_only);
     REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
 }
