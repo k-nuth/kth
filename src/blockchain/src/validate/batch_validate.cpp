@@ -180,11 +180,20 @@ code validate_block_batch(
         for (size_t i = 0; i < blocks.size(); ++i) {
             sizes[i] = blocks[i]->serialized_size(1);
         }
-        auto const last_idx = header_index.find(blocks.back()->hash());
-        if (last_idx == header_index::null_index) {
+        auto branch_idx = header_index.find(blocks.back()->hash());
+        if (branch_idx == header_index::null_index && blocks.size() == 1) {
+            // A found block is checked before anything is stored
+            // (block_chain::organize), so it has no index entry yet. Its
+            // parent's schedule is the same through this block's height:
+            // tick_schedule_for_tip includes the interval the parent's own MTP
+            // sets for the next block, and an entry for this block would only
+            // add a change for the block after it.
+            branch_idx = header_index.find(blocks.front()->header().previous_block_hash());
+        }
+        if (branch_idx == header_index::null_index) {
             return error::not_found;
         }
-        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, last_idx);
+        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, branch_idx);
         if ( ! states) {
             return states.error();
         }
