@@ -74,8 +74,8 @@ counterpart.
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
-| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
@@ -249,6 +249,87 @@ rpc.gbt_store_time = 3600   # seconds before a job expires
 Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
 required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
 (the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
+historical hashrate estimate and is a follow-up.
+
+## Mining: submitblocklight
+
+`submitblocklight ["hexdata", "job_id"]` closes the light-template loop. `hexdata`
+is the solved block carrying just the header and the coinbase; the node looks up
+`job_id`, splices the cached selection after the coinbase, and submits the
+reconstructed block to the chain. Returns the Bitcoin `submitblock` result: `null`
+when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
+`"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
+or expired `job_id`) is a JSON-RPC `-32602` error instead.
+
+## Blocks and transactions
+
+`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+store, through the header index; a side-branch block the node holds is returned
+too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
+`confirmations` (-1 off the connected chain), `confirmations_ticks`, `size`, `height`, `ticks`, `version`,
+`versionHex`, `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`,
+`difficulty`, `target_time`, `next_target_time`, `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2`
+lists each transaction with its `decoderawtransaction` fields and `hex`. `fee`
+per transaction and `ablastate` are not reported. `getrawtransaction "<txid>"` answers for a mempool transaction.
+Confirmed transactions are not indexed by txid (#491), so for one of those pass
+the block hash as the third parameter: `getrawtransaction "<txid>" false
+"<blockhash>"`. With `verbose` true (or non-zero) it returns the
+`decoderawtransaction` fields with `hex`, and for a transaction read from a block
+also `blockhash`, `confirmations`, `confirmations_ticks`, `time`, `blocktime` and `in_active_chain`; for a
+block off the connected chain both confirmation fields are 0, the times are left out and
+`in_active_chain` is false. A block or transaction the node does not have is error `-5`.
+
+Tick depth includes the containing block's own target interval and follows the
+selected branch schedule across activation. These fields measure scheduled
+time, not elapsed wall-clock time. A mempool transaction omits both confirmation
+fields, and raw hex responses remain unchanged.
+
+## decoderawtransaction
+
+`decoderawtransaction "<hex>"` decodes a serialized transaction without looking
+anything up: `txid`, `hash`, `version`, `size`, `locktime`, `vin` (for a coinbase
+just `coinbase` and `sequence`) and `vout`. Each output has `value` in BCH, `n`,
+`scriptPubKey` (`asm`, `hex`, `type`: `pubkeyhash`, `scripthash`, `pubkey`,
+`multisig`, `nulldata` or `nonstandard`, and for a spendable kind `reqSigs` and
+`addresses` as cashaddr under the node's network prefix) and, when it carries
+CashTokens, `tokenData` (`category`, `amount` as a string, and `nft` with
+`capability` and `commitment`). `scriptPubKey.hex` leaves out the token prefix.
+`asm` is kth's own script notation, under the node's current script rules.
+
+## Mining: getblocktemplatelight
+
+Returns the next-block template **without** the transaction list. The selected
+transactions are cached server-side under `job_id`; a later `submitblocklight`
+(pending) reconstructs the full block from the miner's solved header + coinbase
+alone, so transactions never travel over the wire.
+
+Response fields: `version`, `previousblockhash`, `height`, `coinbasevalue`
+(subsidy + selected fees), `target`, `bits`, `mintime` (MTP + 1), `curtime`,
+`sizelimit`, `sigchecklimit`, `noncerange`, `mutable`, `job_id`, and `merkle`.
+
+`merkle` is the coinbase's merkle branch: the hashes, in display order like
+`previousblockhash`, that the miner folds its coinbase txid with, one after the
+other (`root = sha256d(root || hash)`, each hash in internal byte order), to get
+the block's merkle root. It is empty when the template has no transactions.
+
+Job cache config (mirrors bitcoind `-gbtcachesize` / `-gbtstoretime`):
+
+```ini
+rpc.gbt_cache_size = 10     # recent jobs kept
+rpc.gbt_store_time = 3600   # seconds before a job expires
+```
+
+> The assembled template is cached in the core (`block_chain::fetch_mining_template`,
+> shared by this RPC and the C-API): a new tip rebuilds immediately, while under
+> mempool churn rebuilds are rate-limited to `chain.gbt_template_refresh_seconds`
+> (default 5, bitcoind-style). `tools/rpc_bench.py` load-tests the miner-polling
+> side; a faithful benchmark also simulates transactions and blocks arriving.
+
+## Mining: getmininginfo
+
+Returns a small mining snapshot: `blocks` (tip height), `difficulty` (of the next
+required work, matching the template's `bits`), `pooledtx` (mempool size), `chain`
+(network name), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
 ## Mining: submitblocklight

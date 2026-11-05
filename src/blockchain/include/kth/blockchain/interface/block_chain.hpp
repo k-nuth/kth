@@ -32,6 +32,7 @@
 #include <kth/domain.hpp>
 #include <kth/domain/chain/light_block.hpp>
 
+#include <kth/blockchain/chain_progress.hpp>
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
@@ -626,6 +627,18 @@ struct KB_API block_chain {
     [[nodiscard]]
     chain_view_ptr chain_view() const;
 
+    // Metadata relative to a single connected publication. The overload taking
+    // a view lets multi-part API responses retain the same reference chain.
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash, chain_view_ptr const& view) const;
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_chain_progress() const;
+
+
     /// Build the view for `connected_tip_height` and publish it.
     ///
     /// `connected_tip_height` is the last block whose state — the UTXO delta,
@@ -965,6 +978,11 @@ struct KB_API block_chain {
 
 private:
     using handle = database::data_base::handle;
+
+    // The block at header-index entry `idx`, read from the flat-file store,
+    // with its height. not_found when the node does not hold its data.
+    [[nodiscard]] std::expected<std::pair<block_const_ptr, size_t>, code>
+    read_indexed_block(header_index::index_t idx) const;
 
     template <typename R>
     void read_serial(R const& reader) const;

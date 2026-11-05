@@ -108,6 +108,33 @@ int64_t confirmations(blockchain::block_chain const& chain,
     return int64_t(view->connected_tip_height - height + 1);
 }
 
+
+// The median of the timestamps of the 11 blocks ending at header-index entry
+// `idx`, or of all of them nearer genesis.
+std::uint32_t median_time_past(blockchain::header_index const& index,
+                               blockchain::header_index::index_t idx) {
+    std::vector<std::uint32_t> times;
+    for (int i = 0; i < 11 && idx != blockchain::header_index::null_index; ++i) {
+        times.push_back(index.get_timestamp(idx));
+        idx = index.get_parent_index(idx);
+    }
+    if (times.empty()) {
+        return 0;
+    }
+    std::ranges::sort(times);
+    return times[times.size() / 2];
+}
+
+// The getblock / getrawtransaction verbosity: a JSON boolean, or a number.
+// `fallback` when absent; nullopt when it is neither.
+std::optional<std::uint64_t> params_verbosity(std::string_view params, std::size_t index,
+                                              std::uint64_t fallback) {
+    if (auto const flag = params_bool(params, index, fallback != 0)) {
+        return *flag ? std::max<std::uint64_t>(fallback, 1) : 0;
+    }
+    return params_uint(params, index);
+}
+
 // getblockcount -> the height of the most-work fully-validated block.
 // C-API counterpart: kth_chain_sync_last_height (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
@@ -474,8 +501,11 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
     co_return render_chain_tips(*tips);
 }
 
-// getrawtransaction <txid> -> the wire-serialized transaction as hex.
-// C-API counterpart: kth_chain_sync_transaction.
+// getrawtransaction <txid> [verbose] [blockhash] -> the wire-serialized
+// transaction as hex. With a block hash it is read from that block; without
+// one only the mempool can answer, since confirmed transactions are not
+// indexed by txid (#491).
+// C-API counterpart: kth_chain_sync_transaction (+ kth_chain_sync_block_by_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
@@ -487,17 +517,67 @@ get_raw_transaction(method_context& ctx, request const& req) {
     if ( ! hash) {
         co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
     }
+
+    auto const verbose = params_verbosity(req.params, 1, /*fallback*/ 0);
+    if ( ! verbose) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "verbose must be a boolean or a number"));
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const render = [&](domain::chain::transaction const& tx,
+                            std::optional<transaction_location> const& location) {
+        if (*verbose != 0) {
+            return render_transaction_verbose(tx, view->state->network(),
+                view->state->enabled_flags(), location);
+        }
+        writer w;
+        w.value(transaction_to_hex(tx));
+        return w.str();
+    };
+
+    if (args.size() > 2 && ! args[2].empty()) {
+        auto const block_hash = decode_hash(args[2]);
+        if ( ! block_hash) {
+            co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
+        }
+        auto const block = co_await ctx.chain.fetch_block(*block_hash);
+        if ( ! block) {
+            co_return kth::fail(make_error(error_code::invalid_address_or_key,
+                "Block hash not found"));
+        }
+        auto const& [found, height] = *block;
+        for (auto const& tx : found->transactions()) {
+            if (tx.hash() == *hash) {
+                auto const progress = ctx.chain.get_block_progress(*block_hash, view);
+                if (!progress) {
+                    co_return kth::fail(from_code(progress.error()));
+                }
+                co_return render(tx, transaction_location{*block_hash,
+                    progress->confirmations, found->header().timestamp(), progress->confirmations_ticks});
+            }
+        }
+        co_return kth::fail(make_error(error_code::invalid_address_or_key,
+            "No such transaction found in the provided block"));
+    }
+
     auto const result = co_await ctx.chain.fetch_transaction(*hash, /*require_confirmed*/ false);
     if ( ! result) {
+        if (result.error() == error::not_found) {
+            co_return kth::fail(make_error(error_code::invalid_address_or_key,
+                "No such mempool transaction; pass the block hash for a confirmed one"));
+        }
         co_return kth::fail(from_code(result.error()));
     }
-    auto const& tx = std::get<0>(*result);
-    writer w;
-    w.value(transaction_to_hex(*tx));
-    co_return w.str();
+    co_return render(*std::get<0>(*result), std::nullopt);
 }
 
-// getblock <blockhash> -> the wire-serialized block as hex.
+// getblock <blockhash> [verbosity=1] -> with verbosity 0 (or false) the
+// wire-serialized block as hex; with 1 (or true) its fields and txids; with 2
+// its fields and its transactions decoded.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -510,14 +590,63 @@ get_block(method_context& ctx, request const& req) {
     if ( ! hash) {
         co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
     }
+    auto const verbosity = params_verbosity(req.params, 1, /*fallback*/ 1);
+    if ( ! verbosity || *verbosity > 2) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "verbosity must be 0, 1, 2 or a boolean"));
+    }
     auto const result = co_await ctx.chain.fetch_block(*hash);
     if ( ! result) {
+        if (result.error() == error::not_found) {
+            co_return kth::fail(make_error(error_code::invalid_address_or_key,
+                "Block not found"));
+        }
         co_return kth::fail(from_code(result.error()));
     }
-    auto const& block = std::get<0>(*result);
-    writer w;
-    w.value(block_to_hex(*block));
-    co_return w.str();
+    auto const& [block, height] = *result;
+    if (*verbosity == 0) {
+        writer w;
+        w.value(block_to_hex(*block));
+        co_return w.str();
+    }
+
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const& index = ctx.chain.headers();
+    auto const idx = index.find(*hash);
+    if (idx == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::invalid_address_or_key,
+            "Block not found"));
+    }
+    auto const progress = ctx.chain.get_block_progress(*hash, view);
+    if (!progress) {
+        co_return kth::fail(from_code(progress.error()));
+    }
+    block_location location{
+        .height = height,
+        .confirmations = progress->confirmations,
+        .median_time = median_time_past(index, idx),
+        .chain_work = std::nullopt,
+        .next_block_hash = std::nullopt,
+        .progress = chain_progress{progress->ticks, progress->target_time, progress->next_target_time},
+        .confirmations_ticks = progress->confirmations_ticks};
+    // The header index counts work from the genesis block's child on.
+    if (auto const genesis = index.get_ancestor(idx, 0); genesis != blockchain::header_index::null_index) {
+        location.chain_work = index.get_chain_work(idx) +
+            domain::chain::header::proof(index.get_bits(genesis));
+    }
+    if (location.confirmations > 1) {
+        auto const connected_tip = index.find(view->tip_hash);
+        auto const next = index.get_ancestor(connected_tip, int32_t(height + 1));
+        if (next != blockchain::header_index::null_index) {
+            location.next_block_hash = index.get_hash(next);
+        }
+    }
+    co_return render_block_verbose(*block, location, *verbosity == 2,
+        view->state->network(), view->state->enabled_flags());
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its
