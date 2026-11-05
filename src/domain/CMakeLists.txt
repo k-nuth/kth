@@ -667,6 +667,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_test PUBLIC ${PROJECT_NAME})
   target_link_libraries(kth_domain_test PRIVATE Catch2::Catch2WithMain)
 
+  if(Python3_FOUND AND CURRENCY STREQUAL "BCH")
+    set(kth_address_literal_options "${CMAKE_CURRENT_BINARY_DIR}/address_literal_options_$<CONFIG>.rsp")
+    file(GENERATE OUTPUT "${kth_address_literal_options}"
+      CONTENT "-I\"$<JOIN:$<TARGET_PROPERTY:kth_domain_test,INCLUDE_DIRECTORIES>,\"\n-I\">\"\n-D\"$<JOIN:$<TARGET_PROPERTY:kth_domain_test,COMPILE_DEFINITIONS>,\"\n-D\">\"\n"
+      TARGET kth_domain_test)
+    add_test(NAME kth_domain_address_literal_tests
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/test_address_literals.py
+        --compiler ${CMAKE_CXX_COMPILER}
+        --include-dir ${CMAKE_CURRENT_SOURCE_DIR}/include
+        --compiler-options-file ${kth_address_literal_options})
+  endif()
+
   include(CTest)
   # Try to use Catch2 automatic test discovery
   find_package(Catch2 QUIET)
