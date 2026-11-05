@@ -16,6 +16,7 @@
 #include <asio/cancellation_signal.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
 #include <asio/use_awaitable.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
 
@@ -911,4 +912,38 @@ TEST_CASE("network status cancellation leaves another admitted client intact", "
     io.run();
     CHECK(second.get().connections == 23);
     port.close();
+}
+
+TEST_CASE("network status service cancelled before startup closes its clients", "[rpc dispatch][rpc status]") {
+    network::settings settings;
+    settings.threads = 1;
+    node::p2p_node node(settings);
+    ::asio::io_context io;
+    network::status_port port(io.get_executor(), 1);
+    bool client_done = false;
+    bool watchdog_fired = false;
+    std::exception_ptr client_error;
+    ::asio::steady_timer watchdog(io, std::chrono::seconds(1));
+    watchdog.async_wait([&](std::error_code ec) {
+        if (!ec) {
+            watchdog_fired = true;
+            port.close(); // recover a broken implementation, retaining the failure
+        }
+    });
+    ::asio::co_spawn(io, port.read(), [&](std::exception_ptr error, network::status) {
+        client_error = error;
+        client_done = true;
+        watchdog.cancel();
+    });
+    io.poll(); // client awaits a reply, service has not been scheduled yet
+    ::asio::cancellation_signal cancel;
+    auto owner = ::asio::co_spawn(io, node.serve_network_status(port),
+        ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+    cancel.emit(::asio::cancellation_type::all);
+    io.run();
+    CHECK_THROWS_AS(owner.get(), std::system_error);
+    CHECK(client_done);
+    CHECK(bool(client_error));
+    CHECK_FALSE(watchdog_fired);
+    CHECK_FALSE(port.is_open());
 }
