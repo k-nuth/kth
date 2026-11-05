@@ -107,6 +107,7 @@ struct network_info {
     uint64_t services;
     bool relay;                      // relays transactions to its peers
     size_t connections;
+    bool active = false;
     float byte_fee_satoshis;         // the size part of the transaction price
 };
 

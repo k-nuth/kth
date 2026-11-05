@@ -302,6 +302,15 @@ size_t p2p_node::connection_count() const {
     return manager_.count_snapshot();
 }
 
+::asio::awaitable<kth::network::status> p2p_node::network_status() const {
+    // count() sends an awaited request to the peer manager strand. The P2P
+    // pool remains alive until RPC and the core tasks have joined. Read the
+    // existing lifecycle after the reply so a stop during the request wins.
+    auto const count = co_await manager_.count();
+    auto const active = ! stopped();
+    co_return kth::network::status{active, active ? count : 0};
+}
+
 threadpool& p2p_node::thread_pool() {
     return pool_;
 }

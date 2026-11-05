@@ -62,9 +62,12 @@ struct rpc_server_fixture {
         if (server_done.valid()) server_done.get();
     }
 
-    [[nodiscard]] bool start() {
+    [[nodiscard]] bool start(
+        std::optional<node::rpc::network_configuration> config = std::nullopt,
+        network::status_source const* status = nullptr) {
         if ( ! chain.created() || ! chain.start()) return false;
-        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor());
+        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor(),
+            std::move(config), status);
         server_done = ::asio::co_spawn(io, server->run(), ::asio::use_future);
         auto started = ::asio::co_spawn(io, await_startup(), ::asio::use_future);
         runner = std::thread([this] { io.run(); });
@@ -420,5 +423,29 @@ TEST_CASE("rpc server accepts a later keep-alive request", "[rpc server]") {
     CHECK(answers[1].find(R"("id":42)") != std::string::npos);
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
     CHECK(answers[1].find(R"("result":0)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server owns its network configuration copy", "[rpc server]") {
+    struct fixed_status final : network::status_source {
+        ::asio::awaitable<network::status> read() const override {
+            co_return network::status{true, 7};
+        }
+    } status;
+    rpc_server_fixture fixture("rpc_server_network_config");
+    node::rpc::network_configuration config{"/original:1/", 70016, 1, true};
+    REQUIRE(fixture.start(config, &status));
+    config = {"/changed:2/", 42, 0, false};
+    std::string const body = R"({"method":"getnetworkinfo","params":[],"id":18})";
+    auto const wire = "POST / HTTP/1.1\r\nHost: localhost\r\n"
+        "Authorization: Basic dGVzdDp0ZXN0\r\nConnection: close\r\nContent-Length: "
+        + std::to_string(body.size()) + "\r\n\r\n" + body;
+    auto const replies = bodies(fixture.exchange(wire));
+    REQUIRE(replies.size() == 1);
+    CHECK(replies[0].find(R"("subversion":"/original:1/")") != std::string::npos);
+    CHECK(replies[0].find(R"("protocolversion":70016)") != std::string::npos);
+    CHECK(replies[0].find(R"("localservices":"0000000000000001")") != std::string::npos);
+    CHECK(replies[0].find(R"("localrelay":true)") != std::string::npos);
+    CHECK(replies[0].find(R"("connections":7)") != std::string::npos);
     CHECK_NOTHROW(fixture.finish());
 }

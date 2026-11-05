@@ -39,7 +39,6 @@
 #include <kth/infrastructure/path.hpp>
 #include <kth/node/rpc/mining.hpp>
 #include <kth/node/rpc/query.hpp>
-#include <kth/node/p2p_node.hpp>
 
 namespace kth::node::rpc {
 
@@ -663,18 +662,20 @@ get_tx_out(method_context& ctx, request const& req) {
 // services, relay_transactions) + kth_blockchain_settings.byte_fee_satoshis.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_network_info(method_context& ctx, request const& /*req*/) {
-    if (ctx.network == nullptr) {
+    if (ctx.network_config == nullptr || ctx.network_status == nullptr) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "network unavailable"));
     }
-    auto const& settings = ctx.network->network_settings();
+    auto const& config = *ctx.network_config;
+    auto const status = co_await ctx.network_status->read();
     co_return render_network_info({
         .version = kth::version,
-        .subversion = settings.user_agent,
-        .protocol_version = settings.protocol_maximum,
-        .services = settings.services,
-        .relay = settings.relay_transactions,
-        .connections = ctx.network->connection_count(),
+        .subversion = config.subversion,
+        .protocol_version = config.protocol_version,
+        .services = config.services,
+        .relay = config.relay,
+        .connections = status.connections,
+        .active = status.active,
         .byte_fee_satoshis = ctx.chain.chain_settings().byte_fee_satoshis});
 }
 

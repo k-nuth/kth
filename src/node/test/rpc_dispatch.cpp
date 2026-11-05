@@ -12,6 +12,10 @@
 #include <type_traits>
 
 #include <asio/co_spawn.hpp>
+#include <asio/bind_cancellation_slot.hpp>
+#include <asio/cancellation_signal.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
+#include <asio/use_awaitable.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
 
@@ -799,6 +803,32 @@ TEST_CASE("getnetworkinfo dispatch needs the P2P node", "[rpc dispatch]") {
     REQUIRE(result.get() == node::rpc::build_error("8", -32603, "network unavailable"));
 }
 
+namespace {
+
+class p2p_status_source final : public network::status_source {
+public:
+    explicit p2p_status_source(node::p2p_node const& node) : node_(node) {}
+    ::asio::awaitable<network::status> read() const override {
+        co_return co_await node_.network_status();
+    }
+private:
+    node::p2p_node const& node_;
+};
+
+class channel_status_source final : public network::status_source {
+public:
+    explicit channel_status_source(::asio::any_io_executor executor)
+        : responses(executor, 1) {}
+    ::asio::awaitable<network::status> read() const override {
+        ++requests;
+        co_return co_await responses.async_receive(::asio::use_awaitable);
+    }
+    mutable ::asio::experimental::concurrent_channel<void(std::error_code, network::status)> responses;
+    mutable size_t requests = 0;
+};
+
+} // namespace
+
 TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_network_info_review");
     REQUIRE(fixture.created());
@@ -813,7 +843,10 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     node::p2p_node network(settings);
     REQUIRE(network.stopped());
     node::mining::job_store jobs(1, 60);
-    node::rpc::method_context context{fixture.chain(), jobs, &network};
+    p2p_status_source status(network);
+    node::rpc::network_configuration config{settings.user_agent, settings.protocol_maximum,
+        settings.services, settings.relay_transactions};
+    node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
     node::rpc::dispatcher dispatcher;
     node::rpc::register_builtin_methods(dispatcher);
     auto request = [&](std::string_view params) {
@@ -829,4 +862,47 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     auto const extra = request("[1]");
     INFO(extra);
     CHECK(extra.find(R"("error":null)") == std::string::npos);
+}
+
+TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellation", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_network_info_status");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    ::asio::io_context io;
+    channel_status_source status(io.get_executor());
+    node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
+    node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    constexpr auto body = R"({"method":"getnetworkinfo","params":[],"id":9})";
+    for (auto const state : {network::status{true, 12}, network::status{false, 0}}) {
+        io.restart();
+        REQUIRE(status.responses.try_send(std::error_code{}, state));
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto const reply = result.get();
+        CHECK(reply.find(state.active ? R"("networkactive":true)" : R"("networkactive":false)") != std::string::npos);
+        CHECK(reply.find(state.active ? R"("connections":12)" : R"("connections":0)") != std::string::npos);
+        CHECK(reply.find(R"("subversion":"/test:1/")") != std::string::npos);
+    }
+    // No reply is queued: cancellation must wake the suspended query.
+    io.restart();
+    ::asio::cancellation_signal cancel;
+    auto result = ::asio::co_spawn(io, dispatcher.handle(context, body),
+        ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+    io.poll();
+    REQUIRE(status.requests == 3);
+    cancel.emit(::asio::cancellation_type::all);
+    io.run();
+    CHECK_THROWS_AS(result.get(), std::system_error);
+
+    // A cancellation arriving before the query starts must not wait for a reply.
+    io.restart();
+    ::asio::cancellation_signal early_cancel;
+    auto early = ::asio::co_spawn(io, dispatcher.handle(context, body),
+        ::asio::bind_cancellation_slot(early_cancel.slot(), ::asio::use_future));
+    early_cancel.emit(::asio::cancellation_type::all);
+    io.run();
+    CHECK_THROWS_AS(early.get(), std::system_error);
 }

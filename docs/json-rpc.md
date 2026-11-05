@@ -195,6 +195,10 @@ and `warnings`. `relayfee` is the size part of the node's transaction price,
 `node.byte_fee_satoshis` per byte, in BCH per kB; the price also charges
 `node.sigop_fee_satoshis` per signature operation.
 
+The server owns a copy of the advertised network configuration. Connection
+count and activity are obtained through an awaited status query; RPC handlers
+do not access the P2P node or its peer collection.
+
 ## Mining: getblocktemplatelight
 
 Returns the next-block template **without** the transaction list. The selected

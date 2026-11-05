@@ -393,7 +393,7 @@ std::string render_network_info(network_info const& info) {
     }
     w.end_array();
     w.field("localrelay", info.relay);
-    w.field("networkactive", true);
+    w.field("networkactive", info.active);
     w.field("connections", uint64_t(info.connections));
     w.field("relayfee", fee_per_kb(info.byte_fee_satoshis));
     w.field("warnings", "");
