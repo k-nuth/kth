@@ -1753,6 +1753,28 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
     CHECK(log.count("block_range_request") == size_t(recover));
 }
 
+namespace {
+
+// block_chain::organize on a thread of its own, as the RPC server calls it.
+std::future<code> organize_async(chain_fixture& fixture, domain::chain::block const& block) {
+    return std::async(std::launch::async, [&fixture, block] {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            fixture.chain().organize(std::make_shared<domain::message::block const>(block)),
+            ::asio::use_future);
+        io.run();
+        return result.get();
+    });
+}
+
+code organize_now(chain_fixture& fixture, domain::chain::block const& block) {
+    auto organized = organize_async(fixture, block);
+    REQUIRE(organized.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
+    return organized.get();
+}
+
+} // namespace
+
 TEST_CASE("a block that does not pass at the connected tip is refused before anything is stored",
           "[header_tip][submit]") {
     // No orchestrator: everything here is decided by organize() itself, before
