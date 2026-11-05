@@ -586,7 +586,7 @@ get_network_info(method_context& ctx, request const& /*req*/) {
             "network unavailable"));
     }
     auto const& config = *ctx.network_config;
-    network::status status;
+    node::network_status status;
     try {
         status = co_await ctx.network_status->read();
     } catch (std::system_error const&) {

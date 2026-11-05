@@ -18,6 +18,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/constants/common.hpp>
 #include <kth/domain/wallet/cashaddr.hpp>

@@ -34,7 +34,7 @@ struct server {
     server(rpc_settings const& settings, blockchain::block_chain& chain,
         ::asio::any_io_executor executor,
         std::optional<network_configuration> network_config = std::nullopt,
-        network::status_port const* network_status = nullptr);
+        node::network_status_port const* network_status = nullptr);
 
     // Bind the listener and accept connections until the executor is stopped.
     // Intended to be co_spawned. Returns on a fatal bind error or shutdown.
@@ -56,7 +56,7 @@ private:
     rpc_settings const& settings_;
     blockchain::block_chain& chain_;
     std::optional<network_configuration> const network_config_;
-    network::status_port const* const network_status_;
+    node::network_status_port const* const network_status_;
     dispatcher dispatcher_;
     mining::job_store jobs_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header

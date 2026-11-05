@@ -210,7 +210,7 @@ std::string random_token() {
 
 server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     ::asio::any_io_executor executor, std::optional<network_configuration> network_config,
-    network::status_port const* network_status)
+    node::network_status_port const* network_status)
     : settings_(settings)
     , chain_(chain)
     , network_config_(std::move(network_config))
