@@ -159,6 +159,8 @@ struct jd_client::attempt {
         uint32_t generation = 0;
         hash_digest previous{};
         std::chrono::steady_clock::time_point sent{};
+        // The share also met the network target, so its block ends this job.
+        bool block = false;
     };
     std::deque<tracked_share> tracked;
     // Full-template blocks found before DeclareMiningJob.Success. Pushed once
@@ -652,6 +654,7 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
     auto const generation = found->generation;
     auto const previous = found->previous;
     auto const sent = found->sent;
+    auto const block = found->block;
     auto const outstanding = std::find_if(value.submitted.begin(), value.submitted.end(),
         [&](auto const& share) { return share.sequence == message->sequence_number; });
     auto consume = [&] {
@@ -675,10 +678,18 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
         return true;
     }
     auto const view = chain_ ? chain_->chain_view() : nullptr;
-    if ( ! view || view->tip_hash == previous) {
+    // The share that found a block moves the tip. The pool can reach that tip
+    // before this node does, from the PushSolution or from the network, and
+    // answer the share as an old job. That is the stale race below, not a
+    // refusal of current work.
+    if ( ! block && ( ! view || view->tip_hash == previous)) {
         fail(value, jd_failure::dishonest,
             "pool refused a valid share on an accepted job (" + code + ")");
         return false;
+    }
+    if (block) {
+        spdlog::debug("[sv2 jd] share error {} for the block found by sequence {} counts as stale",
+            code, message->sequence_number);
     }
     bool const stale = message->error_code == "stale-share"
         || message->error_code == "invalid-job-id";
@@ -827,14 +838,15 @@ void jd_client::forward_share(attempt& value, mining::pool_proof const& proof) {
     }
     auto const sent = std::chrono::steady_clock::now();
     value.submitted.push_back({message.sequence_number, proof.prev_hash, sent});
-    remember_submitted(value, message.sequence_number, proof.generation, proof.prev_hash, sent);
+    remember_submitted(value, message.sequence_number, proof.generation, proof.prev_hash, sent,
+        proof.block);
     value.wake_declarations();
 }
 
 void jd_client::remember_submitted(attempt& value, uint32_t sequence, uint32_t generation,
-    hash_digest const& previous, std::chrono::steady_clock::time_point sent) {
+    hash_digest const& previous, std::chrono::steady_clock::time_point sent, bool block) {
     if (value.tracked.size() >= max_tracked_shares) value.tracked.pop_front();
-    value.tracked.push_back(attempt::tracked_share{sequence, generation, previous, sent});
+    value.tracked.push_back(attempt::tracked_share{sequence, generation, previous, sent, block});
 }
 
 bool jd_client::push_block(attempt& value, mining::pool_proof const& proof) {

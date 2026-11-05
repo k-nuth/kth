@@ -2728,6 +2728,18 @@ TEST_CASE("sv2 JD pushes a block found before DeclareMiningJob.Success once", "[
     // SetCustomMiningJob.Success flushes the cached share and must not push again.
     REQUIRE(fixture.jds.frames.empty());
     expect_idle(fixture, fixture.jds.socket);
+
+    // The pool may reach this block's tip, from the PushSolution above, before
+    // it answers the share that found it, and call the job unknown. That is a
+    // race on the share's own block, not a refusal of current work.
+    captured_log log;
+    fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
+        "invalid-job-id"});
+    REQUIRE(fixture.wait_until([&] {
+        return log.count("share error invalid-job-id for the block found by sequence 0 counts as stale") >= 1;
+    }));
+    REQUIRE(log.count("pool refused a valid share") == 0);
+    expect_idle(fixture, fixture.jds.socket);
 }
 
 TEST_CASE("sv2 JD coinbase-only does not push a block to the JDS", "[sv2 jd]") {

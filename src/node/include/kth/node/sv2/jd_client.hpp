@@ -98,7 +98,7 @@ private:
     void note_share(attempt& value, mining::pool_proof const& proof);
     void forward_share(attempt& value, mining::pool_proof const& proof);
     void remember_submitted(attempt& value, uint32_t sequence, uint32_t generation,
-        hash_digest const& previous, std::chrono::steady_clock::time_point sent);
+        hash_digest const& previous, std::chrono::steady_clock::time_point sent, bool block);
     // False when the JDS queue refuses the frame and this attempt is stopping.
     [[nodiscard]] bool push_block(attempt& value, mining::pool_proof const& proof);
     [[nodiscard]] bool flush_pending_solutions(attempt& value);

@@ -301,6 +301,24 @@ TEST_CASE("sv2 jd upstream request fits eight bytes and accepts larger grants", 
     REQUIRE(refused.error == "invalid upstream extended channel");
 }
 
+TEST_CASE("sv2 jd names full-template when a JDS refuses coinbase-only setup", "[sv2 jd]") {
+    // SetupConnection.Error carries the flags behind the refusal. DECLARE_TX_DATA
+    // (bit 0) from a JDS means it accepts only full-template declarations.
+    auto coinbase_only = waiting(jd_peer::declaration, false);
+    auto const refused = process(coinbase_only, setup_connection_error{1, "unsupported-feature-flags"});
+    require_closed(coinbase_only, refused);
+    REQUIRE(refused.error == "upstream refused setup (unsupported-feature-flags); "
+        "this JDS requires full-template (sv2.jd.mode = full-template)");
+
+    // The hint is only for the JDS, and only when this node did not offer the flag.
+    for (auto const& [peer, full] : {std::pair{jd_peer::declaration, true}, std::pair{jd_peer::mining, false}}) {
+        auto setup = waiting(peer, full);
+        auto const plain = process(setup, setup_connection_error{1, "unsupported-feature-flags"});
+        require_closed(setup, plain);
+        REQUIRE(plain.error == "upstream refused setup (unsupported-feature-flags)");
+    }
+}
+
 TEST_CASE("sv2 jd refusal diagnostics retain bounded printable upstream error codes", "[sv2 jd]") {
     std::string const controls{'\0', '\t', '\n', '\r', '\x1b', '\x7f'};
     auto const cases = std::vector<std::pair<std::string, std::string>>{
