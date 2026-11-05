@@ -110,15 +110,6 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
 
 namespace {
 
-// The cashaddr form of `address` under `net`'s prefix. payment_address itself
-// encodes a regtest address under the testnet prefix.
-std::string cashaddr_for(domain::wallet::payment_address const& address,
-                         domain::config::network net) {
-    namespace cashaddr = domain::wallet::cashaddr;
-    auto const payload = cashaddr::decode(address.encoded_cashaddr(false), "").second;
-    return cashaddr::encode(domain::wallet::payment_address::cashaddr_prefix_for(net), payload);
-}
-
 // An output script's kind as the scriptPubKey "type", and the addresses it
 // pays with the number of signatures that takes; no addresses for an
 // unspendable or unrecognized script.
@@ -157,7 +148,7 @@ script_destination describe_output_script(domain::chain::script const& script,
             for (auto it = ops.begin() + 1; it + 2 < ops.end(); ++it) {
                 auto const address = payment_address::from_shorthash(bitcoin_short_hash(it->data()), p2kh);
                 if (address) {
-                    out.addresses.push_back(cashaddr_for(*address, net));
+                    out.addresses.push_back(address->encoded_cashaddr(net));
                 }
             }
             return out;
@@ -170,7 +161,7 @@ script_destination describe_output_script(domain::chain::script const& script,
             return out;
     }
     for (auto const& address : payment_address::extract_output(script, p2kh, p2sh)) {
-        out.addresses.push_back(cashaddr_for(address, net));
+        out.addresses.push_back(address.encoded_cashaddr(net));
     }
     out.required = out.addresses.empty() ? 0 : 1;
     return out;
