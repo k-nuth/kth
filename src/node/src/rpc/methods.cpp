@@ -24,9 +24,8 @@
 
 
 #include <asio/awaitable.hpp>
-#include <asio/co_spawn.hpp>
-#include <asio/use_awaitable.hpp>
 #include <simdjson.h>
+#include <spdlog/spdlog.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #if defined(KTH_CURRENCY_BCH)
@@ -77,36 +76,42 @@ std::expected<chain_progress, rpc_error> progress_for(
 }
 #endif
 
-// Runs on the chain's existing disk/work pool, never the RPC/network executor.
-// Own the path across suspension; there is no borrowed store state or new worker.
-::asio::awaitable<expect<uint64_t>> block_files_size(std::filesystem::path dir) {
+// The size of the block and undo files in `dir`: blk/rev followed by at least
+// five digits (flat_file_seq's minimum, not a maximum) and `.dat`. Symlinks are
+// followed, so files moved to another disk still count. size_on_disk is
+// informational: an unreadable file is skipped and a listing error stops the
+// scan with what was counted, both logged, and getblockchaininfo still answers.
+uint64_t block_files_size(std::filesystem::path const& dir) {
     uint64_t total = 0;
     std::error_code ec;
     std::filesystem::directory_iterator it(dir, ec);
-    if (ec) co_return kth::fail(ec);
-    for (std::filesystem::directory_iterator const end; it != end; it.increment(ec)) {
-        if (ec) co_return kth::fail(ec);
+    for (std::filesystem::directory_iterator const end; ! ec && it != end; it.increment(ec)) {
         auto const name = it->path().filename().string();
         std::string_view const file{name};
-        // flat_file_seq uses a minimum of five digits, not a maximum of five.
         if (file.size() < 12 || ! file.ends_with(".dat") ||
             (! file.starts_with("blk") && ! file.starts_with("rev")) ||
             ! std::ranges::all_of(file.substr(3, file.size() - 7),
                 [](char c) { return c >= '0' && c <= '9'; })) {
             continue;
         }
-        auto const status = it->symlink_status(ec);
-        if (ec) co_return kth::fail(ec);
-        if ( ! std::filesystem::is_regular_file(status)) continue;
-        auto const size = it->file_size(ec);
-        if (ec) co_return kth::fail(ec);
-        if (size > std::numeric_limits<uint64_t>::max() - total) {
-            co_return kth::fail(std::make_error_code(std::errc::value_too_large));
+        std::error_code file_ec;
+        if ( ! std::filesystem::is_regular_file(it->status(file_ec)) || file_ec) {
+            if (file_ec) {
+                spdlog::warn("[rpc] size_on_disk skips {}: {}", it->path().string(), file_ec.message());
+            }
+            continue;
+        }
+        auto const size = it->file_size(file_ec);
+        if (file_ec) {
+            spdlog::warn("[rpc] size_on_disk skips {}: {}", it->path().string(), file_ec.message());
+            continue;
         }
         total += size;
     }
-    if (ec) co_return kth::fail(ec);
-    co_return total;
+    if (ec) {
+        spdlog::warn("[rpc] size_on_disk could not list {}: {}", dir.string(), ec.message());
+    }
+    return total;
 }
 
 // How many blocks the connected chain has from the block at `height` with
@@ -458,9 +463,6 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 
     auto const chain_work = ctx.chain.headers().total_chain_work(view->tip_hash);
 
-    auto const size = co_await ::asio::co_spawn(ctx.chain.executor(),
-        block_files_size(ctx.chain.data_dir() / "blocks"), ::asio::use_awaitable);
-    if ( ! size) co_return kth::fail(from_code(size.error()));
 
 #if defined(KTH_CURRENCY_BCH)
     auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height);
@@ -476,7 +478,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         .difficulty = blockchain::difficulty_from_bits(view->state->work_required()),
         .median_time = view->state->median_time_past(),
         .chain_work = chain_work,
-        .size_on_disk = *size,
+        .size_on_disk = block_files_size(ctx.chain.data_dir() / "blocks"),
         .initial_block_download = ! synced.synchronized()
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress

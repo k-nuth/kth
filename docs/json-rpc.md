@@ -165,10 +165,9 @@ view, so they always describe the same tip.
   left out while the header index cannot name the tip.
 - `size_on_disk` is the size of the block and undo files as they are on disk,
   including the space each file has preallocated for the blocks to come (block
-  files grow in 128 MiB chunks). Only regular `blk`/`rev` files with numbered
-  `.dat` names are counted; symlinks and unrelated files are excluded. A scan
-  failure returns an RPC error instead of a partial total. The scan runs on
-  the chain work pool rather than the network/RPC executor.
+  files grow in 128 MiB chunks). Only `blk`/`rev` files with numbered `.dat`
+  names count, symlinked ones included. A file that cannot be read is skipped
+  and logged; it never turns the whole call into an error.
 - `pruned` is not reported.
 
 ## getchaintips

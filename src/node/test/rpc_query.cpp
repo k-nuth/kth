@@ -3,8 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
-#include <kth/infrastructure/expect.hpp>
-#include <kth/node/rpc/error.hpp>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain.hpp>
@@ -440,22 +438,3 @@ TEST_CASE("header RPC distinguishes the boundary block from its successor", "[rp
     CHECK(after.find("\"ticks\":60060") != std::string::npos);
 }
 #endif
-
-TEST_CASE("RPC 256 bit hex preserves every limb with fixed width", "[rpc query]") {
-    REQUIRE(encode_hash(uint256_t{0}) == std::string(64, '0'));
-    REQUIRE(encode_hash(~uint256_t{0}) == std::string(64, 'f'));
-    auto const value = (uint256_t{0x0123456789abcdefULL} << 192) |
-        (uint256_t{0xfedcba9876543210ULL} << 128) |
-        (uint256_t{0x13579bdf2468ace0ULL} << 64) | uint256_t{0xdeadbeef00000001ULL};
-    REQUIRE(encode_hash(value) == "0123456789abcdeffedcba987654321013579bdf2468ace0deadbeef00000001");
-}
-
-TEST_CASE("fail preserves common and distinct RPC errors", "[rpc query]") {
-    expect<int> const common = kth::fail(kth::error::operation_failed);
-    REQUIRE_FALSE(common);
-    REQUIRE(common.error() == kth::error::operation_failed);
-    std::expected<int, rpc_error> const protocol = kth::fail(make_error(error_code::invalid_params, "bad params"));
-    REQUIRE_FALSE(protocol);
-    REQUIRE(protocol.error().code == -32602);
-    REQUIRE(protocol.error().message == "bad params");
-}

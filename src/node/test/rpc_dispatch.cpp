@@ -993,7 +993,7 @@ TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long 
     }
 }
 
-TEST_CASE("getblockchaininfo disk size counts only block and undo regular files", "[rpc dispatch]") {
+TEST_CASE("getblockchaininfo disk size counts only block and undo files", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_disk_size");
     REQUIRE(fixture.created());
     REQUIRE(fixture.start());
@@ -1022,14 +1022,19 @@ TEST_CASE("getblockchaininfo disk size counts only block and undo regular files"
     make_file(blocks / "blkabcde.dat", 300);
     make_file(blocks / "blk1234.dat", 400);
     std::filesystem::create_directory(blocks / "blk12345.dat");
+    uint64_t linked = 0;
 #if ! defined(_WIN32)
+    // A block file moved to another disk and linked back still counts; a
+    // dangling link is skipped.
     make_file(fixture.dir() / "external.dat", 500);
     std::filesystem::create_symlink(fixture.dir() / "external.dat", blocks / "rev99999.dat");
+    std::filesystem::create_symlink(fixture.dir() / "missing.dat", blocks / "blk88888.dat");
+    linked = 500;
 #endif
-    REQUIRE(size() == before + 18);
+    REQUIRE(size() == before + 18 + linked);
 }
 
-TEST_CASE("getblockchaininfo reports a disk scan failure rather than zero", "[rpc dispatch]") {
+TEST_CASE("getblockchaininfo still answers when the block files cannot be listed", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_disk_size_error");
     REQUIRE(fixture.created());
     REQUIRE(fixture.start());
@@ -1043,8 +1048,9 @@ TEST_CASE("getblockchaininfo reports a disk scan failure rather than zero", "[rp
     // Restore the open store's paths before checking the RPC observation.
     restore.run();
     REQUIRE(std::filesystem::is_directory(blocks));
-    REQUIRE(raw.find(R"("code":-32603)") != std::string::npos);
-    REQUIRE(raw.find(R"("result":null)") != std::string::npos);
+    // size_on_disk is informational: the listing error is logged, not returned.
+    REQUIRE(raw.find(R"("error":null)") != std::string::npos);
+    REQUIRE(raw.find(R"("size_on_disk":0,)") != std::string::npos);
 }
 
 TEST_CASE("getblockchaininfo uses the active header tip while blocks are behind", "[rpc dispatch]") {
