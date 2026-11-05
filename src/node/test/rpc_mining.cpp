@@ -4,7 +4,12 @@
 
 #include <test_helpers.hpp>
 
+#include <memory>
+#include <string>
+
 #include <kth/domain.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/node/rpc/mining.hpp>
 
 using namespace kth;
@@ -34,7 +39,41 @@ TEST_CASE("render_mining_template serializes the GBT-light fields", "[rpc mining
         R"("sizelimit":32000000,"sigchecklimit":226950,)"
         R"("noncerange":"00000000ffffffff",)"
         R"("mutable":["time","transactions","prevblock"],)"
-        R"("job_id":"testjob"})");
+        R"("job_id":"testjob","merkle":[]})");
+}
+
+TEST_CASE("render_mining_template carries the coinbase merkle branch", "[rpc mining]") {
+    auto const make_tx = [](uint32_t locktime) {
+        return std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1u, locktime, {}, {}});
+    };
+    auto const first = make_tx(11u);
+    auto const second = make_tx(22u);
+
+    blockchain::block_template selection{};
+    selection.txs = {first, second};
+    blockchain::mining_template tmpl{
+        /*version*/ 0x20000000u,
+        /*previous_block_hash*/ null_hash,
+        /*height*/ 5u,
+        /*bits*/ 0x1d00ffffu,
+        /*min_time*/ 1000u,
+        /*current_time*/ 2000u,
+        /*coinbase_value*/ 5000000000ULL,
+        /*size_limit*/ 32000000u,
+        /*sigchecks_limit*/ 226950u,
+        selection};
+
+    // Coinbase, first, second: the coinbase pairs with `first`, then with the
+    // hash of `second` paired with itself, the odd one out of its level.
+    data_chunk pair;
+    extend_data(pair, second->hash());
+    extend_data(pair, second->hash());
+    auto const expected = std::string(R"("job_id":"testjob","merkle":[")") +
+        encode_hash(first->hash()) + R"(",")" + encode_hash(bitcoin_hash(pair)) + R"("]})";
+
+    auto const rendered = render_mining_template(tmpl, "testjob");
+    REQUIRE(rendered.ends_with(expected));
 }
 
 TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining]") {
@@ -50,7 +89,7 @@ TEST_CASE("render_mining_info serializes the getmininginfo fields", "[rpc mining
         .fresh = true};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"Mainnet",)"
+        R"({"blocks":42,"difficulty":1.0,"pooledtx":3,"chain":"main",)"
         R"("transitioninprogress":false,"caughtup":true,"fresh":true,"warnings":""})");
 }
 
@@ -69,7 +108,7 @@ TEST_CASE("render_mining_info reports the three refusal reasons apart", "[rpc mi
         .fresh = false};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":7,"difficulty":2.5,"pooledtx":0,"chain":"Regtest",)"
+        R"({"blocks":7,"difficulty":2.5,"pooledtx":0,"chain":"regtest",)"
         R"("transitioninprogress":true,"caughtup":false,"fresh":false,"warnings":""})");
 }
 
@@ -88,6 +127,78 @@ TEST_CASE("render_mining_info reports a caught-up but stale tip", "[rpc mining]"
         .fresh = false};
 
     REQUIRE(render_mining_info(info) ==
-        R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"Regtest",)"
+        R"({"blocks":9,"difficulty":1.0,"pooledtx":1,"chain":"regtest",)"
         R"("transitioninprogress":false,"caughtup":true,"fresh":false,"warnings":""})");
+}
+
+TEST_CASE("render_block_template serializes the GBT fields with the transactions", "[rpc mining]") {
+    // A parent and a child that spends it, in template order.
+    auto const parent = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 11u, {}, {}});
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{parent->hash(), 0}, domain::chain::script{}, 0xffffffffu);
+    auto const child = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 22u, std::move(ins), {}});
+
+    blockchain::block_template selection{};
+    selection.txs = {parent, child};
+    selection.policy = {{300u, 2u}, {200u, 3u}};
+    blockchain::mining_template tmpl{
+        /*version*/ 0x20000000u,
+        /*previous_block_hash*/ null_hash,
+        /*height*/ 5u,
+        /*bits*/ 0x1d00ffffu,
+        /*min_time*/ 1000u,
+        /*current_time*/ 2000u,
+        /*coinbase_value*/ 5000000300ULL,
+        /*size_limit*/ 32000000u,
+        /*sigchecks_limit*/ 226950u,
+        selection};
+
+    // Both entries are owned by the selection, independently of the live pool.
+    auto const json = render_block_template(tmpl);
+    auto const hex = [](transaction_const_ptr const& tx) {
+        domain::chain::transaction const& chain_tx = *tx;
+        return encode_base16(to_data_chunk(chain_tx, /*wire*/ true));
+    };
+    REQUIRE(json ==
+        std::string(R"({"capabilities":[],"version":536870912,)") +
+        R"("previousblockhash":"0000000000000000000000000000000000000000000000000000000000000000",)" +
+        R"("transactions":[{"data":")" + hex(parent) + R"(","txid":")" + encode_hash(parent->hash()) +
+        R"(","hash":")" + encode_hash(parent->hash()) + R"(","fee":300,"sigops":2},)" +
+        R"({"data":")" + hex(child) + R"(","txid":")" + encode_hash(child->hash()) +
+        R"(","hash":")" + encode_hash(child->hash()) + R"(","depends":[1],"fee":200,"sigops":3}],)" +
+        R"("coinbaseaux":{"flags":""},"coinbasevalue":5000000300,)" +
+        R"("target":"00000000ffff0000000000000000000000000000000000000000000000000000",)" +
+        R"("mintime":1000,"mutable":["time","transactions","prevblock"],"noncerange":"00000000ffffffff",)" +
+        R"("sigoplimit":226950,"sizelimit":32000000,"curtime":2000,"bits":"1d00ffff","height":5})");
+}
+
+TEST_CASE("block template dependencies deduplicate inputs independently per transaction", "[rpc mining][template dependencies]") {
+    auto const parent = [](uint32_t tag) {
+        return std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1u, tag, {}, {}});
+    };
+    auto const a = parent(1);
+    auto const b = parent(2);
+    auto const later = parent(3);
+    auto const child = [&](uint32_t tag) {
+        domain::chain::input::list inputs;
+        for (auto const& tx : {b, a, b, later, a}) {
+            inputs.emplace_back(domain::chain::output_point{tx->hash(), 0},
+                domain::chain::script{}, 0xffffffffu);
+        }
+        return std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1u, tag, std::move(inputs), {}});
+    };
+    blockchain::mining_template tmpl{};
+    tmpl.selection.txs = {a, b, child(4), child(5), later};
+    auto const json = render_block_template(tmpl);
+    auto const depends = std::string(R"("depends":[2,1])");
+    auto const first = json.find(depends);
+    REQUIRE(first != std::string::npos);
+    auto const second = json.find(depends, first + depends.size());
+    REQUIRE(second != std::string::npos);
+    CHECK(json.find(depends, second + depends.size()) == std::string::npos);
+    CHECK(json.find(R"("depends":[2,1,2)") == std::string::npos);
 }
