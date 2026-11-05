@@ -67,3 +67,15 @@ TEST_CASE("pkcs5 pbkdf2 hmac sha512 test", "[hash tests]") {
 }
 
 // End Test Suite
+
+TEST_CASE("uint256 byte conversion preserves numeric order and all bits", "[hash tests]") {
+    for (size_t bit = 0; bit < 256; ++bit) {
+        uint256_t const value = uint256_t(1) << bit;
+        auto const bytes = to_hash_digest(value);
+        REQUIRE(bytes[bit / 8] == uint8_t(1u << (bit % 8)));
+        REQUIRE(to_uint256(bytes) == value);
+    }
+    REQUIRE(encode_hash(to_hash_digest(uint256_t(0))) == std::string(64, '0'));
+    REQUIRE(encode_hash(to_hash_digest(uint256_t(1))) == std::string(63, '0') + "1");
+    REQUIRE(encode_hash(to_hash_digest(~uint256_t(0))) == std::string(64, 'f'));
+}

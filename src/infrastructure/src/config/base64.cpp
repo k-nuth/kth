@@ -35,11 +35,9 @@ byte_span base64::as_span() const noexcept {
 }
 
 std::expected<base64, std::error_code> base64::from_string(std::string_view text) noexcept {
-    data_chunk value;
-    if ( ! decode_base64(value, text)) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
-    return base64(std::move(value));
+    auto value = decode_base64(text);
+    if (!value) return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    return base64(std::move(*value));
 }
 
 std::string base64::to_string() const {

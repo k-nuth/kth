@@ -19,6 +19,13 @@ finalization::finalization(header_index const& index,
 {}
 
 void finalization::maybe_advance(index_t active_tip_idx, int32_t block_valid_height, int64_t now) {
+#if defined(KTH_CURRENCY_BCH)
+    maybe_advance(active_tip_idx, block_valid_height, now, domain::chain::block_ticks{});
+}
+
+void finalization::maybe_advance(index_t active_tip_idx, int32_t block_valid_height, int64_t now,
+                                 domain::chain::block_ticks const& schedule) {
+#endif
     // Finalization disabled (BCHN -maxreorgdepth = -1).
     if (max_reorg_depth_ < 0) {
         return;
@@ -34,12 +41,24 @@ void finalization::maybe_advance(index_t active_tip_idx, int32_t block_valid_hei
         return;
     }
 
-    // Depth rule: the candidate is the active-chain block max_reorg_depth below
-    // the validated tip.
+    // A header tip can run ahead of connected blocks. The gate measures only
+    // from the validated tip and counts ideal time across interval changes.
+    if (block_valid_height < 0 || block_valid_height > index_.get_height(active_tip_idx)) {
+        return;
+    }
+#if defined(KTH_CURRENCY_BCH)
+    auto const validated_tick = schedule.height_to_tick(uint64_t(block_valid_height));
+    auto const required_ticks = uint64_t(max_reorg_depth_) * 600;
+    if (validated_tick < required_ticks) {
+        return;
+    }
+    auto const candidate_height = int32_t(schedule.tick_to_height(validated_tick - required_ticks));
+#else
     int32_t const candidate_height = block_valid_height - max_reorg_depth_;
     if (candidate_height < 0) {
         return;
     }
+#endif
 
     // Single writer (block-validation path), so a relaxed load of our own pointer
     // is fine here; the store below publishes with release for the header reader.
