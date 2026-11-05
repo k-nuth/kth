@@ -25,6 +25,9 @@
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/blockchain/tick_schedule.hpp>
+#endif
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/version.hpp>
 #include <kth/domain/message/transaction.hpp>
@@ -46,6 +49,29 @@
 namespace kth::node::rpc {
 
 namespace {
+#if defined(KTH_CURRENCY_BCH)
+std::expected<chain_progress, rpc_error> progress_for(
+    blockchain::block_chain const& chain, hash_digest const& hash, size_t height) {
+    auto const& index = chain.headers();
+    auto const idx = index.find(hash);
+    if (idx == blockchain::header_index::null_index) {
+        return std::unexpected(make_error(error_code::internal_error,
+            "block progress unavailable"));
+    }
+    auto const published = chain.chain_view();
+    if (!published) {
+        return std::unexpected(make_error(error_code::internal_error,
+            "chain context unavailable"));
+    }
+    blockchain::validate_header validator(chain.chain_settings(), published->state->network());
+    auto const schedule = blockchain::tick_schedule_for_tip(validator, index, idx);
+    if (!schedule) {
+        return std::unexpected(from_code(schedule.error()));
+    }
+    return chain_progress{schedule->height_to_tick(height),
+        schedule->block_interval(height), schedule->next_block_interval(height)};
+}
+#endif
 
 // How many blocks the connected chain has from the block at `height` with
 // `hash` up to its tip, that block included; -1 when that block is not on the
@@ -99,7 +125,16 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
     }
 
     auto const job_id = ctx.jobs.add(tmpl->selection.txs);
+#if defined(KTH_CURRENCY_BCH)
+    // The template's parent fixes its branch even if the active tip changes.
+    auto const progress = progress_for(ctx.chain, tmpl->previous_block_hash, tmpl->height);
+    if (!progress) {
+        co_return std::unexpected(progress.error());
+    }
+    co_return render_mining_template(*tmpl, job_id, *progress);
+#else
     co_return render_mining_template(*tmpl, job_id);
+#endif
 }
 
 // getblocktemplate [template_request] -> the next-block template with its
@@ -153,11 +188,26 @@ get_block_template(method_context& ctx, request const& req) {
 // C-API counterpart: kth_chain_async_fetch_mining_info (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_mining_info(method_context& ctx, request const& /*req*/) {
+#if defined(KTH_CURRENCY_BCH)
+    auto const published = ctx.chain.chain_view();
+#endif
     auto const info = co_await ctx.chain.fetch_mining_info();
     if ( ! info) {
         co_return kth::fail(from_code(info.error()));
     }
+#if defined(KTH_CURRENCY_BCH)
+    if (!published || ctx.chain.chain_view() != published) {
+        co_return std::unexpected(make_error(error_code::internal_error,
+            "mining progress unavailable during chain transition"));
+    }
+    auto const progress = progress_for(ctx.chain, published->tip_hash, info->blocks);
+    if (!progress) {
+        co_return std::unexpected(progress.error());
+    }
+    co_return render_mining_info(*info, *progress);
+#else
     co_return render_mining_info(*info);
+#endif
 }
 
 // submitblocklight -> reconstruct the full block from the miner's solved header +
@@ -370,6 +420,12 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
             "chain height unavailable"));
     }
 
+#if defined(KTH_CURRENCY_BCH)
+    auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height);
+    if (!progress) {
+        co_return kth::fail(progress.error());
+    }
+#endif
     co_return render_blockchain_info({
         .chain = domain::config::chain_name(view->state->network()),
         .blocks = view->connected_tip_height,
@@ -379,7 +435,11 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         .median_time = view->state->median_time_past(),
         .chain_work = ctx.chain.headers().total_chain_work(view->tip_hash),
         .size_on_disk = files_size(ctx.chain.data_dir() / "blocks"),
-        .initial_block_download = ! ctx.chain.synchronization().synchronized()});
+        .initial_block_download = ! ctx.chain.synchronization().synchronized()
+#if defined(KTH_CURRENCY_BCH)
+        , .progress = *progress
+#endif
+    });
 }
 
 // getchaintips -> every chain tip the header index knows, highest first: the
@@ -479,8 +539,15 @@ get_block_header(method_context& ctx, request const& req) {
     }
 
     auto const& [header, height] = *result;
-    co_return render_block_header(*header, height, *hash,
-        confirmations(ctx.chain, height, *hash));
+#if defined(KTH_CURRENCY_BCH)
+    auto const progress = progress_for(ctx.chain, *hash, height);
+    if (!progress) {
+        co_return std::unexpected(progress.error());
+    }
+    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash), *progress);
+#else
+    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash));
+#endif
 }
 
 // sendrawtransaction <hexstring> -> the accepted txid, or a reject error.

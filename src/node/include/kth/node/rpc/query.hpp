@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <kth/node/rpc/chain_progress.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,6 +53,7 @@ struct blockchain_info {
     std::optional<uint256_t> chain_work; // absent while the header index cannot name the tip
     uint64_t size_on_disk;          // block and undo files
     bool initial_block_download;         // the node is not yet synchronized
+    std::optional<chain_progress> progress = std::nullopt;
 };
 
 // Serialize the getblockchaininfo result object. verificationprogress is the
@@ -135,7 +137,8 @@ std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listi
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
-                                int64_t confirmations);
+                                int64_t confirmations,
+                                std::optional<chain_progress> progress = std::nullopt);
 
 // validateaddress result object for `address` on network `net`: only
 // {"isvalid":false} unless it is a P2PKH or P2SH address of that network,

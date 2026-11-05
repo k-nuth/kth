@@ -324,6 +324,7 @@ TEST_CASE("chain_name gives each network's short chain name", "[rpc query]") {
     REQUIRE(domain::config::chain_name(network::testnet4) == "test4");
     REQUIRE(domain::config::chain_name(network::scalenet) == "scale");
     REQUIRE(domain::config::chain_name(network::chipnet) == "chip");
+    REQUIRE(domain::config::chain_name(network::tempnet) == "temp");
     REQUIRE(domain::config::chain_name(network::regtest) == "regtest");
 }
 
@@ -340,6 +341,7 @@ TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
     REQUIRE(chain_name(network::testnet4, chain_name_format::display) == "Testnet4");
     REQUIRE(chain_name(network::scalenet, chain_name_format::display) == "Scalenet");
     REQUIRE(chain_name(network::chipnet, chain_name_format::display) == "Chipnet");
+    REQUIRE(chain_name(network::tempnet, chain_name_format::display) == "Tempnet");
 #endif
 }
 
@@ -409,3 +411,30 @@ TEST_CASE("render_raw_mempool_verbose keys each entry by its txid", "[rpc query]
         std::string(R"({")") + zeros + R"(":{"fees":{"base":0.00000219,"modified":0.00000219},)" +
         R"("size":219,"time":42,"depends":[],"spentby":[")" + zeros + R"("]}})");
 }
+#if defined(KTH_CURRENCY_BCH)
+#if __has_include(<kth/node/rpc/chain_progress.hpp>)
+#include <kth/node/rpc/chain_progress.hpp>
+#endif
+TEST_CASE("blockchain RPC exposes tick height and both boundary intervals", "[rpc query][faster_blocks]") {
+    auto const text = render_blockchain_info({
+        .chain = "chip", .blocks = 100, .headers = 100,
+        .best_block_hash = null_hash, .difficulty = 1.0,
+        .median_time = 0, .chain_work = std::nullopt, .size_on_disk = 0,
+        .initial_block_download = false, .progress = chain_progress{60000, 600, 60}});
+    CHECK(text.find("\"ticks\":60000") != std::string::npos);
+    CHECK(text.find("\"target_time\":600") != std::string::npos);
+    CHECK(text.find("\"next_target_time\":60") != std::string::npos);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("header RPC distinguishes the boundary block from its successor", "[rpc query][faster_blocks]") {
+    domain::chain::header const header{4, null_hash, null_hash, 1000, 0x1d00ffff, 0};
+    auto const before = render_block_header(header, 100, null_hash, 1, chain_progress{60000, 600, 60});
+    CHECK(before.find("\"ticks\":60000") != std::string::npos);
+    CHECK(before.find("\"target_time\":600") != std::string::npos);
+    CHECK(before.find("\"next_target_time\":60") != std::string::npos);
+    auto const after = render_block_header(header, 101, null_hash, 1, chain_progress{60060, 60, 60});
+    CHECK(after.find("\"ticks\":60060") != std::string::npos);
+}
+#endif

@@ -12,6 +12,7 @@
 #include <optional>
 #include <vector>
 
+#include <kth/domain/chain/block_ticks.hpp>
 #include <kth/domain/chain/output_point.hpp>
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/define.hpp>
@@ -98,6 +99,11 @@ struct KD_API input {
 
     [[nodiscard]]
     bool is_locked(size_t block_height, uint32_t median_time_past) const;
+
+    /// Height-mode relative lock in ticks: locked while
+    /// T(block_height) - T(prevout height) < 600 * n. Time-mode is unchanged.
+    [[nodiscard]]
+    bool is_locked(block_ticks const& ticks, size_t block_height, uint32_t median_time_past) const;
 
     [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;

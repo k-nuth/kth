@@ -54,6 +54,11 @@ std::string render_blockchain_info(blockchain_info const& info) {
     w.field("headers", uint64_t(info.headers));
     w.field("bestblockhash", encode_hash(info.best_block_hash));
     w.field("difficulty", info.difficulty);
+    if (info.progress) {
+        w.field("ticks", info.progress->ticks);
+        w.field("target_time", info.progress->target_time);
+        w.field("next_target_time", info.progress->next_target_time);
+    }
     w.field("mediantime", int64_t(info.median_time));
     w.field("verificationprogress", progress);
     w.field("initialblockdownload", info.initial_block_download);
@@ -430,12 +435,18 @@ std::string header_to_hex(domain::chain::header const& header) {
 
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
-                                int64_t confirmations) {
+                                int64_t confirmations,
+                                std::optional<chain_progress> progress) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
     w.field("confirmations", confirmations);
     w.field("height", uint64_t(height));
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+        w.field("next_target_time", progress->next_target_time);
+    }
     w.field("version", int64_t(header.version()));
     w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     w.field("merkleroot", encode_hash(header.merkle()));
