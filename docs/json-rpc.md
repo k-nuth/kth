@@ -249,3 +249,18 @@ reconstructed block to the chain. Returns the Bitcoin `submitblock` result: `nul
 when accepted, otherwise a reject-reason string (e.g. `"duplicate block"`,
 `"high-hash"`). Malformed input (missing args, bad hex, undecodable block, unknown
 or expired `job_id`) is a JSON-RPC `-32602` error instead.
+
+### Runtime query ownership
+
+Node runtime queries use `node::query_port<Query, Reply>` from
+`kth/node/query_port.hpp`. The port transports owned, typed messages; it exposes
+no node object, member pointer or callback. The state owner receives requests in
+its execution context and decides when to return a copied or moved reply.
+`network_status_port` is the parameterless network-status specialization.
+
+Use separate bounded ports for different owners or admission policies. A query
+payload can describe several operations owned by the same service, but there is
+no global queue that serializes every subsystem behind an unrelated slow query.
+Cancellation abandons only the caller's reply; closing a port wakes admission
+and reply waits. The lifecycle coordinator stops producers and joins clients and
+services before destroying their ports or dependencies.

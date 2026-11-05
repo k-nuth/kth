@@ -134,7 +134,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_network_status_ = std::make_unique<kth::network::status_port>();
+        rpc_network_status_ = std::make_unique<kth::node::network_status_port>();
         rpc::network_configuration config{network_settings_.user_agent,
             network_settings_.protocol_maximum, network_settings_.services,
             network_settings_.relay_transactions};

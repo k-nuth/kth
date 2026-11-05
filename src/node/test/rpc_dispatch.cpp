@@ -825,12 +825,12 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     node::rpc::register_builtin_methods(dispatcher);
     auto request = [&](std::string_view params) {
         ::asio::io_context io;
-        network::status_port status;
+        node::network_status_port status;
         node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
         auto const body = std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
         auto call = [&]() -> ::asio::awaitable<std::string> {
             struct close_port {
-                network::status_port& port;
+                node::network_status_port& port;
                 ~close_port() { port.close(); }
             } guard{status};
             co_return co_await dispatcher.handle(context, body);
@@ -855,13 +855,13 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
     REQUIRE(fixture.start());
     node::mining::job_store jobs(1, 60);
     ::asio::io_context io;
-    network::status_port status;
+    node::network_status_port status;
     node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
     node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
     node::rpc::dispatcher dispatcher;
     node::rpc::register_builtin_methods(dispatcher);
     constexpr auto body = R"({"method":"getnetworkinfo","params":[],"id":9})";
-    for (auto const state : {network::status{true, 12}, network::status{false, 0}}) {
+    for (auto const state : {node::network_status{true, 12}, node::network_status{false, 0}}) {
         io.restart();
         auto respond = [&]() -> ::asio::awaitable<void> {
             auto request = co_await status.receive();
@@ -904,7 +904,7 @@ TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellati
 
 TEST_CASE("network status port bounds admission and isolates cancelled replies", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(1);
+    node::network_status_port port(1);
     auto first = ::asio::co_spawn(io, port.read(), ::asio::use_future);
     io.poll(); // first request occupies the only admission slot
     ::asio::cancellation_signal cancel;
@@ -929,7 +929,7 @@ TEST_CASE("network status port bounds admission and isolates cancelled replies",
 
 TEST_CASE("network status shutdown wakes admission and replies before owner starts", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(1);
+    node::network_status_port port(1);
     size_t completed = 0;
     bool watchdog_fired = false;
     ::asio::cancellation_signal cancel_queued;
@@ -942,7 +942,7 @@ TEST_CASE("network status shutdown wakes admission and replies before owner star
             cancel_waiting.emit(::asio::cancellation_type::all);
         }
     });
-    auto tracked_read = [&]() -> ::asio::awaitable<network::status> {
+    auto tracked_read = [&]() -> ::asio::awaitable<node::network_status> {
         struct completion {
             size_t& count;
             ::asio::steady_timer& deadline;
@@ -971,7 +971,7 @@ TEST_CASE("network status shutdown wakes admission and replies before owner star
 
 TEST_CASE("network status shutdown abandons an in-flight reply", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(1);
+    node::network_status_port port(1);
     auto client = ::asio::co_spawn(io, port.read(), ::asio::use_future);
     auto owner = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
     io.poll();
@@ -986,7 +986,7 @@ TEST_CASE("network status shutdown abandons an in-flight reply", "[rpc dispatch]
 
 TEST_CASE("network status cancellation leaves another admitted client intact", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
-    network::status_port port(2);
+    node::network_status_port port(2);
     ::asio::cancellation_signal cancel;
     auto first = ::asio::co_spawn(io, port.read(),
         ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
@@ -1013,7 +1013,7 @@ TEST_CASE("network status service cancelled before startup closes its clients", 
     settings.threads = 1;
     node::p2p_node node(settings);
     ::asio::io_context io;
-    network::status_port port(1);
+    node::network_status_port port(1);
     bool client_done = false;
     bool watchdog_fired = false;
     std::exception_ptr client_error;
@@ -1024,7 +1024,7 @@ TEST_CASE("network status service cancelled before startup closes its clients", 
             port.close(); // recover a broken implementation, retaining the failure
         }
     });
-    ::asio::co_spawn(io, port.read(), [&](std::exception_ptr error, network::status) {
+    ::asio::co_spawn(io, port.read(), [&](std::exception_ptr error, node::network_status) {
         client_error = error;
         client_done = true;
         watchdog.cancel();
@@ -1047,7 +1047,7 @@ TEST_CASE("network status service on a pool joins concurrent shutdown", "[rpc di
         network::settings settings;
         ::asio::thread_pool workers{4};
         node::p2p_node node;
-        network::status_port port{4};
+        node::network_status_port port{4};
 
         fixture() : settings(make_settings()), node(settings) {}
         static network::settings make_settings() {
@@ -1067,7 +1067,7 @@ TEST_CASE("network status service on a pool joins concurrent shutdown", "[rpc di
     for (size_t round = 0; round < 32; ++round) {
         fixture state;
         auto service = ::asio::co_spawn(state.workers, state.node.serve_network_status(state.port), ::asio::use_future);
-        std::vector<std::future<network::status>> clients;
+        std::vector<std::future<node::network_status>> clients;
         for (size_t i = 0; i < 16; ++i) {
             clients.push_back(::asio::co_spawn(state.workers, state.port.read(), ::asio::use_future));
         }
@@ -1087,4 +1087,48 @@ TEST_CASE("network status service on a pool joins concurrent shutdown", "[rpc di
     }
     CHECK(completed == 32 * 16);
     CHECK(invalid == 0);
+}
+
+TEST_CASE("node query port transfers owned typed payloads to the owner", "[rpc dispatch][rpc status]") {
+    struct query {
+        std::string key;
+        std::unique_ptr<uint64_t> value;
+    };
+    struct reply {
+        std::string key;
+        std::unique_ptr<uint64_t> value;
+    };
+    ::asio::io_context io;
+    node::query_port<query, reply> port(2);
+    auto first = ::asio::co_spawn(io,
+        port.read({"first", std::make_unique<uint64_t>(17)}), ::asio::use_future);
+    auto second = ::asio::co_spawn(io,
+        port.read({"second", std::make_unique<uint64_t>(23)}), ::asio::use_future);
+    io.poll();
+    CHECK(first.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+    CHECK(second.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+    auto take_first = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    auto take_second = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+    io.poll();
+    REQUIRE(take_first.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    REQUIRE(take_second.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    auto a = take_first.get();
+    auto b = take_second.get();
+    REQUIRE(a.query.key == "first");
+    REQUIRE(b.query.key == "second");
+    REQUIRE(*a.query.value == 17);
+    REQUIRE(*b.query.value == 23);
+    // Only the owner publishes. Reverse delivery must preserve correlation.
+    b.respond({std::move(b.query.key), std::move(b.query.value)});
+    a.respond({std::move(a.query.key), std::move(a.query.value)});
+    io.run();
+    auto one = first.get();
+    auto two = second.get();
+    CHECK(one.key == "first");
+    REQUIRE(one.value);
+    CHECK(*one.value == 17);
+    CHECK(two.key == "second");
+    REQUIRE(two.value);
+    CHECK(*two.value == 23);
+    port.close();
 }

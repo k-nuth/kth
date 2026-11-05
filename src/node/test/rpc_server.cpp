@@ -67,7 +67,7 @@ struct rpc_server_fixture {
 
     [[nodiscard]] bool start(
         std::optional<node::rpc::network_configuration> config = std::nullopt,
-        network::status_port const* status = nullptr) {
+        node::network_status_port const* status = nullptr) {
         if ( ! chain.created() || ! chain.start()) return false;
         server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor(),
             std::move(config), status);
@@ -182,7 +182,7 @@ struct rpc_server_fixture {
     test::chain_fixture chain;
     node::rpc_settings settings;
     ::asio::io_context io;
-    network::status_port network_status;
+    node::network_status_port network_status;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
     std::future<void> server_done;

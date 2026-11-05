@@ -302,18 +302,18 @@ size_t p2p_node::connection_count() const {
     return manager_.count_snapshot();
 }
 
-::asio::awaitable<kth::network::status> p2p_node::network_status() const {
+::asio::awaitable<kth::node::network_status> p2p_node::network_status() const {
     // count() sends an awaited request to the peer manager strand. The P2P
     // pool remains alive until RPC and the core tasks have joined. Read the
     // existing lifecycle after the reply so a stop during the request wins.
     auto const count = co_await manager_.count();
     auto const active = ! stopped();
-    co_return kth::network::status{active, active ? count : 0};
+    co_return kth::node::network_status{active, active ? count : 0};
 }
 
-::asio::awaitable<void> p2p_node::serve_network_status(kth::network::status_port& port) const {
+::asio::awaitable<void> p2p_node::serve_network_status(kth::node::network_status_port& port) const {
     struct close_port {
-        kth::network::status_port& port;
+        kth::node::network_status_port& port;
         ~close_port() { port.close(); }
     } guard{port};
     try {
