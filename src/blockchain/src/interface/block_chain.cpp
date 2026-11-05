@@ -1328,18 +1328,14 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
         return database::disconnect_result::failed;
     }
 
-    if ( ! header_index_.has_block_data(idx)) {
-        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
-        return database::disconnect_result::failed;
-    }
-
     // The outputs the block created are not stored in the undo record: they are
     // recomputed here by re-reading the block, which is why undo data only needs
     // to carry what was spent.
-    database::flat_file_pos const pos{
-        header_index_.get_file_number(idx),
-        header_index_.get_data_pos(idx)
-    };
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
+        return database::disconnect_result::failed;
+    }
     auto raw = block_store_->read_block_raw(pos);
     if ( ! raw) {
         spdlog::error("[blockchain] disconnect_block: cannot read block at height {}", height);
@@ -2644,28 +2640,78 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// DEPRECATED: Block storage moved to flat files (blk*.dat)
-// These functions will return not_found until we implement reading from flat files
+awaitable_expected<std::pair<block_const_ptr, size_t>>
+block_chain::read_stored_block(hash_digest const& hash, size_t height,
+                               database::flat_file_pos pos) const {
+    // Disk I/O and parsing run on priority_pool_, like store_block, so a
+    // caller on the network executor (RPC, peers) is not held by them. The
+    // store opens the file for each read, so this does not contend with the
+    // writer appending to it.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash, height, pos]() -> awaitable_expected<std::pair<block_const_ptr, size_t>> {
+            auto const raw = block_store_->read_block_raw(pos);
+            if ( ! raw) {
+                spdlog::error("[blockchain] cannot read block {} from the block files at {}",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+
+            // The record must be exactly the block the index names. A record
+            // that parses but is another block, or whose transactions do not
+            // match its header, is damage, and answering with it would hand a
+            // client the wrong data as if it were right.
+            byte_reader reader(*raw);
+            auto block = domain::message::block::from_data(reader, 0u);
+            if ( ! block || ! reader.is_exhausted() || block->hash() != hash ||
+                    ! block->is_valid_merkle_root()) {
+                spdlog::error("[blockchain] the record of block {} at {} is not that block",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::pair{std::make_shared<domain::message::block const>(std::move(*block)), height};
+        },
+        ::asio::use_awaitable);
+}
+
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
+    }
+    if (height > size_t(max_int32)) {
+        co_return kth::fail(error::not_found);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)height;
-    co_return std::unexpected(error::not_found);
+    // The block on the active chain at that height. The index also holds side
+    // branches, numbered in arrival order, so an entry's index is not its height.
+    auto const idx = header_index_.active_at(int32_t(height));
+    if (idx == header_index::null_index) {
+        co_return kth::fail(error::not_found);
+    }
+    // Storage may be recording this block's location right now: one read
+    // gives both halves of it, or none.
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(header_index_.get_hash(idx), height, pos);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)hash;
-    co_return std::unexpected(error::not_found);
+    auto const idx = header_index_.find(hash);
+    if (idx == header_index::null_index) {
+        co_return kth::fail(error::not_found);
+    }
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(hash, size_t(header_index_.get_height(idx)), pos);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
@@ -2693,14 +2739,12 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
             return std::unexpected(database::result_code::key_not_found);
         }
 
-        if (!header_index_.has_block_data(idx)) {
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
             spdlog::error("[blockchain] fetch_blocks_raw: No block data for height {}", h);
             return std::unexpected(database::result_code::key_not_found);
         }
-
-        auto file_num = header_index_.get_file_number(idx);
-        auto data_pos = header_index_.get_data_pos(idx);
-        positions.emplace_back(file_num, data_pos);
+        positions.push_back(pos);
     }
 
     // Read all blocks from flat files
@@ -2847,10 +2891,14 @@ block_chain::fetch_transaction(hash_digest const& hash, bool require_confirmed) 
     }
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
-    // store was removed; blocks live in flat files). Reading a tx by hash will be
-    // reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // store was removed; blocks live in flat files), so only the mempool can
+    // answer by hash. A pool transaction is in no block: its position and height
+    // are max_size_t. See issue #491.
+    if ( ! require_confirmed) {
+        if (auto tx = mempool_.get(hash)) {
+            co_return std::tuple{std::move(tx), size_t(max_size_t), size_t(max_size_t)};
+        }
+    }
     co_return std::unexpected(error::not_found);
 }
 
@@ -2862,9 +2910,11 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
     // store was removed; blocks live in flat files). Reading a tx position by hash
-    // will be reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // will be reimplemented over the flat-file block store. See issue #491. A
+    // mempool transaction is in no block: max_size_t for both.
+    if ( ! require_confirmed && mempool_.contains(hash)) {
+        co_return std::pair{size_t(max_size_t), size_t(max_size_t)};
+    }
     co_return std::unexpected(error::not_found);
 }
 

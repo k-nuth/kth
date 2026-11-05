@@ -325,6 +325,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
+          test/block_reads.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp

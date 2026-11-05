@@ -1998,8 +1998,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
         spdlog::info("[block_storage:header_index_dump] Dumping {} entries...", total);
 
         for (uint32_t idx = 0; idx < total; ++idx) {
-            auto const file_num = hdr.get_file_number(idx);
-            auto const data_pos = hdr.get_data_pos(idx);
+            auto const block_pos = hdr.get_block_pos(idx);
+            auto const file_num = block_pos.file;
+            auto const data_pos = block_pos.pos;
             auto const status = hdr.get_status(idx);
             auto const has_data = has_flag(status, blockchain::header_status::have_data);
 
@@ -2528,10 +2529,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // Prune with the bloom only up to the checkpoint; above it keep every
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
+            auto const block_pos = chain.headers().get_block_pos(idx);
             auto block_delta_result = blockchain::process_compact_block_utxos(
                 *parsed, chain.headers().get_hash(idx), h, mtp, network,
-                chain.headers().get_file_number(idx),
-                chain.headers().get_data_pos(idx),
+                int16_t(block_pos.file), block_pos.pos,
                 block_bloom);
             if ( ! block_delta_result) {
                 // The header index has no file number for this block. Storing

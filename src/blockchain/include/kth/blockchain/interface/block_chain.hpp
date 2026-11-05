@@ -883,7 +883,12 @@ struct KB_API block_chain {
     // FETCH OPERATIONS (Thread safe, coroutine-based)
     // =========================================================================
 
-    // Block fetching
+    // Block fetching. The block is read from the flat files through its
+    // header-index record, on the chain's pool rather than the caller's
+    // executor. By height: the block on the active chain. By hash: any stored
+    // block the index holds, side branches included, with its own height.
+    // not_found when the node does not hold the block's data; operation_failed
+    // when the stored record cannot be read or is not the block the index names.
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(size_t height) const;
 
@@ -1020,6 +1025,12 @@ struct KB_API block_chain {
 
 private:
     using handle = database::data_base::handle;
+
+    // Read the block stored at `pos`, which the index names `hash` at `height`,
+    // on the chain's pool. Values only: nothing of the index is read after the
+    // caller captured them.
+    [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
+    read_stored_block(hash_digest const& hash, size_t height, database::flat_file_pos pos) const;
 
     template <typename R>
     void read_serial(R const& reader) const;
