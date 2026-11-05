@@ -929,14 +929,37 @@ TEST_CASE("network status port bounds admission and isolates cancelled replies",
 TEST_CASE("network status shutdown wakes admission and replies before owner starts", "[rpc dispatch][rpc status]") {
     ::asio::io_context io;
     network::status_port port(io.get_executor(), 1);
-    auto queued = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    size_t completed = 0;
+    bool watchdog_fired = false;
+    ::asio::cancellation_signal cancel_queued;
+    ::asio::cancellation_signal cancel_waiting;
+    ::asio::steady_timer watchdog(io, std::chrono::seconds(1));
+    watchdog.async_wait([&](std::error_code ec) {
+        if (!ec) {
+            watchdog_fired = true;
+            cancel_queued.emit(::asio::cancellation_type::all);
+            cancel_waiting.emit(::asio::cancellation_type::all);
+        }
+    });
+    auto tracked_read = [&]() -> ::asio::awaitable<network::status> {
+        struct completion {
+            size_t& count;
+            ::asio::steady_timer& deadline;
+            ~completion() { if (++count == 2) deadline.cancel(); }
+        } guard{completed, watchdog};
+        co_return co_await port.read();
+    };
+    auto queued = ::asio::co_spawn(io, tracked_read(),
+        ::asio::bind_cancellation_slot(cancel_queued.slot(), ::asio::use_future));
     io.poll();
-    auto waiting = ::asio::co_spawn(io, port.read(), ::asio::use_future);
+    auto waiting = ::asio::co_spawn(io, tracked_read(),
+        ::asio::bind_cancellation_slot(cancel_waiting.slot(), ::asio::use_future));
     io.poll();
     port.close();
     io.run();
     CHECK_THROWS_AS(queued.get(), std::system_error);
     CHECK_THROWS_AS(waiting.get(), std::system_error);
+    CHECK_FALSE(watchdog_fired);
     io.restart();
     auto late = ::asio::co_spawn(io, port.read(), ::asio::use_future);
     auto owner = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
