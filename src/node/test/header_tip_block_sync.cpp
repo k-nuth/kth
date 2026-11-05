@@ -75,6 +75,18 @@ using namespace kth::test;
 
 namespace {
 
+// Take one buffered message, if there is one, and hand it to `on_message`.
+// The inbound channel is a select_channel: try_receive(ec) returns the
+// message instead of calling back.
+template <typename Channel, typename Handler>
+bool take(Channel& channel, Handler&& on_message) {
+    std::error_code ec;
+    auto raw = channel.try_receive(ec);
+    if ( ! raw) return false;
+    on_message(ec, std::move(*raw));
+    return true;
+}
+
 using peer_ptr = network::peer_session::ptr;
 
 // Swap the default logger for one that keeps what was written.
@@ -1937,7 +1949,7 @@ void push_compact_bytes(wire_peer& peer, byte_span bytes) {
 network::raw_message read_compact(wire_peer& peer, std::string const& command) {
     std::optional<network::raw_message> received;
     REQUIRE(wait_until([&] {
-        return peer.session->messages().try_receive(
+        return take(peer.session->messages(), 
             [&](std::error_code ec, network::raw_message raw) {
                 if ( ! ec) received = std::move(raw);
             });
@@ -2247,7 +2259,7 @@ TEST_CASE("integrated: compact transaction requests complete or fall back to a f
                 push_compact_bytes(peer, byte_span(packet).first(packet.size() - 1));
                 bool delivered = false;
                 CHECK_FALSE(wait_until([&] {
-                    delivered = peer.session->messages().try_receive([](std::error_code, network::raw_message) {});
+                    delivered = take(peer.session->messages(), [](std::error_code, network::raw_message) {});
                     return delivered;
                 }, std::chrono::milliseconds(100)));
                 CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
