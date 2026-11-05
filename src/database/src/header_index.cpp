@@ -5,6 +5,9 @@
 #include <kth/database/header_index.hpp>
 
 #include <cstring>
+#include <bit>
+#include <kth/domain/chain/block_ticks.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
 #include <algorithm>
 #include <functional>
 
@@ -177,6 +180,11 @@ std::optional<uint256_t> header_index::total_chain_work(hash_digest const& tip) 
 
 std::optional<std::vector<header_index::chain_tip>>
 header_index::get_chain_tips(hash_digest const& connected_tip) const {
+    return get_chain_tips(connected_tip, std::numeric_limits<uint64_t>::max());
+}
+
+std::optional<std::vector<header_index::chain_tip>>
+header_index::get_chain_tips(hash_digest const& connected_tip, uint64_t activation_time) const {
     auto const active = find(connected_tip);
     if (active == null_index) return std::nullopt;
 
@@ -185,8 +193,16 @@ header_index::get_chain_tips(hash_digest const& connected_tip) const {
     // of walking the same shared ancestry again for every leaf.
     auto const count = size();
     if (active >= count) return std::nullopt;
+    // Eleven threshold bits reproduce the upper median without sorting or
+    // walking shared ancestors again. Bit 11 records that this branch already
+    // crossed activation; the containing block still adds its parent's interval.
+    static_assert(domain::chain::faster_blocks_mtp_span < 16);
+    constexpr uint16_t window_mask = (1u << domain::chain::faster_blocks_mtp_span) - 1;
+    constexpr uint16_t activated_mask = 1u << domain::chain::faster_blocks_mtp_span;
     struct branch_state {
+        uint64_t ticks = 0;
         int32_t fork_height = -1; // -1: not connected to the published chain
+        uint16_t activation_window = 0;
         bool all_data = false;
         bool has_child = false;
     };
@@ -204,6 +220,18 @@ header_index::get_chain_tips(hash_digest const& connected_tip) const {
             branches[parent].has_child = true;
         }
         auto& branch = branches[i];
+        auto const parent_window = parent != null_index && parent < i
+            ? branches[parent].activation_window : uint16_t{0};
+        auto const parent_activated = (parent_window & activated_mask) != 0;
+        if (parent != null_index && parent < i) {
+            branch.ticks = branches[parent].ticks + (parent_activated
+                ? domain::chain::faster_block_interval : domain::chain::base_block_interval);
+        }
+        auto const window = uint16_t(((parent_window << 1) |
+            (uint64_t(get_timestamp(idx)) >= activation_time ? 1u : 0u)) & window_mask);
+        auto const samples = std::min(size_t(get_height(idx)) + 1, domain::chain::faster_blocks_mtp_span);
+        auto const activated = parent_activated || size_t(std::popcount(window)) >= (samples + 1) / 2;
+        branch.activation_window = window | (activated ? activated_mask : 0);
         if (branch.fork_height >= 0) continue; // already on the connected chain
         if (parent == header_index::null_index || parent >= i) continue;
         auto const& previous = branches[parent];
@@ -217,7 +245,7 @@ header_index::get_chain_tips(hash_digest const& connected_tip) const {
     for (size_t i = 0; i < count; ++i) {
         auto const idx = header_index::index_t(i);
         if (idx == active) {
-            tips.push_back({size_t(get_height(active)), connected_tip, 0, tip_status::active});
+            tips.push_back({size_t(get_height(active)), connected_tip, 0, tip_status::active, branches[i].ticks});
             continue;
         }
         auto const& branch = branches[i];
@@ -225,7 +253,7 @@ header_index::get_chain_tips(hash_digest const& connected_tip) const {
         auto const height = get_height(idx);
         tips.push_back({size_t(height), get_hash(idx),
             size_t(height - branch.fork_height),
-            branch.all_data ? tip_status::valid_headers : tip_status::headers_only});
+            branch.all_data ? tip_status::valid_headers : tip_status::headers_only, branch.ticks});
     }
     // O(N + T log T) time, O(N + T) storage for N headers and T tips.
     std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);

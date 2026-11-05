@@ -67,13 +67,14 @@ peer_manager::~peer_manager() {
             co_return error::address_in_use;  // Duplicate nonce
         }
 
-        // Check for duplicate authority
-        auto const& new_auth = peer->destination();
+        // The key is the canonical destination. Hostname peers all share the
+        // unspecified address, so comparing authorities would treat them as one.
+        auto const& new_destination = peer->destination();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
-            if (existing_peer->destination() == new_auth ||
+            if (existing_peer->destination() == new_destination ||
                 (peer->authority().is_overlay() && existing_peer->authority().is_overlay() &&
                     existing_peer->authority().to_hostname() == peer->authority().to_hostname())) {
-                co_return error::address_in_use;  // Duplicate authority
+                co_return error::address_in_use;
             }
         }
 
