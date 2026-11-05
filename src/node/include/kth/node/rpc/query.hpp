@@ -103,10 +103,10 @@ std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
 struct network_info {
     std::string_view version;        // kth::version, e.g. "1.5.2"
     std::string_view subversion;     // the user agent this node sends its peers
-    std::uint32_t protocol_version;
-    std::uint64_t services;
+    uint32_t protocol_version;
+    uint64_t services;
     bool relay;                      // relays transactions to its peers
-    std::size_t connections;
+    size_t connections;
     float byte_fee_satoshis;         // the size part of the transaction price
 };
 

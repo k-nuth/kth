@@ -5,12 +5,16 @@
 #include <kth/node/rpc/query.hpp>
 
 #include <algorithm>
+#include <charconv>
+#include <system_error>
 #include <cmath>
 #include <cstdint>
 #include <span>
 #include <string_view>
 #include <vector>
 #include <utility>
+
+#include <fmt/format.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
@@ -63,6 +67,11 @@ std::string render_blockchain_info(blockchain_info const& info) {
 
 namespace {
 
+double fee_per_kb(float byte_fee_satoshis) {
+    auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
+    return double(std::max(per_kb, 0LL)) / double(kth::satoshi_per_bitcoin);
+}
+
 void write_hash_array(writer& w, hash_list const& hashes) {
     w.begin_array();
     for (auto const& h : hashes) {
@@ -105,9 +114,8 @@ std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
 }
 
 std::string render_estimate_fee(float byte_fee_satoshis) {
-    auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
     writer w;
-    w.value(double(std::max(per_kb, 0LL)) / double(kth::satoshi_per_bitcoin));
+    w.value(fee_per_kb(byte_fee_satoshis));
     return w.str();
 }
 
@@ -325,16 +333,16 @@ namespace {
 
 // "1.5.2" -> 1050200, the integer clients compare node versions with. A part
 // that is missing or not a number counts as 0.
-std::uint64_t version_number(std::string_view version) {
-    std::uint64_t number = 0;
-    for (std::uint64_t const scale : {1000000u, 10000u, 100u}) {
-        std::uint64_t part = 0;
+uint64_t version_number(std::string_view version) {
+    uint64_t number = 0;
+    for (uint64_t const scale : {1000000u, 10000u, 100u}) {
+        uint64_t part = 0;
         auto const [end, ec] = std::from_chars(version.data(), version.data() + version.size(), part);
         if (ec != std::errc{}) {
             break;
         }
         number += part * scale;
-        version.remove_prefix(std::size_t(end - version.data()));
+        version.remove_prefix(size_t(end - version.data()));
         if (version.empty() || version.front() != '.') {
             break;
         }
@@ -344,11 +352,11 @@ std::uint64_t version_number(std::string_view version) {
 }
 
 // The names of the service bits in `services`, by bit order.
-std::vector<std::string> service_names(std::uint64_t services) {
+std::vector<std::string> service_names(uint64_t services) {
     using service = domain::message::version::service;
     std::vector<std::string> names;
     for (unsigned bit = 0; bit < 64; ++bit) {
-        auto const flag = std::uint64_t(1) << bit;
+        auto const flag = uint64_t(1) << bit;
         if ((services & flag) == 0) {
             continue;
         }
@@ -364,7 +372,7 @@ std::vector<std::string> service_names(std::uint64_t services) {
             case service::node_extversion: names.emplace_back("EXTVERSION"); break;
 #endif
             case service::node_network_limited: names.emplace_back("NETWORK_LIMITED"); break;
-            default: names.push_back("UNKNOWN[2^" + std::to_string(bit) + "]"); break;
+            default: names.push_back(fmt::format("UNKNOWN[2^{}]", bit)); break;
         }
     }
     return names;
@@ -373,18 +381,12 @@ std::vector<std::string> service_names(std::uint64_t services) {
 } // namespace
 
 std::string render_network_info(network_info const& info) {
-    constexpr double satoshis_per_bch = 100'000'000.0;
-    auto const relay_fee_per_kb = std::llround(static_cast<double>(info.byte_fee_satoshis) * 1000.0);
-
-    std::ostringstream services;
-    services << std::hex << std::setfill('0') << std::setw(16) << info.services;
-
     writer w;
     w.begin_object();
     w.field("version", version_number(info.version));
     w.field("subversion", info.subversion);
-    w.field("protocolversion", static_cast<std::uint64_t>(info.protocol_version));
-    w.field("localservices", services.str());
+    w.field("protocolversion", uint64_t(info.protocol_version));
+    w.field("localservices", fmt::format("{:016x}", info.services));
     w.key("localservicesnames").begin_array();
     for (auto const& name : service_names(info.services)) {
         w.value(name);
@@ -392,8 +394,8 @@ std::string render_network_info(network_info const& info) {
     w.end_array();
     w.field("localrelay", info.relay);
     w.field("networkactive", true);
-    w.field("connections", static_cast<std::uint64_t>(info.connections));
-    w.field("relayfee", static_cast<double>(std::max(relay_fee_per_kb, 0LL)) / satoshis_per_bch);
+    w.field("connections", uint64_t(info.connections));
+    w.field("relayfee", fee_per_kb(info.byte_fee_satoshis));
     w.field("warnings", "");
     w.end_object();
     return w.str();
