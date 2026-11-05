@@ -4,12 +4,16 @@
 
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 
+#include <kth/blockchain/abla_pipeline.hpp>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <kth/domain.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
 
 
 #include <kth/blockchain/define.hpp>
@@ -284,6 +288,37 @@ bool populate_chain_state::populate_bip9_bit1(chain_state::data& data,
 #endif
 
 
+#if defined(KTH_CURRENCY_BCH)
+bool populate_chain_state::populate_faster_blocks(chain_state::data& data, branch::const_ptr branch) const {
+    data.faster_blocks_activation_height = max_size_t;
+
+    cantor_t const activation_time{settings_.cantor_activation_time};
+    if ( ! chain_state::is_faster_blocks_activated(chain_state::median_time_past(data), activation_time)) {
+        return true;
+    }
+
+    // data.height is the block being described; its parent has the MTP above.
+    auto const found = domain::chain::find_faster_blocks_activation_height(
+        size_t(data.height) - 1, settings_.cantor_activation_time,
+        [&](size_t height) -> std::optional<uint32_t> {
+            uint32_t timestamp = 0;
+            if ( ! get_timestamp(timestamp, height, branch)) {
+                return std::nullopt;
+            }
+            return timestamp;
+        });
+
+    if ( ! found) {
+        spdlog::error("[blockchain] Failed to populate chain state: could not locate the "
+                      "faster-blocks activation height below {}", data.height);
+        return false;
+    }
+
+    data.faster_blocks_activation_height = *found;
+    return true;
+}
+#endif
+
 bool populate_chain_state::populate_all(chain_state::data& data, branch::const_ptr branch) const {
     // Critical Section
     ///////////////////////////////////////////////////////////////////////////
@@ -297,7 +332,9 @@ bool populate_chain_state::populate_all(chain_state::data& data, branch::const_p
         && populate_versions(data, map, branch)
         && populate_timestamps(data, map, branch)
         && populate_collision(data, map, branch)
-#if ! defined(KTH_CURRENCY_BCH)
+#if defined(KTH_CURRENCY_BCH)
+        && populate_faster_blocks(data, branch)
+#else
         && populate_bip9_bit0(data, map, branch)
         && populate_bip9_bit1(data, map, branch)
 #endif
@@ -386,37 +423,25 @@ chain_state::ptr populate_chain_state::populate(size_t connected_top) const {
         last_header = std::get<0>(*stored);
     }
 
-    // The ABLA state, from the only place it lives.
-    //
-    // Taken separately from the header, and on BOTH paths, because the two are
-    // not the same question. The header has to come from memory or a run
-    // describes itself by how far a checkpoint got, which is what #697 is; the
-    // ABLA state has no home in the index at all, so reading it from the index
-    // would mean answering zero at runtime and whatever the record holds while
-    // hydrating -- the same chain state changing under the node as it leaves the
-    // start. Whether these fields should live in the index is #700's question;
-    // until it is answered they are read where they are written.
-    //
-    // Three answers, and only two of them are the same.
-    //
-    // A record that IS there decides, zeros included: that is what every header
-    // the three-argument push_header wrote holds, and the branch below already
-    // reads zero as "use the static maximum".
-    //
-    // `key_not_found` is the durable table lagging behind the index -- the run in
-    // #697 reached a height whose row had never been written -- and it must not
-    // stop a chain state being built, or the fix is undone.
-    //
-    // Anything else is a read that FAILED: a fault in the store, a malformed
-    // record. Treating that as absence would take a corrupt or unreadable
-    // database and quietly answer with the static maximum, which is a consensus
-    // input invented from an error. It fails closed and says which error it was.
+    // Header identity comes from the active index at runtime; the ABLA state
+    // comes from its durable record. Check the identities agree before using
+    // that record. A missing row is an unknown state, while other read errors
+    // are storage failures. Neither may be replaced with an invented post-ABLA
+    // floor: advance_abla_state below permits initialization only at the real
+    // activation boundary (or the first successor of genesis).
+    // The connect writer persists header gaps and ABLA records before publishing
+    // the new connected tip, so a normal publication has its required state.
     auto const stored = detail::abla_lookup_faulted()
         ? std::expected<database::header_with_abla_state_t, database::result_code>(
               std::unexpected(database::result_code::other))
         : chain_.get_header_and_abla_state(connected_top);
 
     if (stored) {
+        if (domain::chain::hash(std::get<0>(*stored)) != domain::chain::hash(last_header)) {
+            spdlog::error("[blockchain] Persisted ABLA header does not match the connected branch at {}",
+                connected_top);
+            return {};
+        }
         block_size = std::get<1>(*stored);
         control_block_size = std::get<2>(*stored);
         elastic_buffer_size = std::get<3>(*stored);
@@ -431,14 +456,6 @@ chain_state::ptr populate_chain_state::populate(size_t connected_top) const {
     data.hash = null_hash;
     data.height = *safe_add(connected_top, size_t(1));
 
-    if (block_size == 0) {
-        data.abla_state = abla::state(settings_.abla_config, static_max_block_size(network_));
-    } else {
-        data.abla_state = abla::state(settings_.abla_config, block_size);
-        data.abla_state.control_block_size = control_block_size;
-        data.abla_state.elastic_buffer_size = elastic_buffer_size;
-    }
-
     auto branch_ptr = std::make_shared<branch>(connected_top, chain_.block_validations());
 
     // Use an empty branch to represent the transaction pool.
@@ -446,6 +463,29 @@ chain_state::ptr populate_chain_state::populate(size_t connected_top) const {
         spdlog::error("[blockchain] Failed to populate chain state, all.");
         return {};
     }
+
+    // The ABLA state of the CANDIDATE (abla_pipeline.hpp): the record read above
+    // is the state of the connected tip, and the block this state describes is
+    // the one after it, so the state advances once here -- from the tip's size
+    // and the tip's interval -- and nobody downstream advances it again. The
+    // candidate's own size is not known: 0. The intervals come from the schedule
+    // populate_all just established for this branch.
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = chain_state::branch_ticks(data, cantor_t(settings_.cantor_activation_time));
+    auto const tip_state = abla_state_from_record(settings_, block_size, control_block_size,
+        elastic_buffer_size, schedule.block_interval(connected_top));
+    if (!tip_state) {
+        return {};
+    }
+    auto const candidate_state = advance_abla_state(settings_, network_, *tip_state, data.height,
+        0, schedule.block_interval(data.height));
+    if ( ! candidate_state) {
+        spdlog::error("[blockchain] Failed to populate chain state: the ABLA state at height {} "
+                      "cannot be represented", data.height);
+        return {};
+    }
+    data.abla_state = *candidate_state;
+#endif
 
 #if defined(KTH_CURRENCY_BCH)
     auto const anchor = get_assert_anchor_block(network_);
@@ -482,11 +522,11 @@ chain_state::ptr populate_chain_state::populate(chain_state::ptr pool, branch::c
     auto const block = branch->top();
     KTH_ASSERT(block);
 
-    // If this is not a reorganization we can just promote the pool state.
-    if (branch->size() == 1 && branch->top_height() == pool->height()) {
-        return chain_state::from_pool_ptr(*pool, *block);
-    }
-
+    // Always the general path, including a branch of one block over the pool's
+    // own height: the pool's state is the CANDIDATE's (size unknown) and cannot
+    // be promoted to the state of a block whose size is known without changing
+    // its ABLA state, and the state of a side branch must come from that
+    // branch's own ancestors, never from the pool of the active chain.
     auto const height = branch->top_height();
     chain_state::data data;
     data.hash = block->hash();
@@ -497,23 +537,48 @@ chain_state::ptr populate_chain_state::populate(chain_state::ptr pool, branch::c
         return {};
     }
 
-    // Before activating lobachevski, we need to check if it is enabled using the median time past.
-    // auto const is_lobachevski_enabled = chain_state::is_mtp_activated(chain_state::median_time_past(data), settings_.lobachevski_activation_time);
-    // After activating lobachevski, we need to check if it is enabled using the height.
-    auto const is_lobachevski_enabled = chain_state::is_lobachevski_enabled(height, network_);
-    if (is_lobachevski_enabled) {
-        if ( ! pool->is_lobachevski_enabled()) {
-            data.abla_state = abla::state(settings_.abla_config, block->serialized_size(1));
-        } else {
-            auto const abla_config_opt = abla::next(pool->abla_state(), settings_.abla_config, block->serialized_size(1));
-            if ( ! abla_config_opt) {
-                return {};
-            }
-            data.abla_state = *abla_config_opt;
+    // S_height: the state of the branch ancestor at the fork point (a connected
+    // block, so its record is the state of that block on this branch too) advanced
+    // once through every block of the branch, each at its interval on the
+    // branch's own schedule.
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = chain_state::branch_ticks(data, cantor_t(settings_.cantor_activation_time));
+    std::optional<abla::state> ancestor;
+    if (auto const stored = chain_.get_header_and_abla_state(branch->height()); stored) {
+        if (domain::chain::hash(std::get<0>(*stored)) != branch->hash()) {
+            spdlog::error("[blockchain] Persisted ABLA header does not match the branch fork at {}",
+                branch->height());
+            return {};
         }
-    } else {
-        data.abla_state = abla::state(settings_.abla_config, block->serialized_size(1));
+        auto const parsed = abla_state_from_record(settings_, std::get<1>(*stored), std::get<2>(*stored),
+            std::get<3>(*stored), schedule.block_interval(branch->height()));
+        if (!parsed) {
+            return {};
+        }
+        ancestor = *parsed;
+    } else if (stored.error() != database::result_code::key_not_found) {
+        spdlog::error("[blockchain] Failed to populate branch chain state: reading the ABLA state at "
+                      "the fork height {} failed with {}", branch->height(),
+                      database::result_code_name(stored.error()));
+        return {};
     }
+
+    auto const& blocks = *branch->blocks();
+    size_t block_height = size_t(branch->height());
+    std::optional<abla::state> current = ancestor;
+    for (auto const& member : blocks) {
+        ++block_height;
+        current = advance_abla_state(settings_, network_, current, block_height,
+            member->serialized_size(1), schedule.block_interval(block_height));
+        if ( ! current) {
+            return {};
+        }
+    }
+    if ( ! current) {
+        return {};
+    }
+    data.abla_state = *current;
+#endif
 
     return std::make_shared<chain_state>(
         std::move(data)

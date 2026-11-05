@@ -29,10 +29,10 @@ namespace kth::database {
 //   - Fork tracking and reorganization
 //   - Headers-first sync
 //
-// Memory layout (SoA — one vector per field). At default capacity (~1.18M
+// Memory layout (SoA — one vector per field). At the BCH default (~3.21M
 // entries) the footprint is dominated by the four 32-byte vectors — hashes,
-// prev_block_hashes, chain_works (uint256), merkle_roots (~37.7 MB each) — plus
-// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 205 MB total, plus the
+// prev_block_hashes, chain_works (uint256), merkle_roots (~102.8 MB each) — plus
+// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 559 MB total, plus the
 // hash->index concurrent map. See the private members below for the full set.
 //
 // Thread safety:
@@ -41,10 +41,15 @@ namespace kth::database {
 //   - Traversal: safe via happens-before transitivity through ancestor chain
 // =============================================================================
 
-// Default capacity - enough for ~2030 (aligned to 2^20 + buffer)
+// Default: one-minute tempnet through 2030 after its 600-second history.
+// Aligned to 2^16; deployments can override this allocation bound.
 // Defined via CMake/Conan as KTH_HEADER_INDEX_CAPACITY
 #ifndef KTH_HEADER_INDEX_CAPACITY
+#if defined(KTH_CURRENCY_BCH)
+#define KTH_HEADER_INDEX_CAPACITY 3211264
+#else
 #define KTH_HEADER_INDEX_CAPACITY 1179648
+#endif
 #endif
 
 /// Status flags for indexed headers (similar to BCHN's BlockStatus)
@@ -170,6 +175,27 @@ struct KD_API header_index {
     [[nodiscard]] index_t get_skip_index(index_t idx) const;
     [[nodiscard]] int32_t get_height(index_t idx) const;
     [[nodiscard]] uint256_t get_chain_work(index_t idx) const;
+
+    /// Cumulative proof including genesis, or nullopt for an unknown root/tip.
+    /// Unlike get_chain_work(), this includes the root's own proof. Call from
+    /// the index owner's context or under its existing traversal contract.
+    [[nodiscard]] std::optional<uint256_t> total_chain_work(hash_digest const& tip) const;
+
+    enum class tip_status { active, valid_headers, headers_only };
+    struct chain_tip {
+        size_t height;
+        hash_digest hash;
+        size_t branch_length;
+        tip_status status;
+    };
+
+    /// Owned tip records, highest first, relative to the supplied connected tip.
+    /// Returns nullopt when that tip is not in the indexed prefix. Computes
+    /// branch metadata once per entry: O(N + T log T) time, O(N + T) storage.
+    /// This synchronous query does not establish execution affinity or a
+    /// concurrent snapshot; callers must honor the index's ownership contract.
+    [[nodiscard]] std::optional<std::vector<chain_tip>>
+    get_chain_tips(hash_digest const& connected_tip) const;
     [[nodiscard]] header_status get_status(index_t idx) const;
     [[nodiscard]] uint32_t get_version(index_t idx) const;
     [[nodiscard]] hash_digest get_merkle(index_t idx) const;

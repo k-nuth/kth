@@ -1292,7 +1292,7 @@ void executor::initialize_output(std::string_view extra, db_mode_type db_mode) {
 
     auto const network_id = config_.network.identifier;
     auto const network_type = kth::get_network(network_id, config_.network.inbound_port == 48333);
-    spdlog::info("[node] Network: {0} ({1} - {1:#x}).", name(network_type), network_id);
+    spdlog::info("[node] Network: {0} ({1} - {1:#x}).", domain::config::chain_name(network_type, domain::config::chain_name_format::display), network_id);
     spdlog::info("[node] Blockchain configured to use {} threads.", kth::thread_ceiling(config_.chain.cores));
     spdlog::info("[node] Networking configured to use {} threads.", kth::thread_ceiling(config_.network.threads));
 }
