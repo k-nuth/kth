@@ -182,7 +182,7 @@ struct rpc_server_fixture {
     test::chain_fixture chain;
     node::rpc_settings settings;
     ::asio::io_context io;
-    network::status_port network_status{io.get_executor()};
+    network::status_port network_status;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
     std::future<void> server_done;

@@ -92,6 +92,8 @@ public:
     ::asio::awaitable<code> start();
 
     /// Run the node (start P2P connections and protocol handlers).
+    /// The caller must use a strand or a single-thread executor for the composed
+    /// lifecycle tasks. The standard node executor supplies that context.
     [[nodiscard]]
     ::asio::awaitable<code> run();
 
