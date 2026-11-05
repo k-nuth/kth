@@ -175,12 +175,11 @@ TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entri
             peer = std::make_shared<network::peer_session>(std::move(socket), settings, true);
             peer_run = ::asio::co_spawn(io, peer->run(), ::asio::use_future);
             for (;;) {
-                auto [ec, message] = co_await peer->messages().async_receive(
-                    ::asio::as_tuple(::asio::use_awaitable));
-                if (ec) {
+                auto message = co_await peer->receive();
+                if ( ! message) {
                     break;
                 }
-                if ( ! co_await dispatcher.dispatch(*peer, message)) {
+                if ( ! co_await dispatcher.dispatch(*peer, *message)) {
                     break;
                 }
             }
