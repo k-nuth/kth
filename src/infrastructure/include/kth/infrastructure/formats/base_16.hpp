@@ -56,6 +56,11 @@ template <size_t Size>
 /// The bitcoin_hash format is like base16, but with the bytes reversed.
 [[nodiscard]] constexpr std::string encode_hash(hash_digest hash);
 
+/// Encode an unsigned 256-bit integer as 64 lowercase hexadecimal digits,
+/// most significant digit first, including leading zeroes.
+/// Allocates the result; allocation failures may throw.
+[[nodiscard]] inline std::string encode_hash(uint256_t const& value);
+
 /// Convert a string into a bitcoin_hash.
 /// The bitcoin_hash format is like base16, but with the bytes reversed.
 /// @return the decoded hash, or an error code if the input is malformed.

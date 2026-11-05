@@ -54,7 +54,7 @@ std::string render_blockchain_info(blockchain_info const& info) {
     w.field("verificationprogress", progress);
     w.field("initialblockdownload", info.initial_block_download);
     if (info.chain_work) {
-        w.field("chainwork", encode_hash(to_hash_digest(*info.chain_work)));
+        w.field("chainwork", encode_hash(*info.chain_work));
     }
     w.field("size_on_disk", info.size_on_disk);
     w.field("warnings", "");

@@ -119,6 +119,10 @@ constexpr std::string encode_hash(hash_digest hash) {
     return encode_base16(hash);
 }
 
+inline std::string encode_hash(uint256_t const& value) {
+    return encode_hash(to_hash_digest(value));
+}
+
 namespace detail {
 
 KI_API std::string encode_base16_runtime(byte_span input);

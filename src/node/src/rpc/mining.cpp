@@ -35,7 +35,7 @@ std::string render_mining_template(
     // overflowing encoding, which a chain-produced nBits never is.
     std::string target_hex(64, '0');
     if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
-        target_hex = encode_hash(to_hash_digest(target->big()));
+        target_hex = encode_hash(target->big());
     }
 
     writer w;

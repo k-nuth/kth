@@ -207,3 +207,15 @@ TEST_CASE("base16 span accepts spare capacity and preserves untouched bytes", "[
     CHECK(base16_span_capacity_control());
     CHECK(decode_base16<3>("00ff").error() == base16_errc::size_mismatch);
 }
+
+TEST_CASE("encode_hash accepts numeric uint256 values", "[base16]") {
+    REQUIRE(encode_hash(uint256_t(0)) == std::string(64, '0'));
+    REQUIRE(encode_hash(uint256_t(1)) == std::string(63, '0') + "1");
+    REQUIRE(encode_hash(~uint256_t(0)) == std::string(64, 'f'));
+    constexpr std::string_view digits = "0123456789abcdef";
+    for (size_t bit = 0; bit < 256; ++bit) {
+        std::string expected(64, '0');
+        expected[63 - bit / 4] = digits[1u << (bit % 4)];
+        REQUIRE(encode_hash(uint256_t(1) << bit) == expected);
+    }
+}
