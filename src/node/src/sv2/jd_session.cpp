@@ -106,7 +106,14 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     if (header.msg_type == setup_connection_error::message_type) {
         auto const error = parse<setup_connection_error>(payload);
         if ( ! error) return fail("malformed upstream setup error");
-        return fail("upstream refused setup (" + printable_error_code(error->error_code) + ")");
+        auto reason = "upstream refused setup (" + printable_error_code(error->error_code) + ")";
+        // SetupConnection.Error names the flags behind the refusal. A JDS that
+        // wants DECLARE_TX_DATA accepts only full-template declarations.
+        if (peer_ == jd_peer::declaration && ! full_template_
+            && (error->flags & jd_flag_declare_tx_data) != 0) {
+            reason += "; this JDS requires full-template (sv2.jd.mode = full-template)";
+        }
+        return fail(std::move(reason));
     }
     if (header.msg_type != setup_connection_success::message_type) {
         return fail("unexpected upstream setup message");

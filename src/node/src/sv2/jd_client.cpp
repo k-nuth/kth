@@ -518,12 +518,12 @@ void jd_client::forward_share(mining::pool_proof const& proof) {
         stop();
         return;
     }
-    remember_submitted(message.sequence_number, proof.generation);
+    remember_submitted(message.sequence_number, proof.generation, proof.block);
 }
 
-void jd_client::remember_submitted(uint32_t sequence, uint32_t generation) {
+void jd_client::remember_submitted(uint32_t sequence, uint32_t generation, bool block) {
     if (submitted_.size() >= max_tracked_shares) submitted_.pop_front();
-    submitted_.push_back(submitted_share{sequence, generation});
+    submitted_.push_back(submitted_share{sequence, generation, block});
 }
 
 std::optional<std::string> jd_client::share_reply(message_header const& header,
@@ -549,6 +549,14 @@ std::optional<std::string> jd_client::share_reply(message_header const& header,
     if (found == submitted_.end()) {
         spdlog::debug("[sv2 jd] ignoring share error for unknown sequence {}",
             message->sequence_number);
+        return std::nullopt;
+    }
+    // The share that found a block moves the tip. The pool can reach that tip
+    // first, from this node's PushSolution or from the network, and then
+    // answer the share as an old job. An honest race, not a refused share.
+    if (found->block) {
+        spdlog::debug("[sv2 jd] ignoring share error {} for the block found by sequence {}",
+            code, message->sequence_number);
         return std::nullopt;
     }
     auto const& work = jobs_.work();
