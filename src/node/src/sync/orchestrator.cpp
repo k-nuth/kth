@@ -1757,8 +1757,11 @@ static
                     auto const known = organizer.index().find(submitted.block->hash());
                     bool const active = known != blockchain::header_index::null_index
                         && organizer.index().active_at(int32_t(submitted.height)) == known;
-                    if (active && result->height == submitted.height
-                        && ( ! result->result || result->result == error::stale_chain)) {
+                    // One header added at its height, or a compact body for a
+                    // header the node already had: nothing added, the batch
+                    // reported as held, and that header active at the height.
+                    if (result->height == submitted.height && (result->count == 1
+                        || (active && result->result == error::stale_chain))) {
                         // Stored as a downloaded chunk of one, under the current
                         // generation; the UTXO build connects it from there.
                         spdlog::info("[sync_coordinator] Submitted block {} accepted at {}",

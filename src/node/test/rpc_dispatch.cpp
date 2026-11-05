@@ -908,22 +908,34 @@ TEST_CASE("getrawmempool dispatch lists entries keyed by txid when verbose", "[r
 }
 
 TEST_CASE("getblocktemplate dispatch serves the template with its transactions", "[rpc dispatch]") {
-    // A limit of zero keeps the genesis-only chain synchronized, so the node
-    // serves mining work.
+    // A limit of zero keeps the chain synchronized whatever its tip's age, so
+    // the node serves mining work.
     test::chain_fixture fixture("rpc_block_template", /*notify_limit_hours*/ 0);
     REQUIRE(fixture.created());
     fixture.settings().gbt_template_refresh_seconds = max_uint32;
     REQUIRE(fixture.start());
 
-    // One pooled transaction; the template builder takes the pool as given.
-    domain::chain::input::list ins;
-    hash_digest prevout{};
-    prevout[0] = 0x42;
-    ins.emplace_back(domain::chain::output_point{prevout, 0}, domain::chain::script{}, 0xffffffffu);
-    domain::chain::output::list outs;
-    outs.emplace_back(1000u, domain::chain::script{}, domain::chain::token_data_opt{});
-    auto const tx = std::make_shared<domain::message::transaction>(
-        domain::chain::transaction{1u, 0u, std::move(ins), std::move(outs)});
+    // 101 connected blocks, so the coinbase of block 1 is mature for the
+    // template at height 102. The template re-reads every pooled input from the
+    // UTXO set and drops a transaction whose input is missing or immature.
+    constexpr uint32_t tip_height = 101;
+    auto const base_time = uint32_t(zulu_time()) - (tip_height + 10) * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= tip_height; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == tip_height);
+
+    // One pooled transaction spending that coinbase.
+    auto const& funding = trunk.front().transactions().front();
+    auto const tx = std::make_shared<domain::message::transaction>(test::spend_p2pkh(
+        funding, 0, funding.outputs()[0].value() - 500u,
+        fixture.chain().chain_settings().enabled_flags()));
     REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
         tx, 500u, uint32_t(tx->serialized_size(true)), 3u, 0u}));
 
@@ -943,9 +955,9 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     auto const reply = request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"],"rules":[]}])");
     REQUIRE(reply.find(R"("txid":")" + encode_hash(tx->hash()) + R"(","hash":")") != std::string::npos);
     REQUIRE(reply.find(R"("fee":500,"sigops":3})") != std::string::npos);
-    REQUIRE(reply.find(R"("previousblockhash":")" +
-        encode_hash(domain::chain::block::genesis_regtest().hash()) + '"') != std::string::npos);
-    REQUIRE(reply.find(R"("height":1})") != std::string::npos);
+    REQUIRE(reply.find(R"("previousblockhash":")" + encode_hash(trunk.back().hash()) + '"') !=
+        std::string::npos);
+    REQUIRE(reply.find(R"("height":102})") != std::string::npos);
     REQUIRE(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"]}])").find(R"("error":null)") !=
         std::string::npos);
     REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);

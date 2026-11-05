@@ -1778,10 +1778,6 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
     CHECK(log.count("block_range_request") == size_t(recover));
 }
 
-// =============================================================================
-// A block handed to the node at its tip (#563)
-// =============================================================================
-
 namespace {
 
 // block_chain::organize on a thread of its own, as the RPC server calls it.
