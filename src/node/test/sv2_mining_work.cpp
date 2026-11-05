@@ -161,7 +161,7 @@ TEST_CASE("Mining payout is a supported cashaddr for the selected network", "[sv
     auto valid = cash_address(0, hash20);
     auto malformed = valid;
     malformed.back() = malformed.back() == 'q' ? 'p' : 'q';
-    domain::wallet::payment_address const legacy(hash, domain::wallet::payment_address::testnet_p2kh);
+    auto const legacy = domain::wallet::payment_address::from_shorthash(hash, domain::wallet::payment_address::testnet_p2kh).value();
     for (auto const& refused : {std::string{}, std::string("bchreg:q"), malformed,
             valid.substr(valid.find(':') + 1), legacy.encoded_legacy(),
             cash_address(0, hash20, "bchtest"), cash_address(0, hash20, "bitcoincash"),
