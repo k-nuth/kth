@@ -65,6 +65,11 @@ class KthRecipe(KnuthConanFileV2):
         # lane-parallel batches by src/secp256k1-simd (AVX-512 IFMA where the
         # CPU has it, libsecp256k1 elsewhere).
         "signature_verification": ['secp256k1', 'secp256k1_simd'],
+        # GPU backends of src/secp256k1-simd (used for large batches when a
+        # device is present): none (default), cuda (needs nvcc; CUDACXX or
+        # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
+        # whose toolchain is found).
+        "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -98,6 +103,7 @@ class KthRecipe(KnuthConanFileV2):
         "currency": "BCH",
         "mempool_backend": "cfm",
         "signature_verification": "secp256k1",
+        "secp256k1_gpu": "none",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -288,6 +294,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["CURRENCY"] = self.options.currency
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
         tc.variables["KTH_SIGNATURE_VERIFICATION"] = self.options.signature_verification
+        tc.variables["KTH_SECP256K1_SIMD_GPU"] = self.options.secp256k1_gpu
 
         # Header index capacity based on compilation year
         header_capacity = _calculate_header_capacity(datetime.now().year)
@@ -364,6 +371,16 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1_simd"].names["cmake_find_package"] = "secp256k1-simd"
         self.cpp_info.components["secp256k1_simd"].names["cmake_find_package_multi"] = "secp256k1-simd"
         self.cpp_info.components["secp256k1_simd"].requires = ["secp256k1"]
+        gpu = str(self.options.secp256k1_gpu)
+        if gpu in ("auto", "metal") and self.settings.os == "Macos":
+            self.cpp_info.components["secp256k1_simd"].frameworks = ["Metal", "Foundation"]
+        if gpu == "cuda" or (gpu == "auto" and os.environ.get("CUDAToolkit_ROOT")):
+            # The static CUDA runtime the backend was linked against.
+            cuda_root = os.environ.get("CUDAToolkit_ROOT", "/usr/local/cuda")
+            self.cpp_info.components["secp256k1_simd"].libdirs.append(os.path.join(cuda_root, "lib64"))
+            self.cpp_info.components["secp256k1_simd"].libdirs.append(os.path.join(cuda_root, "lib"))
+            self.cpp_info.components["secp256k1_simd"].libs.append("cudart_static")
+            self.cpp_info.components["secp256k1_simd"].system_libs.extend(["dl", "pthread", "rt"])
 
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]

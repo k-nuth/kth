@@ -48,6 +48,11 @@ elseif (NOT KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1")
     message(FATAL_ERROR "Invalid signature verification: ${KTH_SIGNATURE_VERIFICATION} (expected secp256k1|secp256k1_simd)")
 endif()
 message(STATUS "Knuth: Signature verification: ${KTH_SIGNATURE_VERIFICATION}")
+# GPU backends of src/secp256k1-simd: none | auto | cuda | metal. Off by
+# default in the node build; src/secp256k1-simd/CMakeLists.txt documents the
+# toolchains each one needs.
+set(KTH_SECP256K1_SIMD_GPU "none" CACHE STRING "secp256k1-simd GPU backends: none | auto | cuda | metal")
+message(STATUS "Knuth: secp256k1-simd GPU backends: ${KTH_SECP256K1_SIMD_GPU}")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

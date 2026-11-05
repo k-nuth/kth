@@ -492,8 +492,19 @@ code validate_block_batch(
         {
             static std::once_flag once;
             std::call_once(once, [] {
-                spdlog::info("[batch_validate] deferred signature checks: {}",
-                    secp256k1_simd::backend_name(secp256k1_simd::best_backend()));
+                // The workers already use every core: a GPU batch must not
+                // spread its host preprocessing over more threads.
+                secp256k1_simd::set_host_threads(1);
+                auto const gpu = secp256k1_simd::best_backend(std::numeric_limits<size_t>::max());
+                if (gpu != secp256k1_simd::best_backend()) {
+                    spdlog::info("[batch_validate] deferred signature checks: {} (batches of {}+ on {}: {})",
+                        secp256k1_simd::backend_name(secp256k1_simd::best_backend()),
+                        secp256k1_simd::gpu_min_batch(),
+                        secp256k1_simd::backend_name(gpu), secp256k1_simd::device_name(gpu));
+                } else {
+                    spdlog::info("[batch_validate] deferred signature checks: {}",
+                        secp256k1_simd::backend_name(secp256k1_simd::best_backend()));
+                }
             });
         }
         secp256k1_simd::deferred::begin();
