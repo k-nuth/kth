@@ -580,7 +580,27 @@ decode_raw_transaction(method_context& ctx, request const& req) {
 // C-API counterpart: kth_network_settings (user_agent, protocol_maximum,
 // services, relay_transactions) + kth_blockchain_settings.byte_fee_satoshis.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
-get_network_info(method_context& ctx, request const& /*req*/) {
+get_network_info(method_context& ctx, request const& req) {
+    // Validate before admitting work to the runtime owner. Omitted parameters
+    // and an empty array are the only supported forms for this zero-arg RPC.
+    if (!req.params.empty()) {
+        auto const invalid_params = [] {
+            return kth::fail(make_error(error_code::invalid_params,
+                "getnetworkinfo takes no arguments"));
+        };
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        for (auto element : args) {
+            (void)element;
+            co_return invalid_params();
+        }
+    }
     if (ctx.network_config == nullptr || ctx.network_status == nullptr) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "network unavailable"));

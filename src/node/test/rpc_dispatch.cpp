@@ -757,7 +757,9 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
         ::asio::io_context io;
         node::network_status_port status;
         node::rpc::method_context context{fixture.chain(), jobs, &config, &status};
-        auto const body = std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
+        auto const body = params.empty()
+            ? std::string(R"({"method":"getnetworkinfo","id":42})")
+            : std::string(R"({"method":"getnetworkinfo","params":)") + std::string(params) + R"(,"id":42})";
         auto call = [&]() -> ::asio::awaitable<std::string> {
             struct close_port {
                 node::network_status_port& port;
@@ -774,9 +776,11 @@ TEST_CASE("getnetworkinfo reports inactive networking and rejects arguments", "[
     auto const inactive = request("[]");
     INFO(inactive);
     CHECK(inactive.find(R"("networkactive":false)") != std::string::npos);
+    CHECK(request("") == inactive);
+    CHECK(request("[ ]") == inactive);
     auto const extra = request("[1]");
     INFO(extra);
-    CHECK(extra.find(R"("error":null)") == std::string::npos);
+    CHECK(extra == node::rpc::build_error("42", -32602, "getnetworkinfo takes no arguments"));
 }
 
 TEST_CASE("getnetworkinfo awaits narrow status replies and propagates cancellation", "[rpc dispatch]") {
@@ -1061,4 +1065,38 @@ TEST_CASE("node query port transfers owned typed payloads to the owner", "[rpc d
     REQUIRE(two.value);
     CHECK(*two.value == 23);
     port.close();
+}
+
+TEST_CASE("getnetworkinfo rejects invalid parameters without querying the owner", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_network_info_params");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::network_configuration config{"/test:1/", 70016, 1, true};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+        CAPTURE(params);
+        ::asio::io_context io;
+        node::network_status_port port(1);
+        node::rpc::method_context context{fixture.chain(), jobs, &config, &port};
+        auto const body = std::string(R"({"method":"getnetworkinfo","params":)") + params + R"(,"id":12})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.poll();
+        auto const completed_before_close = result.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        io.restart();
+        auto received = ::asio::co_spawn(io, port.receive(), ::asio::use_future);
+        io.poll();
+        auto const queried_owner = received.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        // Close/drain even on the faulty implementation; observe completion
+        // and admission before cleanup so closure cannot hide either defect.
+        port.close();
+        io.restart();
+        io.run();
+        CHECK(completed_before_close);
+        CHECK_FALSE(queried_owner);
+        CHECK(result.get() == node::rpc::build_error("12", -32602, "getnetworkinfo takes no arguments"));
+        if (queried_owner) (void)received.get();
+        else CHECK_THROWS_AS(received.get(), std::system_error);
+    }
 }
