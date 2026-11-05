@@ -24,6 +24,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/utility/assert.hpp>
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/jd_messages.hpp>
@@ -258,15 +259,9 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
     bool negotiation_timeout = false;
     co_await serve(declaration_, declaration_session_, "JDS", &negotiation_timeout);
     if ( ! negotiation_timeout || stopped_) co_return;
-    if ( ! declaration_session_.restart_without_extensions()) {
-        stop();
-        if ( ! published_) {
-            published_ = true;
-            (void)ready_.try_send(std::make_error_code(std::errc::connection_aborted), 0);
-        }
-        spdlog::warn("[sv2 jd] JDS: negotiation timeout could not open a replacement; continuing solo mining");
-        co_return;
-    }
+    // serve() sets negotiation_timeout only after awaiting_extensions() was
+    // true, then returns without another session message. The restart holds.
+    KTH_CONTRACT(declaration_session_.restart_without_extensions());
     // Same endpoint as the connection that just closed. run() is one-shot, so
     // this is a new object rather than a second run of declaration_.
     jds_replacement_ = std::make_unique<jd_connection>(owner_, jds_host_, jds_port_,

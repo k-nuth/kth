@@ -1375,6 +1375,62 @@ TEST_CASE("sv2 JD keeps BCH large template frames inert until negotiated", "[sv2
     REQUIRE(replaced.pending());
 }
 
+TEST_CASE("sv2 JD refuses negotiated large template positions that are not the in-flight supply", "[sv2 jd]") {
+    // 0x4C54 has to be set before start: use_large_templates is ignored once
+    // the declaration is pending. allocation() then leaves it declaring, which
+    // is the only state that supplies missing transactions.
+    auto const negotiated_declaring = [] {
+        jd_declaration state("worker", true);
+        state.use_large_templates(true);
+        auto const started = state.start(mining_template(), channel());
+        REQUIRE(started.error.empty());
+        // The token id is the one in flight. The positions frame for id 2 names another.
+        REQUIRE(decode<allocate_mining_job_token>(started.declaration).request_id == 1);
+        auto const allocated = process(state, jd_peer::declaration, allocation());
+        REQUIRE(allocated.error.empty());
+        REQUIRE(allocated.progress);
+        REQUIRE_FALSE(allocated.declaration.empty());
+        return state;
+    };
+
+    // start() issues request id 1. Id 2 was never issued, and supersede() was
+    // not called, so that id is not retired. The frame fails the request check.
+    auto wrong_id = negotiated_declaring();
+    auto const mismatch = process(wrong_id, jd_peer::declaration,
+        provide_missing_transactions_positions{2, {0}});
+    require_failure(wrong_id, mismatch);
+    REQUIRE(mismatch.error.find("invalid missing transaction request") != std::string::npos);
+
+    // The id is the one in flight. refuse_incomplete sends every proper prefix
+    // and then one trailing byte, each on a new negotiated declaring state.
+    // A body that does not parse fails the request.
+    refuse_incomplete(provide_missing_transactions_positions{1, {0}},
+        jd_peer::declaration, negotiated_declaring);
+
+    // The channel bit shares the extension field with the id. The positions
+    // message keeps 0x4C54 in the low 15 bits and sets the high bit. The body
+    // names transaction 0 of the id in flight, so the flag is what makes the
+    // frame the wrong direction.
+    auto const positions = to_data_chunk(provide_missing_transactions_positions{1, {0}});
+    auto channel_state = negotiated_declaring();
+    auto const channel_frame = process(channel_state, jd_peer::declaration,
+        static_cast<uint16_t>(large_templates_extension | message_header::channel_msg_flag),
+        provide_missing_transactions_positions::message_type, positions);
+    require_failure(channel_state, channel_frame);
+    REQUIRE(channel_frame.error.find("unexpected large template message or direction")
+        != std::string::npos);
+
+    // 0x03 is not ProvideMissingTransactions.Positions. The body is a
+    // positions payload for the id in flight, so the type is what makes the
+    // frame unexpected.
+    auto other_state = negotiated_declaring();
+    auto const other_frame = process(other_state, jd_peer::declaration,
+        large_templates_extension, 0x03, positions);
+    require_failure(other_state, other_frame);
+    REQUIRE(other_frame.error.find("unexpected large template message or direction")
+        != std::string::npos);
+}
+
 TEST_CASE("sv2 JD exact payout outputs refuse a coinbase version outside 1..2", "[sv2 jd]") {
     for (uint32_t const version : {0u, 3u}) {
         CAPTURE(version);
@@ -1469,4 +1525,135 @@ TEST_CASE("sv2 JD supplies missing transactions after a stale notice, then alloc
     REQUIRE(again.user_identifier == "account.worker");
     REQUIRE(state.pending());
     REQUIRE_FALSE(state.work());
+}
+
+TEST_CASE("sv2 JD payout coinbase that does not fit the template size limit is refused", "[sv2 jd]") {
+    // The transactions fill the limit, so start() still allocates. The coinbase
+    // is built only from the payout success, and that is what crosses the limit.
+    auto small = mining_template();
+    small.size_limit = small.selection.total_size;
+    jd_declaration state("worker", true);
+    state.use_payout_outputs(true);
+    REQUIRE(state.start(small, channel()).error.empty());
+    auto const requested = process(state, jd_peer::declaration, allocation());
+    REQUIRE(requested.error.empty());
+    REQUIRE(decode<request_payout_outputs>(requested.declaration).request_id == 1);
+    auto const result = process(state, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    require_failure(state, result);
+    REQUIRE(result.error.find("payout coinbase or template exceeds mining limits") != std::string::npos);
+    REQUIRE(state.has_template());
+}
+
+TEST_CASE("sv2 JD payout success while not requesting is an unexpected response", "[sv2 jd]") {
+    // A payout frame is applied only to the request that is in flight. Idle,
+    // with the extension on and no start(), has no such request.
+    jd_declaration idle("account.worker", true);
+    idle.use_payout_outputs(true);
+    auto const result = process(idle, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    require_failure(idle, result);
+    REQUIRE(result.error.find("unexpected payout response") != std::string::npos);
+}
+
+TEST_CASE("sv2 JD stale notice then a payout error allocates again", "[sv2 jd]") {
+    // The notice marks the request already sent. invalid-request is not itself
+    // a reason to retry, so the next allocation is that mark being consumed.
+    auto state = requesting();
+    auto const notice = process(state, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(notice.error.empty());
+    REQUIRE(notice.declaration.empty());
+    REQUIRE(notice.mining.empty());
+    REQUIRE(state.pending());
+    auto const retried = process(state, jd_peer::declaration,
+        request_payout_outputs_error{1, "invalid-request"});
+    REQUIRE(retried.error.empty());
+    REQUIRE(retried.progress);
+    REQUIRE(retried.mining.empty());
+    REQUIRE_FALSE(retried.accepted);
+    auto const again = decode<allocate_mining_job_token>(retried.declaration);
+    REQUIRE(again.request_id == 2);
+    REQUIRE(again.user_identifier == "account.worker");
+    REQUIRE(state.pending());
+    REQUIRE_FALSE(state.work());
+}
+
+TEST_CASE("sv2 JD unknown payout message while requesting is refused", "[sv2 jd]") {
+    // Success, error, and stale are the payout replies. Another type on this
+    // extension is not one of them. The payload is empty, so the refusal is
+    // the type, not a short body.
+    auto state = requesting();
+    REQUIRE(requested_payout_outputs_extension == 0x5052);
+    auto const result = process(state, jd_peer::declaration,
+        requested_payout_outputs_extension, 0x7f, data_chunk{});
+    require_failure(state, result);
+    REQUIRE(result.error.find("unexpected payout message") != std::string::npos);
+}
+
+TEST_CASE("sv2 JD stale notice after DeclareMiningJob then an error allocates again", "[sv2 jd]") {
+    // DeclareMiningJob is already sent. The notice does not open a second
+    // request; the error that answers this id does.
+    auto state = requesting();
+    auto const declared = process(state, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    REQUIRE(declared.error.empty());
+    REQUIRE(decode<declare_mining_job>(declared.declaration).request_id == 1);
+    REQUIRE(state.pending());
+    auto const notice = process(state, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(notice.error.empty());
+    REQUIRE(notice.declaration.empty());
+    REQUIRE(notice.mining.empty());
+    REQUIRE(state.pending());
+    auto const retried = process(state, jd_peer::declaration,
+        declare_mining_job_error{1, "unknown-pool-policy", {}});
+    REQUIRE(retried.error.empty());
+    REQUIRE(retried.progress);
+    REQUIRE(retried.mining.empty());
+    REQUIRE_FALSE(retried.accepted);
+    auto const again = decode<allocate_mining_job_token>(retried.declaration);
+    REQUIRE(again.request_id == 2);
+    REQUIRE(again.user_identifier == "account.worker");
+    REQUIRE(state.pending());
+    REQUIRE_FALSE(state.work());
+}
+
+TEST_CASE("sv2 JD stale notice after DeclareMiningJob.Success allocates again for either custom job reply", "[sv2 jd]") {
+    // Success has sent SetCustomMiningJob and is waiting on the pool. The
+    // notice leaves that reply in place. Either answer allocates the next token.
+    auto state = requesting();
+    auto const declared = process(state, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    REQUIRE(declared.error.empty());
+    REQUIRE(decode<declare_mining_job>(declared.declaration).request_id == 1);
+    auto const installed = process(state, jd_peer::declaration, declare_mining_job_success{1, {9, 8}});
+    REQUIRE(installed.error.empty());
+    REQUIRE(installed.progress);
+    REQUIRE(installed.declaration.empty());
+    auto const custom = decode<set_custom_mining_job>(installed.mining);
+    REQUIRE(custom.channel_id == channel().channel_id);
+    REQUIRE(custom.request_id == 1);
+    auto const notice = process(state, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(notice.error.empty());
+    REQUIRE(notice.declaration.empty());
+    REQUIRE(notice.mining.empty());
+    REQUIRE(state.pending());
+    REQUIRE(state.can_push_solution());
+    REQUIRE(state.work());
+
+    auto const expect_next_allocation = [&](jd_declaration::result const& retried) {
+        REQUIRE(retried.error.empty());
+        REQUIRE(retried.progress);
+        REQUIRE(retried.mining.empty());
+        REQUIRE_FALSE(retried.accepted);
+        auto const again = decode<allocate_mining_job_token>(retried.declaration);
+        REQUIRE(again.request_id == 2);
+        REQUIRE(again.user_identifier == "account.worker");
+        REQUIRE(state.pending());
+        REQUIRE_FALSE(state.can_push_solution());
+        REQUIRE_FALSE(state.work());
+    };
+    SECTION("set custom mining job error") {
+        expect_next_allocation(process(state, jd_peer::mining,
+            set_custom_mining_job_error{custom.channel_id, custom.request_id, "policy-refused"}));
+    }
+    SECTION("set custom mining job success") {
+        expect_next_allocation(process(state, jd_peer::mining,
+            set_custom_mining_job_success{custom.channel_id, custom.request_id, 123}));
+    }
 }
