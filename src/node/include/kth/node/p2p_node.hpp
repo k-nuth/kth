@@ -278,6 +278,11 @@ public:
     using block_transactions_offer = std::function<bool(peer_session::ptr const&, domain::message::block_transactions const&)>;
     void set_block_transactions_offer(block_transactions_offer offer);
 
+    /// node.compact_blocks_high_bandwidth. When false, every peer is asked for
+    /// low bandwidth compact relay (sendcmpct(false, 1)) and none counts
+    /// toward the three high bandwidth announcers. Set before peers connect.
+    void set_compact_high_bandwidth(bool enabled);
+
     /// Register a message handler injected by the node. This is how chain-backed
     /// replies (e.g. the BIP-35 `mempool` -> inv) are served: the node owns the
     /// bridge to the blockchain and supplies the handler, so p2p_node itself
@@ -589,6 +594,7 @@ private:
     compact_block_offer compact_block_offer_;
     block_transactions_offer block_transactions_offer_;
     std::atomic<size_t> compact_announcers_{0};
+    std::atomic<bool> compact_high_bandwidth_{true};
 
     /// The fee filter last sent to every peer, and when. Status strand only,
     /// after set_fee_filter_source.

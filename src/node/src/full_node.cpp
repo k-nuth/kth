@@ -203,6 +203,10 @@ full_node::~full_node() {
     // mempool evicts and decays back after.
     network_.set_fee_filter_source([this] { return chain_.fee_filter(); });
 
+    // With node.compact_blocks_high_bandwidth off, no peer is asked to push
+    // compact blocks before announcing them.
+    network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
+
     // Before any peer exists, so a cmpctblock that arrives with the first
     // connection is reconstructed rather than reduced to its header.
     compact_block_relay_ = std::make_unique<compact_block_relay>(chain_, network_);

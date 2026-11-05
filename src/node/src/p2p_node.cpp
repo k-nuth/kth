@@ -449,6 +449,10 @@ void p2p_node::set_compact_block_offer(compact_block_offer offer) {
     compact_block_offer_ = std::move(offer);
 }
 
+void p2p_node::set_compact_high_bandwidth(bool enabled) {
+    compact_high_bandwidth_.store(enabled);
+}
+
 void p2p_node::set_block_transactions_offer(block_transactions_offer offer) {
     block_transactions_offer_ = std::move(offer);
 }
@@ -1590,9 +1594,11 @@ void p2p_node::wake_status_task() noexcept {
                         // send what it takes and nothing it refuses. Best-effort.
                         co_await peer->send(domain::message::send_headers{});
                         if (peer->negotiated_version() >= domain::message::send_compact::version_minimum) {
-                            auto count = compact_announcers_.load();
-                            while (count < 3 && ! compact_announcers_.compare_exchange_weak(count, count + 1)) {}
-                            compact_announcer = count < 3;
+                            if (compact_high_bandwidth_.load()) {
+                                auto count = compact_announcers_.load();
+                                while (count < 3 && ! compact_announcers_.compare_exchange_weak(count, count + 1)) {}
+                                compact_announcer = count < 3;
+                            }
                             co_await peer->send(domain::message::send_compact(compact_announcer, 1));
                         }
                         co_await peer->send(domain::message::fee_filter{fee_filter()});

@@ -624,6 +624,45 @@ TEST_CASE("sendcmpct records version one only and rejects malformed messages spl
     network.join();
 }
 
+TEST_CASE("a cmpctblock is offered once whole after a split read, and never with a trailing byte", "[block_relay][compact_blocks]") {
+    auto const settings = relay_settings();
+    auto const block = mine_block(domain::chain::block::genesis_regtest().hash(), 1,
+        uint32_t(zulu_time()) - block_spacing, 0, {}, 0);
+    auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
+    p2p_node network(settings);
+    size_t offered = 0;
+    network.set_compact_block_offer([&](network::peer_session::ptr const&, domain::message::compact_block const& offer) {
+        ++offered;
+        CHECK(offer == compact);
+        return true;
+    });
+    wire_peer peer(settings);
+
+    // A partial message is not a message: nothing reaches the channel until
+    // the last byte arrives, and then it is offered once.
+    auto const bytes = domain::message::serialize(wire_version, compact, regtest_magic);
+    peer.write(bytes, 0, bytes.size() - 1);
+    std::this_thread::sleep_for(20ms);
+    CHECK_FALSE(take(peer.session->messages(), [](std::error_code, network::raw_message) {}));
+    peer.write(bytes, bytes.size() - 1, bytes.size());
+    CHECK_FALSE(network.observe_block_message(peer.session, peer.received()));
+    CHECK(offered == 1);
+
+    // A payload that parses with a byte left over is not reconstructed: only
+    // its header is taken.
+    constexpr size_t heading_size = 24;
+    data_chunk payload(bytes.begin() + heading_size, bytes.end());
+    payload.push_back(0);
+    network::raw_message trailing;
+    trailing.heading = domain::message::heading(regtest_magic,
+        domain::message::compact_block::command, uint32_t(payload.size()), 0);
+    trailing.payload = std::move(payload);
+    CHECK_FALSE(network.observe_block_message(peer.session, trailing));
+    CHECK(offered == 1);
+    network.stop();
+    network.join();
+}
+
 TEST_CASE("a high bandwidth peer gets a compact block while other peers get headers or inventory", "[block_relay][compact_blocks]") {
     auto const settings = relay_settings();
     auto const block = mine_block(domain::chain::block::genesis_regtest().hash(), 1,
@@ -730,6 +769,32 @@ TEST_CASE("only three live peers are asked for high bandwidth compact relay", "[
     auto const replacement = peers.back()->handshake(0x152004);
     CHECK(replacement.version() == 1);
     CHECK(replacement.high_bandwidth_mode());
+    network.stop();
+    REQUIRE(running.wait_for(5s) == std::future_status::ready);
+    CHECK(running.get() == error::success);
+    network.join();
+}
+
+TEST_CASE("with high bandwidth compact relay off every peer is asked for low bandwidth", "[block_relay][compact_blocks]") {
+    auto settings = relay_settings();
+    settings.channel_handshake_seconds = 3;
+    settings.peers_file = (std::filesystem::temp_directory_path() / "kth_compact_low_bandwidth_peers").string();
+    std::filesystem::remove(settings.peers_file);
+    std::vector<std::unique_ptr<wire_peer>> peers;
+    p2p_node network(settings);
+    network.set_compact_high_bandwidth(false);
+    auto started = ::asio::co_spawn(network.thread_pool().get_executor(), network.start(), ::asio::use_future);
+    REQUIRE(started.wait_for(3s) == std::future_status::ready);
+    REQUIRE(started.get() == error::success);
+    auto running = ::asio::co_spawn(network.thread_pool().get_executor(), network.run(), ::asio::use_future);
+    for (uint64_t i = 0; i < 2; ++i) {
+        peers.push_back(std::make_unique<wire_peer>(settings, false, false));
+        REQUIRE(node::detail::p2p_node_test_seam::queue_peer(network, peers.back()->session));
+        auto const compact = peers.back()->handshake(0x153000 + i);
+        CHECK(compact.version() == 1);
+        CHECK_FALSE(compact.high_bandwidth_mode());
+    }
+    CHECK(node::detail::p2p_node_test_seam::compact_announcer_count(network) == 0);
     network.stop();
     REQUIRE(running.wait_for(5s) == std::future_status::ready);
     CHECK(running.get() == error::success);
