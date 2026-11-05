@@ -3073,7 +3073,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
         now,
         state->dynamic_max_block_size(),
         state->dynamic_max_block_sigchecks(),
-        std::move(selection));
+        std::move(selection),
+        settings_.retarget);
 
     auto next = boost::make_shared<template_snapshot>(
         template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});

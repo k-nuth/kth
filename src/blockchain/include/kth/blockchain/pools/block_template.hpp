@@ -86,11 +86,14 @@ struct mining_template {
 // Assemble a mining_template from the next-block parameters and the selection.
 // Pure (no chain access), so it is unit-tested directly: min_time = MTP + 1,
 // current_time = max(min_time, now), coinbase_value = subsidy(height) + fees.
+// `retarget` is the network's halving schedule (blockchain settings): false
+// on regtest, which halves every 150 blocks, as block validation does.
 KB_API
 mining_template make_mining_template(
     uint32_t version, hash_digest const& previous_block_hash, size_t height,
     uint32_t bits, uint32_t median_time_past, uint32_t now,
-    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection);
+    uint64_t size_limit, uint64_t sigchecks_limit, block_template selection,
+    bool retarget = true);
 
 // A snapshot of mining-relevant chain state, for the getmininginfo RPC and its
 // C-API counterpart.
