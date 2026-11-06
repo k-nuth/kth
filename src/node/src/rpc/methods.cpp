@@ -29,6 +29,7 @@
 #include <kth/blockchain/tick_schedule.hpp>
 #endif
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
 #include <kth/domain/version.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/expect.hpp>
@@ -160,22 +161,6 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     return result;
 }
 
-
-// The median of the timestamps of the 11 blocks ending at header-index entry
-// `idx`, or of all of them nearer genesis.
-uint32_t median_time_past(blockchain::header_index const& index,
-                               blockchain::header_index::index_t idx) {
-    std::vector<uint32_t> times;
-    for (int i = 0; i < 11 && idx != blockchain::header_index::null_index; ++i) {
-        times.push_back(index.get_timestamp(idx));
-        idx = index.get_parent_index(idx);
-    }
-    if (times.empty()) {
-        return 0;
-    }
-    std::ranges::sort(times);
-    return times[times.size() / 2];
-}
 
 // getblockcount -> the height of the most-work fully-validated block.
 // C-API counterpart: kth_chain_sync_last_height (see docs/json-rpc.md).
@@ -662,7 +647,15 @@ get_block(method_context& ctx, request const& req) {
     block_location location{
         .height = height,
         .confirmations = progress->confirmations,
-        .median_time = median_time_past(index, idx),
+        .median_time = domain::chain::median_time_past_of(idx,
+            [&](blockchain::header_index::index_t at) { return index.get_timestamp(at); },
+            [&](blockchain::header_index::index_t at) -> std::optional<blockchain::header_index::index_t> {
+                auto const parent = index.get_parent_index(at);
+                if (parent == blockchain::header_index::null_index) {
+                    return std::nullopt;
+                }
+                return parent;
+            }),
         .chain_work = std::nullopt,
         .next_block_hash = std::nullopt,
         .progress = chain_progress{progress->ticks, progress->target_time, progress->next_target_time},
