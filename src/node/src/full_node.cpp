@@ -16,6 +16,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -139,6 +140,12 @@ full_node::~full_node() {
     network_.register_served_message_handler<domain::message::get_data>(
         [this](peer_session& peer, domain::message::get_data const& request) {
             return handlers::chain_data::handle_get_data(chain_, peer, request);
+        });
+    // Each newly connected tip, owed to every peer by the sync coordinator, is
+    // announced by the peer's own service.
+    network_.set_tip_announcement_handler(
+        [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
         });
 
 #if ! defined(__EMSCRIPTEN__)

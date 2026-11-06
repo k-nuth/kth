@@ -138,14 +138,24 @@ public:
         served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
     }
 
+    /// Announces a tip to one peer. `last_announced` is what this peer's
+    /// service last announced to it; the handler updates it.
+    using tip_announcement_fn = std::function<::asio::awaitable<void>(
+        peer_session&, hash_digest const& tip, std::optional<hash_digest>& last_announced)>;
+
+    /// Set the handler for the tips owed to each peer (peer_session::announce_tip).
+    void set_tip_announcement_handler(tip_announcement_fn handler);
+
     /// The peer's service: runs the served handlers on the requests dispatch()
-    /// handed over, in arrival order, until the session closes the queue. A
-    /// handler asking to disconnect stops the session.
+    /// handed over, in arrival order, and announces the tip owed to the peer,
+    /// until the session closes its queues. A handler asking to disconnect
+    /// stops the session.
     ::asio::awaitable<void> serve(peer_session& peer);
 
 private:
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
     boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
+    tip_announcement_fn tip_announcement_;
     message_handler_fn default_handler_;
 };
 
@@ -290,6 +300,11 @@ public:
     template <typename Message>
     void register_served_message_handler(typed_message_handler_fn<Message> handler) {
         dispatcher_.register_served_handler<Message>(std::move(handler));
+    }
+
+    /// Set the node's handler for the tips owed to each peer.
+    void set_tip_announcement_handler(message_dispatcher::tip_announcement_fn handler) {
+        dispatcher_.set_tip_announcement_handler(std::move(handler));
     }
 
     // Manual connections

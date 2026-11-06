@@ -48,6 +48,13 @@ p2p_node::p2p_node(settings const& settings)
     // The make_handler<> wrapper handles parsing automatically
     dispatcher_.register_handler<domain::message::ping>(handlers::ping::handle);
     dispatcher_.register_handler<domain::message::pong>(handlers::pong::handle);
+    // BIP130: the peer wants new blocks announced with headers.
+    dispatcher_.register_handler<domain::message::send_headers>(
+        typed_message_handler_fn<domain::message::send_headers>(
+            [](peer_session& peer, domain::message::send_headers const&) -> ::asio::awaitable<message_result> {
+                peer.set_prefers_headers(true);
+                co_return message_result::handled;
+            }));
 }
 
 p2p_node::~p2p_node() {
@@ -446,16 +453,32 @@ double p2p_node::get_peer_speed(infrastructure::config::authority const& authori
     co_return true;
 }
 
+void message_dispatcher::set_tip_announcement_handler(tip_announcement_fn handler) {
+    tip_announcement_ = std::move(handler);
+}
+
 ::asio::awaitable<void> message_dispatcher::serve(peer_session& peer) {
     auto executor = co_await ::asio::this_coro::executor;
+    // Requests before announcements when both are ready: a request was the
+    // peer's own, and the owed tip only grows more current while it waits.
+    ::asio::experimental::channel_select_options options;
+    options.biased = true;
+    std::optional<hash_digest> last_announced;
     while (true) {
         auto completion = co_await ::asio::experimental::make_select(
-            ::asio::experimental::receive(peer.served_requests())
-        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            ::asio::experimental::receive(peer.served_requests()),
+            ::asio::experimental::receive(peer.tip_announcements())
+        ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) {
-            // eof: the session stopped and closed the queue.
+            // eof: the session stopped and closed the queues.
             co_return;
+        }
+        if (selected.index == 1) {
+            if (tip_announcement_) {
+                co_await tip_announcement_(peer, *selected.value<1>(), last_announced);
+            }
+            continue;
         }
         auto const raw = std::move(*selected.value<0>());
         auto const it = served_handlers_.find(raw.heading.command());

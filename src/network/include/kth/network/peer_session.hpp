@@ -170,6 +170,27 @@ public:
     [[nodiscard]]
     served_channel& served_requests();
 
+    /// The data queue, for inspecting what is queued and not yet written.
+    [[nodiscard]]
+    outbound_channel& data_outbound();
+
+    // -------------------------------------------------------------------------
+    // Tip announcements
+    // -------------------------------------------------------------------------
+
+    /// The node's announcement debt to this peer: the latest connected tip
+    /// not yet taken by the peer's service. Holds one hash; a newer tip
+    /// replaces one not taken yet, so a peer that falls behind owes one
+    /// announcement, never one per block. Closed by stop().
+    using tip_channel = select_channel<hash_digest>;
+
+    /// Record that `tip` is owed to this peer. One producer: the sync
+    /// coordinator. Never waits.
+    void announce_tip(hash_digest const& tip);
+
+    [[nodiscard]]
+    tip_channel& tip_announcements();
+
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
     [[nodiscard]]
@@ -390,6 +411,17 @@ public:
     /// Mark that peer supports addrv2 (called when sendaddrv2 received)
     void set_wants_addrv2(bool value);
 
+    // -------------------------------------------------------------------------
+    // BIP130 (sendheaders)
+    // -------------------------------------------------------------------------
+
+    /// True once the peer sent sendheaders: new blocks are announced to it
+    /// with headers instead of an inv.
+    [[nodiscard]]
+    bool prefers_headers() const;
+
+    void set_prefers_headers(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -430,6 +462,7 @@ private:
     outbound_channel data_outbound_;
     inbound_channel inbound_;
     served_channel served_requests_;
+    tip_channel tip_announcements_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive
@@ -490,6 +523,9 @@ private:
     // BIP155 (addrv2) support
     // Set to true when peer sends sendaddrv2 during handshake
     std::atomic<bool> wants_addrv2_{false};
+
+    // BIP130: set when the peer sends sendheaders
+    std::atomic<bool> prefers_headers_{false};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

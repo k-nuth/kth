@@ -4,6 +4,7 @@
 
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
@@ -1749,6 +1750,36 @@ static
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
 
+        // Each newly connected tip is announced to the peers once, whoever
+        // supplied the block: a peer, or a miner through submitblock. Not
+        // during initial block download, and not the tip the node started at.
+        std::optional<hash_digest> last_announced;
+        if (auto const view = chain.chain_view()) {
+            last_announced = view->tip_hash;
+        }
+        auto announce_connected_tip = [&] {
+            auto const view = chain.chain_view();
+            if ( ! view || view->tip_hash == last_announced) {
+                return;
+            }
+            auto const& index = organizer.index();
+            auto const tip_idx = index.find(view->tip_hash);
+            auto const timestamp = tip_idx == blockchain::header_index::null_index
+                ? std::nullopt : std::optional<uint32_t>(index.get_timestamp(tip_idx));
+            last_announced = view->tip_hash;
+            if (blockchain::recency_is_stale(timestamp, announcement_max_tip_age_seconds)) {
+                return;
+            }
+            // Owed to each peer, never sent from here: each peer's service
+            // takes the latest owed tip and decides between headers and an
+            // inv from what it last announced to that peer.
+            spdlog::debug("[sync_coordinator] Announcing block {} to {} peer(s)",
+                encode_hash(view->tip_hash), header_peers.size());
+            for (auto const& peer : header_peers) {
+                peer->announce_tip(view->tip_hash);
+            }
+        };
+
 
         auto find_header_peer = [&](uint64_t nonce) -> network::peer_session::ptr {
             for (auto const& peer : header_peers) {
@@ -2357,6 +2388,7 @@ static
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
+                announce_connected_tip();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
