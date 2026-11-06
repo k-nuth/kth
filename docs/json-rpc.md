@@ -217,24 +217,43 @@ an empty array is a `-32602` error.
 
 ## Blocks and transactions
 
-`getblock "<hash>"` reads the block from the flat-file block store, through the
-header index, and returns it as hex; a side-branch block the node holds is
-returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
-Confirmed transactions are not indexed by txid (#491), so for one of those pass
-the block hash as the third parameter: `getrawtransaction "<txid>" false
-"<blockhash>"`. A block or transaction the node does not have is error `-5`.
-An empty optional block hash is treated as omitted. KTH currently has neither a
+Both methods take their arguments as BCHN does.
+
+`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+store, through the header index; a side-branch block the node holds is returned
+too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
+`confirmations` (-1 off the connected chain), `confirmations_ticks`, `size`,
+`height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
+`merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
+`chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
+transaction with its `decoderawtransaction` fields and `hex`. `fee` per
+transaction and `ablastate` are not reported.
+
+`getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
+mempool transaction. Confirmed transactions are not indexed by txid (#491), so
+for one of those pass the block hash as the third parameter:
+`getrawtransaction "<txid>" false "<blockhash>"`. KTH currently has neither a
 confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
-therefore require the block hash. Verbose transaction responses are tracked in
-#789 rather than silently returning hex for a verbose request.
-`fetch_block` reads the block through its header-index record on the chain's
-pool, so the RPC executor is not held by disk I/O. The stored record must parse
-to the end, hash to the requested block and match its merkle root. Missing
-indexed data remains `-5`; a damaged or unreadable stored record is an internal
-error, including through `getrawtransaction` with an explicit block hash. Until
-verbose forms arrive in #789, these endpoints accept only raw verbosity (`false`
-or `0`, with null using the default) and reject unsupported verbosity, wrong
-types and extra arguments.
+therefore require the block hash. An empty block hash is treated as omitted.
+With `verbose` true (or 1) it returns the `decoderawtransaction` fields
+with `hex`, and for a transaction read from a block also `blockhash`,
+`confirmations`, `confirmations_ticks`, `time`, `blocktime` and
+`in_active_chain`. For a block off the connected chain both confirmation fields
+are 0, the times are left out and `in_active_chain` is false. A mempool
+transaction omits both confirmation fields. Verbosity 2 (fees and prevouts) is
+not implemented and is rejected, as is any higher value.
+
+Tick depth includes the containing block's own target interval and follows the
+selected branch schedule across activation. These fields measure scheduled
+time, not elapsed wall-clock time.
+
+A block or transaction the node does not have is error `-5`. `fetch_block` reads
+the block through its header-index record on the chain's pool, so the RPC
+executor is not held by disk I/O. The stored record must parse to the end, hash
+to the requested block and match its merkle root; a damaged or unreadable
+stored record is an internal error, including through `getrawtransaction` with
+an explicit block hash. Wrong argument types, an out-of-range verbosity and
+extra arguments are rejected with `-32602`.
 
 ## Mining: getblocktemplatelight
 
