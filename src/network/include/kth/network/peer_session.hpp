@@ -65,11 +65,23 @@ public:
     using strand_type = ::asio::strand<executor_type>;
     using socket_type = ::asio::ip::tcp::socket;
 
-    // Channel for outbound messages (serialized bytes ready to send)
-    using outbound_channel = concurrent_channel<data_chunk>;
+    // Outbound messages, serialized and ready to write. Two queues with one
+    // writer: control traffic (pings, pongs, requests, announcements) and
+    // data served to the peer (blocks, headers). The writer always drains
+    // control first, so a pong goes ahead of every queued block; it still
+    // waits for a block already being written to the socket.
+    // select_channels: executor-free, closed by stop().
+    using outbound_channel = select_channel<data_chunk>;
 
-    /// Messages the outbound queue holds before a send has to wait.
+    /// Messages the control queue holds before a send has to wait.
     static constexpr size_t outbound_capacity = 100;
+
+    /// Messages the data queue holds before a send_data has to wait. Small:
+    /// a served block can be large, and the queue is per peer.
+    static constexpr size_t data_outbound_capacity = 2;
+
+    /// Requests waiting for the node's per-peer service (see served_requests).
+    static constexpr size_t served_requests_capacity = 16;
 
     // Inbound messages (heading + payload). A select_channel (see
     // async_channel.hpp): the read loop hands messages in with a suspended
@@ -119,27 +131,44 @@ public:
     // Messaging
     // -------------------------------------------------------------------------
 
-    /// Send a message to the peer (coroutine version)
+    /// Send a control message to the peer. Waits while the control queue is
+    /// full; error::channel_stopped once the session is stopped.
     template <typename Message>
     ::asio::awaitable<code> send(Message const& message) {
         if (stopped()) {
             co_return error::channel_stopped;
         }
-
-        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec] = co_await outbound_.async_send(
-            std::error_code{},
-            std::move(data),
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        if (ec) {
-            co_return error::channel_stopped;
-        }
-        co_return error::success;
+        co_return co_await enqueue(outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
-    /// Send raw bytes to the peer (coroutine version)
+    /// Send data served to the peer (blocks, headers answering its requests).
+    /// Waits while the data queue is full, without holding control traffic.
+    template <typename Message>
+    ::asio::awaitable<code> send_data(Message const& message) {
+        if (stopped()) {
+            co_return error::channel_stopped;
+        }
+        co_return co_await enqueue(data_outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
+    /// Send raw bytes to the peer as control traffic.
     ::asio::awaitable<code> send_raw(data_chunk data);
+
+    // -------------------------------------------------------------------------
+    // Served requests
+    // -------------------------------------------------------------------------
+
+    /// Requests the read loop hands to the node's per-peer service instead of
+    /// answering them itself (getheaders, getdata): serving them waits on the
+    /// data queue, and the read loop must keep reading. Bounded; the read loop
+    /// only try_sends, and a peer that fills it has too many requests pending.
+    /// Closed by stop(): a waiting service then sees eof.
+    using served_channel = select_channel<raw_message>;
+
+    [[nodiscard]]
+    served_channel& served_requests();
 
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
@@ -393,9 +422,14 @@ private:
     socket_type socket_;
     strand_type strand_;
 
+    /// Queue `data` on `channel`, waiting while it is full.
+    ::asio::awaitable<code> enqueue(outbound_channel& channel, data_chunk data);
+
     // Channels for message passing
     outbound_channel outbound_;
+    outbound_channel data_outbound_;
     inbound_channel inbound_;
+    served_channel served_requests_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive

@@ -129,8 +129,23 @@ public:
     /// Register a default handler for unhandled messages
     void set_default_handler(message_handler_fn handler);
 
+    /// Register a handler that runs in the peer's service instead of in its
+    /// read loop: dispatch() hands the message to the peer's bounded
+    /// served_requests() queue and returns, and serve() runs the handler.
+    /// For requests whose answer waits on the peer's data queue.
+    template <typename Message>
+    void register_served_handler(typed_message_handler_fn<Message> handler) {
+        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+    }
+
+    /// The peer's service: runs the served handlers on the requests dispatch()
+    /// handed over, in arrival order, until the session closes the queue. A
+    /// handler asking to disconnect stops the session.
+    ::asio::awaitable<void> serve(peer_session& peer);
+
 private:
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
+    boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
     message_handler_fn default_handler_;
 };
 
@@ -268,6 +283,13 @@ public:
     template <typename Message>
     void register_message_handler(typed_message_handler_fn<Message> handler) {
         dispatcher_.register_handler<Message>(std::move(handler));
+    }
+
+    /// Register a node handler that runs in each peer's service, off its read
+    /// loop (see message_dispatcher::register_served_handler).
+    template <typename Message>
+    void register_served_message_handler(typed_message_handler_fn<Message> handler) {
+        dispatcher_.register_served_handler<Message>(std::move(handler));
     }
 
     // Manual connections
@@ -433,6 +455,7 @@ private:
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
