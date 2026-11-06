@@ -948,9 +948,9 @@ validate_address(method_context& ctx, request const& req) {
 }
 
 // estimatefee [nblocks] -> the fee per kB, in BCH, that the size part of this
-// node's transaction price asks for (chain.byte_fee_satoshis). The price also
-// charges per signature operation (chain.sigop_fee_satoshis), which a per-kB
-// rate cannot carry. kth has no fee estimator, so nblocks, which older clients
+// node's transaction price asks for (chain.byte_fee_satoshis). A price per
+// signature operation (chain.sigop_fee_satoshis, 0 by default) is charged on
+// top, which a per-kB rate cannot carry. kth has no fee estimator, so nblocks, which older clients
 // send, does not change the answer. Anything other than no argument or one
 // non-negative integer is refused rather than answered.
 // C-API counterpart: kth_blockchain_settings.byte_fee_satoshis.
