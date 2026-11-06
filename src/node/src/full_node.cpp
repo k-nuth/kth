@@ -137,9 +137,18 @@ full_node::~full_node() {
         [this](peer_session& peer, domain::message::get_headers const& request) {
             return handlers::chain_data::handle_get_headers(chain_, peer, request);
         });
+    // One getdata can ask for blocks and transactions alike: the blocks are
+    // served from the chain, then, when the node relays transactions, the
+    // transactions from the mempool. Each part answers what it cannot find
+    // with its own notfound.
     network_.register_served_message_handler<domain::message::get_data>(
-        [this](peer_session& peer, domain::message::get_data const& request) {
-            return handlers::chain_data::handle_get_data(chain_, peer, request);
+        [this](peer_session& peer, domain::message::get_data const& request)
+            -> ::asio::awaitable<message_result> {
+            auto const result = co_await handlers::chain_data::handle_get_data(chain_, peer, request);
+            if (relay_ && result == message_result::handled && ! peer.stopped()) {
+                co_return co_await relay_->on_get_data(peer, request);
+            }
+            co_return result;
         });
     // Each newly connected tip, owed to every peer by the sync coordinator, is
     // announced by the peer's own service.
@@ -161,11 +170,6 @@ full_node::~full_node() {
             [this](peer_session& peer, domain::message::transaction const& tx)
                 -> ::asio::awaitable<message_result> {
                 co_return co_await relay_->on_transaction(peer, tx);
-            });
-        network_.register_message_handler<domain::message::get_data>(
-            [this](peer_session& peer, domain::message::get_data const& request)
-                -> ::asio::awaitable<message_result> {
-                co_return co_await relay_->on_get_data(peer, request);
             });
     }
 #endif

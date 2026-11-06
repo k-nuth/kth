@@ -109,13 +109,18 @@ transaction_relay::transaction_relay(blockchain::block_chain& chain, p2p_node& n
 ::asio::awaitable<message_result> transaction_relay::on_get_data(
     network::peer_session& peer, domain::message::get_data const& request) {
 
+    // Served data, like the blocks of the same getdata: it waits on the
+    // peer's data queue, not on its control traffic.
     auto const answer = answer_transaction_request(request, chain_.mempool_ref());
     for (auto const& tx : answer.found) {
-        co_await peer.send(*tx);
+        if (co_await peer.send_data(*tx)) {
+            // The peer is gone; nothing more can be sent to it.
+            co_return message_result::handled;
+        }
     }
     if ( ! answer.missing.empty()) {
         if (auto const missing = domain::message::not_found::create(answer.missing)) {
-            co_await peer.send(*missing);
+            (void)co_await peer.send_data(*missing);
         }
     }
     co_return message_result::handled;
