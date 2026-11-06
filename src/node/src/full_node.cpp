@@ -15,6 +15,7 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -125,6 +126,19 @@ full_node::~full_node() {
                 co_await peer.send(**inv);
             }
             co_return message_result::handled;
+        });
+
+    // Serve the connected chain: headers for a locator, and the blocks a
+    // peer asks for after an announcement or during its own sync. Both run in
+    // the peer's service, off its read loop: their answers wait on the peer's
+    // data queue.
+    network_.register_served_message_handler<domain::message::get_headers>(
+        [this](peer_session& peer, domain::message::get_headers const& request) {
+            return handlers::chain_data::handle_get_headers(chain_, peer, request);
+        });
+    network_.register_served_message_handler<domain::message::get_data>(
+        [this](peer_session& peer, domain::message::get_data const& request) {
+            return handlers::chain_data::handle_get_data(chain_, peer, request);
         });
 
 #if ! defined(__EMSCRIPTEN__)

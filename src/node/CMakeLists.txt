@@ -151,6 +151,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
+    src/handlers/chain_data.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -205,6 +206,7 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
+  include/kth/node/handlers/chain_data.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp
@@ -326,6 +328,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
           test/block_reads.cpp
+          test/chain_data.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
