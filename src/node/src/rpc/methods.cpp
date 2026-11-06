@@ -195,7 +195,7 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
 // submitblocklight -> reconstruct the full block from the miner's solved header +
 // coinbase and the cached job selection, then submit it to the chain. Returns
 // (Bitcoin submitblock semantics) null on accept, or a reject-reason string.
-// C-API counterpart: kth_chain_async_organize_block (see docs/json-rpc.md).
+// C-API counterpart: kth_chain_async_submit_block (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 submit_block_light(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);

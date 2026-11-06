@@ -45,21 +45,27 @@ full_node::full_node(configuration const& configuration)
     , network_type_(configuration.net)
     , network_settings_(configuration.network)
     , network_(network_settings_)
+    , block_submissions_(std::make_shared<blockchain::block_submission_channel>(4, 1))
     , chain_(
         configuration.chain,
         configuration.database,
         network_type_,
-        configuration.network.relay_transactions
+        configuration.network.relay_transactions,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(configuration.net)
+    // No sync owner exists in the browser build. Refuse instead of queueing.
+    , block_submissions_()
     , chain_(
         configuration.chain,
         configuration.database,
-        network_type_
+        network_type_,
+        true,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #endif
@@ -299,7 +305,8 @@ full_node::~full_node() {
     co_await ::asio::co_spawn(
         network_.thread_pool().get_executor(),
         sync::sync_orchestrator(chain_, organizer, network_, network_type_,
-            [this](std::string const& reason) { notify_fatal(reason); }),
+            [this](std::string const& reason) { notify_fatal(reason); },
+            sync::node_header_walk_timing, block_submissions_.get()),
         ::asio::use_awaitable
     );
 
@@ -334,7 +341,7 @@ void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
-    // run_sync() may still be inside chain.organize() when this is called.
+    // run_sync() may still be inside chain.submit_block() when this is called.
     // chain_.stop() is called in join() after run() has fully exited.
     network_.stop();
 #endif
@@ -346,7 +353,7 @@ void full_node::join() {
 #endif
 
     // Now that run() has exited (all coroutines done), it's safe to stop the chain.
-    // This must happen AFTER run() completes to avoid crashes in chain.organize().
+    // This must happen AFTER run() completes to avoid crashes in chain.submit_block().
     if (!chain_.stop()) {
         spdlog::error("[node] Failed to stop blockchain.");
     }
