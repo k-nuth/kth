@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -372,11 +371,11 @@ transaction_organizer::fetch_ds_proof(hash_digest const& hash) const {
 //-----------------------------------------------------------------------------
 
 uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
-    auto const byte_fee = minimum_byte_fee();
+    auto const byte_fee = settings_.byte_fee_satoshis;
     auto const sigop_fee = settings_.sigop_fee_satoshis;
 
     // Guard against summing signed values by testing independently.
-    if (byte_fee == 0.0 && sigop_fee == 0.0f) return 0;
+    if (byte_fee == 0.0f && sigop_fee == 0.0f) return 0;
 
     // TODO: this is a second pass on size and sigops, implement cache.
     // This at least prevents uncached calls when zero fee is configured.
@@ -386,51 +385,6 @@ uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
 
     // Require at least one satoshi per tx if there are any fees configured.
     return std::max(uint64_t(1), uint64_t(byte + sigop));
-}
-
-// The excess of a raised floor over the configured one halves this often.
-constexpr uint64_t floor_half_life_seconds = 12 * 60 * 60;
-
-uint64_t transaction_organizer::now() const {
-    return clock_();
-}
-
-void transaction_organizer::set_clock(std::function<uint64_t()> clock) {
-    clock_ = std::move(clock);
-}
-
-double transaction_organizer::floor_at(uint64_t now) const {
-    double const configured = settings_.byte_fee_satoshis;
-    if (raised_floor_ <= configured) {
-        return configured;
-    }
-    auto const elapsed = now > raised_at_ ? double(now - raised_at_) : 0.0;
-    auto const excess = (raised_floor_ - configured)
-        * std::pow(0.5, elapsed / double(floor_half_life_seconds));
-
-    // Once the excess is under half the configured floor it is gone: what is
-    // left is too small to keep the pool from refilling at the configured price.
-    if (excess < configured / 2) {
-        return configured;
-    }
-    return configured + excess;
-}
-
-double transaction_organizer::minimum_byte_fee() const {
-    std::lock_guard const lock(floor_mutex_);
-    return floor_at(now());
-}
-
-uint64_t transaction_organizer::fee_filter() const {
-    return static_cast<uint64_t>(std::llround(minimum_byte_fee() * 1000.0));
-}
-
-void transaction_organizer::raise_floor(fee_rate evicted) {
-    double const rate = double(evicted.fee) / double(evicted.size);
-    auto const at = now();
-    std::lock_guard const lock(floor_mutex_);
-    raised_floor_ = std::max(floor_at(at), rate + settings_.byte_fee_satoshis);
-    raised_at_ = at;
 }
 
 } // namespace kth::blockchain
