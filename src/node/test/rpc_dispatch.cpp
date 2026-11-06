@@ -1561,6 +1561,13 @@ TEST_CASE("block reads validate identity, bounds, errors and request parameters"
         auto const raw = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + ",1]");
         INFO(raw);
         CHECK(raw.find(R"("code":-32602)") != std::string::npos);
+        // Verbosity 2 is not implemented and 3 does not exist: neither is
+        // answered as verbosity 1.
+        for (auto const* verbosity : {"2", "3"}) {
+            auto const rejected = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + "," + verbosity + "," + quoted(trunk[0].hash()) + "]");
+            INFO(rejected);
+            CHECK(rejected.find(R"("code":-32602)") != std::string::npos);
+        }
     }
 }
 

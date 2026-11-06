@@ -143,10 +143,12 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
             result.verbosity = verbose ? 1u : 0u;
         } else if (type == simdjson::ondemand::json_type::number) {
             int64_t verbosity;
+            // getrawtransaction's verbosity 2 (fees and prevouts) is not
+            // implemented, so it is rejected instead of answered as 1.
             if (value.get_int64().get(verbosity) != simdjson::SUCCESS || verbosity < 0 ||
-                    ( ! transaction && verbosity > 2)) {
+                    verbosity > (transaction ? 1 : 2)) {
                 return kth::fail(make_error(error_code::invalid_params, transaction ?
-                    "verbose must be a boolean or a non-negative number" :
+                    "verbose must be 0, 1 or a boolean" :
                     "verbosity must be 0, 1, 2 or a boolean"));
             }
             result.verbosity = uint64_t(verbosity);
@@ -656,15 +658,10 @@ get_block(method_context& ctx, request const& req) {
                 }
                 return parent;
             }),
-        .chain_work = std::nullopt,
+        .chain_work = index.total_chain_work(args->hash),
         .next_block_hash = std::nullopt,
         .progress = chain_progress{progress->ticks, progress->target_time, progress->next_target_time},
         .confirmations_ticks = progress->confirmations_ticks};
-    // The header index counts work from the genesis block's child on.
-    if (auto const genesis = index.get_ancestor(idx, 0); genesis != blockchain::header_index::null_index) {
-        location.chain_work = index.get_chain_work(idx) +
-            domain::chain::header::proof(index.get_bits(genesis));
-    }
     if (location.confirmations > 1) {
         auto const connected_tip = index.find(view->tip_hash);
         auto const next = index.get_ancestor(connected_tip, int32_t(height + 1));

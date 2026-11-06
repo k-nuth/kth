@@ -235,12 +235,13 @@ for one of those pass the block hash as the third parameter:
 `getrawtransaction "<txid>" false "<blockhash>"`. KTH currently has neither a
 confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
 therefore require the block hash. An empty block hash is treated as omitted.
-With `verbose` true (or non-zero) it returns the `decoderawtransaction` fields
+With `verbose` true (or 1) it returns the `decoderawtransaction` fields
 with `hex`, and for a transaction read from a block also `blockhash`,
 `confirmations`, `confirmations_ticks`, `time`, `blocktime` and
 `in_active_chain`. For a block off the connected chain both confirmation fields
 are 0, the times are left out and `in_active_chain` is false. A mempool
-transaction omits both confirmation fields.
+transaction omits both confirmation fields. Verbosity 2 (fees and prevouts) is
+not implemented and is rejected, as is any higher value.
 
 Tick depth includes the containing block's own target interval and follows the
 selected branch schedule across activation. These fields measure scheduled
