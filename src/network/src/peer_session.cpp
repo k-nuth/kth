@@ -87,6 +87,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , data_outbound_(data_outbound_capacity)
     , inbound_(100)            // Buffer up to 100 inbound messages
     , served_requests_(served_requests_capacity)
+    , tip_announcements_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -122,6 +123,7 @@ peer_session::~peer_session() {
     data_outbound_.close();
     inbound_.close();
     served_requests_.close();
+    tip_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -261,6 +263,7 @@ void peer_session::stop(code const& ec) {
     data_outbound_.close();
     inbound_.close();
     served_requests_.close();
+    tip_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -314,6 +317,25 @@ bool peer_session::stopped() const {
 
 peer_session::served_channel& peer_session::served_requests() {
     return served_requests_;
+}
+
+peer_session::outbound_channel& peer_session::data_outbound() {
+    return data_outbound_;
+}
+
+void peer_session::announce_tip(hash_digest const& tip) {
+    if (tip_announcements_.try_send(hash_digest(tip))) {
+        return;
+    }
+    // Full: replace what the service has not taken. With one producer the
+    // slot can only empty in between, and then the send below succeeds.
+    std::error_code ec;
+    (void)tip_announcements_.try_receive(ec);
+    (void)tip_announcements_.try_send(hash_digest(tip));
+}
+
+peer_session::tip_channel& peer_session::tip_announcements() {
+    return tip_announcements_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {
@@ -535,6 +557,14 @@ bool peer_session::wants_addrv2() const {
 
 void peer_session::set_wants_addrv2(bool value) {
     wants_addrv2_.store(value, std::memory_order_relaxed);
+}
+
+bool peer_session::prefers_headers() const {
+    return prefers_headers_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_prefers_headers(bool value) {
+    prefers_headers_.store(value, std::memory_order_relaxed);
 }
 
 // =============================================================================
