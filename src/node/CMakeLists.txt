@@ -145,6 +145,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/local_admission_tasks.cpp
     src/detail/shv.cpp
     src/executor/executor.cpp
 
@@ -326,6 +327,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
+          test/block_reads.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
@@ -339,6 +341,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/block_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
+          test/local_block_admission.cpp
+          test/local_admission_tasks.cpp
+          test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp

@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <catch2/catch_approx.hpp>
 #include <optional>
+#include <boost/make_shared.hpp>
 #include "sync_harness.hpp"
 
 #include <algorithm>
@@ -16,8 +17,11 @@
 #include <type_traits>
 
 #include <chrono>
+#include <cstdio>
 #include <future>
+#include <memory>
 #include <vector>
+#include <fmt/format.h>
 
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -772,9 +776,9 @@ TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyo
     io.run();
 
     REQUIRE(result.get() == node::rpc::build_success("3", node::rpc::render_chain_tips({
-        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only},
-        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only},
-        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active}})));
+        {5u, trunk[4].hash(), 2u, blockchain::header_index::tip_status::headers_only, 3000},
+        {4u, side[1].hash(), 2u, blockchain::header_index::tip_status::headers_only, 2400},
+        {3u, trunk[2].hash(), 0u, blockchain::header_index::tip_status::active, 1800}})));
 }
 
 TEST_CASE("getchaintips shares ancestry across many tips without stale availability", "[rpc dispatch][rpc chain tips]") {
@@ -798,7 +802,9 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
     auto missing = blockchain::header_index::null_index;
     for (size_t i = 0; i < shared_length; ++i) {
         auto const [hash, idx] = add(parent, uint32_t(i + 1));
-        if (i == 0) missing = idx;
+        if (i == 0) {
+            missing = idx;
+        }
         parent = hash;
     }
     index.set_status(missing, blockchain::header_status::none);
@@ -826,6 +832,7 @@ TEST_CASE("getchaintips shares ancestry across many tips without stale availabil
         io.run();
         return result.get();
     };
+    for (auto& tip : expected) tip.ticks = uint64_t(tip.height) * 600;
     REQUIRE(query() == node::rpc::build_success("3", node::rpc::render_chain_tips(expected)));
     REQUIRE_FALSE(index.get_chain_tips(null_hash));
     auto const previous_tips = index.get_chain_tips(genesis);
@@ -874,7 +881,7 @@ TEST_CASE("gettxout dispatch reads the UTXO set and the mempool", "[rpc dispatch
     auto const coinbase = trunk[1].transactions().front().hash();
     auto const reply = request("[" + quoted(coinbase) + ",0]");
     CHECK(reply.find(R"("bestblock":)" + quoted(trunk[4].hash())) != std::string::npos);
-    CHECK(reply.find(R"("confirmations":4,"value":50,)") != std::string::npos);
+    CHECK(reply.find(R"("confirmations":4,"confirmations_ticks":2400,"value":50,)") != std::string::npos);
     CHECK(reply.find(R"("coinbase":true})") != std::string::npos);
 
     // No such output, and no such transaction.
@@ -898,7 +905,7 @@ TEST_CASE("gettxout dispatch reads the UTXO set and the mempool", "[rpc dispatch
     CHECK(request("[" + quoted(coinbase) + ",0,true]") == none);
     CHECK(request("[" + quoted(coinbase) + ",0,false]") == reply);
     auto const pooled = request("[" + quoted(spend->hash()) + ",0]");
-    CHECK(pooled.find(R"("confirmations":0,"value":49.9999,)") != std::string::npos);
+    CHECK(pooled.find(R"("confirmations":0,"confirmations_ticks":0,"value":49.9999,)") != std::string::npos);
     CHECK(pooled.find(R"("coinbase":false})") != std::string::npos);
     CHECK(request("[" + quoted(spend->hash()) + ",0,false]") == none);
 
@@ -1075,7 +1082,7 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     REQUIRE(reply.find(R"("fee":500,"sigops":3})") != std::string::npos);
     REQUIRE(reply.find(R"("previousblockhash":")" + encode_hash(trunk.back().hash()) + '"') !=
         std::string::npos);
-    REQUIRE(reply.find(R"("height":102})") != std::string::npos);
+    REQUIRE(reply.find(R"("height":102,"ticks":61200,"target_time":600})") != std::string::npos);
     REQUIRE(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"]}])").find(R"("error":null)") !=
         std::string::npos);
     REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);
@@ -1215,4 +1222,799 @@ TEST_CASE("getblockchaininfo uses the active header tip while blocks are behind"
     REQUIRE(document["result"]["verificationprogress"].get_double().get(progress) == simdjson::SUCCESS);
     REQUIRE(progress == 0.0);
     REQUIRE(raw.find(R"("initialblockdownload":true)") != std::string::npos);
+}
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("RPC tick metadata extends existing replies without replacing block counts", "[rpc dispatch][rpc ticks]") {
+    test::chain_fixture fixture("rpc_tick_metadata", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":31}";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto reply = result.get();
+        REQUIRE(reply.find("\"error\":null") != std::string::npos);
+        return reply;
+    };
+    auto const hash = encode_hash(domain::chain::block::genesis_regtest().hash());
+    auto const header = request("getblockheader", "[\"" + hash + "\"]");
+    CHECK(header.find("\"confirmations\":1") != std::string::npos);
+    CHECK(header.find("\"confirmations_ticks\":600") != std::string::npos);
+    auto const tips = request("getchaintips", "[]");
+    CHECK(tips.find("\"height\":0") != std::string::npos);
+    CHECK(tips.find("\"ticks\":0") != std::string::npos);
+    for (auto const* method : {"getblocktemplate", "getblocktemplatelight"}) {
+        auto const candidate = request(method, "[]");
+        CAPTURE(method, candidate);
+        CHECK(candidate.find("\"height\":1") != std::string::npos);
+        CHECK(candidate.find("\"ticks\":600") != std::string::npos);
+        CHECK(candidate.find("\"target_time\":600") != std::string::npos);
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+domain::chain::block mine_tick_block(hash_digest const& previous, uint32_t height,
+                                     uint32_t timestamp, uint64_t coinbase_value) {
+    domain::chain::transaction::list txs{test::coinbase_tx(height, 0, coinbase_value)};
+    domain::chain::block candidate(domain::chain::header{0x20000000, previous, null_hash,
+        timestamp, test::regtest_bits, 0}, txs);
+    auto const merkle = candidate.generate_merkle_root();
+    std::optional<domain::chain::block> mined;
+    for (uint64_t nonce = 0; nonce <= max_uint32; ++nonce) {
+        domain::chain::header header{0x20000000, previous, merkle, timestamp,
+            test::regtest_bits, uint32_t(nonce)};
+        if (header.is_valid_proof_of_work(domain::chain::hash(header), false)) {
+            mined.emplace(std::move(header), txs);
+            break;
+        }
+    }
+    REQUIRE(mined);
+    return *mined;
+}
+
+std::vector<domain::chain::block> mixed_tick_chain(hash_digest previous, uint32_t count,
+                                                 uint32_t activation_height, uint32_t base_time) {
+    std::vector<domain::chain::block> blocks;
+    blocks.reserve(count);
+    for (uint32_t height = 1; height <= count; ++height) {
+        auto const shorter = height > activation_height;
+        auto const timestamp = shorter
+            ? base_time + activation_height * 600 + (height - activation_height) * 60
+            : base_time + height * 600;
+        blocks.push_back(mine_tick_block(previous, height, timestamp,
+            uint64_t(shorter ? 5 : 50) * 100'000'000));
+        previous = blocks.back().hash();
+    }
+    return blocks;
+}
+} // namespace
+
+TEST_CASE("RPC tick fields follow mixed intervals and the candidate branch", "[rpc dispatch][rpc ticks]") {
+    constexpr uint32_t activation_height = 12;
+    constexpr uint32_t base_time = 1'700'000'000;
+    test::chain_fixture fixture("rpc_mixed_tick_metadata", /*notify_limit_hours*/ 0);
+    fixture.settings().cantor_activation_time = base_time + (activation_height - 5) * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const trunk = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(),
+        15, activation_height, base_time);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 15);
+
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":41}";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        auto reply = result.get();
+        REQUIRE(reply.find("\"error\":null") != std::string::npos);
+        return reply;
+    };
+    for (auto const item : {std::pair{11u, 1380}, std::pair{12u, 780}, std::pair{13u, 180}}) {
+        auto const text = request("getblockheader", "[\"" + encode_hash(trunk[item.first-1].hash()) + "\"]");
+        CAPTURE(item.first, text);
+        CHECK(text.find("\"confirmations_ticks\":" + std::to_string(item.second)) != std::string::npos);
+    }
+    auto const coinbase = trunk[11].transactions().front().hash();
+    auto const output = request("gettxout", "[\"" + encode_hash(coinbase) + "\",0]");
+    CHECK(output.find("\"confirmations\":4") != std::string::npos);
+    CHECK(output.find("\"confirmations_ticks\":780") != std::string::npos);
+    auto const boundary = request("getblockheader", "[\"" + encode_hash(trunk[11].hash()) + "\"]");
+    CHECK(boundary.find("\"ticks\":7200") != std::string::npos);
+    CHECK(boundary.find("\"target_time\":600") != std::string::npos);
+    CHECK(boundary.find("\"next_target_time\":60") != std::string::npos);
+    for (auto const* method : {"getblocktemplate", "getblocktemplatelight"}) {
+        auto const candidate = request(method, "[]");
+        CAPTURE(method, candidate);
+        CHECK(candidate.find("\"height\":16") != std::string::npos);
+        CHECK(candidate.find("\"ticks\":7440") != std::string::npos);
+        CHECK(candidate.find("\"target_time\":60") != std::string::npos);
+    }
+    CHECK(request("getchaintips", "[]").find("\"ticks\":7380") != std::string::npos);
+}
+
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("block progress captures mixed intervals and preserves a supplied publication", "[chain progress][faster_blocks]") {
+    constexpr uint32_t activation_height = 12;
+    constexpr uint32_t base_time = 1'700'000'000;
+    test::chain_fixture fixture("rpc_verbose_tick_depth", /*notify_limit_hours*/ 0);
+    fixture.settings().cantor_activation_time = base_time + (activation_height - 5) * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const trunk = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(),
+        15, activation_height, base_time);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 15);
+
+    auto const captured = fixture.chain().chain_view();
+    auto missing_tip = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    missing_tip->tip_hash = null_hash;
+    auto wrong_height = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    ++wrong_height->connected_tip_height;
+    for (auto const& unavailable : {blockchain::block_chain::chain_view_ptr{},
+            blockchain::block_chain::chain_view_ptr{missing_tip},
+            blockchain::block_chain::chain_view_ptr{wrong_height}}) {
+        auto const progress = fixture.chain().get_block_progress(trunk[12].hash(), unavailable);
+        CHECK(progress);
+        if (!progress) continue;
+        CHECK(progress->confirmations == -1);
+        CHECK(progress->confirmations_ticks == -1);
+        CHECK(progress->ticks == 7260);
+        CHECK(progress->target_time == 60);
+        CHECK(progress->next_target_time == 60);
+    }
+    auto no_state = boost::make_shared<blockchain::block_chain::published_chain_view>(*captured);
+    no_state->state.reset();
+    auto const indexed_depth = fixture.chain().get_block_progress(trunk[12].hash(), no_state);
+    REQUIRE(indexed_depth);
+    CHECK(indexed_depth->confirmations == 3);
+    CHECK(indexed_depth->confirmations_ticks == 180);
+    for (auto const test : {std::pair{11u, 1380}, std::pair{12u, 780}, std::pair{13u, 180}}) {
+        auto const progress = fixture.chain().get_block_progress(trunk[test.first - 1].hash(), captured);
+        REQUIRE(progress);
+        CHECK(progress->height == test.first);
+        CHECK(progress->confirmations_ticks == test.second);
+    }
+    auto const boundary = fixture.chain().get_block_progress(trunk[11].hash(), captured);
+    REQUIRE(boundary);
+    CHECK(boundary->ticks == 7200);
+    CHECK(boundary->target_time == 600);
+    CHECK(boundary->next_target_time == 60);
+    auto const short_block = fixture.chain().get_block_progress(trunk[12].hash(), captured);
+    REQUIRE(short_block);
+    CHECK(short_block->ticks == 7260);
+    CHECK(short_block->target_time == 60);
+    CHECK(short_block->next_target_time == 60);
+    CHECK_FALSE(fixture.chain().get_block_progress(null_hash, captured));
+
+    // Extend through the real header, persistence and connect boundaries.
+    auto const timestamp = base_time + activation_height * 600 + 4 * 60;
+    std::vector<domain::chain::block> next{mine_tick_block(trunk.back().hash(), 16,
+        timestamp, 5 * uint64_t(100'000'000))};
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(next)).headers_added == 1);
+    test::persist_headers(fixture, next, 16);
+    test::connect_bodies(fixture, next, 16);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 16);
+    auto const still_captured = fixture.chain().get_block_progress(trunk[11].hash(), captured);
+    auto const current = fixture.chain().get_block_progress(trunk[11].hash());
+    REQUIRE(still_captured);
+    REQUIRE(current);
+    CHECK(still_captured->confirmations == 4);
+    CHECK(still_captured->confirmations_ticks == 780);
+    CHECK(current->confirmations == 5);
+    CHECK(current->confirmations_ticks == 840);
+
+    // A stored side branch activates one height sooner. Its own tick height
+    // must not be borrowed from the active chain's schedule at the same height.
+    std::vector<domain::chain::block> side;
+    auto side_previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 15; ++height) {
+        side.push_back(test::mine_block(side_previous, height, base_time + (height + 1) * 600, 1, {}, 0));
+        side_previous = side.back().hash();
+    }
+    static_cast<void>(fixture.organizer().add_headers(test::headers_of(side)));
+    auto const stale = fixture.chain().get_block_progress(side.back().hash(), captured);
+    REQUIRE(stale);
+    CHECK(stale->height == 15);
+    CHECK(stale->ticks == 6840);
+    CHECK(stale->target_time == 60);
+    CHECK(stale->next_target_time == 60);
+    CHECK(stale->confirmations == -1);
+    CHECK(stale->confirmations_ticks == -1);
+}
+
+TEST_CASE("getblockheader returns unknown depth for a stored unconnected header", "[rpc dispatch][rpc ticks]") {
+    test::chain_fixture fixture("rpc_header_unconnected_ticks", 0);
+    constexpr uint32_t base = 1'700'000'000;
+    fixture.settings().cantor_activation_time = base + 7 * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const blocks = mixed_tick_chain(domain::chain::block::genesis_regtest().hash(), 15, 12, base);
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
+    test::persist_headers(fixture, blocks, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 0);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = "{\"method\":\"getblockheader\",\"params\":[\"" +
+        encode_hash(blocks.back().hash()) + "\"],\"id\":51}";
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.run();
+    auto const reply = result.get();
+    CHECK(reply.find("\"error\":null") != std::string::npos);
+    CHECK(reply.find("\"confirmations\":-1") != std::string::npos);
+    CHECK(reply.find("\"confirmations_ticks\":-1") != std::string::npos);
+    CHECK(reply.find("\"ticks\":7380") != std::string::npos);
+    CHECK(reply.find("\"target_time\":60") != std::string::npos);
+    CHECK(reply.find("\"next_target_time\":60") != std::string::npos);
+}
+
+#endif
+
+
+TEST_CASE("getblock and getrawtransaction dispatch read the block files and the mempool", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_file_reads");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = R"({"method":")" + method + R"(","params":)" + params + R"(,"id":12})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+    auto const hex = [](std::string const& text) { return '"' + text + '"'; };
+
+    // Block 3, as stored, by hash.
+    REQUIRE(request("getblock", "[" + quoted(trunk[2].hash()) + ",false]") ==
+        node::rpc::build_success("12", hex(node::rpc::block_to_hex(trunk[2]))));
+    REQUIRE(request("getblock", "[" + quoted(null_hash) + "]") ==
+        node::rpc::build_error("12", -5, "Block not found"));
+
+    // A confirmed transaction: with its block hash, and not without one.
+    auto const& coinbase = trunk[2].transactions().front();
+    REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",false," + quoted(trunk[2].hash()) + "]") ==
+        node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(coinbase))));
+    REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",false," + quoted(trunk[1].hash()) + "]") ==
+        node::rpc::build_error("12", -5, "No such transaction found in the provided block"));
+    REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + "]") ==
+        node::rpc::build_error("12", -5, "No such mempool transaction; pass the block hash for a confirmed one"));
+
+    // A mempool transaction, by txid alone.
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{coinbase.hash(), 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    auto const pooled = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{2u, 0u, std::move(ins), std::move(outs)});
+    REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
+        pooled, 1000u, uint32_t(pooled->serialized_size(true)), 1u, 0u}));
+    REQUIRE(request("getrawtransaction", "[" + quoted(pooled->hash()) + "]") ==
+        node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
+    CHECK(request("getrawtransaction", "[" + quoted(pooled->hash()) + ",false,\"\"]") ==
+        node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
+}
+
+TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failure", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_file_damaged");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    auto const fetch = [&](hash_digest const& hash) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, fixture.chain().fetch_block(hash), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(fetch(trunk[0].hash()));
+    REQUIRE(fetch(trunk[1].hash()));
+    // Corruption must exercise a cache miss, not the immutable block just read.
+    REQUIRE(fixture.restart());
+    auto& chain = fixture.chain();
+
+    // Overwrite bytes of a block's record in its block file, relative to the
+    // start of the block itself. The record opens with an 8-byte header: the
+    // network magic, then the block's size.
+    auto const overwrite = [&](domain::chain::block const& block, long offset, data_chunk const& bytes) {
+        auto const idx = chain.headers().find(block.hash());
+        REQUIRE(idx != blockchain::header_index::null_index);
+        auto const name = fmt::format("blk{:05}.dat", chain.headers().get_file_number(idx));
+        auto const path = chain.data_dir() / "blocks" / name;
+        auto const close_file = [](FILE* handle) noexcept { std::fclose(handle); };
+        std::unique_ptr<FILE, decltype(close_file)> file(
+            std::fopen(path.string().c_str(), "r+b"), close_file);
+        REQUIRE(file);
+        REQUIRE(std::fseek(file.get(), long(chain.headers().get_data_pos(idx)) + offset, SEEK_SET) == 0);
+        REQUIRE(std::fwrite(bytes.data(), 1, bytes.size(), file.get()) == bytes.size());
+        REQUIRE(std::fflush(file.get()) == 0);
+    };
+
+    // The first block's magic is gone: the record cannot be read.
+    overwrite(trunk[0], -8, data_chunk(4, 0x00));
+    auto const unreadable = fetch(trunk[0].hash());
+    REQUIRE_FALSE(unreadable);
+    CHECK(unreadable.error() == error::operation_failed);
+
+    // The second block's record reads, but its bytes are not a block: the
+    // transaction count after the 80-byte header claims far more than follows.
+    overwrite(trunk[1], 80, data_chunk(9, 0xff));
+    auto const unparsable = fetch(trunk[1].hash());
+    REQUIRE_FALSE(unparsable);
+    CHECK(unparsable.error() == error::operation_failed);
+}
+
+TEST_CASE("block reads validate identity, bounds, errors and request parameters", "[rpc dispatch][rpc block read review]") {
+    test::chain_fixture fixture("rpc_block_read_review");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    auto& chain = fixture.chain();
+    auto const fetch = [&](hash_digest const& hash) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, chain.fetch_block(hash), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    REQUIRE(fetch(trunk[1].hash()));
+
+    // Overwrite bytes of a block's record in its block file, relative to the
+    // start of the block itself. The record opens with an 8-byte header: the
+    // network magic, then the block's size.
+    auto const overwrite = [&](domain::chain::block const& block, long offset, data_chunk const& bytes) {
+        auto const idx = chain.headers().find(block.hash());
+        REQUIRE(idx != blockchain::header_index::null_index);
+        auto const name = fmt::format("blk{:05}.dat", chain.headers().get_file_number(idx));
+        auto const path = chain.data_dir() / "blocks" / name;
+        auto const close_file = [](FILE* handle) noexcept { std::fclose(handle); };
+        std::unique_ptr<FILE, decltype(close_file)> file(
+            std::fopen(path.string().c_str(), "r+b"), close_file);
+        REQUIRE(file);
+        REQUIRE(std::fseek(file.get(), long(chain.headers().get_data_pos(idx)) + offset, SEEK_SET) == 0);
+        REQUIRE(std::fwrite(bytes.data(), 1, bytes.size(), file.get()) == bytes.size());
+        REQUIRE(std::fflush(file.get()) == 0);
+    };
+
+
+    auto request = [&](std::string_view method, std::string const& params) {
+        node::mining::job_store jobs(1, 60);
+        node::rpc::method_context context{chain, jobs};
+        node::rpc::dispatcher dispatcher;
+        node::rpc::register_builtin_methods(dispatcher);
+        auto const body = std::string(R"({"method":")") + std::string(method) + R"(","params":)" + params + R"(,"id":99})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& h) { return '"' + encode_hash(h) + '"'; };
+    SECTION("parseable records must match the indexed block hash") {
+        overwrite(trunk[0], 76, {uint8_t(trunk[0].header().nonce() ^ 1u)});
+        auto const changed = fetch(trunk[0].hash());
+        REQUIRE_FALSE(changed);
+        CHECK(changed.error() == error::operation_failed);
+    }
+    SECTION("disk failures are not missing transactions") {
+        overwrite(trunk[0], -8, data_chunk(4, 0x00));
+        auto const params = "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + "]";
+        auto const raw = request("getrawtransaction", params);
+        INFO(raw);
+        CHECK(raw == node::rpc::build_error("99", -32603, code(error::operation_failed).message()));
+    }
+    SECTION("block contents must match the header merkle commitment") {
+        overwrite(trunk[0], long(trunk[0].serialized_size()) - 1, {1});
+        CHECK_FALSE(fetch(trunk[0].hash()));
+    }
+    SECTION("heights must not wrap to a different existing block") {
+        if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
+            ::asio::io_context io;
+            auto result = ::asio::co_spawn(io, chain.fetch_block(size_t(max_uint32) + 2), ::asio::use_future);
+            io.run();
+            CHECK_FALSE(result.get());
+        }
+    }
+    SECTION("malformed optional parameters and extra arguments are rejected") {
+        for (auto const& params : {"[" + quoted(trunk[0].hash()) + ",false,1]", "[" + quoted(trunk[0].hash()) + R"(,"wrong-type"])"}) {
+            auto const raw = request("getblock", params);
+            INFO(raw);
+            CHECK(raw.find(R"("code":-32602)") != std::string::npos);
+        }
+        auto const raw = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + ",1]");
+        INFO(raw);
+        CHECK(raw.find(R"("code":-32602)") != std::string::npos);
+        // Verbosity 2 is not implemented and 3 does not exist: neither is
+        // answered as verbosity 1.
+        for (auto const* verbosity : {"2", "3"}) {
+            auto const rejected = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + "," + verbosity + "," + quoted(trunk[0].hash()) + "]");
+            INFO(rejected);
+            CHECK(rejected.find(R"("code":-32602)") != std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("getblock and getrawtransaction dispatch answer verbosely", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_verbose_block_and_tx");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five connected blocks.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    std::vector<domain::chain::block> trunk;
+    auto prev = genesis.hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = R"({"method":")" + method + R"(","params":)" + params + R"(,"id":13})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+    auto const has = [](std::string const& text, std::string const& fragment) {
+        return text.find(fragment) != std::string::npos;
+    };
+
+    // Block 3: three confirmations, its neighbours, the median of its own
+    // timestamp and those of the blocks before it.
+    auto const block = request("getblock", "[" + quoted(trunk[2].hash()) + "]");
+    CHECK(has(block, R"("result":{"hash":)" + quoted(trunk[2].hash()) + R"(,"confirmations":3,)"));
+    CHECK(has(block, R"("height":3,)"));
+    CHECK(has(block, R"("tx":[)" + quoted(trunk[2].transactions().front().hash()) + "]"));
+    CHECK(has(block, R"("mediantime":)" + std::to_string(trunk[1].header().timestamp()) + ","));
+    CHECK(has(block, R"("nTx":1,"previousblockhash":)" + quoted(trunk[1].hash()) +
+        R"(,"nextblockhash":)" + quoted(trunk[3].hash()) + "}"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",1]") == block);
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",true]") == block);
+    // The tip has no next block; the hex form is still there.
+    CHECK_FALSE(has(request("getblock", "[" + quoted(trunk[4].hash()) + "]"), "nextblockhash"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",0]") ==
+        node::rpc::build_success("13", '"' + node::rpc::block_to_hex(trunk[2]) + '"'));
+    // Verbosity 2: the transactions decoded, with their hex.
+    auto const full = request("getblock", "[" + quoted(trunk[2].hash()) + ",2]");
+    CHECK(has(full, R"("tx":[{"txid":)" + quoted(trunk[2].transactions().front().hash())));
+    CHECK(has(full, R"("vin":[{"coinbase":")"));
+    CHECK(has(full, R"("hex":")" + node::rpc::transaction_to_hex(trunk[2].transactions().front()) + R"("}])"));
+    CHECK(request("getblock", "[" + quoted(trunk[2].hash()) + ",3]") ==
+        node::rpc::build_error("13", -32602, "verbosity must be 0, 1, 2 or a boolean"));
+
+    // A transaction read from its block, verbosely.
+    auto const& coinbase = trunk[2].transactions().front();
+    auto const tx = request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",true," + quoted(trunk[2].hash()) + "]");
+    CHECK(has(tx, R"("hex":")" + node::rpc::transaction_to_hex(coinbase) + R"(","blockhash":)" +
+        quoted(trunk[2].hash()) + R"(,"confirmations":3,"confirmations_ticks":1800,"time":)" +
+        std::to_string(trunk[2].header().timestamp()) + R"(,"blocktime":)" +
+        std::to_string(trunk[2].header().timestamp()) + R"(,"in_active_chain":true})"));
+}
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("verbose block and transaction RPCs expose inclusive tick depth across activation", "[rpc dispatch][rpc verbose ticks]") {
+    constexpr uint32_t activation_height = 12;
+    constexpr uint32_t base_time = 1'700'000'000;
+    test::chain_fixture fixture("rpc_verbose_tick_depth_activation", /*notify_limit_hours*/ 0);
+    fixture.settings().cantor_activation_time = base_time + (activation_height - 5) * 600;
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    std::vector<domain::chain::block> trunk;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t height = 1; height <= 15; ++height) {
+        auto const short_blocks = height > activation_height;
+        auto const timestamp = short_blocks
+            ? base_time + activation_height * 600 + (height - activation_height) * 60
+            : base_time + height * 600;
+        auto const value = uint64_t(short_blocks ? 5 : 50) * 100'000'000;
+        domain::chain::transaction::list txs{test::coinbase_tx(height, 0, value)};
+        domain::chain::block candidate(domain::chain::header{0x20000000, previous, null_hash,
+            timestamp, test::regtest_bits, 0}, txs);
+        auto const merkle = candidate.generate_merkle_root();
+        bool solved = false;
+        for (uint64_t nonce = 0; nonce <= max_uint32; ++nonce) {
+            domain::chain::header header{0x20000000, previous, merkle, timestamp,
+                test::regtest_bits, uint32_t(nonce)};
+            if (header.is_valid_proof_of_work(domain::chain::hash(header), false)) {
+                trunk.emplace_back(std::move(header), txs);
+                solved = true;
+                break;
+            }
+        }
+        REQUIRE(solved);
+        previous = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 15);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto const body = R"({"method":")" + method + R"(","params":)" + params + R"(,"id":31})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto field = [](std::string const& json, std::string_view key) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(json);
+        simdjson::ondemand::document document;
+        REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+        int64_t result = 0;
+        INFO(json);
+        REQUIRE(document["result"][key].get_int64().get(result) == simdjson::SUCCESS);
+        return result;
+    };
+    struct expected { uint32_t height; uint64_t ticks; int64_t depth; uint32_t own_interval, next_interval; };
+    for (auto const test : {expected{11, 6600, 1380, 600, 600}, expected{12, 7200, 780, 600, 60},
+                           expected{13, 7260, 180, 60, 60}, expected{15, 7380, 60, 60, 60}}) {
+        CAPTURE(test.height);
+        auto const& block = trunk[test.height - 1];
+        auto const quoted = '"' + encode_hash(block.hash()) + '"';
+        for (auto const verbosity : {1, 2}) {
+            auto const raw = request("getblock", "[" + quoted + ',' + std::to_string(verbosity) + ']');
+            CHECK(field(raw, "height") == test.height);
+            CHECK(field(raw, "confirmations") == 16 - test.height);
+            CHECK(field(raw, "ticks") == test.ticks);
+            CHECK(field(raw, "confirmations_ticks") == test.depth);
+            CHECK(field(raw, "target_time") == test.own_interval);
+            CHECK(field(raw, "next_target_time") == test.next_interval);
+        }
+        auto const raw = request("getrawtransaction", "[\"" + encode_hash(block.transactions().front().hash()) + "\",true," + quoted + ']');
+        CHECK(field(raw, "confirmations") == 16 - test.height);
+        CHECK(field(raw, "confirmations_ticks") == test.depth);
+        // A transaction's location has no height field; tick depth accompanies
+        // confirmations without inventing a block-height field for the reply.
+        CHECK(raw.find("\"ticks\":") == std::string::npos);
+    }
+}
+#endif
+
+TEST_CASE("submitblock dispatch rejects malformed parameters and block data", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_submitblock_malformed");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto body = std::string(R"({"method":")") + method + R"(","id":8)";
+        if ( ! params.empty()) {
+            body += R"(,"params":)" + params;
+        }
+        body += '}';
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    auto const hex = encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()));
+    for (auto const& params : std::vector<std::string>{
+             "", "[]", "{}", "[0]", "[null]", R"([""])",
+             R"([")" + hex + R"(",null,null])"}) {
+        CAPTURE(params);
+        auto const response = request("submitblock", params);
+        REQUIRE(response.find(R"("code":-32602)") != std::string::npos);
+    }
+    for (auto const& data : std::vector<std::string>{
+             "zz", "0", "00", hex.substr(0, hex.size() - 2), hex + "00",
+             encode_base16(to_data_chunk(domain::chain::block{
+                 domain::chain::block::genesis_regtest().header(), {}}))}) {
+        CAPTURE(data);
+        auto const response = request("submitblock", R"([")" + data + R"("])");
+        REQUIRE(response.find(R"("code":-22)") != std::string::npos);
+    }
+    auto const response = request("submitblock", R"([")" + hex + R"("])");
+    REQUIRE(response.find(R"("code":-28)") != std::string::npos);
+}
+
+TEST_CASE("submitblock RPC distinguishes admission pressure and shutdown from rejection", "[rpc dispatch][block_submission]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_pressure");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const hex = encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()));
+    auto const body = std::string(R"({"method":"submitblock","params":[")")
+        + hex + R"("],"id":10})";
+    ::asio::io_context io;
+    auto first = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.poll();
+    REQUIRE(submissions->buffered() == 1);
+    CHECK(first.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+    auto second = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.poll();
+    REQUIRE(second.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    CHECK(second.get().find(R"("code":-25)") != std::string::npos);
+    REQUIRE(fixture.chain().stop());
+    io.restart();
+    io.run();
+    CHECK(first.get().find(R"("code":-28)") != std::string::npos);
+    CHECK(submissions->buffered() == 0);
+}
+
+TEST_CASE("submitblock RPC preserves the admission owner's duplicate validity", "[rpc dispatch][block_submission]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_complete_outcome");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const job_id = jobs.add({});
+    for (auto const* method : {"submitblock", "submitblocklight"}) {
+        CAPTURE(method);
+        auto const body = std::string(R"({"method":")") + method + R"(","params":[")"
+            + encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()))
+            + R"(",")" + job_id + R"("],"id":11})";
+        using blockchain::block_validity;
+        for (auto const& [validity, expected] : {
+                 std::pair{block_validity::valid, R"("duplicate")"},
+                 std::pair{block_validity::invalid, R"("duplicate-invalid")"},
+                 std::pair{block_validity::unknown, R"("duplicate-inconclusive")"}}) {
+            ::asio::io_context io;
+            auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+            io.poll();
+            std::error_code ec;
+            auto pending = submissions->try_receive(ec);
+            REQUIRE_FALSE(ec);
+            REQUIRE(pending);
+            REQUIRE(pending->reply->try_send(std::error_code{},
+                blockchain::block_submission_result{error::duplicate_block, validity, true}));
+            io.restart();
+            io.run();
+            CHECK(result.get() == node::rpc::build_success("11", expected));
+        }
+    }
+}
+
+TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispatch][block_submission][bip22]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_bip22");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const job_id = jobs.add({});
+    for (auto const* method : {"submitblock", "submitblocklight"}) {
+        CAPTURE(method);
+        auto const body = std::string(R"({"method":")") + method + R"(","params":[")"
+            + encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()))
+            + R"(",")" + job_id + R"("],"id":11})";
+        using blockchain::block_validity;
+        struct scenario {
+            code error;
+            block_validity validity;
+            std::string_view expected;
+            int rpc_error{0};
+        };
+        for (auto const& test : {
+                 scenario{error::success, block_validity::valid, "null"},
+                 scenario{error::success, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::insufficient_work, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::stale_chain, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::coinbase_value_limit, block_validity::invalid, R"("bad-cb-amount")"},
+                 scenario{error::invalid_proof_of_work, block_validity::unknown, R"("high-hash")"},
+                 scenario{error::merkle_mismatch, block_validity::invalid, R"("bad-txnmrklroot")"},
+                 scenario{error::timestamp_too_early, block_validity::unknown, R"("time-too-old")"},
+                 scenario{error::futuristic_timestamp, block_validity::unknown, R"("time-too-new")"},
+                 scenario{error::incorrect_proof_of_work, block_validity::unknown, R"("bad-diffbits")"},
+                 scenario{error::coinbase_height_mismatch, block_validity::invalid, R"("bad-cb-height")"},
+                 scenario{error::old_version_block, block_validity::unknown, R"json("bad-version(0x00000001)")json"},
+                 scenario{error::extra_coinbases, block_validity::invalid, R"("bad-tx-coinbase")"},
+                 scenario{error::orphan_block, block_validity::unknown, R"("prev-blk-not-found")"},
+                 scenario{error::missing_previous_output, block_validity::invalid, R"("bad-txns-inputs-missingorspent")"},
+                 scenario{error::coinbase_maturity, block_validity::invalid, R"("bad-txns-premature-spend-of-coinbase")"},
+                 scenario{error::spend_exceeds_value, block_validity::invalid, R"("bad-txns-in-belowout")"},
+                 scenario{error::invalid_script, block_validity::invalid, R"("rejected")"},
+                 scenario{error::operation_failed, block_validity::unknown, "", -25},
+                 scenario{error::file_system, block_validity::unknown, "", -25},
+                 scenario{error::database_push_failed, block_validity::unknown, "", -25},
+                 scenario{code{int(error::coinbase_value_limit), std::generic_category()}, block_validity::unknown, "", -25},
+                 scenario{error::service_stopped, block_validity::unknown, "", -28},
+                 scenario{error::empty_transaction, block_validity::invalid, R"("rejected")"},
+                 scenario{error::spend_overflow, block_validity::invalid, R"("rejected")"}}) {
+            CAPTURE(test.error.message());
+            ::asio::io_context io;
+            auto response = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+            io.poll();
+            std::error_code ec;
+            auto pending = submissions->try_receive(ec);
+            REQUIRE_FALSE(ec);
+            REQUIRE(pending);
+            REQUIRE(pending->reply->try_send(std::error_code{},
+                blockchain::block_submission_result{test.error, test.validity}));
+            io.restart();
+            io.run();
+            auto const actual = response.get();
+            if (test.rpc_error != 0) {
+                CHECK(actual.find(fmt::format("\"code\":{}", test.rpc_error)) != std::string::npos);
+            } else {
+                CHECK(actual == node::rpc::build_success("11", test.expected));
+            }
+        }
+    }
 }

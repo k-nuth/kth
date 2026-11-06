@@ -100,7 +100,8 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips);
 // them, and whether a coinbase created it.
 std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
                           domain::chain::output const& output, bool coinbase,
-                          domain::config::network net, domain::script_flags_t flags);
+                          domain::config::network net, domain::script_flags_t flags,
+                          std::optional<int64_t> confirmations_ticks = std::nullopt);
 
 // The getnetworkinfo fields.
 struct network_info {
@@ -133,6 +134,39 @@ struct mempool_listing {
 // `fees` (`base` and `modified`, in BCH; the mempool keeps no fee deltas, so
 // they are equal), `size`, `time`, `depends` and `spentby`.
 std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listings);
+// Where a confirmed transaction sits, for verbose getrawtransaction.
+struct transaction_location {
+    hash_digest block_hash;
+    int64_t confirmations;     // -1 when its block is off the connected chain
+    uint32_t block_time;
+    std::optional<int64_t> confirmations_ticks = std::nullopt;
+};
+
+// The verbose getrawtransaction object: the decoderawtransaction fields, `hex`,
+// and for a transaction read from a block its `blockhash`, `confirmations`,
+// `time`, `blocktime` and `in_active_chain`. A block off the connected chain
+// gives `confirmations` 0, no times and `in_active_chain` false.
+std::string render_transaction_verbose(domain::chain::transaction const& tx,
+                                       domain::config::network net, domain::script_flags_t flags,
+                                       std::optional<transaction_location> const& location);
+
+// What getblock reports about a block beyond the block itself.
+struct block_location {
+    size_t height;
+    int64_t confirmations;            // -1 when off the connected chain
+    uint32_t median_time;             // of the 11 blocks ending at this one
+    std::optional<uint256_t> chain_work;   // the chain's work up to this block
+    std::optional<hash_digest> next_block_hash;
+    std::optional<chain_progress> progress = std::nullopt;
+    std::optional<int64_t> confirmations_ticks = std::nullopt;
+};
+
+// The verbose getblock object. `with_transactions` (verbosity 2) lists each
+// transaction as verbose getrawtransaction's fields without the location;
+// otherwise (verbosity 1) by txid.
+std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
+                                 bool with_transactions,
+                                 domain::config::network net, domain::script_flags_t flags);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
@@ -140,6 +174,7 @@ std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
                                 std::optional<chain_progress> progress = std::nullopt,
+                                std::optional<int64_t> confirmations_ticks = std::nullopt,
                                 std::optional<hash_digest> shv_root = std::nullopt);
 
 // SHV hashes use display order; the header retains its 80-byte wire encoding.
