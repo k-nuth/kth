@@ -604,7 +604,7 @@ bool block_chain::stopped() const {
 
 namespace {
 
-::asio::awaitable<code> submit_owned_block(
+::asio::awaitable<block_submission_result> submit_owned_block(
     std::shared_ptr<block_submission_channel> submissions, block_const_ptr block) {
     co_await ::asio::this_coro::throw_if_cancelled(false);
     auto const cancellation = co_await ::asio::this_coro::cancellation_state;
@@ -631,17 +631,17 @@ namespace {
             ? code(error::service_stopped) : code(error::operation_failed);
     }
     auto [ec, result] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
-    co_return ec ? code(error::service_stopped) : result;
+    co_return ec ? block_submission_result(error::service_stopped) : result;
 }
 
 } // namespace
 
-::asio::awaitable<code> block_chain::submit_block(block_const_ptr block) {
+::asio::awaitable<block_submission_result> block_chain::submit_block(block_const_ptr block) {
     // Capture ownership before returning the lazy coroutine to the caller.
     return submit_owned_block(block_submissions_, std::move(block));
 }
 
-::asio::awaitable<code> block_chain::submit_block(domain::chain::block const& block) {
+::asio::awaitable<block_submission_result> block_chain::submit_block(domain::chain::block const& block) {
     return submit_block(std::make_shared<domain::message::block const>(block));
 }
 

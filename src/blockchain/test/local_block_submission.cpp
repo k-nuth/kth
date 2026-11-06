@@ -27,7 +27,7 @@ TEST_CASE("block submission without a node admission owner refuses promptly",
     // at the same boundary, with the same block and observation.
     auto result = ::asio::co_spawn(io, fixture.chain().submit_block(std::move(block)), ::asio::use_future);
     io.run();
-    CHECK(result.get() == error::service_stopped);
+    CHECK(result.get().error == error::service_stopped);
 }
 
 TEST_CASE("block submission queued before its consumer starts is released by chain stop",
@@ -46,7 +46,7 @@ TEST_CASE("block submission queued before its consumer starts is released by cha
     REQUIRE(fixture.chain().stop());
     io.restart();
     io.run();
-    CHECK(result.get() == error::service_stopped);
+    CHECK(result.get().error == error::service_stopped);
     CHECK(submissions->buffered() == 0);
 }
 
@@ -65,12 +65,12 @@ TEST_CASE("block submission under admission pressure refuses without discarding 
     auto second = ::asio::co_spawn(io, fixture.chain().submit_block(block), ::asio::use_future);
     io.poll();
     REQUIRE(second.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
-    CHECK(second.get() == error::operation_failed);
+    CHECK(second.get().error == error::operation_failed);
     CHECK(submissions->buffered() == 1);
     REQUIRE(fixture.chain().stop());
     io.restart();
     io.run();
-    CHECK(first.get() == error::service_stopped);
+    CHECK(first.get().error == error::service_stopped);
 }
 
 TEST_CASE("cancelling a block submitter does not withdraw work already admitted",
@@ -90,7 +90,7 @@ TEST_CASE("cancelling a block submitter does not withdraw work already admitted"
     cancel.emit(::asio::cancellation_type::terminal);
     io.restart();
     io.run();
-    CHECK(result.get() == error::service_stopped);
+    CHECK(result.get().error == error::service_stopped);
     std::error_code ec;
     auto pending = submissions->try_receive(ec);
     REQUIRE(pending.has_value());
@@ -114,7 +114,7 @@ TEST_CASE("cancellation before a block submission starts admits no block",
         // Emitting from outside io.run() only schedules cancellation ingress;
         // it does not prove cancellation has reached the coroutine yet.
         cancel.emit(::asio::cancellation_type::terminal);
-        co_return co_await fixture.chain().submit_block(block);
+        co_return (co_await fixture.chain().submit_block(block)).error;
     };
     auto result = ::asio::co_spawn(io, before_start(),
         ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
@@ -140,6 +140,39 @@ TEST_CASE("a lazy block submission owns its endpoint after chain destruction",
     ::asio::io_context io;
     auto result = ::asio::co_spawn(io, std::move(operation), ::asio::use_future);
     io.run();
-    CHECK(result.get() == error::service_stopped);
+    CHECK(result.get().error == error::service_stopped);
     CHECK(submissions->buffered() == 0);
+}
+
+TEST_CASE("one block submission preserves validity and duplication independently",
+          "[block_submission][result]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    chain_fixture fixture("submission_complete_reply");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    using blockchain::block_submission_result;
+    using blockchain::block_validity;
+    for (auto const expected : {
+             block_submission_result{error::success, block_validity::valid, false},
+             block_submission_result{error::duplicate_block, block_validity::valid, true},
+             block_submission_result{error::coinbase_value_limit, block_validity::invalid, false},
+             block_submission_result{error::duplicate_block, block_validity::invalid, true},
+             block_submission_result{error::duplicate_block, block_validity::unknown, true},
+             block_submission_result{error::operation_failed, block_validity::unknown, false}}) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            fixture.chain().submit_block(domain::chain::block::genesis_regtest()), ::asio::use_future);
+        io.poll();
+        std::error_code ec;
+        auto pending = submissions->try_receive(ec);
+        REQUIRE_FALSE(ec);
+        REQUIRE(pending.has_value());
+        REQUIRE(pending->reply->try_send(std::error_code{}, expected));
+        io.restart();
+        io.run();
+        auto const actual = result.get();
+        CHECK(actual.error == expected.error);
+        CHECK(actual.validity == expected.validity);
+        CHECK(actual.duplicate == expected.duplicate);
+    }
 }

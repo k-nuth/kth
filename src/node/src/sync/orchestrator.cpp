@@ -1457,18 +1457,20 @@ static
 
         // The one answer a submission gets. A requester that gave up is a
         // channel nobody reads, and the capacity-one try_send still succeeds.
-        auto const answer = [](local_admission const& pending, code outcome) {
+        auto const answer = [](local_admission const& pending, blockchain::block_submission_result outcome) {
             if (pending.reply) {
                 (void)pending.reply->try_send(std::error_code{}, outcome);
             }
         };
-        auto resolve_local = [&](size_t at, code outcome) {
+        auto resolve_local = [&](size_t at, code outcome,
+                                 blockchain::block_validity validity = blockchain::block_validity::unknown) {
             auto const& pending = local_pending[at];
             spdlog::info("[sync_coordinator] Local block {} at height {}: {}",
                 encode_hash(pending.hash), pending.height,
                 outcome ? outcome.message() : std::string("connected"));
             held_heights.erase(pending.height);
-            answer(pending, outcome);
+            answer(pending, blockchain::block_submission_result{outcome,
+                outcome ? validity : blockchain::block_validity::valid});
             local_pending.erase(local_pending.begin() + long(at));
         };
         auto find_local = [&](auto const& predicate) -> std::optional<size_t> {
@@ -1633,11 +1635,28 @@ static
                 return;
             }
             pending.hash = submission.block->hash();
+            if (std::ranges::any_of(local_pending, [&](local_admission const& other) {
+                    return other.hash == pending.hash;
+                })) {
+                answer(pending, blockchain::block_submission_result{error::duplicate_block,
+                    blockchain::block_validity::unknown, true});
+                return;
+            }
             auto const& index = organizer.index();
             auto const idx = index.find(pending.hash);
             if (idx != blockchain::header_index::null_index) {
-                if (index.has_block_data(idx) || rejected_hashes.contains(pending.hash)) {
-                    answer(pending, error::duplicate_block);
+                if (rejected_hashes.contains(pending.hash)) {
+                    answer(pending, blockchain::block_submission_result{error::duplicate_block, blockchain::block_validity::invalid, true});
+                    return;
+                }
+                if (index.has_block_data(idx)) {
+                    auto const view = chain.chain_view();
+                    auto const height = index.get_height(idx);
+                    auto const valid = view && height >= 0 &&
+                        uint64_t(height) <= view->connected_tip_height &&
+                        index.active_at(height) == idx;
+                    answer(pending, blockchain::block_submission_result{error::duplicate_block,
+                        valid ? blockchain::block_validity::valid : blockchain::block_validity::unknown, true});
                     return;
                 }
                 // A header we hold without its body: the body is what is
@@ -2373,7 +2392,7 @@ static
 
                 if (auto const at = find_local([&](local_admission const& p) {
                         return p.hash == rejected->hash; })) {
-                    resolve_local(*at, rejected->reason);
+                    resolve_local(*at, rejected->reason, blockchain::block_validity::invalid);
                 }
                 settle_moved();
 

@@ -136,7 +136,7 @@ struct running_node {
         if (result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
             return std::nullopt;
         }
-        return result.get();
+        return result.get().error;
     }
 
     // Answers whether run() finished within the limit.
@@ -389,6 +389,15 @@ TEST_CASE("local admission: a submission the node cannot finish is answered at s
     REQUIRE(pending.wait_for(std::chrono::seconds(3)) == std::future_status::timeout);
     REQUIRE(run.header_tip_height() == 4);
     REQUIRE(run.connected_height() == 2u);
+    auto repeated = ::asio::co_spawn(run.node.network_thread_pool().get_executor(),
+        run.chain().submit_block(std::make_shared<domain::message::block const>(four)),
+        ::asio::use_future);
+    REQUIRE(repeated.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+    auto const duplicate = repeated.get();
+    CHECK(duplicate.error == error::duplicate_block);
+    CHECK(duplicate.duplicate);
+    CHECK(duplicate.validity == blockchain::block_validity::unknown);
+    CHECK(pending.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
 
     // Stopping the node is what answers it. The answer is read while the
     // node's pool is still running — a stop, not yet a join — since that is
@@ -396,7 +405,7 @@ TEST_CASE("local admission: a submission the node cannot finish is answered at s
     auto const started = std::chrono::steady_clock::now();
     run.node.stop();
     REQUIRE(pending.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
-    CHECK(pending.get() == error::service_stopped);
+    CHECK(pending.get().error == error::service_stopped);
     CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(30));
     REQUIRE(run.stop());
 
@@ -409,7 +418,7 @@ TEST_CASE("local admission: a submission the node cannot finish is answered at s
         ::asio::use_future);
     own.run();
     REQUIRE(after.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
-    CHECK(after.get() == error::service_stopped);
+    CHECK(after.get().error == error::service_stopped);
 }
 
 TEST_CASE("local admission: rejecting the first block preserves genesis and admits a replacement",
@@ -435,4 +444,44 @@ TEST_CASE("local admission: rejecting the first block preserves genesis and admi
     CHECK(run.connected_tip() == good.hash());
     CHECK(run.built_height() == 1u);
     CHECK(run.stop());
+}
+
+TEST_CASE("local admission: the owner distinguishes connected and invalid duplicates",
+          "[local_admission][integration][duplicate]") {
+    running_node run("duplicate_outcome");
+    auto detailed = [&](domain::chain::block const& block) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            run.chain().submit_block(std::make_shared<domain::message::block const>(block)),
+            ::asio::use_future);
+        io.run_for(answer_limit);
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        return result.get();
+    };
+    auto const block = valid_block(run.connected_tip(), 1);
+    auto const accepted = detailed(block);
+    CHECK(accepted.error == error::success);
+    CHECK(accepted.validity == blockchain::block_validity::valid);
+    CHECK_FALSE(accepted.duplicate);
+    REQUIRE(run.connected_tip() == block.hash());
+    auto const duplicate = detailed(block);
+    CHECK(duplicate.error == error::duplicate_block);
+    CHECK(duplicate.validity == blockchain::block_validity::valid);
+    CHECK(duplicate.duplicate);
+
+    auto const invalid = overclaiming_block(block.hash(), 2);
+    auto const rejected = detailed(invalid);
+    CHECK(rejected.error == error::coinbase_value_limit);
+    CHECK(rejected.validity == blockchain::block_validity::invalid);
+    CHECK_FALSE(rejected.duplicate);
+    auto const repeated = detailed(invalid);
+    CHECK(repeated.error == error::duplicate_block);
+    CHECK(repeated.validity == blockchain::block_validity::invalid);
+    CHECK(repeated.duplicate);
+    CHECK(run.connected_tip() == block.hash());
+    // Callers that only need the error select it from the same reply.
+    auto const legacy = run.submit(invalid);
+    REQUIRE(legacy.has_value());
+    CHECK(*legacy == error::duplicate_block);
+    REQUIRE(run.stop());
 }

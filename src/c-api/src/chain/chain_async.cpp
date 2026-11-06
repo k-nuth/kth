@@ -265,8 +265,8 @@ void kth_chain_async_submit_block(kth_chain_t chain, void* ctx, kth_block_mut_t 
     auto operation = bc.submit_block(block_shared(block));
     ::asio::co_spawn(bc.executor(),
         [operation = std::move(operation), chain, ctx, handler]() mutable -> ::asio::awaitable<void> {
-            auto const ec = co_await std::move(operation);
-            handler(chain, ctx, kth::to_c_err(ec));
+            auto const result = co_await std::move(operation);
+            handler(chain, ctx, kth::to_c_err(result.error));
         }, ::asio::detached);
 }
 

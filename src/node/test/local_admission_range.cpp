@@ -176,7 +176,7 @@ struct node_run {
 
     // Hand a block to the chain's endpoint; the answer, if any, arrives on
     // the future, through the submitter's context.
-    std::future<code> submit(blockchain::block_chain& chain, domain::chain::block const& blk) {
+    std::future<blockchain::block_submission_result> submit(blockchain::block_chain& chain, domain::chain::block const& blk) {
         return ::asio::co_spawn(submitter,
             chain.submit_block(std::make_shared<domain::message::block const>(blk)),
             ::asio::use_future);
@@ -290,10 +290,10 @@ TEST_CASE("integrated: a local body stored above the body frontier is not asked 
         // Read while the submitter's context still runs: the coordinator's
         // answers are dispatched through it.
         if (six_answer.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
-            six_outcome = six_answer.get();
+            six_outcome = six_answer.get().error;
         }
         if (seven_answer.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
-            seven_outcome = seven_answer.get();
+            seven_outcome = seven_answer.get().error;
         }
     }
     log.dump("local_range");

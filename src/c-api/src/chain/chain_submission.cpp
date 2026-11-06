@@ -25,7 +25,7 @@ kth_error_code_t kth_chain_sync_submit_block(kth_chain_t self, kth_block_const_t
     KTH_PRECONDITION(block != nullptr);
     auto operation = [&]() -> kth_error_code_t {
         auto const& block_cpp = kth::cpp_ref<kth::domain::chain::block>(block);
-        return kth::to_c_err(kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).submit_block(block_cpp)));
+        return kth::to_c_err(kth::capi::sync_wait(kth::cpp_ref<cpp_t>(self), kth::cpp_ref<cpp_t>(self).submit_block(block_cpp)).error);
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
     return kth::capi_invoke(operation);

@@ -133,12 +133,14 @@ struct KB_API block_chain {
     /// Success means connected publication, not merely queued or stored.
     /// A standalone chain without an admission owner refuses with service_stopped.
     /// Cancelling the waiter does not roll back work already admitted.
+    /// Returns the owner's complete outcome, including invalid-duplicate status.
+    /// This is one submission-and-reply operation, never a later result query.
     [[nodiscard]]
-    ::asio::awaitable<code> submit_block(block_const_ptr block);
+    ::asio::awaitable<block_submission_result> submit_block(block_const_ptr block);
 
     /// Copy a caller-owned block into the admission request before suspension.
     [[nodiscard]]
-    ::asio::awaitable<code> submit_block(domain::chain::block const& block);
+    ::asio::awaitable<block_submission_result> submit_block(domain::chain::block const& block);
 
     /// Constructor-bound endpoint; the sync coordinator is its sole consumer.
     [[nodiscard]] block_submission_channel& block_submissions() noexcept;
