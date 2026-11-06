@@ -318,6 +318,36 @@ domain::chain::header header_index::get_header(index_t idx) const {
 // Status Management
 // =============================================================================
 
+void header_index::restore_failed_blocks(std::vector<hash_digest> hashes) {
+    std::ranges::sort(hashes);
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+    restored_failures_ = std::move(hashes);
+    if (restored_failures_.empty()) {
+        return;
+    }
+    for (auto const& hash : restored_failures_) {
+        auto const idx = find(hash);
+        if (idx != null_index) {
+            add_status(idx, header_status::failed_valid);
+        }
+    }
+    // Parents are inserted before children. One forward pass marks even deep
+    // descendants that were persisted before their ancestor's verdict committed.
+    auto const count = index_t(size());
+    for (index_t idx = 0; idx < count; ++idx) {
+        auto const parent = get_parent_index(idx);
+        if (parent != null_index &&
+            (has_status(parent, header_status::failed_valid) ||
+             has_status(parent, header_status::failed_child))) {
+            add_status(idx, header_status::failed_child);
+        }
+    }
+}
+
+bool header_index::is_restored_failure(hash_digest const& hash) const {
+    return std::binary_search(restored_failures_.begin(), restored_failures_.end(), hash);
+}
+
 void header_index::set_status(index_t idx, header_status status) {
     statuses_[idx] = uint32_t(status);
 }

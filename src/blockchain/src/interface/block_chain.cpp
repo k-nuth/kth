@@ -387,6 +387,49 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
+    // Startup owns the index exclusively. Restore verdicts before any peer or
+    // organizer can admit headers, including hashes absent after truncation.
+    auto rejections = database_.internal_db().rejected_blocks();
+    if ( ! rejections) {
+        spdlog::critical("[blockchain] Cannot read the persisted block rejection history");
+        return false;
+    }
+    std::optional<uint32_t> recovery_height;
+    for (auto const& hash : *rejections) {
+        auto const idx = header_index_.find(hash);
+        if (idx != header_index::null_index) {
+            auto const height = uint32_t(header_index_.get_height(idx));
+            if (height == 0 || height <= *reconciled) {
+                // A contextual rejection cannot have been connected. This is
+                // inconsistent durable state, not a header-only recovery.
+                spdlog::critical("[blockchain] Rejected block {} at {} is in the connected chain",
+                    encode_hash(hash), height);
+                return false;
+            }
+            recovery_height = recovery_height ? std::min(*recovery_height, height) : height;
+        }
+    }
+    header_index_.restore_failed_blocks(std::move(*rejections));
+    if (recovery_height) {
+        auto const parent_height = *recovery_height - 1;
+        // Same durable truncation as body rejection, but no live writers exist
+        // yet. Preserve the parent row (including genesis/ABLA) and UTXO state.
+#if defined(KTH_DB_READONLY)
+        spdlog::critical("[blockchain] Header recovery above {} requires a writable database", parent_height);
+        return false;
+#else
+        if (auto const ec = truncate_headers_after(parent_height); ec) {
+            spdlog::critical("[blockchain] Cannot recover headers above {}: {}",
+                parent_height, ec.message());
+            return false;
+        }
+        headers_persisted_through_ = parent_height;
+#endif
+        persisted_chain_indices.resize(size_t(parent_height) + 1);
+        spdlog::warn("[blockchain] Recovered interrupted block rejection; headers now end at {}",
+            parent_height);
+    }
+
     // Restore block file positions in header_index from flat files.
     //
     // Unconditional now, and `heights->block > 0` is gone on purpose: the walks
@@ -643,6 +686,27 @@ namespace {
 
 ::asio::awaitable<block_submission_result> block_chain::submit_block(domain::chain::block const& block) {
     return submit_block(std::make_shared<domain::message::block const>(block));
+}
+
+awaitable_expected<std::vector<hash_digest>> block_chain::rejected_blocks() const {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> awaitable_expected<std::vector<hash_digest>> {
+            auto result = database_.internal_db().rejected_blocks();
+            if ( ! result) {
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::move(*result);
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<code> block_chain::record_rejected_block(hash_digest hash) {
+    // LMDB may wait for a writer or disk. Keep it off the peer/sync executor;
+    // the admission owner awaits completion before publishing the verdict.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash]() -> ::asio::awaitable<code> {
+            co_return database::succeed(database_.internal_db().record_rejected_block(hash))
+                ? code(error::success) : code(error::operation_failed);
+        }, ::asio::use_awaitable);
 }
 
 block_submission_channel& block_chain::block_submissions() noexcept {

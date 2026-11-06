@@ -223,6 +223,12 @@ struct KD_API header_index {
     // Status Management
     // =========================================================================
 
+    // Startup only, before publishing the index to consumers. Keep these hashes
+    // even when truncation removed their headers from the persisted height table.
+    // After restoration the list is immutable; live verdicts use status flags.
+    void restore_failed_blocks(std::vector<hash_digest> hashes);
+    [[nodiscard]] bool is_restored_failure(hash_digest const& hash) const;
+
     /// Set status flags for a header.
     void set_status(index_t idx, header_status status);
 
@@ -412,6 +418,9 @@ private:
 
     [[nodiscard]]
     index_t get_ancestor_internal(index_t start_idx, int32_t target_height) const;
+
+    // Written only during startup; read without mutation during admission.
+    std::vector<hash_digest> restored_failures_;
 
     // SoA storage - one vector per field
     std::vector<hash_digest> hashes_;  // Block hash (stored, not recomputed)

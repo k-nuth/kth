@@ -89,14 +89,22 @@ void header_organizer::sync_tip() {
         return;
     }
 
-    index_t best_idx = 0;
-    uint256_t best_work = index_.get_chain_work(best_idx);
-    for (index_t i = 1; i < index_t(size); ++i) {
+    index_t best_idx = header_index::null_index;
+    uint256_t best_work{};
+    for (index_t i = 0; i < index_t(size); ++i) {
+        if (index_.has_status(i, header_status::failed_valid) ||
+            index_.has_status(i, header_status::failed_child)) {
+            continue;
+        }
         auto const w = index_.get_chain_work(i);
-        if (w > best_work) {
+        if (best_idx == header_index::null_index || w > best_work) {
             best_work = w;
             best_idx = i;
         }
+    }
+    if (best_idx == header_index::null_index) {
+        spdlog::critical("[header_organizer] No non-failed header is available at startup");
+        return;
     }
     {
         std::lock_guard<std::mutex> const lock(tip_mutex_);
@@ -173,6 +181,10 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     //   (3) anchor unknown                       -> orphan; validation surfaces the
     //       missing-parent error (this is also the old ABC/BCHN duplicate-retry case).
     auto const first_prev_hash = headers.front().previous_block_hash();
+    if (index_.is_restored_failure(first_prev_hash)) {
+        result.error = error::invalid_previous_block;
+        return result;
+    }
     bool const extends_tip = (first_prev_hash == tip_hash);
 
     index_t anchor_idx = tip_idx;
@@ -243,6 +255,11 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         KTH_STATS_TIME_START(hash);
         auto const hash = domain::chain::hash(header);
         KTH_STATS_TIME_END(global_sync_stats(), hash, hash_time_ns, hash_calls);
+
+        if (index_.is_restored_failure(hash)) {
+            result.error = error::duplicate_block;
+            break;
+        }
 
         // Already known (duplicate/retry batch, or a re-announced branch header): it
         // was validated when first added, so skip re-validation and just advance the

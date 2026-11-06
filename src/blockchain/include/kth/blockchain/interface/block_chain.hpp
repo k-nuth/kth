@@ -142,6 +142,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<block_submission_result> submit_block(domain::chain::block const& block);
 
+    /// Read rejection identities before admission starts; the coordinator owns the live set.
+    [[nodiscard]] awaitable_expected<std::vector<hash_digest>> rejected_blocks() const;
+    /// Persist a contextual verdict before publishing it to submitters.
+    [[nodiscard]] ::asio::awaitable<code> record_rejected_block(hash_digest hash);
+
     /// Constructor-bound endpoint; the sync coordinator is its sole consumer.
     [[nodiscard]] block_submission_channel& block_submissions() noexcept;
     [[nodiscard]] bool has_block_submissions() const noexcept { return bool(block_submissions_); }

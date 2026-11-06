@@ -1420,7 +1420,7 @@ static
         // What this owns is the record of each submission until it is answered,
         // and two memories the ranges and the switch consult: the heights whose
         // bodies are local and handed over, which a range must not ask peers
-        // for; and the hashes the builder refused this run, which the chain is
+        // for; and the hashes the builder refused, which the chain is
         // not switched back onto — the body would only be judged again.
         struct local_admission {
             enum class stage_t : uint8_t { header, body, connect };
@@ -1454,6 +1454,12 @@ static
         uint64_t next_local_id = 1;
         boost::unordered_flat_set<uint32_t> held_heights;
         boost::unordered_flat_set<hash_digest> rejected_hashes;
+        auto const persisted_rejections = co_await chain.rejected_blocks();
+        if ( ! persisted_rejections) {
+            on_fatal("the persisted block rejection history could not be read");
+            co_return;
+        }
+        rejected_hashes.insert(persisted_rejections->begin(), persisted_rejections->end());
 
         // The one answer a submission gets. A requester that gave up is a
         // channel nobody reads, and the capacity-one try_send still succeeds.
@@ -1635,6 +1641,11 @@ static
                 return;
             }
             pending.hash = submission.block->hash();
+            if (rejected_hashes.contains(pending.hash)) {
+                answer(pending, blockchain::block_submission_result{error::duplicate_block,
+                    blockchain::block_validity::invalid, true});
+                return;
+            }
             if (std::ranges::any_of(local_pending, [&](local_admission const& other) {
                     return other.hash == pending.hash;
                 })) {
@@ -1645,10 +1656,6 @@ static
             auto const& index = organizer.index();
             auto const idx = index.find(pending.hash);
             if (idx != blockchain::header_index::null_index) {
-                if (rejected_hashes.contains(pending.hash)) {
-                    answer(pending, blockchain::block_submission_result{error::duplicate_block, blockchain::block_validity::invalid, true});
-                    return;
-                }
                 if (index.has_block_data(idx)) {
                     auto const view = chain.chain_view();
                     auto const height = index.get_height(idx);
@@ -2007,7 +2014,7 @@ static
                         // The builder already judged a body on this branch and
                         // refused it. Switching back would only judge it again.
                         spdlog::warn("[sync_coordinator] Reorg refused: the branch carries a block "
-                            "rejected this run");
+                            "previously rejected");
                         settle_local_header(*result);
                         continue;
                     }
@@ -2365,6 +2372,11 @@ static
                 // first, so no switch brings the same body back for judgement.
                 spdlog::warn("[sync_coordinator] The builder rejected block {} at height {}: {}",
                     encode_hash(rejected->hash), rejected->height, rejected->reason.message());
+                if (auto const ec = co_await chain.record_rejected_block(rejected->hash); ec) {
+                    (void)rejection_ack.try_send(std::error_code{});
+                    on_fatal("a contextual block rejection could not be persisted");
+                    break;
+                }
                 rejected_hashes.insert(rejected->hash);
 
                 auto const outcome = co_await execute_body_rejection(

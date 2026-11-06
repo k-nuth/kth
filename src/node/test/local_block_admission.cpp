@@ -52,18 +52,23 @@ constexpr auto stop_limit = std::chrono::seconds(120);
 struct owned_directory {
     std::filesystem::path directory;
     bool owned;
+    bool keep{false};
 
-    explicit owned_directory(std::string const& tag)
+    explicit owned_directory(std::string const& tag, bool reopen = false)
         : directory(std::filesystem::temp_directory_path() /
             ("kth_local_admission_" + tag + "_" + std::to_string(getpid())))
         , owned(false) {
         std::error_code ec;
-        std::filesystem::remove_all(directory, ec);
-        owned = std::filesystem::create_directories(directory, ec);
+        if (reopen) {
+            owned = std::filesystem::is_directory(directory, ec);
+        } else {
+            std::filesystem::remove_all(directory, ec);
+            owned = std::filesystem::create_directories(directory, ec);
+        }
     }
 
     ~owned_directory() {
-        if (owned) {
+        if (owned && ! keep) {
             std::error_code ec;
             std::filesystem::remove_all(directory, ec);
         }
@@ -96,12 +101,12 @@ struct running_node {
     std::future<code> run;
     bool stopped{false};
 
-    explicit running_node(std::string const& tag)
-        : storage(tag)
+    explicit running_node(std::string const& tag, bool reopen = false)
+        : storage(tag, reopen)
         , config(regtest_configuration(storage.directory, tag))
         , node(config) {
         REQUIRE(storage.owned);
-        {
+        if ( ! reopen) {
             database::data_base db(config.database);
             REQUIRE(db.create(node::full_node::get_genesis_block(config.net)));
         }
@@ -484,4 +489,85 @@ TEST_CASE("local admission: the owner distinguishes connected and invalid duplic
     REQUIRE(legacy.has_value());
     CHECK(*legacy == error::duplicate_block);
     REQUIRE(run.stop());
+}
+
+TEST_CASE("local admission: rejected block identity survives a node restart",
+          "[local_admission][integration][restart]") {
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const one = valid_block(genesis.hash(), 1);
+    auto const invalid = overclaiming_block(one.hash(), 2);
+    {
+        running_node run("rejected_restart");
+        REQUIRE(run.submit(one) == code(error::success));
+        REQUIRE(run.submit(invalid) == code(error::coinbase_value_limit));
+        REQUIRE(run.stop());
+        run.storage.keep = true;
+    }
+    {
+        running_node run("rejected_restart", true);
+        REQUIRE(run.connected_tip() == one.hash());
+        ::asio::io_context io;
+        auto pending = ::asio::co_spawn(io,
+            run.chain().submit_block(std::make_shared<domain::message::block const>(invalid)),
+            ::asio::use_future);
+        io.run_for(answer_limit);
+        REQUIRE(pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        auto const duplicate = pending.get();
+        CHECK(duplicate.error == error::duplicate_block);
+        CHECK(duplicate.validity == blockchain::block_validity::invalid);
+        CHECK(duplicate.duplicate);
+        CHECK(run.connected_tip() == one.hash());
+        auto const replacement = valid_block(one.hash(), 2, 19);
+        REQUIRE(run.submit(replacement) == code(error::success));
+        CHECK(run.connected_tip() == replacement.hash());
+        REQUIRE(run.stop());
+    }
+}
+
+TEST_CASE("local admission: interrupted rejection recovery persists replacement headers",
+          "[local_admission][integration][rejection_recovery]") {
+    std::string const tag = "interrupted_rejection_restart";
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const one = valid_block(genesis.hash(), 1);
+    auto const invalid = overclaiming_block(one.hash(), 2);
+    auto const child = valid_block(invalid.hash(), 3);
+    auto const replacement = valid_block(one.hash(), 2, 19);
+    std::filesystem::path directory;
+    {
+        running_node run(tag);
+        REQUIRE(run.submit(one) == code(error::success));
+        REQUIRE(run.stop());
+        directory = run.storage.directory;
+        run.storage.keep = true;
+    }
+    {
+        // Model the durable crash boundary: the invalid verdict committed but
+        // its unconnected header suffix was not yet removed. No node is live.
+        auto const config = regtest_configuration(directory, tag);
+        database::data_base db(config.database);
+        REQUIRE(db.open());
+        REQUIRE_FALSE(db.push_headers_batch({invalid.header(), child.header()}, 2));
+        REQUIRE(database::succeed(db.internal_db().record_rejected_block(invalid.hash())));
+    }
+    {
+        running_node run(tag, true);
+        CHECK(run.connected_tip() == one.hash());
+        auto const heights = run.chain().get_last_heights();
+        REQUIRE(heights);
+        CHECK(heights->header == 1);
+        REQUIRE(run.submit(replacement) == code(error::success));
+        CHECK(run.connected_tip() == replacement.hash());
+        REQUIRE(run.stop());
+        run.storage.keep = true;
+    }
+    {
+        // The coordinator's persistence cursor must have rewound as well:
+        // acceptance alone can hide a replacement header never written to LMDB.
+        running_node run(tag, true);
+        CHECK(run.connected_tip() == replacement.hash());
+        auto const header = run.chain().get_header(2);
+        REQUIRE(header);
+        CHECK(domain::chain::hash(*header) == replacement.hash());
+        REQUIRE(run.stop());
+    }
 }
