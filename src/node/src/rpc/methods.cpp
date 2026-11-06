@@ -29,10 +29,12 @@
 #include <kth/blockchain/tick_schedule.hpp>
 #endif
 #include <kth/domain/config/network.hpp>
+#include <kth/domain/message/block.hpp>
 #include <kth/domain/chain/faster_blocks.hpp>
 #include <kth/domain/version.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/expect.hpp>
+#include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -281,6 +283,167 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
 #endif
 }
 
+[[nodiscard]]
+std::expected<domain::message::block, rpc_error> parse_submitted_block(std::string_view hexdata) {
+    auto const raw = decode_base16(hexdata);
+    if ( ! raw) {
+        return kth::fail(make_error(error_code::deserialization_error,
+            "hexdata is not valid hex"));
+    }
+
+    byte_reader reader(*raw);
+    auto block = domain::message::block::from_data(reader, 0u);
+    if ( ! block || reader.remaining_size() != 0) {
+        return kth::fail(make_error(error_code::deserialization_error,
+            "hexdata is not a decodable block"));
+    }
+    if (block->transactions().empty() || ! block->transactions().front().is_coinbase()) {
+        return kth::fail(make_error(error_code::deserialization_error,
+            "block does not start with a coinbase"));
+    }
+    return std::move(*block);
+}
+
+// Translate only information supplied by admission. Some KTH codes combine
+// multiple BCHN rejection reasons; those cannot be reconstructed at the RPC
+// boundary and use BIP22's generic "rejected" instead of a KTH diagnostic.
+[[nodiscard]]
+std::optional<std::string> bip22_reject_reason(code const& ec, uint32_t version) {
+    static constexpr std::pair<error::error_code_t, std::string_view> reasons[]{
+        {error::invalid_proof_of_work, "high-hash"},
+        {error::futuristic_timestamp, "time-too-new"},
+        {error::checkpoints_failed, "bad-fork-prior-to-checkpoint"},
+        {error::incorrect_proof_of_work, "bad-diffbits"},
+        {error::timestamp_too_early, "time-too-old"},
+        {error::orphan_block, "prev-blk-not-found"},
+        {error::store_block_missing_parent, "prev-blk-not-found"},
+        {error::invalid_previous_block, "bad-prevblk"},
+        {error::block_size_limit, "bad-blk-length"},
+        {error::empty_block, "bad-cb-missing"},
+        {error::first_not_coinbase, "bad-cb-missing"},
+        {error::extra_coinbases, "bad-tx-coinbase"},
+        {error::internal_duplicate, "bad-txns-duplicate"},
+        {error::block_internal_double_spend, "bad-txns-inputs-missingorspent"},
+        {error::merkle_mismatch, "bad-txnmrklroot"},
+        {error::block_non_final, "bad-txns-nonfinal"},
+        {error::coinbase_height_mismatch, "bad-cb-height"},
+        {error::coinbase_value_limit, "bad-cb-amount"},
+        {error::previous_output_null, "bad-txns-prevout-null"},
+        {error::invalid_coinbase_script_size, "bad-cb-length"},
+        {error::coinbase_transaction, "bad-tx-coinbase"},
+        {error::transaction_internal_double_spend, "bad-txns-inputs-duplicate"},
+        {error::transaction_size_limit, "bad-txns-oversize"},
+        {error::transaction_non_final, "bad-txns-nonfinal"},
+        {error::unspent_duplicate, "bad-txns-BIP30"},
+        {error::missing_previous_output, "bad-txns-inputs-missingorspent"},
+        {error::double_spend, "bad-txns-inputs-missingorspent"},
+        {error::coinbase_maturity, "bad-txns-premature-spend-of-coinbase"},
+        {error::spend_exceeds_value, "bad-txns-in-belowout"},
+        {error::sequence_locked, "bad-txns-nonfinal"},
+        {error::transaction_version_out_of_range, "bad-txns-version"},
+        {error::empty_transaction, "rejected"},
+        {error::spend_overflow, "rejected"},
+        {error::premature_validation, "rejected"},
+        {error::finalized_header_violation, "rejected"},
+#if defined(KTH_CURRENCY_BCH)
+        {error::non_canonical_ordered, "tx-ordering"},
+        {error::invalid_bitfield, "bad-txns-token-bad-bitfield"},
+        {error::token_amount_negative, "bad-txns-token-amount-negative"},
+        {error::token_fungible_only_amount_zero, "bad-txns-token-non-nft-amount-zero"},
+        {error::token_amount_bitfield_mismatch, "bad-txns-token-amount-bitfield-mismatch"},
+        {error::token_commitment_bitfield_mismatch, "bad-txns-token-commitment-bitfield-mismatch"},
+        {error::token_fungible_with_commitment, "bad-txns-token-fungible-with-commitment"},
+        {error::token_commitment_oversized, "bad-txns-token-commitment-oversized"},
+        {error::token_coinbase_has_tokens, "bad-txns-coinbase-has-tokens"},
+        {error::token_unparseable_output, "bad-txns-vout-tokenprefix"},
+        {error::token_unparseable_input, "bad-txns-vin-tokenprefix"},
+        {error::token_input_created_pre_activation, "bad-txns-vin-token-created-pre-activation"},
+        {error::token_inputs_missing_or_spent, "bad-txns-inputs-missingorspent"},
+        {error::token_duplicate_genesis, "bad-txns-token-dupe-genesis"},
+        {error::token_invalid_category, "bad-txns-token-invalid-category"},
+        {error::token_fungible_insufficient, "bad-txns-token-in-belowout"},
+        {error::token_nft_ex_nihilo, "bad-txns-token-nft-ex-nihilo"},
+        {error::token_amount_overflow, "bad-txns-token-amount-overflow"},
+        {error::token_pre_activation_input, "bad-txns-vin-tokenprefix-preactivation"},
+#endif
+    };
+    if (ec == error::old_version_block) {
+        return fmt::format("bad-version(0x{:08x})", version);
+    }
+    for (auto const& [value, reason] : reasons) {
+        // Compare categories as well as values: system errors can have the same
+        // numeric value as a consensus error.
+        if (ec == value) {
+            return std::string(reason);
+        }
+    }
+    return std::nullopt;
+}
+
+// Full and light RPC submissions share the complete admission response.
+[[nodiscard]]
+std::expected<std::string, rpc_error> render_block_submission(
+    blockchain::block_submission_result const& result, uint32_t version) {
+    auto const ec = result.error;
+    if (ec == error::service_stopped) {
+        return kth::fail(make_error(error_code::in_warmup, ec.message()));
+    }
+    if (ec == error::operation_failed || ec == error::file_system || ec == error::unknown) {
+        return kth::fail(make_error(error_code::verify_error, ec.message()));
+    }
+    if (result.duplicate) {
+        writer w;
+        switch (result.validity) {
+            case blockchain::block_validity::valid:
+                w.value("duplicate");
+                break;
+            case blockchain::block_validity::invalid:
+                w.value("duplicate-invalid");
+                break;
+            case blockchain::block_validity::unknown:
+                w.value("duplicate-inconclusive");
+                break;
+        }
+        return w.str();
+    }
+    writer w;
+    if (ec == error::insufficient_work || ec == error::stale_chain) {
+        w.value("inconclusive");
+    } else if ( ! ec) {
+        if (result.validity == blockchain::block_validity::valid) {
+            w.value_null();
+        } else {
+            w.value(result.validity == blockchain::block_validity::invalid ? "rejected" : "inconclusive");
+        }
+    } else if (auto reason = bip22_reject_reason(ec, version)) {
+        w.value(*reason);
+    } else if (result.validity == blockchain::block_validity::invalid) {
+        w.value("rejected");
+    } else {
+        return kth::fail(make_error(error_code::verify_error, ec.message()));
+    }
+    return w.str();
+}
+
+// submitblock -> submit a full wire block, with an optional ignored second arg.
+// C-API counterpart: kth_chain_async_submit_block (see docs/json-rpc.md).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+submit_block(method_context& ctx, request const& req) {
+    auto const args = params_strings(req.params);
+    if (args.empty() || args.size() > 2 || args[0].empty()) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "submitblock requires [hexdata] or [hexdata, dummy]"));
+    }
+
+    auto decoded = parse_submitted_block(args[0]);
+    if ( ! decoded) {
+        co_return kth::fail(decoded.error());
+    }
+    auto const block = std::make_shared<domain::message::block>(std::move(*decoded));
+    auto const result = co_await ctx.chain.submit_block(block);
+    co_return render_block_submission(result, block->header().version());
+}
+
 // submitblocklight -> reconstruct the full block from the miner's solved header +
 // coinbase and the cached job selection, then submit it to the chain. Returns
 // (Bitcoin submitblock semantics) null on accept, or a reject-reason string.
@@ -314,19 +477,10 @@ submit_block_light(method_context& ctx, request const& req) {
     }
 
     // Reassemble (coinbase followed by the cached selection) and submit.
-    auto const ec = co_await mining::submit_block_light(
-        ctx.chain,
-        header_and_coinbase->header(),
-        header_and_coinbase->transactions().front(),
-        *job);
-
-    writer w;
-    if (ec) {
-        w.value(ec.message()); // BIP22-style reject reason
-    } else {
-        w.value_null();        // accepted
-    }
-    co_return w.str();
+    auto const block = std::make_shared<domain::message::block>(mining::assemble_block(
+        header_and_coinbase->header(), header_and_coinbase->transactions().front(), *job));
+    auto const result = co_await ctx.chain.submit_block(block);
+    co_return render_block_submission(result, block->header().version());
 }
 
 // ---- blockchain query methods --------------------------------------------
@@ -1183,6 +1337,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getblocktemplate", get_block_template);
     d.add("getblocktemplatelight", get_block_template_light);
     d.add("getmininginfo", get_mining_info);
+    d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
 
     // Help MUST be the last method registered: capture the completed catalog,

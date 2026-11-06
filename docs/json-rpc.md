@@ -92,13 +92,14 @@ counterpart.
 | `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
+| `submitblock` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
 | `submitblocklight` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
 | `help` | — (describes this server) | `dispatcher::methods()` |
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
 callback (`kth_chain_async_*`) flavor.
 
-_More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
+_More methods land per phase: mining, mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
 
@@ -291,7 +292,35 @@ required work, matching the template's `bits`), `pooledtx` (mempool size), `chai
 (the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
+## Mining: submitblock
+
+`submitblock ["hexdata"]` submits a full serialized block: the header followed by
+all transactions in wire format. An optional second argument (`"dummy"` or a
+parameters object) is ignored. No template job or cached transactions are needed.
+The node's admission owner submits it through the existing header, body and
+contextual-validation pipeline. The call returns `null` only after connected
+publication. A block that does not connect because its branch has insufficient
+work, or whose validation verdict is not available, returns `"inconclusive"`.
+Consensus failures return BCHN/BIP22 rejection reasons such as `"bad-cb-amount"`,
+`"high-hash"`, `"bad-txnmrklroot"`, and `"time-too-old"`. Where admission supplies
+only an aggregate error (for example, empty inputs or empty outputs share one
+code), the RPC returns the BIP22 fallback `"rejected"`; it does not reconstruct
+missing validation detail or expose KTH diagnostic text as a rejection reason.
+A known valid block returns `"duplicate"`; a block
+rejected by contextual validation returns `"duplicate-invalid"`, including after
+a restart. A duplicate without a completed validation verdict returns
+`"duplicate-inconclusive"`.
+
+Missing or invalid parameters and more than two arguments produce `-32602`.
+Bad hex, undecodable blocks, trailing bytes, and a missing first coinbase produce
+`-22`. An unavailable admission pipeline returns `-28`; operational failures
+return `-25` rather than being presented as consensus rejections.
+
 ## Mining: submitblocklight
+
+After reconstruction, submission uses the same admission path and BIP22 response
+mapping as `submitblock`, including `inconclusive`, all three duplicate outcomes,
+and operational RPC errors.
 
 `submitblocklight ["hexdata", "job_id"]` closes the light-template loop. `hexdata`
 is the solved block carrying just the header and the coinbase; the node looks up

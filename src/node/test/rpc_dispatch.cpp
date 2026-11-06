@@ -1721,3 +1721,178 @@ TEST_CASE("verbose block and transaction RPCs expose inclusive tick depth across
     }
 }
 #endif
+
+TEST_CASE("submitblock dispatch rejects malformed parameters and block data", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_submitblock_malformed");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& method, std::string const& params) {
+        auto body = std::string(R"({"method":")") + method + R"(","id":8)";
+        if ( ! params.empty()) {
+            body += R"(,"params":)" + params;
+        }
+        body += '}';
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    auto const hex = encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()));
+    for (auto const& params : std::vector<std::string>{
+             "", "[]", "{}", "[0]", "[null]", R"([""])",
+             R"([")" + hex + R"(",null,null])"}) {
+        CAPTURE(params);
+        auto const response = request("submitblock", params);
+        REQUIRE(response.find(R"("code":-32602)") != std::string::npos);
+    }
+    for (auto const& data : std::vector<std::string>{
+             "zz", "0", "00", hex.substr(0, hex.size() - 2), hex + "00",
+             encode_base16(to_data_chunk(domain::chain::block{
+                 domain::chain::block::genesis_regtest().header(), {}}))}) {
+        CAPTURE(data);
+        auto const response = request("submitblock", R"([")" + data + R"("])");
+        REQUIRE(response.find(R"("code":-22)") != std::string::npos);
+    }
+    auto const response = request("submitblock", R"([")" + hex + R"("])");
+    REQUIRE(response.find(R"("code":-28)") != std::string::npos);
+}
+
+TEST_CASE("submitblock RPC distinguishes admission pressure and shutdown from rejection", "[rpc dispatch][block_submission]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_pressure");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const hex = encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()));
+    auto const body = std::string(R"({"method":"submitblock","params":[")")
+        + hex + R"("],"id":10})";
+    ::asio::io_context io;
+    auto first = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.poll();
+    REQUIRE(submissions->buffered() == 1);
+    CHECK(first.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+    auto second = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.poll();
+    REQUIRE(second.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    CHECK(second.get().find(R"("code":-25)") != std::string::npos);
+    REQUIRE(fixture.chain().stop());
+    io.restart();
+    io.run();
+    CHECK(first.get().find(R"("code":-28)") != std::string::npos);
+    CHECK(submissions->buffered() == 0);
+}
+
+TEST_CASE("submitblock RPC preserves the admission owner's duplicate validity", "[rpc dispatch][block_submission]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_complete_outcome");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const job_id = jobs.add({});
+    for (auto const* method : {"submitblock", "submitblocklight"}) {
+        CAPTURE(method);
+        auto const body = std::string(R"({"method":")") + method + R"(","params":[")"
+            + encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()))
+            + R"(",")" + job_id + R"("],"id":11})";
+        using blockchain::block_validity;
+        for (auto const& [validity, expected] : {
+                 std::pair{block_validity::valid, R"("duplicate")"},
+                 std::pair{block_validity::invalid, R"("duplicate-invalid")"},
+                 std::pair{block_validity::unknown, R"("duplicate-inconclusive")"}}) {
+            ::asio::io_context io;
+            auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+            io.poll();
+            std::error_code ec;
+            auto pending = submissions->try_receive(ec);
+            REQUIRE_FALSE(ec);
+            REQUIRE(pending);
+            REQUIRE(pending->reply->try_send(std::error_code{},
+                blockchain::block_submission_result{error::duplicate_block, validity, true}));
+            io.restart();
+            io.run();
+            CHECK(result.get() == node::rpc::build_success("11", expected));
+        }
+    }
+}
+
+TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispatch][block_submission][bip22]") {
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    test::chain_fixture fixture("rpc_submitblock_bip22");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const job_id = jobs.add({});
+    for (auto const* method : {"submitblock", "submitblocklight"}) {
+        CAPTURE(method);
+        auto const body = std::string(R"({"method":")") + method + R"(","params":[")"
+            + encode_base16(to_data_chunk(domain::chain::block::genesis_regtest()))
+            + R"(",")" + job_id + R"("],"id":11})";
+        using blockchain::block_validity;
+        struct scenario {
+            code error;
+            block_validity validity;
+            std::string_view expected;
+            int rpc_error{0};
+        };
+        for (auto const& test : {
+                 scenario{error::success, block_validity::valid, "null"},
+                 scenario{error::success, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::insufficient_work, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::stale_chain, block_validity::unknown, R"("inconclusive")"},
+                 scenario{error::coinbase_value_limit, block_validity::invalid, R"("bad-cb-amount")"},
+                 scenario{error::invalid_proof_of_work, block_validity::unknown, R"("high-hash")"},
+                 scenario{error::merkle_mismatch, block_validity::invalid, R"("bad-txnmrklroot")"},
+                 scenario{error::timestamp_too_early, block_validity::unknown, R"("time-too-old")"},
+                 scenario{error::futuristic_timestamp, block_validity::unknown, R"("time-too-new")"},
+                 scenario{error::incorrect_proof_of_work, block_validity::unknown, R"("bad-diffbits")"},
+                 scenario{error::coinbase_height_mismatch, block_validity::invalid, R"("bad-cb-height")"},
+                 scenario{error::old_version_block, block_validity::unknown, R"json("bad-version(0x00000001)")json"},
+                 scenario{error::extra_coinbases, block_validity::invalid, R"("bad-tx-coinbase")"},
+                 scenario{error::orphan_block, block_validity::unknown, R"("prev-blk-not-found")"},
+                 scenario{error::missing_previous_output, block_validity::invalid, R"("bad-txns-inputs-missingorspent")"},
+                 scenario{error::coinbase_maturity, block_validity::invalid, R"("bad-txns-premature-spend-of-coinbase")"},
+                 scenario{error::spend_exceeds_value, block_validity::invalid, R"("bad-txns-in-belowout")"},
+                 scenario{error::invalid_script, block_validity::invalid, R"("rejected")"},
+                 scenario{error::operation_failed, block_validity::unknown, "", -25},
+                 scenario{error::file_system, block_validity::unknown, "", -25},
+                 scenario{error::database_push_failed, block_validity::unknown, "", -25},
+                 scenario{code{int(error::coinbase_value_limit), std::generic_category()}, block_validity::unknown, "", -25},
+                 scenario{error::service_stopped, block_validity::unknown, "", -28},
+                 scenario{error::empty_transaction, block_validity::invalid, R"("rejected")"},
+                 scenario{error::spend_overflow, block_validity::invalid, R"("rejected")"}}) {
+            CAPTURE(test.error.message());
+            ::asio::io_context io;
+            auto response = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+            io.poll();
+            std::error_code ec;
+            auto pending = submissions->try_receive(ec);
+            REQUIRE_FALSE(ec);
+            REQUIRE(pending);
+            REQUIRE(pending->reply->try_send(std::error_code{},
+                blockchain::block_submission_result{test.error, test.validity}));
+            io.restart();
+            io.run();
+            auto const actual = response.get();
+            if (test.rpc_error != 0) {
+                CHECK(actual.find(fmt::format("\"code\":{}", test.rpc_error)) != std::string::npos);
+            } else {
+                CHECK(actual == node::rpc::build_success("11", test.expected));
+            }
+        }
+    }
+}
