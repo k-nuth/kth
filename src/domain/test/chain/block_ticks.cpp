@@ -144,6 +144,69 @@ TEST_CASE("find_faster_blocks_activation_height returns the first height whose o
     REQUIRE( ! chain::find_faster_blocks_activation_height(120, 1300, lookup));
 }
 
+TEST_CASE("median_time_past_of walking ancestors matches median_time_past_at by height", "[faster_blocks]") {
+    // Unsorted timestamps, so the median is a real selection.
+    std::vector<uint32_t> ts;
+    for (uint32_t i = 0; i < 30; ++i) ts.push_back(1000 + (i * 7919) % 101);
+    auto lookup = [&](size_t h) { return at(ts, h); };
+    auto timestamp_of = [&](size_t h) { return ts[h]; };
+    auto parent_of = [](size_t h) -> std::optional<size_t> {
+        if (h == 0) return std::nullopt;
+        return h - 1;
+    };
+
+    // Includes the heights near genesis, where fewer than 11 blocks exist.
+    for (size_t h = 0; h < ts.size(); ++h) {
+        REQUIRE(chain::median_time_past_of(h, timestamp_of, parent_of) == *chain::median_time_past_at(h, lookup));
+    }
+    REQUIRE(chain::median_time_past_of(size_t(0), timestamp_of, parent_of) == ts[0]);
+}
+
+// Both medians evaluate at compile time and are noexcept with noexcept lookups.
+namespace {
+
+constexpr uint32_t ts_of(size_t h) noexcept {
+    return uint32_t(1000 + (h * 37) % 11);
+}
+
+constexpr std::optional<size_t> parent_of(size_t h) noexcept {
+    if (h == 0) return std::nullopt;
+    return h - 1;
+}
+
+constexpr std::optional<uint32_t> ts_at(size_t h) noexcept {
+    return ts_of(h);
+}
+
+} // namespace
+
+static_assert(chain::median_time_past_of(size_t(20), ts_of, parent_of) == *chain::median_time_past_at(20, ts_at));
+static_assert(chain::median_time_past_of(size_t(0), ts_of, parent_of) == ts_of(0));
+static_assert(noexcept(chain::median_time_past_of(size_t(20), ts_of, parent_of)));
+static_assert(noexcept(chain::median_time_past_at(20, ts_at)));
+
+TEST_CASE("median_time_past_of follows the branch of the given block", "[faster_blocks]") {
+    // Nodes 0..19 are a trunk; nodes 20..29 fork from node 14 with later times.
+    std::vector<uint32_t> ts;
+    std::vector<std::optional<size_t>> parent;
+    for (uint32_t i = 0; i < 20; ++i) {
+        ts.push_back(1000 + i * 10);
+        parent.push_back(i == 0 ? std::nullopt : std::optional<size_t>(i - 1));
+    }
+    for (uint32_t i = 0; i < 10; ++i) {
+        ts.push_back(5000 + i * 10);
+        parent.push_back(i == 0 ? size_t(14) : size_t(20 + i - 1));
+    }
+    auto timestamp_of = [&](size_t n) { return ts[n]; };
+    auto parent_of = [&](size_t n) { return parent[n]; };
+
+    // Trunk node 19 at height 19: the window is nodes 9..19, median node 14.
+    REQUIRE(chain::median_time_past_of(size_t(19), timestamp_of, parent_of) == 1140);
+    // Fork node 25 at height 20: the window is nodes 20..25 and 10..14, so
+    // the median is the sixth smallest, node 20.
+    REQUIRE(chain::median_time_past_of(size_t(25), timestamp_of, parent_of) == 5000);
+}
+
 TEST_CASE("find_faster_blocks_activation_height differs between branches that diverge before the activation", "[faster_blocks]") {
     // Six timestamps on the divergent branch must reach the MTP threshold
     // before the original branch reaches it at height 35.
