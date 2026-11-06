@@ -38,6 +38,8 @@
 #include <kth/infrastructure/utility/timer.hpp>
 
 #include <asio/co_spawn.hpp>
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/post.hpp>
 #include <asio/this_coro.hpp>
@@ -107,8 +109,10 @@ static auto const hour_seconds = 3600u;
 block_chain::block_chain(blockchain::settings const& chain_settings,
                          database::settings const& database_settings,
                          domain::config::network network,
-                         bool relay_transactions)
+                         bool relay_transactions,
+                         std::shared_ptr<block_submission_channel> submissions)
     : stopped_(true)
+    , block_submissions_(std::move(submissions))
     , settings_(chain_settings)
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
@@ -552,6 +556,13 @@ bool block_chain::start(uint32_t disk_magic) {
 bool block_chain::stop() {
     stopped_ = true;
     reorg_barrier_events_.close();
+    if (block_submissions_) {
+        block_submissions_->close();
+        std::error_code ec;
+        while (auto pending = block_submissions_->try_receive(ec)) {
+            pending->reply->try_send(std::error_code{}, code(error::service_stopped));
+        }
+    }
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
@@ -591,16 +602,52 @@ bool block_chain::stopped() const {
 // ORGANIZERS (Core blockchain operations)
 // =============================================================================
 
-::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
-    // Single-block acceptance was implemented on the pre-v1 LMDB storage
-    // (block_organizer -> populate_block over the LMDB utxo_pool, reorg pool).
-    // That storage is dead in the v1 node (flat files + UTXO-Z; IBD validates via
-    // validate_block_batch + utxo_build), so this path can no longer accept a
-    // block and is stubbed while the dead LMDB code is removed. Reimplementing it
-    // on the v1 model is tracked in issue #563.
-    (void)block;
-    (void)headers_pre_validated;
-    co_return error::not_implemented;
+namespace {
+
+::asio::awaitable<code> submit_owned_block(
+    std::shared_ptr<block_submission_channel> submissions, block_const_ptr block) {
+    co_await ::asio::this_coro::throw_if_cancelled(false);
+    auto const cancellation = co_await ::asio::this_coro::cancellation_state;
+    if (cancellation.cancelled() != ::asio::cancellation_type::none) {
+        co_return error::operation_failed;
+    }
+    if ( ! submissions) {
+        co_return error::service_stopped;
+    }
+    if ( ! block) {
+        co_return error::operation_failed;
+    }
+    auto const executor = co_await ::asio::this_coro::executor;
+    auto reply = std::make_shared<block_submission_reply>(executor, 1);
+    ::asio::experimental::channel_select_options options;
+    options.nonblocking = true;
+    auto [admission_error, selected] = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(*submissions, block_submission{std::move(block), reply})
+    ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    (void)selected;
+    if (admission_error) {
+        // Refusal retains no work: the caller owns retry under pressure.
+        co_return admission_error == ::asio::error::broken_pipe
+            ? code(error::service_stopped) : code(error::operation_failed);
+    }
+    auto [ec, result] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    co_return ec ? code(error::service_stopped) : result;
+}
+
+} // namespace
+
+::asio::awaitable<code> block_chain::submit_block(block_const_ptr block) {
+    // Capture ownership before returning the lazy coroutine to the caller.
+    return submit_owned_block(block_submissions_, std::move(block));
+}
+
+::asio::awaitable<code> block_chain::submit_block(domain::chain::block const& block) {
+    return submit_block(std::make_shared<domain::message::block const>(block));
+}
+
+block_submission_channel& block_chain::block_submissions() noexcept {
+    KTH_CONTRACT(block_submissions_ != nullptr);
+    return *block_submissions_;
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {

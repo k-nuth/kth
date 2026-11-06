@@ -18,7 +18,6 @@
 #include <utility>
 #include <vector>
 #include <variant>
-#include <asio/experimental/channel_select.hpp>
 
 #include <kth/infrastructure/utility/atomic.hpp>
 
@@ -37,6 +36,7 @@
 #include <kth/blockchain/chain_progress.hpp>
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
+#include <kth/blockchain/local_block_admission.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
@@ -98,7 +98,8 @@ struct KB_API block_chain {
     block_chain(blockchain::settings const& chain_settings,
                 database::settings const& database_settings,
                 domain::config::network network,
-                bool relay_transactions = true);
+                bool relay_transactions = true,
+                std::shared_ptr<block_submission_channel> submissions = {});
 
     ~block_chain();
 
@@ -128,9 +129,21 @@ struct KB_API block_chain {
     // ORGANIZERS (Core blockchain operations)
     // =========================================================================
 
-    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
+    /// Submit through the node's existing header/body/connect pipeline.
+    /// Success means connected publication, not merely queued or stored.
+    /// A standalone chain without an admission owner refuses with service_stopped.
+    /// Cancelling the waiter does not roll back work already admitted.
     [[nodiscard]]
-    ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
+    ::asio::awaitable<code> submit_block(block_const_ptr block);
+
+    /// Copy a caller-owned block into the admission request before suspension.
+    [[nodiscard]]
+    ::asio::awaitable<code> submit_block(domain::chain::block const& block);
+
+    /// Constructor-bound endpoint; the sync coordinator is its sole consumer.
+    [[nodiscard]] block_submission_channel& block_submissions() noexcept;
+    [[nodiscard]] bool has_block_submissions() const noexcept { return bool(block_submissions_); }
+
 
     /// Fast IBD: merkle validation (+ disk storage when enabled) for blocks under checkpoint.
     /// Posts work to priority_pool_ so network pool stays free for downloads.
@@ -1099,6 +1112,7 @@ private:
 
     // Thread safe members
     std::atomic<bool> stopped_;
+    std::shared_ptr<block_submission_channel> const block_submissions_;
 
     // Reorg barrier (see request_reorg_pause / enter_reorg_barrier above).
     std::atomic<bool> reorg_pause_{false};

@@ -60,7 +60,8 @@ namespace kth::node::sync {
                 .source_peer = downloaded->source_peer,
                 .reorg_candidate = result.reorg_candidate,
                 .reorg_fork_height = result.reorg_fork_height,
-                .reorg_branch_head = result.reorg_branch_head
+                .reorg_branch_head = result.reorg_branch_head,
+                .submission = downloaded->submission
             }, ::asio::as_tuple(::asio::use_awaitable));
 
             if (send_ec) {

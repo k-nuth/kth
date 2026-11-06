@@ -264,6 +264,7 @@ set(kth_sources
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
         src/chain/chain_sync_generated.cpp
+        src/chain/chain_submission.cpp
         src/chain/chain_mempool.cpp
         src/chain/chain_mining.cpp
         src/chain/chain_query.cpp

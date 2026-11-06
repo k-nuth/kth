@@ -92,7 +92,7 @@ counterpart.
 | `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
-| `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
+| `submitblocklight` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
 | `help` | — (describes this server) | `dispatcher::methods()` |
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a

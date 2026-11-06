@@ -145,6 +145,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/local_admission_tasks.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
@@ -337,6 +338,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/block_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
+          test/local_block_admission.cpp
+          test/local_admission_tasks.cpp
+          test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
