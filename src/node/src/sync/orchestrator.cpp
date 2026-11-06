@@ -780,7 +780,7 @@ static
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (send_ec) {
                     if (reply) {
-                        (void)reply->try_send(std::error_code{}, code(error::service_stopped));
+                        (void)reply->try_send(blockchain::block_submission_result(error::service_stopped));
                     }
                     break;
                 }
@@ -792,7 +792,7 @@ static
             std::error_code drain_ec;
             while (auto queued = submissions->try_receive(drain_ec)) {
                 if (queued->reply) {
-                    (void)queued->reply->try_send(std::error_code{}, code(error::service_stopped));
+                    (void)queued->reply->try_send(blockchain::block_submission_result(error::service_stopped));
                 }
             }
             spdlog::info("[local_admission] Bridge ended");
@@ -1465,7 +1465,7 @@ static
         // channel nobody reads, and the capacity-one try_send still succeeds.
         auto const answer = [](local_admission const& pending, blockchain::block_submission_result outcome) {
             if (pending.reply) {
-                (void)pending.reply->try_send(std::error_code{}, outcome);
+                (void)pending.reply->try_send(std::move(outcome));
             }
         };
         auto resolve_local = [&](size_t at, code outcome,
