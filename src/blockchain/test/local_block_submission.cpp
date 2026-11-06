@@ -11,6 +11,7 @@
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
 #include "reorg_chain_fixture.hpp"
+#include "regtest_miner.hpp"
 
 using namespace kth;
 using namespace kth::test;
@@ -175,4 +176,150 @@ TEST_CASE("one block submission preserves validity and duplication independently
         CHECK(actual.validity == expected.validity);
         CHECK(actual.duplicate == expected.duplicate);
     }
+}
+
+namespace {
+auto read_rejections(blockchain::block_chain const& chain) {
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, chain.rejected_blocks(), ::asio::use_future);
+    io.run();
+    return result.get();
+}
+
+code record_rejection(blockchain::block_chain& chain, hash_digest const& hash) {
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, chain.record_rejected_block(hash), ::asio::use_future);
+    io.run();
+    return result.get();
+}
+
+// With every production handle closed, modify the on-disk table like an older
+// writer or damaged record would. RAII closes all handles even on assertion failure.
+void change_rejection_table(std::filesystem::path const& directory, bool remove_table) {
+    MDB_env* raw;
+    REQUIRE(mdb_env_create(&raw) == MDB_SUCCESS);
+    std::unique_ptr<MDB_env, decltype(&mdb_env_close)> env(raw, mdb_env_close);
+    REQUIRE(mdb_env_set_maxdbs(raw, 4) == MDB_SUCCESS);
+    REQUIRE(mdb_env_open(raw, (directory / "internal_db").string().c_str(), 0, 0664) == MDB_SUCCESS);
+    MDB_txn* txn_raw;
+    REQUIRE(mdb_txn_begin(raw, nullptr, 0, &txn_raw) == MDB_SUCCESS);
+    std::unique_ptr<MDB_txn, decltype(&mdb_txn_abort)> txn(txn_raw, mdb_txn_abort);
+    MDB_dbi dbi;
+    REQUIRE(mdb_dbi_open(txn_raw, "rejected_blocks", 0, &dbi) == MDB_SUCCESS);
+    if (remove_table) {
+        REQUIRE(mdb_drop(txn_raw, dbi, 1) == MDB_SUCCESS);
+    } else {
+        hash_digest hash{};
+        uint8_t unsupported_version = 2;
+        auto key = kth_db_make_value(hash.size(), hash.data());
+        auto value = kth_db_make_value(1, &unsupported_version);
+        REQUIRE(mdb_put(txn_raw, dbi, &key, &value, 0) == MDB_SUCCESS);
+    }
+    REQUIRE(mdb_txn_commit(txn.release()) == MDB_SUCCESS);
+}
+}
+
+TEST_CASE("rejection history survives reopen and recording is idempotent", "[block_submission][rejection_store]") {
+    chain_fixture fixture("rejection_store");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const empty = read_rejections(fixture.chain());
+    REQUIRE(empty);
+    REQUIRE(empty->empty());
+    hash_digest rejected{};
+    rejected.front() = 19;
+    REQUIRE(record_rejection(fixture.chain(), rejected) == error::success);
+    REQUIRE(record_rejection(fixture.chain(), rejected) == error::success);
+    REQUIRE(fixture.restart());
+    auto const restored = read_rejections(fixture.chain());
+    REQUIRE(restored);
+    REQUIRE(restored->size() == 1);
+    CHECK(restored->front() == rejected);
+}
+
+TEST_CASE("an older database without rejection history opens with an empty history", "[block_submission][rejection_store]") {
+    chain_fixture fixture("rejection_store_upgrade");
+    REQUIRE(fixture.created());
+    fixture.close();
+    change_rejection_table(fixture.dir(), true);
+    REQUIRE(fixture.start());
+    auto const restored = read_rejections(fixture.chain());
+    REQUIRE(restored);
+    CHECK(restored->empty());
+}
+
+TEST_CASE("damaged rejection history is refused rather than forgotten", "[block_submission][rejection_store]") {
+    chain_fixture fixture("rejection_store_corrupt");
+    REQUIRE(fixture.created());
+    fixture.close();
+    change_rejection_table(fixture.dir(), false);
+    CHECK_FALSE(fixture.start());
+}
+
+TEST_CASE("startup recovers active headers containing a committed rejection", "[block_submission][rejection_store][rejection_recovery]") {
+    chain_fixture fixture("rejection_store_interrupted");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const genesis = domain::chain::block::genesis_regtest();
+    constexpr uint32_t spacing = 120;
+    auto const one = mine_block(genesis.hash(), 1, genesis.header().timestamp() + spacing, 0, {}, 0);
+    auto const invalid = mine_block(one.hash(), 2, genesis.header().timestamp() + 2 * spacing, 0, {}, 1);
+    auto const child = mine_block(invalid.hash(), 3, genesis.header().timestamp() + 3 * spacing, 0, {}, 0);
+    domain::message::header::list headers{one.header(), invalid.header(), child.header()};
+    REQUIRE(fixture.organizer().add_headers(headers).headers_added == 3u);
+    REQUIRE_FALSE(fixture.chain().organize_headers_batch({one.header(), invalid.header(), child.header()}, 1));
+    // The verdict is durable, but a crash prevented truncation. No rejected
+    // block is connected: only the header table contains this suffix.
+    REQUIRE(record_rejection(fixture.chain(), invalid.hash()) == error::success);
+    REQUIRE(fixture.restart());
+    auto& index = fixture.chain().headers();
+    auto const invalid_idx = index.find(invalid.hash());
+    auto const child_idx = index.find(child.hash());
+    REQUIRE(invalid_idx != blockchain::header_index::null_index);
+    REQUIRE(child_idx != blockchain::header_index::null_index);
+    CHECK(index.has_status(invalid_idx, blockchain::header_status::failed_valid));
+    CHECK(index.has_status(child_idx, blockchain::header_status::failed_child));
+    CHECK(index.get_hash(fixture.organizer().tip_index()) == one.hash());
+    auto const heights = fixture.chain().get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->header == 1);
+    CHECK(heights->block == 0);
+    REQUIRE(fixture.chain().get_header(0));
+    CHECK(domain::chain::hash(*fixture.chain().get_header(0)) == genesis.hash());
+    CHECK(fixture.organizer().add_headers({invalid.header(), child.header()}).error);
+    auto const replacement = mine_block(one.hash(), 2, genesis.header().timestamp() + 2 * spacing, 19, {}, 0);
+    REQUIRE(fixture.organizer().add_headers({replacement.header()}).headers_added == 1);
+    REQUIRE_FALSE(fixture.chain().organize_headers_batch({replacement.header()}, 2));
+    REQUIRE(fixture.restart());
+    CHECK(fixture.chain().headers().get_hash(fixture.organizer().tip_index()) == replacement.hash());
+}
+
+TEST_CASE("restart rejects peer replays of a rejected header absent from the height table", "[block_submission][rejection_store][rejection_recovery]") {
+    chain_fixture fixture("rejection_store_peer_replay");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const genesis = domain::chain::block::genesis_regtest();
+    constexpr uint32_t spacing = 120;
+    auto const invalid = mine_block(genesis.hash(), 1, genesis.header().timestamp() + spacing, 0, {}, 1);
+    auto const child = mine_block(invalid.hash(), 2, genesis.header().timestamp() + 2 * spacing, 0, {}, 0);
+    REQUIRE(record_rejection(fixture.chain(), invalid.hash()) == error::success);
+    REQUIRE(fixture.restart());
+    // add_headers is the peer header admission boundary. The rejected hash is
+    // deliberately absent from the reconstructed by-height index.
+    REQUIRE(fixture.chain().headers().find(invalid.hash()) == blockchain::header_index::null_index);
+    auto const replay = fixture.organizer().add_headers({invalid.header(), child.header()});
+    CHECK(replay.error);
+    CHECK(replay.headers_added == 0);
+    CHECK_FALSE(replay.reorg_candidate);
+    CHECK(fixture.organizer().header_height() == 0);
+    auto const descendant = fixture.organizer().add_headers({child.header()});
+    CHECK(descendant.error);
+    CHECK(descendant.headers_added == 0);
+    REQUIRE(fixture.restart());
+    CHECK(fixture.organizer().header_height() == 0);
+    auto const replacement = mine_block(genesis.hash(), 1, genesis.header().timestamp() + spacing, 19, {}, 0);
+    REQUIRE(fixture.organizer().add_headers({replacement.header()}).headers_added == 1);
+    REQUIRE_FALSE(fixture.chain().organize_headers_batch({replacement.header()}, 1));
+    REQUIRE(fixture.restart());
+    CHECK(fixture.chain().headers().get_hash(fixture.organizer().tip_index()) == replacement.hash());
 }
