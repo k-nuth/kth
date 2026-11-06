@@ -222,6 +222,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_network_test
+    test/message_waits.cpp
     test/peer_database.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
