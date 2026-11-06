@@ -15,12 +15,15 @@
 #include <exception>
 
 #include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
+#include <asio/experimental/channel_select.hpp>
 
 #include <spdlog/spdlog.h>
 
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
 namespace kth::node::sync {
@@ -419,6 +422,124 @@ namespace {
             "part way onto the branch; capture stays closed and the node winds down");
         co_return reorg_outcome{{}, /*fatal*/ true};
     }
+}
+
+::asio::awaitable<body_rejection_outcome> execute_body_rejection(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    uint32_t height,
+    hash_digest const& hash,
+    std::stop_token stop,
+    std::function<code(uint32_t)> truncate,
+    reorg_pipeline pipeline) {
+
+    KTH_CONTRACT(truncate);
+    KTH_CONTRACT(bool(pipeline.storage_input) == bool(pipeline.contiguous_height));
+
+    auto executor = co_await ::asio::this_coro::executor;
+
+    // The same quiescence a switch takes, for the same reason: the by-height
+    // header table and the storage cursor are rewritten here, and a writer
+    // mid-unit must finish before they are. The builder that reported this is
+    // already parked, waiting for the answer.
+    struct pause_scope {
+        blockchain::block_chain& chain;
+        explicit pause_scope(blockchain::block_chain& c) : chain(c) { chain.request_reorg_pause(true); }
+        ~pause_scope() { chain.request_reorg_pause(false); }
+        pause_scope(pause_scope const&) = delete;
+        pause_scope& operator=(pause_scope const&) = delete;
+    } const pause(chain);
+
+    if (pipeline.storage_input) {
+        (void)pipeline.storage_input->try_send(std::error_code{}, storage_reorg_wake{});
+    }
+
+    // Woken by the barrier itself: every park, leave, register and unregister
+    // rings the chain's barrier channel, and the counters are re-read on each
+    // ring. A ring queued while this was not waiting is still there — the
+    // channel holds one, and one is all a re-read needs. The deadline is for a
+    // writer that never parks, which is a bug; the stop token is the shutdown.
+    constexpr auto barrier_deadline = std::chrono::minutes(5);
+    auto const deadline = std::chrono::steady_clock::now() + barrier_deadline;
+    while ( ! chain.reorg_barrier_reached()) {
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(chain.reorg_barrier_events()),
+            ::asio::experimental::after(deadline)
+        ).async_wait(executor, {}, stop, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
+        if (ec) {
+            // operation_aborted: the node is stopping. eof: the chain is. Either
+            // way the chain is left untouched.
+            spdlog::info("[reorg] Stopped while waiting for the barrier to step off the rejected "
+                "block at {}; the chain was not touched ({})", height, ec.message());
+            co_return body_rejection_outcome{};
+        }
+        if (selected.index == 1) {
+            auto const [parked, registered] = chain.reorg_barrier_state();
+            spdlog::error("[reorg] Gave up waiting for the reorg barrier after {} minutes to step "
+                "off the rejected block at {}: {} of {} writers parked. The chain was not touched",
+                barrier_deadline.count(), height, parked, registered);
+            co_return body_rejection_outcome{};
+        }
+    }
+    if (stop.stop_requested()) {
+        co_return body_rejection_outcome{};
+    }
+
+    auto const& index = chain.headers();
+    auto const idx = index.find(hash);
+    if (height == 0 || idx == blockchain::header_index::null_index ||
+        index.active_at(int32_t(height)) != idx) {
+        // Already off the active chain — a switch landed between the report
+        // and this — so there is nothing to step off.
+        spdlog::info("[reorg] The rejected block {} is no longer active at height {}; nothing to do",
+            encode_hash(hash), height);
+        co_return body_rejection_outcome{};
+    }
+
+    auto const parent = index.get_ancestor(idx, int32_t(height) - 1);
+    if (parent == blockchain::header_index::null_index) {
+        spdlog::critical("[reorg] The rejected block at height {} has no ancestor at {}; the "
+            "index is not describing a chain", height, height - 1);
+        co_return body_rejection_outcome{false, /*fatal*/ true};
+    }
+
+    // The verdict goes on the index entry first, while the writers are parked
+    // and before the tip moves: from the instant the parent is the tip, a
+    // batch re-sending this header extends it, and the organizer honours this
+    // flag on a known header exactly as on a new one. Set here and read there,
+    // the index's own status, nothing shared besides.
+    chain.headers().add_status(idx, blockchain::header_status::failed_valid);
+
+    // The tip and the height mapping move together, under the organizer's
+    // lock, as after a switch. Everything above the parent leaves the active
+    // chain; the generation moves, so chunks in flight for those heights are
+    // dropped by storage.
+    organizer.adopt_tip(parent);
+
+    // Before the write, unconditionally: nothing above the parent is durable
+    // as the active chain from here, whatever the write does.
+    headers_persistence_rewound_to(chain, height - 1);
+
+    bool fatal = false;
+    // Preserve the parent row, including genesis and its ABLA state. Replacing
+    // from height zero is deliberately forbidden by the header table.
+    if (auto const ec = truncate(height - 1); ec) {
+        spdlog::critical("[reorg] Could not truncate the header table above {} after rejecting "
+            "the block at {}: {}. The persisted headers still describe the rejected branch",
+            height - 1, height, ec.message());
+        fatal = true;
+    }
+
+    if (pipeline.contiguous_height) {
+        // Before the writers are released: storage re-derives its cursor from
+        // this on resume, and the rejected height is owed again.
+        pipeline.contiguous_height->store(height, std::memory_order_release);
+    }
+
+    spdlog::warn("[reorg] Stepped the active chain off the rejected block {} at height {}; the "
+        "header tip is now {}", encode_hash(hash), height, index.active_tip_height());
+    co_return body_rejection_outcome{true, fatal};
 }
 
 } // namespace kth::node::sync

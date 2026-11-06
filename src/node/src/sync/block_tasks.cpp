@@ -37,6 +37,7 @@
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
 
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
 #include <kth/blockchain/abla_pipeline.hpp>
@@ -2071,6 +2072,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress
 ) {
+    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+        std::move(should_stop), std::move(on_fatal), progress, nullptr, nullptr);
+}
+
+::asio::awaitable<void> utxo_build_task(
+    blockchain::block_chain& chain,
+    std::atomic<uint32_t> const& contiguous_height,
+    uint32_t start_height,
+    domain::config::network network,
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal,
+    utxo_build_progress_channel* progress,
+    block_rejection_channel* rejections,
+    block_rejection_ack_channel* rejection_ack
+) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
@@ -2249,6 +2265,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // cannot tell them apart from the code alone. Kept separate so each is
             // reported as what it is.
             bool parse_failed = false;
+            // Which block the validator refused, when it can say. Read only
+            // after the awaited validation below has completed.
+            blockchain::batch_rejection rejection;
 
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
@@ -2271,7 +2290,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, batch_start);
+                        chain, chain.chain_settings(), network, full_blocks, batch_start,
+                        rejection);
                 }, ::asio::use_awaitable);
 
             if (vc) {
@@ -2283,13 +2303,65 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     co_return;
                 }
 
-                // A block that does not satisfy consensus: a peer sent something
-                // invalid. Recoverable in principle — the range wants re-fetching
-                // from someone else — but the block is already stored and marked
-                // have_data, its peer is not recorded here, and the contiguous
-                // height has moved past it, so there is nothing this task can do
-                // about it beyond stopping. Recovering properly needs a way back to
-                // the coordinator with the failed height, which does not exist yet.
+                // A block that does not satisfy consensus. Nothing of the batch
+                // was applied. With a report channel and a block to name, this is
+                // the one definitive answer the pipeline gives about a body —
+                // whoever supplied it — and the coordinator is told which block,
+                // moves the chain off it, and answers; this task waits parked at
+                // the barrier meanwhile, so a switch that needs the barrier is not
+                // held by a builder that is doing nothing. The blocks before the
+                // rejected one are validated again next pass, as their own batch.
+                if (rejections != nullptr && rejection_ack != nullptr && rejection.block) {
+                    uint32_t const failed_height = batch_start + uint32_t(*rejection.block);
+                    auto const failed_idx = chain.headers().active_at(int32_t(failed_height));
+                    hash_digest const failed_hash = failed_idx == blockchain::header_index::null_index
+                        ? null_hash : chain.headers().get_hash(failed_idx);
+                    spdlog::error("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {} "
+                        "(block {} at height {}); reporting it and waiting for the chain to move",
+                        batch_start, batch_end, vc.message(), encode_hash(failed_hash), failed_height);
+
+                    // Cannot be refused: one report is outstanding at most, since
+                    // this task does not judge again until the answer arrives. A
+                    // closed channel is the shutdown.
+                    if ( ! rejections->try_send(std::error_code{}, block_rejected{
+                            .height = failed_height, .hash = failed_hash, .reason = vc})) {
+                        spdlog::info("[utxo_build] The rejection channel is closed; ending");
+                        co_return;
+                    }
+
+                    {
+                        // Parked for as long as the wait lasts, however it ends.
+                        // A bare pair around the await would leave the parked
+                        // count one too high on a cancellation or an exception,
+                        // after which the barrier reads as reached while a
+                        // writer is mid-unit. Same scope as the storage task's.
+                        struct parked_scope {
+                            blockchain::block_chain& chain;
+                            explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+                            ~parked_scope() { chain.leave_reorg_barrier(); }
+                            parked_scope(parked_scope const&) = delete;
+                            parked_scope& operator=(parked_scope const&) = delete;
+                        } const parked(chain);
+                        auto const [ack_ec] = co_await rejection_ack->async_receive(
+                            ::asio::as_tuple(::asio::use_awaitable));
+                        if (ack_ec) {
+                            co_return;      // shutdown: the owner closed the ack
+                        }
+                    }
+
+                    // The coordinator moved the chain and reset the shared cursor;
+                    // re-derive this task's own, as after a switch.
+                    if (auto const built = chain.get_utxo_built_height(); built) {
+                        utxo_built_height = *built;
+                        reload_timestamp_window(utxo_built_height);
+                    }
+                    continue;
+                }
+
+                // No way to report it, or no block to name: as before, the build
+                // stops here. A fault the validator could not attribute to a
+                // block is a store that did not answer, not a verdict, and is
+                // not reported as one.
                 spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}. "
                     "The UTXO build stops here and nothing re-drives it",
                     batch_start, batch_end, vc.message());
