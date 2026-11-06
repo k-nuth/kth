@@ -48,6 +48,13 @@ p2p_node::p2p_node(settings const& settings)
     // The make_handler<> wrapper handles parsing automatically
     dispatcher_.register_handler<domain::message::ping>(handlers::ping::handle);
     dispatcher_.register_handler<domain::message::pong>(handlers::pong::handle);
+    // BIP130: the peer wants new blocks announced with headers.
+    dispatcher_.register_handler<domain::message::send_headers>(
+        typed_message_handler_fn<domain::message::send_headers>(
+            [](peer_session& peer, domain::message::send_headers const&) -> ::asio::awaitable<message_result> {
+                peer.set_prefers_headers(true);
+                co_return message_result::handled;
+            }));
 }
 
 p2p_node::~p2p_node() {
@@ -406,6 +413,19 @@ double p2p_node::get_peer_speed(infrastructure::config::authority const& authori
 
     spdlog::debug("[dispatcher] Dispatching '{}' from [{}]", command, peer.authority_with_agent());
 
+    // A served request is queued for the peer's service, never answered here:
+    // the read loop does not wait on the peer's data queue. Admission is
+    // bounded, and a peer with that many requests pending is disconnected —
+    // the request is refused by ending the connection that carries it.
+    if (served_handlers_.contains(command)) {
+        if (peer.served_requests().try_send(raw_message(msg))) {
+            co_return true;
+        }
+        spdlog::debug("[dispatcher] [{}] has {} requests pending; disconnecting",
+            peer.authority(), peer_session::served_requests_capacity);
+        co_return false;
+    }
+
     // Look for specific handler
     auto it = handlers_.find(command);
     if (it != handlers_.end()) {
@@ -433,6 +453,46 @@ double p2p_node::get_peer_speed(infrastructure::config::authority const& authori
     co_return true;
 }
 
+void message_dispatcher::set_tip_announcement_handler(tip_announcement_fn handler) {
+    tip_announcement_ = std::move(handler);
+}
+
+::asio::awaitable<void> message_dispatcher::serve(peer_session& peer) {
+    auto executor = co_await ::asio::this_coro::executor;
+    // Requests before announcements when both are ready: a request was the
+    // peer's own, and the owed tip only grows more current while it waits.
+    ::asio::experimental::channel_select_options options;
+    options.biased = true;
+    std::optional<hash_digest> last_announced;
+    while (true) {
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(peer.served_requests()),
+            ::asio::experimental::receive(peer.tip_announcements())
+        ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
+        if (ec) {
+            // eof: the session stopped and closed the queues.
+            co_return;
+        }
+        if (selected.index == 1) {
+            if (tip_announcement_) {
+                co_await tip_announcement_(peer, *selected.value<1>(), last_announced);
+            }
+            continue;
+        }
+        auto const raw = std::move(*selected.value<0>());
+        auto const it = served_handlers_.find(raw.heading.command());
+        if (it == served_handlers_.end()) {
+            continue;
+        }
+        if (co_await it->second(peer, raw) == message_result::disconnect) {
+            spdlog::debug("[dispatcher] Served handler requested disconnect for [{}]", peer.authority());
+            peer.stop();
+            co_return;
+        }
+    }
+}
+
 void message_dispatcher::register_handler(std::string const& command, message_handler_fn handler) {
     handlers_[command] = std::move(handler);
 }
@@ -443,33 +503,6 @@ void message_dispatcher::set_default_handler(message_handler_fn handler) {
 
 infrastructure::config::checkpoint p2p_node::top_block() const {
     return top_block_.load();
-}
-
-void p2p_node::set_fee_filter_source(std::function<uint64_t()> source) {
-    fee_filter_source_ = std::move(source);
-    advertised_fee_filter_ = fee_filter();
-}
-
-uint64_t p2p_node::fee_filter() const {
-    return fee_filter_source_ ? fee_filter_source_() : 1000;
-}
-
-::asio::awaitable<void> p2p_node::refresh_fee_filter() {
-    // A full mempool raises the floor, and it decays back over hours; peers
-    // told the old value keep sending what is now refused, or hold back what
-    // is now taken. BIP133 lets a node send fee_filter again; at most once per
-    // interval keeps a floor that moves every few seconds from flooding them.
-    constexpr auto resend_interval = std::chrono::minutes(10);
-    auto const current = fee_filter();
-    auto const now = std::chrono::steady_clock::now();
-    if (current == advertised_fee_filter_ || now - advertised_at_ < resend_interval) {
-        co_return;
-    }
-    advertised_fee_filter_ = current;
-    advertised_at_ = now;
-    auto const sent = co_await manager_.broadcast(domain::message::fee_filter{current});
-    spdlog::info("[p2p_node] Fee filter is now {} satoshis per 1000 bytes; sent to {} peers",
-        current, sent);
 }
 
 void p2p_node::set_top_block(infrastructure::config::checkpoint const& top) {
@@ -996,6 +1029,16 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 }
 
 ::asio::awaitable<void> p2p_node::run_peer_protocols(peer_session::ptr peer) {
+    // The read loop and the peer's service, joined: each ends the session when
+    // it ends, which closes what the other waits on.
+    co_await (read_peer_messages(peer) && dispatcher_.serve(*peer));
+
+    spdlog::debug("[p2p_node] Calling manager_.remove() for [{}]", peer->authority());
+    co_await manager_.remove(peer);
+    spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
+}
+
+::asio::awaitable<void> p2p_node::read_peer_messages(peer_session::ptr peer) {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
@@ -1109,9 +1152,6 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 
     spdlog::debug("[p2p_node] Calling peer->stop() for [{}]", peer->authority());
     peer->stop();
-    spdlog::debug("[p2p_node] Calling manager_.remove() for [{}]", peer->authority());
-    co_await manager_.remove(peer);
-    spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
 }
 
 void p2p_node::probe_status_task(status_probe_point point) const {
@@ -1212,8 +1252,6 @@ void p2p_node::wake_status_task() noexcept {
             probe_status_task(status_probe_point::reported);
             spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
                 current, target, pending, hosts, banned);
-
-            co_await refresh_fee_filter();
         }
     }, ::asio::detached);
 
@@ -1522,11 +1560,10 @@ void p2p_node::wake_status_task() noexcept {
                         // Announce our capabilities right after the handshake,
                         // the way BCHN does: prefer header announcements, offer
                         // compact blocks (BIP-152 v1), and advertise our relay
-                        // fee filter, the floor this node admits at, so peers
-                        // send what it takes and nothing it refuses. Best-effort.
+                        // fee filter (1 sat/byte). Best-effort.
                         co_await peer->send(domain::message::send_headers{});
                         co_await peer->send(domain::message::send_compact(true, 1));
-                        co_await peer->send(domain::message::fee_filter{fee_filter()});
+                        co_await peer->send(domain::message::fee_filter{1000});
 
                         // Send success response to caller
                         if (response_channel) {

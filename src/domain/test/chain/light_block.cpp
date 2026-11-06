@@ -7,6 +7,7 @@
 #include <thread>
 
 #include <test_helpers.hpp>
+#include <algorithm>
 
 #include <kth/domain/chain/light_block.hpp>
 #include <kth/domain/message/heading.hpp>
@@ -281,4 +282,66 @@ TEST_CASE("transaction parser rejects noncanonical CompactSize fields", "[chain 
         CHECK_FALSE(tx.has_value());
         if (!tx) CHECK(tx.error() == error::invalid_size);
     }
+}
+
+TEST_CASE("light_block rejects duplicate-tail merkle mutation while preserving the committed body",
+          "[chain light_block][merkle_mutation]") {
+    auto raw = get_raw_block();
+    byte_reader original_reader(raw);
+    auto const original = chain::light_block::from_data(original_reader, true);
+    REQUIRE(original);
+    REQUIRE(original->tx_count() == 3u);
+    REQUIRE(original->is_valid_merkle_root());
+
+    // The real three-transaction wire fixture has count 3 in the byte after
+    // its 80-byte header. Appending its last transaction changes the body,
+    // while the merkle tree's odd-leaf padding leaves the root unchanged.
+    auto const last = original->tx_bytes(2);
+    raw[80] = 4;
+    raw.insert(raw.end(), last.begin(), last.end());
+    byte_reader mutated_reader(raw);
+    auto const mutated = chain::light_block::from_data(mutated_reader, true);
+    REQUIRE(mutated);
+    REQUIRE(mutated->tx_count() == 4u);
+    CHECK(mutated->generate_merkle_root() == original->header().merkle());
+    CHECK_FALSE(mutated->is_valid_merkle_root());
+    CHECK(original->is_valid_merkle_root());
+}
+
+TEST_CASE("light_block detects duplicated merkle subtrees above the transaction leaves",
+          "[chain light_block][merkle_mutation]") {
+    auto original_bytes = get_raw_block();
+    byte_reader input(original_bytes);
+    auto const source = chain::light_block::from_data(input, true);
+    REQUIRE(source);
+    data_chunk bytes(original_bytes.begin(), original_bytes.begin() + 80);
+    bytes.push_back(6);
+    for (size_t i = 0; i < 6; ++i) {
+        auto const tx = source->tx_bytes(i % 3);
+        auto const offset = bytes.size();
+        bytes.insert(bytes.end(), tx.begin(), tx.end());
+        if (i >= 3) {
+            // A distinct transaction serialization, without changing framing.
+            bytes[offset + tx.size() - 4] = 1;
+        }
+    }
+    byte_reader preliminary_reader(bytes);
+    auto const preliminary = chain::light_block::from_data(preliminary_reader, true);
+    REQUIRE(preliminary);
+    auto const root = preliminary->generate_merkle_root();
+    std::copy(root.begin(), root.end(), bytes.begin() + 36);
+    byte_reader valid_reader(bytes);
+    auto const unmutated = chain::light_block::from_data(valid_reader, true);
+    REQUIRE(unmutated);
+    REQUIRE(unmutated->is_valid_merkle_root());
+    auto const fifth = unmutated->tx_bytes(4);
+    auto const sixth = unmutated->tx_bytes(5);
+    bytes[80] = 8;
+    bytes.insert(bytes.end(), fifth.begin(), fifth.end());
+    bytes.insert(bytes.end(), sixth.begin(), sixth.end());
+    byte_reader mutated_reader(bytes);
+    auto const mutated = chain::light_block::from_data(mutated_reader, true);
+    REQUIRE(mutated);
+    CHECK(mutated->generate_merkle_root() == root);
+    CHECK_FALSE(mutated->is_valid_merkle_root());
 }

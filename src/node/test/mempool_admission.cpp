@@ -5,19 +5,23 @@
 #include <test_helpers.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include <atomic>
 #include <chrono>
-#include <functional>
 #include <future>
 #include <utility>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/use_future.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+#include <asio/bind_cancellation_slot.hpp>
+#include <asio/cancellation_signal.hpp>
+#include <kth/blockchain/populate/populate_base.hpp>
 
 #include <kth/blockchain/pools/mempool.hpp>
 
 #include "sync_harness.hpp"
+#include "child_process_harness.hpp"
 #if defined(KTH_CURRENCY_BCH)
 #include "../../blockchain/test/transaction_size_fixture.hpp"
 #include <kth/blockchain/validate/batch_validate.hpp>
@@ -69,9 +73,7 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
-    // `configure` sets anything else in the chain's settings before it starts.
-    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
-        std::function<void(blockchain::settings&)> const& configure = {})
+    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000)
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -79,7 +81,6 @@ struct admission_chain {
 #if defined(KTH_CURRENCY_BCH)
         fixture.settings().standardness.maximum_transaction_size = policy_size;
 #endif
-        if (configure) configure(fixture.settings());
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -116,40 +117,7 @@ struct admission_chain {
         return test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
                                  chain().chain_settings().enabled_flags());
     }
-
-    // A signed spend of the coinbase of block `height`, paying `fee`. Matured
-    // for heights up to the trunk's length less 99.
-    [[nodiscard]]
-    domain::chain::transaction coinbase_spend(uint32_t height, uint64_t fee) {
-        auto const& coinbase = trunk[height - 1].transactions().front();
-        return test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
-                                 chain().chain_settings().enabled_flags());
-    }
 #if defined(KTH_CURRENCY_BCH)
-    // A signed spend of block 1's coinbase into three P2PKH outputs, paying
-    // `fee` satoshis: a payment with change to two parties, as wallets make.
-    domain::chain::transaction three_output_spend(uint64_t fee) {
-        using namespace domain::chain;
-        auto const& cb = trunk.front().transactions().front();
-        auto const share = (cb.outputs()[0].value() - fee) / 3;
-        auto const outputs = [&] {
-            return output::list{
-                output{share, miner_script(), std::nullopt},
-                output{share, miner_script(), std::nullopt},
-                output{cb.outputs()[0].value() - fee - 2 * share, miner_script(), std::nullopt}};
-        };
-        input::list ins{input{output_point{cb.hash(), 0}, script{}, 0xffffffff}};
-        transaction unsigned_tx{1, 0, std::move(ins), outputs()};
-        unsigned_tx.inputs()[0].previous_output().validation.cache = cb.outputs()[0];
-        auto sig = script::create_endorsement(miner_secret(), miner_script(), unsigned_tx, 0,
-            uint8_t(infrastructure::machine::sighash_algorithm::forkid_all),
-            chain().chain_settings().enabled_flags(), cb.outputs()[0].value());
-        REQUIRE(sig);
-        input::list signed_ins{input{output_point{cb.hash(), 0},
-            script(script::to_pay_public_key_hash_pattern_unlocking(*sig, miner_public())), 0xffffffff}};
-        return transaction{1, 0, std::move(signed_ins), outputs()};
-    }
-
     domain::chain::transaction p2sh_funding() {
         using namespace domain::chain;
         using domain::machine::operation;
@@ -435,203 +403,171 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
 
 #endif // KTH_CURRENCY_BCH
 
-#if defined(KTH_CURRENCY_BCH)
-TEST_CASE("a payment paying one satoshi per byte is admitted at the default price", "[mempool][admission][fee]") {
-    // A wallet pays by size. With one input and three outputs the payment
-    // carries three signature operations, so any per-sigop price of note would
-    // exceed what one satoshi per byte pays for its ~260 bytes.
-    admission_chain built("one_sat_per_byte", trunk_len);
+// A separate executable process lets the existing watchdog report a deadlock
+// without abandoning any threads or forking a process with live Asio workers.
+TEST_CASE("admission child: a suspended validation leaves the caller responsive", "[.admission-child]") {
+    bool const cancel_waiter = GENERATE(false, true);
+    bool const validate_only_waiter = GENERATE(false, true);
+    watchdog guard(std::chrono::seconds(30), "concurrent transaction admission");
+    {
+        test::chain_fixture fixture("admission_deadlock");
+        std::printf("ADMISSION-DIR:%s\n", fixture.dir().string().c_str());
+        std::fflush(stdout);
+        fixture.settings().cores = 1;
+        REQUIRE(fixture.created());
+        REQUIRE(fixture.start());
+        auto& chain = fixture.chain();
+        std::promise<void> worker_entered, release_worker;
+        auto released = release_worker.get_future().share();
+        ::asio::post(chain.executor(), [&] { worker_entered.set_value(); released.wait(); });
+        worker_entered.get_future().get();
+        auto make_tx = [](uint8_t tag) {
+            hash_digest hash{}; hash[0] = tag;
+            domain::chain::input::list inputs{domain::chain::input{
+                domain::chain::output_point{hash, 0}, domain::chain::script{}, 0xffffffff}};
+            domain::chain::output::list outputs{domain::chain::output{1000,
+                domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern(short_hash{})), std::nullopt}};
+            return std::make_shared<domain::message::transaction>(1, 0, std::move(inputs), std::move(outputs));
+        };
+        ::asio::io_context caller;
+        auto first = ::asio::co_spawn(caller, chain.organize(make_tx(1)), ::asio::use_future);
+        caller.poll_one();
+        bool const suspended = first.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        ::asio::cancellation_signal cancel;
+        auto second = ::asio::co_spawn(caller,
+            validate_only_waiter ? chain.transaction_validate(make_tx(2)) : chain.organize(make_tx(2)),
+            ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+        if (cancel_waiter) ::asio::post(caller, [&] { cancel.emit(::asio::cancellation_type::terminal); });
+        auto third = ::asio::co_spawn(caller, chain.transaction_validate(make_tx(3)), ::asio::use_future);
+        bool heartbeat = false;
+        ::asio::post(caller, [&] { heartbeat = true; });
+        // The second admission is queued before the first one's completion.
+        release_worker.set_value();
+        caller.restart();
+        caller.run();
+        CHECK(suspended);
+        CHECK(heartbeat);
+        CHECK(first.get() == error::missing_previous_output);
+        auto const second_result = second.get();
+        if (cancel_waiter) {
+            CHECK(second_result == ::asio::error::operation_aborted);
+            CHECK(second_result != error::service_stopped);
+        } else {
+            CHECK(second_result == error::missing_previous_output);
+        }
+        CHECK(third.get() == error::missing_previous_output);
+    }
+    announce_completion();
+}
+
+TEST_CASE("concurrent admission leaves a single caller executor responsive", "[mempool][admission][deadlock]") {
+    auto const child = run_child("admission child: a suspended validation leaves the caller responsive");
+    // Clean a fixture left behind by the intentionally killed RED control.
+    size_t offset = 0;
+    while ((offset = child.out.find("ADMISSION-DIR:", offset)) != std::string::npos) {
+        offset += std::string_view("ADMISSION-DIR:").size();
+        auto const end = child.out.find('\n', offset);
+        std::filesystem::path const dir(child.out.substr(offset, end - offset));
+        if (dir.parent_path() == std::filesystem::temp_directory_path() &&
+            dir.filename().string().starts_with("kth_reorg_e2e_admission_deadlock_")) {
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }
+    }
+    require_clean_child(child);
+}
+
+TEST_CASE("a prevout newer than the validation height is not a storage fault", "[mempool][admission][snapshot]") {
+    admission_chain built("newer_prevout", trunk_len);
     auto& chain = built.chain();
-    CHECK(chain.chain_settings().sigop_fee_satoshis == 0.0f);
+    auto const& parent = built.trunk.back().transactions().front();
+    domain::chain::output_point point{parent.hash(), 0};
+    auto const bounded = chain.get_utxo(point, trunk_len - 1);
+    REQUIRE_FALSE(bounded);
+    REQUIRE(bounded.error() == database::result_code::key_not_found);
+    struct probe : blockchain::populate_base {
+        probe(executor_type executor, size_t threads, blockchain::block_chain const& chain)
+            : populate_base(std::move(executor), threads, chain) {}
+        using blockchain::populate_base::populate_prevout;
+    } populate(chain.executor(), 1, chain);
+    CHECK(populate.populate_prevout(trunk_len - 1, point, true, 0) == error::success);
+    CHECK_FALSE(point.validation.cache.is_valid());
+    CHECK(populate.populate_prevout(trunk_len, point, true, 0) == error::success);
+    CHECK(point.validation.cache.is_valid());
+    // A real operational failure must still fail closed, not become absence.
+    {
+        auto window = chain.begin_utxo_write();
+        REQUIRE(window);
+        window->mark_mutating();
+    }
+    auto const failed_read = chain.get_utxo(point, trunk_len);
+    REQUIRE_FALSE(failed_read);
+    REQUIRE(failed_read.error() == database::result_code::recovery_required);
+    CHECK(populate.populate_prevout(trunk_len, point, true, 0) == error::operation_failed);
+}
 
-    auto const size = built.three_output_spend(0).serialized_size(true);
-    auto const tx = std::make_shared<domain::message::transaction>(built.three_output_spend(size));
-    // The fee is the funding value less the outputs: one satoshi per byte of a
-    // payment that is about as large as the one it was measured on.
-    auto const funding = built.trunk.front().transactions().front().outputs()[0].value();
-    REQUIRE(funding - tx->total_output_value() == size);
-    REQUIRE(tx->serialized_size(true) > 250u);
-    REQUIRE(tx->serialized_size(true) <= size + 2);
-
-    CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::success);
+TEST_CASE("admission refuses an obsolete chain publication", "[mempool][admission][snapshot]") {
+    admission_chain built("commit_snapshot", trunk_len);
+    auto& chain = built.chain();
+    auto const old = chain.chain_view();
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    REQUIRE(run_on_chain(chain, [&chain, tx] { return chain.transaction_validate(tx); }) == error::success);
+    auto const next = test::mine_block(built.trunk.back().hash(), trunk_len + 1,
+        built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+    std::vector<domain::chain::block> blocks{next};
+    REQUIRE(built.fixture.organizer().add_headers(headers_of(blocks)).headers_added == 1);
+    persist_headers(built.fixture, blocks, trunk_len + 1);
+    connect_bodies(built.fixture, blocks, trunk_len + 1);
+    auto const entry = blockchain::mempool_entry{tx, fee, uint32_t(tx->serialized_size(true)), 1, 1};
+    CHECK(chain.commit_validated_transaction(entry, old) == error::stale_chain);
+    CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
+    auto const current = chain.chain_view();
+    REQUIRE(chain.begin_transition());
+    CHECK(chain.commit_validated_transaction(entry, current) == error::stale_chain);
+    chain.end_transition();
+    CHECK(chain.commit_validated_transaction(entry, current) == error::success);
     CHECK(chain.mempool_ref().contains(tx->hash()));
 }
 
-TEST_CASE("a payment paying less than the per-byte price is still refused", "[mempool][admission][fee]") {
-    // Only the per-signature-operation price is gone. A payment paying a
-    // twentieth of a satoshi per byte, under the default 0.1, is refused as
-    // before.
-    admission_chain built("under_byte_price", trunk_len);
+TEST_CASE("admission revalidates once when a block arrives during validation", "[mempool][admission][snapshot]") {
+    bool const invalidate_retry = GENERATE(false, true);
+    admission_chain built("commit_retry", trunk_len);
     auto& chain = built.chain();
-    REQUIRE(chain.chain_settings().byte_fee_satoshis == 0.1f);
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    ::asio::io_context caller;
+    auto result = ::asio::co_spawn(caller, chain.organize(tx), ::asio::use_future);
 
-    auto const size = built.three_output_spend(0).serialized_size(true);
-    auto const tx = std::make_shared<domain::message::transaction>(built.three_output_spend(size / 20));
+    auto advance_to_validation = [&](size_t height) {
+        // Only this context resumes the admission coroutine. Stop as soon as
+        // accept publishes its scratch state, before the commit can run.
+        bool reached = false;
+        for (size_t step = 0; step < 32 && !reached; ++step) {
+            REQUIRE(caller.run_one() == 1);
+            chain.transaction_validations().visit(tx->hash(), [&](auto const& tv) {
+                reached = tv.state && tv.state->height() == height;
+            });
+        }
+        REQUIRE(reached);
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+    };
+    auto connect_next = [&](uint32_t height) {
+        auto const block = test::mine_block(built.trunk.back().hash(), height,
+            built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+        std::vector<domain::chain::block> blocks{block};
+        REQUIRE(built.fixture.organizer().add_headers(headers_of(blocks)).headers_added == 1);
+        persist_headers(built.fixture, blocks, height);
+        connect_bodies(built.fixture, blocks, height);
+        built.trunk.push_back(block);
+    };
 
-    CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::insufficient_fee);
-    CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
-}
-
-TEST_CASE("a per-signature-operation price set by the operator still applies", "[mempool][admission][fee]") {
-    // node.sigop_fee_satoshis still prices signature operations when it is set.
-    // At the old default of 100, the payment one satoshi per byte pays for is
-    // refused, and admitted once it also pays for its three signature
-    // operations.
-    admission_chain built("operator_sigop_price", trunk_len, true, 1'000'000,
-        [](blockchain::settings& settings) { settings.sigop_fee_satoshis = 100.0f; });
-    auto& chain = built.chain();
-    REQUIRE(chain.chain_settings().sigop_fee_satoshis == 100.0f);
-
-    auto const size = built.three_output_spend(0).serialized_size(true);
-    auto const by_size = std::make_shared<domain::message::transaction>(built.three_output_spend(size));
-    CHECK(run_on_chain(chain, [&chain, by_size] { return chain.organize(by_size); }) == error::insufficient_fee);
-    CHECK_FALSE(chain.mempool_ref().contains(by_size->hash()));
-
-    auto const priced = std::make_shared<domain::message::transaction>(built.three_output_spend(size + 300));
-    CHECK(run_on_chain(chain, [&chain, priced] { return chain.organize(priced); }) == error::success);
-    CHECK(chain.mempool_ref().contains(priced->hash()));
-}
-#endif // KTH_CURRENCY_BCH
-
-// =============================================================================
-// A full mempool, a floor that rises and decays, and expiry
-// =============================================================================
-
-namespace {
-
-// A trunk long enough that the coinbases of blocks 1 to 11 have matured.
-constexpr uint32_t spendable_trunk_len = 110;
-constexpr uint64_t start_time = 1'700'000'000;
-constexpr uint64_t hour = 60 * 60;
-
-std::shared_ptr<domain::message::transaction> as_message(domain::chain::transaction const& tx) {
-    return std::make_shared<domain::message::transaction>(tx);
-}
-
-code organize_on(blockchain::block_chain& chain, transaction_const_ptr tx) {
-    return run_on_chain(chain, [&chain, tx] { return chain.organize(tx); });
-}
-
-} // namespace
-
-TEST_CASE("a full mempool evicts the lowest fee per byte and raises its floor", "[mempool][admission][fee][limit]") {
-    // Room for two of these one-input, one-output payments (about 191 bytes
-    // each), not three.
-    admission_chain built("mempool_full", spendable_trunk_len, true, 1'000'000,
-        [](blockchain::settings& settings) { settings.mempool_max_bytes = 450; });
-    auto& chain = built.chain();
-    std::atomic<uint64_t> now{start_time};
-    chain.set_policy_clock([&now] { return now.load(); });
-    REQUIRE(chain.fee_filter() == 100);
-
-    auto const two = as_message(built.coinbase_spend(1, 400));
-    auto const three = as_message(built.coinbase_spend(2, 600));
-    REQUIRE(organize_on(chain, two) == error::success);
-    REQUIRE(organize_on(chain, three) == error::success);
-
-    // Cheaper than all the pool holds: it is the one evicted, so it is refused,
-    // and the two already there stay.
-    auto const one = as_message(built.coinbase_spend(3, 200));
-    CHECK(organize_on(chain, one) == error::insufficient_fee);
-    CHECK_FALSE(chain.mempool_ref().contains(one->hash()));
-    CHECK(chain.mempool_ref().contains(two->hash()));
-    CHECK(chain.mempool_ref().contains(three->hash()));
-    CHECK(chain.mempool_ref().bytes() <= 450u);
-    CHECK(chain.fee_filter() > 1000);
-
-    // Paying more than the cheapest held: that one goes, with nothing else.
-    auto const five = as_message(built.coinbase_spend(4, 1000));
-    CHECK(organize_on(chain, five) == error::success);
-    CHECK_FALSE(chain.mempool_ref().contains(two->hash()));
-    CHECK(chain.mempool_ref().contains(three->hash()));
-    CHECK(chain.mempool_ref().contains(five->hash()));
-    CHECK(chain.mempool_ref().bytes() <= 450u);
-
-    // The floor is now the evicted rate (about 2.1 per byte) plus the
-    // configured 0.1, so a payment of about 1.6 per byte is refused on price.
-    auto const raised = chain.fee_filter();
-    CHECK(raised > 2000);
-    auto const under = as_message(built.coinbase_spend(5, 300));
-    CHECK(organize_on(chain, under) == error::insufficient_fee);
-
-    // The excess halves every 12 hours, and is gone within days.
-    now += 12 * hour;
-    CHECK(chain.fee_filter() < raised);
-    CHECK(chain.fee_filter() > 100);
-    now += 7 * 24 * hour;
-    CHECK(chain.fee_filter() == 100);
-}
-
-TEST_CASE("an unconfirmed transaction expires with its descendants when a block connects", "[mempool][admission][expiry]") {
-    admission_chain built("mempool_expiry", spendable_trunk_len);
-    auto& chain = built.chain();
-    REQUIRE(chain.chain_settings().mempool_expiry_hours == 336u);
-    std::atomic<uint64_t> now{start_time};
-    chain.set_policy_clock([&now] { return now.load(); });
-
-    auto const parent = built.coinbase_spend(1, 1000);
-    REQUIRE(organize_on(chain, as_message(parent)) == error::success);
-    now += hour;
-    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - 1000,
-        chain.chain_settings().enabled_flags());
-    REQUIRE(organize_on(chain, as_message(child)) == error::success);
-    now += hour;
-    auto const other = built.coinbase_spend(2, 1000);
-    REQUIRE(organize_on(chain, as_message(other)) == error::success);
-
-    // Not yet: 335 hours after the parent was first seen.
-    now = start_time + 335 * hour;
-    chain.mempool_remove_for_block(built.trunk.back());
-    CHECK(chain.mempool_ref().contains(parent.hash()));
-
-    // 337 hours: the parent has expired, and its child (seen an hour later, so
-    // not expired itself) goes with it; the one seen two hours later stays.
-    now = start_time + 337 * hour;
-    chain.mempool_remove_for_block(built.trunk.back());
-    CHECK_FALSE(chain.mempool_ref().contains(parent.hash()));
-    CHECK_FALSE(chain.mempool_ref().contains(child.hash()));
-    CHECK(chain.mempool_ref().contains(other.hash()));
-}
-
-TEST_CASE("a transaction reloaded from mempool.dat keeps its age", "[mempool][admission][expiry]") {
-    admission_chain built("mempool_reload_age", spendable_trunk_len);
-    auto& chain = built.chain();
-    std::atomic<uint64_t> now{start_time};
-    chain.set_policy_clock([&now] { return now.load(); });
-
-    auto const expired = built.coinbase_spend(1, 1000);
-    auto const recent = built.coinbase_spend(2, 1000);
-    std::vector<database::mempool_stored_tx> stored{
-        {as_message(expired), start_time - 337 * hour},
-        {as_message(recent), start_time - hour}};
-    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
-
-    auto const admitted = run_count_on_chain(chain, [&] { return chain.load_mempool_from_disk(); });
-    CHECK(admitted == 1u);
-    CHECK_FALSE(chain.mempool_ref().contains(expired.hash()));
-    auto const entry = chain.mempool_ref().entry(recent.hash());
-    REQUIRE(entry.has_value());
-    CHECK(entry->time_seen == start_time - hour);
-}
-
-TEST_CASE("a mempool limit or expiry of zero turns it off", "[mempool][admission][limit][expiry]") {
-    admission_chain built("mempool_unlimited", spendable_trunk_len, true, 1'000'000,
-        [](blockchain::settings& settings) {
-            settings.mempool_max_bytes = 0;
-            settings.mempool_expiry_hours = 0;
-        });
-    auto& chain = built.chain();
-    std::atomic<uint64_t> now{start_time};
-    chain.set_policy_clock([&now] { return now.load(); });
-
-    auto const first = as_message(built.coinbase_spend(1, 200));
-    auto const second = as_message(built.coinbase_spend(2, 200));
-    REQUIRE(organize_on(chain, first) == error::success);
-    REQUIRE(organize_on(chain, second) == error::success);
-    CHECK(chain.fee_filter() == 100);
-
-    now += 10'000 * hour;
-    chain.mempool_remove_for_block(built.trunk.back());
-    CHECK(chain.mempool_ref().contains(first->hash()));
-    CHECK(chain.mempool_ref().contains(second->hash()));
+    advance_to_validation(trunk_len + 1);
+    connect_next(trunk_len + 1);
+    if (invalidate_retry) {
+        advance_to_validation(trunk_len + 2);
+        connect_next(trunk_len + 2);
+    }
+    caller.run();
+    CHECK(result.get() == (invalidate_retry ? error::stale_chain : error::success));
+    CHECK(chain.mempool_ref().contains(tx->hash()) == !invalidate_retry);
+    CHECK_FALSE(chain.transaction_validations().visit(tx->hash(), [](auto const&) {}));
 }

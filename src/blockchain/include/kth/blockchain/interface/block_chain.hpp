@@ -17,6 +17,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <variant>
 
 #include <kth/infrastructure/utility/atomic.hpp>
 
@@ -32,8 +33,10 @@
 #include <kth/domain.hpp>
 #include <kth/domain/chain/light_block.hpp>
 
+#include <kth/blockchain/chain_progress.hpp>
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
+#include <kth/blockchain/local_block_admission.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
@@ -95,7 +98,8 @@ struct KB_API block_chain {
     block_chain(blockchain::settings const& chain_settings,
                 database::settings const& database_settings,
                 domain::config::network network,
-                bool relay_transactions = true);
+                bool relay_transactions = true,
+                std::shared_ptr<block_submission_channel> submissions = {});
 
     ~block_chain();
 
@@ -125,9 +129,28 @@ struct KB_API block_chain {
     // ORGANIZERS (Core blockchain operations)
     // =========================================================================
 
-    /// @param headers_pre_validated If true, skip header validation (for headers-first sync)
+    /// Submit through the node's existing header/body/connect pipeline.
+    /// Success means connected publication, not merely queued or stored.
+    /// A standalone chain without an admission owner refuses with service_stopped.
+    /// Cancelling the waiter does not roll back work already admitted.
+    /// Returns the owner's complete outcome, including invalid-duplicate status.
+    /// This is one submission-and-reply operation, never a later result query.
     [[nodiscard]]
-    ::asio::awaitable<code> organize(block_const_ptr block, bool headers_pre_validated = false);
+    ::asio::awaitable<block_submission_result> submit_block(block_const_ptr block);
+
+    /// Copy a caller-owned block into the admission request before suspension.
+    [[nodiscard]]
+    ::asio::awaitable<block_submission_result> submit_block(domain::chain::block const& block);
+
+    /// Read rejection identities before admission starts; the coordinator owns the live set.
+    [[nodiscard]] awaitable_expected<std::vector<hash_digest>> rejected_blocks() const;
+    /// Persist a contextual verdict before publishing it to submitters.
+    [[nodiscard]] ::asio::awaitable<code> record_rejected_block(hash_digest hash);
+
+    /// Constructor-bound endpoint; the sync coordinator is its sole consumer.
+    [[nodiscard]] block_submission_channel& block_submissions() noexcept;
+    [[nodiscard]] bool has_block_submissions() const noexcept { return bool(block_submissions_); }
+
 
     /// Fast IBD: merkle validation (+ disk storage when enabled) for blocks under checkpoint.
     /// Posts work to priority_pool_ so network pool stays free for downloads.
@@ -179,6 +202,9 @@ struct KB_API block_chain {
     /// (organize_headers_batch above is not guarded, and so fails to link
     /// rather than to compile in such a build — pre-existing, left alone here.)
     code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
+
+    /// Called by the coordinator with writers parked; preserve the retained row.
+    [[nodiscard]] code truncate_headers_after(uint32_t height);
 #endif // ! defined(KTH_DB_READONLY)
 
     /// Open the exclusive window over the UTXO store, for ONE logical operation.
@@ -507,15 +533,32 @@ struct KB_API block_chain {
     // deregisters when it exits, so a retired task neither blocks the barrier
     // forever nor counts as parked.
 
-    void register_reorg_participant() { reorg_registered_.fetch_add(1, std::memory_order_seq_cst); }
-    void unregister_reorg_participant() { reorg_registered_.fetch_sub(1, std::memory_order_seq_cst); }
+    void register_reorg_participant() {
+        reorg_registered_.fetch_add(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+    void unregister_reorg_participant() {
+        reorg_registered_.fetch_sub(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
 
     void request_reorg_pause(bool paused) { reorg_pause_.store(paused, std::memory_order_seq_cst); }
     [[nodiscard]] bool reorg_pause_requested() const { return reorg_pause_.load(std::memory_order_seq_cst); }
 
     // Called by a registered task when it parks at / leaves the barrier.
-    void enter_reorg_barrier() { reorg_parked_.fetch_add(1, std::memory_order_seq_cst); }
-    void leave_reorg_barrier() { reorg_parked_.fetch_sub(1, std::memory_order_seq_cst); }
+    void enter_reorg_barrier() {
+        reorg_parked_.fetch_add(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+    void leave_reorg_barrier() {
+        reorg_parked_.fetch_sub(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+
+    /// Coordinator-only wake source. A queued notification retains the debt
+    /// to inspect the existing barrier counters; a full channel loses no wake.
+    [[nodiscard]] ::asio::experimental::select_channel<std::monostate>&
+    reorg_barrier_events() noexcept { return reorg_barrier_events_; }
 
     // Bumped by each completed switch. Work that was requested against the old
     // chain carries the previous generation; the storage path drops it instead of
@@ -626,6 +669,25 @@ struct KB_API block_chain {
     [[nodiscard]]
     chain_view_ptr chain_view() const;
 
+    /// Commit an already validated transaction only against the publication it
+    /// was validated for. No suspension or script work under the mempool lock.
+    [[nodiscard]]
+    code commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected);
+
+    // Metadata relative to a single connected publication. The overload taking
+    // a view lets multi-part API responses retain the same reference chain.
+    // An unavailable reference leaves both depths at -1; own branch metadata
+    // remains available independently of the connected publication.
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash, chain_view_ptr const& view) const;
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_chain_progress() const;
+
+
     /// Build the view for `connected_tip_height` and publish it.
     ///
     /// `connected_tip_height` is the last block whose state — the UTXO delta,
@@ -724,14 +786,6 @@ struct KB_API block_chain {
 
     blockchain::mempool& mempool_ref();
     blockchain::mempool const& mempool_ref() const;
-
-    // The admission floor in satoshis per 1000 bytes, as peers are told it in
-    // fee_filter: the configured floor, or more while a full mempool raised it.
-    [[nodiscard]] uint64_t fee_filter() const;
-
-    // Replaces the clock (unix seconds) that the rising floor and mempool expiry
-    // read. For tests: set it before transactions arrive.
-    void set_policy_clock(std::function<uint64_t()> clock);
 
     // =========================================================================
     // SUBSCRIPTIONS
@@ -836,7 +890,12 @@ struct KB_API block_chain {
     // FETCH OPERATIONS (Thread safe, coroutine-based)
     // =========================================================================
 
-    // Block fetching
+    // Block fetching. The block is read from the flat files through its
+    // header-index record, on the chain's pool rather than the caller's
+    // executor. By height: the block on the active chain. By hash: any stored
+    // block the index holds, side branches included, with its own height.
+    // not_found when the node does not hold the block's data; operation_failed
+    // when the stored record cannot be read or is not the block the index names.
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(size_t height) const;
 
@@ -974,6 +1033,12 @@ struct KB_API block_chain {
 private:
     using handle = database::data_base::handle;
 
+    // Read the block stored at `pos`, which the index names `hash` at `height`,
+    // on the chain's pool. Values only: nothing of the index is read after the
+    // caller captured them.
+    [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
+    read_stored_block(hash_digest const& hash, size_t height, database::flat_file_pos pos) const;
+
     template <typename R>
     void read_serial(R const& reader) const;
 
@@ -983,13 +1048,6 @@ private:
 
     // <datadir>/mempool.dat — sibling of the blocks/ and utxoz/ directories.
     std::filesystem::path mempool_dat_path() const;
-
-    // The first-seen time before which a pooled transaction has expired, or 0
-    // when expiry is off. Read on the organizer's clock.
-    uint64_t mempool_expiry_cutoff() const;
-
-    // Drop expired transactions, with their descendants. Validation lock held.
-    void expire_mempool();
 
     /// Whether the last chain transition finished, and therefore whether this
     /// database may be opened for operation at all (#600). Logs the refusal —
@@ -1072,11 +1130,13 @@ private:
 
     // Thread safe members
     std::atomic<bool> stopped_;
+    std::shared_ptr<block_submission_channel> const block_submissions_;
 
     // Reorg barrier (see request_reorg_pause / enter_reorg_barrier above).
     std::atomic<bool> reorg_pause_{false};
     std::atomic<size_t> reorg_parked_{0};
     std::atomic<size_t> reorg_registered_{0};
+    ::asio::experimental::select_channel<std::monostate> reorg_barrier_events_{1, 1};
     settings const& settings_;
     time_t const notify_limit_seconds_;
 

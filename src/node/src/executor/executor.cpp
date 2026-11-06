@@ -852,7 +852,7 @@ void executor::wind_down_node(stop_handler const& handler) noexcept {
         }
 
         // CRITICAL: Wait for run() to fully complete before cleanup.
-        // run() may still be inside chain.organize() when stop() is called. We
+        // run() may still be inside chain.submit_block() when stop() is called. We
         // must wait for all coroutines to exit before destroying resources.
         spdlog::debug("[executor] Waiting for run() to complete...");
         if (admitted) {

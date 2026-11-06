@@ -124,10 +124,8 @@ transaction_const_ptr synthetic_spend(domain::chain::output_point const& source,
     return std::make_shared<domain::message::transaction>(1, 0, std::move(inputs), std::move(outputs));
 }
 
-// First seen now. An entry first seen at time 0 is past mempool expiry, and
-// expiry runs when each block connects, so it would be gone before its release.
 blockchain::mempool_entry entry(transaction_const_ptr const& tx) {
-    return {tx, 1000, uint32_t(tx->serialized_size(true)), 1, uint64_t(zulu_time())};
+    return {tx, 1000, uint32_t(tx->serialized_size(true)), 1, 0};
 }
 } // namespace
 

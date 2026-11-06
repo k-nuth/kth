@@ -260,6 +260,27 @@ kth_bool_t kth_domain_chain_block_is_valid_merkle_root(kth_block_const_t self) {
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_merkle_root());
 }
 
+kth_bool_t kth_domain_chain_block_is_final_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height, uint32_t block_time) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_final(ticks_cpp, height_cpp, block_time));
+}
+
+kth_bool_t kth_domain_chain_block_is_valid_coinbase_claim_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_valid_coinbase_claim(ticks_cpp, height_cpp));
+}
+
+kth_bool_t kth_domain_chain_block_has_forbidden_coinbase_shape(kth_block_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).has_forbidden_coinbase_shape());
+}
+
 
 // Operations
 
@@ -282,6 +303,14 @@ kth_size_t kth_domain_chain_block_total_inputs(kth_block_const_t self, kth_bool_
     return kth::cpp_ref<cpp_t>(self).total_inputs(with_coinbase_cpp);
 }
 
+uint64_t kth_domain_chain_block_reward_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    return kth::cpp_ref<cpp_t>(self).reward(ticks_cpp, height_cpp);
+}
+
 
 // Static utilities
 
@@ -300,6 +329,14 @@ uint64_t kth_domain_chain_block_subsidy(kth_size_t height, kth_bool_t retarget) 
     auto const height_cpp = kth::sz(height);
     auto const retarget_cpp = kth::int_to_bool(retarget);
     return cpp_t::subsidy(height_cpp, retarget_cpp);
+}
+
+uint64_t kth_domain_chain_block_subsidy_with_ticks(kth_block_ticks_const_t ticks, kth_size_t height, kth_bool_t retarget) {
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    auto const retarget_cpp = kth::int_to_bool(retarget);
+    return cpp_t::subsidy(ticks_cpp, height_cpp, retarget_cpp);
 }
 
 } // extern "C"

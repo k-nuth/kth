@@ -91,6 +91,9 @@ public:
     /// See internal_database::replace_headers_from.
     code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
 
+    /// Preserve the retained row (including genesis) and atomically discard its suffix.
+    [[nodiscard]] code truncate_headers_after(uint32_t height);
+
     //bool set_database_flags(bool fast);
 
     // ==========================================================================
