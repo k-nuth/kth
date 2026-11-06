@@ -314,10 +314,10 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
             if (location->confirmations_ticks) {
                 w.field("confirmations_ticks", *location->confirmations_ticks);
             }
-            w.field("time", static_cast<std::int64_t>(location->block_time));
-            w.field("blocktime", static_cast<std::int64_t>(location->block_time));
+            w.field("time", int64_t(location->block_time));
+            w.field("blocktime", int64_t(location->block_time));
         } else {
-            w.field("confirmations", std::int64_t(0));
+            w.field("confirmations", int64_t(0));
             if (location->confirmations_ticks) {
                 w.field("confirmations_ticks", int64_t(0));
             }
@@ -339,14 +339,14 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
     if (location.confirmations_ticks) {
         w.field("confirmations_ticks", *location.confirmations_ticks);
     }
-    w.field("size", static_cast<std::uint64_t>(block.serialized_size()));
-    w.field("height", static_cast<std::uint64_t>(location.height));
+    w.field("size", uint64_t(block.serialized_size()));
+    w.field("height", uint64_t(location.height));
     if (location.progress) {
         w.field("ticks", location.progress->ticks);
         w.field("target_time", location.progress->target_time);
         w.field("next_target_time", location.progress->next_target_time);
     }
-    w.field("version", static_cast<std::int64_t>(header.version()));
+    w.field("version", int64_t(header.version()));
     w.field("versionHex", fmt::format("{:08x}", header.version()));
     w.field("merkleroot", encode_hash(header.merkle()));
     w.key("tx").begin_array();
@@ -361,15 +361,15 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
         }
     }
     w.end_array();
-    w.field("time", static_cast<std::int64_t>(header.timestamp()));
-    w.field("mediantime", static_cast<std::int64_t>(location.median_time));
-    w.field("nonce", static_cast<std::int64_t>(header.nonce()));
+    w.field("time", int64_t(header.timestamp()));
+    w.field("mediantime", int64_t(location.median_time));
+    w.field("nonce", int64_t(header.nonce()));
     w.field("bits", encode_base16(header.bits()));
     w.field("difficulty", blockchain::difficulty_from_bits(header.bits()));
     if (location.chain_work) {
         w.field("chainwork", encode_hash(*location.chain_work));
     }
-    w.field("nTx", static_cast<std::uint64_t>(block.transactions().size()));
+    w.field("nTx", uint64_t(block.transactions().size()));
     if (header.previous_block_hash() != null_hash) {
         w.field("previousblockhash", encode_hash(header.previous_block_hash()));
     }

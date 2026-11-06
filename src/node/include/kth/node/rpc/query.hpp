@@ -136,8 +136,8 @@ std::string render_raw_mempool_verbose(std::vector<mempool_listing> const& listi
 // Where a confirmed transaction sits, for verbose getrawtransaction.
 struct transaction_location {
     hash_digest block_hash;
-    std::int64_t confirmations;     // -1 when its block is off the connected chain
-    std::uint32_t block_time;
+    int64_t confirmations;     // -1 when its block is off the connected chain
+    uint32_t block_time;
     std::optional<int64_t> confirmations_ticks = std::nullopt;
 };
 
@@ -151,9 +151,9 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
 
 // What getblock reports about a block beyond the block itself.
 struct block_location {
-    std::size_t height;
-    std::int64_t confirmations;            // -1 when off the connected chain
-    std::uint32_t median_time;             // of the 11 blocks ending at this one
+    size_t height;
+    int64_t confirmations;            // -1 when off the connected chain
+    uint32_t median_time;             // of the 11 blocks ending at this one
     std::optional<uint256_t> chain_work;   // the chain's work up to this block
     std::optional<hash_digest> next_block_hash;
     std::optional<chain_progress> progress = std::nullopt;

@@ -163,9 +163,9 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
 
 // The median of the timestamps of the 11 blocks ending at header-index entry
 // `idx`, or of all of them nearer genesis.
-std::uint32_t median_time_past(blockchain::header_index const& index,
+uint32_t median_time_past(blockchain::header_index const& index,
                                blockchain::header_index::index_t idx) {
-    std::vector<std::uint32_t> times;
+    std::vector<uint32_t> times;
     for (int i = 0; i < 11 && idx != blockchain::header_index::null_index; ++i) {
         times.push_back(index.get_timestamp(idx));
         idx = index.get_parent_index(idx);
