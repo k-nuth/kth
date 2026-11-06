@@ -74,8 +74,8 @@ counterpart.
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
-| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
@@ -92,13 +92,14 @@ counterpart.
 | `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
-| `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
+| `submitblock` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
+| `submitblocklight` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
 | `help` | — (describes this server) | `dispatcher::methods()` |
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
 callback (`kth_chain_async_*`) flavor.
 
-_More methods land per phase: mining (`submitblock`, `getmininginfo`), mempool
+_More methods land per phase: mining, mempool
 (`getrawmempool`, `getmempoolentry`, ...), and blockchain/raw-tx (`getblock`,
 `getrawtransaction`, `sendrawtransaction`, ...)._
 
@@ -215,6 +216,46 @@ BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
 operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
 
+## Blocks and transactions
+
+Both methods take their arguments as BCHN does.
+
+`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+store, through the header index; a side-branch block the node holds is returned
+too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
+`confirmations` (-1 off the connected chain), `confirmations_ticks`, `size`,
+`height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
+`merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
+`chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
+transaction with its `decoderawtransaction` fields and `hex`. `fee` per
+transaction and `ablastate` are not reported.
+
+`getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
+mempool transaction. Confirmed transactions are not indexed by txid (#491), so
+for one of those pass the block hash as the third parameter:
+`getrawtransaction "<txid>" false "<blockhash>"`. KTH currently has neither a
+confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
+therefore require the block hash. An empty block hash is treated as omitted.
+With `verbose` true (or 1) it returns the `decoderawtransaction` fields
+with `hex`, and for a transaction read from a block also `blockhash`,
+`confirmations`, `confirmations_ticks`, `time`, `blocktime` and
+`in_active_chain`. For a block off the connected chain both confirmation fields
+are 0, the times are left out and `in_active_chain` is false. A mempool
+transaction omits both confirmation fields. Verbosity 2 (fees and prevouts) is
+not implemented and is rejected, as is any higher value.
+
+Tick depth includes the containing block's own target interval and follows the
+selected branch schedule across activation. These fields measure scheduled
+time, not elapsed wall-clock time.
+
+A block or transaction the node does not have is error `-5`. `fetch_block` reads
+the block through its header-index record on the chain's pool, so the RPC
+executor is not held by disk I/O. The stored record must parse to the end, hash
+to the requested block and match its merkle root; a damaged or unreadable
+stored record is an internal error, including through `getrawtransaction` with
+an explicit block hash. Wrong argument types, an out-of-range verbosity and
+extra arguments are rejected with `-32602`.
+
 ## Mining: getblocktemplatelight
 
 Returns the next-block template **without** the transaction list. The selected
@@ -251,7 +292,35 @@ required work, matching the template's `bits`), `pooledtx` (mempool size), `chai
 (the same short name as `getblockchaininfo`), and `warnings`. `networkhashps` is not reported yet — it needs a
 historical hashrate estimate and is a follow-up.
 
+## Mining: submitblock
+
+`submitblock ["hexdata"]` submits a full serialized block: the header followed by
+all transactions in wire format. An optional second argument (`"dummy"` or a
+parameters object) is ignored. No template job or cached transactions are needed.
+The node's admission owner submits it through the existing header, body and
+contextual-validation pipeline. The call returns `null` only after connected
+publication. A block that does not connect because its branch has insufficient
+work, or whose validation verdict is not available, returns `"inconclusive"`.
+Consensus failures return BCHN/BIP22 rejection reasons such as `"bad-cb-amount"`,
+`"high-hash"`, `"bad-txnmrklroot"`, and `"time-too-old"`. Where admission supplies
+only an aggregate error (for example, empty inputs or empty outputs share one
+code), the RPC returns the BIP22 fallback `"rejected"`; it does not reconstruct
+missing validation detail or expose KTH diagnostic text as a rejection reason.
+A known valid block returns `"duplicate"`; a block
+rejected by contextual validation returns `"duplicate-invalid"`, including after
+a restart. A duplicate without a completed validation verdict returns
+`"duplicate-inconclusive"`.
+
+Missing or invalid parameters and more than two arguments produce `-32602`.
+Bad hex, undecodable blocks, trailing bytes, and a missing first coinbase produce
+`-22`. An unavailable admission pipeline returns `-28`; operational failures
+return `-25` rather than being presented as consensus rejections.
+
 ## Mining: submitblocklight
+
+After reconstruction, submission uses the same admission path and BIP22 response
+mapping as `submitblock`, including `inconclusive`, all three duplicate outcomes,
+and operational RPC errors.
 
 `submitblocklight ["hexdata", "job_id"]` closes the light-template loop. `hexdata`
 is the solved block carrying just the header and the coinbase; the node looks up

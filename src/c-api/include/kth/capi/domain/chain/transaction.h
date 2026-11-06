@@ -10,6 +10,7 @@
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
 #include <kth/capi/chain/script_flags.h>
+#include <kth/capi/domain/chain/block_ticks.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -179,6 +180,15 @@ kth_bool_t kth_domain_chain_transaction_is_standard_simple(kth_transaction_const
 KTH_EXPORT
 kth_bool_t kth_domain_chain_transaction_is_standard(kth_transaction_const_t self, kth_script_flags_t flags);
 
+KTH_EXPORT
+kth_bool_t kth_domain_chain_transaction_is_mature_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t height);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_transaction_is_final_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t block_time);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_transaction_is_locked_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t median_time_past);
+
 
 // Operations
 
@@ -199,6 +209,9 @@ kth_error_code_t kth_domain_chain_transaction_connect(kth_transaction_const_t se
 
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_transaction_connect_input(kth_transaction_const_t self, kth_chain_state_const_t state, kth_size_t input_index);
+
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_transaction_accept_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate);
 
 #ifdef __cplusplus
 } // extern "C"

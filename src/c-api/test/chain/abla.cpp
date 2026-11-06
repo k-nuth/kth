@@ -180,3 +180,56 @@ TEST_CASE("C-API Abla - state_construct null config aborts",
           "[C-API Abla][precondition]") {
     KTH_EXPECT_ABORT(kth_domain_chain_abla_state_construct(NULL, 0));
 }
+
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/capi/domain/chain/block_ticks.h>
+
+TEST_CASE("C-API ABLA retains and updates the target interval", "[C-API Abla][ticks]") {
+    kth_abla_config_mut_t cfg = kth_domain_chain_abla_default_config(32000000, 0);
+    REQUIRE(cfg != NULL);
+    kth_abla_state_mut_t legacy = kth_domain_chain_abla_state_construct(cfg, 0);
+    REQUIRE(legacy != NULL);
+    CHECK(kth_domain_chain_abla_block_size_limit(legacy) == 32000000);
+    kth_abla_state_mut_t short_state = kth_domain_chain_abla_state_construct_with_interval(cfg, 0, 60);
+    REQUIRE(short_state != NULL);
+    CHECK(kth_domain_chain_abla_state_block_interval(short_state) == 60);
+    kth_domain_chain_abla_state_set_block_interval(legacy, 60);
+    CHECK(kth_domain_chain_abla_block_size_limit(short_state) == 3200000);
+    CHECK(kth_domain_chain_abla_block_size_limit(legacy) == 3200000);
+    kth_domain_chain_abla_state_destruct(short_state);
+    kth_domain_chain_abla_state_destruct(legacy);
+    kth_domain_chain_abla_config_destruct(cfg);
+}
+
+TEST_CASE("C-API ABLA carries the next interval and checks limit overflow", "[C-API Abla][ticks]") {
+    kth_abla_config_mut_t cfg = kth_domain_chain_abla_default_config(32000000, 0);
+    REQUIRE(cfg != NULL);
+    kth_abla_state_mut_t previous = kth_domain_chain_abla_state_construct(cfg, 0);
+    REQUIRE(previous != NULL);
+    kth_abla_state_mut_t next = kth_domain_chain_abla_next_with_interval(previous, cfg, 0, 60);
+    REQUIRE(next != NULL);
+    CHECK(kth_domain_chain_abla_state_block_interval(previous) == 600);
+    CHECK(kth_domain_chain_abla_state_block_interval(next) == 60);
+    uint64_t limit = 17;
+    REQUIRE(kth_domain_chain_abla_block_size_limit_with_interval(previous, 60, &limit));
+    CHECK(limit == kth_domain_chain_abla_block_size_limit(next));
+    kth_abla_state_mut_t future = kth_domain_chain_abla_lookahead(next, cfg, 1);
+    REQUIRE(future != NULL);
+    CHECK(kth_domain_chain_abla_state_block_interval(future) == 60);
+    CHECK(kth_abla_state_validity_valid == 0);
+    CHECK(kth_abla_state_validity_error_control_block_size == 1);
+    CHECK(kth_abla_state_validity_error_elastic_buffer_size == 2);
+    CHECK(kth_abla_state_validity_error_block_interval == 3);
+    kth_domain_chain_abla_state_set_block_interval(next, 0);
+    CHECK(kth_domain_chain_abla_validate_state(next, cfg) == kth_abla_state_validity_error_block_interval);
+    kth_domain_chain_abla_state_set_control_block_size(previous, UINT64_MAX);
+    kth_domain_chain_abla_state_set_elastic_buffer_size(previous, 0);
+    limit = 17;
+    CHECK_FALSE(kth_domain_chain_abla_block_size_limit_with_interval(previous, 601, &limit));
+    CHECK(limit == 17);
+    kth_domain_chain_abla_state_destruct(future);
+    kth_domain_chain_abla_state_destruct(next);
+    kth_domain_chain_abla_state_destruct(previous);
+    kth_domain_chain_abla_config_destruct(cfg);
+}
+#endif

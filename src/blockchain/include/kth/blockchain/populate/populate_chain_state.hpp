@@ -22,6 +22,10 @@ struct block_chain;
 struct KB_API populate_chain_state {
     populate_chain_state(block_chain const& chain, settings const& settings, domain::config::network network);
 
+    // Constructor context remains available before a connected publication.
+    [[nodiscard]] domain::config::network network() const noexcept { return network_; }
+
+
     /// Populate chain state for the tx pool (start).
     /// Build the state for the block after `connected_top`.
     ///

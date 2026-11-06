@@ -116,4 +116,47 @@ TEST_CASE("persisting a different header replaces its row and hash index", "[hea
     CHECK(domain::chain::hash(indexed->first) == replacement.hash());
     REQUIRE(db.close());
 }
+TEST_CASE("truncating persisted headers preserves the retained row and removes both suffix indexes",
+          "[header_persistence][header_truncation]") {
+    auto const retained_height = GENERATE(0u, 1u);
+    chain_fixture fixture("header_suffix_truncation");
+    REQUIRE(fixture.created());
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const one = mine_block(genesis.hash(), 1, uint32_t(zulu_time()) - 600, 1, {}, 0);
+    auto const two = mine_block(one.hash(), 2, one.header().timestamp() + 120, 2, {}, 0);
+    database::settings settings;
+    settings.directory = fixture.dir();
+    database::data_base db(settings);
+    REQUIRE(db.open());
+    REQUIRE_FALSE(db.push_header(one.header(), 1, one.serialized_size(), 32'000'001, 32'000'002));
+    REQUIRE_FALSE(db.push_header(two.header(), 2, two.serialized_size(), 32'000'003, 32'000'004));
+    auto const before = db.internal_db().get_header_and_abla_state(retained_height);
+    REQUIRE(before);
+
+    // An absent retained row is refused without touching any existing suffix.
+    CHECK(db.truncate_headers_after(3));
+    REQUIRE(db.internal_db().get_header(2));
+    REQUIRE_FALSE(db.truncate_headers_after(retained_height));
+    REQUIRE_FALSE(db.truncate_headers_after(retained_height));
+    auto const heights = db.internal_db().get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->header == retained_height);
+    CHECK_FALSE(db.internal_db().get_header(2));
+    CHECK_FALSE(db.internal_db().get_header(two.hash()));
+    if (retained_height == 0) {
+        CHECK_FALSE(db.internal_db().get_header(1));
+        CHECK_FALSE(db.internal_db().get_header(one.hash()));
+    }
+    REQUIRE(db.close());
+    REQUIRE(db.open());
+    auto const after = db.internal_db().get_header_and_abla_state(retained_height);
+    REQUIRE(after);
+    CHECK(*after == *before);
+    CHECK_FALSE(db.internal_db().get_header(retained_height + 1));
+    auto const genesis_row = db.internal_db().get_header(0);
+    REQUIRE(genesis_row);
+    CHECK(domain::chain::hash(*genesis_row) == genesis.hash());
+    REQUIRE(db.close());
+}
+
 #endif

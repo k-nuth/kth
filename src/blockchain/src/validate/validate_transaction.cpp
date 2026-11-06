@@ -98,9 +98,8 @@ code validate_transaction::check_standardness(transaction_const_ptr const& tx) c
 
 ::asio::awaitable<code> validate_transaction::accept(transaction_const_ptr tx) const {
     // Populate chain state of the next block (tx pool).
-    // NOTE: on the transaction_validate (c-api single-tx validate) path this
-    // store write happens off the organizer mutex, but the tx is private to
-    // the caller so no other worker touches this hash concurrently.
+    // Both admission and validation-only callers hold the transaction
+    // organizer's validator token throughout this operation.
     {
         // One reference: the state a transaction is validated against and the
         // chain it describes are published together (#605).

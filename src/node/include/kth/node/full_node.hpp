@@ -222,6 +222,7 @@ private:
     // Present when the node relays transactions (network.relay_transactions).
     std::unique_ptr<transaction_relay> relay_;
 #endif
+    std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)

@@ -5,6 +5,7 @@
 #ifndef KTH_CAPI_CHAIN_CHAIN_SYNC_H_
 #define KTH_CAPI_CHAIN_CHAIN_SYNC_H_
 
+#include <kth/capi/chain/chain_submission.h>
 #include <stdint.h>
 
 #include <kth/capi/primitives.h>
@@ -84,11 +85,6 @@ kth_mempool_transaction_list_t kth_chain_sync_mempool_transactions(kth_chain_t c
 
 KTH_EXPORT
 kth_transaction_list_mut_t kth_chain_sync_mempool_transactions_from_wallets(kth_chain_t chain, kth_payment_address_list_t addresses, kth_bool_t use_testnet_rules);
-
-// Organizers.
-//-------------------------------------------------------------------------
-KTH_EXPORT
-int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_mut_t block);
 
 /**
  * Fetch the mining template. On success fills `out` with the header fields and
