@@ -32,6 +32,7 @@
 #include <kth/domain.hpp>
 #include <kth/domain/chain/light_block.hpp>
 
+#include <kth/blockchain/chain_progress.hpp>
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
@@ -630,6 +631,20 @@ struct KB_API block_chain {
     /// was validated for. No suspension or script work under the mempool lock.
     [[nodiscard]]
     code commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected);
+
+    // Metadata relative to a single connected publication. The overload taking
+    // a view lets multi-part API responses retain the same reference chain.
+    // An unavailable reference leaves both depths at -1; own branch metadata
+    // remains available independently of the connected publication.
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash, chain_view_ptr const& view) const;
+    [[nodiscard]] std::expected<block_progress, code>
+    get_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_block_progress(hash_digest const& hash) const;
+    [[nodiscard]] awaitable_expected<block_progress>
+    fetch_chain_progress() const;
+
 
     /// Build the view for `connected_tip_height` and publish it.
     ///

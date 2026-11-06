@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
@@ -2050,6 +2051,67 @@ block_chain::sync_status block_chain::synchronization(
 
 block_chain::chain_view_ptr block_chain::chain_view() const {
     return chain_view_.load();
+}
+
+std::expected<block_progress, code> block_chain::get_block_progress(
+        hash_digest const& hash, chain_view_ptr const& view) const {
+    auto const subject = header_index_.find(hash);
+    if (subject == header_index::null_index) {
+        return std::unexpected(error::not_found);
+    }
+    auto const raw_height = header_index_.get_height(subject);
+    if (raw_height < 0) {
+        return std::unexpected(error::operation_failed);
+    }
+    auto const height = size_t(raw_height);
+#if defined(KTH_CURRENCY_BCH)
+    validate_header validator(settings_, chain_state_populator_.network());
+    auto const schedule = tick_schedule_for_tip(validator, header_index_, subject);
+    if (!schedule) {
+        return std::unexpected(schedule.error());
+    }
+    block_progress result{height, schedule->height_to_tick(height),
+        schedule->block_interval(height), schedule->next_block_interval(height), -1, -1, hash};
+#else
+    block_progress result{height, uint64_t(height) * target_spacing_seconds,
+        target_spacing_seconds, target_spacing_seconds, -1, -1, hash};
+#endif
+    // Connected depth is unavailable in these cases, but the subject's own
+    // branch metadata above is independent of the connected publication.
+    if (!view) return result;
+    auto const tip = header_index_.find(view->tip_hash);
+    if (tip == header_index::null_index || header_index_.get_height(tip) < 0 ||
+        size_t(header_index_.get_height(tip)) != view->connected_tip_height) {
+        return result;
+    }
+    if (height <= view->connected_tip_height &&
+        header_index_.get_ancestor(tip, raw_height) == subject) {
+#if defined(KTH_CURRENCY_BCH)
+        auto const connected = tip == subject ? schedule
+            : tick_schedule_for_tip(validator, header_index_, tip);
+        if (!connected) return result;
+        result.confirmations_ticks = int64_t(connected->height_to_tick(view->connected_tip_height)
+            - connected->height_to_tick(height) + connected->block_interval(height));
+#else
+        result.confirmations_ticks = int64_t(view->connected_tip_height - height + 1) * target_spacing_seconds;
+#endif
+        result.confirmations = int64_t(view->connected_tip_height - height + 1);
+    }
+    return result;
+}
+
+std::expected<block_progress, code> block_chain::get_block_progress(hash_digest const& hash) const {
+    return get_block_progress(hash, chain_view());
+}
+
+awaitable_expected<block_progress> block_chain::fetch_block_progress(hash_digest const& hash) const {
+    co_return get_block_progress(hash);
+}
+
+awaitable_expected<block_progress> block_chain::fetch_chain_progress() const {
+    auto const view = chain_view();
+    if (!view) co_return std::unexpected(error::operation_failed);
+    co_return get_block_progress(view->tip_hash, view);
 }
 
 code block_chain::publish_chain_view(size_t connected_tip_height) {

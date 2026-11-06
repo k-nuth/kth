@@ -230,6 +230,7 @@ set(kth_headers
   include/kth/blockchain/define.hpp
   include/kth/blockchain/header_index.hpp
   include/kth/blockchain/abla_pipeline.hpp
+  include/kth/blockchain/chain_progress.hpp
   include/kth/blockchain/tick_schedule.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
