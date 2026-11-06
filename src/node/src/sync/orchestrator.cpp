@@ -731,8 +731,12 @@ static
     all_tasks.spawn("announcement_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::info("[announcement_bridge] Started");
         while (true) {
-            auto [ec, ring] = co_await network.block_announcements().async_receive(
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto announced = co_await network.block_announcements().async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, ring] = announced;
             if (ec) {
                 spdlog::debug("[announcement_bridge] Channel closed: {}", ec.message());
                 break;
@@ -874,7 +878,11 @@ static
 
         try {
             while (!network.stopped()) {
-                auto [ec, index] = co_await inbox.wait(::asio::as_tuple(::asio::deferred));
+                // Named, then bound by reference: GCC 16 never destroys a by-value
+                // structured binding still in scope at a later suspension. Bind the
+                // result directly again once GCC fixes it.
+                auto woken = co_await inbox.wait(::asio::as_tuple(::asio::deferred));
+                auto& [ec, index] = woken;
                 if (ec) {
                     spdlog::debug("[peer_provider] Input wait ended: {}", ec.message());
                     break;
@@ -1039,8 +1047,12 @@ static
             while (true) {
                 // Measure time waiting to receive from supervisor
                 auto recv_start = std::chrono::steady_clock::now();
-                auto [ec, msg] = co_await downloaded_blocks.async_receive(
+                // Named, then bound by reference: GCC 16 never destroys a by-value
+                // structured binding still in scope at a later suspension. Bind the
+                // result directly again once GCC fixes it.
+                auto received = co_await downloaded_blocks.async_receive(
                     ::asio::as_tuple(::asio::use_awaitable));
+                auto& [ec, msg] = received;
                 auto recv_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - recv_start).count();
 
@@ -1175,8 +1187,12 @@ static
     // later publications. Shutdown closes both channels before joining tasks.
     all_tasks.spawn("coordinator_utxo_bridge", [&]() -> ::asio::awaitable<void> {
         while (true) {
-            auto [ec, progress] = co_await utxo_progress.async_receive(
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto received = co_await utxo_progress.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, progress] = received;
             if (ec) {
                 co_return;
             }
@@ -1205,8 +1221,12 @@ static
     // dropped is a builder parked forever and a requester never answered.
     all_tasks.spawn("coordinator_rejection_bridge", [&]() -> ::asio::awaitable<void> {
         while (true) {
-            auto [ec, rejected] = co_await utxo_rejections.async_receive(
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto received = co_await utxo_rejections.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, rejected] = received;
             if (ec) {
                 co_return;
             }
@@ -1303,8 +1323,12 @@ static
     all_tasks.spawn("coordinator_headers_bridge", [&]() -> ::asio::awaitable<void> {
         spdlog::debug("[coordinator:headers_bridge] Started");
         while (true) {
-            auto [ec, result] = co_await validated_headers.async_receive(
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto received = co_await validated_headers.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, result] = received;
             if (ec) {
                 spdlog::debug("[coordinator:headers_bridge] Channel closed: {}", ec.message());
                 break;
@@ -1904,8 +1928,12 @@ static
         // Main loop: ONLY receives from unified channel (no || operator)
         while (true) {
             spdlog::debug("[sync_coordinator] Waiting for events...");
-            auto [ec, event] = co_await coordinator_events.async_receive(
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto received = co_await coordinator_events.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, event] = received;
 
             if (ec) {
                 spdlog::debug("[sync_coordinator] Events channel closed");

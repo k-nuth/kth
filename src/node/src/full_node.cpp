@@ -168,7 +168,10 @@ full_node::~full_node() {
         spdlog::error("[node] The blockchain is corrupt.");
         co_return error::operation_failed;
     }
-    auto const [header_height, block_height] = *heights;
+    // Bound by reference: GCC 16 never destroys a by-value structured
+    // binding still in scope at a later suspension. Bind by value again
+    // once GCC fixes it.
+    auto const& [header_height, block_height] = *heights;
 
     auto const top_hash = chain_.get_block_hash(block_height);
     if ( ! top_hash) {

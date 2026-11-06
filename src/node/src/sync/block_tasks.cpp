@@ -331,7 +331,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         uint32_t chunk_id = *maybe_chunk;
         current_chunk_id = chunk_id;  // Track for exception cleanup
-        auto [chunk_start, chunk_end] = coordinator->chunk_range(chunk_id);
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto range = coordinator->chunk_range(chunk_id);
+        auto& [chunk_start, chunk_end] = range;
 
         spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
             addr, chunk_id, chunk_start, chunk_end);
@@ -901,7 +905,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
     uint64_t events_processed = 0;
     while (true) {
         events.case_at<tick_case>().time = next_tick;
-        auto [ec, index] = co_await events.wait(::asio::as_tuple(::asio::deferred));
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto woken = co_await events.wait(::asio::as_tuple(::asio::deferred));
+        auto& [ec, index] = woken;
 
         if (ec) {
             // eof on the input: the orchestrator closed it, which is how it says
@@ -1088,8 +1096,12 @@ std::atomic<uint32_t> g_active_download_peers{0};
     while (true) {
         // Measure time waiting to receive from bridge
         auto recv_start = std::chrono::steady_clock::now();
-        auto [ec, msg] = co_await input.async_receive(
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto received = co_await input.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec, msg] = received;
         auto recv_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - recv_start).count();
 

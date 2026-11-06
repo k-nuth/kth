@@ -259,8 +259,12 @@ bool server::authorized(std::string_view authorization_header) const {
         while ( ! ctx.complete) {
             std::string_view input = pending;
             if (input.empty()) {
-                auto [ec, n] = co_await socket.async_read_some(
+                // Named, then bound by reference: GCC 16 never destroys a by-value
+                // structured binding still in scope at a later suspension. Bind the
+                // result directly again once GCC fixes it.
+                auto read = co_await socket.async_read_some(
                     ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
+                auto& [ec, n] = read;
                 if (ec || n == 0) {
                     if (head.after_cr && (!ec || ec == ::asio::error::eof)) {
                         co_await write_response(socket, 400, "Bad Request",
@@ -410,8 +414,12 @@ void server::stop() {
                     continue;
                 }
                 tcp::socket socket(owner_);
-                auto [aec] = co_await acceptor.async_accept(socket,
+                // Named, then bound by reference: GCC 16 never destroys a by-value
+                // structured binding still in scope at a later suspension. Bind the
+                // result directly again once GCC fixes it.
+                auto accepted = co_await acceptor.async_accept(socket,
                     ::asio::as_tuple(::asio::use_awaitable));
+                auto& [aec] = accepted;
                 if (aec) {
                     if (stopping || aec == ::asio::error::operation_aborted) break;
                     spdlog::warn("[rpc] accept failed: {}; retrying", aec.message());

@@ -73,12 +73,20 @@ namespace kth::node::detail {
     sync::header_validation_input_channel& validation)
 {
     while (true) {
-        auto [pull_ec] = co_await channels.commands.async_send(std::error_code{},
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto pulled = co_await channels.commands.async_send(std::error_code{},
             ingest_pull{}, ::asio::as_tuple(::asio::use_awaitable));
+        auto& [pull_ec] = pulled;
         if (pull_ec) break;
 
-        auto [take_ec, batch] = co_await handoff.async_receive(
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto taken = co_await handoff.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto& [take_ec, batch] = taken;
         if (take_ec) break;
 
         auto [send_ec] = co_await validation.async_send(std::error_code{},
@@ -96,8 +104,12 @@ namespace kth::node::detail {
     sync::sync_coordinator_event_channel& events)
 {
     while (true) {
-        auto [ec, ring] = co_await channels.debt.async_receive(
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto owed = co_await channels.debt.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec, ring] = owed;
         if (ec) break;
         auto [send_ec] = co_await events.async_send(std::error_code{},
             sync::headers_owed_event{}, ::asio::as_tuple(::asio::use_awaitable));
@@ -141,7 +153,11 @@ void walk_timer::arm(std::chrono::milliseconds delay, sync::sync_coordinator_eve
             co_return;                  // cancelled before this task started
         }
         state->timer.expires_after(delay);
-        auto [ec] = co_await state->timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto waited = co_await state->timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec] = waited;
         if (ec || state->cancelled) {
             co_return;                  // cancelled while waiting, or as it woke
         }

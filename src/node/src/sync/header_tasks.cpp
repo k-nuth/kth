@@ -24,8 +24,12 @@ namespace kth::node::sync {
 
     // Single channel, FIFO processing - no priority issues
     while (true) {
-        auto [ec, msg] = co_await input.async_receive(
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto received = co_await input.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec, msg] = received;
 
         if (ec) {
             spdlog::debug("[header_validation] Input channel closed");

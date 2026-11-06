@@ -88,7 +88,11 @@ bool transaction_organizer::stop() {
 // This is called from blockchain::transaction_validate.
 ::asio::awaitable<code> transaction_organizer::transaction_validate(transaction_const_ptr tx) const {
     if (stopped()) co_return error::service_stopped;
-    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    // Named, then bound by reference: GCC 16 never destroys a by-value
+    // structured binding still in scope at a later suspension. Bind the
+    // result directly again once GCC fixes it.
+    auto const admitted = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    auto const& [wait_error] = admitted;
     if (wait_error) {
         if (wait_error == ::asio::experimental::error::channel_cancelled ||
             wait_error == ::asio::error::operation_aborted) {
@@ -185,7 +189,11 @@ bool transaction_organizer::stop() {
 // This is called from blockchain::organize.
 ::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx) {
     if (stopped()) co_return error::service_stopped;
-    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    // Named, then bound by reference: GCC 16 never destroys a by-value
+    // structured binding still in scope at a later suspension. Bind the
+    // result directly again once GCC fixes it.
+    auto const admitted = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    auto const& [wait_error] = admitted;
     if (wait_error) {
         if (wait_error == ::asio::experimental::error::channel_cancelled ||
             wait_error == ::asio::error::operation_aborted) {

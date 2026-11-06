@@ -102,7 +102,11 @@ p2p_node::~p2p_node() {
         }
     }
 
-    auto const [available, banned] = peer_db_.count_by_status();
+    // Named, then bound by reference: GCC 16 never destroys a by-value
+    // structured binding still in scope at a later suspension. Bind the
+    // result directly again once GCC fixes it.
+    auto const counts = peer_db_.count_by_status();
+    auto const& [available, banned] = counts;
     spdlog::info("[p2p_node] Loaded {} peers ({} available, {} banned)",
         peer_db_.size(), available, banned);
 
@@ -740,7 +744,10 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         }
 
         // Early exit if we have enough addresses
-        if (auto const [avail, _] = peer_db_.count_by_status(); avail >= settings_.host_pool_capacity / 4) {
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        if (auto const counts = peer_db_.count_by_status(); counts.first >= settings_.host_pool_capacity / 4) {
             spdlog::info("[p2p_node] Collected sufficient addresses, stopping seeding early");
             break;
         }
@@ -1191,7 +1198,11 @@ void p2p_node::wake_status_task() noexcept {
     while (!stopped()) {
         auto const current_count = manager_.count_snapshot();
         auto const target = settings_.outbound_connections;
-        auto const [host_count, ban_count] = peer_db_.count_by_status();
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto const counts = peer_db_.count_by_status();
+        auto const& [host_count, ban_count] = counts;
         auto const pending_count = pending_connections_.size();
 
         if (current_count < target) {

@@ -3167,8 +3167,12 @@ block_chain::fetch_template() const {
 
     // A single owner issues UTXO-library reads on the chain executor. Other
     // template requests suspend instead of filling workers with blocked reads.
-    auto [gate_error] = co_await template_rebuild_gate_.async_receive(
+    // Named, then bound by reference: GCC 16 never destroys a by-value
+    // structured binding still in scope at a later suspension. Bind the
+    // result directly again once GCC fixes it.
+    auto gate = co_await template_rebuild_gate_.async_receive(
         ::asio::as_tuple(::asio::use_awaitable));
+    auto& [gate_error] = gate;
     if (gate_error) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -3305,8 +3309,12 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
 
     // One coroutine owns a rebuild, including awaited prevout refresh. Other
     // callers suspend here; no network worker blocks behind the current owner.
-    auto [gate_error] = co_await template_rebuild_gate_.async_receive(
+    // Named, then bound by reference: GCC 16 never destroys a by-value
+    // structured binding still in scope at a later suspension. Bind the
+    // result directly again once GCC fixes it.
+    auto gate = co_await template_rebuild_gate_.async_receive(
         ::asio::as_tuple(::asio::use_awaitable));
+    auto& [gate_error] = gate;
     if (gate_error) {
         co_return std::unexpected(error::service_stopped);
     }

@@ -494,8 +494,12 @@ struct remote_peer {
     ::asio::awaitable<void> serve() {
         data_chunk head_buf(domain::message::heading::maximum_size());
         while (true) {
-            auto [ec, n] = co_await ::asio::async_read(socket, ::asio::buffer(head_buf),
+            // Named, then bound by reference: GCC 16 never destroys a by-value
+            // structured binding still in scope at a later suspension. Bind the
+            // result directly again once GCC fixes it.
+            auto read = co_await ::asio::async_read(socket, ::asio::buffer(head_buf),
                 ::asio::as_tuple(::asio::use_awaitable));
+            auto& [ec, n] = read;
             if (ec) co_return;
             byte_reader head_reader(head_buf);
             auto head = domain::message::heading::from_data(head_reader, 0);

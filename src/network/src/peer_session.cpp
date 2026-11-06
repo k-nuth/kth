@@ -581,8 +581,12 @@ void peer_session::set_wants_addrv2(bool value) {
 ::asio::awaitable<void> peer_session::write_loop() {
     spdlog::debug("[peer_session] write_loop() starting for [{}]", authority());
     while (!stopped()) {
-        auto [ec, data] = co_await outbound_.async_receive(
+        // Named, then bound by reference: GCC 16 never destroys a by-value
+        // structured binding still in scope at a later suspension. Bind the
+        // result directly again once GCC fixes it.
+        auto received = co_await outbound_.async_receive(
             ::asio::as_tuple(::asio::use_awaitable));
+        auto& [ec, data] = received;
 
         if (ec) {
             // Channel closed or error
