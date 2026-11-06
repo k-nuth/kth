@@ -87,10 +87,19 @@ std::optional<hash_digest> chain_mmr::root(uint64_t height,
     return mmr_.root(height + 1, last);
 }
 
-std::optional<shv_proof_result> chain_mmr::proof_locked(uint64_t height,
+shv_proof_expect chain_mmr::proof_locked(uint64_t height,
     uint64_t commitment_height, bool to_root) const {
-    if (height > commitment_height || commitment_height >= leaves_.size()) {
-        return std::nullopt;
+    // The reasons are checked in the order the shv statuses are defined: a
+    // height the chain lacks is not found even when the commitment is above
+    // the tip as well, so a client learns first that the block is missing.
+    if (height > commitment_height) {
+        return std::unexpected(shv_miss::above_commitment);
+    }
+    if (height >= leaves_.size()) {
+        return std::unexpected(shv_miss::not_found);
+    }
+    if (commitment_height >= leaves_.size()) {
+        return std::unexpected(shv_miss::commitment_above_tip);
     }
     auto const count = commitment_height + 1;
     auto const sibling = (height ^ 1) < count
@@ -116,17 +125,20 @@ std::optional<shv_proof_result> chain_mmr::proof_locked(uint64_t height,
     return shv_proof_result{height, headers_.get_header(leaves_[height]), std::move(*proof), target};
 }
 
-std::optional<shv_proof_result> chain_mmr::proof(uint64_t height,
+shv_proof_expect chain_mmr::proof(uint64_t height,
     uint64_t commitment_height, bool to_root) const {
     std::shared_lock const lock(mutex_);
     return proof_locked(height, commitment_height, to_root);
 }
 
-std::optional<shv_proof_result> chain_mmr::proof(hash_digest const& hash,
+shv_proof_expect chain_mmr::proof(hash_digest const& hash,
     uint64_t commitment_height, bool to_root) const {
     std::shared_lock const lock(mutex_);
     auto const height = height_locked(hash);
-    return height ? proof_locked(*height, commitment_height, to_root) : std::nullopt;
+    if ( ! height) {
+        return std::unexpected(shv_miss::not_found);
+    }
+    return proof_locked(*height, commitment_height, to_root);
 }
 
 } // namespace kth::blockchain

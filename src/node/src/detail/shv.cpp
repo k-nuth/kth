@@ -12,6 +12,22 @@
 
 namespace kth::node::detail {
 
+namespace {
+
+uint8_t status_of(blockchain::shv_miss miss) {
+    switch (miss) {
+        case blockchain::shv_miss::above_commitment:
+            return domain::message::shv_status_above_commitment;
+        case blockchain::shv_miss::commitment_above_tip:
+            return domain::message::shv_status_commitment_above_tip;
+        case blockchain::shv_miss::not_found:
+            break;
+    }
+    return domain::message::shv_status_not_found;
+}
+
+} // namespace
+
 shv_reply process_get_shv(blockchain::block_chain const& chain, byte_span payload, uint32_t version) {
     if ( ! chain.shv_enabled()) {
         return {shv_action::ignored, {}};
@@ -23,6 +39,7 @@ shv_reply process_get_shv(blockchain::block_chain const& chain, byte_span payloa
         return {shv_action::malformed, {}};
     }
     // Score an oversized batch before its parser can allocate request storage.
+    // It still gets one shv with no entries, so every getshv has one reply.
     if (*count > domain::message::max_shv_requests) {
         return {shv_action::oversized, {}};
     }
@@ -33,20 +50,25 @@ shv_reply process_get_shv(blockchain::block_chain const& chain, byte_span payloa
         return {shv_action::malformed, {}};
     }
 
+    // One entry per request, in the request's order, so a client knows the
+    // answer is complete when it arrives and which request each entry answers.
     domain::message::shv response;
     response.responses.reserve(request->requests.size());
     for (auto const& entry : request->requests) {
         if ( ! entry.is_valid()) {
+            response.responses.push_back({.status = domain::message::shv_status_reserved_type});
             continue;
         }
         auto proof = entry.is_by_hash()
             ? chain.shv_proof(entry.block_height_or_hash, entry.commitment_height, entry.is_proof_to_root())
             : chain.shv_proof(entry.block_height(), entry.commitment_height, entry.is_proof_to_root());
         if ( ! proof) {
+            response.responses.push_back({.status = status_of(proof.error())});
             continue;
         }
-        response.responses.push_back({entry.type, entry.commitment_height, proof->block_height,
-            std::move(proof->header), std::move(proof->proof), proof->target});
+        response.responses.push_back({domain::message::shv_status_found, entry.type,
+            entry.commitment_height, proof->block_height, std::move(proof->header),
+            std::move(proof->proof), proof->target});
     }
     return {shv_action::reply, std::move(response)};
 }
@@ -59,6 +81,7 @@ message_handler_fn make_get_shv_handler(blockchain::block_chain const& chain, p2
             if (p2p.report_misbehavior(peer.authority(), 20, "oversized-getshv")) {
                 co_return message_result::disconnect;
             }
+            co_await peer.send(result.message);
         } else if (result.action == shv_action::reply) {
             co_await peer.send(result.message);
         }

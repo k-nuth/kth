@@ -63,11 +63,13 @@ TEST_CASE("getshv serves connected headers that a light client verifies", "[shv]
     REQUIRE(fixture.organizer().add_headers(headers_of(blocks)).headers_added == blocks.size());
     persist_headers(fixture, blocks, 1);
 
-    // Downloaded headers are not an authenticated connected-chain commitment.
+    // Downloaded headers are not an authenticated connected-chain commitment:
+    // until their blocks connect, the commitment is above the connected tip.
     auto const ahead = payload_of(domain::message::get_shv{{request_at(0, 5, 1)}});
     auto const before = node::detail::process_get_shv(chain, ahead, wire_version);
     REQUIRE(before.action == node::detail::shv_action::reply);
-    REQUIRE(before.message.responses.empty());
+    REQUIRE(before.message.responses.size() == 1);
+    REQUIRE(before.message.responses[0].status == domain::message::shv_status_commitment_above_tip);
     connect_bodies(fixture, blocks, 1);
 
     domain::mmr_accumulator client;
@@ -94,6 +96,7 @@ TEST_CASE("getshv serves connected headers that a light client verifies", "[shv]
     REQUIRE(response);
     for (size_t i = 0; i < response->responses.size(); ++i) {
         auto const& proof = response->responses[i];
+        REQUIRE(proof.status == domain::message::shv_status_found);
         REQUIRE(proof.type == request.requests[i].type);
         REQUIRE(proof.commitment_height == 5);
         auto const expected_height = i == 12 ? 2 : i / 2;
@@ -116,17 +119,31 @@ TEST_CASE("getshv serves connected headers that a light client verifies", "[shv]
         }
     }
 
-    auto invalid_type = request_at(0, 5, 4);
-    auto invalid_height = request_at(0, 5);
-    invalid_height.block_height_or_hash[8] = 1;
-    domain::message::get_shv mixed{{request_at(0, 5), invalid_type, invalid_height,
-        request_at(0, 6), request_at(6, 5), request_at(5, 4),
-        {domain::message::shv_by_hash, 5, null_hash}, request_at(5, 5, 1)}};
-    auto const filtered = node::detail::process_get_shv(chain, payload_of(mixed), wire_version);
-    REQUIRE(filtered.action == node::detail::shv_action::reply);
-    REQUIRE(filtered.message.responses.size() == 2);
-    CHECK(filtered.message.responses.front().block_height == 0);
-    CHECK(filtered.message.responses.back().block_height == 5);
+    // Every request gets one entry, in order, with the reason when there is
+    // no proof. A height the chain lacks is not found even when the
+    // commitment is above the tip as well.
+    using namespace domain::message;
+    get_shv mixed{{request_at(0, 5), request_at(0, 5, 4), request_at(0, 6),
+        request_at(6, 5), request_at(5, 4), {shv_by_hash, 5, null_hash}, request_at(7, 8),
+        request_at(5, 5, 1), {shv_by_hash, 1, blocks[2].hash()},
+        {shv_by_hash | 0x80, 5, blocks[0].hash()}}};
+    auto const answered = node::detail::process_get_shv(chain, payload_of(mixed), wire_version);
+    REQUIRE(answered.action == node::detail::shv_action::reply);
+    auto const answer_bytes = payload_of(answered.message);
+    byte_reader answer_reader(answer_bytes);
+    auto const answer = shv::from_data(answer_reader, wire_version);
+    REQUIRE(answer);
+    std::vector<uint8_t> statuses;
+    for (auto const& entry : answer->responses) {
+        statuses.push_back(entry.status);
+    }
+    REQUIRE(statuses == std::vector<uint8_t>{shv_status_found, shv_status_reserved_type,
+        shv_status_commitment_above_tip, shv_status_above_commitment, shv_status_above_commitment,
+        shv_status_not_found, shv_status_not_found, shv_status_found, shv_status_above_commitment,
+        shv_status_reserved_type});
+    CHECK(answer->responses[0].block_height == 0);
+    CHECK(answer->responses[7].block_height == 5);
+    CHECK(answer->responses[7].type == shv_proof_to_root);
 }
 
 TEST_CASE("getshv enforces batch and payload boundaries", "[shv][p2p]") {
@@ -138,16 +155,21 @@ TEST_CASE("getshv enforces batch and payload boundaries", "[shv][p2p]") {
     using node::detail::process_get_shv;
     using node::detail::shv_action;
 
+    // An oversized batch is answered with one shv with no entries.
     for (auto const& bytes : std::vector<data_chunk>{{101}, {0xfe, 0xff, 0xff, 0xff, 0x7f}}) {
         auto const result = process_get_shv(chain, bytes, wire_version);
         REQUIRE(result.action == shv_action::oversized);
         REQUIRE(result.message.responses.empty());
+        REQUIRE(payload_of(result.message) == data_chunk{0});
     }
     domain::message::get_shv maximum;
     maximum.requests.assign(domain::message::max_shv_requests, request_at(0, 0, 1));
     auto const accepted = process_get_shv(chain, payload_of(maximum), wire_version);
     REQUIRE(accepted.action == shv_action::reply);
     REQUIRE(accepted.message.responses.size() == domain::message::max_shv_requests);
+    for (auto const& entry : accepted.message.responses) {
+        REQUIRE(entry.status == domain::message::shv_status_found);
+    }
     auto const empty = process_get_shv(chain, data_chunk{0}, wire_version);
     REQUIRE(empty.action == shv_action::reply);
     REQUIRE(empty.message.responses.empty());
@@ -190,7 +212,7 @@ TEST_CASE("NODE_SHV follows the index setting in the version handshake", "[shv][
     }
 }
 
-TEST_CASE("getshv handler penalizes oversized batches without sending a reply", "[shv][p2p]") {
+TEST_CASE("getshv handler penalizes oversized batches without waiting on the peer", "[shv][p2p]") {
     for (bool enabled : {false, true}) {
         chain_fixture fixture(enabled ? "shv_score_on" : "shv_score_off");
         fixture.settings().mmr_index = enabled;
@@ -201,8 +223,10 @@ TEST_CASE("getshv handler penalizes oversized batches without sending a reply", 
         settings.peers_file.clear();
         node::p2p_node p2p(settings);
         ::asio::io_context io;
-        // No socket is opened. The handler's oversized path must neither send
-        // nor wait for a peer to read, even when its score reaches the ban limit.
+        // No socket is opened. The empty reply to an oversized batch only
+        // goes into the session's outbound queue, so the handler never waits
+        // for a peer to read, and once the score reaches the ban limit it
+        // disconnects without replying.
         network::peer_session peer(::asio::ip::tcp::socket(io), settings);
         auto const handler = node::detail::make_get_shv_handler(fixture.chain(), p2p);
         network::raw_message const raw{domain::message::heading(0, "getshv", 1, 0), {101}};

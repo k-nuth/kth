@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include <kth/domain/constants/common.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
 
@@ -15,7 +16,19 @@ std::string const shv::command = "shv";
 uint32_t const shv::version_minimum = version::level::minimum;
 uint32_t const shv::version_maximum = version::level::maximum;
 
+// One shv message holds a whole answer, never split: a one-byte count and up
+// to max_shv_requests found entries, each with both heights at their longest
+// CompactSize and a proof of 64 hashes.
+static_assert(1 + max_shv_requests * (1 + 1 + 9 + 9 + 80 + 1 + 64 * hash_size + hash_size)
+    <= max_payload_size, "a full shv answer must fit in one message");
+
 expect<shv_response> shv_response::from_data(byte_reader& reader) {
+    auto const status = reader.read_byte();
+    if ( ! status) return std::unexpected(status.error());
+    if (*status > shv_status_maximum) return std::unexpected(error::illegal_value);
+    if (*status != shv_status_found) {
+        return shv_response{.status = *status};
+    }
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());
     auto const commitment = reader.read_variable_little_endian();
@@ -37,10 +50,14 @@ expect<shv_response> shv_response::from_data(byte_reader& reader) {
     }
     auto const target = read_hash(reader);
     if ( ! target) return std::unexpected(target.error());
-    return shv_response{*type, *commitment, *height, std::move(*header), std::move(proof), *target};
+    return shv_response{shv_status_found, *type, *commitment, *height, std::move(*header),
+        std::move(proof), *target};
 }
 
 expect<void> shv_response::to_data(byte_writer& writer) const noexcept {
+    if (status > shv_status_maximum) return std::unexpected(error::illegal_value);
+    if (auto r = writer.write_byte(status); ! r) return r;
+    if (status != shv_status_found) return {};
     if (auto r = writer.write_byte(type); ! r) return r;
     if (auto r = writer.write_variable_little_endian(commitment_height); ! r) return r;
     if (auto r = writer.write_variable_little_endian(block_height); ! r) return r;
@@ -53,7 +70,10 @@ expect<void> shv_response::to_data(byte_writer& writer) const noexcept {
 }
 
 size_t shv_response::serialized_size() const {
-    return 1 + infrastructure::message::variable_uint_size(commitment_height)
+    if (status != shv_status_found) {
+        return 1;
+    }
+    return 1 + 1 + infrastructure::message::variable_uint_size(commitment_height)
         + infrastructure::message::variable_uint_size(block_height) + header.serialized_size(true)
         + infrastructure::message::variable_uint_size(proof.size()) + proof.size() * hash_size + hash_size;
 }

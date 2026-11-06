@@ -112,7 +112,7 @@ struct transport_stop {
 
 } // namespace
 
-TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entries", "[shv][p2p][transport]") {
+TEST_CASE("SHV framed peer requests survive split reads and get one entry each", "[shv][p2p][transport]") {
     for (bool enabled : {false, true}) {
         chain_fixture fixture(enabled ? "shv_transport_on" : "shv_transport_off");
         fixture.settings().mmr_index = enabled;
@@ -195,10 +195,11 @@ TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entri
             auto const [connect_ec] = co_await client.async_connect(endpoint,
                 ::asio::as_tuple(::asio::use_awaitable));
             REQUIRE( ! connect_ec);
-            auto reserved = request_at(1, 2, 4);
-            auto upper = request_at(1, 2, 0);
-            upper.block_height_or_hash[8] = 1;
-            domain::message::get_shv const request{{request_at(1, 2, 1), reserved, upper,
+            auto const reserved = request_at(1, 2, 4);
+            // Block 3 is beyond the connected tip, and so is its commitment:
+            // the missing block is what the entry reports.
+            auto const missing = request_at(3, 3, 0);
+            domain::message::get_shv const request{{request_at(1, 2, 1), reserved, missing,
                 request_at(1, 2, 0)}};
             auto const request_frame = domain::message::serialize(wire_version, request, settings.identifier);
             co_await write_fragmented(client, request_frame, io);
@@ -207,35 +208,41 @@ TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entri
                 REQUIRE(raw.heading.command() == "shv");
                 auto const response = from_data_chunk<domain::message::shv>(raw.payload, wire_version);
                 REQUIRE(response);
-                REQUIRE(response->responses.size() == 2);
+                REQUIRE(response->responses.size() == 4);
+                REQUIRE(response->responses[1].status == domain::message::shv_status_reserved_type);
+                REQUIRE(response->responses[2].status == domain::message::shv_status_not_found);
                 domain::mmr_accumulator accumulator;
                 REQUIRE(accumulator.extend(genesis.hash()));
                 for (auto const& block : blocks) {
                     REQUIRE(accumulator.extend(block.hash()));
                 }
                 auto const& root = response->responses[0];
+                REQUIRE(root.status == domain::message::shv_status_found);
                 REQUIRE(root.type == 1);
                 REQUIRE(root.block_height == 1);
                 REQUIRE(root.commitment_height == 2);
                 REQUIRE(domain::chain::hash(root.header) == blocks[0].hash());
                 REQUIRE(root.target == accumulator.root());
                 REQUIRE(accumulator.verify_proof_to_root(1, blocks[0].hash(), root.proof));
-                auto const& peak = response->responses[1];
+                auto const& peak = response->responses[3];
+                REQUIRE(peak.status == domain::message::shv_status_found);
                 REQUIRE(peak.type == 0);
                 REQUIRE(peak.block_height == 1);
                 REQUIRE(accumulator.verify_proof_to_peak(1, blocks[0].hash(), peak.proof));
                 REQUIRE(peak.target == domain::mmr_node_hash(genesis.hash(), blocks[0].hash()));
 
-                domain::message::get_shv const invalid{{reserved, upper,
+                domain::message::get_shv const invalid{{reserved, missing,
                     request_at(1, 3, 0), request_at(3, 2, 0),
                     {domain::message::shv_by_hash, 2, null_hash}}};
                 auto const frame = domain::message::serialize(wire_version, invalid, settings.identifier);
                 co_await write_fragmented(client, frame, io);
-                auto const omitted = co_await read_frame(client, settings.identifier);
-                REQUIRE(omitted.heading.command() == "shv");
-                auto const parsed = from_data_chunk<domain::message::shv>(omitted.payload, wire_version);
+                auto const refused = co_await read_frame(client, settings.identifier);
+                REQUIRE(refused.heading.command() == "shv");
+                // Each refusal is its status byte alone.
+                REQUIRE(refused.payload == data_chunk{5, 4, 1, 3, 2, 1});
+                auto const parsed = from_data_chunk<domain::message::shv>(refused.payload, wire_version);
                 REQUIRE(parsed);
-                REQUIRE(parsed->responses.empty());
+                REQUIRE(parsed->responses.size() == 5);
             }
 
             // Split a noncanonical CompactSize after its width marker. It
@@ -255,8 +262,15 @@ TEST_CASE("SHV framed peer requests survive split reads and refuse invalid entri
             auto const fence = domain::message::serialize(wire_version,
                 domain::message::ping(0x12345678), settings.identifier);
             co_await write_fragmented(client, fence, io);
-            // Dispatch is ordered. A forbidden reply to either ignored request
-            // would arrive before this pong and fail the command assertion.
+            // Dispatch is ordered. The malformed request gets no reply, and an
+            // oversized one gets one shv with no entries, so with SHV on that
+            // reply comes first; any other reply would come before the pong
+            // and fail the command assertion.
+            if (enabled) {
+                auto const empty = co_await read_frame(client, settings.identifier);
+                REQUIRE(empty.heading.command() == "shv");
+                REQUIRE(empty.payload == data_chunk{0});
+            }
             auto const pong = co_await read_frame(client, settings.identifier);
             REQUIRE(pong.heading.command() == "pong");
             auto const echoed = from_data_chunk<domain::message::pong>(pong.payload, wire_version);

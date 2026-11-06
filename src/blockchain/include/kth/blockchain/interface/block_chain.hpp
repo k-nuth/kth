@@ -130,9 +130,11 @@ struct KB_API block_chain {
     [[nodiscard]] std::optional<uint64_t> shv_height(hash_digest const& hash) const;
     [[nodiscard]] std::optional<hash_digest> shv_root(uint64_t height,
         std::optional<hash_digest> expected_hash = std::nullopt) const;
-    [[nodiscard]] std::optional<shv_proof_result> shv_proof(uint64_t height,
+    // Without the index, or while the chain is stopped or in a transition,
+    // no block can be shown to be on the connected chain: not found.
+    [[nodiscard]] shv_proof_expect shv_proof(uint64_t height,
         uint64_t commitment_height, bool to_root) const;
-    [[nodiscard]] std::optional<shv_proof_result> shv_proof(hash_digest const& hash,
+    [[nodiscard]] shv_proof_expect shv_proof(hash_digest const& hash,
         uint64_t commitment_height, bool to_root) const;
 
     // =========================================================================

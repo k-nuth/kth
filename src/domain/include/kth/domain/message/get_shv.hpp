@@ -19,13 +19,20 @@
 namespace kth::domain::message {
 
 inline constexpr size_t max_shv_requests = 100;
+// Type bit 0: a proof to the root of the commitment, rather than to the peak
+// of the block's mountain.
 inline constexpr uint8_t shv_proof_to_root = 0x01;
+// Type bit 1: the block is selected by its 32-byte hash. Clear, it is selected
+// by its height, sent as a CompactSize.
 inline constexpr uint8_t shv_by_hash = 0x02;
 inline constexpr uint8_t shv_reserved_mask = 0xfc;
 
 struct KD_API shv_request {
     uint8_t type{0};
     uint64_t commitment_height{0};
+    // The block's hash, or its height in the first 8 bytes, little-endian,
+    // with the other bytes zero. Only the height goes on the wire for a
+    // request by height.
     hash_digest block_height_or_hash{null_hash};
 
     [[nodiscard]] bool is_proof_to_root() const noexcept;

@@ -165,17 +165,24 @@ TEST_CASE("chain MMR refuses invalid heights, unknown hashes and unrelated roots
     chain_mmr index(headers);
     REQUIRE(index.leaf_count() == 0);
     REQUIRE_FALSE(index.root(0));
-    REQUIRE_FALSE(index.proof(0, 0, true));
+    REQUIRE(index.proof(0, 0, true).error() == shv_miss::not_found);
     REQUIRE_FALSE(index.set_tip(header_index::null_index));
     REQUIRE_FALSE(index.set_tip(19));
     REQUIRE(index.set_tip(chain.back()));
     auto const root = index.root(2);
-    REQUIRE_FALSE(index.proof(2, 1, false));
-    REQUIRE_FALSE(index.proof(0, 3, true));
-    REQUIRE_FALSE(index.proof(0, std::numeric_limits<uint64_t>::max(), true));
+    // Each miss names its reason, in the order the shv statuses take: above
+    // the commitment, then a block the chain lacks, then a commitment above
+    // the tip.
+    REQUIRE(index.proof(2, 1, false).error() == shv_miss::above_commitment);
+    REQUIRE(index.proof(4, 3, true).error() == shv_miss::above_commitment);
+    REQUIRE(index.proof(0, 3, true).error() == shv_miss::commitment_above_tip);
+    REQUIRE(index.proof(0, std::numeric_limits<uint64_t>::max(), true).error()
+        == shv_miss::commitment_above_tip);
+    REQUIRE(index.proof(3, 3, true).error() == shv_miss::not_found);
     REQUIRE_FALSE(index.root(std::numeric_limits<uint64_t>::max()));
     REQUIRE_FALSE(index.height(null_hash));
-    REQUIRE_FALSE(index.proof(null_hash, 2, true));
+    REQUIRE(index.proof(null_hash, 2, true).error() == shv_miss::not_found);
+    REQUIRE(index.proof(headers.get_hash(chain[2]), 1, true).error() == shv_miss::above_commitment);
     REQUIRE_FALSE(index.root(2, null_hash));
     auto const unrelated = add_header(headers, null_hash, 100);
     REQUIRE_FALSE(index.set_tip(unrelated));

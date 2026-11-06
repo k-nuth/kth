@@ -703,20 +703,20 @@ std::optional<hash_digest> block_chain::shv_root(uint64_t height,
     return mmr_index_->root(height, expected_hash);
 }
 
-std::optional<shv_proof_result> block_chain::shv_proof(uint64_t height,
+shv_proof_expect block_chain::shv_proof(uint64_t height,
     uint64_t commitment_height, bool to_root) const {
     captured_lease const lease(capture_gate_);
     if ( ! lease || ! mmr_index_ || stopped()) {
-        return std::nullopt;
+        return std::unexpected(shv_miss::not_found);
     }
     return mmr_index_->proof(height, commitment_height, to_root);
 }
 
-std::optional<shv_proof_result> block_chain::shv_proof(hash_digest const& hash,
+shv_proof_expect block_chain::shv_proof(hash_digest const& hash,
     uint64_t commitment_height, bool to_root) const {
     captured_lease const lease(capture_gate_);
     if ( ! lease || ! mmr_index_ || stopped()) {
-        return std::nullopt;
+        return std::unexpected(shv_miss::not_found);
     }
     return mmr_index_->proof(hash, commitment_height, to_root);
 }

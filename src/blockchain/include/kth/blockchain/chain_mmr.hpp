@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <shared_mutex>
 #include <vector>
@@ -24,6 +25,16 @@ struct shv_proof_result {
     hash_digest target;
 };
 
+/// Why there is no proof for a request. An shv reply carries the reason as
+/// the entry's status.
+enum class shv_miss {
+    not_found,            ///< The connected chain has no such block.
+    above_commitment,     ///< The block is above the commitment height.
+    commitment_above_tip  ///< The commitment height is above the connected tip.
+};
+
+using shv_proof_expect = std::expected<shv_proof_result, shv_miss>;
+
 /// The connected chain, independent of the active header-height mapping. Header
 /// entries remain stable when that mapping moves ahead or changes branches.
 class KB_API chain_mmr {
@@ -39,14 +50,14 @@ public:
     [[nodiscard]] std::optional<uint64_t> height(hash_digest const& hash) const;
     [[nodiscard]] std::optional<hash_digest> root(uint64_t height,
         std::optional<hash_digest> expected_hash = std::nullopt) const;
-    [[nodiscard]] std::optional<shv_proof_result> proof(uint64_t height,
+    [[nodiscard]] shv_proof_expect proof(uint64_t height,
         uint64_t commitment_height, bool to_root) const;
-    [[nodiscard]] std::optional<shv_proof_result> proof(hash_digest const& hash,
+    [[nodiscard]] shv_proof_expect proof(hash_digest const& hash,
         uint64_t commitment_height, bool to_root) const;
 
 private:
     [[nodiscard]] std::optional<uint64_t> height_locked(hash_digest const& hash) const;
-    [[nodiscard]] std::optional<shv_proof_result> proof_locked(uint64_t height,
+    [[nodiscard]] shv_proof_expect proof_locked(uint64_t height,
         uint64_t commitment_height, bool to_root) const;
 
     header_index const& headers_;

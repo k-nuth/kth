@@ -83,9 +83,13 @@ handshake. With it disabled, Knuth clears that service bit and ignores
 
 ## P2P requests and replies
 
-The `getshv` and `shv` payloads use BCHN's SHV MR wire format. `CompactSize`
-means canonical Bitcoin variable-length integers. Heights start at zero;
-a commitment at height `h` includes `h + 1` block hashes.
+The `getshv` and `shv` payloads follow CHIP-2026-02 with the message points
+agreed in its review: one `shv` answers one `getshv`, with a status for every
+request; an oversized `getshv` gets an `shv` with no entries; and heights in
+requests are CompactSize. This keeps kth compatible with other SHV servers,
+so one light client works against any of them. `CompactSize` means canonical
+Bitcoin variable-length integers. Heights start at zero; a commitment at
+height `h` includes `h + 1` block hashes.
 
 `getshv` begins with a CompactSize request count, followed by these fields
 for each request:
@@ -94,18 +98,30 @@ for each request:
 |---|---|
 | `type` | One byte: bit 0 selects root (1) or peak (0); bit 1 selects hash (1) or height (0) |
 | `commitment_height` | CompactSize |
-| `block_height_or_hash` | 32 bytes: internal-order block hash, or little-endian height with bytes 8 through 31 zero |
+| `block_hash` or `block_height` | 32-byte internal-order block hash when bit 1 is set; otherwise the height as a CompactSize |
 
 Bits 2 through 7 are reserved and must be zero. A batch may contain at most
-100 requests. A larger batch receives a 20-point misbehavior penalty and no
-reply. Invalid individual entries are omitted: reserved bits, a malformed
-height, an unknown or disconnected block hash, a height beyond the commitment,
-or a commitment beyond the connected tip. A valid batch still receives `shv`
-when every entry is omitted. If the enabled index is temporarily unavailable,
-the response may be empty.
+100 requests. A larger batch receives a 20-point misbehavior penalty and one
+`shv` with no entries. A `getshv` with no requests receives an `shv` with no
+entries. A malformed payload receives no reply.
 
-`shv` begins with a CompactSize response count. Successful entries preserve
-request order and contain:
+`shv` begins with a CompactSize entry count. It holds one entry per request,
+in the request's order, and is never split across messages, so a client
+knows the answer is complete when it arrives. Each entry starts with a status
+byte, numbered as below:
+
+| Status | Meaning |
+|---|---|
+| 0, found | The entry continues with the fields below |
+| 1, not found | The connected chain has no such block, including a height beyond the connected tip when the commitment is beyond it too |
+| 2, above the commitment | The block is above the commitment height |
+| 3, commitment above the tip | The commitment height is beyond the connected tip |
+| 4, reserved type | A reserved type bit is set |
+
+Any status but found is that single byte. A status above 4 is not a valid
+entry. While the enabled index is temporarily unavailable, as during a chain
+transition, no block can be shown to be on the connected chain, and entries
+are not found. A found entry continues with:
 
 | Field | Encoding |
 |---|---|
@@ -117,11 +133,10 @@ request order and contain:
 | `target` | 32-byte internal-order root or containing peak |
 
 For example, a proof-to-peak request for block 5 committed at height 10 is
-`01 00 0a 05` followed by 31 zero bytes. Change the type byte to `01` for a
-proof to the root. A client hashes the returned header and verifies the
-branch with `mmr_accumulator::verify_proof_to_peak` or `verify_proof_to_root`
-against its trusted accumulator. It must match the returned heights and type
-to its request. A returned target alone does not establish trust.
+`01 00 0a 05`. Change the type byte to `01` for a proof to the root. A client
+hashes the returned header and verifies the branch with
+`mmr_accumulator::verify_proof_to_peak` or `verify_proof_to_root` against its
+trusted accumulator. A returned target alone does not establish trust.
 
 ## RPC
 

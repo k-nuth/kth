@@ -4,7 +4,6 @@
 
 #include <kth/domain/message/get_shv.hpp>
 
-#include <algorithm>
 #include <utility>
 
 #include <kth/domain/message/version.hpp>
@@ -24,10 +23,10 @@ bool shv_request::is_by_hash() const noexcept {
     return (type & shv_by_hash) != 0;
 }
 
+// A height travels as a CompactSize, so any request that parses names a
+// height that fits; only the reserved type bits make it invalid.
 bool shv_request::is_valid() const noexcept {
-    return (type & shv_reserved_mask) == 0 && (is_by_hash()
-        || std::all_of(block_height_or_hash.begin() + 8, block_height_or_hash.end(),
-            [](uint8_t value) { return value == 0; }));
+    return (type & shv_reserved_mask) == 0;
 }
 
 uint64_t shv_request::block_height() const noexcept {
@@ -43,20 +42,34 @@ expect<shv_request> shv_request::from_data(byte_reader& reader) {
     if ( ! type) return std::unexpected(type.error());
     auto const commitment = reader.read_variable_little_endian();
     if ( ! commitment) return std::unexpected(commitment.error());
-    auto const block = read_hash(reader);
-    if ( ! block) return std::unexpected(block.error());
-    // Semantic errors are omitted individually by the server, like BCHN.
-    return shv_request{*type, *commitment, *block};
+    // Bit 1 decides the field's encoding even when reserved bits are set, so
+    // a request with reserved bits still parses and gets its own status.
+    if ((*type & shv_by_hash) != 0) {
+        auto const block = read_hash(reader);
+        if ( ! block) return std::unexpected(block.error());
+        return shv_request{*type, *commitment, *block};
+    }
+    auto const height = reader.read_variable_little_endian();
+    if ( ! height) return std::unexpected(height.error());
+    hash_digest encoded{null_hash};
+    for (size_t i = 0; i < sizeof(*height); ++i) {
+        encoded[i] = uint8_t(*height >> (i * 8));
+    }
+    return shv_request{*type, *commitment, encoded};
 }
 
 expect<void> shv_request::to_data(byte_writer& writer) const noexcept {
     if (auto r = writer.write_byte(type); ! r) return r;
     if (auto r = writer.write_variable_little_endian(commitment_height); ! r) return r;
-    return writer.write_hash(block_height_or_hash);
+    if (is_by_hash()) {
+        return writer.write_hash(block_height_or_hash);
+    }
+    return writer.write_variable_little_endian(block_height());
 }
 
 size_t shv_request::serialized_size() const {
-    return 1 + infrastructure::message::variable_uint_size(commitment_height) + hash_size;
+    return 1 + infrastructure::message::variable_uint_size(commitment_height)
+        + (is_by_hash() ? hash_size : infrastructure::message::variable_uint_size(block_height()));
 }
 
 expect<get_shv> get_shv::from_data(byte_reader& reader, uint32_t /*version*/) {
