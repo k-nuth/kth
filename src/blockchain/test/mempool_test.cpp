@@ -17,6 +17,8 @@
 #include <test_helpers.hpp>
 
 #include <kth/blockchain/pools/mempool.hpp>
+#include <kth/blockchain/pools/mempool_limit.hpp>
+#include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
 
 #include <algorithm>
@@ -35,6 +37,8 @@ using namespace kth;
 using namespace kth::domain::chain;
 using kth::blockchain::mempool;
 using kth::blockchain::mempool_entry;
+using kth::blockchain::mempool_full_fee_increment_per_kb;
+using kth::blockchain::mempool_limit;
 
 namespace {
 
@@ -901,4 +905,191 @@ TEST_CASE("mempool spender names the pool transaction that spends an outpoint", 
     // Gone with the transaction that spent it.
     mp.remove_for_block(make_block({child}));
     CHECK_FALSE(mp.spender(point{parent.hash(), 1}).has_value());
+}
+
+TEST_CASE("mempool removals report what they removed", "[mempool][serial]") {
+    mempool mp{0x1111u, 0x2222u};
+    auto const parent = make_tx({op(1, 0)}, 2, 1);
+    auto const child = make_tx({output_point{parent.hash(), 0}}, 1, 2);
+    auto const conflicting = make_tx({op(2, 0)}, 1, 3);
+    auto const confirmed = make_tx({op(2, 0)}, 1, 4);
+    REQUIRE(mp.add(entry_for(parent, 1)));
+    REQUIRE(mp.add(entry_for(child, 2)));
+    REQUIRE(mp.add(entry_for(conflicting, 3)));
+
+    // A block confirming a conflict of one, and a transaction it does not hold.
+    auto const by_block = mp.remove_for_block(make_block({confirmed}));
+    CHECK(by_block == std::vector<hash_digest>{conflicting.hash()});
+
+    auto by_eviction = mp.remove_with_descendants(parent.hash());
+    std::ranges::sort(by_eviction);
+    auto expected = std::vector<hash_digest>{parent.hash(), child.hash()};
+    std::ranges::sort(expected);
+    CHECK(by_eviction == expected);
+    CHECK(mp.remove_with_descendants(parent.hash()).empty());
+}
+
+// ---------------------------------------------------------------------------
+// Size limit (BCHN -maxmempool, TrimToSize, GetMinFee)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// An entry with the policy figures given, whatever the transaction's real size:
+// the rate the limit orders by is fee per 1000 virtual bytes of `size`.
+mempool_entry priced(transaction const& tx, uint64_t fee, uint32_t size, uint32_t sigchecks = 1) {
+    return mempool_entry{as_ptr(tx), fee, size, sigchecks, /*time_seen*/ 0};
+}
+
+// A pool and its limit, admitted to together, as the chain does.
+struct limited_pool {
+    mempool pool{0x1111u, 0x2222u};
+    mempool_limit limit;
+
+    bool add(mempool_entry const& entry) {
+        if ( ! pool.add(entry)) {
+            return false;
+        }
+        limit.added(entry);
+        return true;
+    }
+    size_t trim(uint64_t bytes) {
+        return limit.trim(pool, bytes, mempool_full_fee_increment_per_kb);
+    }
+};
+
+} // namespace
+
+// A default-built settings, with no network, has BCHN's default all the same:
+// a limit read from an uninitialized block size would be zero, or anything,
+// and a zero limit evicts every transaction the moment it is admitted.
+TEST_CASE("mempool limit defaults are BCHN's for a settings built without a network",
+          "[mempool][limit]") {
+    blockchain::settings value_initialized{};
+    blockchain::settings default_initialized;
+#if defined(KTH_CURRENCY_BCH)
+    CHECK(value_initialized.mempool_limit_bytes() == 320'000'000u);
+    CHECK(default_initialized.mempool_limit_bytes() == 320'000'000u);
+    CHECK(blockchain::settings(domain::config::network::mainnet).mempool_limit_bytes() == 320'000'000u);
+#else
+    CHECK(value_initialized.mempool_limit_bytes() == 300'000'000u);
+    CHECK(default_initialized.mempool_limit_bytes() == 300'000'000u);
+#endif
+    value_initialized.mempool_max_mb = 5;
+    CHECK(value_initialized.mempool_limit_bytes() == 5'000'000u);
+}
+
+TEST_CASE("mempool limit usage follows additions and removals", "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const tx = make_tx({op(1, 0)}, 2, 1);
+    auto const entry = priced(tx, 1000, 200);
+    auto const expected = mempool_limit::entry_usage(entry);
+    CHECK(expected > tx.serialized_size(true));
+
+    REQUIRE(lp.add(entry));
+    CHECK(lp.limit.usage() == expected);
+    lp.limit.removed(lp.pool.remove_for_block(make_block({tx})));
+    CHECK(lp.limit.usage() == 0);
+}
+
+TEST_CASE("mempool limit evicts the lowest fee per virtual byte with its descendants",
+          "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const cheap = make_tx({op(1, 0)}, 1, 1);
+    auto const child = make_tx({output_point{cheap.hash(), 0}}, 1, 2);
+    auto const middle = make_tx({op(2, 0)}, 1, 3);
+    REQUIRE(lp.add(priced(cheap, 200, 200)));        // 1000 per kB
+    REQUIRE(lp.add(priced(child, 20'000, 200)));     // pays well, but spends cheap
+    REQUIRE(lp.add(priced(middle, 400, 200)));       // 2000 per kB
+
+    CHECK(lp.limit.minimum_fee_per_kb(lp.limit.usage(), 0) == 0);
+    CHECK(lp.trim(lp.limit.usage() - 1) == 2);
+    CHECK_FALSE(lp.pool.contains(cheap.hash()));
+    CHECK_FALSE(lp.pool.contains(child.hash()));
+    CHECK(lp.pool.contains(middle.hash()));
+    CHECK(lp.limit.usage() == mempool_limit::entry_usage(priced(middle, 400, 200)));
+
+    // The evicted rate plus the increment.
+    CHECK(lp.limit.minimum_fee_per_kb(lp.limit.usage(), 0) == 2000);
+}
+
+TEST_CASE("mempool limit evicts the most recent of equal rates first", "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const first = make_tx({op(1, 0)}, 1, 1);
+    auto const second = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(lp.add(priced(first, 300, 200)));
+    REQUIRE(lp.add(priced(second, 300, 200)));
+
+    CHECK(lp.trim(lp.limit.usage() - 1) == 1);
+    CHECK(lp.pool.contains(first.hash()));
+    CHECK_FALSE(lp.pool.contains(second.hash()));
+}
+
+TEST_CASE("mempool limit refuses a newcomer that is the cheapest", "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const pooled = make_tx({op(1, 0)}, 1, 1);
+    REQUIRE(lp.add(priced(pooled, 400, 200)));
+    auto const bytes = lp.limit.usage();
+
+    auto const newcomer = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(lp.add(priced(newcomer, 300, 200)));
+    CHECK(lp.trim(bytes) == 1);
+    CHECK(lp.pool.contains(pooled.hash()));
+    CHECK_FALSE(lp.pool.contains(newcomer.hash()));
+}
+
+TEST_CASE("mempool limit orders by virtual size, so signature checks are paid for",
+          "[mempool][serial][limit]") {
+    limited_pool lp;
+    // 200 bytes and 20 signature checks: 1000 virtual bytes, 400 per kB, though
+    // it pays more per serialized byte than the other.
+    auto const heavy = make_tx({op(1, 0)}, 1, 1);
+    auto const light = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(lp.add(priced(heavy, 400, 200, 20)));
+    REQUIRE(lp.add(priced(light, 300, 200, 1)));    // 1500 per kB
+
+    CHECK(lp.trim(lp.limit.usage() - 1) == 1);
+    CHECK_FALSE(lp.pool.contains(heavy.hash()));
+    CHECK(lp.pool.contains(light.hash()));
+}
+
+TEST_CASE("mempool limit forgets what left the pool another way", "[mempool][serial][limit]") {
+    // A transaction a block confirmed must not be chosen for eviction later:
+    // the next lowest is.
+    limited_pool lp;
+    auto const confirmed = make_tx({op(1, 0)}, 1, 1);
+    auto const pooled = make_tx({op(2, 0)}, 1, 2);
+    auto const richer = make_tx({op(3, 0)}, 1, 3);
+    REQUIRE(lp.add(priced(confirmed, 200, 200)));
+    REQUIRE(lp.add(priced(pooled, 400, 200)));
+    REQUIRE(lp.add(priced(richer, 800, 200)));
+    lp.limit.removed(lp.pool.remove_for_block(make_block({confirmed})));
+
+    CHECK(lp.trim(lp.limit.usage() - 1) == 1);
+    CHECK_FALSE(lp.pool.contains(pooled.hash()));
+    CHECK(lp.pool.contains(richer.hash()));
+    CHECK(lp.limit.minimum_fee_per_kb(lp.limit.usage(), 0) == 3000);
+}
+
+TEST_CASE("mempool minimum fee decays only after a block", "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const evicted = make_tx({op(1, 0)}, 1, 1);
+    auto const kept = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(lp.add(priced(kept, 10'000, 200)));
+    REQUIRE(lp.add(priced(evicted, 600, 200)));     // 3000 per kB
+    REQUIRE(lp.trim(lp.limit.usage() - 1) == 1);
+
+    // Pool at its limit, so the half-life is the full 12 hours.
+    auto const bytes = lp.limit.usage();
+    uint64_t const t0 = 1'700'000'000;
+    uint64_t const half_life = 12 * 60 * 60;
+    CHECK(lp.limit.minimum_fee_per_kb(bytes, t0) == 4000);
+    CHECK(lp.limit.minimum_fee_per_kb(bytes, t0 + 3 * half_life) == 4000);
+
+    lp.limit.note_block_connected(t0);
+    CHECK(lp.limit.minimum_fee_per_kb(bytes, t0 + half_life) == 2000);
+    CHECK(lp.limit.minimum_fee_per_kb(bytes, t0 + 2 * half_life) == 1000);
+
+    // A pool under a quarter of its limit decays four times as fast.
+    CHECK(lp.limit.minimum_fee_per_kb(bytes * 8, t0 + 2 * half_life + half_life / 4) == 500);
 }
