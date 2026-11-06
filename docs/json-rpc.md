@@ -74,8 +74,8 @@ counterpart.
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
-| `getrawtransaction` | `kth_chain_sync_transaction` | `fetch_transaction(hash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
@@ -214,6 +214,27 @@ size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
 BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
 operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
+
+## Blocks and transactions
+
+`getblock "<hash>"` reads the block from the flat-file block store, through the
+header index, and returns it as hex; a side-branch block the node holds is
+returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
+Confirmed transactions are not indexed by txid (#491), so for one of those pass
+the block hash as the third parameter: `getrawtransaction "<txid>" false
+"<blockhash>"`. A block or transaction the node does not have is error `-5`.
+An empty optional block hash is treated as omitted. KTH currently has neither a
+confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
+therefore require the block hash. Verbose transaction responses are tracked in
+#789 rather than silently returning hex for a verbose request.
+`fetch_block` reads the block through its header-index record on the chain's
+pool, so the RPC executor is not held by disk I/O. The stored record must parse
+to the end, hash to the requested block and match its merkle root. Missing
+indexed data remains `-5`; a damaged or unreadable stored record is an internal
+error, including through `getrawtransaction` with an explicit block hash. Until
+verbose forms arrive in #789, these endpoints accept only raw verbosity (`false`
+or `0`, with null using the default) and reject unsupported verbosity, wrong
+types and extra arguments.
 
 ## Mining: getblocktemplatelight
 
