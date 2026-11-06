@@ -62,6 +62,9 @@ struct spec {
     uint32_t coinbase_version = 1;
     uint32_t coinbase_locktime = 0;
     uint32_t coinbase_sequence = 0xffffffff;
+    uint32_t repeat_coinbase_of = 0;
+    uint32_t repeat_coinbase_at = 0;
+    bool short_timestamps = false;
     domain::config::network consensus_network = domain::config::network::regtest;
     uint32_t spend_coinbase_of = 0;               // height whose coinbase is spent; 0 = none
     uint32_t spend_at = 0;
@@ -158,6 +161,12 @@ std::vector<domain::message::block::const_ptr> build_chain(spec const& sp, uint3
             outs.emplace_back(value, script{std::move(ops)}, domain::chain::token_data_opt{});
             cb = transaction(cb.version(), cb.locktime(), input::list(cb.inputs()), std::move(outs));
         }
+        if (sp.repeat_coinbase_at == h) {
+            REQUIRE(sp.repeat_coinbase_of > 0);
+            REQUIRE(sp.repeat_coinbase_of < h);
+            cb = blocks[sp.repeat_coinbase_of - 1]->transactions().front();
+            CHECK(cb.hash() == blocks[sp.repeat_coinbase_of - 1]->transactions().front().hash());
+        }
         txs.push_back(std::move(cb));
         // Canonical transaction order (CTOR): every transaction after the
         // coinbase sorted by txid as displayed, the comparison
@@ -183,7 +192,8 @@ std::vector<domain::message::block::const_ptr> build_chain(spec const& sp, uint3
             REQUIRE(block(domain::chain::header{}, transaction::list(txs)).serialized_size() == sp.padded_block_size);
         }
 
-        auto mined = mine(prev, base + h * 600, std::move(txs));
+        auto const timestamp = base + uint32_t(sp.short_timestamps ? ticks.height_to_tick(h) : h * 600);
+        auto mined = mine(prev, timestamp, std::move(txs));
         prev = mined.hash();
         blocks.push_back(std::make_shared<domain::message::block const>(std::move(mined)));
     }
@@ -430,9 +440,10 @@ TEST_CASE("batch enforces a two-megabyte configuration's exact two-hundred-kilob
     CHECK(run("fb_2mb_before", sp) == error::success);
 }
 
-TEST_CASE("coinbase height-minus-one locktime breaks at the second short block unless sequence is final",
+TEST_CASE("coinbase height-minus-one templates remain valid across Faster Blocks activation",
           "[batch][faster_blocks][coinbase_locktime]") {
     spec sp;
+    sp.short_timestamps = true;
     sp.len = h_a + 1;
     sp.coinbase_value_override_at = sp.len;
     sp.coinbase_value_override = 5 * coin;
@@ -442,9 +453,63 @@ TEST_CASE("coinbase height-minus-one locktime breaks at the second short block u
     sp.len = h_a + 2;
     sp.coinbase_value_override_at = sp.len;
     sp.coinbase_locktime = sp.len - 1;
-    CHECK(run("fb_cb_lt_second", sp) == error::block_non_final);
+    CHECK(run("fb_cb_lt_second", sp) == error::success);
     sp.coinbase_sequence = 0xffffffff;
     CHECK(run("fb_cb_lt_escape", sp) == error::success);
+}
+
+TEST_CASE("batch coinbase exemption preserves pre-activation height and time finality",
+          "[batch][faster_blocks][coinbase_exemption]") {
+    for (auto const height : {h_a - 1, h_a, h_a + 1, h_a + 2}) {
+        for (auto const locktime : {h_a + 10, base_time(0) + h_a * 600 + 3600}) {
+            for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
+                CAPTURE(height, locktime, sequence);
+                spec sp;
+                sp.short_timestamps = true;
+                sp.len = height;
+                sp.coinbase_value_override_at = height;
+                sp.coinbase_value_override = 5 * coin;
+                sp.coinbase_version = 2;
+                sp.coinbase_locktime = locktime;
+                sp.coinbase_sequence = sequence;
+                auto const expected = height > h_a || sequence == max_uint32
+                    ? error::success : error::block_non_final;
+                CHECK(run("fb_cb_exemption", sp) == expected);
+            }
+        }
+    }
+}
+
+TEST_CASE("coinbase exemption retains both duplicate protections and the reward limit",
+          "[batch][faster_blocks][coinbase_exemption]") {
+    // An exact replay still commits the old BIP34 height. Test a historical
+    // and a post-activation coinbase, and replay on either side of activation.
+    for (auto const replay_height : {h_a, h_a + 2}) {
+        spec replay;
+        replay.short_timestamps = true;
+        replay.len = replay_height;
+        replay.repeat_coinbase_of = replay_height - 1;
+        replay.repeat_coinbase_at = replay_height;
+        CHECK(run("fb_cb_replay", replay) == error::coinbase_height_mismatch);
+    }
+    spec historical;
+    historical.short_timestamps = true;
+    historical.repeat_coinbase_of = h_a;
+    historical.repeat_coinbase_at = h_a + 2;
+    CHECK(run("fb_cb_replay_historical", historical) == error::coinbase_height_mismatch);
+
+    // A historically collidable shape is refused before the independent
+    // reward limit, even though every locktime/sequence combination is final.
+    for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
+        spec shaped;
+        shaped.short_timestamps = true;
+        shaped.coinbase_value_override_at = h_a + 1;
+        shaped.coinbase_value_override = 25 * coin;
+        shaped.coinbase_sequence = sequence;
+        CHECK(run("fb_cb_shape_guard", shaped) == error::coinbase_shape);
+        shaped.coinbase_locktime = max_uint32;
+        CHECK(run("fb_cb_shape_escape", shaped) == error::coinbase_value_limit);
+    }
 }
 
 #endif // KTH_CURRENCY_BCH

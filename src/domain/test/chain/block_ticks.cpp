@@ -488,3 +488,36 @@ TEST_CASE("tick schedules compare by their complete interval history", "[faster_
     CHECK_FALSE(block_ticks::activated_at(100) == block_ticks::activated_at(101));
     CHECK_FALSE(block_ticks{} == block_ticks::activated_at(100));
 }
+
+TEST_CASE("coinbase finality exemption starts strictly after Faster Blocks activation",
+          "[faster_blocks][coinbase_exemption]") {
+    auto const ticks = block_ticks::activated_at(100);
+    constexpr uint32_t time = 1'700'000'000;
+    for (auto const height : {99u, 100u, 101u, 102u}) {
+        for (auto const locktime : {0u, 100u, 101u, time, max_uint32}) {
+            for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
+                for (auto const version : {1u, 2u}) {
+                    CAPTURE(height, locktime, sequence, version);
+                    chain::input::list inputs{chain::input{
+                        chain::output_point{null_hash, chain::point::null_index}, chain::script{}, sequence}};
+                    chain::transaction cb{version, locktime, inputs, chain::output::list{}};
+                    REQUIRE(cb.is_coinbase());
+                    auto const legacy = locktime == 0 || sequence == max_uint32 ||
+                        (locktime < locktime_threshold ? locktime < height : locktime < time);
+                    CHECK(cb.is_final(height, time) == legacy);
+                    CHECK(cb.is_final(ticks, height, time) == (height > 100 || legacy));
+                    // A coinbase has no funding coin: relative locks remain inapplicable.
+                    CHECK_FALSE(cb.is_locked(ticks, height, time));
+                    inputs.front().set_previous_output(chain::output_point{null_hash, 0});
+                    chain::transaction ordinary{version, locktime, std::move(inputs), chain::output::list{}};
+                    REQUIRE_FALSE(ordinary.is_coinbase());
+                    auto const normalized = locktime == 0 || sequence == max_uint32 ||
+                        (locktime < locktime_threshold
+                            ? ticks.height_to_tick(height) > uint64_t(locktime) * 600
+                            : locktime < time);
+                    CHECK(ordinary.is_final(ticks, height, time) == normalized);
+                }
+            }
+        }
+    }
+}

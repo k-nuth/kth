@@ -238,6 +238,13 @@ bool transaction::is_final(size_t block_height, uint32_t block_time) const {
 }
 
 bool transaction::is_final(block_ticks const& ticks, size_t block_height, uint32_t block_time) const {
+#if defined(KTH_CURRENCY_BCH)
+    // The activation block keeps the old rules. Later coinbases have no
+    // absolute timelock, regardless of their locktime and input sequence.
+    if (is_coinbase() && ! ticks.schedule().empty() && block_height > ticks.schedule().front().height) {
+        return true;
+    }
+#endif
     if (locktime_ == 0 || all_inputs_final()) {
         return true;
     }
