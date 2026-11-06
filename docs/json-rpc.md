@@ -78,6 +78,7 @@ counterpart.
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `testmempoolaccept` | — (`kth_chain_transaction_validate` does not apply the pool's first-seen rule) | `test_accept(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
@@ -188,6 +189,27 @@ against), `confirmations`, `value` in BCH, `scriptPubKey` and `tokenData` as
 `decoderawtransaction` shows them, and `coinbase`. With `include_mempool`, an
 output that a mempool transaction spends is `null`, and an output of a mempool
 transaction is returned with `0` confirmations.
+
+## testmempoolaccept
+
+`testmempoolaccept ["<hex>"] [allowhighfees]` answers whether the mempool would
+admit the transaction, without admitting it: it runs the checks
+`sendrawtransaction` runs, through the same admission path, and the transaction
+is neither pooled nor announced. The array holds exactly one transaction; any
+other count is a `-8` error, and hex that does not decode to one transaction is
+a `-22` error. `allowhighfees` is accepted and changes nothing, since the node
+sets no maximum fee.
+
+The answer is a one-element array with `txid` and `allowed`. An allowed
+transaction also has `size`, `vsize` and `fees` (`base` and `effective-feerate`
+per kB, in BCH). `vsize` equals `size`: the node prices signature checks on
+their own (`node.sigop_fee_satoshis`), not through a weighted size. A refused
+one has `reject-reason`: `missing-inputs` when a prevout is neither unspent in
+the chain nor an output of a pooled transaction, `18: txn-already-in-mempool`
+and `18: txn-mempool-conflict` (BIP61 code 18, duplicate) when the pool already
+holds it or already holds a spend of one of its prevouts, each with the node's
+own message as `reject-details`, and otherwise the node's own reason.
+
 ## Mining: getblocktemplate
 
 `getblocktemplate [template_request]` returns the next-block template with its

@@ -87,6 +87,23 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
 
+// What testmempoolaccept found for one transaction.
+struct mempool_accept_result {
+    hash_digest txid;
+    bool allowed = false;
+    uint64_t size = 0;           // serialized bytes, when allowed
+    uint64_t fee = 0;            // satoshis, when allowed
+    std::string reject_reason;   // when refused
+    std::string reject_details;  // when refused, if there is more to say
+};
+
+// Serialize the testmempoolaccept result: a one-element array. An allowed
+// transaction carries size, vsize (the same number: the node prices signature
+// checks on their own, not through a weighted size) and fees, base and
+// effective-feerate per kB, in BCH. A refused one carries reject-reason and,
+// when set, reject-details.
+std::string render_mempool_accept(mempool_accept_result const& result);
+
 // Owned records from the header index; RPC only renders their wire format.
 using chain_tip = blockchain::header_index::chain_tip;
 

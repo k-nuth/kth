@@ -22,6 +22,7 @@
 
 
 #include <asio/awaitable.hpp>
+#include <asio/error.hpp>
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -903,6 +904,115 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// testmempoolaccept [rawtx] (allowhighfees) -> whether the mempool would admit
+// the transaction. It runs the checks sendrawtransaction runs, through the
+// same admission path, but the transaction is neither added to the pool nor
+// announced. One transaction per call. allowhighfees is accepted and changes
+// nothing: the node sets no maximum fee. A refusal names missing inputs, a
+// transaction the pool already holds, or a conflict with a pooled spend, the
+// last two with BIP61's code 18 (duplicate); any other refusal is the node's
+// own reason.
+// C-API counterpart: none yet (kth_chain_transaction_validate does not apply
+// the pool's first-seen rule).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+test_mempool_accept(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "testmempoolaccept requires [[rawtx]] and an optional allowhighfees boolean"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    std::string rawtx;
+    size_t transactions = 0;
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::value value;
+        if (element.get(value) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        if (count == 0) {
+            simdjson::ondemand::array rawtxs;
+            if (value.get_array().get(rawtxs) != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            for (auto entry : rawtxs) {
+                std::string_view text;
+                if (entry.get_string().get(text) != simdjson::SUCCESS) {
+                    co_return invalid_params();
+                }
+                if (transactions++ == 0) {
+                    rawtx.assign(text);
+                }
+            }
+        } else if (count == 1) {
+            simdjson::ondemand::json_type type;
+            if (value.type().get(type) != simdjson::SUCCESS ||
+                (type != simdjson::ondemand::json_type::boolean &&
+                 type != simdjson::ondemand::json_type::null)) {
+                co_return invalid_params();
+            }
+        } else {
+            co_return invalid_params();
+        }
+        ++count;
+    }
+    if (count == 0) {
+        co_return invalid_params();
+    }
+    if (transactions != 1) {
+        co_return kth::fail(make_error(error_code::invalid_parameter,
+            "testmempoolaccept takes exactly one transaction"));
+    }
+
+    auto const raw = decode_base16(rawtx);
+    if ( ! raw) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx || ! reader.is_exhausted()) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not a decodable transaction"));
+    }
+
+    auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
+    auto const tested = co_await ctx.chain.test_accept(pooled);
+
+    mempool_accept_result result{.txid = pooled->hash(), .allowed = tested.has_value()};
+    if (tested) {
+        result.size = pooled->serialized_size(true);
+        // Validation filled in the prevouts, so the fee is known now.
+        result.fee = pooled->fees();
+        co_return render_mempool_accept(result);
+    }
+
+    auto const ec = tested.error();
+    // The node could not answer, which says nothing about the transaction.
+    if (ec == error::service_stopped || ec == error::operation_failed ||
+        ec == ::asio::error::operation_aborted) {
+        co_return kth::fail(make_error(error_code::internal_error, ec.message()));
+    }
+    if (ec == error::missing_previous_output) {
+        result.reject_reason = "missing-inputs";
+    } else if (ec == error::duplicate_transaction) {
+        result.reject_reason = "18: txn-already-in-mempool";
+        result.reject_details = ec.message();
+    } else if (ec == error::double_spend_mempool) {
+        result.reject_reason = "18: txn-mempool-conflict";
+        result.reject_details = ec.message();
+    } else {
+        result.reject_reason = ec.message();
+    }
+    co_return render_mempool_accept(result);
+}
+
 // validateaddress <address> -> whether it is a P2PKH or P2SH address of this
 // node's network and, if it is, its cashaddr form and the scriptPubKey it pays.
 // C-API counterpart: kth_wallet_payment_address_parse_from.
@@ -1325,6 +1435,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("testmempoolaccept", test_mempool_accept);
     d.add("validateaddress", validate_address);
     d.add("decoderawtransaction", decode_raw_transaction);
     d.add("gettxout", get_tx_out);
