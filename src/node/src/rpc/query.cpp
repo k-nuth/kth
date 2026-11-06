@@ -8,8 +8,6 @@
 #include <charconv>
 #include <system_error>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -290,13 +288,6 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
     w.end_array();
 }
 
-// 256-bit value as a 64-char, zero-padded, big-endian hex string (chainwork).
-std::string work_to_hex(uint256_t const& value) {
-    std::ostringstream os;
-    os << std::hex << std::setfill('0') << std::setw(64) << value;
-    return os.str();
-}
-
 } // namespace
 
 std::string render_transaction(domain::chain::transaction const& tx,
@@ -341,9 +332,6 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags) {
     auto const& header = block.header();
-    std::ostringstream version_hex;
-    version_hex << std::hex << std::setfill('0') << std::setw(8) << header.version();
-
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(block.hash()));
@@ -359,7 +347,7 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
         w.field("next_target_time", location.progress->next_target_time);
     }
     w.field("version", static_cast<std::int64_t>(header.version()));
-    w.field("versionHex", version_hex.str());
+    w.field("versionHex", fmt::format("{:08x}", header.version()));
     w.field("merkleroot", encode_hash(header.merkle()));
     w.key("tx").begin_array();
     for (auto const& tx : block.transactions()) {
@@ -379,7 +367,7 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
     w.field("bits", encode_base16(header.bits()));
     w.field("difficulty", blockchain::difficulty_from_bits(header.bits()));
     if (location.chain_work) {
-        w.field("chainwork", work_to_hex(*location.chain_work));
+        w.field("chainwork", encode_hash(*location.chain_work));
     }
     w.field("nTx", static_cast<std::uint64_t>(block.transactions().size()));
     if (header.previous_block_hash() != null_hash) {
