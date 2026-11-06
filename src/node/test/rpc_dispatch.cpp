@@ -9,6 +9,7 @@
 #include "sync_harness.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -852,6 +853,56 @@ TEST_CASE("getnetworkinfo reads the P2P node and rejects arguments", "[rpc dispa
     for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
         CAPTURE(params);
         CHECK(request(params) == node::rpc::build_error("42", -32602, "getnetworkinfo takes no arguments"));
+    }
+}
+
+TEST_CASE("uptime dispatch counts whole seconds from the node's start", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_uptime");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    // A node that started a minute and a half ago.
+    context.started = std::chrono::steady_clock::now() - std::chrono::seconds(90);
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string_view params) {
+        ::asio::io_context io;
+        auto const body = params.empty()
+            ? std::string(R"({"method":"uptime","id":43})")
+            : std::string(R"({"method":"uptime","params":)") + std::string(params) + R"(,"id":43})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto seconds = [](std::string const& reply) {
+        INFO(reply);
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(reply);
+        simdjson::ondemand::document document;
+        REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+        int64_t value = -1;
+        REQUIRE(document["result"].get_int64().get(value) == simdjson::SUCCESS);
+        return value;
+    };
+
+    auto const first = seconds(request("[]"));
+    CHECK(first >= 90);
+    // Generous, so a slow runner cannot fail it, and still far from a count
+    // taken from some other origin such as the steady clock's epoch.
+    CHECK(first < 90 + 600);
+    // Omitted params are the same request, and the count never goes back.
+    auto const second = seconds(request(""));
+    CHECK(second >= first);
+    CHECK(seconds(request("[ ]")) >= second);
+
+    // A start the clock has not reached yet answers 0, never a negative count.
+    context.started = std::chrono::steady_clock::now() + std::chrono::hours(1);
+    CHECK(request("[]") == node::rpc::build_success("43", "0"));
+
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("43", -32602, "uptime takes no arguments"));
     }
 }
 

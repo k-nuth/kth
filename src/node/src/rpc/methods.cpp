@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <array>
+#include <chrono>
 #include <expected>
 #include <limits>
 #include <memory>
@@ -1148,6 +1149,38 @@ get_network_info(method_context& ctx, request const& req) {
         .byte_fee_satoshis = ctx.chain.chain_settings().byte_fee_satoshis});
 }
 
+// uptime -> the whole seconds since the node started. The steady clock is
+// used, so a change of the system clock cannot make the answer jump or go
+// backwards. Fulcrum calls it to probe the node.
+// C-API counterpart: none (it describes this server's process).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+uptime(method_context& ctx, request const& req) {
+    // Omitted parameters and an empty array are the only accepted forms.
+    if ( ! req.params.empty()) {
+        auto const invalid_params = [] {
+            return kth::fail(make_error(error_code::invalid_params,
+                "uptime takes no arguments"));
+        };
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        for (auto element : args) {
+            (void)element;
+            co_return invalid_params();
+        }
+    }
+    auto const elapsed = std::chrono::steady_clock::now() - ctx.started;
+    auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    writer w;
+    w.value(uint64_t(seconds > 0 ? seconds : 0));
+    co_return w.str();
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool [verbose=false] -> the txids currently in the mempool; with
@@ -1339,6 +1372,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmininginfo", get_mining_info);
     d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
+    d.add("uptime", uptime);
 
     // Help MUST be the last method registered: capture the completed catalog,
     // including its own name, before any request can be served.
