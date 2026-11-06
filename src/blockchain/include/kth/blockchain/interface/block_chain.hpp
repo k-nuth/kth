@@ -626,6 +626,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     chain_view_ptr chain_view() const;
 
+    /// Commit an already validated transaction only against the publication it
+    /// was validated for. No suspension or script work under the mempool lock.
+    [[nodiscard]]
+    code commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected);
+
     /// Build the view for `connected_tip_height` and publish it.
     ///
     /// `connected_tip_height` is the last block whose state — the UTXO delta,
