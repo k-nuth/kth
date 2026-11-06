@@ -8,7 +8,6 @@
 #include <memory>
 #include <system_error>
 #include <asio/experimental/channel_select.hpp>
-#include <asio/experimental/concurrent_channel.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::blockchain {
@@ -38,7 +37,10 @@ struct block_submission_result {
         : error(ec), validity(state), duplicate(repeated) {}
 };
 
-using block_submission_reply = ::asio::experimental::concurrent_channel<void(std::error_code, block_submission_result)>;
+// Executor-free, like the submission endpoint. The owner may hold the reply
+// after the submitter is gone, together with its executor; a channel bound to
+// that executor would reach into the destroyed context when the owner drops it.
+using block_submission_reply = ::asio::experimental::select_channel<block_submission_result>;
 
 // The admission owner answers once, after rejection or connected publication.
 // An abandoned waiter does not cancel consensus work already admitted.

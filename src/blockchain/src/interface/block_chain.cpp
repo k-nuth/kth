@@ -603,7 +603,7 @@ bool block_chain::stop() {
         block_submissions_->close();
         std::error_code ec;
         while (auto pending = block_submissions_->try_receive(ec)) {
-            pending->reply->try_send(std::error_code{}, code(error::service_stopped));
+            pending->reply->try_send(block_submission_result(error::service_stopped));
         }
     }
     // concurrent_channel is the operation owner and supports thread-safe close.
@@ -661,20 +661,32 @@ namespace {
         co_return error::operation_failed;
     }
     auto const executor = co_await ::asio::this_coro::executor;
-    auto reply = std::make_shared<block_submission_reply>(executor, 1);
+    auto reply = std::make_shared<block_submission_reply>(1);
     ::asio::experimental::channel_select_options options;
     options.nonblocking = true;
-    auto [admission_error, selected] = co_await ::asio::experimental::make_select(
+    // Named, then bound by reference, because of a GCC 16 bug: at -O1 and
+    // above it never destroys the object behind a by-value structured binding
+    // that is still in scope at a later suspension, and this result owns the
+    // submission endpoint. Once GCC fixes it, the binding can take the
+    // co_await result directly again.
+    auto admission = co_await ::asio::experimental::make_select(
         ::asio::experimental::send(*submissions, block_submission{std::move(block), reply})
     ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto const& [admission_error, selected] = admission;
     (void)selected;
     if (admission_error) {
         // Refusal retains no work: the caller owns retry under pressure.
         co_return admission_error == ::asio::error::broken_pipe
             ? code(error::service_stopped) : code(error::operation_failed);
     }
-    auto [ec, result] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
-    co_return ec ? block_submission_result(error::service_stopped) : result;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*reply)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, answered] = completion;
+    if (ec) {
+        co_return block_submission_result(error::service_stopped);
+    }
+    co_return std::move(*answered.value<0>());
 }
 
 } // namespace
