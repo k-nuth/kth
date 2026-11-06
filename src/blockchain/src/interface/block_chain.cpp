@@ -551,6 +551,7 @@ bool block_chain::start(uint32_t disk_magic) {
 
 bool block_chain::stop() {
     stopped_ = true;
+    reorg_barrier_events_.close();
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
@@ -938,6 +939,13 @@ code block_chain::replace_headers_from(domain::chain::header::list const& header
     }
 
     return database_.replace_headers_from(headers, start_height);
+}
+
+code block_chain::truncate_headers_after(uint32_t height) {
+    if (stopped()) {
+        return error::service_stopped;
+    }
+    return database_.truncate_headers_after(height);
 }
 
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {

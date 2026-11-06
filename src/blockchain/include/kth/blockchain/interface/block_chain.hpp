@@ -17,6 +17,8 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <variant>
+#include <asio/experimental/channel_select.hpp>
 
 #include <kth/infrastructure/utility/atomic.hpp>
 
@@ -180,6 +182,9 @@ struct KB_API block_chain {
     /// (organize_headers_batch above is not guarded, and so fails to link
     /// rather than to compile in such a build — pre-existing, left alone here.)
     code replace_headers_from(domain::chain::header::list const& headers, size_t start_height);
+
+    /// Called by the coordinator with writers parked; preserve the retained row.
+    [[nodiscard]] code truncate_headers_after(uint32_t height);
 #endif // ! defined(KTH_DB_READONLY)
 
     /// Open the exclusive window over the UTXO store, for ONE logical operation.
@@ -508,15 +513,32 @@ struct KB_API block_chain {
     // deregisters when it exits, so a retired task neither blocks the barrier
     // forever nor counts as parked.
 
-    void register_reorg_participant() { reorg_registered_.fetch_add(1, std::memory_order_seq_cst); }
-    void unregister_reorg_participant() { reorg_registered_.fetch_sub(1, std::memory_order_seq_cst); }
+    void register_reorg_participant() {
+        reorg_registered_.fetch_add(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+    void unregister_reorg_participant() {
+        reorg_registered_.fetch_sub(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
 
     void request_reorg_pause(bool paused) { reorg_pause_.store(paused, std::memory_order_seq_cst); }
     [[nodiscard]] bool reorg_pause_requested() const { return reorg_pause_.load(std::memory_order_seq_cst); }
 
     // Called by a registered task when it parks at / leaves the barrier.
-    void enter_reorg_barrier() { reorg_parked_.fetch_add(1, std::memory_order_seq_cst); }
-    void leave_reorg_barrier() { reorg_parked_.fetch_sub(1, std::memory_order_seq_cst); }
+    void enter_reorg_barrier() {
+        reorg_parked_.fetch_add(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+    void leave_reorg_barrier() {
+        reorg_parked_.fetch_sub(1, std::memory_order_seq_cst);
+        (void)reorg_barrier_events_.try_send(std::monostate{});
+    }
+
+    /// Coordinator-only wake source. A queued notification retains the debt
+    /// to inspect the existing barrier counters; a full channel loses no wake.
+    [[nodiscard]] ::asio::experimental::select_channel<std::monostate>&
+    reorg_barrier_events() noexcept { return reorg_barrier_events_; }
 
     // Bumped by each completed switch. Work that was requested against the old
     // chain carries the previous generation; the storage path drops it instead of
@@ -1082,6 +1104,7 @@ private:
     std::atomic<bool> reorg_pause_{false};
     std::atomic<size_t> reorg_parked_{0};
     std::atomic<size_t> reorg_registered_{0};
+    ::asio::experimental::select_channel<std::monostate> reorg_barrier_events_{1, 1};
     settings const& settings_;
     time_t const notify_limit_seconds_;
 

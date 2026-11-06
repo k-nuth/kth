@@ -312,6 +312,7 @@ if (ENABLE_TEST)
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
+        test/header_organizer_failed.cpp
         test/block_entry.cpp
         test/block_pool.cpp
         test/branch.cpp
@@ -334,6 +335,7 @@ if (ENABLE_TEST)
         test/batch_sigchecks_activation.cpp
         test/batch_activation_boundary.cpp
         test/batch_structure.cpp
+        test/batch_rejection_attribution.cpp
         test/faster_blocks_batch.cpp
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp

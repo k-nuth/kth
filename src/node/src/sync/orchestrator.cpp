@@ -10,6 +10,8 @@
 #include <kth/node/detail/header_walk_tasks.hpp>
 
 #include <algorithm>
+#include <iterator>
+#include <kth/infrastructure/formats/base_16.hpp>
 
 #include <kth/node/sync/reorg.hpp>
 
@@ -576,6 +578,11 @@ static
     sync_coordinator_event_channel coordinator_events(executor, 100);
     utxo_build_progress_channel utxo_progress(executor, 1);
 
+    // The builder's contextual refusal and the coordinator's answer to it.
+    // Capacity one each: one refusal is outstanding at most (messages.hpp).
+    block_rejection_channel utxo_rejections(executor, 1);
+    block_rejection_ack_channel rejection_ack(executor, 1);
+
     // =========================================================================
     // TASKS - All independent, communicate only via channels
     // =========================================================================
@@ -844,6 +851,12 @@ static
         stored_chunks.close();
         utxo_progress.cancel();
         utxo_progress.close();
+        // The builder may be parked waiting for an answer to a refusal; a
+        // closed ack is the answer that ends it.
+        utxo_rejections.cancel();
+        utxo_rejections.close();
+        rejection_ack.cancel();
+        rejection_ack.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1050,10 +1063,14 @@ static
         while (true) {
             auto [ec, progress] = co_await utxo_progress.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) co_return;
+            if (ec) {
+                co_return;
+            }
             auto [send_ec] = co_await coordinator_events.async_send(
                 std::error_code{}, progress, ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) co_return;
+            if (send_ec) {
+                co_return;
+            }
         }
     });
 
@@ -1065,8 +1082,27 @@ static
         network_type,
         [&network]() { return network.stopped(); },
         on_fatal,
-        &utxo_progress
+        &utxo_progress,
+        &utxo_rejections,
+        &rejection_ack
     ));
+
+    // Bridge: utxo_rejections -> coordinator_events. Awaited: a refusal
+    // dropped is a builder parked forever and a requester never answered.
+    all_tasks.spawn("coordinator_rejection_bridge", [&]() -> ::asio::awaitable<void> {
+        while (true) {
+            auto [ec, rejected] = co_await utxo_rejections.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return;
+            }
+            auto [send_ec] = co_await coordinator_events.async_send(
+                std::error_code{}, rejected, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                co_return;
+            }
+        }
+    });
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
     all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
@@ -1263,6 +1299,28 @@ static
         auto try_start_slow_sync = [&](body_range_trigger trigger) -> ::asio::awaitable<void> {
             record(co_await open_body_range_if_owed(
                 deps, range_log, trigger, blocks_synced_to, headers_synced_to, slow_sync_end));
+        };
+
+        boost::unordered_flat_set<hash_digest> rejected_hashes;
+
+        // Whether a branch carries a block the builder refused this run.
+        auto branch_rejected = [&](blockchain::header_index::index_t head, uint32_t fork_height) {
+            if (rejected_hashes.empty()) {
+                return false;
+            }
+            auto const& index = organizer.index();
+            for (auto idx = head;
+                 idx != blockchain::header_index::null_index && index.get_height(idx) > int32_t(fork_height);
+                 idx = index.get_ancestor(idx, index.get_height(idx) - 1)) {
+                if (rejected_hashes.contains(index.get_hash(idx))) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        auto const truncate_active = [&chain](uint32_t retained_height) {
+            return chain.truncate_headers_after(retained_height);
         };
 
         // Whether the chain already holds a hash. An announcement of something we
@@ -1544,6 +1602,14 @@ static
                     auto const fork_height = uint32_t(result->reorg_fork_height);
                     spdlog::warn("[sync_coordinator] Reorg requested: fork at height {}", fork_height);
 
+                    if (branch_rejected(result->reorg_branch_head, fork_height)) {
+                        // The builder already judged a body on this branch and
+                        // refused it. Switching back would only judge it again.
+                        spdlog::warn("[sync_coordinator] Reorg refused: the branch carries a block "
+                            "rejected this run");
+                        continue;
+                    }
+
                     auto const reorg = co_await execute_reorg(
                         chain, organizer, result->reorg_branch_head, fork_height,
                         [&network] { return network.stopped(); },
@@ -1580,6 +1646,16 @@ static
                         // execute_reorg reset the shared storage cursor while
                         // every writer was parked. Repeating that reset here
                         // could overwrite progress storage already published.
+
+                        // A result buffered above the fork describes a body of
+                        // the branch just left. Left in place, the next advance
+                        // through its height would count it as a body the new
+                        // branch holds — which it does not — and move the
+                        // counter past a block nothing will download.
+                        for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
+                            it = it->second.start_height + it->second.block_count - 1 > blocks_synced_to
+                                ? pending_chunks.erase(it) : std::next(it);
+                        }
 
                         // HERE, before any branching: the branches below that do
                         // not re-drive the download are exactly the ones that
@@ -1855,6 +1931,47 @@ static
                 continue;
             }
 
+            if (auto* rejected = std::get_if<block_rejected>(&event)) {
+                // The builder's verdict on a body, whoever supplied it, and the
+                // builder is parked until this answers. Remembered for the run
+                // first, so no switch brings the same body back for judgement.
+                spdlog::warn("[sync_coordinator] The builder rejected block {} at height {}: {}",
+                    encode_hash(rejected->hash), rejected->height, rejected->reason.message());
+                rejected_hashes.insert(rejected->hash);
+
+                auto const outcome = co_await execute_body_rejection(
+                    chain, organizer, rejected->height, rejected->hash,
+                    network.stop_token(), truncate_active,
+                    reorg_pipeline{&block_storage_input, contiguous_height.get()});
+
+                if (outcome.fatal) {
+                    (void)rejection_ack.try_send(std::error_code{});
+                    on_fatal("the persisted chain could not be stepped off a rejected block");
+                    break;
+                }
+
+                if (outcome.stepped) {
+                    headers_synced_to = uint32_t(std::max<int32_t>(0, organizer.index().active_tip_height()));
+                    if (blocks_synced_to >= rejected->height) {
+                        blocks_synced_to = rejected->height - 1;
+                    }
+                    for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
+                        it = it->second.start_height + it->second.block_count - 1 >= rejected->height
+                            ? pending_chunks.erase(it) : std::next(it);
+                    }
+                    slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
+                }
+
+                // Answered after the chain and the cursors moved: the builder
+                // re-derives its own from them when it wakes.
+                (void)rejection_ack.try_send(std::error_code{});
+
+                if (outcome.stepped) {
+                    co_await apply(walk.restart(headers_synced_to), "body rejected");
+                }
+                continue;
+            }
+
             if (auto* result = std::get_if<chunk_validated>(&event)) {
                 if (!result->result) {
                     // Buffer the chunk result (chunks may arrive out of order)
@@ -1941,6 +2058,11 @@ static
         body_retry.cancel();
         utxo_progress.cancel();
         utxo_progress.close();
+        // A builder parked on a refusal is woken by the closed ack.
+        utxo_rejections.cancel();
+        utxo_rejections.close();
+        rejection_ack.cancel();
+        rejection_ack.close();
         coordinator_events.cancel();
         coordinator_events.close();
         spdlog::info("[sync_coordinator] Task ended");

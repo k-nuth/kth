@@ -245,6 +245,29 @@ using block_storage_input_channel = concurrent_channel<block_storage_input>;
 using stop_channel = concurrent_event_channel;
 
 // -----------------------------------------------------------------------------
+// Contextual rejection by the builder
+// -----------------------------------------------------------------------------
+
+// The builder refused the block at `height` with hash `hash`: the batch it
+// belonged to failed full validation and the validator attributed the failure
+// to that block. Nothing of the batch was applied.
+//
+// One of these is outstanding at most. The builder sends it and then parks at
+// the reorg barrier until the coordinator answers on the ack channel, so a
+// second one cannot be produced before the first is consumed, and a capacity
+// of one cannot refuse it.
+struct block_rejected {
+    uint32_t height;
+    hash_digest hash;
+    code reason;
+};
+
+using block_rejection_channel = concurrent_channel<block_rejected>;
+// The coordinator's answer: the chain has been moved off the rejected block and
+// the cursors re-derived; the builder may go on. Closing it is the shutdown.
+using block_rejection_ack_channel = concurrent_event_channel;
+
+// -----------------------------------------------------------------------------
 // Sync coordinator messages (unified input channel)
 // -----------------------------------------------------------------------------
 
@@ -323,7 +346,8 @@ using sync_coordinator_event = std::variant<
     block_validated,
     chunk_validated,
     utxo_build_advanced,
-    body_range_retry
+    body_range_retry,
+    block_rejected
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;
