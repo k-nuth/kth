@@ -9,6 +9,7 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/domain/chain/block_ticks.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -165,6 +166,15 @@ kth_bool_t kth_domain_chain_block_is_internal_double_spend(kth_block_const_t sel
 KTH_EXPORT
 kth_bool_t kth_domain_chain_block_is_valid_merkle_root(kth_block_const_t self);
 
+KTH_EXPORT
+kth_bool_t kth_domain_chain_block_is_final_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height, uint32_t block_time);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_block_is_valid_coinbase_claim_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_block_has_forbidden_coinbase_shape(kth_block_const_t self);
+
 
 // Operations
 
@@ -176,6 +186,9 @@ kth_size_t kth_domain_chain_block_signature_operations(kth_block_const_t self, k
 
 KTH_EXPORT
 kth_size_t kth_domain_chain_block_total_inputs(kth_block_const_t self, kth_bool_t with_coinbase);
+
+KTH_EXPORT
+uint64_t kth_domain_chain_block_reward_with_ticks(kth_block_const_t self, kth_block_ticks_const_t ticks, kth_size_t height);
 
 
 // Static utilities
@@ -189,6 +202,9 @@ kth_u64_list_mut_t kth_domain_chain_block_locator_heights(kth_size_t top);
 
 KTH_EXPORT
 uint64_t kth_domain_chain_block_subsidy(kth_size_t height, kth_bool_t retarget);
+
+KTH_EXPORT
+uint64_t kth_domain_chain_block_subsidy_with_ticks(kth_block_ticks_const_t ticks, kth_size_t height, kth_bool_t retarget);
 
 #ifdef __cplusplus
 } // extern "C"

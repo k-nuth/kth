@@ -412,6 +412,9 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips) {
     for (auto const& tip : tips) {
         w.begin_object();
         w.field("height", uint64_t(tip.height));
+#if defined(KTH_CURRENCY_BCH)
+        w.field("ticks", tip.ticks);
+#endif
         w.field("hash", encode_hash(tip.hash));
         w.field("branchlen", uint64_t(tip.branch_length));
         w.field("status", tip_status_name(tip.status));
@@ -423,11 +426,13 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips) {
 
 std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
                           domain::chain::output const& output, bool coinbase,
-                          domain::config::network net, domain::script_flags_t flags) {
+                          domain::config::network net, domain::script_flags_t flags,
+                          std::optional<int64_t> confirmations_ticks) {
     writer w;
     w.begin_object();
     w.field("bestblock", encode_hash(best_block));
     w.field("confirmations", confirmations);
+    if (confirmations_ticks) w.field("confirmations_ticks", *confirmations_ticks);
     w.field_raw("value", satoshi_to_bitcoin(output.value()));
     write_script_pubkey(w, output.script(), net, flags);
     if (auto const& token = output.token_data()) {
@@ -539,11 +544,13 @@ std::string header_to_hex(domain::chain::header const& header) {
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
-                                std::optional<chain_progress> progress) {
+                                std::optional<chain_progress> progress,
+                                std::optional<int64_t> confirmations_ticks) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
     w.field("confirmations", confirmations);
+    if (confirmations_ticks) w.field("confirmations_ticks", *confirmations_ticks);
     w.field("height", uint64_t(height));
     if (progress) {
         w.field("ticks", progress->ticks);

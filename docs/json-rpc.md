@@ -92,7 +92,7 @@ counterpart.
 | `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
-| `submitblocklight` | `kth_chain_sync_organize_block` / `kth_chain_async_organize_block` | `organize(block)` |
+| `submitblocklight` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
 | `help` | — (describes this server) | `dispatcher::methods()` |
 
 Each async chain reader is exposed in both a blocking (`kth_chain_sync_*`) and a
@@ -214,6 +214,27 @@ size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
 BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
 operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
+
+## Blocks and transactions
+
+`getblock "<hash>"` reads the block from the flat-file block store, through the
+header index, and returns it as hex; a side-branch block the node holds is
+returned too. `getrawtransaction "<txid>"` answers for a mempool transaction.
+Confirmed transactions are not indexed by txid (#491), so for one of those pass
+the block hash as the third parameter: `getrawtransaction "<txid>" false
+"<blockhash>"`. A block or transaction the node does not have is error `-5`.
+An empty optional block hash is treated as omitted. KTH currently has neither a
+confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
+therefore require the block hash. Verbose transaction responses are tracked in
+#789 rather than silently returning hex for a verbose request.
+`fetch_block` reads the block through its header-index record on the chain's
+pool, so the RPC executor is not held by disk I/O. The stored record must parse
+to the end, hash to the requested block and match its merkle root. Missing
+indexed data remains `-5`; a damaged or unreadable stored record is an internal
+error, including through `getrawtransaction` with an explicit block hash. Until
+verbose forms arrive in #789, these endpoints accept only raw verbosity (`false`
+or `0`, with null using the default) and reject unsupported verbosity, wrong
+types and extra arguments.
 
 ## Mining: getblocktemplatelight
 

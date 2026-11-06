@@ -12,10 +12,16 @@
 
 #include <asio/co_spawn.hpp>
 #include <asio/use_future.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+#include <asio/bind_cancellation_slot.hpp>
+#include <asio/cancellation_signal.hpp>
+#include <kth/blockchain/populate/populate_base.hpp>
 
 #include <kth/blockchain/pools/mempool.hpp>
 
 #include "sync_harness.hpp"
+#include "child_process_harness.hpp"
 #if defined(KTH_CURRENCY_BCH)
 #include "../../blockchain/test/transaction_size_fixture.hpp"
 #include <kth/blockchain/validate/batch_validate.hpp>
@@ -396,3 +402,172 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
 }
 
 #endif // KTH_CURRENCY_BCH
+
+// A separate executable process lets the existing watchdog report a deadlock
+// without abandoning any threads or forking a process with live Asio workers.
+TEST_CASE("admission child: a suspended validation leaves the caller responsive", "[.admission-child]") {
+    bool const cancel_waiter = GENERATE(false, true);
+    bool const validate_only_waiter = GENERATE(false, true);
+    watchdog guard(std::chrono::seconds(30), "concurrent transaction admission");
+    {
+        test::chain_fixture fixture("admission_deadlock");
+        std::printf("ADMISSION-DIR:%s\n", fixture.dir().string().c_str());
+        std::fflush(stdout);
+        fixture.settings().cores = 1;
+        REQUIRE(fixture.created());
+        REQUIRE(fixture.start());
+        auto& chain = fixture.chain();
+        std::promise<void> worker_entered, release_worker;
+        auto released = release_worker.get_future().share();
+        ::asio::post(chain.executor(), [&] { worker_entered.set_value(); released.wait(); });
+        worker_entered.get_future().get();
+        auto make_tx = [](uint8_t tag) {
+            hash_digest hash{}; hash[0] = tag;
+            domain::chain::input::list inputs{domain::chain::input{
+                domain::chain::output_point{hash, 0}, domain::chain::script{}, 0xffffffff}};
+            domain::chain::output::list outputs{domain::chain::output{1000,
+                domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern(short_hash{})), std::nullopt}};
+            return std::make_shared<domain::message::transaction>(1, 0, std::move(inputs), std::move(outputs));
+        };
+        ::asio::io_context caller;
+        auto first = ::asio::co_spawn(caller, chain.organize(make_tx(1)), ::asio::use_future);
+        caller.poll_one();
+        bool const suspended = first.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        ::asio::cancellation_signal cancel;
+        auto second = ::asio::co_spawn(caller,
+            validate_only_waiter ? chain.transaction_validate(make_tx(2)) : chain.organize(make_tx(2)),
+            ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
+        if (cancel_waiter) ::asio::post(caller, [&] { cancel.emit(::asio::cancellation_type::terminal); });
+        auto third = ::asio::co_spawn(caller, chain.transaction_validate(make_tx(3)), ::asio::use_future);
+        bool heartbeat = false;
+        ::asio::post(caller, [&] { heartbeat = true; });
+        // The second admission is queued before the first one's completion.
+        release_worker.set_value();
+        caller.restart();
+        caller.run();
+        CHECK(suspended);
+        CHECK(heartbeat);
+        CHECK(first.get() == error::missing_previous_output);
+        auto const second_result = second.get();
+        if (cancel_waiter) {
+            CHECK(second_result == ::asio::error::operation_aborted);
+            CHECK(second_result != error::service_stopped);
+        } else {
+            CHECK(second_result == error::missing_previous_output);
+        }
+        CHECK(third.get() == error::missing_previous_output);
+    }
+    announce_completion();
+}
+
+TEST_CASE("concurrent admission leaves a single caller executor responsive", "[mempool][admission][deadlock]") {
+    auto const child = run_child("admission child: a suspended validation leaves the caller responsive");
+    // Clean a fixture left behind by the intentionally killed RED control.
+    size_t offset = 0;
+    while ((offset = child.out.find("ADMISSION-DIR:", offset)) != std::string::npos) {
+        offset += std::string_view("ADMISSION-DIR:").size();
+        auto const end = child.out.find('\n', offset);
+        std::filesystem::path const dir(child.out.substr(offset, end - offset));
+        if (dir.parent_path() == std::filesystem::temp_directory_path() &&
+            dir.filename().string().starts_with("kth_reorg_e2e_admission_deadlock_")) {
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }
+    }
+    require_clean_child(child);
+}
+
+TEST_CASE("a prevout newer than the validation height is not a storage fault", "[mempool][admission][snapshot]") {
+    admission_chain built("newer_prevout", trunk_len);
+    auto& chain = built.chain();
+    auto const& parent = built.trunk.back().transactions().front();
+    domain::chain::output_point point{parent.hash(), 0};
+    auto const bounded = chain.get_utxo(point, trunk_len - 1);
+    REQUIRE_FALSE(bounded);
+    REQUIRE(bounded.error() == database::result_code::key_not_found);
+    struct probe : blockchain::populate_base {
+        probe(executor_type executor, size_t threads, blockchain::block_chain const& chain)
+            : populate_base(std::move(executor), threads, chain) {}
+        using blockchain::populate_base::populate_prevout;
+    } populate(chain.executor(), 1, chain);
+    CHECK(populate.populate_prevout(trunk_len - 1, point, true, 0) == error::success);
+    CHECK_FALSE(point.validation.cache.is_valid());
+    CHECK(populate.populate_prevout(trunk_len, point, true, 0) == error::success);
+    CHECK(point.validation.cache.is_valid());
+    // A real operational failure must still fail closed, not become absence.
+    {
+        auto window = chain.begin_utxo_write();
+        REQUIRE(window);
+        window->mark_mutating();
+    }
+    auto const failed_read = chain.get_utxo(point, trunk_len);
+    REQUIRE_FALSE(failed_read);
+    REQUIRE(failed_read.error() == database::result_code::recovery_required);
+    CHECK(populate.populate_prevout(trunk_len, point, true, 0) == error::operation_failed);
+}
+
+TEST_CASE("admission refuses an obsolete chain publication", "[mempool][admission][snapshot]") {
+    admission_chain built("commit_snapshot", trunk_len);
+    auto& chain = built.chain();
+    auto const old = chain.chain_view();
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    REQUIRE(run_on_chain(chain, [&chain, tx] { return chain.transaction_validate(tx); }) == error::success);
+    auto const next = test::mine_block(built.trunk.back().hash(), trunk_len + 1,
+        built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+    std::vector<domain::chain::block> blocks{next};
+    REQUIRE(built.fixture.organizer().add_headers(headers_of(blocks)).headers_added == 1);
+    persist_headers(built.fixture, blocks, trunk_len + 1);
+    connect_bodies(built.fixture, blocks, trunk_len + 1);
+    auto const entry = blockchain::mempool_entry{tx, fee, uint32_t(tx->serialized_size(true)), 1, 1};
+    CHECK(chain.commit_validated_transaction(entry, old) == error::stale_chain);
+    CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
+    auto const current = chain.chain_view();
+    REQUIRE(chain.begin_transition());
+    CHECK(chain.commit_validated_transaction(entry, current) == error::stale_chain);
+    chain.end_transition();
+    CHECK(chain.commit_validated_transaction(entry, current) == error::success);
+    CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+TEST_CASE("admission revalidates once when a block arrives during validation", "[mempool][admission][snapshot]") {
+    bool const invalidate_retry = GENERATE(false, true);
+    admission_chain built("commit_retry", trunk_len);
+    auto& chain = built.chain();
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    ::asio::io_context caller;
+    auto result = ::asio::co_spawn(caller, chain.organize(tx), ::asio::use_future);
+
+    auto advance_to_validation = [&](size_t height) {
+        // Only this context resumes the admission coroutine. Stop as soon as
+        // accept publishes its scratch state, before the commit can run.
+        bool reached = false;
+        for (size_t step = 0; step < 32 && !reached; ++step) {
+            REQUIRE(caller.run_one() == 1);
+            chain.transaction_validations().visit(tx->hash(), [&](auto const& tv) {
+                reached = tv.state && tv.state->height() == height;
+            });
+        }
+        REQUIRE(reached);
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+    };
+    auto connect_next = [&](uint32_t height) {
+        auto const block = test::mine_block(built.trunk.back().hash(), height,
+            built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+        std::vector<domain::chain::block> blocks{block};
+        REQUIRE(built.fixture.organizer().add_headers(headers_of(blocks)).headers_added == 1);
+        persist_headers(built.fixture, blocks, height);
+        connect_bodies(built.fixture, blocks, height);
+        built.trunk.push_back(block);
+    };
+
+    advance_to_validation(trunk_len + 1);
+    connect_next(trunk_len + 1);
+    if (invalidate_retry) {
+        advance_to_validation(trunk_len + 2);
+        connect_next(trunk_len + 2);
+    }
+    caller.run();
+    CHECK(result.get() == (invalidate_retry ? error::stale_chain : error::success));
+    CHECK(chain.mempool_ref().contains(tx->hash()) == !invalidate_retry);
+    CHECK_FALSE(chain.transaction_validations().visit(tx->hash(), [](auto const&) {}));
+}

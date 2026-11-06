@@ -8,16 +8,24 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/local_admission_tasks.hpp>
 
 #include <algorithm>
+#include <iterator>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include <kth/node/sync/reorg.hpp>
 
 #include <chrono>
 #include <thread>
 
+#include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <spdlog/spdlog.h>
+
+#include <kth/infrastructure/formats/base_16.hpp>
 
 #include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
@@ -400,6 +408,51 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
             blocks_synced_to, moved_to, range_end)};
 }
 
+::asio::awaitable<headers_progress> on_headers_advanced(
+    body_range_deps deps,
+    body_range_log_memory& memory,
+    headers_validated const& result,
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    std::optional<uint32_t> range_end,
+    uint32_t range_end_cap) {
+
+    if (result.count == 0) {
+        co_return headers_progress{headers_synced_to, std::nullopt};
+    }
+
+    // The tip moves to where the batch put it; what peers are ASKED for stops
+    // at the cap, below which the bodies the coordinator already holds begin.
+    auto const moved_to = result.height;
+
+    co_return headers_progress{
+        moved_to,
+        co_await open_body_range_if_owed(
+            deps, memory, body_range_trigger::headers_advanced,
+            blocks_synced_to, std::min(moved_to, range_end_cap), range_end)};
+}
+
+uint32_t trim_held_suffix(uint32_t blocks_synced_to, uint32_t headers_synced_to,
+                          std::function<bool(uint32_t)> const& held) {
+    auto end = headers_synced_to;
+    while (end > blocks_synced_to && held(end)) {
+        --end;
+    }
+    return end;
+}
+
+uint32_t trim_held_suffix(blockchain::header_index const& index,
+    uint32_t blocks_synced_to, uint32_t headers_synced_to,
+    std::function<bool(uint32_t)> const& held) {
+    return trim_held_suffix(blocks_synced_to, headers_synced_to, [&](uint32_t height) {
+        if (held(height)) {
+            return true;
+        }
+        auto const idx = index.active_at(int32_t(height));
+        return idx != blockchain::header_index::null_index && index.has_block_data(idx);
+    });
+}
+
 bool refresh_validated_tip(blockchain::block_chain const& chain,
                            blockchain::header_organizer& organizer) {
     auto const view = chain.chain_view();
@@ -528,6 +581,19 @@ static
     std::function<void(std::string const&)> on_fatal,
     header_walk_timing timing
 ) {
+    co_await sync_orchestrator(chain, organizer, network, network_type,
+        std::move(on_fatal), timing, nullptr);
+}
+
+::asio::awaitable<void> sync_orchestrator(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    kth::node::p2p_node& network,
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal,
+    header_walk_timing timing,
+    blockchain::block_submission_channel* submissions
+) {
     auto executor = co_await ::asio::this_coro::executor;
 
     // 2026-02-07: Log which executor is being used for debugging
@@ -575,6 +641,11 @@ static
     // Sync coordinator unified event channel (created here so peer_provider can close it during shutdown)
     sync_coordinator_event_channel coordinator_events(executor, 100);
     utxo_build_progress_channel utxo_progress(executor, 1);
+
+    // The builder's contextual refusal and the coordinator's answer to it.
+    // Capacity one each: one refusal is outstanding at most (messages.hpp).
+    block_rejection_channel utxo_rejections(executor, 1);
+    block_rejection_ack_channel rejection_ack(executor, 1);
 
     // =========================================================================
     // TASKS - All independent, communicate only via channels
@@ -677,6 +748,56 @@ static
         }
         spdlog::info("[announcement_bridge] Task ended");
     });
+
+    // -------------------------------------------------------------------------
+    // Local block admission bridge
+    // -------------------------------------------------------------------------
+    //
+    // The endpoint block_chain::submit_block feeds, drained here and handed to
+    // the coordinator, which owns each submission until it answers. The wait is
+    // armed with the network's stop token; the forward is AWAITED, since a
+    // submission dropped here is a requester that never hears anything. When
+    // this ends — the network stopped, or the coordinator is gone — the
+    // endpoint is closed so later submitters are refused at once, and whatever
+    // was queued is answered, because nobody else will.
+    if (submissions != nullptr) {
+        all_tasks.spawn("local_admission_bridge", [&, submissions]() -> ::asio::awaitable<void> {
+            spdlog::info("[local_admission] Bridge started");
+            auto exec = co_await ::asio::this_coro::executor;
+            while (true) {
+                auto completion = co_await ::asio::experimental::make_select(
+                    ::asio::experimental::receive(*submissions)
+                ).async_wait(exec, {}, network.stop_token(), ::asio::as_tuple(::asio::deferred));
+                auto& [ec, selected] = completion;
+                if (ec) {
+                    spdlog::debug("[local_admission] Endpoint wait ended: {}", ec.message());
+                    break;
+                }
+                auto submission = std::move(*selected.value<0>());
+                auto const reply = submission.reply;
+                auto [send_ec] = co_await coordinator_events.async_send(std::error_code{},
+                    local_block_submitted{std::move(submission)},
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (send_ec) {
+                    if (reply) {
+                        (void)reply->try_send(std::error_code{}, code(error::service_stopped));
+                    }
+                    break;
+                }
+            }
+
+            // Terminal. Closed first, so a submitter racing this gets
+            // broken_pipe rather than a slot nobody will drain.
+            submissions->close();
+            std::error_code drain_ec;
+            while (auto queued = submissions->try_receive(drain_ec)) {
+                if (queued->reply) {
+                    (void)queued->reply->try_send(std::error_code{}, code(error::service_stopped));
+                }
+            }
+            spdlog::info("[local_admission] Bridge ended");
+        });
+    }
 
     // -------------------------------------------------------------------------
     // peer_provider - Minimal peer distributor for sync tasks
@@ -844,6 +965,12 @@ static
         stored_chunks.close();
         utxo_progress.cancel();
         utxo_progress.close();
+        // The builder may be parked waiting for an answer to a refusal; a
+        // closed ack is the answer that ends it.
+        utxo_rejections.cancel();
+        utxo_rejections.close();
+        rejection_ack.cancel();
+        rejection_ack.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1050,10 +1177,14 @@ static
         while (true) {
             auto [ec, progress] = co_await utxo_progress.async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) co_return;
+            if (ec) {
+                co_return;
+            }
             auto [send_ec] = co_await coordinator_events.async_send(
                 std::error_code{}, progress, ::asio::as_tuple(::asio::use_awaitable));
-            if (send_ec) co_return;
+            if (send_ec) {
+                co_return;
+            }
         }
     });
 
@@ -1065,8 +1196,27 @@ static
         network_type,
         [&network]() { return network.stopped(); },
         on_fatal,
-        &utxo_progress
+        &utxo_progress,
+        &utxo_rejections,
+        &rejection_ack
     ));
+
+    // Bridge: utxo_rejections -> coordinator_events. Awaited: a refusal
+    // dropped is a builder parked forever and a requester never answered.
+    all_tasks.spawn("coordinator_rejection_bridge", [&]() -> ::asio::awaitable<void> {
+        while (true) {
+            auto [ec, rejected] = co_await utxo_rejections.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (ec) {
+                co_return;
+            }
+            auto [send_ec] = co_await coordinator_events.async_send(
+                std::error_code{}, rejected, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                co_return;
+            }
+        }
+    });
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
     all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
@@ -1260,9 +1410,299 @@ static
             }
         };
 
+        // ---------------------------------------------------------------------
+        // Local block admission
+        // ---------------------------------------------------------------------
+        //
+        // A block handed in through the endpoint goes the way a peer's does:
+        // its header to the organizer through the validation task, its body
+        // through fast validation and storage, its verdict from the builder.
+        // What this owns is the record of each submission until it is answered,
+        // and two memories the ranges and the switch consult: the heights whose
+        // bodies are local and handed over, which a range must not ask peers
+        // for; and the hashes the builder refused this run, which the chain is
+        // not switched back onto — the body would only be judged again.
+        struct local_admission {
+            enum class stage_t : uint8_t { header, body, connect };
+            uint64_t id;
+            hash_digest hash;
+            uint32_t height;
+            block_const_ptr block;
+            std::shared_ptr<blockchain::block_submission_reply> reply;
+            stage_t stage;
+        };
+        // Owner-scoped. The loop's own exit answers every submission still held
+        // with service_stopped; an exception skips that exit, and then this
+        // destructor closes the replies still open, which the requester reads
+        // as service_stopped. On the container and not per element: the
+        // vector moves its elements about, and a per-element destructor would
+        // close the reply of a request that is still live.
+        struct local_admissions {
+            std::vector<local_admission> items;
+            local_admissions() = default;
+            local_admissions(local_admissions const&) = delete;
+            local_admissions& operator=(local_admissions const&) = delete;
+            ~local_admissions() {
+                for (auto const& pending : items) {
+                    if (pending.reply) {
+                        pending.reply->close();
+                    }
+                }
+            }
+        } pending_local;
+        auto& local_pending = pending_local.items;
+        uint64_t next_local_id = 1;
+        boost::unordered_flat_set<uint32_t> held_heights;
+        boost::unordered_flat_set<hash_digest> rejected_hashes;
+
+        // The one answer a submission gets. A requester that gave up is a
+        // channel nobody reads, and the capacity-one try_send still succeeds.
+        auto const answer = [](local_admission const& pending, code outcome) {
+            if (pending.reply) {
+                (void)pending.reply->try_send(std::error_code{}, outcome);
+            }
+        };
+        auto resolve_local = [&](size_t at, code outcome) {
+            auto const& pending = local_pending[at];
+            spdlog::info("[sync_coordinator] Local block {} at height {}: {}",
+                encode_hash(pending.hash), pending.height,
+                outcome ? outcome.message() : std::string("connected"));
+            held_heights.erase(pending.height);
+            answer(pending, outcome);
+            local_pending.erase(local_pending.begin() + long(at));
+        };
+        auto find_local = [&](auto const& predicate) -> std::optional<size_t> {
+            for (size_t i = 0; i < local_pending.size(); ++i) {
+                if (predicate(local_pending[i])) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        };
+        auto is_active = [&](hash_digest const& hash, uint32_t height) {
+            auto const idx = organizer.index().find(hash);
+            return idx != blockchain::header_index::null_index &&
+                organizer.index().active_at(int32_t(height)) == idx;
+        };
+        // The highest height peers may be asked for. A height is this node's
+        // own — not peers' to supply — while a local body is on its way to
+        // storage (held) and from the moment the active entry at that height
+        // has its data. The second half is read from the index each time, not
+        // remembered: a switch replaces what sits at a height, and a cache of
+        // heights would describe the branch that was left.
+        auto trimmed_end = [&](uint32_t end) {
+            return trim_held_suffix(organizer.index(), blocks_synced_to, end,
+                [&](uint32_t height) { return held_heights.contains(height); });
+        };
+
+        // The body, serialized as a peer would send it and parsed as the
+        // download parses it, handed to fast validation by a task of this
+        // group (detail::local_body_handoff) that suspends on the send with the
+        // network's stop token, then waits on the body's own outcome slot and
+        // carries the outcome here. Stamped with the submission's id, so the
+        // outcome answers this submission and no other at the same height, and
+        // with the current generation, so a switch in between makes storage
+        // report it stale rather than store it.
+        auto hand_off_body = [&](size_t at) {
+            auto& pending = local_pending[at];
+            domain::chain::block const& body = *pending.block;
+            data_chunk raw(body.serialized_size());
+            byte_writer writer(raw);
+            if ( ! body.to_data(writer)) {
+                resolve_local(at, error::operation_failed);
+                return;
+            }
+            byte_reader reader(raw);
+            auto light = domain::chain::light_block::from_data(reader, true);
+            if ( ! light) {
+                resolve_local(at, error::operation_failed);
+                return;
+            }
+            downloaded_chunk chunk{
+                .start_height = pending.height,
+                .chunk_id = 0,
+                .blocks = {std::make_shared<domain::chain::light_block const>(std::move(*light))},
+                .source_peer = nullptr,
+                .generation = chain.chain_generation(),
+                .submission = pending.id,
+                .local_result = std::make_shared<local_body_result_channel>(1, 1)};
+            pending.stage = local_admission::stage_t::body;
+            held_heights.insert(pending.height);
+            spdlog::info("[sync_coordinator] Local block {} at height {}: body handed to validation",
+                encode_hash(pending.hash), pending.height);
+            all_tasks.spawn("local_body_handoff", detail::local_body_handoff(
+                fast_val_input, std::move(chunk), network.stop_token(), coordinator_events));
+        };
+
+        // What the organizer made of a submitted header.
+        auto settle_local_header = [&](headers_validated const& result) {
+            if (result.submission == 0) {
+                return;
+            }
+            auto const at = find_local([&](local_admission const& p) {
+                return p.id == result.submission && p.stage == local_admission::stage_t::header;
+            });
+            if ( ! at) {
+                return;
+            }
+            auto& pending = local_pending[*at];
+            bool const missing_parent = result.result.value() == error::store_block_missing_parent;
+            bool const stale = result.result.value() == error::stale_chain;
+            if (result.result && ! missing_parent && ! stale) {
+                resolve_local(*at, result.result);
+                return;
+            }
+            if (missing_parent) {
+                resolve_local(*at, error::orphan_block);
+                return;
+            }
+            auto const& index = organizer.index();
+            auto const idx = index.find(pending.hash);
+            if (idx == blockchain::header_index::null_index) {
+                // Judged and not kept: a header the organizer had no use for
+                // is a branch it did not take, not a block it never saw.
+                resolve_local(*at, error::insufficient_work);
+                return;
+            }
+            pending.height = uint32_t(index.get_height(idx));
+            if (index.active_at(int32_t(pending.height)) != idx) {
+                // A side branch, valid as far as its header goes. Its body
+                // has no place in this pipeline until the branch wins, as for
+                // any peer's branch.
+                resolve_local(*at, error::insufficient_work);
+                return;
+            }
+            if (index.has_block_data(idx)) {
+                pending.stage = local_admission::stage_t::connect;
+                return;
+            }
+            hand_off_body(*at);
+        };
+
+        // After the chain moved under them: a submission whose block is no
+        // longer active will never be connected by this pipeline.
+        auto settle_moved = [&]() {
+            for (size_t i = 0; i < local_pending.size();) {
+                auto const& pending = local_pending[i];
+                if (pending.stage != local_admission::stage_t::header &&
+                    ! is_active(pending.hash, pending.height)) {
+                    resolve_local(i, error::insufficient_work);
+                } else {
+                    ++i;
+                }
+            }
+        };
+
+        // After the builder published: connected, at last.
+        auto settle_connected = [&]() {
+            auto const view = chain.chain_view();
+            if ( ! view) {
+                return;
+            }
+            // The view must describe the chain that is active NOW — the same
+            // reading refresh_validated_tip takes. A view published for a branch
+            // since abandoned names a height, and a different block may sit at
+            // that height on the branch that replaced it, not yet connected.
+            auto const& index = organizer.index();
+            if (view->connected_tip_height > size_t(max_int32)) {
+                return;
+            }
+            auto const view_tip = index.find(view->tip_hash);
+            if (view_tip == blockchain::header_index::null_index ||
+                index.active_at(int32_t(view->connected_tip_height)) != view_tip) {
+                return;
+            }
+            for (size_t i = 0; i < local_pending.size();) {
+                auto const& pending = local_pending[i];
+                if (pending.stage == local_admission::stage_t::connect &&
+                    view->connected_tip_height >= pending.height &&
+                    is_active(pending.hash, pending.height)) {
+                    resolve_local(i, error::success);
+                } else {
+                    ++i;
+                }
+            }
+        };
+
+        auto admit_local = [&](blockchain::block_submission submission) {
+            local_admission pending{
+                next_local_id++, null_hash, 0, submission.block, submission.reply,
+                local_admission::stage_t::header};
+            if ( ! submission.block) {
+                answer(pending, error::operation_failed);
+                return;
+            }
+            pending.hash = submission.block->hash();
+            auto const& index = organizer.index();
+            auto const idx = index.find(pending.hash);
+            if (idx != blockchain::header_index::null_index) {
+                if (index.has_block_data(idx) || rejected_hashes.contains(pending.hash)) {
+                    answer(pending, error::duplicate_block);
+                    return;
+                }
+                // A header we hold without its body: the body is what is
+                // being offered, and it goes the way any body does.
+                pending.height = uint32_t(index.get_height(idx));
+                if (index.active_at(int32_t(pending.height)) != idx) {
+                    answer(pending, error::insufficient_work);
+                    return;
+                }
+                if (local_pending.size() >= max_pending_local_submissions) {
+                    answer(pending, error::operation_failed);
+                    return;
+                }
+                local_pending.push_back(std::move(pending));
+                hand_off_body(local_pending.size() - 1);
+                return;
+            }
+            if (index.find(submission.block->header().previous_block_hash())
+                    == blockchain::header_index::null_index) {
+                answer(pending, error::orphan_block);
+                return;
+            }
+            if (local_pending.size() >= max_pending_local_submissions) {
+                answer(pending, error::operation_failed);
+                return;
+            }
+            // Never waited on: the validation task's input drains into the
+            // channel this loop reads, so a wait here could close a cycle. A
+            // refusal is the submitter's to retry.
+            if ( ! header_validation_input.try_send(std::error_code{}, downloaded_headers{
+                    .headers = {submission.block->header()},
+                    .source_peer = nullptr,
+                    .submission = pending.id})) {
+                answer(pending, error::operation_failed);
+                return;
+            }
+            spdlog::info("[sync_coordinator] Local block {}: header handed to validation",
+                encode_hash(pending.hash));
+            local_pending.push_back(std::move(pending));
+        };
+
+        // Whether a branch carries a block the builder refused this run.
+        auto branch_rejected = [&](blockchain::header_index::index_t head, uint32_t fork_height) {
+            if (rejected_hashes.empty()) {
+                return false;
+            }
+            auto const& index = organizer.index();
+            for (auto idx = head;
+                 idx != blockchain::header_index::null_index && index.get_height(idx) > int32_t(fork_height);
+                 idx = index.get_ancestor(idx, index.get_height(idx) - 1)) {
+                if (rejected_hashes.contains(index.get_hash(idx))) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        auto const truncate_active = [&chain](uint32_t retained_height) {
+            return chain.truncate_headers_after(retained_height);
+        };
+
         auto try_start_slow_sync = [&](body_range_trigger trigger) -> ::asio::awaitable<void> {
             record(co_await open_body_range_if_owed(
-                deps, range_log, trigger, blocks_synced_to, headers_synced_to, slow_sync_end));
+                deps, range_log, trigger, blocks_synced_to, trimmed_end(headers_synced_to),
+                slow_sync_end));
         };
 
         // Whether the chain already holds a hash. An announcement of something we
@@ -1544,6 +1984,15 @@ static
                     auto const fork_height = uint32_t(result->reorg_fork_height);
                     spdlog::warn("[sync_coordinator] Reorg requested: fork at height {}", fork_height);
 
+                    if (branch_rejected(result->reorg_branch_head, fork_height)) {
+                        // The builder already judged a body on this branch and
+                        // refused it. Switching back would only judge it again.
+                        spdlog::warn("[sync_coordinator] Reorg refused: the branch carries a block "
+                            "rejected this run");
+                        settle_local_header(*result);
+                        continue;
+                    }
+
                     auto const reorg = co_await execute_reorg(
                         chain, organizer, result->reorg_branch_head, fork_height,
                         [&network] { return network.stopped(); },
@@ -1581,12 +2030,28 @@ static
                         // every writer was parked. Repeating that reset here
                         // could overwrite progress storage already published.
 
+                        // A result buffered above the fork describes a body of
+                        // the branch just left. Left in place, the next advance
+                        // through its height would count it as a body the new
+                        // branch holds — which it does not — and move the
+                        // counter past a block nothing will download.
+                        for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
+                            it = it->second.start_height + it->second.block_count - 1 > blocks_synced_to
+                                ? pending_chunks.erase(it) : std::next(it);
+                        }
+
                         // HERE, before any branching: the branches below that do
                         // not re-drive the download are exactly the ones that
                         // would otherwise carry a range end describing blocks the
                         // switch just took away.
                         slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
                     }
+
+                    // Before the re-drive below: a local block the switch put on
+                    // the active chain hands its body over now, and the range is
+                    // trimmed around it; one it took off the chain is answered.
+                    settle_local_header(*result);
+                    settle_moved();
 
                     auto const new_tip = switched ? chain.headers().active_tip_height() : -1;
                     if (switched && new_tip > int32_t(blocks_synced_to)) {
@@ -1596,23 +2061,30 @@ static
                         spdlog::warn("[sync_coordinator] Reorg complete: blocks rewound to {}, "
                             "headers now at {}", blocks_synced_to, headers_synced_to);
 
+                        auto const asked_to = trimmed_end(headers_synced_to);
+
                         // Recorded like any other range. Left unrecorded, a
                         // stale end from before the switch would read as a range
                         // still in flight over heights the reorg just rewound,
                         // and the remainder above it would never be opened.
                         log_range_opening(
-                            slow_sync_range{blocks_synced_to + 1, headers_synced_to},
+                            slow_sync_range{blocks_synced_to + 1, asked_to},
                             body_range_trigger::reorg, headers_synced_to, blocks_synced_to,
                             slow_sync_end, std::nullopt);
 
-                        if (co_await send_block_range(deps, blocks_synced_to + 1, headers_synced_to)) {
+                        if (asked_to <= blocks_synced_to) {
+                            // Everything above the rewound tip is a body this
+                            // node holds itself; nothing is peers' to supply.
+                            spdlog::info("[sync_coordinator] Reorg: every owed body is local; "
+                                "no range asked for");
+                        } else if (co_await send_block_range(deps, blocks_synced_to + 1, asked_to)) {
                             // The only place a new end is recorded, and only once
                             // the request was actually sent. A send that failed
                             // leaves nothing recorded, and the rewind above has
                             // already dropped what described the old branch, so
                             // the next event re-derives the range from the
                             // heights instead of holding behind it.
-                            slow_sync_end = headers_synced_to;
+                            slow_sync_end = asked_to;
                         } else {
                             spdlog::error("[sync_coordinator] Reorg: failed to re-drive block "
                                 "download; the next event asks again");
@@ -1644,11 +2116,18 @@ static
                 // that added a valid prefix before hitting a bad header moved the
                 // tip by that prefix. Splitting first is how the error path came
                 // to advance the tip and tell nobody.
+                // A submitted header, first: if the organizer took it as the tip,
+                // its body is handed over here, and the range opened below is
+                // trimmed around it rather than asking peers for a block only
+                // this node has.
+                settle_local_header(*result);
+
                 auto const prev_headers_synced = headers_synced_to;
                 {
                     auto const progress = co_await on_headers_advanced(
                         deps, range_log, *result,
-                        blocks_synced_to, headers_synced_to, slow_sync_end);
+                        blocks_synced_to, headers_synced_to, slow_sync_end,
+                        trimmed_end(result->height));
                     headers_synced_to = progress.headers_synced_to;
                     record(progress.opened);
                 }
@@ -1851,12 +2330,108 @@ static
                 // the immutable publication now; storage and event payloads are
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
+                settle_connected();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
 
+            if (auto* submitted = std::get_if<local_block_submitted>(&event)) {
+                admit_local(std::move(submitted->submission));
+                continue;
+            }
+
+            if (auto* rejected = std::get_if<block_rejected>(&event)) {
+                // The builder's verdict on a body, whoever supplied it, and the
+                // builder is parked until this answers. Remembered for the run
+                // first, so no switch brings the same body back for judgement.
+                spdlog::warn("[sync_coordinator] The builder rejected block {} at height {}: {}",
+                    encode_hash(rejected->hash), rejected->height, rejected->reason.message());
+                rejected_hashes.insert(rejected->hash);
+
+                auto const outcome = co_await execute_body_rejection(
+                    chain, organizer, rejected->height, rejected->hash,
+                    network.stop_token(), truncate_active,
+                    reorg_pipeline{&block_storage_input, contiguous_height.get()});
+
+                if (outcome.fatal) {
+                    (void)rejection_ack.try_send(std::error_code{});
+                    on_fatal("the persisted chain could not be stepped off a rejected block");
+                    break;
+                }
+
+                if (outcome.stepped) {
+                    headers_synced_to = uint32_t(std::max<int32_t>(0, organizer.index().active_tip_height()));
+                    if (blocks_synced_to >= rejected->height) {
+                        blocks_synced_to = rejected->height - 1;
+                    }
+                    for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
+                        it = it->second.start_height + it->second.block_count - 1 >= rejected->height
+                            ? pending_chunks.erase(it) : std::next(it);
+                    }
+                    slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
+                }
+
+                if (auto const at = find_local([&](local_admission const& p) {
+                        return p.hash == rejected->hash; })) {
+                    resolve_local(*at, rejected->reason);
+                }
+                settle_moved();
+
+                // Answered after the chain and the cursors moved: the builder
+                // re-derives its own from them when it wakes.
+                (void)rejection_ack.try_send(std::error_code{});
+
+                if (outcome.stepped) {
+                    co_await apply(walk.restart(headers_synced_to), "body rejected");
+                }
+                continue;
+            }
+
             if (auto* result = std::get_if<chunk_validated>(&event)) {
+                // A local body's outcome names its submission; it is matched by
+                // that and nothing else. The submission may already be answered
+                // — a switch answered it — in which case the outcome is nobody's.
+                std::optional<size_t> local_at;
+                if (result->submission != 0) {
+                    local_at = find_local([&](local_admission const& p) {
+                        return p.id == result->submission &&
+                            p.stage == local_admission::stage_t::body;
+                    });
+                    if (result->result.value() == error::stale_chain) {
+                        // Dropped by storage as stale: never stored, so no
+                        // counter moves for it. The switch that made it stale
+                        // answered the submission already; if it is still
+                        // here, the block is on a branch the chain left.
+                        if (local_at) {
+                            resolve_local(*local_at, error::insufficient_work);
+                        }
+                        continue;
+                    }
+                    if ( ! local_at) {
+                        // This submission was retired (for example by a reorg).
+                        // Even a late successful store describes that retired
+                        // request, not the current branch's body cursor.
+                        continue;
+                    }
+                    auto const& pending = local_pending[*local_at];
+                    if ( ! is_active(pending.hash, pending.height)) {
+                        resolve_local(*local_at, error::insufficient_work);
+                        continue;
+                    }
+                }
+
                 if (!result->result) {
+                    if (local_at) {
+                        // Stored. Not held any more: the range may be asked up
+                        // to it, and the builder decides the rest.
+                        local_pending[*local_at].stage = local_admission::stage_t::connect;
+                        held_heights.erase(local_pending[*local_at].height);
+                        // Publication can reach the coordinator before this
+                        // storage acknowledgement. Re-check now rather than
+                        // waiting for an unrelated future publication.
+                        settle_connected();
+                    }
+
                     // Buffer the chunk result (chunks may arrive out of order)
                     pending_chunks[result->start_height] = *result;
 
@@ -1907,6 +2482,19 @@ static
                         co_await apply(walk.restart(headers_synced_to), "restart");
                     }
                 } else {
+                    if (local_at) {
+                        // A body that does not match its header, or could not
+                        // be stored. Nothing was stored and nothing advanced;
+                        // the header stays, since a wrong body says nothing
+                        // about it, and the right one can still be offered.
+                        resolve_local(*local_at, result->result);
+                        // The valid header is still active and its body is now
+                        // owed from peers. The rejection itself releases that
+                        // debt; do not wait for an unrelated announcement.
+                        co_await try_start_slow_sync(body_range_trigger::chunk_validated);
+                        continue;
+                    }
+
                     spdlog::error("[sync_coordinator] Chunk validation failed at height {}: {}",
                         result->start_height, result->result.message());
 
@@ -1923,6 +2511,14 @@ static
                 continue;
             }
         }
+
+        // Every submission still owned is answered before anything closes:
+        // nobody else will, and a requester must never outwait a coordinator
+        // that is gone.
+        for (auto const& pending : local_pending) {
+            answer(pending, error::service_stopped);
+        }
+        local_pending.clear();
 
         spdlog::info("[sync_coordinator] Event loop ended, task completing...");
         } catch (std::exception const& e) {
@@ -1941,6 +2537,11 @@ static
         body_retry.cancel();
         utxo_progress.cancel();
         utxo_progress.close();
+        // A builder parked on a refusal is woken by the closed ack.
+        utxo_rejections.cancel();
+        utxo_rejections.close();
+        rejection_ack.cancel();
+        rejection_ack.close();
         coordinator_events.cancel();
         coordinator_events.close();
         spdlog::info("[sync_coordinator] Task ended");

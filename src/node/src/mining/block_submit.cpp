@@ -70,7 +70,7 @@ domain::message::block assemble_block(
 
     auto const block = std::make_shared<domain::message::block>(
         assemble_block(header, coinbase, job_txs));
-    co_return co_await chain.organize(block);
+    co_return co_await chain.submit_block(block);
 }
 
 } // namespace kth::node::mining

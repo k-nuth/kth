@@ -16,11 +16,22 @@ static void on_block_height(kth_chain_t chain, void* ctx, kth_error_code_t ec,
     (void)chain; (void)ctx; (void)ec; (void)height;
 }
 
+static void on_progress(kth_chain_t chain, void* ctx, kth_error_code_t ec,
+                        kth_block_progress_t progress) {
+    (void)chain; (void)ctx; (void)ec; (void)progress;
+}
+
 static void query_readers_sig_check(kth_chain_t chain, kth_hash_t const* hash) {
     // Synchronous (blocking) flavor.
     kth_size_t height = 0;
     kth_error_code_t rc = kth_chain_sync_block_height(chain, hash, &height);
     (void)rc; (void)height;
+
+    kth_block_progress_t progress;
+    (void)kth_chain_sync_chain_progress(chain, &progress);
+    (void)kth_chain_sync_block_progress(chain, hash, &progress);
+    kth_chain_async_chain_progress(chain, NULL, &on_progress);
+    kth_chain_async_block_progress(chain, NULL, hash, &on_progress);
 
     // Asynchronous (callback) flavor.
     kth_chain_async_block_height(chain, NULL, hash, &on_block_height);

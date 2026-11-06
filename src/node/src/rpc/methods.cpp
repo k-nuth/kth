@@ -51,25 +51,18 @@ namespace kth::node::rpc {
 namespace {
 #if defined(KTH_CURRENCY_BCH)
 std::expected<chain_progress, rpc_error> progress_for(
-    blockchain::block_chain const& chain, hash_digest const& hash, size_t height) {
-    auto const& index = chain.headers();
-    auto const idx = index.find(hash);
-    if (idx == blockchain::header_index::null_index) {
-        return std::unexpected(make_error(error_code::internal_error,
-            "block progress unavailable"));
+    blockchain::block_chain const& chain, hash_digest const& hash, size_t height,
+    blockchain::block_chain::chain_view_ptr const& captured = {}) {
+    auto const progress = chain.get_block_progress(hash, captured ? captured : chain.chain_view());
+    if (!progress) return kth::fail(from_code(progress.error()));
+    if (height == progress->height) {
+        return chain_progress{progress->ticks, progress->target_time, progress->next_target_time};
     }
-    auto const published = chain.chain_view();
-    if (!published) {
-        return std::unexpected(make_error(error_code::internal_error,
-            "chain context unavailable"));
+    if (height == progress->height + 1) {
+        return chain_progress{progress->ticks + progress->next_target_time,
+            progress->next_target_time, progress->next_target_time};
     }
-    blockchain::validate_header validator(chain.chain_settings(), published->state->network());
-    auto const schedule = blockchain::tick_schedule_for_tip(validator, index, idx);
-    if (!schedule) {
-        return std::unexpected(from_code(schedule.error()));
-    }
-    return chain_progress{schedule->height_to_tick(height),
-        schedule->block_interval(height), schedule->next_block_interval(height)};
+    return kth::fail(make_error(error_code::internal_error, "block progress height mismatch"));
 }
 #endif
 
@@ -82,30 +75,78 @@ bool is_block_file(std::string_view name) {
             [](char c) { return c >= '0' && c <= '9'; });
 }
 
-// How many blocks the connected chain has from the block at `height` with
-// `hash` up to its tip, that block included; -1 when that block is not on the
-// connected chain, including a header stored ahead of it.
-int64_t confirmations(blockchain::block_chain const& chain,
-                           size_t height, hash_digest const& hash) {
-    auto const view = chain.chain_view();
-    if ( ! view || height > view->connected_tip_height) {
-        return -1;
+// The raw-read endpoints deliberately do not implement verbose output (#789).
+// Validate types and arity before touching storage; null keeps an optional default.
+struct raw_read_arguments {
+    hash_digest hash;
+    std::optional<hash_digest> block_hash;
+};
+
+std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req, bool transaction) {
+    auto const invalid = [&] {
+        return kth::fail(make_error(error_code::invalid_params,
+            transaction ? "getrawtransaction requires [txid, verbose=false, blockhash]" :
+                          "getblock requires [blockhash, verbosity=0]"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array args;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(args) != simdjson::SUCCESS) {
+        return invalid();
     }
-    // The durable height table may already name a replacement branch while
-    // this publication still names the old connected tip. Walk that tip's
-    // immutable ancestry instead of mixing it with a newer height mapping.
-    auto const& index = chain.headers();
-    auto const tip = index.find(view->tip_hash);
-    if (tip == blockchain::header_index::null_index ||
-        index.get_height(tip) < 0 ||
-        size_t(index.get_height(tip)) != view->connected_tip_height) {
-        return -1;
+    raw_read_arguments result{};
+    size_t count = 0;
+    for (auto element : args) {
+        simdjson::ondemand::value value;
+        simdjson::ondemand::json_type type;
+        if (count >= (transaction ? 3u : 2u) || element.get(value) != simdjson::SUCCESS ||
+            value.type().get(type) != simdjson::SUCCESS) {
+            return invalid();
+        }
+        if (count == 0 || count == 2) {
+            if (count == 2 && type == simdjson::ondemand::json_type::null) {
+                ++count;
+                continue;
+            }
+            std::string_view text;
+            if (value.get_string().get(text) != simdjson::SUCCESS) {
+                return invalid();
+            }
+            if (count == 2 && text.empty()) {
+                ++count;
+                continue;
+            }
+            auto hash = decode_hash(text);
+            if (!hash) {
+                return kth::fail(make_error(error_code::invalid_params,
+                    transaction && count == 0 ? "invalid txid" : "invalid block hash"));
+            }
+            if (count == 0) {
+                result.hash = *hash;
+            } else {
+                result.block_hash = *hash;
+            }
+        } else if (type == simdjson::ondemand::json_type::boolean) {
+            bool verbose;
+            if (value.get_bool().get(verbose) != simdjson::SUCCESS || verbose) {
+                return invalid();
+            }
+        } else if (type == simdjson::ondemand::json_type::number) {
+            int64_t verbose;
+            if (value.get_int64().get(verbose) != simdjson::SUCCESS || verbose != 0) {
+                return invalid();
+            }
+        } else if (type != simdjson::ondemand::json_type::null) {
+            return invalid();
+        }
+        ++count;
     }
-    auto const ancestor = index.get_ancestor(tip, int32_t(height));
-    if (ancestor == blockchain::header_index::null_index || index.get_hash(ancestor) != hash) {
-        return -1;
+    if (count == 0) {
+        return invalid();
     }
-    return int64_t(view->connected_tip_height - height + 1);
+    return result;
 }
 
 
@@ -217,7 +258,13 @@ get_block_template(method_context& ctx, request const& req) {
         co_return kth::fail(from_code(tmpl.error()));
     }
 
+#if defined(KTH_CURRENCY_BCH)
+    auto const progress = progress_for(ctx.chain, tmpl->previous_block_hash, tmpl->height);
+    if (!progress) co_return kth::fail(progress.error());
+    co_return render_block_template(*tmpl, *progress);
+#else
     co_return render_block_template(*tmpl);
+#endif
 }
 
 // getmininginfo -> height, difficulty, mempool size, and network.
@@ -236,7 +283,7 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
         co_return std::unexpected(make_error(error_code::internal_error,
             "mining progress unavailable during chain transition"));
     }
-    auto const progress = progress_for(ctx.chain, published->tip_hash, info->blocks);
+    auto const progress = progress_for(ctx.chain, published->tip_hash, info->blocks, published);
     if (!progress) {
         co_return std::unexpected(progress.error());
     }
@@ -249,7 +296,7 @@ get_mining_info(method_context& ctx, request const& /*req*/) {
 // submitblocklight -> reconstruct the full block from the miner's solved header +
 // coinbase and the cached job selection, then submit it to the chain. Returns
 // (Bitcoin submitblock semantics) null on accept, or a reject-reason string.
-// C-API counterpart: kth_chain_async_organize_block (see docs/json-rpc.md).
+// C-API counterpart: kth_chain_async_submit_block (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 submit_block_light(method_context& ctx, request const& req) {
     auto const args = params_strings(req.params);
@@ -460,7 +507,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 
 
 #if defined(KTH_CURRENCY_BCH)
-    auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height);
+    auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height, view);
     if (!progress) {
         co_return kth::fail(progress.error());
     }
@@ -493,7 +540,11 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
         co_return kth::fail(make_error(error_code::internal_error,
             "chain state unavailable"));
     }
-    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash);
+    auto const tips = ctx.chain.headers().get_chain_tips(view->tip_hash
+#if defined(KTH_CURRENCY_BCH)
+        , ctx.chain.chain_settings().cantor_activation_time
+#endif
+    );
     if (!tips) {
         co_return kth::fail(make_error(error_code::internal_error,
             "connected tip not in the header index"));
@@ -508,63 +559,32 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
 // C-API counterpart: kth_chain_sync_transaction (+ kth_chain_sync_block_by_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
-    auto const args = params_strings(req.params);
-    if (args.empty() || args[0].empty()) {
-        co_return kth::fail(make_error(error_code::invalid_params,
-            "getrawtransaction requires [txid]"));
+    auto const args = raw_read_params(req, true);
+    if (!args) {
+        co_return kth::fail(args.error());
     }
-    auto const hash = decode_hash(args[0]);
-    if ( ! hash) {
-        co_return kth::fail(make_error(error_code::invalid_params, "invalid txid"));
-    }
-
-    auto const verbose = params_verbosity(req.params, 1, /*fallback*/ 0);
-    if ( ! verbose) {
-        co_return kth::fail(make_error(error_code::invalid_params,
-            "verbose must be a boolean or a number"));
-    }
-    auto const view = ctx.chain.chain_view();
-    if ( ! view || ! view->state) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "chain state unavailable"));
-    }
-    auto const render = [&](domain::chain::transaction const& tx,
-                            std::optional<transaction_location> const& location) {
-        if (*verbose != 0) {
-            return render_transaction_verbose(tx, view->state->network(),
-                view->state->enabled_flags(), location);
-        }
-        writer w;
-        w.value(transaction_to_hex(tx));
-        return w.str();
-    };
-
-    if (args.size() > 2 && ! args[2].empty()) {
-        auto const block_hash = decode_hash(args[2]);
-        if ( ! block_hash) {
-            co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
-        }
-        auto const block = co_await ctx.chain.fetch_block(*block_hash);
-        if ( ! block) {
+    auto const& hash = args->hash;
+    if (args->block_hash) {
+        auto const block = co_await ctx.chain.fetch_block(*args->block_hash);
+        if (!block) {
+            if (block.error() != error::not_found) {
+                co_return kth::fail(from_code(block.error()));
+            }
             co_return kth::fail(make_error(error_code::invalid_address_or_key,
                 "Block hash not found"));
         }
-        auto const& [found, height] = *block;
-        for (auto const& tx : found->transactions()) {
-            if (tx.hash() == *hash) {
-                auto const progress = ctx.chain.get_block_progress(*block_hash, view);
-                if (!progress) {
-                    co_return kth::fail(from_code(progress.error()));
-                }
-                co_return render(tx, transaction_location{*block_hash,
-                    progress->confirmations, found->header().timestamp(), progress->confirmations_ticks});
+        for (auto const& tx : std::get<0>(*block)->transactions()) {
+            if (tx.hash() == hash) {
+                writer w;
+                w.value(transaction_to_hex(tx));
+                co_return w.str();
             }
         }
         co_return kth::fail(make_error(error_code::invalid_address_or_key,
             "No such transaction found in the provided block"));
     }
 
-    auto const result = co_await ctx.chain.fetch_transaction(*hash, /*require_confirmed*/ false);
+    auto const result = co_await ctx.chain.fetch_transaction(hash, /*require_confirmed*/ false);
     if ( ! result) {
         if (result.error() == error::not_found) {
             co_return kth::fail(make_error(error_code::invalid_address_or_key,
@@ -581,21 +601,11 @@ get_raw_transaction(method_context& ctx, request const& req) {
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
-    auto const args = params_strings(req.params);
-    if (args.empty() || args[0].empty()) {
-        co_return kth::fail(make_error(error_code::invalid_params,
-            "getblock requires [blockhash]"));
+    auto const args = raw_read_params(req, false);
+    if (!args) {
+        co_return kth::fail(args.error());
     }
-    auto const hash = decode_hash(args[0]);
-    if ( ! hash) {
-        co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
-    }
-    auto const verbosity = params_verbosity(req.params, 1, /*fallback*/ 1);
-    if ( ! verbosity || *verbosity > 2) {
-        co_return kth::fail(make_error(error_code::invalid_params,
-            "verbosity must be 0, 1, 2 or a boolean"));
-    }
-    auto const result = co_await ctx.chain.fetch_block(*hash);
+    auto const result = co_await ctx.chain.fetch_block(args->hash);
     if ( ! result) {
         if (result.error() == error::not_found) {
             co_return kth::fail(make_error(error_code::invalid_address_or_key,
@@ -680,15 +690,16 @@ get_block_header(method_context& ctx, request const& req) {
     }
 
     auto const& [header, height] = *result;
+    auto const progress = ctx.chain.get_block_progress(*hash);
+    if (!progress) co_return kth::fail(from_code(progress.error()));
 #if defined(KTH_CURRENCY_BCH)
-    auto const progress = progress_for(ctx.chain, *hash, height);
-    if (!progress) {
-        co_return std::unexpected(progress.error());
-    }
-    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash), *progress);
+    co_return render_block_header(*header, height, *hash, progress->confirmations,
+        chain_progress{progress->ticks, progress->target_time, progress->next_target_time},
+        progress->confirmations_ticks);
 #else
-    co_return render_block_header(*header, height, *hash, confirmations(ctx.chain, height, *hash));
+    co_return render_block_header(*header, height, *hash, progress->confirmations);
 #endif
+
 }
 
 // sendrawtransaction <hexstring> -> the accepted txid, or a reject error.
@@ -873,7 +884,11 @@ get_tx_out(method_context& ctx, request const& req) {
             co_return none.str();
         }
         if (auto const output = pool.resolve(outpoint)) {
-            co_return render_tx_out(view->tip_hash, 0, *output, /*coinbase*/ false, net, flags);
+            co_return render_tx_out(view->tip_hash, 0, *output, /*coinbase*/ false, net, flags
+#if defined(KTH_CURRENCY_BCH)
+                , int64_t{0}
+#endif
+            );
         }
     }
 
@@ -910,7 +925,13 @@ get_tx_out(method_context& ctx, request const& req) {
             "the UTXO store could not be read"));
     }
     co_return render_tx_out(view->tip_hash,
-        int64_t(tip - utxo->height + 1), utxo->output, utxo->coinbase, net, flags);
+        int64_t(tip - utxo->height + 1), utxo->output, utxo->coinbase, net, flags
+#if defined(KTH_CURRENCY_BCH)
+        , int64_t(view->state->ticks().height_to_tick(tip)
+            - view->state->ticks().height_to_tick(utxo->height)
+            + view->state->ticks().block_interval(utxo->height))
+#endif
+    );
 }
 
 // getnetworkinfo -> this node's version and user agent, protocol version,

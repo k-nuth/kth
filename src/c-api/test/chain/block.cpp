@@ -208,3 +208,27 @@ TEST_CASE("C-API Block - to_data_simple null out_size aborts",
     KTH_EXPECT_ABORT(kth_domain_chain_block_to_data(blk, NULL));
     kth_domain_chain_block_destruct(blk);
 }
+
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/capi/domain/chain/block_ticks.h>
+TEST_CASE("C-API Block subsidy follows the supplied branch schedule", "[C-API Block][ticks]") {
+    CHECK(kth_domain_chain_block_subsidy(101, 1) == 5000000000);
+    kth_block_ticks_mut_t uniform = kth_domain_chain_block_ticks_construct_default();
+    REQUIRE(uniform != NULL);
+    CHECK(kth_domain_chain_block_ticks_height_to_tick(uniform, 101) == 60600);
+    CHECK(kth_domain_chain_block_ticks_block_interval(uniform, 101) == 600);
+    CHECK(kth_domain_chain_block_subsidy_with_ticks(uniform, 101, 1) == 5000000000);
+    kth_domain_chain_block_ticks_destruct(uniform);
+    kth_block_ticks_mut_t ticks = kth_domain_chain_block_ticks_activated_at(100);
+    REQUIRE(ticks != NULL);
+    CHECK(kth_domain_chain_block_ticks_height_to_tick(ticks, 100) == 60000);
+    CHECK(kth_domain_chain_block_ticks_height_to_tick(ticks, 101) == 60060);
+    CHECK(kth_domain_chain_block_ticks_tick_to_height(ticks, 60060) == 101);
+    CHECK(kth_domain_chain_block_ticks_block_interval(ticks, 100) == 600);
+    CHECK(kth_domain_chain_block_ticks_next_block_interval(ticks, 100) == 60);
+    CHECK(kth_domain_chain_block_ticks_next_block_tick(ticks, 100) == 60060);
+    CHECK(kth_domain_chain_block_subsidy_with_ticks(ticks, 100, 1) == 5000000000);
+    CHECK(kth_domain_chain_block_subsidy_with_ticks(ticks, 101, 1) == 500000000);
+    kth_domain_chain_block_ticks_destruct(ticks);
+}
+#endif

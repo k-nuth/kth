@@ -99,7 +99,8 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips);
 // them, and whether a coinbase created it.
 std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
                           domain::chain::output const& output, bool coinbase,
-                          domain::config::network net, domain::script_flags_t flags);
+                          domain::config::network net, domain::script_flags_t flags,
+                          std::optional<int64_t> confirmations_ticks = std::nullopt);
 
 // The getnetworkinfo fields.
 struct network_info {
@@ -171,7 +172,8 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
-                                std::optional<chain_progress> progress = std::nullopt);
+                                std::optional<chain_progress> progress = std::nullopt,
+                                std::optional<int64_t> confirmations_ticks = std::nullopt);
 
 // validateaddress result object for `address` on network `net`: only
 // {"isvalid":false} unless it is a P2PKH or P2SH address of that network,

@@ -312,6 +312,7 @@ if (ENABLE_TEST)
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
+        test/header_organizer_failed.cpp
         test/block_entry.cpp
         test/block_pool.cpp
         test/branch.cpp
@@ -334,6 +335,8 @@ if (ENABLE_TEST)
         test/batch_sigchecks_activation.cpp
         test/batch_activation_boundary.cpp
         test/batch_structure.cpp
+        test/batch_rejection_attribution.cpp
+        test/local_block_submission.cpp
         test/faster_blocks_batch.cpp
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp
@@ -426,6 +429,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(nanobench REQUIRED)
   find_package(fmt REQUIRED)
   find_package(Boost REQUIRED)
+
+  add_executable(kth_blockchain_bench_chain_tips bench/chain_tips/benchmarks.cpp)
+  target_link_libraries(kth_blockchain_bench_chain_tips PRIVATE ${PROJECT_NAME})
 
   # ==========================================================================
   # 0. block_pool store: bimap + mutex vs concurrent_flat_map

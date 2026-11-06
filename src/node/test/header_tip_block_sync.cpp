@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "sync_harness.hpp"
 
@@ -1751,4 +1752,85 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
         return sent.command == "getdata";
     }) == recover);
     CHECK(log.count("block_range_request") == size_t(recover));
+}
+
+TEST_CASE("integrated: a refused stored block releases the pipeline for a valid replacement",
+          "[header_tip][integration][body_recovery]") {
+    captured_log log;
+    chain_fixture fixture{"body_recovery"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const prefix = GENERATE(0u, 2u);
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    if (prefix != 0) {
+        auto const staged = stage(fixture, prefix, prefix);
+        previous = staged.trunk.back().hash();
+    }
+    auto const height = prefix + 1;
+    auto const timestamp = uint32_t(zulu_time()) - 1200;
+    // No paying transactions: claiming an extra satoshi fails in context,
+    // while the header, serialization and merkle root remain valid.
+    auto const refused = mine_block(previous, height, timestamp, 0, {}, 1);
+    REQUIRE(fixture.organizer().add_headers(headers_of({refused})).headers_added == 1);
+    persist_headers(fixture, {refused}, height);
+    {
+        ::asio::io_context io;
+        block_storage_input_channel input(io.get_executor(), 2);
+        chunk_validated_channel output(io.get_executor(), 2);
+        std::atomic<uint32_t> contiguous{height};
+        REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+            .start_height = height, .chunk_id = 0, .blocks = {to_light(refused)},
+            .source_peer = nullptr, .generation = fixture.chain().chain_generation()}));
+        REQUIRE(input.try_send(std::error_code{}, stop_request{}));
+        auto storage = ::asio::co_spawn(io, block_storage_task(fixture.chain(), input,
+            output, height, fixture.organizer(), &contiguous), ::asio::use_future);
+        io.run();
+        storage.get();
+        REQUIRE(contiguous.load() == height + 1);
+    }
+
+    auto const replacement = mine_block(previous, height, timestamp, 8, {}, 0);
+    auto const peer_config = node_settings("body_recovery_peer");
+    wire_peer peer(peer_config, 9901, height);
+    bool rewound = false;
+    bool resumed = false;
+    bool alive = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "body_recovery");
+        rewound = wait_until([&] {
+            return fixture.organizer().header_height() == prefix &&
+                log.count("Stepped the active chain off the rejected block") != 0;
+        }, quick);
+        alive = ! run.network.stopped() &&
+            run.orchestrator.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        if (rewound && alive) {
+            run.connect(peer.session);
+            run.deliver(peer.session, peer.headers({replacement}));
+            data_chunk bytes(replacement.serialized_size());
+            byte_writer writer(bytes);
+            REQUIRE(replacement.to_data(writer));
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, std::move(bytes))));
+            resumed = wait_until([&] {
+                auto const view = fixture.chain().chain_view();
+                return view && view->connected_tip_height == height &&
+                    view->tip_hash == replacement.hash();
+            }, quick);
+        }
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(rewound);
+    CHECK(alive);
+    CHECK(resumed);
+    CHECK(stopped_cleanly);
+    auto const retained = fixture.chain().get_header(prefix);
+    REQUIRE(retained);
+    CHECK(domain::chain::hash(*retained) == previous);
+    auto const current = fixture.chain().get_header(height);
+    REQUIRE(current);
+    CHECK(domain::chain::hash(*current) == replacement.hash());
+    auto const refused_idx = fixture.chain().headers().find(refused.hash());
+    REQUIRE(refused_idx != blockchain::header_index::null_index);
+    CHECK(fixture.chain().headers().has_status(refused_idx, blockchain::header_status::failed_valid));
 }

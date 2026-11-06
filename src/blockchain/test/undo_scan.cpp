@@ -314,14 +314,14 @@ TEST_CASE("a record for a block the index no longer holds is counted, not refuse
     CHECK(result.found.front().block_hash == kept);
 }
 
-TEST_CASE("two records claiming the same block are refused", "[undo][scan]") {
+TEST_CASE("conflicting records claiming the same block are refused", "[undo][scan]") {
     store_fixture fixture("duplicate");
 
     auto const block_a = make_hash(1);
     auto const parent_a = make_hash(0);
 
     REQUIRE_FALSE(fixture.store.write_undo(make_undo(10, 100), 0, block_a, parent_a).is_null());
-    REQUIRE_FALSE(fixture.store.write_undo(make_undo(10, 100), 0, block_a, parent_a).is_null());
+    REQUIRE_FALSE(fixture.store.write_undo(make_undo(11, 100), 0, block_a, parent_a).is_null());
 
     auto const result = fixture.store.scan_undo_positions(parents_of({{block_a, parent_a}}));
     CHECK(result.status == block_store::undo_scan_status::duplicate_record);
@@ -584,16 +584,14 @@ TEST_CASE("an implausible payload size is refused before anything is reserved",
     CHECK(result.error() == result_code::db_corrupt);
 }
 
-TEST_CASE("two records claiming one forgotten block are still refused", "[undo][scan]") {
-    // Uniqueness does not depend on knowing the block. Checking it only after
-    // the owner is resolved would let a duplicate pair from a branch the index
-    // has forgotten pass as two ordinary unattributed records — the promise that
-    // duplicates are refused holding only while the block is still known.
+TEST_CASE("conflicting records claiming one forgotten block are still refused", "[undo][scan]") {
+    // Conflicting content must be refused even after the owner has disappeared
+    // from the rebuilt header index.
     store_fixture fixture("duplicate_forgotten");
 
     auto const forgotten = make_hash(9);
     REQUIRE_FALSE(fixture.store.write_undo(make_undo(10, 100), 0, forgotten, make_hash(8)).is_null());
-    REQUIRE_FALSE(fixture.store.write_undo(make_undo(10, 100), 0, forgotten, make_hash(8)).is_null());
+    REQUIRE_FALSE(fixture.store.write_undo(make_undo(11, 100), 0, forgotten, make_hash(8)).is_null());
 
     // Nothing resolves, so both records are unattributable.
     auto const result = fixture.store.scan_undo_positions(parents_of({}));
@@ -653,4 +651,64 @@ TEST_CASE("a block that spent nothing still has an undo record", "[undo][scan]")
     CHECK(result.status == block_store::undo_scan_status::clean_eof);
     REQUIRE(result.found.size() == 1);
     CHECK(result.found[0].block_hash == block_a);
+}
+
+TEST_CASE("replayed undo retains the first position across a restart", "[undo][scan][replayed_undo]") {
+    store_fixture fixture("replayed");
+    auto const block = make_hash(1);
+    auto const parent = make_hash(0);
+    auto const undo = make_undo(10, 100);
+    auto const first = fixture.store.write_undo(undo, 0, block, parent);
+    REQUIRE_FALSE(first.is_null());
+    REQUIRE_FALSE(fixture.store.write_undo(undo, 0, block, parent).is_null());
+    REQUIRE(fixture.store.initialize());
+    auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+    REQUIRE(result.status == block_store::undo_scan_status::clean_eof);
+    REQUIRE(result.found.size() == 1);
+    CHECK(result.found.front().position == first.pos);
+    CHECK(fixture.store.read_undo(first, block, parent).has_value());
+}
+
+TEST_CASE("repeated records are compared by their checksums", "[undo][scan][replayed_undo]") {
+    store_fixture fixture("forgotten_replay");
+    auto const block = make_hash(9);
+    auto const parent = make_hash(8);
+    auto const undo = make_undo(10, 100);
+    REQUIRE_FALSE(fixture.store.write_undo(undo, 0, block, parent).is_null());
+    auto const repeated = fixture.store.write_undo(undo, 0, block, parent);
+    REQUIRE_FALSE(repeated.is_null());
+    SECTION("identical forgotten records remain unattributed") {
+        auto const result = fixture.store.scan_undo_positions(parents_of({}));
+        CHECK(result.status == block_store::undo_scan_status::clean_eof);
+        CHECK(result.unattributed == 2);
+        CHECK(result.found.empty());
+    }
+    SECTION("a forgotten record's payload is not read") {
+        // Damage there is harmless until its branch is active again, and then
+        // the record is validated against its checksum like any other.
+        corrupt_byte(fixture.rev_path(0), repeated.pos);
+        auto const forgotten = fixture.store.scan_undo_positions(parents_of({}));
+        CHECK(forgotten.status == block_store::undo_scan_status::clean_eof);
+        CHECK(forgotten.unattributed == 2);
+        auto const known = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        CHECK(known.status == block_store::undo_scan_status::invalid_checksum);
+    }
+    SECTION("changed stored checksum with unchanged payload conflicts") {
+        corrupt_byte(fixture.rev_path(0), repeated.pos + undo.serialized_size());
+        auto const result = fixture.store.scan_undo_positions(parents_of({}));
+        CHECK(result.status == block_store::undo_scan_status::duplicate_record);
+        CHECK(result.found.empty());
+    }
+    SECTION("known duplicate payload must validate its checksum") {
+        corrupt_byte(fixture.rev_path(0), repeated.pos);
+        auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        CHECK(result.status == block_store::undo_scan_status::invalid_checksum);
+        CHECK(result.found.empty());
+    }
+    SECTION("known duplicate checksum must validate") {
+        corrupt_byte(fixture.rev_path(0), repeated.pos + undo.serialized_size());
+        auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        CHECK(result.status == block_store::undo_scan_status::invalid_checksum);
+        CHECK(result.found.empty());
+    }
 }

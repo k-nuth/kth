@@ -275,6 +275,10 @@ struct KD_API internal_database_basis {
     /// mean deleting the chain from that height, which is not what any caller
     /// means by it. Both are refused before the transaction opens.
     result_code replace_headers_from(domain::chain::header::list const& headers, uint32_t start_height);
+
+    /// Atomically remove rows strictly above an existing retained height.
+    /// Genesis and the retained row's ABLA state are never rewritten.
+    [[nodiscard]] result_code truncate_headers_after(uint32_t height);
 #endif
 
     // DEPRECATED: UTXO storage moved to UTXOZ
