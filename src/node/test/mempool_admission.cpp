@@ -6,6 +6,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <chrono>
+#include <expected>
 #include <future>
 #include <utility>
 #include <vector>
@@ -175,6 +176,82 @@ TEST_CASE("organizing a valid transaction admits it to the mempool", "[mempool][
     CHECK(ec == error::success);
     CHECK(chain.mempool_ref().size() == 1);
     CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+namespace {
+
+// test_accept on the chain's own pool, as run_on_chain runs the others.
+std::expected<size_t, code> test_accept_on_chain(blockchain::block_chain& chain,
+                                                 transaction_const_ptr tx) {
+    return ::asio::co_spawn(chain.executor(),
+        [&chain, tx]() -> ::asio::awaitable<std::expected<size_t, code>> {
+            co_return co_await chain.test_accept(tx);
+        },
+        ::asio::use_future).get();
+}
+
+} // namespace
+
+TEST_CASE("testing acceptance neither admits nor announces", "[mempool][admission]") {
+    admission_chain built("test_accept_only", trunk_len);
+    auto& chain = built.chain();
+    auto const channel = chain.subscribe_transaction();
+    REQUIRE(channel);
+
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    auto const tested = test_accept_on_chain(chain, tx);
+
+    // It passed, so the empty pool below shows it was not admitted rather
+    // than refused. A P2PKH spend counts its signature check.
+    REQUIRE(tested.has_value());
+    CHECK(*tested >= 1u);
+    CHECK(chain.mempool_ref().size() == 0);
+    bool published = false;
+    while (channel->try_receive([&](std::error_code, transaction_const_ptr) { published = true; })) {}
+    CHECK_FALSE(published);
+
+    // Nothing left behind trips admission: the same transaction is admitted.
+    CHECK(run_on_chain(chain, [&chain, tx] { return chain.organize(tx); }) == error::success);
+    CHECK(chain.mempool_ref().contains(tx->hash()));
+    chain.unsubscribe_transaction(channel);
+}
+
+TEST_CASE("testing acceptance applies the pool's first-seen rule", "[mempool][admission]") {
+    admission_chain built("test_accept_first_seen", trunk_len);
+    auto& chain = built.chain();
+
+    auto const pooled = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    REQUIRE(run_on_chain(chain, [&chain, pooled] { return chain.organize(pooled); }) == error::success);
+
+    // The pooled transaction itself.
+    auto const again = test_accept_on_chain(chain, pooled);
+    REQUIRE_FALSE(again.has_value());
+    CHECK(again.error() == error::duplicate_transaction);
+
+    // Another spend of the same coin. Valid on its own; the pooled spend came
+    // first, so admission refuses it, and testing says so before admission does.
+    auto const rival = std::make_shared<domain::message::transaction>(built.matured_spend(2 * fee));
+    REQUIRE(rival->hash() != pooled->hash());
+    auto const conflict = test_accept_on_chain(chain, rival);
+    REQUIRE_FALSE(conflict.has_value());
+    CHECK(conflict.error() == error::double_spend_mempool);
+    CHECK(run_on_chain(chain, [&chain, rival] { return chain.organize(rival); }) == error::double_spend_mempool);
+
+    // A spend of an output nothing holds.
+    hash_digest unknown{};
+    unknown[0] = 0x01;
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{unknown, 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    auto const orphan = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{2u, 0u, std::move(ins), std::move(outs)});
+    auto const missing = test_accept_on_chain(chain, orphan);
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error() == error::missing_previous_output);
+
+    CHECK(chain.mempool_ref().size() == 1);
 }
 
 #if defined(KTH_CURRENCY_BCH)
