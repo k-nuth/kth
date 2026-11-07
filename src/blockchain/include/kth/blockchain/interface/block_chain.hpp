@@ -808,6 +808,19 @@ struct KB_API block_chain {
     [[nodiscard]]
     uint64_t mempool_minimum_fee_per_kb();
 
+    // mempool_minimum_fee_per_kb(), on the chain's executor: the caller waits
+    // for the validation lock without holding a thread of its own.
+    [[nodiscard]]
+    ::asio::awaitable<uint64_t> mempool_minimum_fee();
+
+    // Rung when the mempool's minimum fee may have moved: an eviction raised
+    // it, or a block changed how it decays. One slot, so rings coalesce: what
+    // it wakes reads the minimum afresh. Closed by stop().
+    [[nodiscard]]
+    ::asio::experimental::select_channel<std::monostate>& mempool_fee_events() noexcept {
+        return mempool_fee_events_;
+    }
+
     // The mempool's estimated memory, in bytes, as its limit counts it.
     [[nodiscard]]
     uint64_t mempool_usage();
@@ -1199,6 +1212,12 @@ private:
     // The size limit's state. Read and written only under validation_mutex_,
     // like every write to mempool_ (see mempool_limit).
     mempool_limit mempool_limit_;
+
+    // Under validation_mutex_: the limit's bookkeeping for a connected block,
+    // and a trim, each ringing mempool_fee_events_ when the minimum moved.
+    void note_mempool_block_connected();
+    size_t trim_mempool(uint64_t limit);
+    ::asio::experimental::select_channel<std::monostate> mempool_fee_events_{1};
 
     // Immutable template publication. A one-token channel serializes rebuilds
     // across asynchronous input refresh without holding a thread-affine mutex.

@@ -424,6 +424,40 @@ TEST_CASE("a stop wakes the expiry sweep from its wait", "[mempool][admission][e
 // After a full pool evicted, admission asks the evicted rate plus BCHN's
 // increment, per virtual byte, until blocks let it decay (BCHN "mempool min
 // fee not met").
+// The fee filter watch is woken when the minimum may have moved, and only
+// then: an eviction raises it, and a block connected while it is above zero
+// changes how it decays. A block with no minimum to decay rings nothing, so
+// initial sync rings nothing for each of its blocks.
+TEST_CASE("the mempool's fee events ring when its minimum may have moved, and only then",
+          "[mempool][admission][limit][fee_filter]") {
+    admission_chain built("mempool_fee_events", trunk_len);
+    auto& chain = built.chain();
+    auto& events = chain.mempool_fee_events();
+    auto const rung = [&] {
+        std::error_code ec;
+        return bool(events.try_receive(ec));
+    };
+
+    chain.mempool_remove_for_block(built.trunk.back());
+    CHECK_FALSE(rung());
+
+    auto const pooled = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(pooled); }) == error::success);
+    CHECK_FALSE(rung());                         // admitted, nothing evicted
+
+    REQUIRE(chain.mempool_trim(0) == 1);
+    CHECK(rung());
+    CHECK_FALSE(rung());
+
+    auto const minimum = chain.mempool_minimum_fee_per_kb();
+    REQUIRE(minimum > 0);
+    CHECK(::asio::co_spawn(chain.executor(), chain.mempool_minimum_fee(), ::asio::use_future).get()
+          == minimum);
+
+    chain.mempool_remove_for_block(built.trunk.back());
+    CHECK(rung());
+}
+
 TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
           "[mempool][admission][limit]") {
     admission_chain built("mempool_minimum_fee", trunk_len);
