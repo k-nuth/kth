@@ -2347,6 +2347,24 @@ private:
     prioritized_mutex& mutex_;
 };
 
+// The same at low priority: admission's side, and readers that must not delay
+// a block.
+struct validation_low_priority_lock {
+    explicit validation_low_priority_lock(prioritized_mutex& mutex) : mutex_(mutex) {
+        mutex_.lock_low_priority();
+    }
+    ~validation_low_priority_lock() { mutex_.unlock_low_priority(); }
+    validation_low_priority_lock(validation_low_priority_lock const&) = delete;
+    validation_low_priority_lock& operator=(validation_low_priority_lock const&) = delete;
+private:
+    prioritized_mutex& mutex_;
+};
+
+uint64_t unix_now() {
+    return uint64_t(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
 } // namespace
 
 code block_chain::mempool_remove_for_block(byte_span raw) {
@@ -2369,6 +2387,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
+    mempool_limit_.note_block_connected(unix_now());
 
     // Under the lock, so an admission cannot land between finding the pool empty
     // and deciding there is nothing to do. Empty is the whole of initial sync,
@@ -2383,7 +2402,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
         return error::operation_failed;
     }
 
-    mempool_.remove_for_block(*block);
+    mempool_limit_.removed(mempool_.remove_for_block(*block));
     return error::success;
 }
 
@@ -2407,7 +2426,23 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
-    mempool_.remove_for_block(block);
+    mempool_limit_.note_block_connected(unix_now());
+    mempool_limit_.removed(mempool_.remove_for_block(block));
+}
+
+uint64_t block_chain::mempool_minimum_fee_per_kb() {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.minimum_fee_per_kb(settings_.mempool_limit_bytes(), unix_now());
+}
+
+uint64_t block_chain::mempool_usage() {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.usage();
+}
+
+size_t block_chain::mempool_trim(uint64_t limit) {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
 }
 
 ::asio::awaitable<size_t> block_chain::mempool_expire(uint64_t seen_before) {
@@ -2417,7 +2452,9 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
     co_return co_await ::asio::co_spawn(executor(),
         [this, seen_before]() -> ::asio::awaitable<size_t> {
             validation_high_priority_lock const lock(validation_mutex_);
-            co_return mempool_.expire(seen_before);
+            auto const removed = mempool_.expire(seen_before);
+            mempool_limit_.removed(removed);
+            co_return removed.size();
         }, ::asio::use_awaitable);
 }
 
@@ -2469,7 +2506,29 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
             return error::missing_previous_output;
         }
     }
-    return mempool_.add(std::move(entry)) ? error::success : error::double_spend_mempool;
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"), per virtual byte, so a transaction heavy in signature checks
+    // pays for them. Checked here, under the lock that orders it against the
+    // evictions and blocks that move it.
+    auto const limit = settings_.mempool_limit_bytes();
+    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
+    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
+        return error::insufficient_fee;
+    }
+
+    auto const txid = entry.tx->hash();
+    auto const tracked = entry;
+    if ( ! mempool_.add(std::move(entry))) {
+        return error::double_spend_mempool;
+    }
+    mempool_limit_.added(tracked);
+
+    // Past its limit the pool evicts the lowest fee per virtual byte, with
+    // descendants (BCHN LimitMempoolSize). When that is this transaction, it
+    // is refused as paying too little ("mempool full").
+    mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
+    return mempool_.contains(txid) ? error::success : error::insufficient_fee;
 }
 
 blockchain::mempool& block_chain::mempool_ref() {

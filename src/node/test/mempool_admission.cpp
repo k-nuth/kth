@@ -230,6 +230,32 @@ TEST_CASE("a reloaded transaction keeps its age and expires with its descendants
     CHECK_FALSE(chain.mempool_ref().contains(child.hash()));
 }
 
+// What expiry removes, descendants included, no longer counts against the
+// mempool's limit: otherwise an expired pool would still read as full.
+TEST_CASE("expired transactions and their descendants leave the limit's usage",
+          "[mempool][admission][expiry][limit]") {
+    admission_chain built("mempool_expiry_usage", trunk_len);
+    auto& chain = built.chain();
+    auto const parent = built.matured_spend(fee);
+    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - fee,
+        chain.chain_settings().enabled_flags());
+
+    auto const now = uint64_t(zulu_time());
+    std::vector<database::mempool_stored_tx> stored{
+        {std::make_shared<domain::message::transaction>(parent), now - 7200},
+        {std::make_shared<domain::message::transaction>(child), now - 60}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+    REQUIRE(::asio::co_spawn(chain.executor(), chain.load_mempool_from_disk(),
+        ::asio::use_future).get() == 2);
+    REQUIRE(chain.mempool_usage() > 0);
+
+    // Only the parent is old enough; the child goes as its descendant.
+    REQUIRE(::asio::co_spawn(chain.executor(), chain.mempool_expire(now - 3600),
+        ::asio::use_future).get() == 2);
+    REQUIRE(chain.mempool_ref().size() == 0);
+    CHECK(chain.mempool_usage() == 0);
+}
+
 namespace {
 
 // A chain whose mempool holds one transaction first seen `age` seconds ago.
@@ -337,6 +363,43 @@ TEST_CASE("a stop wakes the expiry sweep from its wait", "[mempool][admission][e
         REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
     }
     CHECK(pool.pooled());
+}
+
+// After a full pool evicted, admission asks the evicted rate plus BCHN's
+// increment, per virtual byte, until blocks let it decay (BCHN "mempool min
+// fee not met").
+TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
+          "[mempool][admission][limit]") {
+    admission_chain built("mempool_minimum_fee", trunk_len);
+    auto& chain = built.chain();
+    using namespace domain::chain;
+
+    // An admitted transaction, then evicted by a pool trimmed to nothing: the
+    // minimum becomes its rate plus the increment.
+    auto const pooled = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(run_on_chain(chain, [&] { return chain.organize(pooled); }) == error::success);
+    auto const entry = chain.mempool_ref().entry(pooled->hash());
+    REQUIRE(entry);
+    auto const raised = blockchain::fee_per_kb(entry->fee, blockchain::virtual_size(entry->size, entry->sigchecks))
+        + blockchain::mempool_full_fee_increment_per_kb;
+    REQUIRE(chain.mempool_usage() > 0);
+    REQUIRE(chain.mempool_trim(0) == 1);
+    CHECK_FALSE(chain.mempool_ref().contains(pooled->hash()));
+    CHECK(chain.mempool_usage() == 0);
+    REQUIRE(chain.mempool_minimum_fee_per_kb() == raised);
+
+    // Below it, refused: the evicted transaction cannot come straight back at
+    // the price it was evicted at. Above it, a spend of the same coin enters.
+    auto const cheap = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(cheap->hash() == pooled->hash());
+    REQUIRE(blockchain::fee_per_kb(1000, cheap->serialized_size(true)) < raised);
+    CHECK(run_on_chain(chain, [&] { return chain.organize(cheap); }) == error::insufficient_fee);
+    CHECK_FALSE(chain.mempool_ref().contains(cheap->hash()));
+
+    auto const paying = std::make_shared<domain::message::transaction>(built.matured_spend(2000));
+    REQUIRE(blockchain::fee_per_kb(2000, paying->serialized_size(true)) >= raised);
+    CHECK(run_on_chain(chain, [&] { return chain.organize(paying); }) == error::success);
+    CHECK(chain.mempool_ref().contains(paying->hash()));
 }
 
 #if defined(KTH_CURRENCY_BCH)

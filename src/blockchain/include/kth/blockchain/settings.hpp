@@ -39,6 +39,24 @@ struct KB_API settings {
     // BCHN -mempoolexpiry: a transaction still unconfirmed this long after the
     // node first saw it leaves the mempool, with its descendants. 0 keeps them.
     uint32_t mempool_expiry_hours = 336;
+
+    // -maxmempool, in MB of estimated memory. 0, the default, is BCHN's on BCH,
+    // ten times the network's default block size (320 MB on mainnet), and
+    // Bitcoin Core's 300 MB elsewhere.
+    uint32_t mempool_max_mb = 0;
+
+    /// The mempool's memory limit in bytes (mempool_max_mb, or its default).
+    [[nodiscard]]
+    uint64_t mempool_limit_bytes() const {
+        if (mempool_max_mb > 0) {
+            return uint64_t(mempool_max_mb) * 1'000'000;
+        }
+#if defined(KTH_CURRENCY_BCH)
+        return 10 * uint64_t(default_consensus_block_size);
+#else
+        return 300 * uint64_t(1'000'000);
+#endif
+    }
 #if defined(KTH_CURRENCY_BCH)
     uint64_t minimum_output_satoshis = 0;
     domain::policy::transaction_standardness_parameters standardness;
@@ -156,7 +174,10 @@ struct KB_API settings {
     // Doubled if blocks are ahead of schedule.
     uint64_t asert_half_life = 2ull * 24 * 60 * 60;   //two days
 
-    uint64_t default_consensus_block_size;
+    // Mainnet's until settings(network) sets the network's: a default-built
+    // settings must not leave it indeterminate, since the mempool limit and
+    // the ABLA defaults are derived from it.
+    uint64_t default_consensus_block_size = max_block_size::mainnet_new;
     kth::domain::chain::abla::config abla_config {};
 
 #else

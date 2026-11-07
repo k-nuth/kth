@@ -44,6 +44,7 @@
 #include <kth/blockchain/pools/capture_gate.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
+#include <kth/blockchain/pools/mempool_limit.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
@@ -799,6 +800,19 @@ struct KB_API block_chain {
     ::asio::awaitable<void> run_mempool_expiry(std::chrono::seconds expiry,
         std::chrono::steady_clock::duration period, std::stop_token stop);
 
+    // The fee per 1000 virtual bytes the mempool asks now: 0 until it has been
+    // full, then the rate it evicted plus the increment, decaying after blocks.
+    [[nodiscard]]
+    uint64_t mempool_minimum_fee_per_kb();
+
+    // The mempool's estimated memory, in bytes, as its limit counts it.
+    [[nodiscard]]
+    uint64_t mempool_usage();
+
+    // Evict down to `limit` bytes now, as admission does past the configured
+    // limit. Returns how many transactions left.
+    size_t mempool_trim(uint64_t limit);
+
     blockchain::mempool& mempool_ref();
     blockchain::mempool const& mempool_ref() const;
 
@@ -1179,6 +1193,9 @@ private:
     mutable transaction_validation_store transaction_validations_;
 
     blockchain::mempool mempool_;
+    // The size limit's state. Read and written only under validation_mutex_,
+    // like every write to mempool_ (see mempool_limit).
+    mempool_limit mempool_limit_;
 
     // Immutable template publication. A one-token channel serializes rebuilds
     // across asynchronous input refresh without holding a thread-affine mutex.
