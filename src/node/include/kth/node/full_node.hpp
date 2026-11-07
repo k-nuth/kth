@@ -47,6 +47,7 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/transaction_relay.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
@@ -224,6 +225,11 @@ private:
 #endif
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
+#if ! defined(__EMSCRIPTEN__)
+    // The cmpctblock of the latest tip, shared by the peers' services that
+    // announce it to peers asking for high-bandwidth compact blocks.
+    sync::compact_tip_cache compact_tips_;
+#endif
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<rpc::server> rpc_server_;

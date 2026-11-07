@@ -55,6 +55,17 @@ p2p_node::p2p_node(settings const& settings)
                 peer.set_prefers_headers(true);
                 co_return message_result::handled;
             }));
+    // BIP152: the peer wants new blocks announced with a cmpctblock (high
+    // bandwidth), or no longer does. Version 1 is the only one this node
+    // speaks; a sendcmpct of another version leaves what was recorded.
+    dispatcher_.register_handler<domain::message::send_compact>(
+        typed_message_handler_fn<domain::message::send_compact>(
+            [](peer_session& peer, domain::message::send_compact const& request) -> ::asio::awaitable<message_result> {
+                if (request.version() == 1) {
+                    peer.set_prefers_compact_blocks(request.high_bandwidth_mode());
+                }
+                co_return message_result::handled;
+            }));
 }
 
 p2p_node::~p2p_node() {

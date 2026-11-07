@@ -147,10 +147,12 @@ full_node::~full_node() {
             return handlers::chain_data::handle_get_block_transactions(chain_, peer, request);
         });
     // Each newly connected tip, owed to every peer by the sync coordinator, is
-    // announced by the peer's own service.
+    // announced by the peer's own service; to a high-bandwidth compact block
+    // peer with the cmpctblock all of them share.
     network_.set_tip_announcement_handler(
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
-            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced,
+                [this](hash_digest const& hash) { return compact_tips_.get(chain_, hash); });
         });
 
 #if ! defined(__EMSCRIPTEN__)
