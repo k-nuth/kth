@@ -1,0 +1,10 @@
+{
+  "upstream": "Bitcoin Cash Node",
+  "upstreamCommit": "07576013c91ff4a3a74acd85f189c69121cdad1b",
+  "upstreamTree": "2f9788a0d86c7206fe35c7760aebe983638e33d7",
+  "upstreamPath": "src/test/data/token_tests_prefix_valid.json, src/test/data/token_tests_prefix_invalid.json",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2009-present The Bitcoin Core / Bitcoin developers, as distributed in Bitcoin Cash Node (COPYING at the upstream commit)",
+  "files": "verbatim copies in data/",
+  "provenanceNote": "vectors written for the CashTokens CHIP and shipped in Bitcoin Cash Node under its MIT license; the CHIP authors' own notice was not separately verified"
+}

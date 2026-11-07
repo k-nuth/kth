@@ -27,6 +27,7 @@
 #include <kth/domain/chain/stealth.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/policy/standardness.hpp>
+#include <kth/domain/policy/standardness_bchn.hpp>
 
 #include <kth/domain/config/network.hpp>
 #include <kth/domain/config/parser.hpp>
