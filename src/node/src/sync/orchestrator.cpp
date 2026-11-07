@@ -10,6 +10,7 @@
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
+#include <kth/node/detail/tx_relay.hpp>
 
 #include <algorithm>
 #include <iterator>
@@ -1256,6 +1257,51 @@ static
         }
         spdlog::info("[coordinator:stored_bridge] Task ended");
     });
+
+    // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
+    // `mempool_expiry_hours` after the node first saw it leaves the pool with
+    // its descendants. BCHN also checks at each admission, walking its
+    // first-seen order; kth keeps no such order, so the sweep runs every hour,
+    // and at least twice per expiry period, which bounds how long a transaction
+    // outstays it. Ends with the network.
+    if (auto const hours = chain.chain_settings().mempool_expiry_hours; hours > 0) {
+        std::chrono::seconds const expiry = std::chrono::hours(hours);
+        auto const period = std::min<std::chrono::steady_clock::duration>(
+            std::chrono::hours(1), expiry / 2);
+        all_tasks.spawn("mempool_expiry", [&, expiry, period]() -> ::asio::awaitable<void> {
+            co_await chain.run_mempool_expiry(expiry, period, network.stop_token());
+        });
+    }
+
+    // Transaction relay: what peers announce is asked for and offered to the
+    // mempool (detail/tx_relay.hpp). The relay's state is the owner
+    // coroutine's own; each getdata it sends is a task of this group. Both end with the network: stop()
+    // closes the relay's channel, and the owner closes the admission channel.
+    detail::tx_admission_channel tx_admission(detail::tx_admission_capacity);
+    if (network.network_settings().relay_transactions) {
+        detail::tx_relay_view relay_view{
+            .synchronized = [&chain] { return chain.synchronization().synchronized(); },
+            .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
+            .tip = [&chain] {
+                auto const view = chain.chain_view();
+                return view ? view->tip_hash : null_hash;
+            },
+        };
+        auto spawn_relay_task = [&all_tasks](::asio::awaitable<void> task) {
+            all_tasks.spawn("tx_relay_request", std::move(task));
+        };
+        all_tasks.spawn("tx_relay", detail::tx_relay_task(network.tx_relay(),
+            std::move(relay_view), tx_admission, std::move(spawn_relay_task)));
+        // Admission takes the validation lock to commit: on the chain's own
+        // executor, as sendrawtransaction's callers and the tests run it, not
+        // on a network thread.
+        all_tasks.spawn("tx_admission", detail::tx_admission_task(tx_admission,
+            [&chain](domain::message::transaction::const_ptr tx) {
+                return ::asio::co_spawn(chain.executor(), chain.submit_transaction(std::move(tx)),
+                    ::asio::use_awaitable);
+            },
+            network.tx_relay()));
+    }
 
     // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow

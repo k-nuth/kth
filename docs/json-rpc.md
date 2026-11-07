@@ -77,7 +77,7 @@ counterpart.
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
-| `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
@@ -117,9 +117,9 @@ at most one string; other types or extra arguments return invalid params.
 
 `estimatefee` returns the fee per kB, in BCH, that the size part of the node's
 transaction price asks for: `node.byte_fee_satoshis` per byte, rounded to whole
-satoshis per kB (`0.000001` with the default `0.1`). The price also charges
-`node.sigop_fee_satoshis` per signature operation, which a per-kB rate cannot
-carry, so a transaction pays that on top. The node has no fee estimator: the
+satoshis per kB (`0.00001` with the default `1`, BCHN's relay floor). An operator
+who sets `node.sigop_fee_satoshis` (0 by default) adds a price per signature
+operation, which a per-kB rate cannot carry, so a transaction pays that on top. The node has no fee estimator: the
 target-blocks argument older clients send is accepted and does not change the
 answer.
 
@@ -212,8 +212,8 @@ and `warnings`. `version` is `kth::version` as one number:
 `major * 1000000 + minor * 10000 + patch * 100`, so 1.5.2 is 1050200.
 `networkactive` is false while the P2P node is not running. `relayfee` is the
 size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
-BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
-operation. The method takes no arguments: anything other than omitted params or
+BCH per kB; a `node.sigop_fee_satoshis` set by the operator is charged on top
+per signature operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
 
 ## Blocks and transactions

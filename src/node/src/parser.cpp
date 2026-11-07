@@ -249,6 +249,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
     app.add_option("--node.sigop_fee_satoshis",    cfg.chain.sigop_fee_satoshis);
+    app.add_option("--node.mempool_expiry_hours",  cfg.chain.mempool_expiry_hours);
+    app.add_option("--node.mempool_max_mb",        cfg.chain.mempool_max_mb);
     app.add_option("--node.minimum_output_satoshis", cfg.chain.minimum_output_satoshis);
     // General Knuth standardness control. BCHN diagnostics never gate admission.
     app.add_option("--node.acceptnonstdtxn,--acceptnonstdtxn", cfg.chain.accept_non_standard_transactions,

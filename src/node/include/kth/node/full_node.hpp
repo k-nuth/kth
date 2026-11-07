@@ -47,7 +47,6 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
-#include <kth/node/transaction_relay.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
@@ -206,9 +205,6 @@ private:
     ::asio::awaitable<void> run_blockchain_subscriber();
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
-    ::asio::awaitable<void> run_transaction_relay();
-#endif
-#if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
 #endif
 
@@ -222,8 +218,6 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::node::p2p_node network_;
-    // Present when the node relays transactions (network.relay_transactions).
-    std::unique_ptr<transaction_relay> relay_;
 #endif
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
