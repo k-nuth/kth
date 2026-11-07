@@ -2575,6 +2575,10 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
     co_return co_await transaction_organizer_.transaction_validate(tx);
 }
 
+awaitable_expected<size_t> block_chain::test_accept(transaction_const_ptr tx) {
+    co_return co_await transaction_organizer_.test_accept(tx);
+}
+
 // =============================================================================
 // PROPERTIES
 // =============================================================================
