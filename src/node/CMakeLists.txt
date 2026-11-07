@@ -336,6 +336,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/block_reads.cpp
           test/chain_data.cpp
           test/tip_announcement.cpp
+          test/compact_blocks.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
