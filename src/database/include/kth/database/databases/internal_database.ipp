@@ -6,6 +6,7 @@
 #define KTH_DATABASE_INTERNAL_DATABASE_IPP_
 
 // #include <kth/infrastructure.hpp>
+#include <cstring>
 #include <kth/infrastructure/log/source.hpp>
 #include <spdlog/spdlog.h>
 
@@ -367,6 +368,10 @@ bool internal_database_basis<Clock>::close() {
         kth_db_dbi_close(env_, dbi_block_header_);
         kth_db_dbi_close(env_, dbi_block_header_by_hash_);
         kth_db_dbi_close(env_, dbi_properties_);
+        if (dbi_rejected_blocks_) {
+            kth_db_dbi_close(env_, *dbi_rejected_blocks_);
+            dbi_rejected_blocks_.reset();
+        }
 
         db_opened_ = false;
     }
@@ -700,6 +705,70 @@ std::expected<domain::chain::header::list, result_code> internal_database_basis<
     return list;
 }
 
+// Rejection history belongs to consensus admission, not the active-height map.
+// Truncating or replacing that map must never erase these verdicts.
+template <typename Clock>
+std::expected<std::vector<hash_digest>, result_code>
+internal_database_basis<Clock>::rejected_blocks() const {
+    std::vector<hash_digest> hashes;
+    if ( ! dbi_rejected_blocks_) {
+        return hashes;
+    }
+    KTH_DB_txn* txn;
+    if (kth_db_txn_begin(env_, nullptr, KTH_DB_RDONLY, &txn) != KTH_DB_SUCCESS) {
+        return kth::fail(result_code::other);
+    }
+    KTH_DB_cursor* cursor;
+    if (kth_db_cursor_open(txn, *dbi_rejected_blocks_, &cursor) != KTH_DB_SUCCESS) {
+        kth_db_txn_abort(txn);
+        return kth::fail(result_code::other);
+    }
+    KTH_DB_val key;
+    KTH_DB_val value;
+    auto rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_FIRST);
+    while (rc == KTH_DB_SUCCESS) {
+        if (kth_db_get_size(key) != hash_size || kth_db_get_size(value) != 1 ||
+            *static_cast<uint8_t const*>(kth_db_get_data(value)) != 1) {
+            kth_db_cursor_close(cursor);
+            kth_db_txn_abort(txn);
+            return kth::fail(result_code::other);
+        }
+        hash_digest hash;
+        std::memcpy(hash.data(), kth_db_get_data(key), hash.size());
+        hashes.push_back(hash);
+        rc = kth_db_cursor_get(cursor, &key, &value, KTH_DB_NEXT);
+    }
+    kth_db_cursor_close(cursor);
+    kth_db_txn_abort(txn);
+    if (rc != KTH_DB_NOTFOUND) {
+        return kth::fail(result_code::other);
+    }
+    return hashes;
+}
+
+#if ! defined(KTH_DB_READONLY)
+template <typename Clock>
+result_code internal_database_basis<Clock>::record_rejected_block(hash_digest const& hash) {
+    if ( ! dbi_rejected_blocks_) {
+        return result_code::other;
+    }
+    KTH_DB_txn* txn;
+    if (kth_db_txn_begin(env_, nullptr, 0, &txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+    uint8_t version = 1;
+    auto key = kth_db_make_value(hash.size(), const_cast<uint8_t*>(hash.data()));
+    auto value = kth_db_make_value(sizeof(version), &version);
+    auto const put = kth_db_put(txn, *dbi_rejected_blocks_, &key, &value, 0);
+    if (put != KTH_DB_SUCCESS) {
+        kth_db_txn_abort(txn);
+        return result_code::other;
+    }
+    return kth_db_txn_commit(txn) == KTH_DB_SUCCESS
+        ? result_code::success : result_code::other;
+}
+#endif
+
 // Private functions
 // ------------------------------------------------------------------------------------------------------
 
@@ -873,6 +942,25 @@ bool internal_database_basis<Clock>::open_databases() {
     if ( ! open_db(block_header_db_name, KTH_DB_CONDITIONAL_CREATE | KTH_DB_INTEGERKEY, &dbi_block_header_)) return false;
     if ( ! open_db(block_header_by_hash_db_name, KTH_DB_CONDITIONAL_CREATE, &dbi_block_header_by_hash_)) return false;
     if ( ! open_db(db_properties_name, KTH_DB_CONDITIONAL_CREATE | KTH_DB_INTEGERKEY, &dbi_properties_)) return false;
+
+    dbi_rejected_blocks_.reset();
+    KTH_DB_dbi rejected;
+    auto const rejected_open = kth_db_dbi_open(db_txn, rejected_blocks_name,
+        KTH_DB_CONDITIONAL_CREATE, &rejected);
+    if (rejected_open == KTH_DB_SUCCESS) {
+        dbi_rejected_blocks_ = rejected;
+    } else {
+#if defined(KTH_DB_READONLY)
+        // Older databases have no rejection table. Absence is empty, not unreadable.
+        if (rejected_open != KTH_DB_NOTFOUND) {
+            kth_db_txn_abort(db_txn);
+            return false;
+        }
+#else
+        kth_db_txn_abort(db_txn);
+        return false;
+#endif
+    }
 
     auto commit_res = kth_db_txn_commit(db_txn);
     db_opened_ = commit_res == KTH_DB_SUCCESS;

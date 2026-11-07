@@ -227,6 +227,29 @@ using download_worker_launcher = std::function<void(
     utxo_build_progress_channel* progress
 );
 
+// The same, with the contextual verdict made definitive and recoverable.
+//
+// When a batch fails full validation and the validator attributes the failure
+// to one block, the builder reports it as a `block_rejected` on `rejections`
+// (one at a time, see messages.hpp), parks at the reorg barrier, and waits on
+// `rejection_ack` for the coordinator to move the chain off that block and
+// re-derive the cursors. It then re-reads its built height and goes on. The
+// blocks before the rejected one were not applied: they are validated again
+// as a batch of their own on the next pass. Both channels null keeps the
+// previous behaviour (log and end). Both are borrowed until completion; the
+// owner closes them before joining this task.
+::asio::awaitable<void> utxo_build_task(
+    blockchain::block_chain& chain,
+    std::atomic<uint32_t> const& contiguous_height,
+    uint32_t start_height,
+    domain::config::network network,
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal,
+    utxo_build_progress_channel* progress,
+    block_rejection_channel* rejections,
+    block_rejection_ack_channel* rejection_ack
+);
+
 } // namespace kth::node::sync
 
 #endif // KTH_NODE_SYNC_BLOCK_TASKS_HPP

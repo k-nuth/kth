@@ -115,15 +115,13 @@ code populate_base::populate_prevout(size_t branch_height, output_point const& o
     }
 
     if ( ! utxo) {
-        // Every remaining code is this node failing to read its own storage, and
-        // probing the mempool on that basis would answer a question nobody could
-        // answer: a miss would then look exactly like a prevout that does not
-        // exist, and the block would be rejected over a disk that did not
-        // respond.
-        if (utxo.error() != database::result_code::not_resolved) {
-            spdlog::error("[populate] the UTXO store failed while reading {}:{}; "
+        // A height-bounded miss is legitimate, too. All other failures remain
+        // operational errors; never infer absence from a failed store read.
+        if (utxo.error() != database::result_code::not_resolved &&
+            utxo.error() != database::result_code::key_not_found) {
+            spdlog::error("[populate] the UTXO store failed while reading {}:{} ({}); "
                 "refusing to treat an unreadable store as a missing prevout",
-                encode_hash(outpoint.hash()), outpoint.index());
+                encode_hash(outpoint.hash()), outpoint.index(), database::result_code_name(utxo.error()));
             return error::operation_failed;
         }
         // Chained tx: the prevout may be an unconfirmed parent's output in the

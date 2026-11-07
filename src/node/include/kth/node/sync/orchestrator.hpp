@@ -179,6 +179,29 @@ inline constexpr header_walk_timing node_header_walk_timing{
     header_walk_timing timing
 );
 
+/// sync_orchestrator(), draining a local block submission endpoint.
+///
+/// `submissions` is the endpoint block_chain::submit_block feeds, owned by the
+/// node and outliving this call; the coordinator is its one consumer and
+/// closes it when it ends, answering whatever is still queued with
+/// service_stopped. Null runs without local admission, which is what the
+/// overloads above do: nothing here reaches for an endpoint the chain may not
+/// have.
+::asio::awaitable<void> sync_orchestrator(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    kth::node::p2p_node& network,
+    domain::config::network network_type,
+    std::function<void(std::string const&)> on_fatal,
+    header_walk_timing timing,
+    blockchain::block_submission_channel* submissions
+);
+
+/// How many local submissions the coordinator holds at once, from the moment
+/// it takes one until it answers it. Beyond this a submission is refused at
+/// once rather than queued: the submitter owns the retry.
+inline constexpr size_t max_pending_local_submissions = 4;
+
 } // namespace kth::node::sync
 
 #endif // KTH_NODE_SYNC_ORCHESTRATOR_HPP

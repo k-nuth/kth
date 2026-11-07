@@ -82,8 +82,10 @@ void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash
 // Organizers.
 //-------------------------------------------------------------------------
 
+// Copies the block before returning. The caller keeps the node, context and
+// callback alive until the callback returns, as for the other C async entries.
 KTH_EXPORT
-void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler);
+void kth_chain_async_submit_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler);
 
 KTH_EXPORT
 void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_mut_t transaction, kth_result_handler_t handler);

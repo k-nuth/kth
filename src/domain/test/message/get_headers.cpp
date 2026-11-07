@@ -92,6 +92,24 @@ TEST_CASE("get headers from data insufficient version failure", "[get headers]")
     REQUIRE( ! result);
 }
 
+TEST_CASE("get headers from data refuses a locator count the payload cannot hold", "[get headers]") {
+    // Version, a count of 2^62 hashes, and nothing after it: refused before
+    // anything is reserved for them.
+    data_chunk const raw{
+        0x72, 0x11, 0x01, 0x00,
+        0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40};
+    byte_reader reader(raw);
+    REQUIRE( ! message::get_headers::from_data(reader, message::get_headers::version_minimum));
+
+    // Three hashes claimed and two present.
+    data_chunk short_of_one{0x72, 0x11, 0x01, 0x00, 0x03};
+    short_of_one.resize(short_of_one.size() + 2 * hash_size, 0x00);
+    byte_reader short_reader(short_of_one);
+    auto const result = message::get_headers::from_data(short_reader, message::get_headers::version_minimum);
+    REQUIRE( ! result);
+    REQUIRE(result.error() == error::invalid_size);
+}
+
 TEST_CASE("get headers from data valid input success", "[get headers]") {
     message::get_headers const expected {
         {
