@@ -93,6 +93,9 @@ private:
     bool recover_at_boundary();
     bool dispatch(attempt& value, jd_declaration::result result);
     bool share_response(attempt& value, message_header const& header, byte_span payload);
+    // Always false: the attempt ends, and the entry starts again at the new
+    // address now or, before the pair was healthy, after its retry hold.
+    bool follow_reconnect(attempt& value, jd_peer peer, byte_span payload);
     void publish_pool(attempt& value);
     void publish_solo(attempt const& value);
     void note_share(attempt& value, mining::pool_proof const& proof);
@@ -110,6 +113,13 @@ private:
     sv2_settings const settings_;
     std::vector<sv2_settings::jd_upstream> const upstreams_;
     jd_failover policy_;
+    // Addresses named by a followed Reconnect, per entry and connection. An
+    // entry's are dropped when it fails, so its retry uses the configured ones.
+    struct redirect {
+        std::optional<jd_endpoint> mining;
+        std::optional<jd_endpoint> declaration;
+    };
+    std::vector<redirect> redirects_;
     std::shared_ptr<attempt> active_;
     std::shared_ptr<attempt> probe_;
     blockchain::block_chain* const chain_;

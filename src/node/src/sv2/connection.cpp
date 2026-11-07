@@ -83,4 +83,19 @@ expect<setup_connection_error> setup_connection_error::from_data(byte_reader& so
     return setup_connection_error{*flags, std::move(*error_code)};
 }
 
+// --- Reconnect (0x04) -------------------------------------------------------
+
+expect<void> reconnect::to_data(byte_writer& sink) const {
+    if (auto r = write_string_u8(sink, new_host); ! r) return r;
+    return sink.write_little_endian<uint16_t>(new_port);
+}
+
+expect<reconnect> reconnect::from_data(byte_reader& source) {
+    auto new_host = read_string_u8(source);
+    if ( ! new_host) return std::unexpected(new_host.error());
+    auto const new_port = source.read_little_endian<uint16_t>();
+    if ( ! new_port) return std::unexpected(new_port.error());
+    return reconnect{std::move(*new_host), *new_port};
+}
+
 } // namespace kth::node::sv2

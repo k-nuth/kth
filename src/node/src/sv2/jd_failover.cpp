@@ -92,6 +92,12 @@ void jd_failover::release_probe() {
     probe_.reset();
 }
 
+void jd_failover::restart(size_t index) {
+    auto& value = entries_[index];
+    value.health = jd_health::connecting;
+    value.healthy_since.reset();
+}
+
 void jd_failover::healthy(size_t index, time_point now) {
     auto& value = entries_[index];
     // Repeated readiness notifications keep the start of uninterrupted health.

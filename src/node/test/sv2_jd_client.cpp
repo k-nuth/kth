@@ -1184,6 +1184,136 @@ TEST_CASE("sv2 JD flags an authority mismatch and moves to the next entry withou
     REQUIRE_NOTHROW(fixture.result.get());
 }
 
+TEST_CASE("sv2 JD follows a Reconnect to another server of the same pool and keeps the entry's place", "[sv2 jd]") {
+    enum class side { mining, declaration, present };
+    auto moving = side::mining;
+    SECTION("the Mining connection moves") {}
+    SECTION("the JDS connection moves") { moving = side::declaration; }
+    SECTION("an empty host and a zero port keep the present address") { moving = side::present; }
+    client_fixture fixture;
+    // The fixture's pool and JDS authority secrets, so both prove the configured keys.
+    fake_upstream moved_pool(fixture, 4);
+    fake_upstream moved_jds(fixture, 5);
+    captured_log log;
+    fixture.start(settings(fixture.pool, fixture.jds));
+    handshake_upstreams(fixture, true);
+    fixture.await(fixture.ready);
+    REQUIRE_NOTHROW(fixture.ready.get());
+    if (moving == side::mining) fixture.pool.send(reconnect{"127.0.0.1", moved_pool.port});
+    else if (moving == side::declaration) fixture.jds.send(reconnect{"127.0.0.1", moved_jds.port});
+    else fixture.pool.send(reconnect{});
+    // The whole pair starts over; only the connection that was moved changes address.
+    fixture.eof_after_pending(fixture.pool.socket);
+    fixture.eof_after_pending(fixture.jds.socket);
+    if (moving != side::mining) fixture.pool.accept_again();
+    if (moving != side::declaration) fixture.jds.accept_again();
+    // SetupConnection names the address each connection now uses.
+    handshake_upstreams(moving == side::mining ? moved_pool : fixture.pool,
+        moving == side::declaration ? moved_jds : fixture.jds, true);
+    REQUIRE(fixture.wait_until([&] {
+        auto const status = fixture.client->status();
+        return status && status->active == std::optional<size_t>{0}
+            && status->entries[0].health == jd_health::healthy;
+    }));
+    auto const status = fixture.client->status();
+    REQUIRE(status->entries[0].last_error.empty());
+    REQUIRE(status->entries[0].backoff == 0s);
+    REQUIRE(log.count("at the upstream's Reconnect") == 1);
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
+}
+
+TEST_CASE("sv2 JD Reconnect cannot reach another authority, skip the retry hold or keep a dead address", "[sv2 jd]") {
+    enum class trigger { authority, early, malformed, invalid, unreachable };
+    auto which = trigger::authority;
+    SECTION("the new server proves another authority") {}
+    SECTION("Reconnect before the pair is healthy") { which = trigger::early; }
+    SECTION("malformed Reconnect") { which = trigger::malformed; }
+    SECTION("Reconnect to an invalid host") { which = trigger::invalid; }
+    SECTION("the new server closes during the handshake") { which = trigger::unreachable; }
+    client_fixture fixture;
+    fake_upstream moved_pool(fixture, which == trigger::authority ? 9 : 4);
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.retry_initial_seconds = 1;
+    configuration.jd.recovery_hold_seconds = 1;
+    fixture.start(configuration);
+    auto const expect_error = [&](std::string_view text, jd_health health) {
+        REQUIRE(fixture.wait_until([&] {
+            auto const status = fixture.client->status();
+            return status && status->entries[0].health == health;
+        }));
+        REQUIRE(fixture.client->status()->entries[0].last_error.find(text) != std::string::npos);
+    };
+    if (which == trigger::early) {
+        fixture.setup();
+        (void)fixture.jds.receive<setup_connection>();
+        fixture.pool.send(reconnect{"127.0.0.1", moved_pool.port});
+        fixture.eof_after_pending(fixture.pool.socket);
+        fixture.eof_after_pending(fixture.jds.socket);
+        expect_error("Reconnect before the pair was healthy", jd_health::backoff);
+        // The move waits for the retry hold, then uses the new address.
+        CHECK_FALSE(fixture.wait_until([&] { return moved_pool.accepted->done; }, 500ms));
+        fixture.jds.accept_again();
+        handshake_upstreams(moved_pool, fixture.jds, true);
+        REQUIRE(fixture.wait_until([&] {
+            auto const status = fixture.client->status();
+            return status && status->entries[0].health == jd_health::healthy;
+        }));
+    } else {
+        handshake_upstreams(fixture, true);
+        fixture.await(fixture.ready);
+        REQUIRE_NOTHROW(fixture.ready.get());
+        if (which == trigger::malformed) {
+            data_chunk const payload{0x05, 'p', 'o'};
+            auto bytes = to_data_chunk(message_header{0, reconnect::message_type,
+                static_cast<uint32_t>(payload.size())});
+            bytes.insert(bytes.end(), payload.begin(), payload.end());
+            fixture.pool.send_plain(bytes);
+        } else if (which == trigger::invalid) {
+            fixture.pool.send(reconnect{"pool host", 0});
+        } else {
+            fixture.pool.send(reconnect{"127.0.0.1", moved_pool.port});
+        }
+        fixture.eof_after_pending(fixture.pool.socket);
+        fixture.eof_after_pending(fixture.jds.socket);
+        if (which == trigger::malformed) {
+            expect_error("malformed upstream Reconnect", jd_health::backoff);
+        } else if (which == trigger::invalid) {
+            expect_error("named an invalid address", jd_health::backoff);
+        } else if (which == trigger::authority) {
+            // Mining goes to the new server; the JDS returns to its own address.
+            fixture.jds.accept_again();
+            REQUIRE(fixture.wait_until([&] { return fixture.jds.accepted->done; }));
+            moved_pool.handshake();
+            expect_error("", jd_health::authority_hold);
+            fixture.eof_after_pending(fixture.jds.socket);
+            require_no_immediate_retry(fixture);
+        } else {
+            fixture.jds.accept_again();
+            REQUIRE(fixture.wait_until([&] {
+                return moved_pool.accepted->done && fixture.jds.accepted->done;
+            }));
+            std::error_code error;
+            moved_pool.socket.close(error);
+            REQUIRE_FALSE(error);
+            expect_error("", jd_health::backoff);
+            fixture.eof_after_pending(fixture.jds.socket);
+            // The failed entry drops the redirect: its retry uses the configured address.
+            fixture.pool.accept_again();
+            fixture.jds.accept_again();
+            handshake_upstreams(fixture, true);
+            REQUIRE(fixture.wait_until([&] {
+                auto const status = fixture.client->status();
+                return status && status->entries[0].health == jd_health::healthy;
+            }));
+        }
+    }
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
+}
+
 TEST_CASE("sv2 JD client setup and extended channel refusals terminate both upstreams", "[sv2 jd]") {
     client_fixture fixture;
     fixture.start(settings(fixture.pool, fixture.jds));

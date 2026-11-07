@@ -10,6 +10,7 @@
 #include <exception>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
@@ -28,6 +29,7 @@
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/detail/scope_action.hpp>
+#include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
@@ -103,19 +105,23 @@ struct jd_client::attempt {
         std::chrono::steady_clock::time_point sent;
     };
 
-    attempt(size_t index, sv2_settings::jd_upstream const& upstream,
-        sv2_settings const& settings, ::asio::any_io_executor executor)
+    // The addresses are the configured ones unless a Reconnect moved them. The
+    // authority keys always come from the configuration.
+    attempt(size_t index, jd_endpoint mining_endpoint, jd_endpoint declaration_endpoint,
+        sv2_settings::jd_upstream const& upstream, sv2_settings const& settings,
+        ::asio::any_io_executor executor)
         : index(index)
-        , mining(executor, endpoint(upstream.mining_address).host,
-            endpoint(upstream.mining_address).port, authority(upstream.mining_authority_public_key),
+        , mining_at(std::move(mining_endpoint))
+        , declaration_at(std::move(declaration_endpoint))
+        , mining(executor, mining_at.host, mining_at.port, authority(upstream.mining_authority_public_key),
             std::chrono::seconds(settings.handshake_timeout_seconds))
-        , declaration(executor, endpoint(upstream.jds_address).host,
-            endpoint(upstream.jds_address).port, authority(upstream.jds_authority_public_key),
+        , declaration(executor, declaration_at.host, declaration_at.port,
+            authority(upstream.jds_authority_public_key),
             std::chrono::seconds(settings.handshake_timeout_seconds))
-        , mining_session(jd_peer::mining, endpoint(upstream.mining_address).host,
-            endpoint(upstream.mining_address).port, upstream.user_identity, upstream.mode == "full-template")
-        , declaration_session(jd_peer::declaration, endpoint(upstream.jds_address).host,
-            endpoint(upstream.jds_address).port, upstream.user_identity, upstream.mode == "full-template")
+        , mining_session(jd_peer::mining, mining_at.host, mining_at.port,
+            upstream.user_identity, upstream.mode == "full-template")
+        , declaration_session(jd_peer::declaration, declaration_at.host, declaration_at.port,
+            upstream.user_identity, upstream.mode == "full-template")
         , jobs(upstream.user_identity, upstream.mode == "full-template")
         , health(settings.jd)
         , declaration_wake(executor)
@@ -137,6 +143,8 @@ struct jd_client::attempt {
     }
 
     size_t const index;
+    jd_endpoint const mining_at;
+    jd_endpoint const declaration_at;
     jd_connection mining;
     jd_connection declaration;
     jd_session mining_session;
@@ -173,6 +181,10 @@ struct jd_client::attempt {
     bool healthy = false;
     bool pool_live = false;
     bool declaration_changed = false;
+    // A Reconnect named either address.
+    bool redirected = false;
+    // Ended by a followed Reconnect: the entry starts again once this is done.
+    bool moving = false;
     bool stopped = false;
     bool done = false;
 };
@@ -183,6 +195,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
     , settings_(settings)
     , upstreams_(jd_upstreams(settings.jd))
     , policy_(upstreams_.size(), settings.jd)
+    , redirects_(upstreams_.size())
     , chain_(chain)
     , response_timeout_(settings.jd.response_timeout_seconds)
     , ready_(owner_, 1)
@@ -212,6 +225,7 @@ void jd_client::fail(attempt& value, jd_failure kind, std::string reason) {
     if (value.stopped) return;
     if (active_.get() == &value) publish_solo(value);
     value.stop();
+    if (value.redirected) redirects_[value.index] = {};
     auto const now = std::chrono::steady_clock::now();
     policy_.fail(value.index, kind, std::move(reason), now);
     update_status();
@@ -259,6 +273,11 @@ void jd_client::mark_ready(attempt& value) {
         if ( ! header) return false;
         auto const payload = source.read_bytes(source.remaining_size());
         if ( ! payload) return false;
+        // A connection message: the same on either upstream, in any state.
+        if (header->extension() == 0 && ! header->channel_msg()
+            && header->msg_type == reconnect::message_type) {
+            return follow_reconnect(value, peer, *payload);
+        }
         // Share replies name one submission. Success is health-sampled.
         // An error is attributed in share_response; a stale or unknown
         // sequence must not end this attempt (sv2-spec 6.2).
@@ -343,6 +362,8 @@ bool jd_client::recover_at_boundary() {
         || ! policy_.switch_at_boundary(std::chrono::steady_clock::now(), true)) return false;
     if (active_) {
         publish_solo(*active_);
+        // The probe takes over, so a Reconnect in progress is not followed.
+        active_->moving = false;
         active_->stop();
     }
     active_.swap(probe_);
@@ -353,7 +374,12 @@ bool jd_client::recover_at_boundary() {
 }
 
 void jd_client::start_attempt(size_t index, bool probe) {
-    auto value = std::make_shared<attempt>(index, upstreams_[index], settings_, owner_);
+    auto const& upstream = upstreams_[index];
+    auto const& moved = redirects_[index];
+    auto value = std::make_shared<attempt>(index,
+        moved.mining.value_or(endpoint(upstream.mining_address)),
+        moved.declaration.value_or(endpoint(upstream.jds_address)), upstream, settings_, owner_);
+    value->redirected = moved.mining || moved.declaration;
     if (probe) probe_ = value;
     else active_ = value;
     ::asio::co_spawn(owner_, run_attempt(value), [this, value](std::exception_ptr error) {
@@ -420,8 +446,16 @@ void jd_client::start_attempt(size_t index, bool probe) {
         bool solo = false;
         try {
             while ( ! stopped_) {
-                if (active_ && active_->done) active_.reset();
-                if (probe_ && probe_->done) probe_.reset();
+                // A followed Reconnect starts its entry again only once the old
+                // pair is joined, so at most two pairs are ever open.
+                if (active_ && active_->done) {
+                    auto const moved = std::exchange(active_, nullptr);
+                    if (moved->moving) start_attempt(moved->index, false);
+                }
+                if (probe_ && probe_->done) {
+                    auto const moved = std::exchange(probe_, nullptr);
+                    if (moved->moving) start_attempt(moved->index, true);
+                }
                 auto const now = std::chrono::steady_clock::now();
                 bool boundary = ! chain_;
                 if (chain_) {
@@ -719,6 +753,41 @@ bool jd_client::share_response(attempt& value, message_header const& header, byt
     }
     consume();
     return true;
+}
+
+bool jd_client::follow_reconnect(attempt& value, jd_peer peer, byte_span payload) {
+    auto const message = parse<reconnect>(payload);
+    if ( ! message) {
+        fail(value, jd_failure::transient, "malformed upstream Reconnect");
+        return false;
+    }
+    bool const mining = peer == jd_peer::mining;
+    auto const& present = mining ? value.mining_at : value.declaration_at;
+    auto const host = message->new_host.empty() ? present.host : message->new_host;
+    auto const port = message->new_port == 0 ? present.port : message->new_port;
+    // The configured addresses' parser; an IPv6 host has no brackets on the wire.
+    auto const target = parse_jd_endpoint((host.find(':') == std::string::npos ? host : "[" + host + "]")
+        + ":" + std::to_string(port));
+    if ( ! target) {
+        fail(value, jd_failure::transient, "upstream Reconnect named an invalid address");
+        return false;
+    }
+    // A server that answered every new connection with Reconnect would
+    // otherwise keep the node reconnecting with no pause, so the move waits
+    // for the retry hold until the pair has been healthy.
+    bool const healthy = value.healthy;
+    if ( ! healthy) fail(value, jd_failure::transient, "upstream sent Reconnect before the pair was healthy");
+    auto& moved = redirects_[value.index];
+    (mining ? moved.mining : moved.declaration) = *target;
+    spdlog::info("[sv2 jd] Entry {} {} moving to {}:{} at the upstream's Reconnect{}", value.index + 1,
+        mining ? "Mining" : "JDS", target->host, target->port, healthy ? "" : " after the retry hold");
+    if ( ! healthy) return false;
+    value.moving = true;
+    if (active_.get() == &value) publish_solo(value);
+    value.stop();
+    policy_.restart(value.index);
+    update_status();
+    return false;
 }
 
 ::asio::awaitable<void> jd_client::run() {

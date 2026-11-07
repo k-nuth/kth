@@ -77,6 +77,9 @@ struct jd_failover {
     // A better active entry can make a retained probe unnecessary. Its owner
     // closes and joins those sockets before reserving another probe.
     void release_probe();
+    // A followed Reconnect keeps the entry's reservation and backoff. Health
+    // starts over on the new connection.
+    void restart(size_t index);
     void healthy(size_t index, time_point now);
     void fail(size_t index, jd_failure failure, std::string error, time_point now);
     [[nodiscard]] std::optional<size_t> switch_at_boundary(time_point now, bool boundary);

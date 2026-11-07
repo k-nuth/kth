@@ -13,10 +13,10 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 
-// Stratum V2 common connection-setup messages (sv2-spec 03). Every SV2
-// sub-protocol opens with these before its own messages; the Template
+// Stratum V2 common connection messages (sv2-spec 03). Every SV2 sub-protocol
+// opens with the three setup messages before its own messages; the Template
 // Distribution provider negotiates one with protocol == template_distribution.
-// channel_msg is unset and extension_type is 0 for all three.
+// channel_msg is unset and extension_type is 0 for all four.
 
 namespace kth::node::sv2 {
 
@@ -78,6 +78,20 @@ struct setup_connection_error {
     [[nodiscard]] size_t serialized_size() const { return 4 + 1 + error_code.size(); }
     [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
     [[nodiscard]] static expect<setup_connection_error> from_data(byte_reader& source);
+};
+
+// Reconnect (0x04, Server -> Client): move this connection to another server.
+// An empty host keeps the present host and a zero port the present port. The
+// new server must prove the same authority key, so it cannot be another pool.
+struct reconnect {
+    static constexpr uint8_t message_type = 0x04;
+
+    std::string new_host;           // STR0_255
+    uint16_t new_port = 0;
+
+    [[nodiscard]] size_t serialized_size() const { return 1 + new_host.size() + 2; }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<reconnect> from_data(byte_reader& source);
 };
 
 } // namespace kth::node::sv2

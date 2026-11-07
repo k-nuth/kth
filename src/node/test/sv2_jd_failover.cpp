@@ -209,6 +209,39 @@ TEST_CASE("sv2 jd interrupted probe health restarts the recovery hold and retain
     REQUIRE(pools.entries()[0].backoff == 0s);
 }
 
+TEST_CASE("sv2 jd restart after a Reconnect keeps the reservation and backoff and restarts health", "[sv2 jd]") {
+    jd_failover pools(2, limits());
+    REQUIRE(pools.begin(start) == 0);
+    pools.fail(0, jd_failure::transient, "drop", start);
+    REQUIRE(pools.begin(start + 2s) == 0);
+    pools.healthy(0, start + 2s);
+    pools.restart(0);
+    auto const& active = pools.entries()[0];
+    REQUIRE(active.health == jd_health::connecting);
+    REQUIRE_FALSE(active.healthy_since);
+    REQUIRE(active.backoff == 2s);
+    REQUIRE(pools.active() == 0);
+    // Still reserved, so no other entry starts while this one reconnects.
+    REQUIRE_FALSE(pools.begin(start + 2s));
+    pools.healthy(0, start + 3s);
+    REQUIRE(active.healthy_since == start + 3s);
+
+    jd_failover probes(2, limits());
+    REQUIRE(probes.begin(start) == 0);
+    probes.fail(0, jd_failure::transient, "drop", start);
+    REQUIRE(probes.begin(start) == 1);
+    REQUIRE(probes.begin_probe(start + 2s) == 0);
+    probes.healthy(0, start + 2s);
+    probes.restart(0);
+    REQUIRE(probes.probe() == 0);
+    REQUIRE(probes.entries()[0].health == jd_health::connecting);
+    // The recovery hold counts from the new connection's health.
+    REQUIRE_FALSE(probes.switch_at_boundary(start + 20s, true));
+    probes.healthy(0, start + 20s);
+    REQUIRE_FALSE(probes.switch_at_boundary(start + 29s, true));
+    REQUIRE(probes.switch_at_boundary(start + 30s, true) == 0);
+}
+
 TEST_CASE("sv2 jd recovering from solo preserves the hold and job boundary", "[sv2 jd]") {
     jd_failover pools(2, limits());
     REQUIRE(pools.begin(start) == 0);

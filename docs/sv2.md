@@ -354,6 +354,21 @@ when recovering from solo after all entries failed. Probe attempts are spaced by
 `sv2.jd.probe_interval_seconds`. There are at most two upstream pairs open:
 the active pair and one probe pair.
 
+A pool can move either connection to another of its servers with `Reconnect`
+(specification sections 3.3 and 3.6.5), for example before maintenance. Knuth
+closes that entry's pair and connects it again with the new address, keeping
+the entry's place in the list and its retry history; the other connection
+returns to its own address. An empty host or a zero port keeps the present
+one. The new server must present a certificate signed by the same configured
+authority key, so a `Reconnect` cannot move the work to another pool: a
+mismatch is an authentication failure like any other. A `Reconnect` before
+the pair has had a local job accepted is followed only after the entry's retry
+hold, so a server that redirects every new connection cannot keep Knuth
+reconnecting without a pause. The new addresses last until that entry fails;
+its retry then uses the configured addresses. A malformed `Reconnect`, or one
+naming an address the configuration would refuse, demotes the entry for its
+retry delay.
+
 Response latency above `sv2.jd.max_latency_milliseconds` also demotes an
 entry. Share health uses a rolling window of `sv2.jd.health_window` results;
 once that window is full, a stale or reject percentage strictly above its
