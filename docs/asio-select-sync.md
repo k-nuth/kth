@@ -88,6 +88,13 @@ between a start and its record (#652). What is not preserved is the
 cross-source interleaving of the old queue, which was an artefact of bridge
 scheduling and retry delays, not a contract.
 
+If every download worker ends while the current range is still unfinished,
+the same 10 s tick starts replacements from the latest known peers, using the
+same coordinator and epoch. It does this only when no worker remains, and
+skips completed or stopped ranges and withdrawn or stopped peers. A worker's
+end report still only releases its current-range slot; recovery waits for a
+tick rather than immediately restarting a failed worker.
+
 A worker's `task_ended` is a suspended send with no deadline and no stop token:
 a full channel is waited out. The only way it is not delivered is the
 supervisor having closed `task_output`, which it does after its loop, before
