@@ -83,6 +83,18 @@ expect<setup_connection_error> setup_connection_error::from_data(byte_reader& so
     return setup_connection_error{*flags, std::move(*error_code)};
 }
 
+// --- ChannelEndpointChanged (0x03) ------------------------------------------
+
+expect<void> channel_endpoint_changed::to_data(byte_writer& sink) const {
+    return sink.write_little_endian<uint32_t>(channel_id);
+}
+
+expect<channel_endpoint_changed> channel_endpoint_changed::from_data(byte_reader& source) {
+    auto const channel_id = source.read_little_endian<uint32_t>();
+    if ( ! channel_id) return std::unexpected(channel_id.error());
+    return channel_endpoint_changed{*channel_id};
+}
+
 // --- Reconnect (0x04) -------------------------------------------------------
 
 expect<void> reconnect::to_data(byte_writer& sink) const {

@@ -369,6 +369,12 @@ its retry then uses the configured addresses. A malformed `Reconnect`, or one
 naming an address the configuration would refuse, demotes the entry for its
 retry delay.
 
+`ChannelEndpointChanged` (section 3.6.4) is how a proxy in front of the pool
+says it moved the extended channel to another endpoint. The Mining connection
+negotiates no extensions, so there is nothing to negotiate again: the channel
+and its work stay as they are. One naming another channel, or arriving before
+the channel is open, ends the attempt like any other misaddressed message.
+
 Response latency above `sv2.jd.max_latency_milliseconds` also demotes an
 entry. Share health uses a rolling window of `sv2.jd.health_window` results;
 once that window is full, a stale or reject percentage strictly above its

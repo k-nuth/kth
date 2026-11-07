@@ -76,6 +76,20 @@ TEST_CASE("sv2 SetupConnection.Success from_data rejects a short buffer", "[sv2 
     REQUIRE_FALSE(from_data_chunk<setup_connection_success>(short_buffer).has_value());
 }
 
+TEST_CASE("sv2 ChannelEndpointChanged round-trips and matches the wire layout", "[sv2 connection]") {
+    channel_endpoint_changed const msg{0x0a0b0c0du};
+
+    auto const bytes = to_data_chunk(msg);
+    REQUIRE(bytes == data_chunk{0x0d, 0x0c, 0x0b, 0x0a});  // U32 LE
+
+    auto const parsed = from_data_chunk<channel_endpoint_changed>(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->channel_id == msg.channel_id);
+    REQUIRE(channel_endpoint_changed::message_type == 0x03);
+    REQUIRE(channel_endpoint_changed::channel_message);
+    REQUIRE_FALSE(from_data_chunk<channel_endpoint_changed>(data_chunk{0x0d, 0x0c, 0x0b}).has_value());
+}
+
 TEST_CASE("sv2 Reconnect round-trips and matches the wire layout", "[sv2 connection]") {
     reconnect const msg{"pool.test", 0x0d0cu};
 

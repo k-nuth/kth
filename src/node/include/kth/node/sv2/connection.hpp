@@ -16,7 +16,8 @@
 // Stratum V2 common connection messages (sv2-spec 03). Every SV2 sub-protocol
 // opens with the three setup messages before its own messages; the Template
 // Distribution provider negotiates one with protocol == template_distribution.
-// channel_msg is unset and extension_type is 0 for all four.
+// extension_type is 0 for all five, and only ChannelEndpointChanged sets
+// channel_msg.
 
 namespace kth::node::sv2 {
 
@@ -78,6 +79,20 @@ struct setup_connection_error {
     [[nodiscard]] size_t serialized_size() const { return 4 + 1 + error_code.size(); }
     [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
     [[nodiscard]] static expect<setup_connection_error> from_data(byte_reader& source);
+};
+
+// ChannelEndpointChanged (0x03, Server -> Client): a proxy moved this channel
+// to another endpoint, so extensions negotiated on the channel must be
+// negotiated again.
+struct channel_endpoint_changed {
+    static constexpr uint8_t message_type = 0x03;
+    static constexpr bool channel_message = true;
+
+    uint32_t channel_id = 0;
+
+    [[nodiscard]] size_t serialized_size() const { return 4; }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<channel_endpoint_changed> from_data(byte_reader& source);
 };
 
 // Reconnect (0x04, Server -> Client): move this connection to another server.

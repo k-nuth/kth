@@ -402,6 +402,24 @@ TEST_CASE("sv2 jd ready upstream refuses malformed misplaced and unsolicited bas
     require_closed(jd, process(jd, 0, 0x51, {}));
 }
 
+TEST_CASE("sv2 jd ChannelEndpointChanged keeps the channel and refuses another or a misplaced one", "[sv2 jd]") {
+    for (uint32_t const id : {7u, 9u}) {
+        auto session = ready();
+        require_silent(process(session, channel_endpoint_changed{id}));
+        REQUIRE(session.channel()->channel_id == 7);
+        REQUIRE(session.channel()->extranonce_prefix == data_chunk{1, 2});
+    }
+    refuse_incomplete(channel_endpoint_changed{7}, ready);
+    auto another = ready();
+    require_closed(another, process(another, channel_endpoint_changed{8}));
+    auto missing_flag = ready();
+    require_closed(missing_flag, process(missing_flag, 0, channel_endpoint_changed::message_type,
+        to_data_chunk(channel_endpoint_changed{7})));
+    // Before the channel is open there is nothing it could name.
+    auto opening_session = opening();
+    require_closed(opening_session, process(opening_session, channel_endpoint_changed{7}));
+}
+
 TEST_CASE("sv2 jd channel closes request solo fallback for the channel or its group", "[sv2 jd]") {
     for (uint32_t const id : {7u, 9u}) {
         auto session = ready();
