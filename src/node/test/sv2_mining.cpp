@@ -142,15 +142,20 @@ struct completion {
 struct listener_fixture {
     test::chain_fixture chain{"sv2_mining", 0};
     ::asio::io_context io;
+    // The endpoint block_chain::submit_block feeds, for a case whose solutions
+    // a submission_pipeline drains. Without one, a submission is refused at
+    // once instead of waiting for a coordinator that never runs.
+    std::shared_ptr<blockchain::block_submission_channel> submissions;
     std::shared_ptr<template_provider> provider;
     std::shared_ptr<completion> completed = std::make_shared<completion>();
     std::vector<std::shared_ptr<::asio::ip::tcp::socket>> clients;
     bool running = false;
 
-    explicit listener_fixture(node::sv2_settings const& settings)
+    explicit listener_fixture(node::sv2_settings const& settings, bool local_admission = false)
+        : submissions(local_admission ? std::make_shared<blockchain::block_submission_channel>(4, 1) : nullptr)
     {
         REQUIRE(chain.created());
-        REQUIRE(chain.start());
+        REQUIRE(chain.start(submissions));
         provider = std::make_shared<template_provider>(settings, io.get_executor(),
             chain.chain(), domain::config::network::regtest);
     }
@@ -414,11 +419,13 @@ struct submission_pipeline {
 
     explicit submission_pipeline(listener_fixture& listener)
         : fixture(listener), state(std::make_shared<node_state>(fixture)) {
+        REQUIRE(fixture.submissions);
         REQUIRE(fixture.execute(state->network.start()) == error::success);
         ::asio::co_spawn(fixture.io,
             node::sync::sync_orchestrator(fixture.chain.chain(), fixture.chain.organizer(),
                 state->network, domain::config::network::regtest,
-                [](std::string const& reason) { FAIL("sync failed: " << reason); }),
+                [](std::string const& reason) { FAIL("sync failed: " << reason); },
+                node::sync::node_header_walk_timing, fixture.submissions.get()),
             [completed = completed, keep_alive = state](std::exception_ptr error) {
                 completed->error = error;
                 completed->done = true;
@@ -716,7 +723,7 @@ TEST_CASE("sv2 mining network shares connect blocks and advance every channel", 
     bool extended_solution = false;
     SECTION("standard share") {}
     SECTION("extended share") { extended_solution = true; }
-    listener_fixture fixture(loopback_settings());
+    listener_fixture fixture(loopback_settings(), true);
     (void)seed_chain(fixture, 5);
     submission_pipeline pipeline(fixture);
     auto const port = fixture.start();
