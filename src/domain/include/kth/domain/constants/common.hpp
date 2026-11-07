@@ -148,6 +148,9 @@ constexpr size_t minimum_seed_size = minimum_seed_bits / byte_bits;
 // Effective limit given a 32 bit chain height boundary: 10 + log2(2^32) + 1.
 constexpr size_t max_locator = 43;
 
+// The most locator entries a peer may send in getheaders (BCHN MAX_LOCATOR_SZ).
+constexpr size_t max_get_headers_locator = 101;
+
 
 // Currency unit constants (uint64_t).
 //-----------------------------------------------------------------------------

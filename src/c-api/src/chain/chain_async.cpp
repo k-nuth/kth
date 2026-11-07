@@ -258,13 +258,16 @@ void kth_chain_async_transaction_position(kth_chain_t chain, void* ctx, kth_hash
 // Organizers.
 //-------------------------------------------------------------------------
 
-void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler) {
+void kth_chain_async_submit_block(kth_chain_t chain, void* ctx, kth_block_mut_t block, kth_result_handler_t handler) {
     auto& bc = safe_chain(chain);
-    auto block_cpp = block_shared(block);
-    ::asio::co_spawn(bc.executor(), [&bc, block_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto ec = co_await bc.organize(block_cpp);
-        handler(chain, ctx, kth::to_c_err(ec));
-    }, ::asio::detached);
+    // Capture the owned admission operation before scheduling the C callback;
+    // the coroutine never dereferences the chain object after this call.
+    auto operation = bc.submit_block(block_shared(block));
+    ::asio::co_spawn(bc.executor(),
+        [operation = std::move(operation), chain, ctx, handler]() mutable -> ::asio::awaitable<void> {
+            auto const result = co_await std::move(operation);
+            handler(chain, ctx, kth::to_c_err(result.error));
+        }, ::asio::detached);
 }
 
 void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_transaction_mut_t transaction, kth_result_handler_t handler) {

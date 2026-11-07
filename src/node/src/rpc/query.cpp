@@ -244,10 +244,11 @@ void write_token_data(writer& w, domain::chain::token_data_t const& token) {
 
 } // namespace
 
-std::string render_transaction(domain::chain::transaction const& tx,
-                               domain::config::network net, domain::script_flags_t flags) {
-    writer w;
-    w.begin_object();
+namespace {
+
+// The decoderawtransaction fields, into an object the caller has opened.
+void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
+                              domain::config::network net, domain::script_flags_t flags) {
     w.field("txid", encode_hash(tx.hash()));
     w.field("hash", encode_hash(tx.hash()));
     w.field("version", int64_t(tx.version()));
@@ -285,6 +286,96 @@ std::string render_transaction(domain::chain::transaction const& tx,
         w.end_object();
     }
     w.end_array();
+}
+
+} // namespace
+
+std::string render_transaction(domain::chain::transaction const& tx,
+                               domain::config::network net, domain::script_flags_t flags) {
+    writer w;
+    w.begin_object();
+    write_transaction_fields(w, tx, net, flags);
+    w.end_object();
+    return w.str();
+}
+
+std::string render_transaction_verbose(domain::chain::transaction const& tx,
+                                       domain::config::network net, domain::script_flags_t flags,
+                                       std::optional<transaction_location> const& location) {
+    writer w;
+    w.begin_object();
+    write_transaction_fields(w, tx, net, flags);
+    w.field("hex", transaction_to_hex(tx));
+    if (location) {
+        auto const active = location->confirmations >= 0;
+        w.field("blockhash", encode_hash(location->block_hash));
+        if (active) {
+            w.field("confirmations", location->confirmations);
+            if (location->confirmations_ticks) {
+                w.field("confirmations_ticks", *location->confirmations_ticks);
+            }
+            w.field("time", int64_t(location->block_time));
+            w.field("blocktime", int64_t(location->block_time));
+        } else {
+            w.field("confirmations", int64_t(0));
+            if (location->confirmations_ticks) {
+                w.field("confirmations_ticks", int64_t(0));
+            }
+        }
+        w.field("in_active_chain", active);
+    }
+    w.end_object();
+    return w.str();
+}
+
+std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
+                                 bool with_transactions,
+                                 domain::config::network net, domain::script_flags_t flags) {
+    auto const& header = block.header();
+    writer w;
+    w.begin_object();
+    w.field("hash", encode_hash(block.hash()));
+    w.field("confirmations", location.confirmations);
+    if (location.confirmations_ticks) {
+        w.field("confirmations_ticks", *location.confirmations_ticks);
+    }
+    w.field("size", uint64_t(block.serialized_size()));
+    w.field("height", uint64_t(location.height));
+    if (location.progress) {
+        w.field("ticks", location.progress->ticks);
+        w.field("target_time", location.progress->target_time);
+        w.field("next_target_time", location.progress->next_target_time);
+    }
+    w.field("version", int64_t(header.version()));
+    w.field("versionHex", fmt::format("{:08x}", header.version()));
+    w.field("merkleroot", encode_hash(header.merkle()));
+    w.key("tx").begin_array();
+    for (auto const& tx : block.transactions()) {
+        if (with_transactions) {
+            w.begin_object();
+            write_transaction_fields(w, tx, net, flags);
+            w.field("hex", transaction_to_hex(tx));
+            w.end_object();
+        } else {
+            w.value(encode_hash(tx.hash()));
+        }
+    }
+    w.end_array();
+    w.field("time", int64_t(header.timestamp()));
+    w.field("mediantime", int64_t(location.median_time));
+    w.field("nonce", int64_t(header.nonce()));
+    w.field("bits", encode_base16(header.bits()));
+    w.field("difficulty", blockchain::difficulty_from_bits(header.bits()));
+    if (location.chain_work) {
+        w.field("chainwork", encode_hash(*location.chain_work));
+    }
+    w.field("nTx", uint64_t(block.transactions().size()));
+    if (header.previous_block_hash() != null_hash) {
+        w.field("previousblockhash", encode_hash(header.previous_block_hash()));
+    }
+    if (location.next_block_hash) {
+        w.field("nextblockhash", encode_hash(*location.next_block_hash));
+    }
     w.end_object();
     return w.str();
 }
@@ -309,6 +400,9 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips) {
     for (auto const& tip : tips) {
         w.begin_object();
         w.field("height", uint64_t(tip.height));
+#if defined(KTH_CURRENCY_BCH)
+        w.field("ticks", tip.ticks);
+#endif
         w.field("hash", encode_hash(tip.hash));
         w.field("branchlen", uint64_t(tip.branch_length));
         w.field("status", tip_status_name(tip.status));
@@ -320,11 +414,13 @@ std::string render_chain_tips(std::vector<chain_tip> const& tips) {
 
 std::string render_tx_out(hash_digest const& best_block, int64_t confirmations,
                           domain::chain::output const& output, bool coinbase,
-                          domain::config::network net, domain::script_flags_t flags) {
+                          domain::config::network net, domain::script_flags_t flags,
+                          std::optional<int64_t> confirmations_ticks) {
     writer w;
     w.begin_object();
     w.field("bestblock", encode_hash(best_block));
     w.field("confirmations", confirmations);
+    if (confirmations_ticks) w.field("confirmations_ticks", *confirmations_ticks);
     w.field_raw("value", satoshi_to_bitcoin(output.value()));
     write_script_pubkey(w, output.script(), net, flags);
     if (auto const& token = output.token_data()) {
@@ -436,11 +532,13 @@ std::string header_to_hex(domain::chain::header const& header) {
 std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
-                                std::optional<chain_progress> progress) {
+                                std::optional<chain_progress> progress,
+                                std::optional<int64_t> confirmations_ticks) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
     w.field("confirmations", confirmations);
+    if (confirmations_ticks) w.field("confirmations_ticks", *confirmations_ticks);
     w.field("height", uint64_t(height));
     if (progress) {
         w.field("ticks", progress->ticks);

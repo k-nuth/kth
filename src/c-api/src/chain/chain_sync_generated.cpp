@@ -409,21 +409,6 @@ kth_error_code_t kth_chain_sync_transaction_position(
 #endif
 }
 
-int kth_chain_sync_organize_block(kth_chain_t chain, kth_block_mut_t block) {
-    KTH_PRECONDITION(chain != nullptr);
-    KTH_PRECONDITION(block != nullptr);
-    auto operation = [&]() noexcept(false) -> kth_error_code_t {
-        auto& bc = kth::cpp_ref<kth::blockchain::block_chain>(chain);
-        auto ec = kth::capi::sync_wait(bc, bc.organize(block_shared(block)));
-        return kth::to_c_err(ec);
-    };
-#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
-    return static_cast<int>(kth::capi_invoke(operation));
-#else
-    return static_cast<int>(operation());
-#endif
-}
-
 int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t transaction) {
     KTH_PRECONDITION(chain != nullptr);
     KTH_PRECONDITION(transaction != nullptr);

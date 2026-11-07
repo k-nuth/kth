@@ -453,10 +453,15 @@ void seed_regtest(test::chain_fixture& chain) {
     test::connect_bodies(chain, blocks, 1);
 }
 
-std::shared_ptr<test::chain_fixture> started_chain(char const* tag) {
+// With `local_admission`, the chain is started with the endpoint that
+// block_chain::submit_block feeds, for a case whose solutions a
+// submission_pipeline drains. Without it, a submission is refused at once
+// instead of waiting for a coordinator that never runs.
+std::shared_ptr<test::chain_fixture> started_chain(char const* tag, bool local_admission = false) {
     auto chain = std::make_shared<test::chain_fixture>(tag, 0);
     REQUIRE(chain->created());
-    REQUIRE(chain->start());
+    REQUIRE(chain->start(local_admission
+        ? std::make_shared<blockchain::block_submission_channel>(4, 1) : nullptr));
     seed_regtest(*chain);
     return chain;
 }
@@ -677,7 +682,8 @@ struct submission_pipeline {
         done = ::asio::co_spawn(driver.io,
             node::sync::sync_orchestrator(chain.chain(), chain.organizer(), state->network,
                 domain::config::network::regtest,
-                [](std::string const& reason) { FAIL("sync failed: " << reason); }),
+                [](std::string const& reason) { FAIL("sync failed: " << reason); },
+                node::sync::node_header_walk_timing, &chain.chain().block_submissions()),
             ::asio::use_future);
     }
 
@@ -1555,7 +1561,7 @@ TEST_CASE("sv2 JD forwards a share that meets the upstream target and connects a
     char const* tag = "sv2_jd_forward";
     if (mode == kind::below) tag = "sv2_jd_below";
     if (mode == kind::block) tag = "sv2_jd_block";
-    auto chain = started_chain(tag);
+    auto chain = started_chain(tag, mode == kind::block);
     client_fixture fixture;
     std::optional<submission_pipeline> pipeline;
     if (mode == kind::block) pipeline.emplace(fixture, *chain);
