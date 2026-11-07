@@ -167,6 +167,22 @@ void mempool::remove_recursive(hash_digest const& txid, std::vector<hash_digest>
     }
 }
 
+std::vector<hash_digest> mempool::expire(uint64_t seen_before) {
+    std::vector<hash_digest> expired;
+    pool_.for_each([&](hash_digest const& txid, mempool_entry const& e) {
+        if (e.time_seen < seen_before) {
+            expired.push_back(txid);
+        }
+    });
+
+    std::vector<hash_digest> removed;
+    for (auto const& txid : expired) {
+        // A descendant already removed with an earlier one is not found again.
+        remove_recursive(txid, removed);
+    }
+    return removed;
+}
+
 std::vector<hash_digest> mempool::remove_for_block(domain::chain::block const& block) {
     KTH_STATS_INCREMENT(stats_, remove_for_block_calls);
     KTH_STATS_TIME_START(rmv);

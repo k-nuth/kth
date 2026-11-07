@@ -18,6 +18,7 @@
 
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_limit.hpp>
+#include <kth/blockchain/settings.hpp>
 #include <kth/domain.hpp>
 
 #include <algorithm>
@@ -958,6 +959,25 @@ struct limited_pool {
 };
 
 } // namespace
+
+// A default-built settings, with no network, has BCHN's default all the same:
+// a limit read from an uninitialized block size would be zero, or anything,
+// and a zero limit evicts every transaction the moment it is admitted.
+TEST_CASE("mempool limit defaults are BCHN's for a settings built without a network",
+          "[mempool][limit]") {
+    blockchain::settings value_initialized{};
+    blockchain::settings default_initialized;
+#if defined(KTH_CURRENCY_BCH)
+    CHECK(value_initialized.mempool_limit_bytes() == 320'000'000u);
+    CHECK(default_initialized.mempool_limit_bytes() == 320'000'000u);
+    CHECK(blockchain::settings(domain::config::network::mainnet).mempool_limit_bytes() == 320'000'000u);
+#else
+    CHECK(value_initialized.mempool_limit_bytes() == 300'000'000u);
+    CHECK(default_initialized.mempool_limit_bytes() == 300'000'000u);
+#endif
+    value_initialized.mempool_max_mb = 5;
+    CHECK(value_initialized.mempool_limit_bytes() == 5'000'000u);
+}
 
 TEST_CASE("mempool limit usage follows additions and removals", "[mempool][serial][limit]") {
     limited_pool lp;

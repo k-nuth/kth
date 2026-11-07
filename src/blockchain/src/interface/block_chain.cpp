@@ -44,6 +44,7 @@
 #include <asio/post.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
 
 #include <utxoz/logging.hpp>
@@ -2444,6 +2445,46 @@ size_t block_chain::mempool_trim(uint64_t limit) {
     return mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
 }
 
+::asio::awaitable<size_t> block_chain::mempool_expire(uint64_t seen_before) {
+    // The lock may wait for an admission or a block, and the walk is the whole
+    // pool: both belong on the chain's executor, where the mempool's other
+    // writers run, not on the caller's.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, seen_before]() -> ::asio::awaitable<size_t> {
+            validation_high_priority_lock const lock(validation_mutex_);
+            auto const removed = mempool_.expire(seen_before);
+            mempool_limit_.removed(removed);
+            co_return removed.size();
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<void> block_chain::run_mempool_expiry(std::chrono::seconds expiry,
+    std::chrono::steady_clock::duration period, std::stop_token stop) {
+    auto const exec = co_await ::asio::this_coro::executor;
+    auto const age = uint64_t(expiry.count());
+    while ( ! stop.stop_requested() && ! stopped()) {
+        // Named, then bound by reference: the GCC 16 coroutine bug described
+        // in submit_owned_block.
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::after(std::chrono::steady_clock::now() + period)
+        ).async_wait(exec, {}, stop, ::asio::as_tuple(::asio::deferred));
+        auto const& [ec, selected] = completion;
+        (void)selected;
+        if (ec || stopped()) {
+            co_return;
+        }
+        auto const now = uint64_t(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        if (now <= age) {
+            continue;
+        }
+        if (auto const expired = co_await mempool_expire(now - age); expired > 0) {
+            spdlog::info("[mempool] Expired {} transactions unconfirmed for {} hours",
+                expired, age / 3600);
+        }
+    }
+}
+
 code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected) {
     // The same admission gate used by template capture keeps a chain transition
     // from starting between the snapshot check and the mempool mutation.
@@ -3592,7 +3633,9 @@ bool block_chain::dump_mempool_to_disk() const {
     for (auto const& p : persisted) {
         // Re-validate against the current tip and admit (recomputes fee/size/
         // sigchecks, enforces first-seen). Now-invalid txs are simply dropped.
-        auto const ec = co_await organize(p.tx);
+        // It keeps the time it was first seen, so a restart does not reset the
+        // age mempool expiry counts.
+        auto const ec = co_await transaction_organizer_.organize(p.tx, p.time_seen);
         if ( ! ec) {
             ++admitted;
         }

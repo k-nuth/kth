@@ -7,7 +7,10 @@
 
 #include <chrono>
 #include <expected>
+#include <functional>
 #include <future>
+#include <stop_token>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -74,7 +77,8 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
-    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000)
+    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
+                             std::function<void(blockchain::settings&)> const& configure = {})
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -82,6 +86,9 @@ struct admission_chain {
 #if defined(KTH_CURRENCY_BCH)
         fixture.settings().standardness.maximum_transaction_size = policy_size;
 #endif
+        if (configure) {
+            configure(fixture.settings());
+        }
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -176,6 +183,187 @@ TEST_CASE("organizing a valid transaction admits it to the mempool", "[mempool][
     CHECK(ec == error::success);
     CHECK(chain.mempool_ref().size() == 1);
     CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+// Expiry counts from when the node first saw a transaction, as BCHN's does, so
+// a restart must not reset it: mempool.dat records that time, and the reload
+// used to admit every transaction as seen at the restart.
+TEST_CASE("a reloaded transaction keeps its age and expires with its descendants",
+          "[mempool][admission][expiry]") {
+    admission_chain built("mempool_expiry", trunk_len);
+    auto& chain = built.chain();
+    auto const parent = built.matured_spend(fee);
+    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - fee,
+        chain.chain_settings().enabled_flags());
+
+    auto const now = uint64_t(zulu_time());
+    auto const expiry = uint64_t(chain.chain_settings().mempool_expiry_hours) * 3600;
+    REQUIRE(expiry > 0);
+    auto const parent_seen = now - expiry - 3600;
+    auto const child_seen = now - 60;
+    std::vector<database::mempool_stored_tx> stored{
+        {std::make_shared<domain::message::transaction>(parent), parent_seen},
+        {std::make_shared<domain::message::transaction>(child), child_seen}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+    auto const reloaded = ::asio::co_spawn(chain.executor(), chain.load_mempool_from_disk(),
+        ::asio::use_future).get();
+    REQUIRE(reloaded == 2);
+
+    auto const parent_entry = chain.mempool_ref().entry(parent.hash());
+    auto const child_entry = chain.mempool_ref().entry(child.hash());
+    REQUIRE(parent_entry);
+    REQUIRE(child_entry);
+    CHECK(parent_entry->time_seen == parent_seen);
+    CHECK(child_entry->time_seen == child_seen);
+
+    auto const expire = [&](uint64_t seen_before) {
+        return ::asio::co_spawn(chain.executor(), chain.mempool_expire(seen_before),
+            ::asio::use_future).get();
+    };
+
+    // Nothing first seen within the period goes.
+    CHECK(expire(parent_seen) == 0);
+    CHECK(chain.mempool_ref().size() == 2);
+
+    // The parent is past it; its child, seen a minute ago, goes with it.
+    CHECK(expire(now - expiry) == 2);
+    CHECK_FALSE(chain.mempool_ref().contains(parent.hash()));
+    CHECK_FALSE(chain.mempool_ref().contains(child.hash()));
+}
+
+// What expiry removes, descendants included, no longer counts against the
+// mempool's limit: otherwise an expired pool would still read as full.
+TEST_CASE("expired transactions and their descendants leave the limit's usage",
+          "[mempool][admission][expiry][limit]") {
+    admission_chain built("mempool_expiry_usage", trunk_len);
+    auto& chain = built.chain();
+    auto const parent = built.matured_spend(fee);
+    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - fee,
+        chain.chain_settings().enabled_flags());
+
+    auto const now = uint64_t(zulu_time());
+    std::vector<database::mempool_stored_tx> stored{
+        {std::make_shared<domain::message::transaction>(parent), now - 7200},
+        {std::make_shared<domain::message::transaction>(child), now - 60}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+    REQUIRE(::asio::co_spawn(chain.executor(), chain.load_mempool_from_disk(),
+        ::asio::use_future).get() == 2);
+    REQUIRE(chain.mempool_usage() > 0);
+
+    // Only the parent is old enough; the child goes as its descendant.
+    REQUIRE(::asio::co_spawn(chain.executor(), chain.mempool_expire(now - 3600),
+        ::asio::use_future).get() == 2);
+    REQUIRE(chain.mempool_ref().size() == 0);
+    CHECK(chain.mempool_usage() == 0);
+}
+
+namespace {
+
+// A chain whose mempool holds one transaction first seen `age` seconds ago.
+struct aged_pool {
+    admission_chain built;
+    domain::chain::transaction tx;
+
+    aged_pool(char const* tag, uint64_t age)
+        : built(tag, trunk_len)
+        , tx(built.matured_spend(fee))
+    {
+        std::vector<database::mempool_stored_tx> stored{
+            {std::make_shared<domain::message::transaction>(tx), uint64_t(zulu_time()) - age}};
+        REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+        REQUIRE(::asio::co_spawn(built.chain().executor(), built.chain().load_mempool_from_disk(),
+            ::asio::use_future).get() == 1);
+    }
+
+    bool pooled() { return built.chain().mempool_ref().contains(tx.hash()); }
+};
+
+// The sweep on an executor of its own, as the orchestrator runs it beside the
+// chain's.
+struct sweep_runner {
+    ::asio::io_context context;
+    std::future<void> done;
+    std::thread thread;
+
+    sweep_runner(blockchain::block_chain& chain, std::chrono::seconds expiry,
+                 std::chrono::steady_clock::duration period, std::stop_token stop)
+        : done(::asio::co_spawn(context, chain.run_mempool_expiry(expiry, period, stop),
+              ::asio::use_future))
+        , thread([this] { context.run(); }) {}
+
+    ~sweep_runner() {
+        context.stop();
+        thread.join();
+    }
+
+    bool ended_within(std::chrono::milliseconds limit) {
+        return done.wait_for(limit) == std::future_status::ready;
+    }
+};
+
+} // namespace
+
+// The sweep the node runs: its own timer, not a caller, removes what aged out,
+// and a stop wakes it from its wait.
+TEST_CASE("the expiry sweep removes what aged out on its timer and ends when stopped",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep", 7200);
+    REQUIRE(pool.pooled());
+
+    std::stop_source stop;
+    sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(20),
+        stop.get_token());
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (pool.pooled() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK_FALSE(pool.pooled());
+    CHECK_FALSE(sweep.ended_within(std::chrono::milliseconds(0)));
+
+    stop.request_stop();
+    CHECK(sweep.ended_within(std::chrono::seconds(5)));
+}
+
+TEST_CASE("the expiry sweep keeps what is younger than the expiry",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_young", 60);
+    std::stop_source stop;
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(5),
+            stop.get_token());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        stop.request_stop();
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
+}
+
+// A stop that arrives first: the sweep neither waits a period nor expires.
+TEST_CASE("the expiry sweep stopped before it begins expires nothing",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_stopped", 7200);
+    std::stop_source stop;
+    stop.request_stop();
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(0),
+            stop.get_token());
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
+}
+
+// A stop during a long wait wakes it: shutdown does not wait out the period.
+TEST_CASE("a stop wakes the expiry sweep from its wait", "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_wake", 7200);
+    std::stop_source stop;
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::hours(1),
+            stop.get_token());
+        CHECK_FALSE(sweep.ended_within(std::chrono::milliseconds(50)));
+        stop.request_stop();
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
 }
 
 namespace {
@@ -541,6 +729,120 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
     CHECK(chain.mempool_ref().contains(ptr->hash()) == !require_standard);
     CHECK(announced(channel, ptr->hash()) == !require_standard);
     chain.unsubscribe_transaction(channel);
+}
+
+namespace {
+
+// A signed spend of `prev`'s output 0 to `scripts`, paying `per_kb` satoshis
+// per 1000 serialized bytes, rounded down. The size depends on the signature,
+// and the signature on the fee, so it is signed until the two agree. A
+// signature one byte shorter can lower the fee enough to lengthen it again;
+// another lock time gives other signatures to settle with.
+domain::chain::transaction paying(domain::chain::transaction const& prev,
+                                  std::vector<domain::chain::script> const& scripts,
+                                  uint64_t per_kb, domain::script_flags_t flags) {
+    using namespace domain::chain;
+    auto const prev_value = prev.outputs()[0].value();
+    auto const sign = [&](uint64_t fee, uint32_t lock_time) {
+        output::list outs;
+        for (size_t i = 0; i + 1 < scripts.size(); ++i) {
+            outs.emplace_back(10'000, scripts[i], std::nullopt);
+        }
+        outs.emplace_back(prev_value - 10'000 * (scripts.size() - 1) - fee, scripts.back(), std::nullopt);
+        input::list ins{input{output_point{prev.hash(), 0}, script{}, 0xffffffff}};
+        transaction unsigned_tx{1, lock_time, std::move(ins), outs};
+        unsigned_tx.inputs()[0].previous_output().validation.cache = prev.outputs()[0];
+        auto const sig = script::create_endorsement(miner_secret(), miner_script(), unsigned_tx, 0,
+            uint8_t(infrastructure::machine::sighash_algorithm::forkid_all), flags, prev_value);
+        REQUIRE(sig);
+        input::list signed_ins{input{output_point{prev.hash(), 0},
+            script(script::to_pay_public_key_hash_pattern_unlocking(*sig, miner_public())), 0xffffffff}};
+        return transaction{1, lock_time, std::move(signed_ins), std::move(outs)};
+    };
+    for (uint32_t lock_time = 0; lock_time < 16; ++lock_time) {
+        uint64_t fee = 0;
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            auto tx = sign(fee, lock_time);
+            auto const wanted = tx.serialized_size(true) * per_kb / 1000;
+            if (wanted == fee) {
+                return tx;
+            }
+            fee = wanted;
+        }
+    }
+    FAIL("the fee and the size did not settle");
+    return {};
+}
+
+} // namespace
+
+// The default price is BCHN's relay floor: 1000 satoshis per 1000 bytes, by
+// size. The previous default, 0.1 satoshi per byte plus 100 satoshis per
+// signature operation counted in the output scripts, refused a payment to three
+// P2PKH outputs at the network's floor and admitted one to a script hash at a
+// tenth of it.
+TEST_CASE("the default price is the network's relay floor, by size", "[mempool][admission][fee]") {
+    admission_chain built("relay_floor", trunk_len + 2);
+    auto& chain = built.chain();
+    auto const flags = chain.chain_settings().enabled_flags();
+    auto const& first = built.trunk[0].transactions().front();
+    auto const& second = built.trunk[1].transactions().front();
+    using namespace domain::chain;
+    auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
+
+    auto const organize = [&](transaction const& tx) {
+        auto const ptr = std::make_shared<domain::message::transaction>(tx);
+        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+    };
+
+    // Below the floor, refused whatever the outputs.
+    CHECK(organize(paying(second, {p2sh}, 500, flags)) == error::insufficient_fee);
+    CHECK(organize(paying(first, {miner_script(), miner_script(), miner_script()}, 999, flags))
+        == error::insufficient_fee);
+
+    // At the floor, admitted whatever the outputs.
+    auto const payment = paying(first, {miner_script(), miner_script(), miner_script()}, 1000, flags);
+    CHECK(payment.signature_operations(true, false) == 3);
+    CHECK(organize(payment) == error::success);
+    CHECK(organize(paying(second, {p2sh}, 1000, flags)) == error::success);
+}
+
+// An operator who sets a price per signature operation still gets it: on top
+// of the floor, 100 satoshis for each CHECKSIG in the outputs.
+TEST_CASE("an operator's price per signature operation still applies", "[mempool][admission][fee]") {
+    admission_chain built("sigop_price", trunk_len + 2, true, 1'000'000,
+        [](blockchain::settings& s) { s.sigop_fee_satoshis = 100.0f; });
+    auto& chain = built.chain();
+    auto const flags = chain.chain_settings().enabled_flags();
+    auto const& first = built.trunk[0].transactions().front();
+    auto const& second = built.trunk[1].transactions().front();
+    using namespace domain::chain;
+    auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
+    auto const three_p2pkh = std::vector<script>{miner_script(), miner_script(), miner_script()};
+
+    auto const organize = [&](transaction const& tx) {
+        auto const ptr = std::make_shared<domain::message::transaction>(tx);
+        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+    };
+    auto const fee = [](transaction const& tx, transaction const& prev) {
+        return prev.outputs()[0].value() - tx.total_output_value();
+    };
+
+    // At the floor, three signature operations are 300 satoshis short.
+    auto const at_floor = paying(first, three_p2pkh, 1000, flags);
+    REQUIRE(at_floor.signature_operations(true, false) == 3);
+    REQUIRE(fee(at_floor, first) < at_floor.serialized_size(true) + 300);
+    CHECK(organize(at_floor) == error::insufficient_fee);
+
+    // Paying for them, admitted.
+    auto const priced = paying(first, three_p2pkh, 2500, flags);
+    REQUIRE(fee(priced, first) >= priced.serialized_size(true) + 300);
+    CHECK(organize(priced) == error::success);
+
+    // With no signature operation, the floor is enough.
+    auto const unpriced = paying(second, {p2sh}, 1000, flags);
+    REQUIRE(unpriced.signature_operations(true, false) == 0);
+    CHECK(organize(unpriced) == error::success);
 }
 
 #endif // KTH_CURRENCY_BCH

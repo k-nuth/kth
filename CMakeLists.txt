@@ -39,6 +39,8 @@ message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KthCompilerChecks.cmake)
+
 option(BUILD_NODE_EXE "Build the node executable." ON)
 option(BUILD_C_API "Build the C-API." ON)
 option(GLOBAL_BUILD "Global build flag." ON)

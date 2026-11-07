@@ -1257,6 +1257,21 @@ static
         spdlog::info("[coordinator:stored_bridge] Task ended");
     });
 
+    // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
+    // `mempool_expiry_hours` after the node first saw it leaves the pool with
+    // its descendants. BCHN also checks at each admission, walking its
+    // first-seen order; kth keeps no such order, so the sweep runs every hour,
+    // and at least twice per expiry period, which bounds how long a transaction
+    // outstays it. Ends with the network.
+    if (auto const hours = chain.chain_settings().mempool_expiry_hours; hours > 0) {
+        std::chrono::seconds const expiry = std::chrono::hours(hours);
+        auto const period = std::min<std::chrono::steady_clock::duration>(
+            std::chrono::hours(1), expiry / 2);
+        all_tasks.spawn("mempool_expiry", [&, expiry, period]() -> ::asio::awaitable<void> {
+            co_await chain.run_mempool_expiry(expiry, period, network.stop_token());
+        });
+    }
+
     // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
     // Uses unified event channel to avoid || operator between multiple channels

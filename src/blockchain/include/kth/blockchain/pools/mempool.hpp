@@ -76,6 +76,11 @@ struct mempool {
     // transitively. Returns the ids of the transactions this call removed.
     std::vector<hash_digest> remove_with_descendants(hash_digest const& txid);
 
+    // Remove every transaction first seen before `seen_before` (unix seconds),
+    // with its descendants (BCHN's mempool expiry). Returns the ids of the
+    // transactions this call removed.
+    std::vector<hash_digest> expire(uint64_t seen_before);
+
     // A reorg happened: re-admit transactions from the disconnected blocks that
     // are not in the new chain, then apply remove_for_block for the new blocks.
     std::vector<hash_digest> update_for_reorg(block_const_ptr_list_const_ptr outgoing,
