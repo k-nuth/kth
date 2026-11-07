@@ -23,9 +23,10 @@ namespace kth::blockchain {
 ///
 /// The surface is visitation-only: mutate/visit apply a callable to the entry
 /// and never hand out a reference or pointer to it. No internal
-/// synchronization -- every access happens inside the organizers' serialized
-/// organize() path (block and transaction organizers share one prioritized
-/// mutex held across their co_awaits, so they are mutually exclusive).
+/// synchronization: the owning validator must serialize access. Transaction
+/// admission (including validation-only calls) holds the organizer's channel
+/// token across validation and cleanup. Block validation has its own serialized
+/// path; the stores do not rely on a shared mutex held across suspension.
 template <std::default_initializable Validation>
 struct validation_store {
     /// Apply `fn` (taking `Validation&`) to the entry for `hash`, creating a

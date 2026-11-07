@@ -179,7 +179,9 @@ bool header::is_valid_proof_of_work(hash_digest const& hash, bool retarget) cons
     // `work_limit()` returns a consensus pow-limit constant (0x1d00ffff /
     // 0x207fffff), which is a valid compact encoding by definition, so
     // `from_compact` never fails here and `.value()` cannot throw.
-    static uint256_t const pow_limit(compact::from_compact(work_limit(retarget)).value());
+    static uint256_t const retarget_limit(compact::from_compact(work_limit(true)).value());
+    static uint256_t const no_retarget_limit(compact::from_compact(work_limit(false)).value());
+    auto const& pow_limit = retarget ? retarget_limit : no_retarget_limit;
 
     if ( ! compact_bits) {
         return false;
