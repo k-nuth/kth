@@ -176,6 +176,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/primitives.cpp
     src/sv2/messages.cpp
     src/sv2/connection.cpp
+    src/sv2/noise.cpp
+    src/sv2/noise_credentials.cpp
+    src/sv2/template_provider.cpp
   )
 endif()
 
@@ -234,6 +237,9 @@ set(kth_headers
   include/kth/node/sv2/primitives.hpp
   include/kth/node/sv2/messages.hpp
   include/kth/node/sv2/connection.hpp
+  include/kth/node/sv2/noise.hpp
+  include/kth/node/sv2/noise_credentials.hpp
+  include/kth/node/sv2/template_provider.hpp
 
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
@@ -362,6 +368,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_primitives.cpp
           test/sv2_messages.cpp
           test/sv2_connection.cpp
+          test/sv2_noise.cpp
+          test/sv2_noise_credentials.cpp
+          test/sv2_template_provider.cpp
           test/settings.cpp
           test/utility.cpp
           test/utility.hpp)
