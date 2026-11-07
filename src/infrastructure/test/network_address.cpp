@@ -10,6 +10,27 @@ using namespace kth::infrastructure;
 
 using message::network_address;
 
+TEST_CASE("overlay network addresses cannot use legacy serialization", "[network address tests][i2p]") {
+    message::overlay_address const hash{};
+    network_address address(1, 1, message::address_network::i2p, hash, 0);
+    REQUIRE(address.is_valid());
+    REQUIRE(address.is_routable());
+    data_chunk bytes(address.serialized_size(31402, true));
+    byte_writer writer(bytes);
+    REQUIRE( ! address.to_data(writer, 31402, true));
+    REQUIRE(writer.position() == 0);
+    auto onion = network_address(1, 1, message::address_network::torv3, hash, 0);
+    REQUIRE( ! onion.is_routable());
+    onion.set_port(8333);
+    REQUIRE(onion.is_routable());
+    REQUIRE(address != onion);
+    address.set_ip(message::null_address);
+    REQUIRE( ! address.is_overlay());
+    onion.reset();
+    REQUIRE( ! onion.is_overlay());
+    REQUIRE( ! onion.is_valid());
+}
+
 namespace {
     
 //This is defined in Domain <kth/domain/message/version.hpp>

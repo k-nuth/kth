@@ -92,8 +92,16 @@ std::optional<infrastructure::message::network_address> addrv2_entry::to_network
         std::copy(addr_.begin(), addr_.end(), ip.begin() + 12);
     } else if (network_ == bip155_network::ipv6 && addr_.size() == ADDR_IPV6_SIZE) {
         std::copy(addr_.begin(), addr_.end(), ip.begin());
+    } else if ((network_ == bip155_network::torv3 && addr_.size() == ADDR_TORV3_SIZE)
+        || (network_ == bip155_network::i2p && addr_.size() == ADDR_I2P_SIZE)) {
+        infrastructure::message::overlay_address address{};
+        std::copy(addr_.begin(), addr_.end(), address.begin());
+        auto const network = network_ == bip155_network::i2p
+            ? infrastructure::message::address_network::i2p
+            : infrastructure::message::address_network::torv3;
+        return infrastructure::message::network_address(time_, services_, network, address, port_);
     } else {
-        // Tor, I2P and CJDNS have no legacy network_address representation.
+        // CJDNS and the deprecated Tor v2 format are not supported.
         return std::nullopt;
     }
 
@@ -102,6 +110,13 @@ std::optional<infrastructure::message::network_address> addrv2_entry::to_network
 
 // static
 addrv2_entry addrv2_entry::from_network_address(infrastructure::message::network_address const& addr) {
+    if (addr.is_overlay()) {
+        auto const network = addr.network() == infrastructure::message::address_network::i2p
+            ? bip155_network::i2p : bip155_network::torv3;
+        auto const& bytes = addr.overlay_address();
+        return create(addr.timestamp(), addr.services(), network,
+            data_chunk(bytes.begin(), bytes.end()), addr.port()).value();
+    }
     auto const& ip = addr.ip();
 
     // Check if it's an IPv4-mapped IPv6 address (::ffff:x.x.x.x)

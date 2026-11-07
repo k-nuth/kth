@@ -76,7 +76,7 @@ struct KN_API peer_record {
     // Identity
     // -------------------------------------------------------------------------
     infrastructure::config::authority authority = infrastructure::config::authority::any();
-    normalized_address ip;                      // Cached normalized IP (avoids repeated normalization)
+    normalized_address ip;                      // Cached address key, including overlay network
     std::string user_agent;                     // e.g., "BCHN:28.0.1"
     uint64_t services{0};                       // NODE_NETWORK, NODE_BLOOM, etc.
 

@@ -83,6 +83,9 @@ public:
     /// @return true if exists
     ::asio::awaitable<bool> exists_by_authority(infrastructure::config::authority const& authority) const;
 
+    [[nodiscard]]
+    ::asio::awaitable<bool> exists_by_destination(infrastructure::config::endpoint const& destination) const;
+
     /// Check if a peer with the given IP exists (ignores port)
     /// @param ip The IP address to check
     /// @return true if exists
