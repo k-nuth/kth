@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_RPC_DISPATCH_HPP
 #define KTH_NODE_RPC_DISPATCH_HPP
 
+#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <functional>
@@ -33,14 +34,17 @@ struct job_store;
 namespace kth::node::rpc {
 
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
-// cache and the P2P node. Passed by reference; owned by the server for the
-// connection's lifetime.
+// cache, the P2P node and when the node started. Passed by reference; owned by
+// the server for the connection's lifetime.
 struct method_context {
     blockchain::block_chain& chain;
     mining::job_store& jobs;
     // Null when the server runs without one (tests); the network methods then
     // report it as unavailable.
     p2p_node const* network = nullptr;
+    // When the node started, for uptime. The server passes the node's own
+    // start; a context built without one (tests) counts from its creation.
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
