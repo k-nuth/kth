@@ -1934,6 +1934,41 @@ TEST_CASE("integrated: a newly connected block is announced to every peer",
     CHECK(inventories_seen == 1);
 }
 
+// A peer that connects later is told the connected tip's height in the
+// version message, not the height the node started at: the height the
+// handshake reads follows each block the coordinator connects.
+TEST_CASE("integrated: the version message's height follows the connected tip",
+          "[header_tip][integration][tip_announcement]") {
+    captured_log log;
+    chain_fixture fixture{"version_height"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 3, 3);
+    auto const& next = staged.next;
+
+    wire_peer source(node_settings("version_height_source"), 9111, 3);
+    bool followed = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "version_height");
+        run.connect(source.session);
+        run.deliver(source.session, source.headers({next}));
+        data_chunk bytes(next.serialized_size());
+        byte_writer writer(bytes);
+        REQUIRE(next.to_data(writer));
+        REQUIRE(source.session->block_responses().try_send(
+            source.message(domain::message::block::command, std::move(bytes))));
+        followed = wait_until([&] {
+            auto const top = run.network.top_block();
+            return top.height() == 4 && top.hash() == next.hash();
+        }, quick);
+        stopped_cleanly = run.stop_with({source.session}, std::chrono::seconds(120));
+    }
+    log.dump("version_height");
+    REQUIRE(followed);
+    CHECK(stopped_cleanly);
+}
+
 TEST_CASE("integrated: a peer answering below a deep fork is followed to its heavier branch",
           "[header_tip][integration][held_batch]") {
     // The node holds a chain that leaves the peer's after `common_height`, by
