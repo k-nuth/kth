@@ -322,6 +322,15 @@ public:
     /// cmpctblock contributes its header alone, and a blocktxn is not taken.
     void set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions);
 
+    /// Peers asked at once to send new blocks as a cmpctblock before they
+    /// announce them (BIP152 high bandwidth, sendcmpct(1, 1)), as BIP152
+    /// recommends and BCHN does. The others are asked for low bandwidth.
+    static constexpr size_t max_high_bandwidth_compact_peers = 3;
+
+    /// node.compact_blocks_high_bandwidth. Off, every peer is asked for low
+    /// bandwidth (sendcmpct(0, 1)). Set before run().
+    void set_compact_high_bandwidth(bool enabled);
+
     // Manual connections
     // -------------------------------------------------------------------------
 
@@ -691,6 +700,15 @@ private:
 
     compact_block_fn compact_block_handler_;
     block_transactions_fn block_transactions_handler_;
+
+    /// One of the high-bandwidth slots for a peer that just finished its
+    /// handshake, when the setting allows and one is free. The peer's task
+    /// gives it back when its protocols end.
+    [[nodiscard]]
+    bool take_high_bandwidth_compact_slot();
+
+    bool compact_high_bandwidth_{true};
+    std::atomic<size_t> high_bandwidth_compact_peers_{0};
 
     // Peers choose what goes in here, so it is bounded and its membership test
     // is constant time. Beyond the bound new hashes are refused and the refusal

@@ -182,6 +182,8 @@ full_node::~full_node() {
         [this](peer_session::ptr const& peer, domain::message::block_transactions message) {
             return compact_blocks_->deliver(peer, std::move(message));
         });
+    // Off, no peer is asked to send a cmpctblock before announcing a block.
+    network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
 #endif
 
 #if ! defined(__EMSCRIPTEN__)

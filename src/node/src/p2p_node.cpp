@@ -6,6 +6,7 @@
 
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/scope_action.hpp>
 
 #include <algorithm>
 
@@ -755,6 +756,22 @@ bool p2p_node::deliver_block_transactions(peer_session::ptr const& peer, raw_mes
 void p2p_node::set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions) {
     compact_block_handler_ = std::move(compact_block);
     block_transactions_handler_ = std::move(block_transactions);
+}
+
+void p2p_node::set_compact_high_bandwidth(bool enabled) {
+    compact_high_bandwidth_ = enabled;
+}
+
+bool p2p_node::take_high_bandwidth_compact_slot() {
+    if ( ! compact_high_bandwidth_) {
+        return false;
+    }
+    // Peers finish their handshakes on several strands at once.
+    auto taken = high_bandwidth_compact_peers_.load();
+    while (taken < max_high_bandwidth_compact_peers &&
+           ! high_bandwidth_compact_peers_.compare_exchange_weak(taken, taken + 1)) {
+    }
+    return taken < max_high_bandwidth_compact_peers;
 }
 
 detail::header_ingest_channels& p2p_node::header_ingest() {
@@ -1609,9 +1626,22 @@ void p2p_node::wake_status_task() noexcept {
                         // Announce our capabilities right after the handshake,
                         // the way BCHN does: prefer header announcements, offer
                         // compact blocks (BIP-152 v1), and advertise our relay
-                        // fee filter (1 sat/byte). Best-effort.
+                        // fee filter (1 sat/byte). Best-effort. Compact blocks
+                        // go only to a peer whose version knows them. Up to
+                        // three peers are asked to send new blocks as a
+                        // cmpctblock (high bandwidth), the rest to announce
+                        // them first (low bandwidth); a slot is the peer's
+                        // until its protocols end.
                         co_await peer->send(domain::message::send_headers{});
-                        co_await peer->send(domain::message::send_compact(true, 1));
+                        detail::scope_action release_high_bandwidth(
+                            [this]() noexcept { high_bandwidth_compact_peers_.fetch_sub(1); }, false);
+                        if (peer->negotiated_version() >= domain::message::send_compact::version_minimum) {
+                            bool const high_bandwidth = take_high_bandwidth_compact_slot();
+                            if (high_bandwidth) {
+                                release_high_bandwidth.arm();
+                            }
+                            co_await peer->send(domain::message::send_compact(high_bandwidth, 1));
+                        }
                         co_await peer->send(domain::message::fee_filter{1000});
 
                         // Send success response to caller
