@@ -2124,6 +2124,11 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
+    // Consumers may build mining work as soon as they receive this wake-up,
+    // so publishing it while capture is still closed would lose the update.
+    if (auto const view = chain_view()) {
+        block_organizer_.notify_tip(view->connected_tip_height);
+    }
 }
 
 bool block_chain::transition_in_progress() const {
@@ -2447,6 +2452,11 @@ blockchain::mempool const& block_chain::mempool_ref() const {
 
 block_chain::block_channel_ptr block_chain::subscribe_blockchain() {
     return block_organizer_.subscribe();
+}
+
+block_chain::block_channel_ptr block_chain::subscribe_blockchain(
+    ::asio::any_io_executor executor) {
+    return block_organizer_.subscribe(std::move(executor));
 }
 
 block_chain::transaction_channel_ptr block_chain::subscribe_transaction() {
@@ -3243,6 +3253,13 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
 
 awaitable_expected<blockchain::mining_template>
 block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const {
+    co_return co_await fetch_mining_template(blockchain::coinbase_reserve{coinbase_reserve_size}, request_time);
+}
+
+awaitable_expected<blockchain::mining_template>
+block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::optional<uint32_t> request_time) const {
+    auto const coinbase_reserve_size = reserve.size;
+    auto const coinbase_reserve_sigchecks = reserve.sigchecks;
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -3285,6 +3302,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
         return s &&
                s->previous == tip &&
                s->coinbase_reserve_size == coinbase_reserve_size &&
+               s->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
                (s->generation == gen ||
                 at - s->time < settings_.gbt_template_refresh_seconds);
     };
@@ -3309,9 +3327,12 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
     // A busy owner may serve the existing same-tip, same-budget snapshot.
     // This single availability observation only chooses a valid immutable
     // value; ownership itself is acquired by receiving the token below.
+    // The budget is both reserves: a snapshot built for another SigChecks
+    // reserve leaves the caller's coinbase a different amount of room.
     if (!template_rebuild_gate_.ready() && snapshot &&
         snapshot->previous == served->tip_hash &&
-        snapshot->coinbase_reserve_size == coinbase_reserve_size) {
+        snapshot->coinbase_reserve_size == coinbase_reserve_size &&
+        snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks) {
         co_return refresh_header(snapshot->value, served, now);
     }
 
@@ -3401,6 +3422,7 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
         .height = height,
         .median_time_past = state->median_time_past(),
         .coinbase_reserve_size = coinbase_reserve_size,
+        .coinbase_reserve_sigchecks = coinbase_reserve_sigchecks,
 #if defined(KTH_CURRENCY_BCH)
         .ticks = state->ticks(),
 #endif
@@ -3424,7 +3446,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
         , settings_.retarget);
 
     auto next = boost::make_shared<template_snapshot>(
-        template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});
+        template_snapshot{std::move(built), previous, view.generation, now,
+            coinbase_reserve_size, coinbase_reserve_sigchecks});
     template_cache_.store(next);
     co_return next->value;
 }
