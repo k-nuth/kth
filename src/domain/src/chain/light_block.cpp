@@ -160,6 +160,12 @@ code light_block::check_transaction_sizes() const {
 }
 
 hash_digest light_block::generate_merkle_root() const {
+    bool mutated;
+    return generate_merkle_root(mutated);
+}
+
+hash_digest light_block::generate_merkle_root(bool& mutated) const {
+    mutated = false;
     if (tx_offsets_.empty()) {
         return null_hash;
     }
@@ -180,6 +186,7 @@ hash_digest light_block::generate_merkle_root() const {
     std::vector<uint8_t> batch_output;
 
     while (hashes.size() > 1) {
+        auto const unpadded_size = hashes.size();
         // Bitcoin merkle: duplicate last hash if odd count at this level
         if (hashes.size() % 2 != 0) {
             hashes.push_back(hashes.back());
@@ -192,6 +199,11 @@ hash_digest light_block::generate_merkle_root() const {
         batch_output.resize(num_pairs * 32);
 
         for (size_t i = 0; i < num_pairs; ++i) {
+            // Count only real siblings, not the implicit odd-leaf duplicate.
+            // Check every level: whole duplicated subtrees are ambiguous too.
+            if (i * 2 + 1 < unpadded_size && hashes[i * 2] == hashes[i * 2 + 1]) {
+                mutated = true;
+            }
             std::copy(hashes[i * 2].begin(), hashes[i * 2].end(),
                       batch_input.begin() + i * 64);
             std::copy(hashes[i * 2 + 1].begin(), hashes[i * 2 + 1].end(),

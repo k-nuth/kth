@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <stop_token>
 
 #include <asio/awaitable.hpp>
 
@@ -152,6 +153,53 @@ struct reorg_pipeline {
     uint32_t fork_height,
     std::function<bool()> abort,
     header_persister persist,
+    reorg_pipeline pipeline);
+
+// What stepping the chain off a rejected block left behind.
+struct body_rejection_outcome {
+    // The active chain was truncated to the block below the rejected one.
+    // False when the block was no longer active when this ran, in which case
+    // nothing was touched.
+    bool stepped{false};
+    // As reorg_outcome::fatal: the chain moved but its persisted description
+    // could not be made to agree.
+    bool fatal{false};
+};
+
+// Move the active chain off the block at `height` whose hash is `hash`, after
+// the builder refused its body.
+//
+// Not a switch: nothing was connected, so there is nothing to disconnect and
+// the UTXO set is untouched. The index entry is flagged `failed_valid`, the
+// header tip is adopted at the parent, the by-height table is truncated to it,
+// and the storage cursor is reset to the rejected height — all while the
+// writers are parked, for the reason execute_reorg parks them.
+//
+// The flag is what keeps the header from coming back. A body that reached the
+// builder matched the header's merkle root under the storage-side merkle
+// check, which refuses the duplicate-leaf mutations that can make two bodies
+// share a root; what the builder refused is therefore the block the header
+// commits to, and the header is refused with it. The organizer honours the
+// flag on a known header re-sent as a tip extension, on a known descendant
+// (flagged `failed_child` as it is walked onto), and on the parent of a new
+// header. The coordinator's own memory of refused hashes remains the filter
+// for a switch onto a branch that already carried descendants.
+//
+// The rejected header stays in the index, off the active chain. Its bytes stay
+// on disk with `have_data` set, which nothing consults for a flagged entry.
+//
+// The barrier is waited for as an event: every register, unregister, park and
+// leave rings chain.reorg_barrier_events(), and the counters are re-read on
+// each ring. `stop` ends the wait at shutdown; the deadline ends a wait on a
+// writer that never parks, which is a bug and not something to hold the pause
+// open for.
+::asio::awaitable<body_rejection_outcome> execute_body_rejection(
+    blockchain::block_chain& chain,
+    blockchain::header_organizer& organizer,
+    uint32_t height,
+    hash_digest const& hash,
+    std::stop_token stop,
+    std::function<code(uint32_t)> truncate,
     reorg_pipeline pipeline);
 
 } // namespace kth::node::sync

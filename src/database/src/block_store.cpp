@@ -391,6 +391,23 @@ block_store::read_block_raw(flat_file_pos const& pos) const {
         return std::unexpected(result_code::other);
     }
 
+    // The size is what the file says, so a damaged record can claim anything.
+    // It cannot claim more than the file holds after it: check that before
+    // allocating, instead of reserving gigabytes for a record of a few bytes.
+    long const data_start = std::ftell(file);
+    if (data_start < 0 || std::fseek(file, 0, SEEK_END) != 0) {
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+    long const file_end = std::ftell(file);
+    if (file_end < data_start || uint64_t(file_end - data_start) < block_size ||
+            std::fseek(file, data_start, SEEK_SET) != 0) {
+        spdlog::error("block_store::read_block_raw: Record at {} claims {} bytes, more than its file holds",
+            pos.to_string(), block_size);
+        std::fclose(file);
+        return std::unexpected(result_code::other);
+    }
+
     // Read block data
     data_chunk data(block_size);
     if (std::fread(data.data(), 1, block_size, file) != block_size) {

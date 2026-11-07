@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
@@ -37,6 +38,8 @@
 #include <kth/infrastructure/utility/timer.hpp>
 
 #include <asio/co_spawn.hpp>
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/post.hpp>
 #include <asio/this_coro.hpp>
@@ -106,8 +109,10 @@ static auto const hour_seconds = 3600u;
 block_chain::block_chain(blockchain::settings const& chain_settings,
                          database::settings const& database_settings,
                          domain::config::network network,
-                         bool relay_transactions)
+                         bool relay_transactions,
+                         std::shared_ptr<block_submission_channel> submissions)
     : stopped_(true)
+    , block_submissions_(std::move(submissions))
     , settings_(chain_settings)
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
@@ -382,6 +387,49 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
+    // Startup owns the index exclusively. Restore verdicts before any peer or
+    // organizer can admit headers, including hashes absent after truncation.
+    auto rejections = database_.internal_db().rejected_blocks();
+    if ( ! rejections) {
+        spdlog::critical("[blockchain] Cannot read the persisted block rejection history");
+        return false;
+    }
+    std::optional<uint32_t> recovery_height;
+    for (auto const& hash : *rejections) {
+        auto const idx = header_index_.find(hash);
+        if (idx != header_index::null_index) {
+            auto const height = uint32_t(header_index_.get_height(idx));
+            if (height == 0 || height <= *reconciled) {
+                // A contextual rejection cannot have been connected. This is
+                // inconsistent durable state, not a header-only recovery.
+                spdlog::critical("[blockchain] Rejected block {} at {} is in the connected chain",
+                    encode_hash(hash), height);
+                return false;
+            }
+            recovery_height = recovery_height ? std::min(*recovery_height, height) : height;
+        }
+    }
+    header_index_.restore_failed_blocks(std::move(*rejections));
+    if (recovery_height) {
+        auto const parent_height = *recovery_height - 1;
+        // Same durable truncation as body rejection, but no live writers exist
+        // yet. Preserve the parent row (including genesis/ABLA) and UTXO state.
+#if defined(KTH_DB_READONLY)
+        spdlog::critical("[blockchain] Header recovery above {} requires a writable database", parent_height);
+        return false;
+#else
+        if (auto const ec = truncate_headers_after(parent_height); ec) {
+            spdlog::critical("[blockchain] Cannot recover headers above {}: {}",
+                parent_height, ec.message());
+            return false;
+        }
+        headers_persisted_through_ = parent_height;
+#endif
+        persisted_chain_indices.resize(size_t(parent_height) + 1);
+        spdlog::warn("[blockchain] Recovered interrupted block rejection; headers now end at {}",
+            parent_height);
+    }
+
     // Restore block file positions in header_index from flat files.
     //
     // Unconditional now, and `heights->block > 0` is gone on purpose: the walks
@@ -550,6 +598,14 @@ bool block_chain::start(uint32_t disk_magic) {
 
 bool block_chain::stop() {
     stopped_ = true;
+    reorg_barrier_events_.close();
+    if (block_submissions_) {
+        block_submissions_->close();
+        std::error_code ec;
+        while (auto pending = block_submissions_->try_receive(ec)) {
+            pending->reply->try_send(block_submission_result(error::service_stopped));
+        }
+    }
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
@@ -589,16 +645,85 @@ bool block_chain::stopped() const {
 // ORGANIZERS (Core blockchain operations)
 // =============================================================================
 
-::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
-    // Single-block acceptance was implemented on the pre-v1 LMDB storage
-    // (block_organizer -> populate_block over the LMDB utxo_pool, reorg pool).
-    // That storage is dead in the v1 node (flat files + UTXO-Z; IBD validates via
-    // validate_block_batch + utxo_build), so this path can no longer accept a
-    // block and is stubbed while the dead LMDB code is removed. Reimplementing it
-    // on the v1 model is tracked in issue #563.
-    (void)block;
-    (void)headers_pre_validated;
-    co_return error::not_implemented;
+namespace {
+
+::asio::awaitable<block_submission_result> submit_owned_block(
+    std::shared_ptr<block_submission_channel> submissions, block_const_ptr block) {
+    co_await ::asio::this_coro::throw_if_cancelled(false);
+    auto const cancellation = co_await ::asio::this_coro::cancellation_state;
+    if (cancellation.cancelled() != ::asio::cancellation_type::none) {
+        co_return error::operation_failed;
+    }
+    if ( ! submissions) {
+        co_return error::service_stopped;
+    }
+    if ( ! block) {
+        co_return error::operation_failed;
+    }
+    auto const executor = co_await ::asio::this_coro::executor;
+    auto reply = std::make_shared<block_submission_reply>(1);
+    ::asio::experimental::channel_select_options options;
+    options.nonblocking = true;
+    // Named, then bound by reference, because of a GCC 16 bug: at -O1 and
+    // above it never destroys the object behind a by-value structured binding
+    // that is still in scope at a later suspension, and this result owns the
+    // submission endpoint. Once GCC fixes it, the binding can take the
+    // co_await result directly again.
+    auto admission = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(*submissions, block_submission{std::move(block), reply})
+    ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto const& [admission_error, selected] = admission;
+    (void)selected;
+    if (admission_error) {
+        // Refusal retains no work: the caller owns retry under pressure.
+        co_return admission_error == ::asio::error::broken_pipe
+            ? code(error::service_stopped) : code(error::operation_failed);
+    }
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*reply)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, answered] = completion;
+    if (ec) {
+        co_return block_submission_result(error::service_stopped);
+    }
+    co_return std::move(*answered.value<0>());
+}
+
+} // namespace
+
+::asio::awaitable<block_submission_result> block_chain::submit_block(block_const_ptr block) {
+    // Capture ownership before returning the lazy coroutine to the caller.
+    return submit_owned_block(block_submissions_, std::move(block));
+}
+
+::asio::awaitable<block_submission_result> block_chain::submit_block(domain::chain::block const& block) {
+    return submit_block(std::make_shared<domain::message::block const>(block));
+}
+
+awaitable_expected<std::vector<hash_digest>> block_chain::rejected_blocks() const {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> awaitable_expected<std::vector<hash_digest>> {
+            auto result = database_.internal_db().rejected_blocks();
+            if ( ! result) {
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::move(*result);
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<code> block_chain::record_rejected_block(hash_digest hash) {
+    // LMDB may wait for a writer or disk. Keep it off the peer/sync executor;
+    // the admission owner awaits completion before publishing the verdict.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash]() -> ::asio::awaitable<code> {
+            co_return database::succeed(database_.internal_db().record_rejected_block(hash))
+                ? code(error::success) : code(error::operation_failed);
+        }, ::asio::use_awaitable);
+}
+
+block_submission_channel& block_chain::block_submissions() noexcept {
+    KTH_CONTRACT(block_submissions_ != nullptr);
+    return *block_submissions_;
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
@@ -939,6 +1064,13 @@ code block_chain::replace_headers_from(domain::chain::header::list const& header
     return database_.replace_headers_from(headers, start_height);
 }
 
+code block_chain::truncate_headers_after(uint32_t height) {
+    if (stopped()) {
+        return error::service_stopped;
+    }
+    return database_.truncate_headers_after(height);
+}
+
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
@@ -1272,18 +1404,14 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
         return database::disconnect_result::failed;
     }
 
-    if ( ! header_index_.has_block_data(idx)) {
-        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
-        return database::disconnect_result::failed;
-    }
-
     // The outputs the block created are not stored in the undo record: they are
     // recomputed here by re-reading the block, which is why undo data only needs
     // to carry what was spent.
-    database::flat_file_pos const pos{
-        header_index_.get_file_number(idx),
-        header_index_.get_data_pos(idx)
-    };
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
+        return database::disconnect_result::failed;
+    }
     auto raw = block_store_->read_block_raw(pos);
     if ( ! raw) {
         spdlog::error("[blockchain] disconnect_block: cannot read block at height {}", height);
@@ -2057,6 +2185,67 @@ block_chain::chain_view_ptr block_chain::chain_view() const {
     return chain_view_.load();
 }
 
+std::expected<block_progress, code> block_chain::get_block_progress(
+        hash_digest const& hash, chain_view_ptr const& view) const {
+    auto const subject = header_index_.find(hash);
+    if (subject == header_index::null_index) {
+        return std::unexpected(error::not_found);
+    }
+    auto const raw_height = header_index_.get_height(subject);
+    if (raw_height < 0) {
+        return std::unexpected(error::operation_failed);
+    }
+    auto const height = size_t(raw_height);
+#if defined(KTH_CURRENCY_BCH)
+    validate_header validator(settings_, chain_state_populator_.network());
+    auto const schedule = tick_schedule_for_tip(validator, header_index_, subject);
+    if (!schedule) {
+        return std::unexpected(schedule.error());
+    }
+    block_progress result{height, schedule->height_to_tick(height),
+        schedule->block_interval(height), schedule->next_block_interval(height), -1, -1, hash};
+#else
+    block_progress result{height, uint64_t(height) * target_spacing_seconds,
+        target_spacing_seconds, target_spacing_seconds, -1, -1, hash};
+#endif
+    // Connected depth is unavailable in these cases, but the subject's own
+    // branch metadata above is independent of the connected publication.
+    if (!view) return result;
+    auto const tip = header_index_.find(view->tip_hash);
+    if (tip == header_index::null_index || header_index_.get_height(tip) < 0 ||
+        size_t(header_index_.get_height(tip)) != view->connected_tip_height) {
+        return result;
+    }
+    if (height <= view->connected_tip_height &&
+        header_index_.get_ancestor(tip, raw_height) == subject) {
+#if defined(KTH_CURRENCY_BCH)
+        auto const connected = tip == subject ? schedule
+            : tick_schedule_for_tip(validator, header_index_, tip);
+        if (!connected) return result;
+        result.confirmations_ticks = int64_t(connected->height_to_tick(view->connected_tip_height)
+            - connected->height_to_tick(height) + connected->block_interval(height));
+#else
+        result.confirmations_ticks = int64_t(view->connected_tip_height - height + 1) * target_spacing_seconds;
+#endif
+        result.confirmations = int64_t(view->connected_tip_height - height + 1);
+    }
+    return result;
+}
+
+std::expected<block_progress, code> block_chain::get_block_progress(hash_digest const& hash) const {
+    return get_block_progress(hash, chain_view());
+}
+
+awaitable_expected<block_progress> block_chain::fetch_block_progress(hash_digest const& hash) const {
+    co_return get_block_progress(hash);
+}
+
+awaitable_expected<block_progress> block_chain::fetch_chain_progress() const {
+    auto const view = chain_view();
+    if (!view) co_return std::unexpected(error::operation_failed);
+    co_return get_block_progress(view->tip_hash, view);
+}
+
 code block_chain::publish_chain_view(size_t connected_tip_height) {
     // Both halves come from the one height, under whatever exclusion the caller
     // holds — so the state and the hash cannot describe different chains, and
@@ -2223,6 +2412,30 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
 
     validation_high_priority_lock const lock(validation_mutex_);
     mempool_.remove_for_block(block);
+}
+
+code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected) {
+    // The same admission gate used by template capture keeps a chain transition
+    // from starting between the snapshot check and the mempool mutation.
+    captured_lease const capture(capture_gate_);
+    if ( ! capture || ! expected || chain_view() != expected) return error::stale_chain;
+    if (stopped()) return error::service_stopped;
+
+    struct unlock {
+        prioritized_mutex& mutex;
+        ~unlock() { mutex.unlock_low_priority(); }
+    };
+    validation_mutex_.lock_low_priority();
+    unlock const release{validation_mutex_};
+    // A pooled parent may have been removed while script validation was running.
+    // Its hash commits to the output, so presence is enough to recheck it here.
+    for (auto const& input : entry.tx->inputs()) {
+        auto const& point = input.previous_output();
+        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
+            return error::missing_previous_output;
+        }
+    }
+    return mempool_.add(std::move(entry)) ? error::success : error::double_spend_mempool;
 }
 
 blockchain::mempool& block_chain::mempool_ref() {
@@ -2508,28 +2721,78 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// DEPRECATED: Block storage moved to flat files (blk*.dat)
-// These functions will return not_found until we implement reading from flat files
+awaitable_expected<std::pair<block_const_ptr, size_t>>
+block_chain::read_stored_block(hash_digest const& hash, size_t height,
+                               database::flat_file_pos pos) const {
+    // Disk I/O and parsing run on priority_pool_, like store_block, so a
+    // caller on the network executor (RPC, peers) is not held by them. The
+    // store opens the file for each read, so this does not contend with the
+    // writer appending to it.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash, height, pos]() -> awaitable_expected<std::pair<block_const_ptr, size_t>> {
+            auto const raw = block_store_->read_block_raw(pos);
+            if ( ! raw) {
+                spdlog::error("[blockchain] cannot read block {} from the block files at {}",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+
+            // The record must be exactly the block the index names. A record
+            // that parses but is another block, or whose transactions do not
+            // match its header, is damage, and answering with it would hand a
+            // client the wrong data as if it were right.
+            byte_reader reader(*raw);
+            auto block = domain::message::block::from_data(reader, 0u);
+            if ( ! block || ! reader.is_exhausted() || block->hash() != hash ||
+                    ! block->is_valid_merkle_root()) {
+                spdlog::error("[blockchain] the record of block {} at {} is not that block",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::pair{std::make_shared<domain::message::block const>(std::move(*block)), height};
+        },
+        ::asio::use_awaitable);
+}
+
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
+    }
+    if (height > size_t(max_int32)) {
+        co_return kth::fail(error::not_found);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)height;
-    co_return std::unexpected(error::not_found);
+    // The block on the active chain at that height. The index also holds side
+    // branches, numbered in arrival order, so an entry's index is not its height.
+    auto const idx = header_index_.active_at(int32_t(height));
+    if (idx == header_index::null_index) {
+        co_return kth::fail(error::not_found);
+    }
+    // Storage may be recording this block's location right now: one read
+    // gives both halves of it, or none.
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(header_index_.get_hash(idx), height, pos);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
     }
 
-    // LMDB block storage removed - blocks now in flat files
-    (void)hash;
-    co_return std::unexpected(error::not_found);
+    auto const idx = header_index_.find(hash);
+    if (idx == header_index::null_index) {
+        co_return kth::fail(error::not_found);
+    }
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(hash, size_t(header_index_.get_height(idx)), pos);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
@@ -2557,14 +2820,12 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
             return std::unexpected(database::result_code::key_not_found);
         }
 
-        if (!header_index_.has_block_data(idx)) {
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
             spdlog::error("[blockchain] fetch_blocks_raw: No block data for height {}", h);
             return std::unexpected(database::result_code::key_not_found);
         }
-
-        auto file_num = header_index_.get_file_number(idx);
-        auto data_pos = header_index_.get_data_pos(idx);
-        positions.emplace_back(file_num, data_pos);
+        positions.push_back(pos);
     }
 
     // Read all blocks from flat files
@@ -2711,10 +2972,14 @@ block_chain::fetch_transaction(hash_digest const& hash, bool require_confirmed) 
     }
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
-    // store was removed; blocks live in flat files). Reading a tx by hash will be
-    // reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // store was removed; blocks live in flat files), so only the mempool can
+    // answer by hash. A pool transaction is in no block: its position and height
+    // are max_size_t. See issue #491.
+    if ( ! require_confirmed) {
+        if (auto tx = mempool_.get(hash)) {
+            co_return std::tuple{std::move(tx), size_t(max_size_t), size_t(max_size_t)};
+        }
+    }
     co_return std::unexpected(error::not_found);
 }
 
@@ -2726,9 +2991,11 @@ block_chain::fetch_transaction_position(hash_digest const& hash, bool require_co
 
     // Confirmed transactions are no longer indexed by hash (the LMDB transaction
     // store was removed; blocks live in flat files). Reading a tx position by hash
-    // will be reimplemented over the flat-file block store. See issue #491.
-    (void)hash;
-    (void)require_confirmed;
+    // will be reimplemented over the flat-file block store. See issue #491. A
+    // mempool transaction is in no block: max_size_t for both.
+    if ( ! require_confirmed && mempool_.contains(hash)) {
+        co_return std::pair{size_t(max_size_t), size_t(max_size_t)};
+    }
     co_return std::unexpected(error::not_found);
 }
 

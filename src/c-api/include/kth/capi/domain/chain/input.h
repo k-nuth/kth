@@ -9,6 +9,7 @@
 
 #include <kth/capi/primitives.h>
 #include <kth/capi/visibility.h>
+#include <kth/capi/domain/chain/block_ticks.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,6 +110,9 @@ kth_bool_t kth_domain_chain_input_is_final(kth_input_const_t self);
 
 KTH_EXPORT
 kth_bool_t kth_domain_chain_input_is_locked(kth_input_const_t self, kth_size_t block_height, uint32_t median_time_past);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_input_is_locked_with_ticks(kth_input_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t median_time_past);
 
 
 // Operations

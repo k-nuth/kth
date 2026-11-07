@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 namespace kth::domain::chain {
 
@@ -30,7 +31,9 @@ inline constexpr size_t faster_blocks_mtp_span = 11;
 // timestamps ending at `height`. `timestamp_at(height)` yields nullopt when the
 // height cannot be read.
 template <typename TimestampAt>
-std::optional<uint32_t> median_time_past_at(size_t height, TimestampAt&& timestamp_at) {
+[[nodiscard]] constexpr
+std::optional<uint32_t> median_time_past_at(size_t height, TimestampAt&& timestamp_at)
+        noexcept(noexcept(timestamp_at(height))) {
     std::array<uint32_t, faster_blocks_mtp_span> window{};
     size_t const count = std::min(height + 1, faster_blocks_mtp_span);
     for (size_t i = 0; i < count; ++i) {
@@ -39,6 +42,28 @@ std::optional<uint32_t> median_time_past_at(size_t height, TimestampAt&& timesta
             return std::nullopt;
         }
         window[i] = *ts;
+    }
+    std::sort(window.begin(), window.begin() + count);
+    return window[count / 2];
+}
+
+// The same median for a block named by identity instead of by height, such as
+// one off the active chain: walks `node` and its ancestors. `timestamp_of(node)`
+// yields its timestamp; `parent_of(node)` yields nullopt past genesis.
+template <typename Node, typename TimestampOf, typename ParentOf>
+[[nodiscard]] constexpr
+uint32_t median_time_past_of(Node node, TimestampOf&& timestamp_of, ParentOf&& parent_of)
+        noexcept(noexcept(timestamp_of(node)) && noexcept(parent_of(node))
+            && std::is_nothrow_copy_constructible_v<Node>) {
+    std::array<uint32_t, faster_blocks_mtp_span> window{};
+    size_t count = 0;
+    std::optional<Node> at = node;
+    while (at) {
+        window[count++] = timestamp_of(*at);
+        if (count == faster_blocks_mtp_span) {
+            break;
+        }
+        at = parent_of(*at);
     }
     std::sort(window.begin(), window.begin() + count);
     return window[count / 2];

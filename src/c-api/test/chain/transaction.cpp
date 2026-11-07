@@ -339,3 +339,35 @@ TEST_CASE("C-API Transaction - construct null outputs aborts",
             kVersion, kLocktime, ins, NULL));
     kth_domain_chain_input_list_destruct(ins);
 }
+
+#if defined(KTH_CURRENCY_BCH)
+#include <kth/capi/domain/chain/block_ticks.h>
+TEST_CASE("C-API Transaction finality accepts a branch tick context", "[C-API Transaction][ticks]") {
+    kth_output_point_mut_t previous = kth_domain_chain_output_point_construct_from_hash_index(&kPrevHash, 0);
+    kth_script_mut_t script = make_script();
+    REQUIRE(previous != NULL);
+    REQUIRE(script != NULL);
+    kth_input_mut_t input = kth_domain_chain_input_construct(previous, script, 0);
+    REQUIRE(input != NULL);
+    kth_domain_chain_script_destruct(script);
+    kth_domain_chain_output_point_destruct(previous);
+    kth_input_list_mut_t inputs = kth_domain_chain_input_list_construct_default();
+    kth_output_list_mut_t outputs = kth_domain_chain_output_list_construct_default();
+    REQUIRE(inputs != NULL);
+    REQUIRE(outputs != NULL);
+    kth_domain_chain_input_list_push_back(inputs, input);
+    kth_transaction_mut_t tx = kth_domain_chain_transaction_construct(2, 101, inputs, outputs);
+    REQUIRE(tx != NULL);
+    CHECK(kth_domain_chain_transaction_is_final(tx, 102, 0));
+    kth_block_ticks_mut_t ticks = kth_domain_chain_block_ticks_activated_at(100);
+    REQUIRE(ticks != NULL);
+    CHECK_FALSE(kth_domain_chain_transaction_is_final_with_ticks(tx, ticks, 109, 0));
+    CHECK_FALSE(kth_domain_chain_transaction_is_final_with_ticks(tx, ticks, 110, 0));
+    CHECK(kth_domain_chain_transaction_is_final_with_ticks(tx, ticks, 111, 0));
+    kth_domain_chain_block_ticks_destruct(ticks);
+    kth_domain_chain_transaction_destruct(tx);
+    kth_domain_chain_output_list_destruct(outputs);
+    kth_domain_chain_input_list_destruct(inputs);
+    kth_domain_chain_input_destruct(input);
+}
+#endif

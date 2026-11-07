@@ -15,6 +15,7 @@ typedef enum {
     kth_abla_state_validity_valid,
     kth_abla_state_validity_error_control_block_size,
     kth_abla_state_validity_error_elastic_buffer_size,
+    kth_abla_state_validity_error_block_interval,
 } kth_abla_state_validity_t;
 
 #ifdef __cplusplus

@@ -172,6 +172,14 @@ kth_bool_t kth_domain_chain_output_point_is_null(kth_output_point_const_t self) 
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_null());
 }
 
+kth_bool_t kth_domain_chain_output_point_is_mature_with_ticks(kth_output_point_const_t self, kth_block_ticks_const_t ticks, kth_size_t height) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_mature(ticks_cpp, height_cpp));
+}
+
 
 // Static utilities
 

@@ -41,8 +41,7 @@ header_index::header_index(size_t capacity)
     nonces_.resize(capacity_);
 
     // Block file location (initialized to "no data")
-    file_numbers_.resize(capacity_, -1);
-    data_positions_.resize(capacity_, 0);
+    block_positions_ = std::make_unique<std::atomic<uint64_t>[]>(capacity_);
     undo_positions_.resize(capacity_, 0);
 
     // Reception time (0 = loaded from store / not yet set)
@@ -285,6 +284,7 @@ uint32_t header_index::get_nonce(index_t idx) const {
 }
 
 header_entry header_index::get_entry(index_t idx) const {
+    auto const block_pos = get_block_pos(idx);
     return {
         get_header(idx),
         hashes_[idx],
@@ -293,8 +293,8 @@ header_entry header_index::get_entry(index_t idx) const {
         heights_[idx],
         chain_works_[idx],
         header_status(statuses_[idx]),
-        file_numbers_[idx],
-        data_positions_[idx],
+        int16_t(block_pos.file),
+        block_pos.pos,
         undo_positions_[idx]
     };
 }
@@ -317,6 +317,36 @@ domain::chain::header header_index::get_header(index_t idx) const {
 // =============================================================================
 // Status Management
 // =============================================================================
+
+void header_index::restore_failed_blocks(std::vector<hash_digest> hashes) {
+    std::ranges::sort(hashes);
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+    restored_failures_ = std::move(hashes);
+    if (restored_failures_.empty()) {
+        return;
+    }
+    for (auto const& hash : restored_failures_) {
+        auto const idx = find(hash);
+        if (idx != null_index) {
+            add_status(idx, header_status::failed_valid);
+        }
+    }
+    // Parents are inserted before children. One forward pass marks even deep
+    // descendants that were persisted before their ancestor's verdict committed.
+    auto const count = index_t(size());
+    for (index_t idx = 0; idx < count; ++idx) {
+        auto const parent = get_parent_index(idx);
+        if (parent != null_index &&
+            (has_status(parent, header_status::failed_valid) ||
+             has_status(parent, header_status::failed_child))) {
+            add_status(idx, header_status::failed_child);
+        }
+    }
+}
+
+bool header_index::is_restored_failure(hash_digest const& hash) const {
+    return std::binary_search(restored_failures_.begin(), restored_failures_.end(), hash);
+}
 
 void header_index::set_status(index_t idx, header_status status) {
     statuses_[idx] = uint32_t(status);
@@ -342,9 +372,24 @@ void header_index::set_chain_work(index_t idx, uint256_t const& work) {
 // Block File Location
 // =============================================================================
 
+namespace {
+
+constexpr uint64_t pack_block_pos(int16_t file, uint32_t pos) {
+    return file < 0 ? 0 : (uint64_t(file) + 1) << 32 | pos;
+}
+
+constexpr flat_file_pos unpack_block_pos(uint64_t packed) {
+    return packed == 0 ? flat_file_pos{} : flat_file_pos{int32_t(packed >> 32) - 1, uint32_t(packed)};
+}
+
+} // namespace
+
 void header_index::set_block_pos(index_t idx, int16_t file, uint32_t pos) {
-    file_numbers_[idx] = file;
-    data_positions_[idx] = pos;
+    block_positions_[idx].store(pack_block_pos(file, pos), std::memory_order_release);
+}
+
+flat_file_pos header_index::get_block_pos(index_t idx) const {
+    return unpack_block_pos(block_positions_[idx].load(std::memory_order_acquire));
 }
 
 void header_index::set_undo_pos(index_t idx, uint32_t pos) {
@@ -460,11 +505,11 @@ uint32_t header_index::get_received_time(index_t idx) const {
 }
 
 int16_t header_index::get_file_number(index_t idx) const {
-    return file_numbers_[idx];
+    return int16_t(get_block_pos(idx).file);
 }
 
 uint32_t header_index::get_data_pos(index_t idx) const {
-    return data_positions_[idx];
+    return get_block_pos(idx).pos;
 }
 
 uint32_t header_index::get_undo_pos(index_t idx) const {
@@ -472,14 +517,14 @@ uint32_t header_index::get_undo_pos(index_t idx) const {
 }
 
 bool header_index::has_block_data(index_t idx) const {
-    return file_numbers_[idx] >= 0;
+    return ! get_block_pos(idx).is_null();
 }
 
 bool header_index::has_undo_data(index_t idx) const {
     // Undo data exists if file_number is valid and undo_pos is non-zero
     // (position 0 is valid for block data but not for undo, since undo
     // is written after the block is connected)
-    return file_numbers_[idx] >= 0 && undo_positions_[idx] > 0;
+    return has_block_data(idx) && undo_positions_[idx] > 0;
 }
 
 // =============================================================================
@@ -599,8 +644,7 @@ size_t header_index::memory_usage() const {
     total += capacity_ * sizeof(uint32_t);       // timestamps_
     total += capacity_ * sizeof(uint32_t);       // bits_
     total += capacity_ * sizeof(uint32_t);       // nonces_
-    total += capacity_ * sizeof(int16_t);        // file_numbers_
-    total += capacity_ * sizeof(uint32_t);       // data_positions_
+    total += capacity_ * sizeof(uint64_t);       // block_positions_
     total += capacity_ * sizeof(uint32_t);       // undo_positions_
 
     // Estimate hash map overhead (~1.5x for load factor + bucket overhead)
