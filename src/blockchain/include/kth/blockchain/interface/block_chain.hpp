@@ -181,8 +181,11 @@ struct KB_API block_chain {
         std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
         uint32_t start_height);
 
+    /// Validate `tx` against the chain and admit it to the mempool: the entry
+    /// for every transaction from outside the node (sendrawtransaction, the
+    /// peers, the C-API). transaction_validate() validates without admitting.
     [[nodiscard]]
-    ::asio::awaitable<code> organize(transaction_const_ptr tx);
+    ::asio::awaitable<code> submit_transaction(transaction_const_ptr tx);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(double_spend_proof_const_ptr ds_proof);
