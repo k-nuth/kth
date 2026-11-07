@@ -82,9 +82,7 @@ std::optional<domain::chain::abla::state> advance_abla_state(
 /// `sizes[i]` is the serialized size of the block at start_height + i. The
 /// parent S_{start-1} is the persisted record of the connected tip; the
 /// intervals come from the schedule of the branch ending at `last_idx` (an index
-/// entry of the batch's last block, or of its parent for a single block that is
-/// not indexed yet, whose schedule is the same through that block's height),
-/// so a batch crossing the activation steps
+/// entry of the batch's last block), so a batch crossing the activation steps
 /// from 600 to 60 where the branch does. Fails when the record cannot be read:
 /// a read that failed is not an absent state. `settings` are the rules the batch
 /// is judged by (the caller's, which validate_block_batch already takes).
