@@ -341,8 +341,8 @@ code validate_block_batch(
         for (auto const& tx : block.transactions()) {
             auto const finality_time = script::is_enabled(block_flags[i], domain::machine::script_flags::bip113_rule)
                 ? block_mtp[i] : block.header().timestamp();
-            // Coinbase finality is covered too: a non-final input sequence
-            // makes its locktime binding like any other transaction's.
+            // The branch schedule gates the coinbase exemption after H_a;
+            // ordinary transactions retain their absolute timelocks.
             if (!tx.is_final(block_schedule[i], height, finality_time)) {
                 return refuse(i, error::block_non_final);
             }
