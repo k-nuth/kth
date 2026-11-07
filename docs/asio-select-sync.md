@@ -148,11 +148,13 @@ and was not converted.
 * A selector outlives its waits and is used by one task at a time; every
   selector here is a local of the coroutine that uses it, destroyed with the
   frame after the last wait and after everything it started has been joined.
-* On GCC 16 a structured binding taken directly from a `co_await` of a tuple
-  that owns a payload and lives across a later suspension can retain
-  ownership (`csp/README.md`, "named tuple storage"). Every one-shot selection
-  with an owning result here is stored in a named `completion` and bound by
-  reference.
+* GCC 15 and 16.1 never destroy a structured binding taken directly from a
+  `co_await` of a tuple that owns a payload and lives across a later
+  suspension (`csp/README.md`, "named tuple storage"). GCC 16.2 fixes it and
+  is the minimum kth builds with; the configure step also runs the pattern and
+  refuses a compiler that still retains it (`cmake/KthCompilerChecks.cmake`).
+  The one-shot selections here store their result in a named `completion` and
+  bind it by reference, which is correct with any compiler.
 
 ### The inbound message channel of a peer
 
