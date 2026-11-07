@@ -478,9 +478,13 @@ template_provider::template_provider(sv2_settings const& settings,
             }
             if (result.close) co_return;
             if (result.solution) {
-                auto const outcome = co_await chain_.organize(result.solution);
-                spdlog::info("[sv2] Submitted block {}: {}",
-                    encode_hash(result.solution->hash()), outcome ? outcome.message() : "accepted");
+                // A local block, admitted through the sync pipeline as a
+                // submitblock is: the answer comes once it is refused or
+                // connected.
+                auto const submitted = co_await chain_.submit_block(result.solution);
+                spdlog::info("[sv2] Submitted block {}: {}{}", encode_hash(result.solution->hash()),
+                    submitted.error ? submitted.error.message() : "accepted",
+                    submitted.duplicate ? " (a duplicate)" : "");
             }
         }
     };

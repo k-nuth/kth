@@ -65,7 +65,8 @@ std::string render_mining_template(
     return w.str();
 }
 
-std::string render_block_template(blockchain::mining_template const& tmpl) {
+std::string render_block_template(blockchain::mining_template const& tmpl,
+    std::optional<chain_progress> progress) {
 
     std::string target_hex(64, '0');
     if (auto const target = domain::chain::compact::from_compact(tmpl.bits)) {
@@ -130,6 +131,10 @@ std::string render_block_template(blockchain::mining_template const& tmpl) {
     w.field("curtime", int64_t(tmpl.current_time));
     w.field("bits", encode_base16(tmpl.bits));
     w.field("height", int64_t(tmpl.height));
+    if (progress) {
+        w.field("ticks", progress->ticks);
+        w.field("target_time", progress->target_time);
+    }
     w.end_object();
     return w.str();
 }

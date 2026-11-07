@@ -242,6 +242,34 @@ struct headers_progress {
     uint32_t headers_synced_to,
     std::optional<uint32_t> range_end);
 
+/// The same, asking peers for no height above `range_end_cap`. The tip still
+/// moves to where the batch put it; the cap is where the bodies the coordinator
+/// holds itself begin (see trim_held_suffix), which peers cannot be asked for.
+[[nodiscard]] KND_API
+::asio::awaitable<headers_progress> on_headers_advanced(
+    body_range_deps deps,
+    body_range_log_memory& memory,
+    headers_validated const& result,
+    uint32_t blocks_synced_to,
+    uint32_t headers_synced_to,
+    std::optional<uint32_t> range_end,
+    uint32_t range_end_cap);
+
+/// The highest height peers may be asked for: `headers_synced_to`, less the
+/// suffix of heights `held` answers true for. A held height is one whose body
+/// the coordinator has handed to storage itself — a local submission — so no
+/// peer need have it. A held height BELOW an unheld one is left in the range:
+/// a peer that extended past it has it, and asking again is only a copy.
+[[nodiscard]] KND_API
+uint32_t trim_held_suffix(uint32_t blocks_synced_to, uint32_t headers_synced_to,
+                          std::function<bool(uint32_t)> const& held);
+
+/// Also exclude bodies already stored on the current active branch.
+[[nodiscard]] KND_API
+uint32_t trim_held_suffix(blockchain::header_index const& index,
+    uint32_t blocks_synced_to, uint32_t headers_synced_to,
+    std::function<bool(uint32_t)> const& held);
+
 } // namespace kth::node::sync
 
 #endif // KTH_NODE_DETAIL_BODY_RANGE_HPP_

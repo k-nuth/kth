@@ -257,12 +257,14 @@ set(kth_sources
         src/platform.cpp
 
         src/domain/chain/block.cpp
+        src/domain/chain/block_ticks.cpp
         src/domain/chain/block_list.cpp
 
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
         src/chain/chain_sync_generated.cpp
+        src/chain/chain_submission.cpp
         src/chain/chain_mempool.cpp
         src/chain/chain_mining.cpp
         src/chain/chain_query.cpp
@@ -457,6 +459,8 @@ set(kth_headers
     include/kth/capi/domain/chain/point.h
     include/kth/capi/domain/message/merkle_block.h
     include/kth/capi/domain/chain/block.h
+    include/kth/capi/domain/chain/block_ticks.h
+    include/kth/capi/chain/block_progress.h
     include/kth/capi/chain/mempool_transaction.h
     include/kth/capi/domain/message/prefilled_transaction.h
     include/kth/capi/domain/message/prefilled_transaction_list.h
@@ -632,6 +636,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/token_data.cpp
         test/chain/utxo.cpp
         test/chain/abla.cpp
+        test/chain/progress.cpp
         test/wallet/bitcoin_uri.cpp
         test/wallet/cashaddr.cpp
         test/wallet/cashtoken_minting.cpp
@@ -667,6 +672,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         set_source_files_properties(test/chain/transaction_closure.cpp
             PROPERTIES COMPILE_DEFINITIONS KTH_CAPI_TEST_NO_CONSTRUCT_MOVE)
     endif()
+
+    set_source_files_properties(test/chain/progress.cpp PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../node/test")
 
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_capi_test PRIVATE Catch2::Catch2WithMain)

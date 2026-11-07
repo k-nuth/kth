@@ -60,36 +60,11 @@ namespace kth::node::sync {
                 .source_peer = downloaded->source_peer,
                 .reorg_candidate = result.reorg_candidate,
                 .reorg_fork_height = result.reorg_fork_height,
-                .reorg_branch_head = result.reorg_branch_head
-            }, ::asio::as_tuple(::asio::use_awaitable));
-
-            if (send_ec) {
-                spdlog::debug("[header_validation] Output channel closed");
-                break;
-            }
-        }
-
-        if (auto* submitted = std::get_if<block_submission>(&msg)) {
-            spdlog::debug("[header_validation] Validating the header of submitted block {} at {}",
-                encode_hash(submitted->block->hash()), submitted->height);
-
-            // The same single writer, for a header that came with its block.
-            auto result = organizer.add_headers(
-                domain::message::header::list{domain::message::header(submitted->block->header())});
-
-            auto [send_ec] = co_await output.async_send(std::error_code{}, headers_validated{
-                .height = uint32_t(organizer.header_height()),
-                .count = result.headers_added,
-                .result = result.error,
-                .source_peer = nullptr,
-                .reorg_candidate = result.reorg_candidate,
-                .reorg_fork_height = result.reorg_fork_height,
                 .reorg_branch_head = result.reorg_branch_head,
-                .submission = *submitted
+                .submission = downloaded->submission
             }, ::asio::as_tuple(::asio::use_awaitable));
 
             if (send_ec) {
-                (*submitted->answer)(error::service_stopped);
                 spdlog::debug("[header_validation] Output channel closed");
                 break;
             }

@@ -1562,9 +1562,9 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
         });
     }
 
-    {   // organize_block and organize_transaction keep their int result and contain exceptions
-        // A well-formed block to hand to organize: the v1 node answers that
-        // single-block acceptance is not implemented.
+    {   // Submission and transaction admission contain exceptions at the C boundary.
+        // The running node refuses this block's unknown parent. Preserve that
+        // domain result while containing allocation and runtime failures.
         kth_hash_t const zero = {{ 0 }};
         kth_header_mut_t header = kth_domain_chain_header_construct(0x20000000u, &zero, &zero, 1u, 0x207fffffu, 0u);
         kth_transaction_list_mut_t no_txs = kth_domain_chain_transaction_list_construct_default();
@@ -1572,11 +1572,11 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
         REQUIRE(block != nullptr);
         kth_domain_chain_transaction_list_destruct(no_txs);
         kth_domain_chain_header_destruct(header);
-        int const expected = kth_chain_sync_organize_block(chain, block);
-        REQUIRE(is_domain_error(static_cast<kth_error_code_t>(expected)));
+        auto const expected = kth_chain_sync_submit_block(chain, block);
+        REQUIRE(expected == kth_ec_orphan_block);
         sweep_chain_call([&](fault_case fc, std::size_t skip) {
             return judge_with(fc, skip, static_cast<kth_error_code_t>(expected),
-                [&] { return static_cast<kth_error_code_t>(kth_chain_sync_organize_block(chain, block)); },
+                [&] { return static_cast<kth_error_code_t>(kth_chain_sync_submit_block(chain, block)); },
                 [&] { return true; },
                 [&] { return true; });
         });
