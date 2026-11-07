@@ -223,6 +223,7 @@ private:
     kth::network::settings network_settings_;  // Own copy, allows modification (e.g., user_agent)
     kth::node::p2p_node network_;
 #endif
+    std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
     node::sv2_settings sv2_settings_;
