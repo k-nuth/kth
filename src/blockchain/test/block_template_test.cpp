@@ -343,6 +343,22 @@ TEST_CASE("make_mining_template coinbase value is subsidy plus fees", "[block_te
     REQUIRE(t.coinbase_value == 5000000000ull + 1234u);
 }
 
+TEST_CASE("make_mining_template coinbase value follows the network's halving schedule", "[block_template]") {
+    // Regtest halves every 150 blocks; the other networks every 210,000.
+    // Block validation uses the network's schedule, so the template must too.
+    block_template regtest{};
+    regtest.total_fees = 7u;
+    auto const halved = make_mining_template(0x20000000u, null_hash, /*height*/ 151u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, std::move(regtest), /*retarget*/ false);
+    REQUIRE(halved.coinbase_value == 2500000000ull + 7u);
+    auto const first = make_mining_template(0x20000000u, null_hash, /*height*/ 149u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ false);
+    REQUIRE(first.coinbase_value == 5000000000ull);
+    auto const mainnet = make_mining_template(0x20000000u, null_hash, /*height*/ 151u,
+        0x1d00ffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ true);
+    REQUIRE(mainnet.coinbase_value == 5000000000ull);
+}
+
 TEST_CASE("make_mining_template passes the header fields through", "[block_template]") {
     auto const t = make_mining_template(0x20000000u, null_hash, /*height*/ 7u,
         0x1d00ffffu, 1000u, 5000u, /*size*/ 32000000u, /*sigchecks*/ 226950u,
