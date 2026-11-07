@@ -191,6 +191,19 @@ public:
     [[nodiscard]]
     tip_channel& tip_announcements();
 
+    /// The mempool's minimum fee per 1000 bytes, as it moved, not yet taken by
+    /// the peer's service, which decides from it whether the fee filter it
+    /// sends this peer is due sooner. Holds one value; a newer one replaces
+    /// one not taken yet. Closed by stop().
+    using fee_filter_channel = select_channel<uint64_t>;
+
+    /// Record that the minimum moved to `fee_per_kb`. One producer: the
+    /// node's fee filter watch. Never waits.
+    void announce_fee_filter(uint64_t fee_per_kb);
+
+    [[nodiscard]]
+    fee_filter_channel& fee_filter_changes();
+
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
     [[nodiscard]]
@@ -463,6 +476,7 @@ private:
     inbound_channel inbound_;
     served_channel served_requests_;
     tip_channel tip_announcements_;
+    fee_filter_channel fee_filter_changes_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive
