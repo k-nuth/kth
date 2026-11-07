@@ -1750,6 +1750,15 @@ static
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
 
+        // The height a peer is told in the version message is the connected
+        // tip's. The node sets it once at startup; from then on it follows
+        // each tip connected, during initial block download too.
+        auto record_connected_tip = [&] {
+            if (auto const view = chain.chain_view()) {
+                network.set_top_block({view->tip_hash, view->connected_tip_height});
+            }
+        };
+
         // Each newly connected tip is announced to the peers once, whoever
         // supplied the block: a peer, or a miner through submitblock. Not
         // during initial block download, and not the tip the node started at.
@@ -2388,6 +2397,7 @@ static
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
+                record_connected_tip();
                 announce_connected_tip();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
