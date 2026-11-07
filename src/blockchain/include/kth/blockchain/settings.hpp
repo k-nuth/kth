@@ -26,8 +26,16 @@ struct KB_API settings {
     /// Properties.
     uint32_t cores = 0;
     bool priority = true;
+#if defined(KTH_CURRENCY_BCH)
+    // The network's relay floor, BCHN's minrelaytxfee: 1000 satoshis per 1000
+    // bytes, by serialized size. Signature work is not priced at this floor;
+    // admission bounds it with the SigChecks rules, as BCHN does.
+    float byte_fee_satoshis = 1.0f;
+    float sigop_fee_satoshis = 0.0f;
+#else
     float byte_fee_satoshis = 0.1f;
-    float sigop_fee_satoshis= 100.0f;
+    float sigop_fee_satoshis = 100.0f;
+#endif
     // BCHN -mempoolexpiry: a transaction still unconfirmed this long after the
     // node first saw it leaves the mempool, with its descendants. 0 keeps them.
     uint32_t mempool_expiry_hours = 336;

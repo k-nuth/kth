@@ -6,6 +6,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <stop_token>
 #include <thread>
@@ -75,7 +76,8 @@ struct admission_chain {
     test::chain_fixture fixture;
     std::vector<domain::chain::block> trunk;
 
-    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000)
+    explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
+                             std::function<void(blockchain::settings&)> const& configure = {})
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -83,6 +85,9 @@ struct admission_chain {
 #if defined(KTH_CURRENCY_BCH)
         fixture.settings().standardness.maximum_transaction_size = policy_size;
 #endif
+        if (configure) {
+            configure(fixture.settings());
+        }
         REQUIRE(fixture.start());
 
         auto const genesis = domain::chain::block::genesis_regtest();
@@ -556,6 +561,120 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
     CHECK(chain.mempool_ref().contains(ptr->hash()) == !require_standard);
     CHECK(announced(channel, ptr->hash()) == !require_standard);
     chain.unsubscribe_transaction(channel);
+}
+
+namespace {
+
+// A signed spend of `prev`'s output 0 to `scripts`, paying `per_kb` satoshis
+// per 1000 serialized bytes, rounded down. The size depends on the signature,
+// and the signature on the fee, so it is signed until the two agree. A
+// signature one byte shorter can lower the fee enough to lengthen it again;
+// another lock time gives other signatures to settle with.
+domain::chain::transaction paying(domain::chain::transaction const& prev,
+                                  std::vector<domain::chain::script> const& scripts,
+                                  uint64_t per_kb, domain::script_flags_t flags) {
+    using namespace domain::chain;
+    auto const prev_value = prev.outputs()[0].value();
+    auto const sign = [&](uint64_t fee, uint32_t lock_time) {
+        output::list outs;
+        for (size_t i = 0; i + 1 < scripts.size(); ++i) {
+            outs.emplace_back(10'000, scripts[i], std::nullopt);
+        }
+        outs.emplace_back(prev_value - 10'000 * (scripts.size() - 1) - fee, scripts.back(), std::nullopt);
+        input::list ins{input{output_point{prev.hash(), 0}, script{}, 0xffffffff}};
+        transaction unsigned_tx{1, lock_time, std::move(ins), outs};
+        unsigned_tx.inputs()[0].previous_output().validation.cache = prev.outputs()[0];
+        auto const sig = script::create_endorsement(miner_secret(), miner_script(), unsigned_tx, 0,
+            uint8_t(infrastructure::machine::sighash_algorithm::forkid_all), flags, prev_value);
+        REQUIRE(sig);
+        input::list signed_ins{input{output_point{prev.hash(), 0},
+            script(script::to_pay_public_key_hash_pattern_unlocking(*sig, miner_public())), 0xffffffff}};
+        return transaction{1, lock_time, std::move(signed_ins), std::move(outs)};
+    };
+    for (uint32_t lock_time = 0; lock_time < 16; ++lock_time) {
+        uint64_t fee = 0;
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            auto tx = sign(fee, lock_time);
+            auto const wanted = tx.serialized_size(true) * per_kb / 1000;
+            if (wanted == fee) {
+                return tx;
+            }
+            fee = wanted;
+        }
+    }
+    FAIL("the fee and the size did not settle");
+    return {};
+}
+
+} // namespace
+
+// The default price is BCHN's relay floor: 1000 satoshis per 1000 bytes, by
+// size. The previous default, 0.1 satoshi per byte plus 100 satoshis per
+// signature operation counted in the output scripts, refused a payment to three
+// P2PKH outputs at the network's floor and admitted one to a script hash at a
+// tenth of it.
+TEST_CASE("the default price is the network's relay floor, by size", "[mempool][admission][fee]") {
+    admission_chain built("relay_floor", trunk_len + 2);
+    auto& chain = built.chain();
+    auto const flags = chain.chain_settings().enabled_flags();
+    auto const& first = built.trunk[0].transactions().front();
+    auto const& second = built.trunk[1].transactions().front();
+    using namespace domain::chain;
+    auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
+
+    auto const organize = [&](transaction const& tx) {
+        auto const ptr = std::make_shared<domain::message::transaction>(tx);
+        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+    };
+
+    // Below the floor, refused whatever the outputs.
+    CHECK(organize(paying(second, {p2sh}, 500, flags)) == error::insufficient_fee);
+    CHECK(organize(paying(first, {miner_script(), miner_script(), miner_script()}, 999, flags))
+        == error::insufficient_fee);
+
+    // At the floor, admitted whatever the outputs.
+    auto const payment = paying(first, {miner_script(), miner_script(), miner_script()}, 1000, flags);
+    CHECK(payment.signature_operations(true, false) == 3);
+    CHECK(organize(payment) == error::success);
+    CHECK(organize(paying(second, {p2sh}, 1000, flags)) == error::success);
+}
+
+// An operator who sets a price per signature operation still gets it: on top
+// of the floor, 100 satoshis for each CHECKSIG in the outputs.
+TEST_CASE("an operator's price per signature operation still applies", "[mempool][admission][fee]") {
+    admission_chain built("sigop_price", trunk_len + 2, true, 1'000'000,
+        [](blockchain::settings& s) { s.sigop_fee_satoshis = 100.0f; });
+    auto& chain = built.chain();
+    auto const flags = chain.chain_settings().enabled_flags();
+    auto const& first = built.trunk[0].transactions().front();
+    auto const& second = built.trunk[1].transactions().front();
+    using namespace domain::chain;
+    auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
+    auto const three_p2pkh = std::vector<script>{miner_script(), miner_script(), miner_script()};
+
+    auto const organize = [&](transaction const& tx) {
+        auto const ptr = std::make_shared<domain::message::transaction>(tx);
+        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+    };
+    auto const fee = [](transaction const& tx, transaction const& prev) {
+        return prev.outputs()[0].value() - tx.total_output_value();
+    };
+
+    // At the floor, three signature operations are 300 satoshis short.
+    auto const at_floor = paying(first, three_p2pkh, 1000, flags);
+    REQUIRE(at_floor.signature_operations(true, false) == 3);
+    REQUIRE(fee(at_floor, first) < at_floor.serialized_size(true) + 300);
+    CHECK(organize(at_floor) == error::insufficient_fee);
+
+    // Paying for them, admitted.
+    auto const priced = paying(first, three_p2pkh, 2500, flags);
+    REQUIRE(fee(priced, first) >= priced.serialized_size(true) + 300);
+    CHECK(organize(priced) == error::success);
+
+    // With no signature operation, the floor is enough.
+    auto const unpriced = paying(second, {p2sh}, 1000, flags);
+    REQUIRE(unpriced.signature_operations(true, false) == 0);
+    CHECK(organize(unpriced) == error::success);
 }
 
 #endif // KTH_CURRENCY_BCH
