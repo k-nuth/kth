@@ -414,7 +414,7 @@ int kth_chain_sync_organize_transaction(kth_chain_t chain, kth_transaction_mut_t
     KTH_PRECONDITION(transaction != nullptr);
     auto operation = [&]() noexcept(false) -> kth_error_code_t {
         auto& bc = kth::cpp_ref<kth::blockchain::block_chain>(chain);
-        auto ec = kth::capi::sync_wait(bc, bc.organize(tx_shared(transaction)));
+        auto ec = kth::capi::sync_wait(bc, bc.submit_transaction(tx_shared(transaction)));
         return kth::to_c_err(ec);
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)

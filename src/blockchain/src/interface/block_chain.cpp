@@ -1008,7 +1008,7 @@ static constexpr bool chunk_serial_validation = true;
     co_return result;
 }
 
-::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
+::asio::awaitable<code> block_chain::submit_transaction(transaction_const_ptr tx) {
     co_return co_await transaction_organizer_.organize(tx);
 }
 
