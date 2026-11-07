@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_VALIDATE_BATCH_VALIDATE_HPP
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include <kth/domain.hpp>
@@ -55,6 +56,46 @@ code validate_block_batch(
     std::vector<block_const_ptr> const& blocks,
     size_t start_height);
 
+// Which block of a batch a refusal is about.
+//
+// The code alone cannot say: a batch of a hundred blocks refused with
+// coinbase_value_limit names no block, and a caller that has to act on the
+// refusal — reject one block, keep the ones before it — has to guess or give up.
+// Filled only on a non-success return; untouched on success.
+struct batch_rejection {
+    // Index into `blocks` of the block the error is attributed to. The height
+    // is start_height + *block. Empty when the failure is not any block's: a
+    // storage fault, a state that could not be derived, a resolution that
+    // could not run. Those come back as local codes (operation_failed,
+    // not_found), never as a consensus verdict, and attribute nothing.
+    //
+    // Deterministic. The serial phases walk the batch in height order and stop
+    // at the first block that fails. The parallel script phase is made to agree
+    // with that: no transaction of a higher block is skipped until every
+    // transaction of the lowest failing block has been judged, and the
+    // attributed transaction is the first failing one in emission order — so
+    // two runs over the same batch name the same block and the same code,
+    // whatever the thread interleaving.
+    //
+    // Nothing is claimed about the blocks AFTER the attributed one: validation
+    // stopped there. Nothing is claimed about the blocks BEFORE it beyond what
+    // the phase that stopped had checked — a structural refusal at block k has
+    // not run scripts for blocks 0..k-1. A caller that keeps a prefix must
+    // validate it again as a batch of its own.
+    std::optional<size_t> block;
+};
+
+// The same validation, reporting which block it refused. The old form above is
+// this one with the report dropped.
+KB_API
+code validate_block_batch(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    std::vector<block_const_ptr> const& blocks,
+    size_t start_height,
+    batch_rejection& rejection);
+
 // One input's SigChecks contribution to a validated batch, in emission order
 // (block by block, then transaction by transaction, then input by input — so a
 // transaction's inputs are contiguous and each block's inputs form a run).
@@ -85,6 +126,17 @@ code enforce_sigcheck_limits(
     std::vector<sigcheck_entry> const& entries,
     std::vector<uint64_t> const& block_limits,
     std::vector<uint64_t> const& tx_limits);
+
+// The same, naming the block whose limit was exceeded: `failed_block` is set to
+// the offending entry's block_index on a non-success return and left alone on
+// success. Entries are in emission order, so the block named is the lowest one
+// that breaks a limit.
+[[nodiscard]] KB_API
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    std::vector<uint64_t> const& tx_limits,
+    size_t& failed_block);
 
 } // namespace kth::blockchain
 

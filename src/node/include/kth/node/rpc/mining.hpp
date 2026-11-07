@@ -32,7 +32,8 @@ std::string render_mining_template(
 // their data, txid, the 1-based indexes of earlier template transactions they
 // spend from, and fee and sigchecks captured with the selection; then the header
 // fields, coinbase value, target and limits. Long polling is unsupported.
-std::string render_block_template(blockchain::mining_template const& tmpl);
+std::string render_block_template(blockchain::mining_template const& tmpl,
+    std::optional<chain_progress> progress = std::nullopt);
 
 // Serialize a mining_info as the getmininginfo "result" object.
 std::string render_mining_info(blockchain::mining_info const& info,

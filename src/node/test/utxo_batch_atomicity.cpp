@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 
 #include <atomic>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,8 @@ namespace {
 // connect path would be noise — the conditions under test are all inside the
 // build.
 std::vector<std::string> run_build_and_collect_fatals(chain_fixture& fixture,
-                                                      uint32_t start_height) {
+                                                      uint32_t start_height,
+                                                      std::function<bool()> should_stop = [] { return false; }) {
     std::vector<std::string> fatals;
 
     ::asio::io_context ctx;
@@ -47,7 +49,7 @@ std::vector<std::string> run_build_and_collect_fatals(chain_fixture& fixture,
     ::asio::co_spawn(ctx,
         utxo_build_task(fixture.chain(), contiguous, start_height,
             domain::config::network::regtest,
-            [] { return false; },
+            std::move(should_stop),
             [&fatals](std::string const& reason) { fatals.push_back(reason); }),
         ::asio::detached);
 
@@ -537,6 +539,12 @@ TEST_CASE("a clean database lets the build start", "[node][utxo][atomicity]") {
     REQUIRE(fixture.chain().read_transition_record().status
             == database::transition_status::clean);
 
-    auto const fatals = run_build_and_collect_fatals(fixture, 1);
+    // With nothing to build the task idles until stopped, so the run would
+    // last its whole window. Every refusal happens before the batch loop, so
+    // the task is stopped at its second pass: by then it has started and
+    // idled once.
+    int passes = 0;
+    auto const fatals = run_build_and_collect_fatals(fixture, 1, [&passes] { return ++passes > 1; });
+    CHECK(passes > 1);
     CHECK(fatals.empty());
 }

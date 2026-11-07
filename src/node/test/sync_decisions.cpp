@@ -6,10 +6,41 @@
 
 #include <cstdint>
 #include <optional>
+#include <set>
 
+#include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/block_tasks.hpp>
 
 using namespace kth::node::sync;
+
+// =============================================================================
+// trim_held_suffix — peers are not asked for bodies this node holds itself
+// =============================================================================
+
+TEST_CASE("trim_held_suffix: a held suffix is cut off, down to the bodies", "[sync][local_admission]") {
+    std::set<uint32_t> const held{9, 10};
+    auto const is_held = [&](uint32_t h) { return held.contains(h); };
+    // Bodies at 5, headers at 10, the last two local: peers may be asked to 8.
+    CHECK(trim_held_suffix(5, 10, is_held) == 8u);
+    // Nothing held: the end is the header tip.
+    CHECK(trim_held_suffix(5, 8, is_held) == 8u);
+}
+
+TEST_CASE("trim_held_suffix: a held height below an unheld one stays in the range", "[sync][local_admission]") {
+    // A peer that extended past 7 has it; asking again is only a copy.
+    std::set<uint32_t> const held{7};
+    auto const is_held = [&](uint32_t h) { return held.contains(h); };
+    CHECK(trim_held_suffix(5, 10, is_held) == 10u);
+}
+
+TEST_CASE("trim_held_suffix: every owed body held leaves nothing to ask for", "[sync][local_admission]") {
+    std::set<uint32_t> const held{6, 7};
+    auto const is_held = [&](uint32_t h) { return held.contains(h); };
+    // The end lands on the bodies themselves: no range (end <= bodies).
+    CHECK(trim_held_suffix(5, 7, is_held) == 5u);
+    // Never below the bodies, whatever is held.
+    CHECK(trim_held_suffix(5, 5, is_held) == 5u);
+}
 
 // =============================================================================
 // resume_utxo_built_height — the persisted utxo-built height is authoritative

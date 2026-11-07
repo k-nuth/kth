@@ -236,6 +236,24 @@ TEST_CASE("render_transaction decodes a coinbase", "[rpc query]") {
         R"("addresses":["bchreg:qpk2lvcmngg2vx5e90u547xmg27m8g3mzsj5p6rqer"]}}]})"));
 }
 
+TEST_CASE("render_transaction_verbose says whether the block it was read from is active", "[rpc query]") {
+    auto const tx = parse_tx(
+        "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0b016f0101062f"
+        "41424c412fffffffff01dbf2052a010000001976a9146cafb31b9a10a61a992bf94af8db42bdb3a23b1488ac00000000");
+    auto const block_hash = domain::chain::block::genesis_regtest().hash();
+    auto const quoted = R"("blockhash":")" + encode_hash(block_hash) + '"';
+
+    auto const active = render_transaction_verbose(tx, regtest, flags,
+        transaction_location{block_hash, 3, 1296688602});
+    CHECK(contains(active, quoted +
+        R"(,"confirmations":3,"time":1296688602,"blocktime":1296688602,"in_active_chain":true})"));
+
+    // Off the connected chain there is nothing to count and no time to give.
+    auto const stale = render_transaction_verbose(tx, regtest, flags,
+        transaction_location{block_hash, -1, 1296688602});
+    CHECK(contains(stale, quoted + R"(,"confirmations":0,"in_active_chain":false})"));
+}
+
 TEST_CASE("render_transaction decodes a spend with its inputs and outputs", "[rpc query]") {
     auto const tx = parse_tx(
         "02000000013cd49214320f36fd78fd8ed5daf9c25c95d392fbfd9c5e3d1b2da4fa6f7927f0000000006441a51a5935eb9d2b"
@@ -347,9 +365,17 @@ TEST_CASE("chain_name display variant preserves log names", "[rpc query]") {
 
 TEST_CASE("render_chain_tips serializes the getchaintips entries", "[rpc query]") {
     REQUIRE(render_chain_tips({}) == "[]");
-    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active}}) ==
-        std::string(R"([{"height":7,"hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
-        R"({"height":5,"hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
+    REQUIRE(render_chain_tips({{7u, null_hash, 2u, blockchain::header_index::tip_status::headers_only, 4200}, {5u, null_hash, 0u, blockchain::header_index::tip_status::active, 3000}}) ==
+        std::string(R"([{"height":7,)"
+#if defined(KTH_CURRENCY_BCH)
+        R"("ticks":4200,)"
+#endif
+        R"("hash":")") + zeros + R"(","branchlen":2,"status":"headers-only"},)" +
+        R"({"height":5,)"
+#if defined(KTH_CURRENCY_BCH)
+        R"("ticks":3000,)"
+#endif
+        R"("hash":")" + zeros + R"(","branchlen":0,"status":"active"}])");
 }
 
 TEST_CASE("render_tx_out serializes the gettxout fields", "[rpc query]") {
@@ -436,5 +462,50 @@ TEST_CASE("header RPC distinguishes the boundary block from its successor", "[rp
     CHECK(before.find("\"next_target_time\":60") != std::string::npos);
     auto const after = render_block_header(header, 101, null_hash, 1, chain_progress{60060, 60, 60});
     CHECK(after.find("\"ticks\":60060") != std::string::npos);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+namespace {
+template <typename Location>
+void tick_depth_for_verbose_location(Location& location, int64_t depth) {
+    // Preserve the same serializer observation on the unchanged API, which
+    // cannot accept tick depth yet: the expected JSON fields still fail there.
+    if constexpr (requires { location.confirmations_ticks = depth; }) {
+        location.confirmations_ticks = depth;
+    }
+}
+template <typename Location>
+void own_tick_for_verbose_block(Location& location, chain_progress const& progress) {
+    if constexpr (requires { location.progress = progress; }) {
+        location.progress = progress;
+    }
+}
+}
+TEST_CASE("verbose transaction tick depth preserves omission and stale conventions", "[rpc query][rpc verbose ticks]") {
+    domain::chain::transaction tx{2u, 0u, {}, {}};
+    transaction_location location{null_hash, 3, 1700000000};
+    tick_depth_for_verbose_location(location, 720);
+    auto const active = render_transaction_verbose(tx, regtest, flags, location);
+    CHECK(contains(active, R"("confirmations":3,"confirmations_ticks":720,)"));
+    location.confirmations = -1;
+    tick_depth_for_verbose_location(location, -1);
+    auto const stale = render_transaction_verbose(tx, regtest, flags, location);
+    CHECK(contains(stale, R"("confirmations":0,"confirmations_ticks":0,"in_active_chain":false})"));
+    CHECK_FALSE(contains(stale, R"("blocktime":)"));
+    auto const mempool = render_transaction_verbose(tx, regtest, flags, std::nullopt);
+    CHECK_FALSE(contains(mempool, R"("confirmations":)"));
+    CHECK_FALSE(contains(mempool, R"("confirmations_ticks":)"));
+}
+TEST_CASE("verbose stale block retains its own ticks and negative depth sentinel", "[rpc query][rpc verbose ticks]") {
+    auto const block = domain::chain::block::genesis_regtest();
+    block_location location{12, -1, 1700000000, std::nullopt, std::nullopt};
+    tick_depth_for_verbose_location(location, -1);
+    own_tick_for_verbose_block(location, chain_progress{7200, 600, 60});
+    for (auto const verbosity_two : {false, true}) {
+        auto const json = render_block_verbose(block, location, verbosity_two, regtest, flags);
+        CHECK(contains(json, R"("confirmations":-1,"confirmations_ticks":-1,)"));
+        CHECK(contains(json, R"("height":12,"ticks":7200,"target_time":600,"next_target_time":60,)"));
+    }
 }
 #endif

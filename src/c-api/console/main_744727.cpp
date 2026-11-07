@@ -123,7 +123,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
         return 0;
     }
 
-    auto res2 = kth_chain_sync_organize_block(chain, block_ptr);
+    auto res2 = kth_chain_sync_submit_block(chain, block_ptr);
     std::println("res2: {} ...", res2);
     if (res2 != 0) {
         std::println("****** INVALID BLOCK ORGANIZATION:  -- res2: {} ******", res2);

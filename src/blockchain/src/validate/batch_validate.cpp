@@ -8,7 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <limits>
-#include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -49,7 +49,7 @@ struct bv_outpoint_hasher {
     size_t operator()(bv_outpoint const& k) const noexcept {
         size_t h;
         std::memcpy(&h, k.hash.data(), sizeof(h));
-        return h ^ (static_cast<size_t>(k.index) * 0x9e3779b97f4a7c15ull);
+        return h ^ (size_t(k.index) * 0x9e3779b97f4a7c15ull);
     }
 };
 
@@ -91,6 +91,15 @@ code enforce_sigcheck_limits(
     std::vector<sigcheck_entry> const& entries,
     std::vector<uint64_t> const& block_limits,
     std::vector<uint64_t> const& tx_limits) {
+    size_t ignored = 0;
+    return enforce_sigcheck_limits(entries, block_limits, tx_limits, ignored);
+}
+
+code enforce_sigcheck_limits(
+    std::vector<sigcheck_entry> const& entries,
+    std::vector<uint64_t> const& block_limits,
+    std::vector<uint64_t> const& tx_limits,
+    size_t& failed_block) {
 
     KTH_CONTRACT(tx_limits.size() == block_limits.size());
 
@@ -108,11 +117,13 @@ code enforce_sigcheck_limits(
         }
         tx_sigchecks += e.sigchecks;
         if (tx_sigchecks > tx_limits[e.block_index]) {
+            failed_block = e.block_index;
             return error::transaction_sigchecks_limit;
         }
 
         block_sigchecks[e.block_index] += e.sigchecks;
         if (block_sigchecks[e.block_index] > block_limits[e.block_index]) {
+            failed_block = e.block_index;
             return error::block_sigchecks_limit;
         }
     }
@@ -125,17 +136,41 @@ code validate_block_batch(
     domain::config::network network,
     std::vector<block_const_ptr> const& blocks,
     size_t start_height) {
+    batch_rejection dropped;
+    return validate_block_batch(chain, settings, network, blocks, start_height, dropped);
+}
+
+code validate_block_batch(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    std::vector<block_const_ptr> const& blocks,
+    size_t start_height,
+    batch_rejection& rejection) {
 
     if (blocks.empty()) {
         return error::success;
     }
 
+    // Every refusal leaves through one of these two, so the report cannot drift
+    // from the verdict. `refuse` names the block; `fault` is for a failure that
+    // is not any block's — a store that did not answer, a state that could not
+    // be derived — and names none.
+    auto const refuse = [&rejection](size_t block, code ec) {
+        rejection.block = block;
+        return ec;
+    };
+    auto const fault = [&rejection](code ec) {
+        rejection.block.reset();
+        return ec;
+    };
+
     // Headers-first sync has already checked the headers, but not the bodies.
     // Reject malformed transactions and block structure before resolving any
     // prevouts or scheduling script verification.
-    for (auto const& block : blocks) {
-        if (auto const ec = block->check_body()) {
-            return ec;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        if (auto const ec = blocks[i]->check_body()) {
+            return refuse(i, ec);
         }
     }
 
@@ -180,22 +215,13 @@ code validate_block_batch(
         for (size_t i = 0; i < blocks.size(); ++i) {
             sizes[i] = blocks[i]->serialized_size(1);
         }
-        auto branch_idx = header_index.find(blocks.back()->hash());
-        if (branch_idx == header_index::null_index && blocks.size() == 1) {
-            // A found block is checked before anything is stored
-            // (block_chain::organize), so it has no index entry yet. Its
-            // parent's schedule is the same through this block's height:
-            // tick_schedule_for_tip includes the interval the parent's own MTP
-            // sets for the next block, and an entry for this block would only
-            // add a change for the block after it.
-            branch_idx = header_index.find(blocks.front()->header().previous_block_hash());
+        auto const last_idx = header_index.find(blocks.back()->hash());
+        if (last_idx == header_index::null_index) {
+            return fault(error::not_found);
         }
-        if (branch_idx == header_index::null_index) {
-            return error::not_found;
-        }
-        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, branch_idx);
+        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, last_idx);
         if ( ! states) {
-            return states.error();
+            return fault(states.error());
         }
         abla_states = std::move(*states);
     }
@@ -213,6 +239,11 @@ code validate_block_batch(
     // which is what stopped a foreign key from being read as a missing prevout
     // of this block (#646).
     std::vector<utxoz::lookup_request> pending;
+
+    // The lowest block that spends each key in `pending`, recorded as the
+    // lookup is emitted. A proven absence comes back as a key, and this is what
+    // turns it into a block to attribute it to.
+    boost::unordered_flat_map<utxoz::raw_outpoint, size_t> first_spender;
 
     // -----------------------------------------------------------------------
     // Full intra-batch created-output index. Under BCH CTOR a tx may spend the
@@ -244,7 +275,7 @@ code validate_block_batch(
         if (parent_idx == header_index::null_index) {
             // Parent header not in the index: cannot build chain_state (the
             // KTH_ASSERT downstream is a no-op in Release, so guard here).
-            return error::not_found;
+            return fault(error::not_found);
         }
 #if defined(KTH_CURRENCY_BCH)
         auto cs = header_validator.chain_state_at(
@@ -254,24 +285,26 @@ code validate_block_batch(
             block.header(), block.hash(), height, parent_idx, header_index);
 #endif
         if ( ! cs) {
-            return cs.error();
+            // The state for this height could not be built. Like the ABLA
+            // derivation above, that is a failure to judge, not a judgement.
+            return fault(cs.error());
         }
         state = std::move(*cs);
         if ( ! state) {
-            return error::operation_failed;
+            return fault(error::operation_failed);
         }
         block_flags[i] = state->enabled_flags();
         if (state->is_enabled(domain::machine::script_flags::bip34_rule)
             && ! block.is_valid_coinbase_script(height)) {
-            return error::coinbase_height_mismatch;
+            return refuse(i, error::coinbase_height_mismatch);
         }
 #if defined(KTH_CURRENCY_BCH)
         if (state->is_euclid_enabled()) {
             if ( ! block.is_canonical_ordered()) {
-                return error::non_canonical_ordered;
+                return refuse(i, error::non_canonical_ordered);
             }
         } else if (block.is_forward_reference()) {
-            return error::forward_reference;
+            return refuse(i, error::forward_reference);
         }
 #endif
 
@@ -280,7 +313,7 @@ code validate_block_batch(
 #endif
         block_mtp[i] = state->median_time_past();
         if (block.serialized_size(0) > state->dynamic_max_block_size()) {
-            return error::block_size_limit;
+            return refuse(i, error::block_size_limit);
         }
 #if defined(KTH_CURRENCY_BCH)
         block_governed[i] = state->is_faster_blocks_active() ? 1 : 0;
@@ -300,7 +333,7 @@ code validate_block_batch(
         // of the block size limit.
         for (auto const& tx : block.transactions()) {
             if (tx.serialized_size(true) > max_tx_size) {
-                return error::transaction_size_limit;
+                return refuse(i, error::transaction_size_limit);
             }
         }
 #endif
@@ -311,7 +344,7 @@ code validate_block_batch(
             // Coinbase finality is covered too: a non-final input sequence
             // makes its locktime binding like any other transaction's.
             if (!tx.is_final(block_schedule[i], height, finality_time)) {
-                return error::block_non_final;
+                return refuse(i, error::block_non_final);
             }
             if (tx.is_coinbase()) {
                 continue;
@@ -322,7 +355,7 @@ code validate_block_batch(
 
                 // Double spend within the batch (or a prevout claimed twice).
                 if ( ! spent.insert(key).second) {
-                    return error::double_spend;
+                    return refuse(i, error::double_spend);
                 }
 
                 // Resolved intra-batch (created at this height or earlier)?
@@ -348,9 +381,13 @@ code validate_block_batch(
                     spdlog::error("[batch_validate] the UTXO store failed reading {}:{}; "
                         "refusing to judge these blocks",
                         encode_hash(op.hash()), op.index());
-                    return error::operation_failed;
+                    return fault(error::operation_failed);
                 }
-                pending.emplace_back(to_raw_outpoint(op), height);
+                auto const raw = to_raw_outpoint(op);
+                // try_emplace keeps the first, which is the lowest block: the
+                // walk is in height order.
+                first_spender.try_emplace(raw, i);
+                pending.emplace_back(raw, height);
             }
         }
     }
@@ -376,7 +413,7 @@ code validate_block_batch(
                 "(batch {}-{}); refusing to judge these blocks rather than calling "
                 "unresolved prevouts missing",
                 pending.size(), start_height, start_height + blocks.size() - 1);
-            return error::operation_failed;
+            return fault(error::operation_failed);
         }
 
         // Matched back BY KEY. The lists are deduplicated over distinct keys and
@@ -392,15 +429,40 @@ code validate_block_batch(
         // read is an error above, not an entry here. Every one of these keys is
         // a prevout of THIS batch, so a missing one is an invalid block.
         if ( ! resolved->absent.empty()) {
-            auto const& rk = resolved->absent.front();
+            // The LOWEST block that spends any absent key, not the first key
+            // the store happened to list: the list is deduplicated over
+            // distinct keys and carries no order a caller may rely on, and two
+            // runs over the same batch have to name the same block.
+            std::optional<size_t> lowest;
+            utxoz::raw_outpoint const* named = nullptr;
+            for (auto const& rk : resolved->absent) {
+                auto const it = first_spender.find(rk);
+                if (it == first_spender.end()) {
+                    continue;   // not a key this batch emitted; see below
+                }
+                if ( ! lowest || it->second < *lowest) {
+                    lowest = it->second;
+                    named = &rk;
+                }
+            }
+            if ( ! lowest) {
+                // Every absent key is one of ours by the resolution's contract,
+                // so none of them being ours is the store answering a question
+                // this batch did not ask. That is not a verdict on any block.
+                spdlog::error("[batch_validate] the resolution reported {} absent key(s) "
+                    "this batch never emitted (batch {}-{}); refusing to judge these blocks",
+                    resolved->absent.size(), start_height, start_height + blocks.size() - 1);
+                return fault(error::operation_failed);
+            }
             hash_digest h;
             uint32_t idx;
-            std::memcpy(h.data(), rk.data(), h.size());
-            std::memcpy(&idx, rk.data() + h.size(), sizeof(idx));
-            spdlog::error("[batch_validate] prevout not found {}:{} ({} missing total, "
-                "batch {}-{})", encode_hash(h), idx, resolved->absent.size(),
+            std::memcpy(h.data(), named->data(), h.size());
+            std::memcpy(&idx, named->data() + h.size(), sizeof(idx));
+            spdlog::error("[batch_validate] prevout not found {}:{} spent at height {} "
+                "({} missing total, batch {}-{})", encode_hash(h), idx,
+                start_height + *lowest, resolved->absent.size(),
                 start_height, start_height + blocks.size() - 1);
-            return error::missing_previous_output;
+            return refuse(*lowest, error::missing_previous_output);
         }
     }
 
@@ -417,7 +479,7 @@ code validate_block_batch(
         // CHIP-2025-03: from the block built on H_a, a coinbase with version 1,
         // locktime 0 and outputs of at least 25 BCH is invalid.
         if (block_governed[i] != 0 && blocks[i]->has_forbidden_coinbase_shape()) {
-            return error::coinbase_shape;
+            return refuse(i, error::coinbase_shape);
         }
 
         for (auto const& tx : blocks[i]->transactions()) {
@@ -468,13 +530,13 @@ code validate_block_batch(
                         chain.utxo_count()
                             .transform([](size_t n) { return std::to_string(n); })
                             .value_or(std::string("unavailable")));
-                    return error::operation_failed;
+                    return fault(error::operation_failed);
                 }
 
                 // 100 ten-minute block-equivalents, in ticks.
                 if (prevout_coinbase &&
                     ticks.height_to_tick(height) - ticks.height_to_tick(prevout_height) < coinbase_maturity * base_block_interval) {
-                    return error::coinbase_maturity;
+                    return refuse(i, error::coinbase_maturity);
                 }
 
                 op.validation.cache = *out;
@@ -494,10 +556,14 @@ code validate_block_batch(
                     auto const funding_mtp = domain::chain::median_time_past_at(funding_parent,
                         [&](size_t h) -> std::optional<uint32_t> {
                             auto const idx = header_index.get_ancestor(parent_idx, int32_t(h));
-                            if (idx == header_index::null_index) return std::nullopt;
+                            if (idx == header_index::null_index) {
+                                return std::nullopt;
+                            }
                             return header_index.get_timestamp(idx);
                         });
-                    if (!funding_mtp) return error::operation_failed;
+                    if (!funding_mtp) {
+                        return fault(error::operation_failed);
+                    }
                     op.validation.median_time_past = *funding_mtp;
                 }
                 op.validation.spent = false;
@@ -508,11 +574,11 @@ code validate_block_batch(
 
             if (script::is_enabled(block_flags[i], domain::machine::script_flags::bip68_rule)
                 && tx.is_locked(ticks, height, block_mtp[i])) {
-                return error::sequence_locked;
+                return refuse(i, error::sequence_locked);
             }
 
             if (in_value < out_value) {
-                return error::spend_exceeds_value;
+                return refuse(i, error::spend_exceeds_value);
             }
             block_fees += (in_value - out_value);
 
@@ -523,7 +589,7 @@ code validate_block_batch(
 
         auto const reward = block::subsidy(ticks, height, settings.retarget) + block_fees;
         if (coinbase_value > reward) {
-            return error::coinbase_value_limit;
+            return refuse(i, error::coinbase_value_limit);
         }
     }
 
@@ -541,50 +607,49 @@ code validate_block_batch(
     unsigned hw = std::thread::hardware_concurrency();
     size_t const workers = std::max<size_t>(1, std::min<size_t>(hw ? hw : 1, tasks.size()));
 
-    std::atomic<bool> failed{false};
-    std::mutex err_mutex;
-    code first_error = error::success;
+    // One verdict per task, written only by the worker that ran it and read
+    // only after the join. Which task the batch is refused for is decided by a
+    // scan of this vector in emission order — height order — and not by which
+    // worker reported first.
+    std::vector<code> task_errors(tasks.size(), error::success);
     // Total SigChecks per transaction; each worker writes its own slot (no contention).
     std::vector<size_t> task_sigchecks(tasks.size(), 0);
 
+    // The lowest height a failure has been seen at. A worker skips the tasks
+    // of HIGHER blocks once this is set — none of them can be the attributed
+    // block, so the early exit for the rest of the batch is kept — but goes on
+    // judging tasks at or below it, so every transaction that could lower the
+    // attribution is judged. That is what makes the scan below name the same
+    // block and the same code on every run, whatever the interleaving.
+    std::atomic<size_t> failed_height{std::numeric_limits<size_t>::max()};
+    std::atomic<bool> threw{false};
+
     auto run_bucket = [&](size_t bucket) {
       try {
-        for (size_t t = bucket; t < tasks.size() && ! failed.load(std::memory_order_relaxed); t += workers) {
+        // A stride visits tasks in increasing index, and tasks are emitted in
+        // height order, so once a task is above the failed height every later
+        // one in this stride is too.
+        for (size_t t = bucket; t < tasks.size(); t += workers) {
             auto const& task = tasks[t];
+            if (threw.load(std::memory_order_relaxed) ||
+                task.height > failed_height.load(std::memory_order_acquire)) {
+                break;
+            }
             auto const res = validate_input::verify_transaction(*task.tx, task.flags);
             if (res.first != error::success) {
-                std::lock_guard<std::mutex> lk(err_mutex);
-                if ( ! failed.exchange(true)) {
-                    first_error = res.first;
-                    // Re-run per input to pinpoint the culprit and emit a decisive
-                    // diagnostic (everything needed to reproduce it in a standalone
-                    // verify_script test). Only on failure, so it is off the hot path.
-                    auto const& inputs = task.tx->inputs();
-                    for (uint32_t ii = 0; ii < inputs.size(); ++ii) {
-                        if (validate_input::verify_script(*task.tx, ii, task.flags).first == error::success) {
-                            continue;
-                        }
-                        auto const& pv = inputs[ii].previous_output();
-                        spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
-                            task.height, res.first.message(),
-                            static_cast<uint64_t>(task.flags),
-                            encode_hash(task.tx->hash()), ii,
-                            encode_hash(pv.hash()), pv.index(),
-                            pv.validation.cache.value(),
-                            encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
-                            encode_base16(to_data_chunk(inputs[ii].script(), false)));
-                        break;
-                    }
+                task_errors[t] = res.first;
+                auto seen = failed_height.load(std::memory_order_acquire);
+                while (task.height < seen &&
+                       ! failed_height.compare_exchange_weak(seen, task.height,
+                             std::memory_order_acq_rel, std::memory_order_acquire)) {
                 }
-                return;
+                continue;
             }
             task_sigchecks[t] = res.second;
         }
       } catch (std::exception const& e) {
         // A worker thread must not let an exception escape (std::terminate).
-        std::lock_guard<std::mutex> lk(err_mutex);
-        if ( ! failed.exchange(true)) {
-            first_error = error::operation_failed;
+        if ( ! threw.exchange(true)) {
             spdlog::error("[batch_validate] script verification threw: {}", e.what());
         }
       }
@@ -600,8 +665,39 @@ code validate_block_batch(
         th.join();
     }
 
-    if (first_error != error::success) {
-        return first_error;
+    if (threw.load(std::memory_order_acquire)) {
+        // Not a verdict on any block: a worker did not finish judging.
+        return fault(error::operation_failed);
+    }
+
+    // The first refused transaction in emission order. Every task at or below
+    // the lowest failing height was judged (see run_bucket), so the first
+    // failure the scan meets is the lowest one there is.
+    for (size_t t = 0; t < tasks.size(); ++t) {
+        if (task_errors[t] == error::success) {
+            continue;
+        }
+        auto const& task = tasks[t];
+        // Re-run per input to pinpoint the culprit and emit a decisive
+        // diagnostic (everything needed to reproduce it in a standalone
+        // verify_script test). Only on failure, so it is off the hot path.
+        auto const& inputs = task.tx->inputs();
+        for (uint32_t ii = 0; ii < inputs.size(); ++ii) {
+            if (validate_input::verify_script(*task.tx, ii, task.flags).first == error::success) {
+                continue;
+            }
+            auto const& pv = inputs[ii].previous_output();
+            spdlog::error("[batch_validate] script FAIL h={} err={} flags={:#x} tx={} in={} prevout={}:{} value={} prevout_script={} input_script={}",
+                task.height, task_errors[t].message(),
+                uint64_t(task.flags),
+                encode_hash(task.tx->hash()), ii,
+                encode_hash(pv.hash()), pv.index(),
+                pv.validation.cache.value(),
+                encode_base16(to_data_chunk(pv.validation.cache.script(), false)),
+                encode_base16(to_data_chunk(inputs[ii].script(), false)));
+            break;
+        }
+        return refuse(task.height - start_height, task_errors[t]);
     }
 
     // -----------------------------------------------------------------------
@@ -619,9 +715,14 @@ code validate_block_batch(
         entries.push_back(sigcheck_entry{
             tasks[t].height - start_height,
             t,   // one task is one transaction
-            static_cast<uint64_t>(task_sigchecks[t])});
+            uint64_t(task_sigchecks[t])});
     }
-    return enforce_sigcheck_limits(entries, block_sigcheck_limit, block_tx_sigcheck_limit);
+    size_t over_limit = 0;
+    if (auto const ec = enforce_sigcheck_limits(
+            entries, block_sigcheck_limit, block_tx_sigcheck_limit, over_limit); ec) {
+        return refuse(over_limit, ec);
+    }
+    return error::success;
 }
 
 } // namespace kth::blockchain
