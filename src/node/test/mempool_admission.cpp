@@ -25,6 +25,8 @@
 
 #include "sync_harness.hpp"
 #include "child_process_harness.hpp"
+#include "tx_relay_harness.hpp"
+#include <kth/node/detail/tx_relay.hpp>
 #if defined(KTH_CURRENCY_BCH)
 #include "../../blockchain/test/transaction_size_fixture.hpp"
 #include <kth/blockchain/validate/batch_validate.hpp>
@@ -38,10 +40,10 @@ using namespace kth::test;
 // =============================================================================
 //
 // These are two operations, and the difference between them used to be a flag:
-// `organize` read `transaction_validation::simulate` and returned early before
-// the mempool, so the caller that wanted validation alone set the flag on a
-// store entry and called the admitting path anyway. What a call did was decided
-// somewhere other than the call.
+// `organize` (now `submit_transaction`) read `transaction_validation::simulate`
+// and returned early before the mempool, so the caller that wanted validation
+// alone set the flag on a store entry and called the admitting path anyway.
+// What a call did was decided somewhere other than the call.
 //
 // `transaction_validate` is the explicit path and always was. What is pinned
 // here is that the two do different things through their own names — nothing
@@ -170,18 +172,72 @@ TEST_CASE("validating a transaction does not admit it to the mempool", "[mempool
     CHECK_FALSE(chain.mempool_ref().contains(tx->hash()));
 }
 
-TEST_CASE("organizing a valid transaction admits it to the mempool", "[mempool][admission]") {
+TEST_CASE("submitting a valid transaction admits it to the mempool", "[mempool][admission]") {
     admission_chain built("organize_admits", trunk_len);
     auto& chain = built.chain();
 
     auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
     REQUIRE(chain.mempool_ref().size() == 0);
 
-    auto const ec = run_on_chain(chain, [&chain, tx] { return chain.organize(tx); });
+    auto const ec = run_on_chain(chain, [&chain, tx] { return chain.submit_transaction(tx); });
 
     CHECK(ec == error::success);
     CHECK(chain.mempool_ref().size() == 1);
     CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+// The relay's whole path against a real chain: a peer announces a transaction,
+// the relay asks that peer for it, and what the peer sends goes through
+// submit_transaction() into the mempool, as one sendrawtransaction would.
+TEST_CASE("a transaction a peer announces is asked for and reaches the mempool",
+          "[mempool][admission][tx_relay]") {
+    using namespace kth::node::detail;
+    admission_chain built("tx_relay_admission", trunk_len);
+    auto& chain = built.chain();
+    auto const tx = std::make_shared<domain::message::transaction const>(built.matured_spend(fee));
+
+    ::asio::io_context ioc;
+    auto const config = relay_settings();
+    tx_relay_channels channels;
+    tx_admission_channel admission{tx_admission_capacity};
+    auto peer = connect(ioc, config, 1);
+
+    // The chain is current, but the clock half of synchronized() reads this
+    // regtest trunk as stale; the gate itself is controlled in tx_relay.cpp.
+    tx_relay_view view{
+        .synchronized = [] { return true; },
+        .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
+        .tip = [&chain] { return chain.chain_view()->tip_hash; },
+    };
+    auto owner = ::asio::co_spawn(ioc, tx_relay_task(channels, std::move(view), admission,
+        [&ioc](::asio::awaitable<void> task) { ::asio::co_spawn(ioc, std::move(task), ::asio::detached); }),
+        ::asio::use_future);
+    auto admitter = ::asio::co_spawn(ioc, tx_admission_task(admission,
+        [&chain](domain::message::transaction::const_ptr pooled) {
+            return ::asio::co_spawn(chain.executor(), chain.submit_transaction(std::move(pooled)), ::asio::use_awaitable);
+        }, channels), ::asio::use_future);
+
+    REQUIRE(channels.submit(tx_announced{peer.session, {tx->hash()}}));
+    CHECK(contains(read_requests(ioc, peer, 2s), tx->hash()));
+
+    REQUIRE(channels.submit(tx_received{1, tx}));
+    auto const deadline = std::chrono::steady_clock::now() + 10s;
+    while ( ! chain.mempool_ref().contains(tx->hash()) && std::chrono::steady_clock::now() < deadline) {
+        ioc.restart();
+        ioc.run_for(5ms);
+    }
+    CHECK(chain.mempool_ref().contains(tx->hash()));
+
+    // Shutdown: closing the channel ends the owner, and the owner the admission.
+    channels.close();
+    while ((owner.wait_for(0s) != std::future_status::ready
+            || admitter.wait_for(0s) != std::future_status::ready)
+           && std::chrono::steady_clock::now() < deadline + 10s) {
+        ioc.restart();
+        ioc.run_for(5ms);
+    }
+    CHECK(owner.wait_for(0s) == std::future_status::ready);
+    CHECK(admitter.wait_for(0s) == std::future_status::ready);
 }
 
 // Expiry counts from when the node first saw a transaction, as BCHN's does, so
@@ -377,7 +433,7 @@ TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
     // An admitted transaction, then evicted by a pool trimmed to nothing: the
     // minimum becomes its rate plus the increment.
     auto const pooled = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
-    REQUIRE(run_on_chain(chain, [&] { return chain.organize(pooled); }) == error::success);
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(pooled); }) == error::success);
     auto const entry = chain.mempool_ref().entry(pooled->hash());
     REQUIRE(entry);
     auto const raised = blockchain::fee_per_kb(entry->fee, blockchain::virtual_size(entry->size, entry->sigchecks))
@@ -393,12 +449,12 @@ TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
     auto const cheap = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
     REQUIRE(cheap->hash() == pooled->hash());
     REQUIRE(blockchain::fee_per_kb(1000, cheap->serialized_size(true)) < raised);
-    CHECK(run_on_chain(chain, [&] { return chain.organize(cheap); }) == error::insufficient_fee);
+    CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(cheap); }) == error::insufficient_fee);
     CHECK_FALSE(chain.mempool_ref().contains(cheap->hash()));
 
     auto const paying = std::make_shared<domain::message::transaction>(built.matured_spend(2000));
     REQUIRE(blockchain::fee_per_kb(2000, paying->serialized_size(true)) >= raised);
-    CHECK(run_on_chain(chain, [&] { return chain.organize(paying); }) == error::success);
+    CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(paying); }) == error::success);
     CHECK(chain.mempool_ref().contains(paying->hash()));
 }
 
@@ -443,7 +499,7 @@ TEST_CASE("transaction size policy through real mempool admission", "[tx_size][a
     using namespace domain::chain;
     auto const funding = built.p2sh_funding();
     auto const funding_ptr = std::make_shared<domain::message::transaction>(funding);
-    REQUIRE(run_on_chain(chain, [&] { return chain.organize(funding_ptr); }) == error::success);
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(funding_ptr); }) == error::success);
 
     auto const channel = chain.subscribe_transaction();
     REQUIRE(channel);
@@ -467,7 +523,7 @@ TEST_CASE("transaction size policy through real mempool admission", "[tx_size][a
         auto ptr = std::make_shared<domain::message::transaction>(tx);
         CAPTURE(size);
         auto const expected = expected_admission(size);
-        CHECK(run_on_chain(chain, [&] { return chain.organize(ptr); }) == expected);
+        CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(ptr); }) == expected);
         CHECK_FALSE(chain.mempool_ref().contains(ptr->hash()));
         CHECK_FALSE(announced(channel, ptr->hash()));
     }
@@ -477,7 +533,7 @@ TEST_CASE("transaction size policy through real mempool admission", "[tx_size][a
     auto tx = sized_transaction(accepted_size, false, output_point{funding.hash(), 0});
     auto ptr = std::make_shared<domain::message::transaction>(tx);
     CAPTURE(accepted_size);
-    CHECK(run_on_chain(chain, [&] { return chain.organize(ptr); }) == error::success);
+    CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(ptr); }) == error::success);
     CHECK(chain.mempool_ref().contains(ptr->hash()));
     CHECK(announced(channel, ptr->hash()));
     chain.unsubscribe_transaction(channel);
@@ -608,7 +664,7 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
     auto& chain = built.chain();
     auto const funding = built.p2sh_funding();
     auto funding_ptr = std::make_shared<domain::message::transaction>(funding);
-    REQUIRE(run_on_chain(chain, [&] { return chain.organize(funding_ptr); }) == error::success);
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(funding_ptr); }) == error::success);
     auto const tx = sized_transaction(100001, false, domain::chain::output_point{funding.hash(), 0});
     auto ptr = std::make_shared<domain::message::transaction>(tx);
     auto const channel = chain.subscribe_transaction();
@@ -616,11 +672,11 @@ TEST_CASE("Knuth policy mode controls local limits without bypassing consensus",
     domain::chain::transaction bad_version{3, 0, domain::chain::input::list(tx.inputs()),
                                            domain::chain::output::list(tx.outputs())};
     auto bad = std::make_shared<domain::message::transaction>(bad_version);
-    CHECK(run_on_chain(chain, [&] { return chain.organize(bad); }) == error::invalid_tx_version);
+    CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(bad); }) == error::invalid_tx_version);
     CHECK_FALSE(chain.mempool_ref().contains(bad->hash()));
     CHECK_FALSE(announced(channel, bad->hash()));
     auto const expected = require_standard ? code(error::standardness_transaction_size) : code(error::success);
-    CHECK(run_on_chain(chain, [&] { return chain.organize(ptr); }) == expected);
+    CHECK(run_on_chain(chain, [&] { return chain.submit_transaction(ptr); }) == expected);
     CHECK(chain.mempool_ref().contains(ptr->hash()) == !require_standard);
     CHECK(announced(channel, ptr->hash()) == !require_standard);
     chain.unsubscribe_transaction(channel);
@@ -685,21 +741,21 @@ TEST_CASE("the default price is the network's relay floor, by size", "[mempool][
     using namespace domain::chain;
     auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
 
-    auto const organize = [&](transaction const& tx) {
+    auto const submit = [&](transaction const& tx) {
         auto const ptr = std::make_shared<domain::message::transaction>(tx);
-        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+        return run_on_chain(chain, [&] { return chain.submit_transaction(ptr); });
     };
 
     // Below the floor, refused whatever the outputs.
-    CHECK(organize(paying(second, {p2sh}, 500, flags)) == error::insufficient_fee);
-    CHECK(organize(paying(first, {miner_script(), miner_script(), miner_script()}, 999, flags))
+    CHECK(submit(paying(second, {p2sh}, 500, flags)) == error::insufficient_fee);
+    CHECK(submit(paying(first, {miner_script(), miner_script(), miner_script()}, 999, flags))
         == error::insufficient_fee);
 
     // At the floor, admitted whatever the outputs.
     auto const payment = paying(first, {miner_script(), miner_script(), miner_script()}, 1000, flags);
     CHECK(payment.signature_operations(true, false) == 3);
-    CHECK(organize(payment) == error::success);
-    CHECK(organize(paying(second, {p2sh}, 1000, flags)) == error::success);
+    CHECK(submit(payment) == error::success);
+    CHECK(submit(paying(second, {p2sh}, 1000, flags)) == error::success);
 }
 
 // An operator who sets a price per signature operation still gets it: on top
@@ -715,9 +771,9 @@ TEST_CASE("an operator's price per signature operation still applies", "[mempool
     auto const p2sh = script(script::to_pay_script_hash_pattern(bitcoin_short_hash(data_chunk{0x51})));
     auto const three_p2pkh = std::vector<script>{miner_script(), miner_script(), miner_script()};
 
-    auto const organize = [&](transaction const& tx) {
+    auto const submit = [&](transaction const& tx) {
         auto const ptr = std::make_shared<domain::message::transaction>(tx);
-        return run_on_chain(chain, [&] { return chain.organize(ptr); });
+        return run_on_chain(chain, [&] { return chain.submit_transaction(ptr); });
     };
     auto const fee = [](transaction const& tx, transaction const& prev) {
         return prev.outputs()[0].value() - tx.total_output_value();
@@ -727,17 +783,17 @@ TEST_CASE("an operator's price per signature operation still applies", "[mempool
     auto const at_floor = paying(first, three_p2pkh, 1000, flags);
     REQUIRE(at_floor.signature_operations(true, false) == 3);
     REQUIRE(fee(at_floor, first) < at_floor.serialized_size(true) + 300);
-    CHECK(organize(at_floor) == error::insufficient_fee);
+    CHECK(submit(at_floor) == error::insufficient_fee);
 
     // Paying for them, admitted.
     auto const priced = paying(first, three_p2pkh, 2500, flags);
     REQUIRE(fee(priced, first) >= priced.serialized_size(true) + 300);
-    CHECK(organize(priced) == error::success);
+    CHECK(submit(priced) == error::success);
 
     // With no signature operation, the floor is enough.
     auto const unpriced = paying(second, {p2sh}, 1000, flags);
     REQUIRE(unpriced.signature_operations(true, false) == 0);
-    CHECK(organize(unpriced) == error::success);
+    CHECK(submit(unpriced) == error::success);
 }
 
 #endif // KTH_CURRENCY_BCH
@@ -769,12 +825,12 @@ TEST_CASE("admission child: a suspended validation leaves the caller responsive"
             return std::make_shared<domain::message::transaction>(1, 0, std::move(inputs), std::move(outputs));
         };
         ::asio::io_context caller;
-        auto first = ::asio::co_spawn(caller, chain.organize(make_tx(1)), ::asio::use_future);
+        auto first = ::asio::co_spawn(caller, chain.submit_transaction(make_tx(1)), ::asio::use_future);
         caller.poll_one();
         bool const suspended = first.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
         ::asio::cancellation_signal cancel;
         auto second = ::asio::co_spawn(caller,
-            validate_only_waiter ? chain.transaction_validate(make_tx(2)) : chain.organize(make_tx(2)),
+            validate_only_waiter ? chain.transaction_validate(make_tx(2)) : chain.submit_transaction(make_tx(2)),
             ::asio::bind_cancellation_slot(cancel.slot(), ::asio::use_future));
         if (cancel_waiter) ::asio::post(caller, [&] { cancel.emit(::asio::cancellation_type::terminal); });
         auto third = ::asio::co_spawn(caller, chain.transaction_validate(make_tx(3)), ::asio::use_future);
@@ -874,7 +930,7 @@ TEST_CASE("admission revalidates once when a block arrives during validation", "
     auto& chain = built.chain();
     auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
     ::asio::io_context caller;
-    auto result = ::asio::co_spawn(caller, chain.organize(tx), ::asio::use_future);
+    auto result = ::asio::co_spawn(caller, chain.submit_transaction(tx), ::asio::use_future);
 
     auto advance_to_validation = [&](size_t height) {
         // Only this context resumes the admission coroutine. Stop as soon as
