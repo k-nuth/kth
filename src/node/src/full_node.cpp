@@ -156,21 +156,6 @@ full_node::~full_node() {
         });
 
 #if ! defined(__EMSCRIPTEN__)
-    // Transactions peers announce: asked for, then offered to the mempool.
-    if (network_settings_.relay_transactions) {
-        relay_ = std::make_unique<transaction_relay>(chain_);
-        network_.register_message_handler<domain::message::inventory>(
-            [this](peer_session& peer, domain::message::inventory const& inv)
-                -> ::asio::awaitable<message_result> {
-                co_return co_await relay_->on_inventory(peer, inv);
-            });
-        network_.register_message_handler<domain::message::transaction>(
-            [this](peer_session& peer, domain::message::transaction const& tx)
-                -> ::asio::awaitable<message_result> {
-                co_return co_await relay_->on_transaction(peer, tx);
-            });
-    }
-
     // Compact blocks peers send (BIP152), rebuilt from the mempool once the
     // node is caught up, and the blocktxn that completes one: both taken
     // from the read loop without waiting.

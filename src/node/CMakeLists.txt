@@ -146,12 +146,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/local_admission_tasks.cpp
+    src/detail/tx_relay.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
-    src/transaction_relay.cpp
     src/handlers/chain_data.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
@@ -209,7 +209,6 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
-  include/kth/node/transaction_relay.hpp
   include/kth/node/handlers/chain_data.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
@@ -348,6 +347,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
+          test/tx_relay.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
           test/local_block_admission.cpp
@@ -356,7 +356,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
-          test/transaction_relay.cpp
           test/p2p_status_timer.cpp
           test/performance.cpp
           test/reservation.cpp

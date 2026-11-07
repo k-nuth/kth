@@ -7,6 +7,7 @@
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/scope_action.hpp>
+#include <kth/node/detail/tx_relay.hpp>
 
 #include <algorithm>
 
@@ -43,6 +44,7 @@ p2p_node::p2p_node(settings const& settings)
     // unanswered says nothing the first does not.
     , block_announcement_channel_(std::make_unique<concurrent_channel<blocks_announced>>(pool_.get_executor(), 1))
     , header_ingest_(std::make_unique<detail::header_ingest_channels>(pool_.get_executor()))
+    , tx_relay_(std::make_unique<detail::tx_relay_channels>())
 {
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
     // Register default message handlers using typed registration
@@ -269,6 +271,12 @@ void p2p_node::stop() {
     // nothing submitted is owed to anybody once the node is stopping.
     if (header_ingest_) {
         header_ingest_->close();
+    }
+
+    // The transaction relay's too: its owner waits on it, and a stopping node
+    // asks nobody for anything.
+    if (tx_relay_) {
+        tx_relay_->close();
     }
 
     // Stop acceptor - this causes run_inbound() to exit
@@ -663,6 +671,12 @@ void p2p_node::announce_blocks(hash_list const& hashes) {
 }
 
 bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message const& raw) {
+    detail::tx_relay_backlog dropped;
+    return observe_block_message(peer, raw, dropped);
+}
+
+bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message const& raw,
+                                     detail::tx_relay_backlog& backlog) {
     auto const& command = raw.heading.command();
     if (command == domain::message::headers::command) {
         ingest_headers(peer, raw);
@@ -689,9 +703,9 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
     if (command == domain::message::inventory::command) {
         // The oldest of the announcement forms: hashes, no headers.
         // Transaction entries are not this path's business and are left alone.
-        announce_from_inventory(*peer, raw);
-        // Observed, not consumed — it also carries the transaction entries
-        // this path deliberately ignores, which a handler for `inv` may want.
+        // Transaction entries go to the relay from the same parse.
+        announce_from_inventory(peer, raw, backlog);
+        // Observed, not consumed: a handler for `inv` still sees it.
         return false;
     }
     return false;
@@ -778,17 +792,73 @@ detail::header_ingest_channels& p2p_node::header_ingest() {
     return *header_ingest_;
 }
 
-void p2p_node::announce_from_inventory(peer_session& peer, raw_message const& raw) {
-    auto hashes = detail::announced_by_inventory(raw.payload, peer.negotiated_version());
-    if (hashes.empty()) {
+void p2p_node::announce_from_inventory(peer_session::ptr const& peer, raw_message const& raw,
+                                       detail::tx_relay_backlog& backlog) {
+    auto announced = detail::announced_in_inventory(raw.payload, peer->negotiated_version());
+
+    if ( ! announced.transactions.empty() && settings_.relay_transactions) {
+        auto const count = announced.transactions.size();
+        // Handed over, or kept by this read loop until the relay has room.
+        if ( ! backlog.submit(*tx_relay_, detail::tx_announced{peer, std::move(announced.transactions)})) {
+            spdlog::debug("[p2p_node] {} transaction(s) announced by [{}] not kept: past what a "
+                "peer may have pending", count, peer->authority());
+        }
+    }
+
+    if (announced.blocks.empty()) {
         // Transactions, or nothing we act on. Said out loud rather than dropped
         // in silence: this path knows what it is not handling.
-        spdlog::trace("[p2p_node] inv from [{}] announces no blocks", peer.authority());
+        spdlog::trace("[p2p_node] inv from [{}] announces no blocks", peer->authority());
         return;
     }
     spdlog::debug("[p2p_node] {} block(s) announced by inv from [{}]",
-        hashes.size(), peer.authority());
-    announce_blocks(std::move(hashes));
+        announced.blocks.size(), peer->authority());
+    announce_blocks(std::move(announced.blocks));
+}
+
+bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_message const& raw) {
+    detail::tx_relay_backlog dropped;
+    return observe_transaction_message(peer, raw, dropped);
+}
+
+bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_message const& raw,
+                                           detail::tx_relay_backlog& backlog) {
+    auto const& command = raw.heading.command();
+    if (command == domain::message::transaction::command) {
+        // Consumed whatever happens to it: nothing else handles a `tx`.
+        if ( ! settings_.relay_transactions) {
+            spdlog::trace("[p2p_node] tx from [{}] ignored: the node does not relay", peer->authority());
+            return true;
+        }
+        byte_reader reader(raw.payload);
+        auto parsed = domain::message::transaction::from_data(reader, peer->negotiated_version());
+        if ( ! parsed) {
+            spdlog::debug("[p2p_node] Unparseable tx from [{}]; ignored", peer->authority());
+            return true;
+        }
+        auto tx = std::make_shared<domain::message::transaction const>(std::move(*parsed));
+        if ( ! backlog.submit(*tx_relay_, detail::tx_received{peer->nonce(), std::move(tx)})) {
+            // Its request stays out and fails over when it expires.
+            spdlog::debug("[p2p_node] tx from [{}] not kept: past what a peer may have pending",
+                peer->authority());
+        }
+        return true;
+    }
+    if (command == domain::message::not_found::command) {
+        auto txids = detail::transactions_not_found(raw.payload, peer->negotiated_version());
+        if ( ! txids.empty() && settings_.relay_transactions
+            && ! backlog.submit(*tx_relay_, detail::tx_not_found{peer->nonce(), std::move(txids)})) {
+            spdlog::debug("[p2p_node] notfound from [{}] not kept: past what a peer may have pending",
+                peer->authority());
+        }
+        // Observed, not consumed.
+        return false;
+    }
+    return false;
+}
+
+detail::tx_relay_channels& p2p_node::tx_relay() {
+    return *tx_relay_;
 }
 
 p2p_node::announced_blocks p2p_node::take_announced_blocks() {
@@ -1115,11 +1185,20 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 
     auto last_ping = std::chrono::steady_clock::now();
 
+    // What this loop handed the transaction relay and it could not take yet:
+    // this loop's own, handed over again at every turn, and waited on with a
+    // short retry deadline while it holds something.
+    detail::tx_relay_backlog relay_backlog;
+
     while (!peer->stopped() && !stopped()) {
+        relay_backlog.flush(*tx_relay_);
         // The next message or a short deadline (one selection): the short
         // interval keeps the stopped flags checked promptly, ping timing is
         // tracked separately.
-        auto received = co_await peer->receive(std::chrono::steady_clock::now() + check_interval);
+        auto const wait = relay_backlog.empty()
+            ? std::chrono::steady_clock::duration(check_interval)
+            : std::chrono::steady_clock::duration(detail::tx_relay_backlog::retry_interval);
+        auto received = co_await peer->receive(std::chrono::steady_clock::now() + wait);
 
         if (peer->stopped() || stopped()) {
             spdlog::debug("[p2p_node:protocols] [{}] Breaking due to stopped flag", peer->authority());
@@ -1158,7 +1237,10 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         // Headers and announcements first: every `headers` is consumed here
         // and goes to the header ingest, answer or not, because the wire cannot
         // tell the two apart. `cmpctblock` and `inv` are observed and carry on.
-        if (observe_block_message(peer, raw)) {
+        if (observe_block_message(peer, raw, relay_backlog)) {
+            continue;
+        }
+        if (observe_transaction_message(peer, raw, relay_backlog)) {
             continue;
         }
 
@@ -1679,6 +1761,19 @@ void p2p_node::wake_status_task() noexcept {
                             peer->authority(), peer->nonce());
                         peer_notification_channel_->try_send(
                             peer_notification{peer, peer_event_type::disconnected});
+                        // And the relay, so what this peer was asked passes to
+                        // another announcer now.
+                        // Waited for, not tried: this is not a read loop, and a
+                        // session's end the relay never hears would keep it.
+                        // A stopping node closes the channel, which ends it.
+                        if (settings_.relay_transactions) {
+                            auto handed = co_await ::asio::experimental::make_select(
+                                ::asio::experimental::send(tx_relay_->commands,
+                                    detail::tx_relay_command{detail::tx_peer_gone{peer->nonce()}})
+                            ).async_wait(co_await ::asio::this_coro::executor, {}, stop_token(),
+                                ::asio::as_tuple(::asio::deferred));
+                            (void)handed;
+                        }
 
                         spdlog::debug("[p2p_node] Peer [{}] lambda completed (protocols ended)", peer->authority());
                     }()

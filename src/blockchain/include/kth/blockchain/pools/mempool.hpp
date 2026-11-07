@@ -69,12 +69,22 @@ struct mempool {
 
     // A block was connected: remove its transactions (now confirmed) and any
     // pool transaction that conflicts with them (recursively, with descendants).
-    void remove_for_block(domain::chain::block const& block);
+    // Returns the ids of the transactions this call removed.
+    std::vector<hash_digest> remove_for_block(domain::chain::block const& block);
+
+    // Remove a transaction and every pool transaction that spends its outputs,
+    // transitively. Returns the ids of the transactions this call removed.
+    std::vector<hash_digest> remove_with_descendants(hash_digest const& txid);
+
+    // Remove every transaction first seen before `seen_before` (unix seconds),
+    // with its descendants (BCHN's mempool expiry). Returns the ids of the
+    // transactions this call removed.
+    std::vector<hash_digest> expire(uint64_t seen_before);
 
     // A reorg happened: re-admit transactions from the disconnected blocks that
     // are not in the new chain, then apply remove_for_block for the new blocks.
-    void update_for_reorg(block_const_ptr_list_const_ptr outgoing,
-                          block_const_ptr_list_const_ptr incoming);
+    std::vector<hash_digest> update_for_reorg(block_const_ptr_list_const_ptr outgoing,
+                                              block_const_ptr_list_const_ptr incoming);
 
     // CCoinsViewMemPool-style prevout resolution for chained transactions: if
     // `outpoint` is an output of a pool transaction, returns it; otherwise
@@ -135,12 +145,13 @@ struct mempool {
 
 private:
     // Erase one tx from pool_ and release its input-outpoint claims in
-    // spent_by_. Non-recursive: descendants are untouched.
-    void remove_entry(hash_digest const& txid);
+    // spent_by_. Non-recursive: descendants are untouched. True if this call
+    // erased it.
+    bool remove_entry(hash_digest const& txid);
 
     // Remove a tx and, transitively, every pool tx that spends its outputs
-    // (the rare invalid/conflict path).
-    void remove_recursive(hash_digest const& txid);
+    // (the rare invalid/conflict path), appending what it erased to `removed`.
+    void remove_recursive(hash_digest const& txid, std::vector<hash_digest>& removed);
 
     // Direct in-mempool adjacency, un-instrumented (the public parents/children
     // wrap these with stats; the ancestors/descendants traversal reuses them so
