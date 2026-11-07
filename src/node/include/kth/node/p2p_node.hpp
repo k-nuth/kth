@@ -129,8 +129,33 @@ public:
     /// Register a default handler for unhandled messages
     void set_default_handler(message_handler_fn handler);
 
+    /// Register a handler that runs in the peer's service instead of in its
+    /// read loop: dispatch() hands the message to the peer's bounded
+    /// served_requests() queue and returns, and serve() runs the handler.
+    /// For requests whose answer waits on the peer's data queue.
+    template <typename Message>
+    void register_served_handler(typed_message_handler_fn<Message> handler) {
+        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+    }
+
+    /// Announces a tip to one peer. `last_announced` is what this peer's
+    /// service last announced to it; the handler updates it.
+    using tip_announcement_fn = std::function<::asio::awaitable<void>(
+        peer_session&, hash_digest const& tip, std::optional<hash_digest>& last_announced)>;
+
+    /// Set the handler for the tips owed to each peer (peer_session::announce_tip).
+    void set_tip_announcement_handler(tip_announcement_fn handler);
+
+    /// The peer's service: runs the served handlers on the requests dispatch()
+    /// handed over, in arrival order, and announces the tip owed to the peer,
+    /// until the session closes its queues. A handler asking to disconnect
+    /// stops the session.
+    ::asio::awaitable<void> serve(peer_session& peer);
+
 private:
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
+    boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
+    tip_announcement_fn tip_announcement_;
     message_handler_fn default_handler_;
 };
 
@@ -261,28 +286,6 @@ public:
     void set_top_block(infrastructure::config::checkpoint const& top);
     void set_top_block(infrastructure::config::checkpoint&& top);
 
-    /// Where the fee filter sent to peers comes from: the node's admission
-    /// floor, in satoshis per 1000 bytes. Without one, peers are told 1000.
-    /// Set before run().
-    void set_fee_filter_source(std::function<uint64_t()> source);
-
-    /// Called from the read loop, on the peer's strand, and must not wait.
-    /// True means this cmpctblock was taken for reconstruction: its header is
-    /// not submitted to the header ingest. False, or no offer, leaves today's
-    /// behaviour, which is the header alone.
-    using compact_block_offer = std::function<bool(peer_session::ptr const&, domain::message::compact_block const&)>;
-    void set_compact_block_offer(compact_block_offer offer);
-
-    /// True means a reconstruction was waiting for this blocktxn and has it.
-    /// False, or no offer, leaves the message for whatever else is registered.
-    using block_transactions_offer = std::function<bool(peer_session::ptr const&, domain::message::block_transactions const&)>;
-    void set_block_transactions_offer(block_transactions_offer offer);
-
-    /// node.compact_blocks_high_bandwidth. When false, every peer is asked for
-    /// low bandwidth compact relay (sendcmpct(false, 1)) and none counts
-    /// toward the three high bandwidth announcers. Set before peers connect.
-    void set_compact_high_bandwidth(bool enabled);
-
     /// Register a message handler injected by the node. This is how chain-backed
     /// replies (e.g. the BIP-35 `mempool` -> inv) are served: the node owns the
     /// bridge to the blockchain and supplies the handler, so p2p_node itself
@@ -290,6 +293,18 @@ public:
     template <typename Message>
     void register_message_handler(typed_message_handler_fn<Message> handler) {
         dispatcher_.register_handler<Message>(std::move(handler));
+    }
+
+    /// Register a node handler that runs in each peer's service, off its read
+    /// loop (see message_dispatcher::register_served_handler).
+    template <typename Message>
+    void register_served_message_handler(typed_message_handler_fn<Message> handler) {
+        dispatcher_.register_served_handler<Message>(std::move(handler));
+    }
+
+    /// Set the node's handler for the tips owed to each peer.
+    void set_tip_announcement_handler(message_dispatcher::tip_announcement_fn handler) {
+        dispatcher_.set_tip_announcement_handler(std::move(handler));
     }
 
     // Manual connections
@@ -344,12 +359,10 @@ public:
     // are registered as announcements instead, under a mutex, because they
     // arrive on several peer strands at once. Its channel is only a doorbell.
 
-    /// Observe block messages before anything else sees them. `sendheaders`
-    /// and `sendcmpct` set this peer's preferences and are consumed. `headers`
-    /// goes to the header ingest and is consumed. `cmpctblock` is reconstructed
-    /// when an offer takes it, and otherwise contributes its header; either way
-    /// it carries on to the dispatcher. `blocktxn` is consumed only when a
-    /// reconstruction is waiting for it.
+    /// What the read loop does with `headers`, `cmpctblock` and `inv` before
+    /// anything else sees them. Answers whether the message was consumed: only
+    /// `headers` is; the other two carry on to the dispatcher. Any other
+    /// command is left alone.
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 
@@ -457,15 +470,8 @@ private:
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
-
-    /// The fee filter peers are told now.
-    [[nodiscard]]
-    uint64_t fee_filter() const;
-
-    /// Send the fee filter to every peer when it changed since it was last
-    /// sent, at most once per ten minutes. Status strand only.
-    ::asio::awaitable<void> refresh_fee_filter();
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
     ::asio::awaitable<void> peer_supervisor();
@@ -589,17 +595,6 @@ private:
     ///
     /// Built on the strand above, and touched only from it.
     ::asio::steady_timer status_timer_{status_strand_};
-
-    std::function<uint64_t()> fee_filter_source_;
-    compact_block_offer compact_block_offer_;
-    block_transactions_offer block_transactions_offer_;
-    std::atomic<size_t> compact_announcers_{0};
-    std::atomic<bool> compact_high_bandwidth_{true};
-
-    /// The fee filter last sent to every peer, and when. Status strand only,
-    /// after set_fee_filter_source.
-    uint64_t advertised_fee_filter_{1000};
-    std::chrono::steady_clock::time_point advertised_at_{};
 
     /// Ask the status task to look again, now.
     ///

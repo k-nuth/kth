@@ -13,14 +13,10 @@
 
 #include <kth/blockchain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
-#include <kth/node/block_serving.hpp>
-#if ! defined(__EMSCRIPTEN__)
-#include <kth/node/block_relay.hpp>
-#include <kth/node/compact_block_relay.hpp>
-#endif
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
-#include <kth/node/detail/block_relay.hpp>
+#include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -51,21 +47,27 @@ full_node::full_node(configuration const& configuration)
     , network_type_(configuration.net)
     , network_settings_(configuration.network)
     , network_(network_settings_)
+    , block_submissions_(std::make_shared<blockchain::block_submission_channel>(4, 1))
     , chain_(
         configuration.chain,
         configuration.database,
         network_type_,
-        configuration.network.relay_transactions
+        configuration.network.relay_transactions,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(configuration.net)
+    // No sync owner exists in the browser build. Refuse instead of queueing.
+    , block_submissions_()
     , chain_(
         configuration.chain,
         configuration.database,
-        network_type_
+        network_type_,
+        true,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #endif
@@ -127,58 +129,23 @@ full_node::~full_node() {
             co_return message_result::handled;
         });
 
-    // Serve peers that sync from this node: headers, then the blocks they name.
-    network_.register_message_handler<domain::message::get_headers>(
-        [this](peer_session& peer, domain::message::get_headers const& request)
-            -> ::asio::awaitable<message_result> {
-            auto const answer = answer_header_request(request, chain_);
-            if (co_await peer.send(answer) == error::success) {
-                for (auto const& header : answer.elements()) {
-                    peer.remember_block(domain::chain::hash(header));
-                }
-            }
-            co_return message_result::handled;
+    // Serve the connected chain: headers for a locator, and the blocks a
+    // peer asks for after an announcement or during its own sync. Both run in
+    // the peer's service, off its read loop: their answers wait on the peer's
+    // data queue.
+    network_.register_served_message_handler<domain::message::get_headers>(
+        [this](peer_session& peer, domain::message::get_headers const& request) {
+            return handlers::chain_data::handle_get_headers(chain_, peer, request);
         });
-
-    network_.register_message_handler<domain::message::get_data>(
-        [this](peer_session& peer, domain::message::get_data const& request)
-            -> ::asio::awaitable<message_result> {
-            // Each block goes out as it is read, so a large request never holds
-            // more than one block in memory.
-            domain::message::inventory_vector::list missing;
-            for (auto const& entry : request.inventories()) {
-                if ( ! is_block_request(entry)) {
-                    continue;
-                }
-                auto const block = co_await servable_block(chain_, entry.hash());
-                if ( ! block) {
-                    missing.push_back(entry);
-                    continue;
-                }
-                code sent = error::success;
-                if (entry.type() == domain::message::inventory_vector::type_id::compact_block) {
-                    sent = co_await send_compact_block(chain_, peer, *block);
-                } else {
-                    sent = co_await peer.send(*block);
-                }
-                if (sent != error::success) {
-                    co_return message_result::handled;
-                }
-                peer.remember_block(entry.hash());
-            }
-            if ( ! missing.empty()) {
-                if (auto const answer = domain::message::not_found::create(std::move(missing))) {
-                    co_await peer.send(*answer);
-                }
-            }
-            co_return message_result::handled;
+    network_.register_served_message_handler<domain::message::get_data>(
+        [this](peer_session& peer, domain::message::get_data const& request) {
+            return handlers::chain_data::handle_get_data(chain_, peer, request);
         });
-
-    network_.dispatcher().register_handler(domain::message::get_block_transactions::command,
-        [this](peer_session& peer, raw_message const& raw)
-            -> ::asio::awaitable<message_result> {
-            co_await serve_block_transactions(chain_, peer, raw);
-            co_return message_result::handled;
+    // Each newly connected tip, owed to every peer by the sync coordinator, is
+    // announced by the peer's own service.
+    network_.set_tip_announcement_handler(
+        [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
         });
 
 #if ! defined(__EMSCRIPTEN__)
@@ -199,19 +166,6 @@ full_node::~full_node() {
 #endif
 
 #if ! defined(__EMSCRIPTEN__)
-    // Peers are told the floor the mempool admits at, which rises while a full
-    // mempool evicts and decays back after.
-    network_.set_fee_filter_source([this] { return chain_.fee_filter(); });
-
-    // With node.compact_blocks_high_bandwidth off, no peer is asked to push
-    // compact blocks before announcing them.
-    network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
-
-    // Before any peer exists, so a cmpctblock that arrives with the first
-    // connection is reconstructed rather than reduced to its header.
-    compact_block_relay_ = std::make_unique<compact_block_relay>(chain_, network_);
-    compact_block_relay_->attach();
-
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
@@ -368,9 +322,6 @@ full_node::~full_node() {
     // stops depending on how far that checkpoint happened to get (#697).
     blockchain::detail::block_chain_internal::end_hydration(chain_);
 
-    block_relay_ = std::make_unique<detail::block_relay_state>(
-        chain_.synchronization().caught_up && ! chain_.is_stale());
-
     // Tell it how far blocks are already validated. Nothing else does until the
     // first connected publication, and deep-reorg parking measures depth against
     // this height: left at "nothing validated yet", a node that just came up
@@ -393,41 +344,12 @@ full_node::~full_node() {
         network_.thread_pool().get_executor(),
         sync::sync_orchestrator(chain_, organizer, network_, network_type_,
             [this](std::string const& reason) { notify_fatal(reason); },
-            [this](uint32_t first, uint32_t last) { handle_connected(first, last); }),
+            sync::node_header_walk_timing, block_submissions_.get()),
         ::asio::use_awaitable
     );
 
     organizer.stop();
     spdlog::info("[full_node] run_sync() ENDED");
-}
-
-void full_node::handle_connected(uint32_t first, uint32_t last) {
-    auto const range = block_relay_->connected(first, last,
-        chain_.synchronization().caught_up && ! chain_.is_stale());
-    if ( ! range) {
-        return;
-    }
-
-    auto incoming = connected_block_headers(chain_.headers(), range->first, range->last);
-    if (incoming.empty()) {
-        return;
-    }
-    network_.set_top_block({domain::chain::hash(incoming.back()), range->last});
-
-    // Snapshotting peers runs separately from the builder. Every send uses a
-    // bounded, non-waiting queue, so one stalled peer cannot hold up another.
-    ::asio::co_spawn(network_.thread_pool().get_executor(),
-        announce_connected(std::move(incoming)), ::asio::detached);
-}
-
-::asio::awaitable<void> full_node::announce_connected(domain::message::header::list incoming) {
-    std::shared_ptr<domain::message::compact_block const> compact;
-    if (incoming.size() == 1) {
-        if (auto block = co_await servable_compact_block(chain_, domain::chain::hash(incoming.back()))) {
-            compact = std::make_shared<domain::message::compact_block const>(std::move(*block));
-        }
-    }
-    co_await announce_blocks(network_.peers(), std::move(incoming), std::move(compact));
 }
 #endif
 
@@ -457,7 +379,7 @@ void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
-    // run_sync() may still be inside chain.organize() when this is called.
+    // run_sync() may still be inside chain.submit_block() when this is called.
     // chain_.stop() is called in join() after run() has fully exited.
     network_.stop();
 #endif
@@ -466,11 +388,10 @@ void full_node::stop() {
 void full_node::join() {
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
-    compact_block_relay_.reset();
 #endif
 
     // Now that run() has exited (all coroutines done), it's safe to stop the chain.
-    // This must happen AFTER run() completes to avoid crashes in chain.organize().
+    // This must happen AFTER run() completes to avoid crashes in chain.submit_block().
     if (!chain_.stop()) {
         spdlog::error("[node] Failed to stop blockchain.");
     }

@@ -284,6 +284,30 @@ kth_bool_t kth_domain_chain_transaction_is_standard(kth_transaction_const_t self
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_standard(flags));
 }
 
+kth_bool_t kth_domain_chain_transaction_is_mature_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t height) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const height_cpp = kth::sz(height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_mature(ticks_cpp, height_cpp));
+}
+
+kth_bool_t kth_domain_chain_transaction_is_final_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t block_time) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const block_height_cpp = kth::sz(block_height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_final(ticks_cpp, block_height_cpp, block_time));
+}
+
+kth_bool_t kth_domain_chain_transaction_is_locked_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t median_time_past) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const block_height_cpp = kth::sz(block_height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_locked(ticks_cpp, block_height_cpp, median_time_past));
+}
+
 
 // Operations
 
@@ -352,6 +376,25 @@ kth_error_code_t kth_domain_chain_transaction_connect_input(kth_transaction_cons
         auto const& state_cpp = kth::cpp_ref<kth::domain::chain::chain_state>(state);
         auto const input_index_cpp = kth::sz(input_index);
         return kth::to_c_err(kth::cpp_ref<cpp_t>(self).connect_input(state_cpp, input_index_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_domain_chain_transaction_accept_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+        auto const height_cpp = kth::sz(height);
+        auto const max_sigops_cpp = kth::sz(max_sigops);
+        auto const is_under_checkpoint_cpp = kth::int_to_bool(is_under_checkpoint);
+        auto const transaction_pool_cpp = kth::int_to_bool(transaction_pool);
+        auto const duplicate_cpp = kth::int_to_bool(duplicate);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).accept(ticks_cpp, flags, height_cpp, median_time_past, max_sigops_cpp, is_under_checkpoint_cpp, transaction_pool_cpp, duplicate_cpp));
     };
 #if defined(KTH_CAPI_EXCEPTION_BARRIERS)
     return kth::capi_invoke(operation);

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
@@ -28,8 +29,6 @@
 #include <kth/blockchain/pools/template_prevouts.hpp>
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
-#include <kth/blockchain/validate/batch_validate.hpp>
-#include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/database.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
@@ -39,10 +38,10 @@
 #include <kth/infrastructure/utility/timer.hpp>
 
 #include <asio/co_spawn.hpp>
-#include <asio/awaitable.hpp>
 #include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
+#include <asio/awaitable.hpp>
 #include <asio/post.hpp>
-#include <asio/steady_timer.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
@@ -110,8 +109,10 @@ static auto const hour_seconds = 3600u;
 block_chain::block_chain(blockchain::settings const& chain_settings,
                          database::settings const& database_settings,
                          domain::config::network network,
-                         bool relay_transactions)
+                         bool relay_transactions,
+                         std::shared_ptr<block_submission_channel> submissions)
     : stopped_(true)
+    , block_submissions_(std::move(submissions))
     , settings_(chain_settings)
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
@@ -386,6 +387,49 @@ bool block_chain::start(uint32_t disk_magic) {
         spdlog::info("[blockchain] Loaded {} headers into header_index in {}ms", loaded, elapsed_ms);
     }
 
+    // Startup owns the index exclusively. Restore verdicts before any peer or
+    // organizer can admit headers, including hashes absent after truncation.
+    auto rejections = database_.internal_db().rejected_blocks();
+    if ( ! rejections) {
+        spdlog::critical("[blockchain] Cannot read the persisted block rejection history");
+        return false;
+    }
+    std::optional<uint32_t> recovery_height;
+    for (auto const& hash : *rejections) {
+        auto const idx = header_index_.find(hash);
+        if (idx != header_index::null_index) {
+            auto const height = uint32_t(header_index_.get_height(idx));
+            if (height == 0 || height <= *reconciled) {
+                // A contextual rejection cannot have been connected. This is
+                // inconsistent durable state, not a header-only recovery.
+                spdlog::critical("[blockchain] Rejected block {} at {} is in the connected chain",
+                    encode_hash(hash), height);
+                return false;
+            }
+            recovery_height = recovery_height ? std::min(*recovery_height, height) : height;
+        }
+    }
+    header_index_.restore_failed_blocks(std::move(*rejections));
+    if (recovery_height) {
+        auto const parent_height = *recovery_height - 1;
+        // Same durable truncation as body rejection, but no live writers exist
+        // yet. Preserve the parent row (including genesis/ABLA) and UTXO state.
+#if defined(KTH_DB_READONLY)
+        spdlog::critical("[blockchain] Header recovery above {} requires a writable database", parent_height);
+        return false;
+#else
+        if (auto const ec = truncate_headers_after(parent_height); ec) {
+            spdlog::critical("[blockchain] Cannot recover headers above {}: {}",
+                parent_height, ec.message());
+            return false;
+        }
+        headers_persisted_through_ = parent_height;
+#endif
+        persisted_chain_indices.resize(size_t(parent_height) + 1);
+        spdlog::warn("[blockchain] Recovered interrupted block rejection; headers now end at {}",
+            parent_height);
+    }
+
     // Restore block file positions in header_index from flat files.
     //
     // Unconditional now, and `heights->block > 0` is gone on purpose: the walks
@@ -554,6 +598,14 @@ bool block_chain::start(uint32_t disk_magic) {
 
 bool block_chain::stop() {
     stopped_ = true;
+    reorg_barrier_events_.close();
+    if (block_submissions_) {
+        block_submissions_->close();
+        std::error_code ec;
+        while (auto pending = block_submissions_->try_receive(ec)) {
+            pending->reply->try_send(block_submission_result(error::service_stopped));
+        }
+    }
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
@@ -595,158 +647,83 @@ bool block_chain::stopped() const {
 
 namespace {
 
-// The block as the download path carries it: serialized the way a peer sends it
-// and parsed back, so storage and the UTXO build read what they read for a
-// block off the wire.
-std::shared_ptr<domain::chain::light_block const> to_light_block(domain::chain::block const& block) {
-    data_chunk raw(block.serialized_size());
-    byte_writer writer(raw);
-    if ( ! block.to_data(writer)) {
-        return nullptr;
+::asio::awaitable<block_submission_result> submit_owned_block(
+    std::shared_ptr<block_submission_channel> submissions, block_const_ptr block) {
+    co_await ::asio::this_coro::throw_if_cancelled(false);
+    auto const cancellation = co_await ::asio::this_coro::cancellation_state;
+    if (cancellation.cancelled() != ::asio::cancellation_type::none) {
+        co_return error::operation_failed;
     }
-    byte_reader reader(raw);
-    auto light = domain::chain::light_block::from_data(reader, true);
-    if ( ! light) {
-        return nullptr;
+    if ( ! submissions) {
+        co_return error::service_stopped;
     }
-    return std::make_shared<domain::chain::light_block const>(std::move(*light));
+    if ( ! block) {
+        co_return error::operation_failed;
+    }
+    auto const executor = co_await ::asio::this_coro::executor;
+    auto reply = std::make_shared<block_submission_reply>(1);
+    ::asio::experimental::channel_select_options options;
+    options.nonblocking = true;
+    // Named, then bound by reference, because of a GCC 16 bug: at -O1 and
+    // above it never destroys the object behind a by-value structured binding
+    // that is still in scope at a later suspension, and this result owns the
+    // submission endpoint. Once GCC fixes it, the binding can take the
+    // co_await result directly again.
+    auto admission = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(*submissions, block_submission{std::move(block), reply})
+    ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto const& [admission_error, selected] = admission;
+    (void)selected;
+    if (admission_error) {
+        // Refusal retains no work: the caller owns retry under pressure.
+        co_return admission_error == ::asio::error::broken_pipe
+            ? code(error::service_stopped) : code(error::operation_failed);
+    }
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*reply)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, answered] = completion;
+    if (ec) {
+        co_return block_submission_result(error::service_stopped);
+    }
+    co_return std::move(*answered.value<0>());
 }
-
-// How often organize() looks for its block in the published view, and for how
-// long. A block that passed the checks below connects in milliseconds; the
-// limit is for a pipeline that stopped under it.
-constexpr auto connect_poll = std::chrono::milliseconds(20);
-constexpr auto connect_limit = std::chrono::seconds(60);
 
 } // namespace
 
-::asio::awaitable<code> block_chain::organize(block_const_ptr block, bool headers_pre_validated) {
-    // Single-block acceptance on the v1 model (#563), at the connected tip.
-    //
-    // Everything that can be checked against the tip is checked here, before
-    // anything is stored: the UTXO build stops for good at a stored block it
-    // finds invalid. Nothing is written here either. Headers, block files and
-    // the UTXO set each have one writer in the node's sync pipeline, so a valid
-    // block is handed to it and connected the way every block is, mempool
-    // update and published view included.
-    auto const view = chain_view();
-    if ( ! block || ! view || ! view->state) {
-        co_return error::operation_failed;
-    }
-
-    auto const& header = block->header();
-    auto const hash = block->hash();
-    auto const height = view->connected_tip_height + 1;
-
-    if (header.previous_block_hash() != view->tip_hash) {
-        // Connected already, or built on something other than the tip.
-        auto const known = header_index_.find(hash);
-        if (known != header_index::null_index) {
-            auto const known_height = header_index_.get_height(known);
-            if (known_height <= int32_t(view->connected_tip_height) &&
-                header_index_.active_at(known_height) == known) {
-                co_return error::duplicate_block;
-            }
-        }
-        co_return error::orphan_block;
-    }
-
-    auto const network = view->state->network();
-    if ( ! headers_pre_validated) {
-        auto const parent = header_index_.find(view->tip_hash);
-        if (parent == header_index::null_index) {
-            co_return error::operation_failed;
-        }
-        validate_header const validator(settings_, network);
-        if (auto const ec = validator.check(header); ec) {
-            co_return ec;
-        }
-        if (auto const ec = validator.accept_full(header, hash, height, parent, header_index_); ec) {
-            co_return ec;
-        }
-    }
-
-    auto const light = to_light_block(*block);
-    if ( ! light) {
-        co_return error::operation_failed;
-    }
-
-    // The checks the download path runs before it stores a block, then the
-    // ones the UTXO build runs before it connects one: scripts, fees, spent
-    // and missing outputs. On the priority pool, as both of those run.
-    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
-    auto checked = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
-    ::asio::post(priority_pool_.get_executor(), [this, block, light, height, network, checked]() {
-        if ( ! light->is_valid_merkle_root()) {
-            checked->try_send(std::error_code{}, error::merkle_mismatch);
-        } else if (auto const size_ec = light->check_transaction_sizes(); size_ec) {
-            checked->try_send(std::error_code{}, size_ec);
-        } else {
-            checked->try_send(std::error_code{},
-                validate_block_batch(*this, settings_, network, {block}, height));
-        }
-    });
-    auto [check_ec, check_result] = co_await checked->async_receive(::asio::as_tuple(::asio::use_awaitable));
-    if (check_ec) {
-        co_return error::operation_failed;
-    }
-    if (check_result) {
-        co_return check_result;
-    }
-
-    auto const submissions = [this] {
-        std::lock_guard<std::mutex> lock(block_submissions_mutex_);
-        return block_submissions_;
-    }();
-    if ( ! submissions) {
-        // Nothing in this process connects blocks: a library user without the
-        // node, or a node that is starting or stopping.
-        co_return error::service_stopped;
-    }
-    auto executor = co_await ::asio::this_coro::executor;
-    auto reply = std::make_shared<result_channel>(executor, 1);
-    if ( ! submissions->try_send(std::error_code{}, block_submission{block, light, height,
-            std::make_shared<block_submission_answer>(reply)})) {
-        if ( ! submissions->is_open()) {
-            co_return error::service_stopped;
-        }
-        spdlog::warn("[blockchain] Block {} not submitted: earlier submissions are still waiting",
-            encode_hash(hash));
-        co_return error::operation_failed;
-    }
-
-    auto [reply_ec, taken] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
-    if (reply_ec) {
-        co_return error::service_stopped;
-    }
-    if (taken) {
-        co_return taken;
-    }
-
-    // Taken: its header is in and its body on the way to storage. The UTXO
-    // build announces nothing when it connects, so the view is polled, as the
-    // sync coordinator polls the built height.
-    ::asio::steady_timer timer(executor);
-    for (auto waited = std::chrono::milliseconds(0); ; waited += connect_poll) {
-        auto const now = chain_view();
-        if (now && now->connected_tip_height >= height) {
-            auto const connected = now->connected_tip_height == height
-                ? std::expected<hash_digest, database::result_code>{now->tip_hash}
-                : get_block_hash(height);
-            // Another block at this height won.
-            co_return (connected && *connected == hash) ? error::success : error::stale_chain;
-        }
-        if (stopped() || waited >= connect_limit) {
-            co_return error::channel_timeout;
-        }
-        timer.expires_after(connect_poll);
-        co_await timer.async_wait(::asio::use_awaitable);
-    }
+::asio::awaitable<block_submission_result> block_chain::submit_block(block_const_ptr block) {
+    // Capture ownership before returning the lazy coroutine to the caller.
+    return submit_owned_block(block_submissions_, std::move(block));
 }
 
-void block_chain::set_block_submissions(std::shared_ptr<block_submission_channel> submissions) {
-    std::lock_guard<std::mutex> lock(block_submissions_mutex_);
-    block_submissions_ = std::move(submissions);
+::asio::awaitable<block_submission_result> block_chain::submit_block(domain::chain::block const& block) {
+    return submit_block(std::make_shared<domain::message::block const>(block));
+}
+
+awaitable_expected<std::vector<hash_digest>> block_chain::rejected_blocks() const {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> awaitable_expected<std::vector<hash_digest>> {
+            auto result = database_.internal_db().rejected_blocks();
+            if ( ! result) {
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::move(*result);
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<code> block_chain::record_rejected_block(hash_digest hash) {
+    // LMDB may wait for a writer or disk. Keep it off the peer/sync executor;
+    // the admission owner awaits completion before publishing the verdict.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash]() -> ::asio::awaitable<code> {
+            co_return database::succeed(database_.internal_db().record_rejected_block(hash))
+                ? code(error::success) : code(error::operation_failed);
+        }, ::asio::use_awaitable);
+}
+
+block_submission_channel& block_chain::block_submissions() noexcept {
+    KTH_CONTRACT(block_submissions_ != nullptr);
+    return *block_submissions_;
 }
 
 ::asio::awaitable<code> block_chain::organize_fast(std::shared_ptr<domain::chain::light_block const> block, size_t height) {
@@ -1087,6 +1064,13 @@ code block_chain::replace_headers_from(domain::chain::header::list const& header
     return database_.replace_headers_from(headers, start_height);
 }
 
+code block_chain::truncate_headers_after(uint32_t height) {
+    if (stopped()) {
+        return error::service_stopped;
+    }
+    return database_.truncate_headers_after(height);
+}
+
 ::asio::awaitable<code> block_chain::push(transaction_const_ptr tx) {
     using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, code)>;
     auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
@@ -1420,18 +1404,14 @@ database::disconnect_result block_chain::disconnect_block(uint32_t height,
         return database::disconnect_result::failed;
     }
 
-    if ( ! header_index_.has_block_data(idx)) {
-        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
-        return database::disconnect_result::failed;
-    }
-
     // The outputs the block created are not stored in the undo record: they are
     // recomputed here by re-reading the block, which is why undo data only needs
     // to carry what was spent.
-    database::flat_file_pos const pos{
-        header_index_.get_file_number(idx),
-        header_index_.get_data_pos(idx)
-    };
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        spdlog::error("[blockchain] disconnect_block: no block data at height {}", height);
+        return database::disconnect_result::failed;
+    }
     auto raw = block_store_->read_block_raw(pos);
     if ( ! raw) {
         spdlog::error("[blockchain] disconnect_block: cannot read block at height {}", height);
@@ -2200,6 +2180,67 @@ block_chain::chain_view_ptr block_chain::chain_view() const {
     return chain_view_.load();
 }
 
+std::expected<block_progress, code> block_chain::get_block_progress(
+        hash_digest const& hash, chain_view_ptr const& view) const {
+    auto const subject = header_index_.find(hash);
+    if (subject == header_index::null_index) {
+        return std::unexpected(error::not_found);
+    }
+    auto const raw_height = header_index_.get_height(subject);
+    if (raw_height < 0) {
+        return std::unexpected(error::operation_failed);
+    }
+    auto const height = size_t(raw_height);
+#if defined(KTH_CURRENCY_BCH)
+    validate_header validator(settings_, chain_state_populator_.network());
+    auto const schedule = tick_schedule_for_tip(validator, header_index_, subject);
+    if (!schedule) {
+        return std::unexpected(schedule.error());
+    }
+    block_progress result{height, schedule->height_to_tick(height),
+        schedule->block_interval(height), schedule->next_block_interval(height), -1, -1, hash};
+#else
+    block_progress result{height, uint64_t(height) * target_spacing_seconds,
+        target_spacing_seconds, target_spacing_seconds, -1, -1, hash};
+#endif
+    // Connected depth is unavailable in these cases, but the subject's own
+    // branch metadata above is independent of the connected publication.
+    if (!view) return result;
+    auto const tip = header_index_.find(view->tip_hash);
+    if (tip == header_index::null_index || header_index_.get_height(tip) < 0 ||
+        size_t(header_index_.get_height(tip)) != view->connected_tip_height) {
+        return result;
+    }
+    if (height <= view->connected_tip_height &&
+        header_index_.get_ancestor(tip, raw_height) == subject) {
+#if defined(KTH_CURRENCY_BCH)
+        auto const connected = tip == subject ? schedule
+            : tick_schedule_for_tip(validator, header_index_, tip);
+        if (!connected) return result;
+        result.confirmations_ticks = int64_t(connected->height_to_tick(view->connected_tip_height)
+            - connected->height_to_tick(height) + connected->block_interval(height));
+#else
+        result.confirmations_ticks = int64_t(view->connected_tip_height - height + 1) * target_spacing_seconds;
+#endif
+        result.confirmations = int64_t(view->connected_tip_height - height + 1);
+    }
+    return result;
+}
+
+std::expected<block_progress, code> block_chain::get_block_progress(hash_digest const& hash) const {
+    return get_block_progress(hash, chain_view());
+}
+
+awaitable_expected<block_progress> block_chain::fetch_block_progress(hash_digest const& hash) const {
+    co_return get_block_progress(hash);
+}
+
+awaitable_expected<block_progress> block_chain::fetch_chain_progress() const {
+    auto const view = chain_view();
+    if (!view) co_return std::unexpected(error::operation_failed);
+    co_return get_block_progress(view->tip_hash, view);
+}
+
 code block_chain::publish_chain_view(size_t connected_tip_height) {
     // Both halves come from the one height, under whatever exclusion the caller
     // holds — so the state and the hash cannot describe different chains, and
@@ -2342,7 +2383,6 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
     }
 
     mempool_.remove_for_block(*block);
-    expire_mempool();
     return error::success;
 }
 
@@ -2367,37 +2407,30 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
 
     validation_high_priority_lock const lock(validation_mutex_);
     mempool_.remove_for_block(block);
-    expire_mempool();
 }
 
-uint64_t block_chain::mempool_expiry_cutoff() const {
-    auto const hours = chain_settings().mempool_expiry_hours;
-    if (hours == 0) {
-        return 0;
+code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected) {
+    // The same admission gate used by template capture keeps a chain transition
+    // from starting between the snapshot check and the mempool mutation.
+    captured_lease const capture(capture_gate_);
+    if ( ! capture || ! expected || chain_view() != expected) return error::stale_chain;
+    if (stopped()) return error::service_stopped;
+
+    struct unlock {
+        prioritized_mutex& mutex;
+        ~unlock() { mutex.unlock_low_priority(); }
+    };
+    validation_mutex_.lock_low_priority();
+    unlock const release{validation_mutex_};
+    // A pooled parent may have been removed while script validation was running.
+    // Its hash commits to the output, so presence is enough to recheck it here.
+    for (auto const& input : entry.tx->inputs()) {
+        auto const& point = input.previous_output();
+        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
+            return error::missing_previous_output;
+        }
     }
-    auto const now = transaction_organizer_.now();
-    auto const age = uint64_t(hours) * 60 * 60;
-    return now > age ? now - age : 0;
-}
-
-void block_chain::expire_mempool() {
-    auto const cutoff = mempool_expiry_cutoff();
-    if (cutoff == 0) {
-        return;
-    }
-    auto const expired = mempool_.expire(cutoff);
-    if (expired > 0) {
-        spdlog::info("[blockchain] {} mempool transactions expired, unconfirmed for {} hours",
-            expired, chain_settings().mempool_expiry_hours);
-    }
-}
-
-uint64_t block_chain::fee_filter() const {
-    return transaction_organizer_.fee_filter();
-}
-
-void block_chain::set_policy_clock(std::function<uint64_t()> clock) {
-    transaction_organizer_.set_clock(std::move(clock));
+    return mempool_.add(std::move(entry)) ? error::success : error::double_spend_mempool;
 }
 
 blockchain::mempool& block_chain::mempool_ref() {
@@ -2683,62 +2716,78 @@ std::expected<block_chain::output_info, database::result_code> block_chain::get_
 // FETCH OPERATIONS (Thread safe, coroutine-based)
 // =============================================================================
 
-// DEPRECATED: Block storage moved to flat files (blk*.dat)
-// These functions will return not_found until we implement reading from flat files
-std::expected<std::pair<block_const_ptr, size_t>, code>
-block_chain::read_indexed_block(header_index::index_t idx) const {
-    if ( ! block_store_ || ! header_index_.has_block_data(idx)) {
-        return std::unexpected(error::not_found);
-    }
+awaitable_expected<std::pair<block_const_ptr, size_t>>
+block_chain::read_stored_block(hash_digest const& hash, size_t height,
+                               database::flat_file_pos pos) const {
+    // Disk I/O and parsing run on priority_pool_, like store_block, so a
+    // caller on the network executor (RPC, peers) is not held by them. The
+    // store opens the file for each read, so this does not contend with the
+    // writer appending to it.
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, hash, height, pos]() -> awaitable_expected<std::pair<block_const_ptr, size_t>> {
+            auto const raw = block_store_->read_block_raw(pos);
+            if ( ! raw) {
+                spdlog::error("[blockchain] cannot read block {} from the block files at {}",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
 
-    database::flat_file_pos const pos{
-        header_index_.get_file_number(idx),
-        header_index_.get_data_pos(idx)
-    };
-    auto const raw = block_store_->read_block_raw(pos);
-    if ( ! raw) {
-        spdlog::error("[blockchain] cannot read block {} from the block files",
-            encode_hash(header_index_.get_hash(idx)));
-        return std::unexpected(error::operation_failed);
-    }
-
-    byte_reader reader(*raw);
-    auto block = domain::message::block::from_data(reader, 0u);
-    if ( ! block) {
-        spdlog::error("[blockchain] cannot parse block {} read from the block files",
-            encode_hash(header_index_.get_hash(idx)));
-        return std::unexpected(error::operation_failed);
-    }
-    return std::pair{std::make_shared<domain::message::block const>(std::move(*block)),
-                     size_t(header_index_.get_height(idx))};
+            // The record must be exactly the block the index names. A record
+            // that parses but is another block, or whose transactions do not
+            // match its header, is damage, and answering with it would hand a
+            // client the wrong data as if it were right.
+            byte_reader reader(*raw);
+            auto block = domain::message::block::from_data(reader, 0u);
+            if ( ! block || ! reader.is_exhausted() || block->hash() != hash ||
+                    ! block->is_valid_merkle_root()) {
+                spdlog::error("[blockchain] the record of block {} at {} is not that block",
+                    encode_hash(hash), pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::pair{std::make_shared<domain::message::block const>(std::move(*block)), height};
+        },
+        ::asio::use_awaitable);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(size_t height) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
+    }
+    if (height > size_t(max_int32)) {
+        co_return kth::fail(error::not_found);
     }
 
     // The block on the active chain at that height. The index also holds side
     // branches, numbered in arrival order, so an entry's index is not its height.
-    auto const idx = header_index_.active_at(static_cast<int32_t>(height));
+    auto const idx = header_index_.active_at(int32_t(height));
     if (idx == header_index::null_index) {
-        co_return std::unexpected(error::not_found);
+        co_return kth::fail(error::not_found);
     }
-    co_return read_indexed_block(idx);
+    // Storage may be recording this block's location right now: one read
+    // gives both halves of it, or none.
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(header_index_.get_hash(idx), height, pos);
 }
 
 awaitable_expected<std::pair<block_const_ptr, size_t>>
 block_chain::fetch_block(hash_digest const& hash) const {
-    if (stopped()) {
-        co_return std::unexpected(error::service_stopped);
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
     }
 
     auto const idx = header_index_.find(hash);
     if (idx == header_index::null_index) {
-        co_return std::unexpected(error::not_found);
+        co_return kth::fail(error::not_found);
     }
-    co_return read_indexed_block(idx);
+    auto const pos = header_index_.get_block_pos(idx);
+    if (pos.is_null()) {
+        co_return kth::fail(error::not_found);
+    }
+    co_return co_await read_stored_block(hash, size_t(header_index_.get_height(idx)), pos);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
@@ -2766,14 +2815,12 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
             return std::unexpected(database::result_code::key_not_found);
         }
 
-        if (!header_index_.has_block_data(idx)) {
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
             spdlog::error("[blockchain] fetch_blocks_raw: No block data for height {}", h);
             return std::unexpected(database::result_code::key_not_found);
         }
-
-        auto file_num = header_index_.get_file_number(idx);
-        auto data_pos = header_index_.get_data_pos(idx);
-        positions.emplace_back(file_num, data_pos);
+        positions.push_back(pos);
     }
 
     // Read all blocks from flat files
@@ -3480,20 +3527,11 @@ bool block_chain::dump_mempool_to_disk() const {
 ::asio::awaitable<size_t> block_chain::load_mempool_from_disk() {
     auto const persisted = database::load_mempool(mempool_dat_path());
 
-    // A transaction keeps the age it had when saved, so a restart does not
-    // reset its expiry; one already past it is not admitted again.
-    auto const cutoff = mempool_expiry_cutoff();
-    auto const now = transaction_organizer_.now();
-
     size_t admitted = 0;
     for (auto const& p : persisted) {
-        if (p.time_seen < cutoff) {
-            continue;
-        }
         // Re-validate against the current tip and admit (recomputes fee/size/
         // sigchecks, enforces first-seen). Now-invalid txs are simply dropped.
-        auto const ec = co_await transaction_organizer_.organize(p.tx,
-            std::min(p.time_seen, now));
+        auto const ec = co_await organize(p.tx);
         if ( ! ec) {
             ++admitted;
         }
@@ -3638,40 +3676,39 @@ block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
     return mempool;
 }
 
-bool block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
+void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
                                             size_t& mempool_count,
                                             std::vector<domain::chain::transaction>& txn_available,
-                                            std::unordered_map<uint64_t, size_t> const& shorttxids) const {
+                                            std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
 
     std::vector<bool> have_txn(txn_available.size());
-    bool collided = false;
 
-    auto const header_hash = hash(block);
+    auto header_hash = hash(block);
+    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
+    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
 
     mempool_.for_each([&](mempool_entry const& e) {
         auto const& tx = *e.tx;
-        auto const shortid = domain::message::compact_short_id(header_hash, tx.hash());
+
+        uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
 
         auto idit = shorttxids.find(shortid);
-        if (idit == shorttxids.end() || idit->second >= txn_available.size()) {
-            return;
+        if (idit != shorttxids.end()) {
+            if ( ! have_txn[idit->second]) {
+                txn_available[idit->second] = tx;
+                have_txn[idit->second] = true;
+                ++mempool_count;
+            } else {
+                // A second transaction maps to the same short id, so the slot
+                // is ambiguous and gets cleared. A cleared slot holds the null
+                // transaction, so clear (and decrement) only once.
+                if ( ! txn_available[idit->second].is_null()) {
+                    txn_available[idit->second] = domain::chain::transaction::null();
+                    --mempool_count;
+                }
+            }
         }
-        if ( ! have_txn[idit->second]) {
-            txn_available[idit->second] = tx;
-            have_txn[idit->second] = true;
-            ++mempool_count;
-            return;
-        }
-        // A second transaction maps to the same short id, so the slot is
-        // ambiguous and gets cleared. A cleared slot holds the null
-        // transaction, so clear (and decrement) only once.
-        if ( ! txn_available[idit->second].is_null()) {
-            txn_available[idit->second] = domain::chain::transaction::null();
-            --mempool_count;
-        }
-        collided = true;
     });
-    return collided;
 }
 
 // =============================================================================

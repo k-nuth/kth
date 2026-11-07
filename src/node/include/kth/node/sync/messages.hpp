@@ -15,7 +15,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
-#include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/local_block_admission.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/chain/light_block.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
@@ -44,6 +44,10 @@ struct stop_request {};
 struct downloaded_headers {
     domain::message::header::list headers;  // Same type as add_headers() expects
     network::peer_session::ptr source_peer;
+    // Non-zero for a header the coordinator submitted on behalf of a local
+    // block submission: the coordinator's own number, copied back on the
+    // result so it can tell which submission the organizer answered.
+    uint64_t submission{0};
 };
 
 // Report peer error to peer_provider - it decides what action to take (ban, exclude, etc.)
@@ -66,14 +70,8 @@ struct header_performance {
     uint32_t download_time_ms;
 };
 
-// A block the node was handed rather than downloaded (block_chain::organize, for
-// a block a miner found). Checked against the connected tip already; its header
-// goes through the header validation task like any other, so the organizer
-// keeps its single writer, and its body to storage like a downloaded chunk.
-using block_submission = blockchain::block_chain::block_submission;
-
 // Header validation task input - single channel (CSP pattern)
-using header_validation_input = std::variant<stop_request, downloaded_headers, block_submission>;
+using header_validation_input = std::variant<stop_request, downloaded_headers>;
 
 struct headers_validated {
     uint32_t height;
@@ -88,9 +86,8 @@ struct headers_validated {
     int32_t reorg_fork_height{-1};
     uint32_t reorg_branch_head{0};
 
-    // Set when the header was a submitted block's: the coordinator stores its
-    // body or answers the submission with why its header was refused.
-    std::optional<block_submission> submission;
+    // The submission this batch was made for, or 0 for a peer's batch.
+    uint64_t submission{0};
 };
 
 // -----------------------------------------------------------------------------
@@ -129,6 +126,8 @@ struct block_validated {
 };
 
 // Chunk-based messages for fast validation pipeline (bypasses supervisor→bridge→validation)
+struct chunk_validated;
+
 struct downloaded_chunk {
     uint32_t start_height;
     uint32_t chunk_id;
@@ -140,6 +139,15 @@ struct downloaded_chunk {
     // abandoned branch is recognisable and dropped: its heights now belong to
     // different blocks, and storing it would mark the wrong hashes have_data.
     uint64_t generation{0};
+
+    // A locally submitted body: the submission it belongs to (0 for a peer's
+    // chunk) and the slot its one terminal outcome goes to — refused by fast
+    // validation, dropped as stale, failed to store, or stored. Capacity one
+    // and sent exactly once, so the try_send cannot find it full; the handoff
+    // task that owns the submission waits on it and carries the outcome to the
+    // coordinator. Null for a peer's chunk, which reports on the shared outputs.
+    uint64_t submission{0};
+    std::shared_ptr<select_channel<chunk_validated>> local_result;
 };
 
 struct chunk_validated {
@@ -147,7 +155,13 @@ struct chunk_validated {
     uint32_t block_count;
     code result;
     network::peer_session::ptr source_peer;
+    // The submission this outcome is about, or 0. The coordinator matches a
+    // local outcome by this, never by height: a body handed over before a
+    // switch must not answer a submission made after it at the same height.
+    uint64_t submission{0};
 };
+
+using local_body_result_channel = select_channel<chunk_validated>;
 
 // Report that a download task has ended (for cleanup of spawned_peers)
 /// A download worker reporting that it ended.
@@ -256,6 +270,39 @@ using block_storage_input_channel = concurrent_channel<block_storage_input>;
 using stop_channel = concurrent_event_channel;
 
 // -----------------------------------------------------------------------------
+// Contextual rejection by the builder
+// -----------------------------------------------------------------------------
+
+// The builder refused the block at `height` with hash `hash`: the batch it
+// belonged to failed full validation and the validator attributed the failure
+// to that block. Nothing of the batch was applied.
+//
+// One of these is outstanding at most. The builder sends it and then parks at
+// the reorg barrier until the coordinator answers on the ack channel, so a
+// second one cannot be produced before the first is consumed, and a capacity
+// of one cannot refuse it.
+struct block_rejected {
+    uint32_t height;
+    hash_digest hash;
+    code reason;
+};
+
+using block_rejection_channel = concurrent_channel<block_rejected>;
+// The coordinator's answer: the chain has been moved off the rejected block and
+// the cursors re-derived; the builder may go on. Closing it is the shutdown.
+using block_rejection_ack_channel = concurrent_event_channel;
+
+// -----------------------------------------------------------------------------
+// Local block admission
+// -----------------------------------------------------------------------------
+
+// A block handed in through block_chain::submit_block, carried from the
+// endpoint to the coordinator, which owns it from here until it answers.
+struct local_block_submitted {
+    blockchain::block_submission submission;
+};
+
+// -----------------------------------------------------------------------------
 // Sync coordinator messages (unified input channel)
 // -----------------------------------------------------------------------------
 
@@ -335,7 +382,8 @@ using sync_coordinator_event = std::variant<
     chunk_validated,
     utxo_build_advanced,
     body_range_retry,
-    block_submission
+    block_rejected,
+    local_block_submitted
 >;
 
 using sync_coordinator_event_channel = concurrent_channel<sync_coordinator_event>;

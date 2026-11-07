@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -22,9 +21,18 @@
 #include <kth/domain.hpp>
 
 #include <asio/co_spawn.hpp>
+#include <asio/cancellation_state.hpp>
+#include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
 namespace kth::blockchain {
+
+namespace {
+struct return_admission {
+    ::asio::experimental::concurrent_channel<void(std::error_code)>& channel;
+    ~return_admission() { (void)channel.try_send(std::error_code{}); }
+};
+} // namespace
 
 using namespace std::placeholders;
 
@@ -39,14 +47,13 @@ transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_
     , settings_(settings)
     , executor_(std::move(executor))
     , threads_(threads)
+    , admission_(executor_, 1)
     , validator_(executor_, threads_, chain_, settings)
     , broadcaster_(executor_)
     , ds_proof_broadcaster_(executor_)
-    , clock_([] {
-        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    })
-{}
+{
+    (void)admission_.try_send(std::error_code{});
+}
 
 // Properties.
 //-----------------------------------------------------------------------------
@@ -67,6 +74,7 @@ bool transaction_organizer::start() {
 }
 
 bool transaction_organizer::stop() {
+    admission_.close();
     validator_.stop();
     broadcaster_.stop();
     ds_proof_broadcaster_.stop();
@@ -79,6 +87,20 @@ bool transaction_organizer::stop() {
 
 // This is called from blockchain::transaction_validate.
 ::asio::awaitable<code> transaction_organizer::transaction_validate(transaction_const_ptr tx) const {
+    if (stopped()) co_return error::service_stopped;
+    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (wait_error) {
+        if (wait_error == ::asio::experimental::error::channel_cancelled ||
+            wait_error == ::asio::error::operation_aborted) {
+            co_return ::asio::error::operation_aborted;
+        }
+        co_return error::service_stopped;
+    }
+    return_admission const admission{admission_};
+    if (stopped()) co_return error::service_stopped;
+    // Once admitted, drain the validator's posted work before transferring the
+    // token. Waiting callers can still cancel before they acquire it.
+    co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
     // Checks that are independent of chain state.
     auto ec = co_await validator_.check(tx);
 
@@ -91,11 +113,8 @@ bool transaction_organizer::stop() {
     }
 
     // Checks that are dependent on chain state and prevouts.
-    // NOTE: this path (c-api single-tx validate) runs lock-free, so the store
-    // entry that validator_.accept creates is written off the validation mutex.
-    // That is safe only because this path is not run concurrently with block or
-    // mempool organization (same pre-existing assumption as the accept-time
-    // insert). Erase on every exit after the entry was created so the store does
+    // The admission channel serializes validation-only and admitting callers.
+    // Erase on every exit after the entry was created so the store does
     // not accumulate one entry per validated tx (idempotent if none was made).
     ec = co_await validator_.accept(tx);
 
@@ -165,17 +184,34 @@ bool transaction_organizer::stop() {
 
 // This is called from blockchain::organize.
 ::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx) {
-    co_return co_await organize(std::move(tx), now());
+    if (stopped()) co_return error::service_stopped;
+    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (wait_error) {
+        if (wait_error == ::asio::experimental::error::channel_cancelled ||
+            wait_error == ::asio::error::operation_aborted) {
+            co_return ::asio::error::operation_aborted;
+        }
+        co_return error::service_stopped;
+    }
+    return_admission const admission{admission_};
+    if (stopped()) co_return error::service_stopped;
+    // Once admitted, drain the validator's posted work before transferring the
+    // token. Waiting callers can still cancel before they acquire it.
+    co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
+
+    // Keep the admission token across both attempts. A new publication requires
+    // fresh prevouts, consensus checks and scripts, not just another insertion.
+    auto result = co_await organize_attempt(tx);
+    if (result == error::stale_chain && !stopped()) {
+        result = co_await organize_attempt(tx);
+    }
+    co_return result;
 }
 
-::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx,
-    uint64_t first_seen) {
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_low_priority();
+::asio::awaitable<code> transaction_organizer::organize_attempt(transaction_const_ptr tx) {
+    auto const published = chain_.chain_view();
 
     if (stopped()) {
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
@@ -183,12 +219,10 @@ bool transaction_organizer::stop() {
     auto ec = co_await validator_.check(tx);
 
     if (stopped()) {
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
@@ -197,7 +231,7 @@ bool transaction_organizer::stop() {
     // returns (a mempool tx that is later mined has its entry recreated by the
     // block populator, and mempool eviction — including mempool_v2's internal
     // has_room_for drop — never needs it). So erase it on every exit after it
-    // was created. All erases run under the low-priority validation mutex.
+    // was created. All erases run while this admission owns the validator token.
     auto const erase_tx_validation = [this, tx] {
         chain_.transaction_validations().erase(tx->hash());
     };
@@ -207,19 +241,16 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
     if (tx->fees() < price(tx)) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::insufficient_fee;
     }
 
@@ -227,7 +258,6 @@ bool transaction_organizer::stop() {
     if ( ! settings_.accept_non_standard_transactions &&
          tx->is_dusty(settings_.minimum_output_satoshis)) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::dusty_transaction;
     }
 #endif
@@ -237,13 +267,11 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if ( ! connected) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return connected.error();
     }
 
@@ -251,7 +279,6 @@ bool transaction_organizer::stop() {
     ec = validator_.check_standardness(tx);
     if (ec) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
@@ -263,34 +290,17 @@ bool transaction_organizer::stop() {
     // Admit to the mempool. The tx is already validated (accept / fee / dust /
     // connect above); this only records it. add() enforces first-seen: it
     // returns false on a double-spend conflict with a pooled tx (or a duplicate).
-    auto& pool = chain_.mempool_ref();
-    auto const admitted = pool.add(mempool_entry{
+    auto const seen = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    auto const committed = chain_.commit_validated_transaction(mempool_entry{
         tx,
         tx->fees(),
         static_cast<uint32_t>(tx->serialized_size(true)),
         static_cast<uint32_t>(*connected),
-        first_seen});
-    if ( ! admitted) {
-        mutex_.unlock_low_priority();
-        co_return error::double_spend_mempool;
-    }
-
-    // A full pool makes room by evicting the lowest fee per byte. When that is
-    // this transaction it is refused as paying too little; either way the
-    // floor rises so what was evicted cannot come straight back.
-    if (settings_.mempool_max_bytes > 0) {
-        if (auto const evicted = pool.trim_to_size(settings_.mempool_max_bytes)) {
-            raise_floor(*evicted);
-            if ( ! pool.contains(tx->hash())) {
-                mutex_.unlock_low_priority();
-                co_return error::insufficient_fee;
-            }
-        }
-    }
+        seen}, published);
+    if (committed) co_return committed;
     //#########################################################################
-
-    mutex_.unlock_low_priority();
-    ///////////////////////////////////////////////////////////////////////////
 
     // This gets picked up by node tx-out protocol for announcement to peers.
     notify(tx);
@@ -361,11 +371,11 @@ transaction_organizer::fetch_ds_proof(hash_digest const& hash) const {
 //-----------------------------------------------------------------------------
 
 uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
-    auto const byte_fee = minimum_byte_fee();
+    auto const byte_fee = settings_.byte_fee_satoshis;
     auto const sigop_fee = settings_.sigop_fee_satoshis;
 
     // Guard against summing signed values by testing independently.
-    if (byte_fee == 0.0 && sigop_fee == 0.0f) return 0;
+    if (byte_fee == 0.0f && sigop_fee == 0.0f) return 0;
 
     // TODO: this is a second pass on size and sigops, implement cache.
     // This at least prevents uncached calls when zero fee is configured.
@@ -375,51 +385,6 @@ uint64_t transaction_organizer::price(transaction_const_ptr tx) const {
 
     // Require at least one satoshi per tx if there are any fees configured.
     return std::max(uint64_t(1), uint64_t(byte + sigop));
-}
-
-// The excess of a raised floor over the configured one halves this often.
-constexpr uint64_t floor_half_life_seconds = 12 * 60 * 60;
-
-uint64_t transaction_organizer::now() const {
-    return clock_();
-}
-
-void transaction_organizer::set_clock(std::function<uint64_t()> clock) {
-    clock_ = std::move(clock);
-}
-
-double transaction_organizer::floor_at(uint64_t now) const {
-    double const configured = settings_.byte_fee_satoshis;
-    if (raised_floor_ <= configured) {
-        return configured;
-    }
-    auto const elapsed = now > raised_at_ ? double(now - raised_at_) : 0.0;
-    auto const excess = (raised_floor_ - configured)
-        * std::pow(0.5, elapsed / double(floor_half_life_seconds));
-
-    // Once the excess is under half the configured floor it is gone: what is
-    // left is too small to keep the pool from refilling at the configured price.
-    if (excess < configured / 2) {
-        return configured;
-    }
-    return configured + excess;
-}
-
-double transaction_organizer::minimum_byte_fee() const {
-    std::lock_guard const lock(floor_mutex_);
-    return floor_at(now());
-}
-
-uint64_t transaction_organizer::fee_filter() const {
-    return static_cast<uint64_t>(std::llround(minimum_byte_fee() * 1000.0));
-}
-
-void transaction_organizer::raise_floor(fee_rate evicted) {
-    double const rate = double(evicted.fee) / double(evicted.size);
-    auto const at = now();
-    std::lock_guard const lock(floor_mutex_);
-    raised_floor_ = std::max(floor_at(at), rate + settings_.byte_fee_satoshis);
-    raised_at_ = at;
 }
 
 } // namespace kth::blockchain

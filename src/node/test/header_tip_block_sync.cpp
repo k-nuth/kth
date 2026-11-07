@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "sync_harness.hpp"
 
@@ -17,7 +18,6 @@
 #include <optional>
 #include <string>
 #include <thread>
-#include <variant>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -31,25 +31,14 @@
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
-#include <kth/blockchain/pools/mempool.hpp>
-#include <kth/domain/chain/chain_state.hpp>
-#include <kth/domain/constants/functions.hpp>
-#include <kth/domain/message/block.hpp>
-#include <kth/domain/message/block_transactions.hpp>
 #include <kth/domain/message/compact_block.hpp>
-#include <kth/domain/message/get_block_transactions.hpp>
-#include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_headers.hpp>
-#include <kth/domain/message/heading.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
 #include <kth/domain/message/ping.hpp>
-#include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/version.hpp>
-#include <kth/infrastructure/math/checksum.hpp>
 #include <kth/network/settings.hpp>
-#include <kth/node/compact_block_relay.hpp>
-#include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
@@ -74,18 +63,6 @@ using namespace kth::test;
 // of it what the organizer says about it.
 
 namespace {
-
-// Take one buffered message, if there is one, and hand it to `on_message`.
-// The inbound channel is a select_channel: try_receive(ec) returns the
-// message instead of calling back.
-template <typename Channel, typename Handler>
-bool take(Channel& channel, Handler&& on_message) {
-    std::error_code ec;
-    auto raw = channel.try_receive(ec);
-    if ( ! raw) return false;
-    on_message(ec, std::move(*raw));
-    return true;
-}
 
 using peer_ptr = network::peer_session::ptr;
 
@@ -226,6 +203,7 @@ struct wire_peer {
     struct sent_message {
         std::string command;
         std::optional<hash_digest> locator;
+        data_chunk payload;
     };
 
     // Every message the node writes from now until nothing more arrives for
@@ -242,7 +220,7 @@ struct wire_peer {
             data_chunk payload(length);
             if (length > 0 && ! read_exact(payload, std::chrono::steady_clock::now() + quiet)) return out;
 
-            sent_message message{command, std::nullopt};
+            sent_message message{command, std::nullopt, payload};
             if (message.command == domain::message::get_headers::command) {
                 byte_reader reader(payload);
                 auto parsed = domain::message::get_headers::from_data(reader, session->negotiated_version());
@@ -1778,530 +1756,178 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
     CHECK(log.count("block_range_request") == size_t(recover));
 }
 
-namespace {
-
-// block_chain::organize on a thread of its own, as the RPC server calls it.
-std::future<code> organize_async(chain_fixture& fixture, domain::chain::block const& block) {
-    return std::async(std::launch::async, [&fixture, block] {
-        ::asio::io_context io;
-        auto result = ::asio::co_spawn(io,
-            fixture.chain().organize(std::make_shared<domain::message::block const>(block)),
-            ::asio::use_future);
-        io.run();
-        return result.get();
-    });
-}
-
-code organize_now(chain_fixture& fixture, domain::chain::block const& block) {
-    auto organized = organize_async(fixture, block);
-    REQUIRE(organized.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
-    return organized.get();
-}
-
-} // namespace
-
-TEST_CASE("a block that does not pass at the connected tip is refused before anything is stored",
-          "[header_tip][submit]") {
-    // No orchestrator: everything here is decided by organize() itself, before
-    // the block reaches anything that writes.
-    chain_fixture fixture{"submit_refused"};
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-    auto const staged = stage(fixture, 5, 5);
-    auto const unknown = [&](domain::chain::block const& block) {
-        return fixture.organizer().index().find(block.hash()) == blockchain::header_index::null_index;
-    };
-
-    // The tip itself, and a block built on something below it.
-    CHECK(organize_now(fixture, staged.trunk[4]) == error::duplicate_block);
-    auto const off_tip = mine_block(staged.trunk[2].hash(), 4,
-        staged.trunk[3].header().timestamp() + 1, /*salt*/ 3, {}, 0);
-    CHECK(organize_now(fixture, off_tip) == error::orphan_block);
-    CHECK(unknown(off_tip));
-
-    // The next block's header over another block's transactions.
-    auto const other = mine_block(staged.trunk[4].hash(), 6,
-        staged.next.header().timestamp(), /*salt*/ 5, {}, 0);
-    domain::chain::block const mismatched(staged.next.header(), other.transactions());
-    CHECK(organize_now(fixture, mismatched) == error::merkle_mismatch);
-    CHECK(unknown(mismatched));
-
-    // A valid next block, with nothing running that connects blocks.
-    CHECK(organize_now(fixture, staged.next) == error::service_stopped);
-    CHECK(unknown(staged.next));
-
-    auto const view = fixture.chain().chain_view();
-    REQUIRE(view);
-    CHECK(view->connected_tip_height == 5u);
-}
-
-TEST_CASE("integrated: a block handed to the node at its tip is connected, and no peer is asked for it",
-          "[header_tip][integration][submit]") {
-    // First, so it is installed before any thread that logs exists and
-    // removed after all of them are gone: swapping the default logger under a
-    // running thread is a data race.
+TEST_CASE("integrated: a refused stored block releases the pipeline for a valid replacement",
+          "[header_tip][integration][body_recovery]") {
     captured_log log;
-
-    // Fully synced at 5. Block 6 is handed to the node, as a block a miner
-    // found reaches it: it is connected through the node's own storage and
-    // UTXO build, and the peer is never asked for a body only this node has.
-    chain_fixture fixture{"submit_at_tip"};
+    chain_fixture fixture{"body_recovery"};
     REQUIRE(fixture.created());
     REQUIRE(fixture.start());
-    auto const staged = stage(fixture, 5, 5);
+    auto const prefix = GENERATE(0u, 2u);
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    if (prefix != 0) {
+        auto const staged = stage(fixture, prefix, prefix);
+        previous = staged.trunk.back().hash();
+    }
+    auto const height = prefix + 1;
+    auto const timestamp = uint32_t(zulu_time()) - 1200;
+    // No paying transactions: claiming an extra satoshi fails in context,
+    // while the header, serialization and merkle root remain valid.
+    auto const refused = mine_block(previous, height, timestamp, 0, {}, 1);
+    REQUIRE(fixture.organizer().add_headers(headers_of({refused})).headers_added == 1);
+    persist_headers(fixture, {refused}, height);
+    {
+        ::asio::io_context io;
+        block_storage_input_channel input(io.get_executor(), 2);
+        chunk_validated_channel output(io.get_executor(), 2);
+        std::atomic<uint32_t> contiguous{height};
+        REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+            .start_height = height, .chunk_id = 0, .blocks = {to_light(refused)},
+            .source_peer = nullptr, .generation = fixture.chain().chain_generation()}));
+        REQUIRE(input.try_send(std::error_code{}, stop_request{}));
+        auto storage = ::asio::co_spawn(io, block_storage_task(fixture.chain(), input,
+            output, height, fixture.organizer(), &contiguous), ::asio::use_future);
+        io.run();
+        storage.get();
+        REQUIRE(contiguous.load() == height + 1);
+    }
 
-    auto const peer_config = node_settings("submit_at_tip_peer");
-    wire_peer peer(peer_config, 9201, 5);
-
-    bool confirmed = false;
-    std::optional<code> accepted;
-    std::optional<code> again;
-    std::vector<wire_peer::sent_message> sent;
+    auto const replacement = mine_block(previous, height, timestamp, 8, {}, 0);
+    auto const peer_config = node_settings("body_recovery_peer");
+    wire_peer peer(peer_config, 9901, height);
+    bool rewound = false;
+    bool resumed = false;
+    bool alive = false;
     bool stopped_cleanly = false;
     {
-        node_run run(fixture, "submit_at_tip");
-        run.connect(peer.session);
-
-        REQUIRE(peer.next_getheaders(quick).has_value());
-        run.deliver(peer.session, peer.headers({}));
-        confirmed = wait_until([&] { return log.count("Fully synced at height 5") > 0; }, quick);
-
-        accepted = organize_now(fixture, staged.next);
-        // Handed over again once connected.
-        again = organize_now(fixture, staged.next);
-        sent = peer.sent_until_quiet(quiet);
-
+        node_run run(fixture, "body_recovery");
+        rewound = wait_until([&] {
+            return fixture.organizer().header_height() == prefix &&
+                log.count("Stepped the active chain off the rejected block") != 0;
+        }, quick);
+        alive = ! run.network.stopped() &&
+            run.orchestrator.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        if (rewound && alive) {
+            run.connect(peer.session);
+            run.deliver(peer.session, peer.headers({replacement}));
+            data_chunk bytes(replacement.serialized_size());
+            byte_writer writer(bytes);
+            REQUIRE(replacement.to_data(writer));
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, std::move(bytes))));
+            resumed = wait_until([&] {
+                auto const view = fixture.chain().chain_view();
+                return view && view->connected_tip_height == height &&
+                    view->tip_hash == replacement.hash();
+            }, quick);
+        }
         stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
     }
-    log.dump("submit_at_tip");
-
+    CHECK(rewound);
+    CHECK(alive);
+    CHECK(resumed);
     CHECK(stopped_cleanly);
-    CHECK(confirmed);
-    REQUIRE(accepted.has_value());
-    CHECK(*accepted == error::success);
-    REQUIRE(again.has_value());
-    CHECK(*again == error::duplicate_block);
-
-    auto const view = fixture.chain().chain_view();
-    REQUIRE(view);
-    CHECK(view->connected_tip_height == 6u);
-    CHECK(view->tip_hash == staged.next.hash());
-
-    // Its body came with it: no range was opened and nothing was asked for.
-    CHECK(log.count("block_range_request") == 0u);
-    CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
-        return message.command == domain::message::get_data::command;
-    }));
+    auto const retained = fixture.chain().get_header(prefix);
+    REQUIRE(retained);
+    CHECK(domain::chain::hash(*retained) == previous);
+    auto const current = fixture.chain().get_header(height);
+    REQUIRE(current);
+    CHECK(domain::chain::hash(*current) == replacement.hash());
+    auto const refused_idx = fixture.chain().headers().find(refused.hash());
+    REQUIRE(refused_idx != blockchain::header_index::null_index);
+    CHECK(fixture.chain().headers().has_status(refused_idx, blockchain::header_status::failed_valid));
 }
 
-namespace {
-
-template <typename Message>
-data_chunk compact_payload(wire_peer const& peer, Message const& message) {
-    auto const version = peer.session->negotiated_version();
-    data_chunk payload(message.serialized_size(version));
-    byte_writer writer(payload);
-    REQUIRE(message.to_data(writer, version).has_value());
-    REQUIRE(writer.remaining_size() == 0u);
-    return payload;
-}
-
-data_chunk compact_packet(std::string const& command, data_chunk const& payload) {
-    domain::message::heading const heading(0xdab5bffa, command,
-        uint32_t(payload.size()), bitcoin_checksum(payload));
-    auto packet = heading.to_data();
-    packet.insert(packet.end(), payload.begin(), payload.end());
-    return packet;
-}
-
-// These writes are small, but a failed socket must still fail within the
-// test's deadline instead of blocking in a synchronous write.
-void push_compact_bytes(wire_peer& peer, byte_span bytes) {
-    std::error_code ec;
-    peer.client.non_blocking(true, ec);
-    REQUIRE_FALSE(ec);
-    auto const deadline = std::chrono::steady_clock::now() + quick;
-    size_t written = 0;
-    while (written < bytes.size() && std::chrono::steady_clock::now() < deadline) {
-        auto const size = peer.client.write_some(
-            ::asio::buffer(bytes.data() + written, bytes.size() - written), ec);
-        if (ec == ::asio::error::would_block || ec == ::asio::error::try_again) {
-            ec.clear();
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            continue;
-        }
-        if (ec) break;
-        written += size;
-    }
-    std::error_code restored;
-    peer.client.non_blocking(false, restored);
-    REQUIRE_FALSE(ec);
-    REQUIRE_FALSE(restored);
-    REQUIRE(written == bytes.size());
-}
-
-// The session's real read loop parses the wire envelope. The test hands its
-// output to the same observer the node's protocol loop calls.
-network::raw_message read_compact(wire_peer& peer, std::string const& command) {
-    std::optional<network::raw_message> received;
-    REQUIRE(wait_until([&] {
-        return take(peer.session->messages(), 
-            [&](std::error_code ec, network::raw_message raw) {
-                if ( ! ec) received = std::move(raw);
-            });
-    }, quick));
-    REQUIRE(received.has_value());
-    REQUIRE(received->heading.command() == command);
-    return std::move(*received);
-}
-
-void receive_compact(node_run& run, wire_peer& peer, std::string const& command) {
-    run.deliver(peer.session, read_compact(peer, command));
-}
-
-std::optional<network::raw_message> next_compact_request(wire_peer& peer,
-    std::string const& command, std::vector<std::string>* skipped = nullptr,
-    std::chrono::milliseconds limit = quick) {
-    auto const deadline = std::chrono::steady_clock::now() + limit;
-    while (std::chrono::steady_clock::now() < deadline) {
-        data_chunk heading_bytes(domain::message::heading::satoshi_fixed_size());
-        if ( ! peer.read_exact(heading_bytes, deadline)) return std::nullopt;
-        byte_reader reader(heading_bytes);
-        auto heading = domain::message::heading::from_data(reader, peer.session->negotiated_version());
-        REQUIRE(heading);
-        REQUIRE(heading->payload_size() < 1'000'000u);
-        data_chunk payload(heading->payload_size());
-        if ( ! payload.empty() && ! peer.read_exact(payload, deadline)) return std::nullopt;
-        if (heading->command() == command) {
-            return network::raw_message{std::move(*heading), std::move(payload)};
-        }
-        if (skipped != nullptr) skipped->push_back(heading->command());
-    }
-    return std::nullopt;
-}
-
-domain::chain::block compact_next_block(chain_fixture& fixture, staged_chain const& staged,
-    bool in_mempool) {
-    auto const& coinbase = staged.trunk.front().transactions().front();
-    constexpr uint64_t fee = 1000;
-    auto const spend = spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
-        fixture.chain().chain_settings().enabled_flags());
-    if (in_mempool) {
-        auto const transaction = std::make_shared<domain::message::transaction const>(spend);
-        REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
-            .tx = transaction,
-            .fee = fee,
-            .size = uint32_t(transaction->serialized_size(true)),
-            .sigchecks = 1,
-            .time_seen = uint64_t(zulu_time())}));
-        REQUIRE(fixture.chain().mempool_ref().contains(spend.hash()));
-    }
-    REQUIRE(staged.trunk.size() >= 100u);
-    return mine_block(staged.trunk[99].hash(), 101,
-        staged.trunk[99].header().timestamp() + block_spacing, 1, {spend}, fee);
-}
-
-void confirm_compact_tip(node_run& run, wire_peer& peer, captured_log const& log) {
-    run.connect(peer.session);
-    REQUIRE(peer.next_getheaders(quick).has_value());
-    run.deliver(peer.session, peer.headers({}));
-    REQUIRE(wait_until([&] { return log.count("Fully synced at height 100") > 0; }, quick));
-}
-
-// Without an orchestrator, fallback submissions remain visible in the ingest
-// channel and organize() reports that nothing can connect its block.
-struct compact_network_run {
-    network::settings const config{node_settings("compact_limits")};
-    p2p_node network{config};
-
-    compact_network_run() {
-        auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
-            network.start(), ::asio::use_future);
-        REQUIRE(started.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
-        REQUIRE(started.get() == error::success);
-    }
-
-    ~compact_network_run() { network.stop(); }
-};
-
-void require_compact_fallback(p2p_node& network, peer_ptr const& peer, hash_digest const& hash,
-    std::chrono::milliseconds limit = quick) {
-    std::optional<kth::node::detail::ingest_submit> submitted;
-    REQUIRE(wait_until([&] {
-        return network.header_ingest().commands.try_receive(
-            [&](std::error_code ec, kth::node::detail::ingest_command command) {
-                REQUIRE_FALSE(ec);
-                auto const* batch = std::get_if<kth::node::detail::ingest_submit>(&command);
-                REQUIRE(batch != nullptr);
-                submitted = *batch;
-            });
-    }, limit));
-    REQUIRE(submitted.has_value());
-    CHECK(submitted->peer == peer);
-    REQUIRE(submitted->headers.size() == 1u);
-    CHECK(domain::chain::hash(submitted->headers[0]) == hash);
-}
-
-} // namespace
-
-TEST_CASE("integrated: a compact block from a loopback peer connects from the mempool without a body download",
-          "[header_tip][integration][compact_blocks]") {
-    bool known_header = false;
-    SECTION("the compact block brings a new header") {}
-    SECTION("the next active header is already known") { known_header = true; }
-
+TEST_CASE("integrated: a newly connected block is announced to every peer",
+          "[header_tip][integration][tip_announcement]") {
     captured_log log;
-    chain_fixture fixture{"compact_mempool"};
+    chain_fixture fixture{"announce_tip"};
     REQUIRE(fixture.created());
     REQUIRE(fixture.start());
-    auto const staged = stage(fixture, 100, 100);
-    auto const block = compact_next_block(fixture, staged, true);
-    if (known_header) {
-        REQUIRE(fixture.organizer().add_headers(headers_of({block})).headers_added == 1u);
-        persist_headers(fixture, {block}, 101);
-    }
-    auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
-    REQUIRE(compact.short_ids().size() == 1u);
-    auto const peer_config = node_settings("compact_mempool_peer");
-    wire_peer peer(peer_config, 9801, 100);
+    auto const staged = stage(fixture, 3, 3);
+    auto const& next = staged.next;
 
-    node_run run(fixture, "compact_mempool");
-    compact_block_relay relay(fixture.chain(), run.network);
-    relay.attach();
-    if (known_header) {
-        run.connect(peer.session);
-        auto const asked = peer.next_getheaders(quick);
-        REQUIRE(asked);
-        CHECK(*asked == block.hash());
-        // The header is known, but its walk is still outstanding and has not
-        // opened a body download. The compact block supplies that body.
-    } else {
-        confirm_compact_tip(run, peer, log);
-    }
-    push_compact_bytes(peer, compact_packet(compact.command, compact_payload(peer, compact)));
-    receive_compact(run, peer, compact.command);
+    // The block arrives from one peer; another asked for headers (BIP130),
+    // and a third did not.
+    wire_peer source(node_settings("announce_tip_source"), 9101, 3);
+    wire_peer by_headers(node_settings("announce_tip_headers"), 9102, 3);
+    wire_peer by_inventory(node_settings("announce_tip_inventory"), 9103, 3);
+    by_headers.session->set_prefers_headers(true);
 
-    REQUIRE(wait_until([&] {
-        auto const view = fixture.chain().chain_view();
-        return view && view->connected_tip_height == 101u && view->tip_hash == block.hash();
-    }, quick));
-    CHECK_FALSE(fixture.chain().mempool_ref().contains(block.transactions()[1].hash()));
-    std::vector<std::string> sent;
-    CHECK_FALSE(next_compact_request(peer, domain::message::get_data::command, &sent, quiet));
-    CHECK(std::find(sent.begin(), sent.end(), domain::message::get_block_transactions::command) == sent.end());
-    CHECK(log.count("block_range_request") == 0u);
-    CHECK(peer.session->knows_block(block.hash()));
-    CHECK(run.stop_with({peer.session}, std::chrono::seconds(120)));
-}
-
-TEST_CASE("compact relay leaves initial sync, refused sends and unavailable submission to the normal download",
-          "[header_tip][compact_blocks]") {
-    bool initial_sync = false;
-    bool full_queue = false;
-    bool over_current_limit = false;
-    SECTION("headers ahead of connected bodies keep header-only initial sync") { initial_sync = true; }
-    SECTION("a full peer queue does not wait to send getblocktxn") { full_queue = true; }
-    SECTION("organize refusing a complete block falls back") {}
-#if defined(KTH_CURRENCY_BCH)
-    SECTION("more transactions than the current block limit permits are refused") { over_current_limit = true; }
-#endif
-
-    chain_fixture fixture{"compact_refused"};
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-    auto const staged = stage(fixture, initial_sync ? 102u : 100u, 100);
-    if (initial_sync) {
-        REQUIRE_FALSE(fixture.chain().synchronization().caught_up);
-        REQUIRE(fixture.chain().synchronization().fresh);
-    }
-    auto const block = compact_next_block(fixture, staged, ! full_queue && ! over_current_limit);
-    REQUIRE(block.header().previous_block_hash() == fixture.chain().chain_view()->tip_hash);
-    auto compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
-    if (over_current_limit) {
-        auto const minimum = static_absolute_max_block_size() / max_compact_transactions();
-        auto const limit = fixture.chain().chain_view()->state->dynamic_max_block_size() / minimum;
-        REQUIRE(limit + 1 < max_compact_transactions());
-        domain::message::compact_block::short_id_list ids;
-        ids.reserve(size_t(limit));
-        for (uint64_t id = 0; id < limit; ++id) ids.push_back(id);
-        compact = domain::message::compact_block(compact.header(), compact.nonce(),
-            std::move(ids), compact.transactions());
-    }
-    auto const peer_config = node_settings("compact_refused_peer");
-    wire_peer peer(peer_config, 9803, 100, true);
-    if (full_queue) REQUIRE(peer.fill_outbound() == network::peer_session::outbound_capacity);
-
-    compact_network_run run;
-    compact_block_relay relay(fixture.chain(), run.network);
-    relay.attach();
-    auto const raw = peer.message(compact.command, compact_payload(peer, compact));
-    CHECK_FALSE(run.network.observe_block_message(peer.session, raw));
-    require_compact_fallback(run.network, peer.session, block.hash(), std::chrono::milliseconds(1000));
-    CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
-    CHECK_FALSE(peer.session->stopped());
-    run.network.stop();
-}
-
-TEST_CASE("compact relay bounds pending reconstruction across peers and per peer",
-          "[header_tip][compact_blocks][saturation]") {
-    chain_fixture fixture{"compact_pending"};
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-    auto const staged = stage(fixture, 100, 100);
-    auto const first = compact_next_block(fixture, staged, false);
-    auto const peer_config = node_settings("compact_pending_peer");
-    wire_peer p(peer_config, 9811, 100);
-    wire_peer q(peer_config, 9812, 100);
-    wire_peer r(peer_config, 9813, 100);
-    wire_peer s(peer_config, 9814, 100);
-    compact_network_run run;
-    compact_block_relay relay(fixture.chain(), run.network);
-    relay.attach();
-
-    auto offer = [&](wire_peer& peer, uint32_t salt) {
-        auto const block = mine_block(staged.trunk.back().hash(), 101,
-            staged.next.header().timestamp(), salt, {first.transactions()[1]}, 1000);
-        auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
-        CHECK_FALSE(run.network.observe_block_message(peer.session,
-            peer.message(compact.command, compact_payload(peer, compact))));
-        return block.hash();
-    };
-
-    (void)offer(p, uint32_t(p.session->nonce()));
-    REQUIRE(next_compact_request(p, domain::message::get_block_transactions::command));
-    for (auto* peer : {&p, &q}) {
-        (void)offer(*peer, uint32_t(p.session->nonce()));
-        CHECK_FALSE(next_compact_request(*peer, domain::message::get_block_transactions::command,
-            nullptr, std::chrono::milliseconds(100)));
-        CHECK_FALSE(run.network.header_ingest().commands.try_receive([](std::error_code, kth::node::detail::ingest_command) {}));
-    }
-    auto const second_hash = offer(p, 5);
-    require_compact_fallback(run.network, p.session, second_hash);
-    for (auto* peer : {&q, &r}) {
-        (void)offer(*peer, uint32_t(peer->session->nonce()));
-        REQUIRE(next_compact_request(*peer, domain::message::get_block_transactions::command));
-    }
-    auto const fourth_hash = offer(s, 4);
-    require_compact_fallback(run.network, s.session, fourth_hash);
-    CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
-    run.network.stop();
-}
-
-TEST_CASE("integrated: compact transaction requests complete or fall back to a full block",
-          "[header_tip][integration][compact_blocks]") {
-    enum class response { complete, wrong_transaction, wrong_hash, timeout, malformed, trailing, collision, merkle };
-    auto answer = response::complete;
-    SECTION("the requested transaction connects the block") {}
-    SECTION("a wrong transaction requests the full block") { answer = response::wrong_transaction; }
-    SECTION("a response for a different block requests the full block") { answer = response::wrong_hash; }
-    SECTION("a missing response requests the full block") { answer = response::timeout; }
-    SECTION("a truncated transaction response requests the full block") { answer = response::malformed; }
-    SECTION("trailing response bytes split across reads are refused") { answer = response::trailing; }
-    SECTION("duplicate short IDs request the full block without requesting transactions") { answer = response::collision; }
-    SECTION("a response matching every short ID still has to match the merkle root") { answer = response::merkle; }
-
-    captured_log log;
-    chain_fixture fixture{"compact_missing"};
-    REQUIRE(fixture.created());
-    REQUIRE(fixture.start());
-    auto const staged = stage(fixture, 100, 100);
-    auto const block = compact_next_block(fixture, staged, false);
-    auto compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
-    if (answer == response::collision) {
-        auto ids = compact.short_ids();
-        ids.push_back(ids.front());
-        compact = domain::message::compact_block(compact.header(), compact.nonce(),
-            std::move(ids), compact.transactions());
-    }
-    if (answer == response::merkle) {
-        auto coinbase = domain::message::prefilled_transaction::create(0,
-            coinbase_tx(101, 999, block.transactions()[0].outputs()[0].value()));
-        REQUIRE(coinbase);
-        compact = domain::message::compact_block(compact.header(), compact.nonce(),
-            compact.short_ids(), {std::move(*coinbase)});
-    }
-    auto const peer_config = node_settings("compact_missing_peer");
-    wire_peer peer(peer_config, 9802, 100);
-    node_run run(fixture, "compact_missing");
-    auto const timeout = answer == response::timeout || answer == response::malformed || answer == response::trailing
-        ? std::chrono::milliseconds(1000) : compact_block_relay::default_blocktxn_timeout;
-    compact_block_relay relay(fixture.chain(), run.network, timeout);
-    relay.attach();
-    confirm_compact_tip(run, peer, log);
-    push_compact_bytes(peer, compact_packet(compact.command, compact_payload(peer, compact)));
-    receive_compact(run, peer, compact.command);
-
-    if (answer != response::collision) {
-        auto const request_raw = next_compact_request(peer, domain::message::get_block_transactions::command);
-        REQUIRE(request_raw);
-        byte_reader reader(request_raw->payload);
-        auto const request = domain::message::get_block_transactions::from_data(reader,
-            peer.session->negotiated_version());
-        REQUIRE(request);
-        CHECK(request->block_hash() == block.hash());
-        REQUIRE(request->indexes() == std::vector<uint64_t>{1});
-        CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
-
-        if (answer != response::timeout) {
-            auto const transaction = answer == response::wrong_transaction
-                ? block.transactions().front() : block.transactions()[1];
-            domain::message::block_transactions const txs(
-                answer == response::wrong_hash ? null_hash : block.hash(), {transaction});
-            auto payload = compact_payload(peer, txs);
-            if (answer == response::malformed) payload.pop_back();
-            if (answer == response::trailing) payload.push_back(0);
-            auto const packet = compact_packet(txs.command, payload);
-            if (answer == response::trailing) {
-                push_compact_bytes(peer, byte_span(packet).first(packet.size() - 1));
-                bool delivered = false;
-                CHECK_FALSE(wait_until([&] {
-                    delivered = take(peer.session->messages(), [](std::error_code, network::raw_message) {});
-                    return delivered;
-                }, std::chrono::milliseconds(100)));
-                CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
-                push_compact_bytes(peer, byte_span(packet).last(1));
-            } else {
-                push_compact_bytes(peer, packet);
-            }
-            receive_compact(run, peer, txs.command);
+    bool connected = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> to_headers;
+    std::vector<wire_peer::sent_message> to_inventory;
+    std::vector<std::future<void>> services;
+    {
+        node_run run(fixture, "announce_tip");
+        // What full_node registers, and each peer's service, as p2p_node runs
+        // it for its own sessions; these are the test's.
+        run.network.set_tip_announcement_handler(
+            [&fixture](network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last) {
+                return node::sync::announce_tip(fixture.chain().headers(), peer, tip, last);
+            });
+        for (auto* peer : {&source, &by_headers, &by_inventory}) {
+            services.push_back(::asio::co_spawn(peer->ioc,
+                run.network.dispatcher().serve(*peer->session), ::asio::use_future));
         }
+        run.connect(source.session);
+        run.connect(by_headers.session);
+        run.connect(by_inventory.session);
+        // Whatever the start sends, so what follows is the announcement.
+        (void)by_headers.sent_until_quiet(quiet);
+        (void)by_inventory.sent_until_quiet(quiet);
+
+        run.deliver(source.session, source.headers({next}));
+        data_chunk bytes(next.serialized_size());
+        byte_writer writer(bytes);
+        REQUIRE(next.to_data(writer));
+        REQUIRE(source.session->block_responses().try_send(
+            source.message(domain::message::block::command, std::move(bytes))));
+        connected = wait_until([&] {
+            auto const view = fixture.chain().chain_view();
+            return view && view->tip_hash == next.hash();
+        }, quick);
+
+        to_headers = by_headers.sent_until_quiet(quiet);
+        to_inventory = by_inventory.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({source.session, by_headers.session, by_inventory.session},
+            std::chrono::seconds(120));
+    }
+    log.dump("announce_tip");
+    REQUIRE(connected);
+    CHECK(stopped_cleanly);
+    // Every service ended with its session.
+    for (auto& service : services) {
+        REQUIRE(service.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        service.get();
     }
 
-    if (answer == response::complete) {
-        REQUIRE(wait_until([&] {
-            auto const view = fixture.chain().chain_view();
-            return view && view->connected_tip_height == 101u && view->tip_hash == block.hash();
-        }, quick));
-        CHECK_FALSE(next_compact_request(peer, domain::message::get_data::command, nullptr, quiet));
-        CHECK(log.count("block_range_request") == 0u);
-    } else {
-        std::vector<std::string> skipped;
-        auto const full_raw = next_compact_request(peer, domain::message::get_data::command, &skipped);
-        REQUIRE(full_raw);
-        if (answer == response::collision) {
-            CHECK(std::find(skipped.begin(), skipped.end(),
-                domain::message::get_block_transactions::command) == skipped.end());
-        }
-        byte_reader reader(full_raw->payload);
-        auto const full = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
-        REQUIRE(full);
-        REQUIRE(full->inventories().size() == 1u);
-        CHECK(full->inventories()[0].hash() == block.hash());
-        CHECK(full->inventories()[0].type() == domain::message::inventory_vector::type_id::block);
-        CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
-
-        CHECK_FALSE(peer.session->stopped());
-        domain::message::block const full_block{block};
-        push_compact_bytes(peer, compact_packet(full_block.command, compact_payload(peer, full_block)));
-        auto const received = read_compact(peer, full_block.command);
-        run.deliver(peer.session, received);
-        REQUIRE(wait_until([&] {
-            return peer.session->block_responses().try_send(network::raw_message{received});
-        }, quick));
-        REQUIRE(wait_until([&] {
-            auto const view = fixture.chain().chain_view();
-            return view && view->connected_tip_height == 101u && view->tip_hash == block.hash();
-        }, quick));
+    auto const version = by_headers.session->negotiated_version();
+    size_t headers_seen = 0;
+    for (auto const& sent : to_headers) {
+        CHECK(sent.command != domain::message::inventory::command);
+        if (sent.command != domain::message::headers::command) continue;
+        byte_reader reader(sent.payload);
+        auto const headers = domain::message::headers::from_data(reader, version);
+        REQUIRE(headers);
+        REQUIRE(headers->elements().size() == 1);
+        CHECK(domain::chain::hash(headers->elements().front()) == next.hash());
+        ++headers_seen;
     }
-    CHECK(run.stop_with({peer.session}, std::chrono::seconds(120)));
+    CHECK(headers_seen == 1);
+
+    size_t inventories_seen = 0;
+    for (auto const& sent : to_inventory) {
+        CHECK(sent.command != domain::message::headers::command);
+        if (sent.command != domain::message::inventory::command) continue;
+        byte_reader reader(sent.payload);
+        auto const inventory = domain::message::inventory::from_data(reader, version);
+        REQUIRE(inventory);
+        REQUIRE(inventory->inventories().size() == 1);
+        CHECK(inventory->inventories().front().hash() == next.hash());
+        CHECK(inventory->inventories().front().type() ==
+            domain::message::inventory_vector::type_id::block);
+        ++inventories_seen;
+    }
+    CHECK(inventories_seen == 1);
 }

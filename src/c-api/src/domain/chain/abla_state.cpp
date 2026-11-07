@@ -29,6 +29,12 @@ kth_abla_state_mut_t kth_domain_chain_abla_state_construct(kth_abla_config_const
     return kth::make_owned<cpp_t>(cfg_cpp, block_size);
 }
 
+kth_abla_state_mut_t kth_domain_chain_abla_state_construct_with_interval(kth_abla_config_const_t cfg, uint64_t block_size, uint64_t block_interval) {
+    KTH_PRECONDITION(cfg != nullptr);
+    auto const& cfg_cpp = kth::cpp_ref<kth::domain::chain::abla::config>(cfg);
+    return kth::make_owned<cpp_t>(cfg_cpp, block_size, block_interval);
+}
+
 
 // Destructor
 
@@ -62,6 +68,11 @@ uint64_t kth_domain_chain_abla_state_elastic_buffer_size(kth_abla_state_const_t 
     return kth::cpp_ref<cpp_t>(self).elastic_buffer_size;
 }
 
+uint64_t kth_domain_chain_abla_state_block_interval(kth_abla_state_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).block_interval;
+}
+
 
 // Setters
 
@@ -78,6 +89,11 @@ void kth_domain_chain_abla_state_set_control_block_size(kth_abla_state_mut_t sel
 void kth_domain_chain_abla_state_set_elastic_buffer_size(kth_abla_state_mut_t self, uint64_t value) {
     KTH_PRECONDITION(self != nullptr);
     kth::cpp_ref<cpp_t>(self).elastic_buffer_size = value;
+}
+
+void kth_domain_chain_abla_state_set_block_interval(kth_abla_state_mut_t self, uint64_t value) {
+    KTH_PRECONDITION(self != nullptr);
+    kth::cpp_ref<cpp_t>(self).block_interval = value;
 }
 
 } // extern "C"
