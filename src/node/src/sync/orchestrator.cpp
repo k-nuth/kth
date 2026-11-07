@@ -4,6 +4,7 @@
 
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
@@ -780,7 +781,7 @@ static
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (send_ec) {
                     if (reply) {
-                        (void)reply->try_send(std::error_code{}, code(error::service_stopped));
+                        (void)reply->try_send(blockchain::block_submission_result(error::service_stopped));
                     }
                     break;
                 }
@@ -792,7 +793,7 @@ static
             std::error_code drain_ec;
             while (auto queued = submissions->try_receive(drain_ec)) {
                 if (queued->reply) {
-                    (void)queued->reply->try_send(std::error_code{}, code(error::service_stopped));
+                    (void)queued->reply->try_send(blockchain::block_submission_result(error::service_stopped));
                 }
             }
             spdlog::info("[local_admission] Bridge ended");
@@ -1465,7 +1466,7 @@ static
         // channel nobody reads, and the capacity-one try_send still succeeds.
         auto const answer = [](local_admission const& pending, blockchain::block_submission_result outcome) {
             if (pending.reply) {
-                (void)pending.reply->try_send(std::error_code{}, outcome);
+                (void)pending.reply->try_send(std::move(outcome));
             }
         };
         auto resolve_local = [&](size_t at, code outcome,
@@ -1748,6 +1749,36 @@ static
         // `headers` is never matched to a request; see detail/header_walk.hpp.
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
+
+        // Each newly connected tip is announced to the peers once, whoever
+        // supplied the block: a peer, or a miner through submitblock. Not
+        // during initial block download, and not the tip the node started at.
+        std::optional<hash_digest> last_announced;
+        if (auto const view = chain.chain_view()) {
+            last_announced = view->tip_hash;
+        }
+        auto announce_connected_tip = [&] {
+            auto const view = chain.chain_view();
+            if ( ! view || view->tip_hash == last_announced) {
+                return;
+            }
+            auto const& index = organizer.index();
+            auto const tip_idx = index.find(view->tip_hash);
+            auto const timestamp = tip_idx == blockchain::header_index::null_index
+                ? std::nullopt : std::optional<uint32_t>(index.get_timestamp(tip_idx));
+            last_announced = view->tip_hash;
+            if (blockchain::recency_is_stale(timestamp, announcement_max_tip_age_seconds)) {
+                return;
+            }
+            // Owed to each peer, never sent from here: each peer's service
+            // takes the latest owed tip and decides between headers and an
+            // inv from what it last announced to that peer.
+            spdlog::debug("[sync_coordinator] Announcing block {} to {} peer(s)",
+                encode_hash(view->tip_hash), header_peers.size());
+            for (auto const& peer : header_peers) {
+                peer->announce_tip(view->tip_hash);
+            }
+        };
 
 
         auto find_header_peer = [&](uint64_t nonce) -> network::peer_session::ptr {
@@ -2357,6 +2388,7 @@ static
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
+                announce_connected_tip();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

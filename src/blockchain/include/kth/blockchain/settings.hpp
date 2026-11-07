@@ -28,6 +28,23 @@ struct KB_API settings {
     bool priority = true;
     float byte_fee_satoshis = 0.1f;
     float sigop_fee_satoshis= 100.0f;
+    // -maxmempool, in MB of estimated memory. 0, the default, is BCHN's on BCH,
+    // ten times the network's default block size (320 MB on mainnet), and
+    // Bitcoin Core's 300 MB elsewhere.
+    uint32_t mempool_max_mb = 0;
+
+    /// The mempool's memory limit in bytes (mempool_max_mb, or its default).
+    [[nodiscard]]
+    uint64_t mempool_limit_bytes() const {
+        if (mempool_max_mb > 0) {
+            return uint64_t(mempool_max_mb) * 1'000'000;
+        }
+#if defined(KTH_CURRENCY_BCH)
+        return 10 * uint64_t(default_consensus_block_size);
+#else
+        return 300 * uint64_t(1'000'000);
+#endif
+    }
 #if defined(KTH_CURRENCY_BCH)
     uint64_t minimum_output_satoshis = 0;
     domain::policy::transaction_standardness_parameters standardness;

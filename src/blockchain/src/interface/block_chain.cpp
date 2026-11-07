@@ -603,7 +603,7 @@ bool block_chain::stop() {
         block_submissions_->close();
         std::error_code ec;
         while (auto pending = block_submissions_->try_receive(ec)) {
-            pending->reply->try_send(std::error_code{}, code(error::service_stopped));
+            pending->reply->try_send(block_submission_result(error::service_stopped));
         }
     }
     // concurrent_channel is the operation owner and supports thread-safe close.
@@ -661,20 +661,32 @@ namespace {
         co_return error::operation_failed;
     }
     auto const executor = co_await ::asio::this_coro::executor;
-    auto reply = std::make_shared<block_submission_reply>(executor, 1);
+    auto reply = std::make_shared<block_submission_reply>(1);
     ::asio::experimental::channel_select_options options;
     options.nonblocking = true;
-    auto [admission_error, selected] = co_await ::asio::experimental::make_select(
+    // Named, then bound by reference, because of a GCC 16 bug: at -O1 and
+    // above it never destroys the object behind a by-value structured binding
+    // that is still in scope at a later suspension, and this result owns the
+    // submission endpoint. Once GCC fixes it, the binding can take the
+    // co_await result directly again.
+    auto admission = co_await ::asio::experimental::make_select(
         ::asio::experimental::send(*submissions, block_submission{std::move(block), reply})
     ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto const& [admission_error, selected] = admission;
     (void)selected;
     if (admission_error) {
         // Refusal retains no work: the caller owns retry under pressure.
         co_return admission_error == ::asio::error::broken_pipe
             ? code(error::service_stopped) : code(error::operation_failed);
     }
-    auto [ec, result] = co_await reply->async_receive(::asio::as_tuple(::asio::use_awaitable));
-    co_return ec ? block_submission_result(error::service_stopped) : result;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*reply)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, answered] = completion;
+    if (ec) {
+        co_return block_submission_result(error::service_stopped);
+    }
+    co_return std::move(*answered.value<0>());
 }
 
 } // namespace
@@ -2334,6 +2346,24 @@ private:
     prioritized_mutex& mutex_;
 };
 
+// The same at low priority: admission's side, and readers that must not delay
+// a block.
+struct validation_low_priority_lock {
+    explicit validation_low_priority_lock(prioritized_mutex& mutex) : mutex_(mutex) {
+        mutex_.lock_low_priority();
+    }
+    ~validation_low_priority_lock() { mutex_.unlock_low_priority(); }
+    validation_low_priority_lock(validation_low_priority_lock const&) = delete;
+    validation_low_priority_lock& operator=(validation_low_priority_lock const&) = delete;
+private:
+    prioritized_mutex& mutex_;
+};
+
+uint64_t unix_now() {
+    return uint64_t(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
 } // namespace
 
 code block_chain::mempool_remove_for_block(byte_span raw) {
@@ -2356,6 +2386,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
+    mempool_limit_.note_block_connected(unix_now());
 
     // Under the lock, so an admission cannot land between finding the pool empty
     // and deciding there is nothing to do. Empty is the whole of initial sync,
@@ -2370,7 +2401,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
         return error::operation_failed;
     }
 
-    mempool_.remove_for_block(*block);
+    mempool_limit_.removed(mempool_.remove_for_block(*block));
     return error::success;
 }
 
@@ -2394,7 +2425,23 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
-    mempool_.remove_for_block(block);
+    mempool_limit_.note_block_connected(unix_now());
+    mempool_limit_.removed(mempool_.remove_for_block(block));
+}
+
+uint64_t block_chain::mempool_minimum_fee_per_kb() {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.minimum_fee_per_kb(settings_.mempool_limit_bytes(), unix_now());
+}
+
+uint64_t block_chain::mempool_usage() {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.usage();
+}
+
+size_t block_chain::mempool_trim(uint64_t limit) {
+    validation_low_priority_lock const lock(validation_mutex_);
+    return mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
 }
 
 code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected) {
@@ -2418,7 +2465,29 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
             return error::missing_previous_output;
         }
     }
-    return mempool_.add(std::move(entry)) ? error::success : error::double_spend_mempool;
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"), per virtual byte, so a transaction heavy in signature checks
+    // pays for them. Checked here, under the lock that orders it against the
+    // evictions and blocks that move it.
+    auto const limit = settings_.mempool_limit_bytes();
+    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
+    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
+        return error::insufficient_fee;
+    }
+
+    auto const txid = entry.tx->hash();
+    auto const tracked = entry;
+    if ( ! mempool_.add(std::move(entry))) {
+        return error::double_spend_mempool;
+    }
+    mempool_limit_.added(tracked);
+
+    // Past its limit the pool evicts the lowest fee per virtual byte, with
+    // descendants (BCHN LimitMempoolSize). When that is this transaction, it
+    // is refused as paying too little ("mempool full").
+    mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
+    return mempool_.contains(txid) ? error::success : error::insufficient_fee;
 }
 
 blockchain::mempool& block_chain::mempool_ref() {

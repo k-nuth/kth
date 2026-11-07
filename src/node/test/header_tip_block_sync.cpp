@@ -38,6 +38,7 @@
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
@@ -202,6 +203,7 @@ struct wire_peer {
     struct sent_message {
         std::string command;
         std::optional<hash_digest> locator;
+        data_chunk payload;
     };
 
     // Every message the node writes from now until nothing more arrives for
@@ -218,7 +220,7 @@ struct wire_peer {
             data_chunk payload(length);
             if (length > 0 && ! read_exact(payload, std::chrono::steady_clock::now() + quiet)) return out;
 
-            sent_message message{command, std::nullopt};
+            sent_message message{command, std::nullopt, payload};
             if (message.command == domain::message::get_headers::command) {
                 byte_reader reader(payload);
                 auto parsed = domain::message::get_headers::from_data(reader, session->negotiated_version());
@@ -1833,4 +1835,99 @@ TEST_CASE("integrated: a refused stored block releases the pipeline for a valid 
     auto const refused_idx = fixture.chain().headers().find(refused.hash());
     REQUIRE(refused_idx != blockchain::header_index::null_index);
     CHECK(fixture.chain().headers().has_status(refused_idx, blockchain::header_status::failed_valid));
+}
+
+TEST_CASE("integrated: a newly connected block is announced to every peer",
+          "[header_tip][integration][tip_announcement]") {
+    captured_log log;
+    chain_fixture fixture{"announce_tip"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 3, 3);
+    auto const& next = staged.next;
+
+    // The block arrives from one peer; another asked for headers (BIP130),
+    // and a third did not.
+    wire_peer source(node_settings("announce_tip_source"), 9101, 3);
+    wire_peer by_headers(node_settings("announce_tip_headers"), 9102, 3);
+    wire_peer by_inventory(node_settings("announce_tip_inventory"), 9103, 3);
+    by_headers.session->set_prefers_headers(true);
+
+    bool connected = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> to_headers;
+    std::vector<wire_peer::sent_message> to_inventory;
+    std::vector<std::future<void>> services;
+    {
+        node_run run(fixture, "announce_tip");
+        // What full_node registers, and each peer's service, as p2p_node runs
+        // it for its own sessions; these are the test's.
+        run.network.set_tip_announcement_handler(
+            [&fixture](network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last) {
+                return node::sync::announce_tip(fixture.chain().headers(), peer, tip, last);
+            });
+        for (auto* peer : {&source, &by_headers, &by_inventory}) {
+            services.push_back(::asio::co_spawn(peer->ioc,
+                run.network.dispatcher().serve(*peer->session), ::asio::use_future));
+        }
+        run.connect(source.session);
+        run.connect(by_headers.session);
+        run.connect(by_inventory.session);
+        // Whatever the start sends, so what follows is the announcement.
+        (void)by_headers.sent_until_quiet(quiet);
+        (void)by_inventory.sent_until_quiet(quiet);
+
+        run.deliver(source.session, source.headers({next}));
+        data_chunk bytes(next.serialized_size());
+        byte_writer writer(bytes);
+        REQUIRE(next.to_data(writer));
+        REQUIRE(source.session->block_responses().try_send(
+            source.message(domain::message::block::command, std::move(bytes))));
+        connected = wait_until([&] {
+            auto const view = fixture.chain().chain_view();
+            return view && view->tip_hash == next.hash();
+        }, quick);
+
+        to_headers = by_headers.sent_until_quiet(quiet);
+        to_inventory = by_inventory.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({source.session, by_headers.session, by_inventory.session},
+            std::chrono::seconds(120));
+    }
+    log.dump("announce_tip");
+    REQUIRE(connected);
+    CHECK(stopped_cleanly);
+    // Every service ended with its session.
+    for (auto& service : services) {
+        REQUIRE(service.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        service.get();
+    }
+
+    auto const version = by_headers.session->negotiated_version();
+    size_t headers_seen = 0;
+    for (auto const& sent : to_headers) {
+        CHECK(sent.command != domain::message::inventory::command);
+        if (sent.command != domain::message::headers::command) continue;
+        byte_reader reader(sent.payload);
+        auto const headers = domain::message::headers::from_data(reader, version);
+        REQUIRE(headers);
+        REQUIRE(headers->elements().size() == 1);
+        CHECK(domain::chain::hash(headers->elements().front()) == next.hash());
+        ++headers_seen;
+    }
+    CHECK(headers_seen == 1);
+
+    size_t inventories_seen = 0;
+    for (auto const& sent : to_inventory) {
+        CHECK(sent.command != domain::message::headers::command);
+        if (sent.command != domain::message::inventory::command) continue;
+        byte_reader reader(sent.payload);
+        auto const inventory = domain::message::inventory::from_data(reader, version);
+        REQUIRE(inventory);
+        REQUIRE(inventory->inventories().size() == 1);
+        CHECK(inventory->inventories().front().hash() == next.hash());
+        CHECK(inventory->inventories().front().type() ==
+            domain::message::inventory_vector::type_id::block);
+        ++inventories_seen;
+    }
+    CHECK(inventories_seen == 1);
 }

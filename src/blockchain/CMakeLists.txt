@@ -189,6 +189,7 @@ set(kth_sources_just_legacy
   src/pools/header_organizer.cpp
   src/pools/transaction_organizer.cpp
   src/pools/mempool.cpp
+  src/pools/mempool_limit.cpp
   src/pools/block_template.cpp
   src/pools/template_prevouts.cpp
   src/pools/capture_gate.cpp
@@ -245,6 +246,7 @@ set(kth_headers
   include/kth/blockchain/pools/mempool.hpp
   include/kth/blockchain/pools/mempool_config.hpp
   include/kth/blockchain/pools/mempool_hashers.hpp
+  include/kth/blockchain/pools/mempool_limit.hpp
   include/kth/blockchain/pools/mempool_map.hpp
   include/kth/blockchain/pools/mempool_stats.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp

@@ -151,6 +151,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
+    src/handlers/chain_data.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -164,6 +165,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
     src/sync/reorg.cpp
+    src/sync/tip_announcement.cpp
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
@@ -205,6 +207,7 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
+  include/kth/node/handlers/chain_data.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp
@@ -248,6 +251,7 @@ set(kth_headers
   include/kth/node/sync/header_tasks.hpp
   include/kth/node/sync/block_tasks.hpp
   include/kth/node/sync/orchestrator.hpp
+  include/kth/node/sync/tip_announcement.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -326,6 +330,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
           test/block_reads.cpp
+          test/chain_data.cpp
+          test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
