@@ -53,6 +53,16 @@ size_t static_absolute_max_block_size() noexcept {
 #endif
 }
 
+// Bound BIP152 counts by transactions, rather than the block's byte limit.
+constexpr inline
+size_t max_compact_transactions() noexcept {
+#if defined(KTH_CURRENCY_BCH)
+    return static_absolute_max_block_size() / min_transaction_size_descartes;
+#else
+    return static_absolute_max_block_size() / 60;
+#endif
+}
+
 constexpr inline
 size_t static_max_block_sigops(domain::config::network network) noexcept {
 #if defined(KTH_CURRENCY_BCH)

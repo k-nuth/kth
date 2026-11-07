@@ -11,14 +11,31 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/math/sip_hash.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
+#include <kth/infrastructure/utility/endian.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth::domain::message {
 
+namespace {
+
+// Use the wire minimum here so historical short transactions still decode.
+constexpr size_t min_wire_transaction_size = 10;
+constexpr size_t short_id_wire_size = 6;
+constexpr size_t min_prefilled_wire_size = 1 + min_wire_transaction_size;
+
+} // namespace
+
 std::string const compact_block::command = "cmpctblock";
 uint32_t const compact_block::version_minimum = version::level::bip152;
 uint32_t const compact_block::version_maximum = version::level::bip152;
+
+uint64_t compact_short_id(hash_digest const& header_nonce_hash, hash_digest const& txid) {
+    auto const k0 = from_little_endian_unsafe<uint64_t>(header_nonce_hash);
+    auto const k1 = from_little_endian_unsafe<uint64_t>(
+        std::span{header_nonce_hash}.subspan(sizeof(uint64_t)));
+    return sip_hash_uint256(k0, k1, txid) & uint64_t{0x0000ffffffffffff};
+}
 
 // static
 compact_block compact_block::factory_from_block(message::block const& block) {
@@ -31,15 +48,12 @@ compact_block compact_block::factory_from_block(message::block const& block) {
     prefilled_transaction::list prefilled_list{
         prefilled_transaction::create(0, block.transactions()[0]).value()};
 
-    auto header_hash = hash(block, nonce);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
-    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
+    auto const header_hash = hash(block, nonce);
 
     compact_block::short_id_list short_ids_list;
     short_ids_list.reserve(block.transactions().size() - 1);
     for (size_t i = 1; i < block.transactions().size(); ++i) {
-        uint64_t shortid = sip_hash_uint256(k0, k1, block.transactions()[i].hash()) & uint64_t(0xffffffffffff);
-        short_ids_list.push_back(shortid);
+        short_ids_list.push_back(compact_short_id(header_hash, block.transactions()[i].hash()));
     }
 
     // A block always carries a valid header and a coinbase, so the result is
@@ -93,7 +107,9 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
     if ( ! short_id_count) {
         return std::unexpected(short_id_count.error());
     }
-    if (*short_id_count > static_absolute_max_block_size()) {
+    // Refuse impossible counts before reserving memory.
+    if (*short_id_count > max_compact_transactions()
+        || (*short_id_count > 0 && reader.remaining_size() / short_id_wire_size < *short_id_count)) {
         return std::unexpected(error::invalid_compact_block);
     }
 
@@ -112,16 +128,43 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
         //short_ids_.push_back(source.read_mini_hash());
     }
 
-    auto txs = read_collection<prefilled_transaction>(reader, version);
-    if ( ! txs) {
-        return std::unexpected(txs.error());
+    auto const prefilled_count = reader.read_size_little_endian();
+    if ( ! prefilled_count) {
+        return std::unexpected(prefilled_count.error());
+    }
+    if (*prefilled_count > max_compact_transactions() - *short_id_count
+        || (*prefilled_count > 0 && reader.remaining_size() / min_prefilled_wire_size < *prefilled_count)) {
+        return std::unexpected(error::invalid_compact_block);
+    }
+
+    // Keep absolute indexes in memory; only the wire form is differential.
+    auto const total = *short_id_count + *prefilled_count;
+    prefilled_transaction::list txs;
+    txs.reserve(*prefilled_count);
+    uint64_t next = 0;
+    for (size_t i = 0; i < *prefilled_count; ++i) {
+        auto const differential = reader.read_variable_little_endian();
+        if ( ! differential) {
+            return std::unexpected(differential.error());
+        }
+        if (*differential >= total - next) {
+            return std::unexpected(error::invalid_compact_block);
+        }
+        auto const absolute = next + *differential;
+        next = absolute + 1;
+        auto transaction = chain::transaction::from_data(reader, true);
+        if ( ! transaction) {
+            return std::unexpected(transaction.error());
+        }
+        // The transaction-count bound is smaller than the prefilled index cap.
+        txs.push_back(prefilled_transaction::create(absolute, std::move(*transaction)).value());
     }
 
     if (version < compact_block::version_minimum) {
         return std::unexpected(error::version_too_low);
     }
 
-    return compact_block(*header, *nonce, std::move(short_ids), std::move(*txs));
+    return compact_block(*header, *nonce, std::move(short_ids), std::move(txs));
 }
 
 // Serialization.
@@ -129,7 +172,7 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
 
 
 
-size_t compact_block::serialized_size(uint32_t version) const {
+size_t compact_block::serialized_size(uint32_t /*version*/) const {
     //std::println("compact_block::serialized_size");
 
     auto size = chain::header::satoshi_fixed_size() +
@@ -137,9 +180,20 @@ size_t compact_block::serialized_size(uint32_t version) const {
                 (short_ids_.size() * 6u) +
                 infrastructure::message::variable_uint_size(transactions_.size()) + 8u;
 
-    // NOTE: Witness flag is controlled by prefilled tx
+    // Use the differential width; retain an upper bound for invalid lists.
+    uint64_t previous = 0;
+    bool started = false;
     for (auto const& tx : transactions_) {
-        size += tx.serialized_size(version);
+        uint64_t differential = tx.index();
+        if ( ! started) {
+            previous = tx.index();
+            started = true;
+        } else if (tx.index() > previous) {
+            differential = tx.index() - previous - 1;
+            previous = tx.index();
+        }
+        size += infrastructure::message::variable_uint_size(differential)
+            + tx.transaction().serialized_size(true);
     }
 
     return size;
@@ -171,7 +225,7 @@ hash_digest hash(compact_block const& block) {
     return sha256_hash(buf);
 }
 
-expect<void> compact_block::to_data(byte_writer& writer, uint32_t version) const noexcept {
+expect<void> compact_block::to_data(byte_writer& writer, uint32_t /*version*/) const noexcept {
         if (auto r = header_.to_data(writer, true); ! r) return r;
         if (auto r = writer.write_little_endian<uint64_t>(nonce_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(short_ids_.size()); ! r) return r;
@@ -186,9 +240,19 @@ expect<void> compact_block::to_data(byte_writer& writer, uint32_t version) const
 
         if (auto r = writer.write_variable_little_endian(transactions_.size()); ! r) return r;
 
-        // NOTE: Witness flag is controlled by prefilled tx
+        // Differentially encoded indexes. prefilled_transaction::to_data writes
+        // the absolute index, which is only right for a list of one.
+        uint64_t previous = 0;
+        bool started = false;
         for (auto const& element : transactions_) {
-            if (auto r = element.to_data(writer, version); ! r) return r;
+            if (started && element.index() <= previous) {
+                return std::unexpected(error::invalid_compact_block);
+            }
+            auto const differential = started ? element.index() - previous - 1 : element.index();
+            if (auto r = writer.write_variable_little_endian(differential); ! r) return r;
+            if (auto r = element.transaction().to_data(writer, true); ! r) return r;
+            previous = element.index();
+            started = true;
         }
         return {};
 }

@@ -6,6 +6,7 @@
 
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/scope_action.hpp>
 
 #include <algorithm>
 
@@ -53,6 +54,17 @@ p2p_node::p2p_node(settings const& settings)
         typed_message_handler_fn<domain::message::send_headers>(
             [](peer_session& peer, domain::message::send_headers const&) -> ::asio::awaitable<message_result> {
                 peer.set_prefers_headers(true);
+                co_return message_result::handled;
+            }));
+    // BIP152: the peer wants new blocks announced with a cmpctblock (high
+    // bandwidth), or no longer does. Version 1 is the only one this node
+    // speaks; a sendcmpct of another version leaves what was recorded.
+    dispatcher_.register_handler<domain::message::send_compact>(
+        typed_message_handler_fn<domain::message::send_compact>(
+            [](peer_session& peer, domain::message::send_compact const& request) -> ::asio::awaitable<message_result> {
+                if (request.version() == 1) {
+                    peer.set_prefers_compact_blocks(request.high_bandwidth_mode());
+                }
                 co_return message_result::handled;
             }));
 }
@@ -657,14 +669,22 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
         return true;
     }
     if (command == domain::message::compact_block::command) {
-        // BIP152 announcement. Its first field is the block header, which is
-        // all this needs: the compact body is not reconstructed and no BIP152
-        // support is implied. These arrive because we asked for them —
-        // `sendcmpct(true, 1)` goes out right after the handshake.
-        ingest_compact_block(peer, raw);
+        // BIP152 announcement. Once the node is caught up it rebuilds the
+        // block from its mempool, and the header then stays out of the
+        // ingest: it would open a download of the block being rebuilt. One
+        // not taken contributes its header, as during initial sync, which is
+        // all its first field is needed for. These arrive because we asked
+        // for them: `sendcmpct` goes out right after the handshake.
+        if ( ! compact_block_handler_ || ! offer_compact_block(peer, raw)) {
+            ingest_compact_block(peer, raw);
+        }
         // Observed, not consumed: a handler registered for `cmpctblock` still
         // sees it.
         return false;
+    }
+    if (command == domain::message::block_transactions::command) {
+        // Only ever the answer to a getblocktxn a reconstruction sent.
+        return block_transactions_handler_ && deliver_block_transactions(peer, raw);
     }
     if (command == domain::message::inventory::command) {
         // The oldest of the announcement forms: hashes, no headers.
@@ -706,6 +726,52 @@ void p2p_node::ingest_compact_block(peer_session::ptr const& peer, raw_message c
         return;
     }
     spdlog::debug("[p2p_node] cmpctblock header from [{}] queued", peer->authority());
+}
+
+bool p2p_node::offer_compact_block(peer_session::ptr const& peer, raw_message const& raw) {
+    // A byte past the end is not a cmpctblock the peer meant; it is not
+    // rebuilt, and only its header is taken.
+    byte_reader reader(raw.payload);
+    auto parsed = domain::message::compact_block::from_data(reader, peer->negotiated_version());
+    if ( ! parsed || reader.remaining_size() != 0) {
+        return false;
+    }
+    return compact_block_handler_(peer, std::move(*parsed));
+}
+
+bool p2p_node::deliver_block_transactions(peer_session::ptr const& peer, raw_message const& raw) {
+    byte_reader reader(raw.payload);
+    auto parsed = domain::message::block_transactions::from_data(reader, peer->negotiated_version());
+    if ( ! parsed || reader.remaining_size() != 0) {
+        spdlog::debug("[p2p_node] Unparseable blocktxn from [{}]; ignored", peer->authority());
+        return false;
+    }
+    if ( ! block_transactions_handler_(peer, std::move(*parsed))) {
+        spdlog::debug("[p2p_node] blocktxn from [{}] answers no request; ignored", peer->authority());
+        return false;
+    }
+    return true;
+}
+
+void p2p_node::set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions) {
+    compact_block_handler_ = std::move(compact_block);
+    block_transactions_handler_ = std::move(block_transactions);
+}
+
+void p2p_node::set_compact_high_bandwidth(bool enabled) {
+    compact_high_bandwidth_ = enabled;
+}
+
+bool p2p_node::take_high_bandwidth_compact_slot() {
+    if ( ! compact_high_bandwidth_) {
+        return false;
+    }
+    // Peers finish their handshakes on several strands at once.
+    auto taken = high_bandwidth_compact_peers_.load();
+    while (taken < max_high_bandwidth_compact_peers &&
+           ! high_bandwidth_compact_peers_.compare_exchange_weak(taken, taken + 1)) {
+    }
+    return taken < max_high_bandwidth_compact_peers;
 }
 
 detail::header_ingest_channels& p2p_node::header_ingest() {
@@ -1560,9 +1626,22 @@ void p2p_node::wake_status_task() noexcept {
                         // Announce our capabilities right after the handshake,
                         // the way BCHN does: prefer header announcements, offer
                         // compact blocks (BIP-152 v1), and advertise our relay
-                        // fee filter (1 sat/byte). Best-effort.
+                        // fee filter (1 sat/byte). Best-effort. Compact blocks
+                        // go only to a peer whose version knows them. Up to
+                        // three peers are asked to send new blocks as a
+                        // cmpctblock (high bandwidth), the rest to announce
+                        // them first (low bandwidth); a slot is the peer's
+                        // until its protocols end.
                         co_await peer->send(domain::message::send_headers{});
-                        co_await peer->send(domain::message::send_compact(true, 1));
+                        detail::scope_action release_high_bandwidth(
+                            [this]() noexcept { high_bandwidth_compact_peers_.fetch_sub(1); }, false);
+                        if (peer->negotiated_version() >= domain::message::send_compact::version_minimum) {
+                            bool const high_bandwidth = take_high_bandwidth_compact_slot();
+                            if (high_bandwidth) {
+                                release_high_bandwidth.arm();
+                            }
+                            co_await peer->send(domain::message::send_compact(high_bandwidth, 1));
+                        }
                         co_await peer->send(domain::message::fee_filter{1000});
 
                         // Send success response to caller

@@ -129,10 +129,11 @@ full_node::~full_node() {
             co_return message_result::handled;
         });
 
-    // Serve the connected chain: headers for a locator, and the blocks a
-    // peer asks for after an announcement or during its own sync. Both run in
-    // the peer's service, off its read loop: their answers wait on the peer's
-    // data queue.
+    // Serve the connected chain: headers for a locator, the blocks a peer
+    // asks for after an announcement or during its own sync, and the
+    // transactions it is missing to rebuild a compact block (BIP152). All run
+    // in the peer's service, off its read loop: their answers wait on the
+    // peer's data queue.
     network_.register_served_message_handler<domain::message::get_headers>(
         [this](peer_session& peer, domain::message::get_headers const& request) {
             return handlers::chain_data::handle_get_headers(chain_, peer, request);
@@ -141,12 +142,49 @@ full_node::~full_node() {
         [this](peer_session& peer, domain::message::get_data const& request) {
             return handlers::chain_data::handle_get_data(chain_, peer, request);
         });
+    network_.register_served_message_handler<domain::message::get_block_transactions>(
+        [this](peer_session& peer, domain::message::get_block_transactions const& request) {
+            return handlers::chain_data::handle_get_block_transactions(chain_, peer, request);
+        });
     // Each newly connected tip, owed to every peer by the sync coordinator, is
-    // announced by the peer's own service.
+    // announced by the peer's own service; to a high-bandwidth compact block
+    // peer with the cmpctblock all of them share.
     network_.set_tip_announcement_handler(
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
-            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced,
+                [this](hash_digest const& hash) { return compact_tips_.get(chain_, hash); });
         });
+
+#if ! defined(__EMSCRIPTEN__)
+    // Transactions peers announce: asked for, then offered to the mempool.
+    if (network_settings_.relay_transactions) {
+        relay_ = std::make_unique<transaction_relay>(chain_);
+        network_.register_message_handler<domain::message::inventory>(
+            [this](peer_session& peer, domain::message::inventory const& inv)
+                -> ::asio::awaitable<message_result> {
+                co_return co_await relay_->on_inventory(peer, inv);
+            });
+        network_.register_message_handler<domain::message::transaction>(
+            [this](peer_session& peer, domain::message::transaction const& tx)
+                -> ::asio::awaitable<message_result> {
+                co_return co_await relay_->on_transaction(peer, tx);
+            });
+    }
+
+    // Compact blocks peers send (BIP152), rebuilt from the mempool once the
+    // node is caught up, and the blocktxn that completes one: both taken
+    // from the read loop without waiting.
+    compact_blocks_ = std::make_unique<sync::compact_block_receiver>(chain_, network_);
+    network_.set_compact_block_handlers(
+        [this](peer_session::ptr const& peer, domain::message::compact_block message) {
+            return compact_blocks_->offer(peer, std::move(message));
+        },
+        [this](peer_session::ptr const& peer, domain::message::block_transactions message) {
+            return compact_blocks_->deliver(peer, std::move(message));
+        });
+    // Off, no peer is asked to send a cmpctblock before announcing a block.
+    network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
+#endif
 
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
@@ -209,7 +247,7 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -333,6 +371,14 @@ full_node::~full_node() {
 
     organizer.stop();
     spdlog::info("[full_node] run_sync() ENDED");
+}
+
+::asio::awaitable<void> full_node::run_compact_blocks() {
+    // Until the network stops, then until the reconstructions under way have
+    // ended: they hold the chain and the network.
+    if (compact_blocks_) {
+        co_await compact_blocks_->run();
+    }
 }
 #endif
 
