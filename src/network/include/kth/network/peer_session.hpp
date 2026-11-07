@@ -83,6 +83,10 @@ public:
     /// Requests waiting for the node's per-peer service (see served_requests).
     static constexpr size_t served_requests_capacity = 16;
 
+    /// Transaction announcements owed and not yet taken by the peer's
+    /// service: one inv's worth.
+    static constexpr size_t transaction_announcements_capacity = max_inventory;
+
     // Inbound messages (heading + payload). A select_channel (see
     // async_channel.hpp): the read loop hands messages in with a suspended
     // send, consumers take them with receive(deadline), one selection with an
@@ -190,6 +194,22 @@ public:
 
     [[nodiscard]]
     tip_channel& tip_announcements();
+
+    // -------------------------------------------------------------------------
+    // Transaction announcements
+    // -------------------------------------------------------------------------
+
+    /// The transactions the node owes this peer an announcement of, not yet
+    /// taken by the peer's service, which sends them as one inv. Bounded: a
+    /// peer that does not keep up owes at most one inv's worth, and newer
+    /// transactions are not announced to it. Closed by stop().
+    using transaction_channel = select_channel<hash_digest>;
+
+    /// Record that the transaction `txid` is owed to this peer. Never waits.
+    void announce_transaction(hash_digest const& txid);
+
+    [[nodiscard]]
+    transaction_channel& transaction_announcements();
 
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
@@ -463,6 +483,7 @@ private:
     inbound_channel inbound_;
     served_channel served_requests_;
     tip_channel tip_announcements_;
+    transaction_channel transaction_announcements_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive

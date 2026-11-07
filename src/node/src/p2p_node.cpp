@@ -465,22 +465,51 @@ void message_dispatcher::set_tip_announcement_handler(tip_announcement_fn handle
     tip_announcement_ = std::move(handler);
 }
 
+namespace {
+
+// The transactions owed to `peer`, `first` already taken, as one inv: what was
+// admitted since its last one, up to an inv's worth.
+::asio::awaitable<void> announce_transactions(peer_session& peer, hash_digest const& first) {
+    hash_list owed{first};
+    std::error_code ec;
+    while (owed.size() < max_inventory) {
+        auto next = peer.transaction_announcements().try_receive(ec);
+        if ( ! next) {
+            break;
+        }
+        owed.push_back(*next);
+    }
+    auto const inventory = domain::message::inventory::create(owed,
+        domain::message::inventory::type_id::transaction);
+    if (inventory) {
+        (void)co_await peer.send_data(*inventory);
+    }
+}
+
+} // namespace
+
 ::asio::awaitable<void> message_dispatcher::serve(peer_session& peer) {
     auto executor = co_await ::asio::this_coro::executor;
     // Requests before announcements when both are ready: a request was the
     // peer's own, and the owed tip only grows more current while it waits.
+    // Transactions last: what is owed of them only grows into a fuller inv.
     ::asio::experimental::channel_select_options options;
     options.biased = true;
     std::optional<hash_digest> last_announced;
     while (true) {
         auto completion = co_await ::asio::experimental::make_select(
             ::asio::experimental::receive(peer.served_requests()),
-            ::asio::experimental::receive(peer.tip_announcements())
+            ::asio::experimental::receive(peer.tip_announcements()),
+            ::asio::experimental::receive(peer.transaction_announcements())
         ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) {
             // eof: the session stopped and closed the queues.
             co_return;
+        }
+        if (selected.index == 2) {
+            co_await announce_transactions(peer, *selected.value<2>());
+            continue;
         }
         if (selected.index == 1) {
             if (tip_announcement_) {

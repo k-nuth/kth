@@ -9,6 +9,7 @@
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/not_found.hpp>
+#include <kth/domain/message/transaction.hpp>
 #include <kth/node/p2p_node.hpp>
 
 #include <spdlog/spdlog.h>
@@ -141,6 +142,34 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
             }
             spdlog::debug("[chain_data] Block {} requested by [{}] could not be read: {}",
                 encode_hash(item.hash()), peer.authority(), block.error().message());
+        }
+        missing.push_back(item);
+    }
+    if ( ! missing.empty()) {
+        if (auto const reply = domain::message::not_found::create(std::move(missing))) {
+            (void)co_await peer.send_data(*reply);
+        }
+    }
+    co_return message_result::handled;
+}
+
+::asio::awaitable<message_result> handle_get_transactions(blockchain::block_chain& chain,
+    network::peer_session& peer, domain::message::get_data const& request) {
+
+    using type_id = domain::message::inventory_vector::type_id;
+    // Read beside the organizers' writes, which the pool allows.
+    auto const& pool = chain.mempool_ref();
+    domain::message::inventory_vector::list missing;
+    for (auto const& item : request.inventories()) {
+        if (item.type() != type_id::transaction) {
+            continue;
+        }
+        if (auto const tx = pool.get(item.hash())) {
+            if (co_await peer.send_data(*tx)) {
+                // The peer is gone; nothing more can be sent to it.
+                co_return message_result::handled;
+            }
+            continue;
         }
         missing.push_back(item);
     }

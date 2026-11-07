@@ -88,6 +88,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , inbound_(100)            // Buffer up to 100 inbound messages
     , served_requests_(served_requests_capacity)
     , tip_announcements_(1)
+    , transaction_announcements_(transaction_announcements_capacity)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -124,6 +125,7 @@ peer_session::~peer_session() {
     inbound_.close();
     served_requests_.close();
     tip_announcements_.close();
+    transaction_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -264,6 +266,7 @@ void peer_session::stop(code const& ec) {
     inbound_.close();
     served_requests_.close();
     tip_announcements_.close();
+    transaction_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -288,6 +291,10 @@ void peer_session::drain_response_channels() {
     drain(served_requests_);
     drain(block_responses_);
     drain(addr_responses_);
+    // And the transactions owed to a peer that is gone: up to an inv's worth.
+    std::error_code ec;
+    while (transaction_announcements_.try_receive(ec)) {
+    }
 }
 
 bool peer_session::stopped() const {
@@ -336,6 +343,15 @@ void peer_session::announce_tip(hash_digest const& tip) {
 
 peer_session::tip_channel& peer_session::tip_announcements() {
     return tip_announcements_;
+}
+
+void peer_session::announce_transaction(hash_digest const& txid) {
+    // Full, or closed: not announced to this peer.
+    (void)transaction_announcements_.try_send(hash_digest(txid));
+}
+
+peer_session::transaction_channel& peer_session::transaction_announcements() {
+    return transaction_announcements_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {

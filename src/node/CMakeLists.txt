@@ -146,6 +146,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/local_admission_tasks.cpp
+    src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
     src/executor/executor.cpp
 

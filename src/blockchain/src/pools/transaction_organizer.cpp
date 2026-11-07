@@ -49,7 +49,9 @@ transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_
     , threads_(threads)
     , admission_(executor_, 1)
     , validator_(executor_, threads_, chain_, settings)
-    , broadcaster_(executor_)
+    // Every admitted transaction is announced to peers from this broadcast,
+    // so a subscriber holds a burst of up to an inv's worth.
+    , broadcaster_(executor_, max_inventory)
     , ds_proof_broadcaster_(executor_)
 {
     (void)admission_.try_send(std::error_code{});

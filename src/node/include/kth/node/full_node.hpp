@@ -206,6 +206,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_transaction_announcements();
 #endif
 
     // Configuration references (stored in configuration object)

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stop_token>
 #include <thread>
 #include <utility>
 
@@ -15,10 +16,12 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
 
+#include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
@@ -137,9 +140,19 @@ full_node::~full_node() {
         [this](peer_session& peer, domain::message::get_headers const& request) {
             return handlers::chain_data::handle_get_headers(chain_, peer, request);
         });
+    // One getdata can ask for blocks and transactions alike: the blocks are
+    // served from the chain, then, when the node relays transactions, the
+    // transactions from the mempool. Each part answers what it cannot find
+    // with its own notfound.
     network_.register_served_message_handler<domain::message::get_data>(
-        [this](peer_session& peer, domain::message::get_data const& request) {
-            return handlers::chain_data::handle_get_data(chain_, peer, request);
+        [this](peer_session& peer, domain::message::get_data const& request)
+            -> ::asio::awaitable<message_result> {
+            auto const result = co_await handlers::chain_data::handle_get_data(chain_, peer, request);
+            if (network_settings_.relay_transactions && result == message_result::handled &&
+                    ! peer.stopped()) {
+                co_return co_await handlers::chain_data::handle_get_transactions(chain_, peer, request);
+            }
+            co_return result;
         });
     // Each newly connected tip, owed to every peer by the sync coordinator, is
     // announced by the peer's own service.
@@ -209,7 +222,8 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() &&
+                  run_transaction_announcements());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -280,6 +294,46 @@ full_node::~full_node() {
 }
 
 #if ! defined(__EMSCRIPTEN__)
+// Each transaction the mempool admits, from a peer or from the RPC, is owed to
+// every peer that asked for transactions in its version message. The peer's
+// service sends what it is owed as one inv; this only records it, so a peer
+// that does not keep up delays nobody else.
+::asio::awaitable<void> full_node::run_transaction_announcements() {
+    if ( ! network_settings_.relay_transactions) {
+        co_return;
+    }
+    auto channel = subscribe_transaction();
+    if ( ! channel) {
+        co_return;
+    }
+    // The chain closes its subscriptions only after the node's tasks have
+    // ended, so the network's stop closes this one.
+    std::stop_callback const on_stop(network_.stop_token(), [&channel] { channel->close(); });
+
+    while (true) {
+        auto [ec, first] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+        if (ec) {
+            break;
+        }
+        hash_list admitted;
+        if (first) {
+            admitted.push_back(first->hash());
+        }
+        // What else was admitted meanwhile goes out with it.
+        while (channel->try_receive([&admitted](std::error_code error, transaction_const_ptr tx) {
+            if ( ! error && tx) {
+                admitted.push_back(tx->hash());
+            }
+        })) {
+        }
+        if (admitted.empty()) {
+            continue;
+        }
+        detail::owe_transactions(co_await network_.peers().all(), admitted);
+    }
+    unsubscribe_transaction(channel);
+}
+
 ::asio::awaitable<void> full_node::run_sync() {
     spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
 

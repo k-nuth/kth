@@ -19,6 +19,8 @@
 #include <kth/blockchain/header_index.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/version.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 
@@ -203,4 +205,125 @@ TEST_CASE("the peer's service announces the latest owed tip from what it last an
     REQUIRE(headers);
     CHECK(c.hashes(headers->elements()) == hash_list{c.trunk[11]});
     CHECK(command_of(*second) == domain::message::inventory::command);
+}
+
+// Transaction announcements
+// -----------------------------------------------------------------------------
+
+namespace {
+
+hash_digest txid_of(size_t n) {
+    hash_digest txid{};
+    std::memcpy(txid.data(), &n, sizeof(n));
+    txid[31] = 0x7e;
+    return txid;
+}
+
+void set_relay(network::peer_session& session, bool relay) {
+    auto version = std::make_shared<domain::message::version>();
+    version->set_relay(relay);
+    session.set_peer_version(version);
+}
+
+hash_list owed(network::peer_session& session) {
+    hash_list out;
+    std::error_code ec;
+    while (auto txid = session.transaction_announcements().try_receive(ec)) {
+        out.push_back(*txid);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("admitted transactions are owed only to the peers whose version asked for them",
+          "[tx_announcement]") {
+    idle_session relays;
+    idle_session declines;
+    idle_session unknown;
+    idle_session gone;
+    set_relay(*relays.session, true);
+    set_relay(*declines.session, false);
+    set_relay(*gone.session, true);
+    gone.session->stop();
+    CHECK(node::detail::takes_transactions(*relays.session));
+    CHECK_FALSE(node::detail::takes_transactions(*declines.session));
+    CHECK_FALSE(node::detail::takes_transactions(*unknown.session));
+
+    hash_list const admitted{txid_of(1), txid_of(2)};
+    node::detail::owe_transactions({relays.session, declines.session, unknown.session, gone.session}, admitted);
+    CHECK(owed(*relays.session) == admitted);
+    CHECK(owed(*declines.session).empty());
+    CHECK(owed(*unknown.session).empty());
+    CHECK(owed(*gone.session).empty());
+    relays.session->stop();
+    declines.session->stop();
+    unknown.session->stop();
+}
+
+TEST_CASE("transactions owed to a peer that is not reading never wait, and stop at one inv's worth",
+          "[tx_announcement]") {
+    idle_session peer;
+    set_relay(*peer.session, true);
+    auto const baseline = peer.session.use_count();
+    hash_list admitted;
+    for (size_t i = 0; i < max_inventory + 5; ++i) {
+        admitted.push_back(txid_of(i));
+    }
+    node::detail::owe_transactions({peer.session}, admitted);
+    peer.io.poll();
+    // Nothing was started that holds the session; the first inv's worth is
+    // owed, and what came after it is not.
+    CHECK(peer.session.use_count() == baseline);
+    auto const taken = owed(*peer.session);
+    REQUIRE(taken.size() == max_inventory);
+    CHECK(taken.front() == admitted.front());
+    CHECK(taken.back() == admitted[max_inventory - 1]);
+    peer.session->stop();
+}
+
+TEST_CASE("the peer's service sends the transactions it owes as one inv", "[tx_announcement]") {
+    idle_session peer;
+    node::message_dispatcher dispatcher;
+
+    // Three owed before the service runs: one inv with the three, in order.
+    for (size_t i = 0; i < 3; ++i) {
+        peer.session->announce_transaction(txid_of(i));
+    }
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+    peer.io.poll();
+    std::error_code ec;
+    auto const first = peer.session->data_outbound().try_receive(ec);
+    REQUIRE(first);
+    CHECK_FALSE(peer.session->data_outbound().try_receive(ec));
+    CHECK(owed(*peer.session).empty());
+
+    // One more later: its own inv.
+    peer.session->announce_transaction(txid_of(3));
+    peer.io.poll();
+    auto const second = peer.session->data_outbound().try_receive(ec);
+    REQUIRE(second);
+
+    peer.session->stop();
+    peer.io.run();
+    REQUIRE(service.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    service.get();
+
+    auto const transactions_in = [&](data_chunk const& raw) {
+        char command[13] = {};
+        std::memcpy(command, raw.data() + 4, 12);
+        REQUIRE(std::string(command) == domain::message::inventory::command);
+        byte_reader reader(raw);
+        REQUIRE(reader.skip(24));
+        auto const inventory = domain::message::inventory::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(inventory);
+        hash_list txids;
+        for (auto const& item : inventory->inventories()) {
+            CHECK(item.type() == domain::message::inventory::type_id::transaction);
+            txids.push_back(item.hash());
+        }
+        return txids;
+    };
+    CHECK(transactions_in(*first) == hash_list{txid_of(0), txid_of(1), txid_of(2)});
+    CHECK(transactions_in(*second) == hash_list{txid_of(3)});
 }

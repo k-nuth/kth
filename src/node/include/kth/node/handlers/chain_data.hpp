@@ -61,6 +61,13 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
 ::asio::awaitable<message_result> handle_get_data(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_data const& request);
 
+/// getdata -> one tx message per requested transaction the mempool holds, in
+/// request order, and a notfound for the requested transactions it does not.
+/// Block entries are not handled here.
+[[nodiscard]] KN_API
+::asio::awaitable<message_result> handle_get_transactions(blockchain::block_chain& chain,
+    network::peer_session& peer, domain::message::get_data const& request);
+
 } // namespace handlers::chain_data
 } // namespace kth::node
 

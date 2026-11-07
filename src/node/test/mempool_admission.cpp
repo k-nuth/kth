@@ -27,6 +27,8 @@
 #include "child_process_harness.hpp"
 #include "tx_relay_harness.hpp"
 #include <kth/node/detail/tx_relay.hpp>
+#include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/p2p_node.hpp>
 #if defined(KTH_CURRENCY_BCH)
 #include "../../blockchain/test/transaction_size_fixture.hpp"
 #include <kth/blockchain/validate/batch_validate.hpp>
@@ -965,4 +967,87 @@ TEST_CASE("admission revalidates once when a block arrives during validation", "
     CHECK(result.get() == (invalidate_retry ? error::stale_chain : error::success));
     CHECK(chain.mempool_ref().contains(tx->hash()) == !invalidate_retry);
     CHECK_FALSE(chain.transaction_validations().visit(tx->hash(), [](auto const&) {}));
+}
+
+namespace {
+
+// Every message sent to `peer` until `count` arrived or `wait` passed, as
+// (command, payload). Starts the session's writer, as read_requests does.
+std::vector<std::pair<std::string, data_chunk>> read_messages(::asio::io_context& ioc, live_peer& peer,
+                                                              size_t count, std::chrono::milliseconds wait) {
+    if ( ! peer.running) {
+        ::asio::co_spawn(ioc, [session = peer.session]() -> ::asio::awaitable<void> {
+            (void)co_await session->run();
+        }, ::asio::detached);
+        peer.running = true;
+    }
+    std::vector<std::pair<std::string, data_chunk>> out;
+    auto const deadline = std::chrono::steady_clock::now() + wait;
+    while (out.size() < count && std::chrono::steady_clock::now() < deadline) {
+        ioc.restart();
+        ioc.run_for(5ms);
+        while (peer.client.available() > 0) {
+            data_chunk more(peer.client.available());
+            ::asio::read(peer.client, ::asio::buffer(more));
+            peer.bytes.insert(peer.bytes.end(), more.begin(), more.end());
+        }
+        while (peer.bytes.size() >= 24) {
+            char command[13] = {};
+            std::memcpy(command, peer.bytes.data() + 4, 12);
+            uint32_t length = 0;
+            std::memcpy(&length, peer.bytes.data() + 16, 4);
+            if (peer.bytes.size() < 24 + size_t(length)) break;
+            out.emplace_back(command, data_chunk(peer.bytes.begin() + 24, peer.bytes.begin() + 24 + long(length)));
+            peer.bytes.erase(peer.bytes.begin(), peer.bytes.begin() + 24 + long(length));
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+// What a peer asks for after kth announces a transaction: the pooled one is
+// sent, a block entry is left to the chain's own handler, and a transaction
+// the pool does not hold is answered with notfound.
+TEST_CASE("getdata for transactions sends the pooled ones and a notfound for the rest",
+          "[mempool][admission][tx_announcement]") {
+    using domain::message::inventory_vector;
+    using type_id = inventory_vector::type_id;
+    admission_chain built("tx_getdata", trunk_len);
+    auto& chain = built.chain();
+    auto const pooled = std::make_shared<domain::message::transaction const>(built.matured_spend(fee));
+    REQUIRE(run_on_chain(chain, [&chain, pooled] { return chain.submit_transaction(pooled); }) == error::success);
+    hash_digest unknown{};
+    unknown[0] = 0x5a;
+
+    ::asio::io_context ioc;
+    auto peer = connect(ioc, relay_settings(), 1);
+    auto const request = domain::message::get_data::create({
+        {type_id::transaction, pooled->hash()},
+        {type_id::block, built.trunk.back().hash()},
+        {type_id::transaction, unknown}});
+    REQUIRE(request);
+    auto served = ::asio::co_spawn(ioc,
+        node::handlers::chain_data::handle_get_transactions(chain, *peer.session, *request),
+        ::asio::use_future);
+
+    auto const sent = read_messages(ioc, peer, 2, 5s);
+    REQUIRE(served.wait_for(0s) == std::future_status::ready);
+    CHECK(served.get() == node::message_result::handled);
+    REQUIRE(sent.size() == 2);
+
+    REQUIRE(sent[0].first == domain::message::transaction::command);
+    byte_reader tx_reader(sent[0].second);
+    auto const tx = domain::message::transaction::from_data(tx_reader, peer.session->negotiated_version());
+    REQUIRE(tx);
+    CHECK(tx->hash() == pooled->hash());
+
+    REQUIRE(sent[1].first == domain::message::not_found::command);
+    byte_reader missing_reader(sent[1].second);
+    auto const missing = domain::message::not_found::from_data(missing_reader, peer.session->negotiated_version());
+    REQUIRE(missing);
+    CHECK(missing->inventories() == inventory_vector::list{{type_id::transaction, unknown}});
+    peer.session->stop();
+    ioc.restart();
+    ioc.run_for(50ms);
 }
