@@ -226,13 +226,21 @@ bool compact_block_receiver::offer(network::peer_session::ptr const& peer,
             message.header().previous_block_hash() != view->tip_hash) {
         return false;
     }
+    // BIP152 has a peer validate a block's header, its proof of work
+    // included, before it sends the block's cmpctblock. One that fails is not
+    // worth a pass over the mempool; refused here, the header goes to the
+    // header ingest, which answers it as it answers a header sent alone.
+    auto const hash = domain::chain::hash(message.header());
+    auto const retarget = view->state->network() != domain::config::network::regtest;
+    if (message.header().check(hash, retarget) || message.header().accept(*view->state, hash)) {
+        return false;
+    }
     // More transactions than that block can hold describe no block the chain
     // would take, and are not worth a pass over the mempool.
     if (message.short_ids().size() + message.transactions().size() > max_transactions(*view->state)) {
         return false;
     }
 
-    auto const hash = domain::chain::hash(message.header());
     std::lock_guard const lock(mutex_);
     if (stopping_) {
         return false;

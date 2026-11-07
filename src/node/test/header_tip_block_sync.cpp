@@ -2310,12 +2310,14 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
 
 TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and when its block cannot be rebuilt",
           "[header_tip][compact_blocks]") {
-    enum class setup { initial_sync, queue_full, no_submission, trailing_byte, too_many };
+    enum class setup { initial_sync, queue_full, no_submission, trailing_byte, too_many, no_work, wrong_bits };
     auto when = setup::initial_sync;
     SECTION("headers ahead of the connected tip: initial sync") {}
     SECTION("a peer whose queue is full is not waited on for getblocktxn") { when = setup::queue_full; }
     SECTION("a chain that takes no submission") { when = setup::no_submission; }
     SECTION("a byte past the cmpctblock") { when = setup::trailing_byte; }
+    SECTION("a header whose hash misses its target") { when = setup::no_work; }
+    SECTION("a header that asks other work than the next block's") { when = setup::wrong_bits; }
 #if defined(KTH_CURRENCY_BCH)
     SECTION("more transactions than the next block can hold") { when = setup::too_many; }
 #endif
@@ -2342,6 +2344,27 @@ TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and wh
             std::move(ids), compact.transactions());
     }
 #endif
+    if (when == setup::no_work || when == setup::wrong_bits) {
+        // The block's own transactions, under a header the chain refuses
+        // before anything is rebuilt.
+        auto const mined = compact.header();
+        auto bits = mined.bits();
+        if (when == setup::wrong_bits) {
+            --bits;
+        }
+        auto nonce = mined.nonce();
+        auto header = mined;
+        do {
+            header = domain::chain::header(mined.version(), mined.previous_block_hash(),
+                mined.merkle(), mined.timestamp(), bits, ++nonce);
+        } while (when == setup::no_work &&
+                 header.is_valid_proof_of_work(domain::chain::hash(header), /*retarget*/ false));
+        auto const refused = header.bits() != fixture.chain().chain_view()->state->work_required() ||
+            ! header.is_valid_proof_of_work(domain::chain::hash(header), /*retarget*/ false);
+        REQUIRE(refused);
+        compact = domain::message::compact_block(header, compact.nonce(),
+            compact.short_ids(), compact.transactions());
+    }
     wire_peer peer(node_settings("compact_refused_peer"), 9803, 100, true);
     if (when == setup::queue_full) {
         REQUIRE(peer.fill_outbound() == network::peer_session::outbound_capacity);
@@ -2354,7 +2377,7 @@ TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and wh
         raw.payload.push_back(0);
     }
     CHECK_FALSE(run.network.observe_block_message(peer.session, raw));
-    require_ingested(run.network, peer.session, block.hash());
+    require_ingested(run.network, peer.session, domain::chain::hash(compact.header()));
     CHECK(wait_until([&] { return receiver.receiver.pending() == 0u; }, quick));
     CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
     CHECK_FALSE(peer.session->stopped());
