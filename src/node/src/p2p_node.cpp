@@ -668,14 +668,22 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
         return true;
     }
     if (command == domain::message::compact_block::command) {
-        // BIP152 announcement. Its first field is the block header, which is
-        // all this needs: the compact body is not reconstructed and no BIP152
-        // support is implied. These arrive because we asked for them —
-        // `sendcmpct(true, 1)` goes out right after the handshake.
-        ingest_compact_block(peer, raw);
+        // BIP152 announcement. Once the node is caught up it rebuilds the
+        // block from its mempool, and the header then stays out of the
+        // ingest: it would open a download of the block being rebuilt. One
+        // not taken contributes its header, as during initial sync, which is
+        // all its first field is needed for. These arrive because we asked
+        // for them: `sendcmpct` goes out right after the handshake.
+        if ( ! compact_block_handler_ || ! offer_compact_block(peer, raw)) {
+            ingest_compact_block(peer, raw);
+        }
         // Observed, not consumed: a handler registered for `cmpctblock` still
         // sees it.
         return false;
+    }
+    if (command == domain::message::block_transactions::command) {
+        // Only ever the answer to a getblocktxn a reconstruction sent.
+        return block_transactions_handler_ && deliver_block_transactions(peer, raw);
     }
     if (command == domain::message::inventory::command) {
         // The oldest of the announcement forms: hashes, no headers.
@@ -717,6 +725,36 @@ void p2p_node::ingest_compact_block(peer_session::ptr const& peer, raw_message c
         return;
     }
     spdlog::debug("[p2p_node] cmpctblock header from [{}] queued", peer->authority());
+}
+
+bool p2p_node::offer_compact_block(peer_session::ptr const& peer, raw_message const& raw) {
+    // A byte past the end is not a cmpctblock the peer meant; it is not
+    // rebuilt, and only its header is taken.
+    byte_reader reader(raw.payload);
+    auto parsed = domain::message::compact_block::from_data(reader, peer->negotiated_version());
+    if ( ! parsed || reader.remaining_size() != 0) {
+        return false;
+    }
+    return compact_block_handler_(peer, std::move(*parsed));
+}
+
+bool p2p_node::deliver_block_transactions(peer_session::ptr const& peer, raw_message const& raw) {
+    byte_reader reader(raw.payload);
+    auto parsed = domain::message::block_transactions::from_data(reader, peer->negotiated_version());
+    if ( ! parsed || reader.remaining_size() != 0) {
+        spdlog::debug("[p2p_node] Unparseable blocktxn from [{}]; ignored", peer->authority());
+        return false;
+    }
+    if ( ! block_transactions_handler_(peer, std::move(*parsed))) {
+        spdlog::debug("[p2p_node] blocktxn from [{}] answers no request; ignored", peer->authority());
+        return false;
+    }
+    return true;
+}
+
+void p2p_node::set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions) {
+    compact_block_handler_ = std::move(compact_block);
+    block_transactions_handler_ = std::move(block_transactions);
 }
 
 detail::header_ingest_channels& p2p_node::header_ingest() {

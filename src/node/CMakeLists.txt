@@ -167,6 +167,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/orchestrator.cpp
     src/sync/reorg.cpp
     src/sync/tip_announcement.cpp
+    src/sync/compact_blocks.cpp
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
@@ -254,6 +255,7 @@ set(kth_headers
   include/kth/node/sync/block_tasks.hpp
   include/kth/node/sync/orchestrator.hpp
   include/kth/node/sync/tip_announcement.hpp
+  include/kth/node/sync/compact_blocks.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})

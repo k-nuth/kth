@@ -142,6 +142,19 @@ public:
             domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
+    /// Queue a control message without waiting: false when the control queue
+    /// is full or the session is stopped, and then nothing is queued. For a
+    /// sender that must not be held by a peer that is not reading.
+    template <typename Message>
+    [[nodiscard]]
+    bool try_send(Message const& message) {
+        if (stopped()) {
+            return false;
+        }
+        return outbound_.try_send(
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
     /// Send data served to the peer (blocks, headers answering its requests).
     /// Waits while the data queue is full, without holding control traffic.
     template <typename Message>

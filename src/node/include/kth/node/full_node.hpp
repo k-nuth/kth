@@ -47,6 +47,7 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/sync/compact_blocks.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/transaction_relay.hpp>
 #endif
@@ -208,6 +209,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_compact_blocks();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -229,6 +231,9 @@ private:
     // The cmpctblock of the latest tip, shared by the peers' services that
     // announce it to peers asking for high-bandwidth compact blocks.
     sync::compact_tip_cache compact_tips_;
+    // Rebuilds the cmpctblocks peers send. Made before the network starts,
+    // so the first peer's is taken too; its run() ends within run().
+    std::unique_ptr<sync::compact_block_receiver> compact_blocks_;
 #endif
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)

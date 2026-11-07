@@ -170,6 +170,18 @@ full_node::~full_node() {
                 co_return co_await relay_->on_transaction(peer, tx);
             });
     }
+
+    // Compact blocks peers send (BIP152), rebuilt from the mempool once the
+    // node is caught up, and the blocktxn that completes one: both taken
+    // from the read loop without waiting.
+    compact_blocks_ = std::make_unique<sync::compact_block_receiver>(chain_, network_);
+    network_.set_compact_block_handlers(
+        [this](peer_session::ptr const& peer, domain::message::compact_block message) {
+            return compact_blocks_->offer(peer, std::move(message));
+        },
+        [this](peer_session::ptr const& peer, domain::message::block_transactions message) {
+            return compact_blocks_->deliver(peer, std::move(message));
+        });
 #endif
 
 #if ! defined(__EMSCRIPTEN__)
@@ -233,7 +245,7 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -357,6 +369,14 @@ full_node::~full_node() {
 
     organizer.stop();
     spdlog::info("[full_node] run_sync() ENDED");
+}
+
+::asio::awaitable<void> full_node::run_compact_blocks() {
+    // Until the network stops, then until the reconstructions under way have
+    // ended: they hold the chain and the network.
+    if (compact_blocks_) {
+        co_await compact_blocks_->run();
+    }
 }
 #endif
 
