@@ -297,6 +297,13 @@ code data_base::replace_headers_from(header::list const& headers, size_t start_h
     return error::success;
 }
 
+code data_base::truncate_headers_after(uint32_t height) {
+    if ( ! succeed(internal_db_->truncate_headers_after(height))) {
+        return error::operation_failed;
+    }
+    return error::success;
+}
+
 // =============================================================================
 // DEPRECATED: Block storage moved to flat files (blk*.dat)
 // Genesis block is now stored in flat files

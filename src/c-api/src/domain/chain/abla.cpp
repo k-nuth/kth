@@ -68,4 +68,23 @@ kth_abla_state_validity_t kth_domain_chain_abla_validate_state(kth_abla_state_co
     return static_cast<kth_abla_state_validity_t>(kth::domain::chain::abla::validate(st_cpp, cfg_cpp));
 }
 
+kth_abla_state_mut_t kth_domain_chain_abla_next_with_interval(kth_abla_state_const_t st, kth_abla_config_const_t cfg, uint64_t next_block_size, uint64_t next_interval) {
+    KTH_PRECONDITION(st != nullptr);
+    KTH_PRECONDITION(cfg != nullptr);
+    auto const& st_cpp = kth::cpp_ref<kth::domain::chain::abla::state>(st);
+    auto const& cfg_cpp = kth::cpp_ref<kth::domain::chain::abla::config>(cfg);
+    auto result = kth::domain::chain::abla::next(st_cpp, cfg_cpp, next_block_size, next_interval);
+    return result.has_value() ? kth::to_owned(std::move(*result)) : nullptr;
+}
+
+kth_bool_t kth_domain_chain_abla_block_size_limit_with_interval(kth_abla_state_const_t st, uint64_t interval, kth_size_t* out) {
+    KTH_PRECONDITION(st != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    auto const& st_cpp = kth::cpp_ref<kth::domain::chain::abla::state>(st);
+    auto const result = kth::domain::chain::abla::block_size_limit(st_cpp, interval);
+    if ( ! result) return kth::bool_to_int(false);
+    *out = *result;
+    return kth::bool_to_int(true);
+}
+
 } // extern "C"

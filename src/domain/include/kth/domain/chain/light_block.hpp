@@ -115,10 +115,17 @@ struct light_block {
     [[nodiscard]]
     hash_digest generate_merkle_root() const;
 
-    /// Check if merkle root matches header.
+    /// Also report equal real sibling hashes before odd-leaf padding, at any
+    /// tree level. Such a mutated body does not uniquely commit to its header.
+    [[nodiscard]]
+    hash_digest generate_merkle_root(bool& mutated) const;
+
+    /// Check the header commitment and reject mutated transaction trees.
     [[nodiscard]]
     bool is_valid_merkle_root() const {
-        return generate_merkle_root() == header_.merkle();
+        bool mutated;
+        auto const root = generate_merkle_root(mutated);
+        return ! mutated && root == header_.merkle();
     }
 
     chain::header header_;                 // Only header is fully parsed

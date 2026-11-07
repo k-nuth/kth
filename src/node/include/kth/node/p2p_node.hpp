@@ -129,8 +129,33 @@ public:
     /// Register a default handler for unhandled messages
     void set_default_handler(message_handler_fn handler);
 
+    /// Register a handler that runs in the peer's service instead of in its
+    /// read loop: dispatch() hands the message to the peer's bounded
+    /// served_requests() queue and returns, and serve() runs the handler.
+    /// For requests whose answer waits on the peer's data queue.
+    template <typename Message>
+    void register_served_handler(typed_message_handler_fn<Message> handler) {
+        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+    }
+
+    /// Announces a tip to one peer. `last_announced` is what this peer's
+    /// service last announced to it; the handler updates it.
+    using tip_announcement_fn = std::function<::asio::awaitable<void>(
+        peer_session&, hash_digest const& tip, std::optional<hash_digest>& last_announced)>;
+
+    /// Set the handler for the tips owed to each peer (peer_session::announce_tip).
+    void set_tip_announcement_handler(tip_announcement_fn handler);
+
+    /// The peer's service: runs the served handlers on the requests dispatch()
+    /// handed over, in arrival order, and announces the tip owed to the peer,
+    /// until the session closes its queues. A handler asking to disconnect
+    /// stops the session.
+    ::asio::awaitable<void> serve(peer_session& peer);
+
 private:
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
+    boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
+    tip_announcement_fn tip_announcement_;
     message_handler_fn default_handler_;
 };
 
@@ -270,6 +295,18 @@ public:
         dispatcher_.register_handler<Message>(std::move(handler));
     }
 
+    /// Register a node handler that runs in each peer's service, off its read
+    /// loop (see message_dispatcher::register_served_handler).
+    template <typename Message>
+    void register_served_message_handler(typed_message_handler_fn<Message> handler) {
+        dispatcher_.register_served_handler<Message>(std::move(handler));
+    }
+
+    /// Set the node's handler for the tips owed to each peer.
+    void set_tip_announcement_handler(message_dispatcher::tip_announcement_fn handler) {
+        dispatcher_.set_tip_announcement_handler(std::move(handler));
+    }
+
     // Manual connections
     // -------------------------------------------------------------------------
 
@@ -322,9 +359,10 @@ public:
     // are registered as announcements instead, under a mutex, because they
     // arrive on several peer strands at once. Its channel is only a doorbell.
 
-    /// Observe block messages before anything else sees them. `sendheaders`
-    /// sets this peer's preference, and `headers` goes to the header ingest;
-    /// both are consumed. The other block forms carry on to the dispatcher.
+    /// What the read loop does with `headers`, `cmpctblock` and `inv` before
+    /// anything else sees them. Answers whether the message was consumed: only
+    /// `headers` is; the other two carry on to the dispatcher. Any other
+    /// command is left alone.
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 
@@ -432,6 +470,7 @@ private:
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)

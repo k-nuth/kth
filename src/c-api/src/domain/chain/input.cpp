@@ -177,6 +177,14 @@ kth_bool_t kth_domain_chain_input_is_locked(kth_input_const_t self, kth_size_t b
     return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_locked(block_height_cpp, median_time_past));
 }
 
+kth_bool_t kth_domain_chain_input_is_locked_with_ticks(kth_input_const_t self, kth_block_ticks_const_t ticks, kth_size_t block_height, uint32_t median_time_past) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(ticks != nullptr);
+    auto const& ticks_cpp = kth::cpp_ref<kth::domain::chain::block_ticks>(ticks);
+    auto const block_height_cpp = kth::sz(block_height);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).is_locked(ticks_cpp, block_height_cpp, median_time_past));
+}
+
 
 // Operations
 

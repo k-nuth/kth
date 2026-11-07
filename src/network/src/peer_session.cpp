@@ -4,7 +4,10 @@
 
 #include <kth/network/peer_session.hpp>
 
-#include <algorithm>
+#include <asio/cancel_after.hpp>
+#include <asio/cancel_at.hpp>
+#include <asio/experimental/channel_select.hpp>
+
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -15,10 +18,7 @@
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 
-#include <asio/cancel_after.hpp>
-#include <asio/cancel_at.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
-#include <asio/experimental/channel_select.hpp>
 #include <asio/post.hpp>
 
 namespace kth::network {
@@ -83,8 +83,11 @@ infrastructure::config::authority extract_authority(::asio::ip::tcp::socket cons
 peer_session::peer_session(socket_type socket, settings const& settings, bool inbound)
     : socket_(std::move(socket))
     , strand_(socket_.get_executor())
-    , outbound_(strand_, outbound_capacity)
+    , outbound_(outbound_capacity)
+    , data_outbound_(data_outbound_capacity)
     , inbound_(100)            // Buffer up to 100 inbound messages
+    , served_requests_(served_requests_capacity)
+    , tip_announcements_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -115,12 +118,12 @@ peer_session::~peer_session() {
     boost_code ignore;
     socket_.close(ignore);
 
-    // Cancel before close to ensure any pending async ops are woken up
-    outbound_.cancel();
-
-    outbound_.close();
-    inbound_.close();
     // select_channels: close() is the wake-up (eof / broken_pipe); no cancel().
+    outbound_.close();
+    data_outbound_.close();
+    inbound_.close();
+    served_requests_.close();
+    tip_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -254,13 +257,13 @@ void peer_session::stop(code const& ec) {
     // - outbound_: Used by write_loop() and send operations
     // - block_responses_, addr_responses_: Used by request protocols
     spdlog::debug("[peer_session] stop() checkpoint 11: canceling all channel operations");
-    outbound_.cancel();
-    spdlog::debug("[peer_session] stop() checkpoint 11b: closing all channels");
+    // All select_channels: close() completes a pending receive with eof and a
+    // pending send with broken_pipe, from any thread.
     outbound_.close();
-    // inbound_ and the response channels are select_channels: close()
-    // completes a pending receive with eof and a pending send with
-    // broken_pipe, from any thread.
+    data_outbound_.close();
     inbound_.close();
+    served_requests_.close();
+    tip_announcements_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -282,6 +285,7 @@ void peer_session::drain_response_channels() {
         }
     };
     drain(inbound_);
+    drain(served_requests_);
     drain(block_responses_);
     drain(addr_responses_);
 }
@@ -298,16 +302,40 @@ bool peer_session::stopped() const {
     if (stopped()) {
         co_return error::channel_stopped;
     }
+    co_return co_await enqueue(outbound_, std::move(data));
+}
 
-    auto [ec] = co_await outbound_.async_send(
-        std::error_code{},
-        std::move(data),
-        ::asio::as_tuple(::asio::use_awaitable));
+::asio::awaitable<code> peer_session::enqueue(outbound_channel& channel, data_chunk data) {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(channel, std::move(data))
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, sent] = completion;
+    (void)sent;
+    co_return ec ? error::channel_stopped : error::success;
+}
 
-    if (ec) {
-        co_return error::channel_stopped;
+peer_session::served_channel& peer_session::served_requests() {
+    return served_requests_;
+}
+
+peer_session::outbound_channel& peer_session::data_outbound() {
+    return data_outbound_;
+}
+
+void peer_session::announce_tip(hash_digest const& tip) {
+    if (tip_announcements_.try_send(hash_digest(tip))) {
+        return;
     }
-    co_return error::success;
+    // Full: replace what the service has not taken. With one producer the
+    // slot can only empty in between, and then the send below succeeds.
+    std::error_code ec;
+    (void)tip_announcements_.try_receive(ec);
+    (void)tip_announcements_.try_send(hash_digest(tip));
+}
+
+peer_session::tip_channel& peer_session::tip_announcements() {
+    return tip_announcements_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {
@@ -531,34 +559,12 @@ void peer_session::set_wants_addrv2(bool value) {
     wants_addrv2_.store(value, std::memory_order_relaxed);
 }
 
-bool peer_session::wants_headers() const {
-    return wants_headers_.load(std::memory_order_relaxed);
+bool peer_session::prefers_headers() const {
+    return prefers_headers_.load(std::memory_order_relaxed);
 }
 
-void peer_session::set_wants_headers(bool value) {
-    wants_headers_.store(value, std::memory_order_relaxed);
-}
-
-bool peer_session::knows_block(hash_digest const& hash) const {
-    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
-    return std::find(known_blocks_.begin(), known_blocks_.end(), hash) != known_blocks_.end();
-}
-
-bool peer_session::remember_block(hash_digest const& hash) {
-    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
-    if (std::find(known_blocks_.begin(), known_blocks_.end(), hash) != known_blocks_.end()) {
-        return false;
-    }
-    if (known_blocks_.size() == known_block_capacity) {
-        known_blocks_.pop_front();
-    }
-    known_blocks_.push_back(hash);
-    return true;
-}
-
-size_t peer_session::known_block_count() const {
-    std::lock_guard<std::mutex> const guard(known_blocks_mutex_);
-    return known_blocks_.size();
+void peer_session::set_prefers_headers(bool value) {
+    prefers_headers_.store(value, std::memory_order_relaxed);
 }
 
 // =============================================================================
@@ -610,14 +616,22 @@ size_t peer_session::known_block_count() const {
 
 ::asio::awaitable<void> peer_session::write_loop() {
     spdlog::debug("[peer_session] write_loop() starting for [{}]", authority());
+    auto executor = co_await ::asio::this_coro::executor;
+    // Control first: a biased selection takes the first ready case in order.
+    ::asio::experimental::channel_select_options options;
+    options.biased = true;
     while (!stopped()) {
-        auto [ec, data] = co_await outbound_.async_receive(
-            ::asio::as_tuple(::asio::use_awaitable));
-
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(outbound_),
+            ::asio::experimental::receive(data_outbound_)
+        ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
         if (ec) {
-            // Channel closed or error
+            // Closed by stop(), or the wait cancelled.
             co_return;
         }
+        auto data = selected.index == 0
+            ? std::move(*selected.value<0>()) : std::move(*selected.value<1>());
 
         // Write to socket
         auto [write_ec, bytes_written] = co_await ::asio::async_write(
