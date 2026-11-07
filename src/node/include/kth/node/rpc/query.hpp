@@ -92,16 +92,17 @@ struct mempool_accept_result {
     hash_digest txid;
     bool allowed = false;
     uint64_t size = 0;           // serialized bytes, when allowed
+    uint64_t vsize = 0;          // virtual bytes, the size its fee rate is per, when allowed
     uint64_t fee = 0;            // satoshis, when allowed
     std::string reject_reason;   // when refused
     std::string reject_details;  // when refused, if there is more to say
 };
 
 // Serialize the testmempoolaccept result: a one-element array. An allowed
-// transaction carries size, vsize (the same number: the node prices signature
-// checks on their own, not through a weighted size) and fees, base and
-// effective-feerate per kB, in BCH. A refused one carries reject-reason and,
-// when set, reject-details.
+// transaction carries size, vsize (the serialized size, or 50 bytes per
+// signature check if that is more: the size the mempool's fee rates are per)
+// and fees, base and effective-feerate per kB of vsize, in BCH. A refused one
+// carries reject-reason and, when set, reject-details.
 std::string render_mempool_accept(mempool_accept_result const& result);
 
 // Owned records from the header index; RPC only renders their wire format.

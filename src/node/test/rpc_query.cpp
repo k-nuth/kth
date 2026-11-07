@@ -197,10 +197,17 @@ TEST_CASE("render_mempool_accept serializes an allowed and a refused transaction
     auto const shown = encode_hash(txid);
 
     // 1000 satoshis over 226 bytes is 4424 satoshis per kB, truncated.
-    mempool_accept_result allowed{.txid = txid, .allowed = true, .size = 226, .fee = 1000};
+    mempool_accept_result allowed{.txid = txid, .allowed = true, .size = 226, .vsize = 226, .fee = 1000};
     REQUIRE(render_mempool_accept(allowed) ==
         R"([{"txid":")" + shown + R"(","allowed":true,"size":226,"vsize":226,)"
         R"("fees":{"base":0.00001,"effective-feerate":0.00004424}}])");
+
+    // Heavy in signature checks: 20 of them weigh 1000 virtual bytes, and the
+    // rate is per those, 1000 satoshis per kB.
+    allowed.vsize = 1000;
+    REQUIRE(render_mempool_accept(allowed) ==
+        R"([{"txid":")" + shown + R"(","allowed":true,"size":226,"vsize":1000,)"
+        R"("fees":{"base":0.00001,"effective-feerate":0.00001}}])");
 
     mempool_accept_result refused{.txid = txid, .reject_reason = "missing-inputs"};
     REQUIRE(render_mempool_accept(refused) ==

@@ -133,12 +133,13 @@ std::string render_mempool_accept(mempool_accept_result const& result) {
     w.field("allowed", result.allowed);
     if (result.allowed) {
         w.field("size", result.size);
-        w.field("vsize", result.size);
+        w.field("vsize", result.vsize);
         w.key("fees").begin_object();
         w.field_raw("base", satoshi_to_bitcoin(result.fee));
-        // Whole satoshis per 1000 bytes, truncated. No overflow: a fee is at
-        // most the 21 million BCH supply, so a thousand times it fits.
-        uint64_t const per_kb = result.size == 0 ? 0 : result.fee * 1000 / result.size;
+        // Whole satoshis per 1000 virtual bytes, truncated, as the mempool
+        // compares them. No overflow: a fee is at most the 21 million BCH
+        // supply, so a thousand times it fits.
+        uint64_t const per_kb = blockchain::fee_per_kb(result.fee, result.vsize);
         w.field_raw("effective-feerate", satoshi_to_bitcoin(per_kb));
         w.end_object();
     } else {

@@ -202,8 +202,8 @@ sets no maximum fee.
 
 The answer is a one-element array with `txid` and `allowed`. An allowed
 transaction also has `size`, `vsize` and `fees` (`base` and `effective-feerate`
-per kB, in BCH). `vsize` equals `size`: the node prices signature checks on
-their own (`node.sigop_fee_satoshis`), not through a weighted size. A refused
+per kB of `vsize`, in BCH). `vsize` is the size the mempool's fee rates are per:
+the serialized size, or 50 bytes per signature check if that is more. A refused
 one has `reject-reason`: `missing-inputs` when a prevout is neither unspent in
 the chain nor an output of a pooled transaction, `18: txn-already-in-mempool`
 and `18: txn-mempool-conflict` (BIP61 code 18, duplicate) when the pool already

@@ -988,6 +988,9 @@ test_mempool_accept(method_context& ctx, request const& req) {
     mempool_accept_result result{.txid = pooled->hash(), .allowed = tested.has_value()};
     if (tested) {
         result.size = pooled->serialized_size(true);
+        // What the mempool prices: the size, or the signature checks it
+        // yields at 50 bytes each if they weigh more.
+        result.vsize = blockchain::virtual_size(result.size, *tested);
         // Validation filled in the prevouts, so the fee is known now.
         result.fee = pooled->fees();
         co_return render_mempool_accept(result);
