@@ -129,10 +129,11 @@ full_node::~full_node() {
             co_return message_result::handled;
         });
 
-    // Serve the connected chain: headers for a locator, and the blocks a
-    // peer asks for after an announcement or during its own sync. Both run in
-    // the peer's service, off its read loop: their answers wait on the peer's
-    // data queue.
+    // Serve the connected chain: headers for a locator, the blocks a peer
+    // asks for after an announcement or during its own sync, and the
+    // transactions it is missing to rebuild a compact block (BIP152). All run
+    // in the peer's service, off its read loop: their answers wait on the
+    // peer's data queue.
     network_.register_served_message_handler<domain::message::get_headers>(
         [this](peer_session& peer, domain::message::get_headers const& request) {
             return handlers::chain_data::handle_get_headers(chain_, peer, request);
@@ -140,6 +141,10 @@ full_node::~full_node() {
     network_.register_served_message_handler<domain::message::get_data>(
         [this](peer_session& peer, domain::message::get_data const& request) {
             return handlers::chain_data::handle_get_data(chain_, peer, request);
+        });
+    network_.register_served_message_handler<domain::message::get_block_transactions>(
+        [this](peer_session& peer, domain::message::get_block_transactions const& request) {
+            return handlers::chain_data::handle_get_block_transactions(chain_, peer, request);
         });
     // Each newly connected tip, owed to every peer by the sync coordinator, is
     // announced by the peer's own service.

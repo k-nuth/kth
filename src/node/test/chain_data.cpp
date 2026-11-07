@@ -21,6 +21,7 @@
 #include <asio/use_future.hpp>
 
 #include <kth/domain/message/block.hpp>
+#include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/not_found.hpp>
 #include <kth/node/handlers/chain_data.hpp>
@@ -254,7 +255,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
         {type_id::block, c.trunk[1].hash()},
         {type_id::transaction, c.trunk[0].transactions().front().hash()},   // not handled here
         {type_id::block, c.side.hash()},                                    // off the connected chain
-        {type_id::compact_block, c.trunk[3].hash()},                        // answered in full
+        {type_id::compact_block, c.trunk[3].hash()},                        // the tip: a cmpctblock
         {type_id::block, c.trunk[4].hash()},                                // header only
         {type_id::block, unknown_hash()}});
     REQUIRE(request);
@@ -263,15 +264,17 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
 
     auto const sent = peer.received();
     REQUIRE(sent.size() == 3);
-    hash_list blocks;
-    for (size_t i = 0; i < 2; ++i) {
-        REQUIRE(sent[i].command == domain::message::block::command);
-        byte_reader reader(sent[i].payload);
-        auto const block = domain::message::block::from_data(reader, peer.session->negotiated_version());
-        REQUIRE(block);
-        blocks.push_back(block->hash());
-    }
-    CHECK(blocks == hash_list{c.trunk[1].hash(), c.trunk[3].hash()});
+    REQUIRE(sent[0].command == domain::message::block::command);
+    byte_reader block_reader(sent[0].payload);
+    auto const block = domain::message::block::from_data(block_reader, peer.session->negotiated_version());
+    REQUIRE(block);
+    CHECK(block->hash() == c.trunk[1].hash());
+
+    REQUIRE(sent[1].command == domain::message::compact_block::command);
+    byte_reader compact_reader(sent[1].payload);
+    auto const compact = domain::message::compact_block::from_data(compact_reader, peer.session->negotiated_version());
+    REQUIRE(compact);
+    CHECK(domain::chain::hash(compact->header()) == c.trunk[3].hash());
 
     REQUIRE(sent[2].command == domain::message::not_found::command);
     byte_reader reader(sent[2].payload);
