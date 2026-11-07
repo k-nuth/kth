@@ -183,9 +183,11 @@ set(kth_sources_just_legacy
         src/formats/base_85.cpp
 
         src/math/checksum.cpp
+        src/math/chacha20_poly1305.cpp
         src/math/crypto.cpp
         src/math/elliptic_curve.cpp
         src/math/hash.cpp
+        src/math/hkdf.cpp
         src/math/secp256k1_initializer.cpp
         src/math/secp256k1_initializer.hpp
         src/math/sip_hash.cpp
@@ -340,9 +342,11 @@ set(kth_headers
     include/kth/infrastructure/impl/machine/number.ipp
 
     include/kth/infrastructure/math/checksum.hpp
+    include/kth/infrastructure/math/chacha20_poly1305.hpp
     include/kth/infrastructure/math/crypto.hpp
     include/kth/infrastructure/math/elliptic_curve.hpp
     include/kth/infrastructure/math/hash.hpp
+    include/kth/infrastructure/math/hkdf.hpp
     include/kth/infrastructure/math/sip_hash.hpp
     include/kth/infrastructure/math/uint256.hpp
 
@@ -670,6 +674,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     test/machine/number.cpp
 
+    test/math/chacha20_poly1305.cpp
     test/math/checksum.cpp
 
     # IMPORTANT: Do not list big_number_gen_*.cpp files here.

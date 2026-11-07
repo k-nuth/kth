@@ -4,11 +4,16 @@
 
 #include <kth/node/parser.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <istream>
+#include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -296,6 +301,69 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the Stratum V2 listener.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Stratum V2 listener binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Stratum V2 listener (default 8442).");
+    app.add_option("--sv2.noise", cfg.sv2.noise,
+        "Require the Noise handshake and encrypted transport (default true).");
+    app.add_option("--sv2.static_key_file", cfg.sv2.static_key_file,
+        "Provider's 32-byte static secret key file (generated if absent).");
+    app.add_option("--sv2.authority_key_file", cfg.sv2.authority_key_file,
+        "Certificate authority's 32-byte secret key file (generated if absent).");
+    app.add_option("--sv2.certificate_file", cfg.sv2.certificate_file,
+        "Offline-signed 74-byte certificate file (empty signs at startup).");
+    app.add_option("--sv2.authority_public_key", cfg.sv2.authority_public_key,
+        "Base58Check authority public key (required with an offline certificate).");
+    app.add_option("--sv2.certificate_validity_seconds", cfg.sv2.certificate_validity_seconds,
+        "Lifetime in seconds of certificates signed at startup (default 2592000).");
+    app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
+        "Deadline in seconds for the complete Noise handshake (default 10).");
+    app.add_option("--sv2.mining.enabled", cfg.sv2.mining.enabled,
+        "Accept Mining Protocol clients on the Stratum V2 listener.");
+    app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
+        "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
+    app.add_option("--sv2.jd.enabled", cfg.sv2.jd.enabled,
+        "Enable the Stratum V2 Job Declaration client (default false).");
+    app.add_option("--sv2.jd.mining_address", cfg.sv2.jd.mining_address,
+        "Pool Mining Protocol host:port, or [IPv6]:port.");
+    app.add_option("--sv2.jd.mining_authority_public_key", cfg.sv2.jd.mining_authority_public_key,
+        "Base58Check Noise authority key pinned for the pool Mining Protocol connection.");
+    app.add_option("--sv2.jd.jds_address", cfg.sv2.jd.jds_address,
+        "Job Declaration Server host:port, or [IPv6]:port.");
+    app.add_option("--sv2.jd.jds_authority_public_key", cfg.sv2.jd.jds_authority_public_key,
+        "Base58Check Noise authority key pinned for the Job Declaration Server.");
+    app.add_option("--sv2.jd.user_identity", cfg.sv2.jd.user_identity,
+        "Pool account identity (1 to 255 UTF-8 bytes).");
+    app.add_option("--sv2.jd.mode", cfg.sv2.jd.mode,
+        "Job Declaration mode: coinbase-only or full-template (default coinbase-only).");
+    app.add_option("--sv2.jd.response_timeout_seconds", cfg.sv2.jd.response_timeout_seconds,
+        "Upstream response deadline in seconds, from 1 to 600 (default 10).");
+    app.add_option("--sv2.jd.upstream", cfg.sv2.jd.upstreams,
+        "Repeat in priority order: mining-address|mining-key|jds-address|jds-key|identity|mode.")
+        ->take_all();
+    app.add_option("--sv2.jd.retry_initial_seconds", cfg.sv2.jd.retry_initial_seconds,
+        "Initial retry delay, from 1 to 3600 seconds (default 5).");
+    app.add_option("--sv2.jd.retry_max_seconds", cfg.sv2.jd.retry_max_seconds,
+        "Maximum retry delay, from the initial delay to 3600 seconds (default 300).");
+    app.add_option("--sv2.jd.authority_hold_seconds", cfg.sv2.jd.authority_hold_seconds,
+        "Noise authentication hold, from 60 to 86400 seconds and at least the maximum retry (default 3600).");
+    app.add_option("--sv2.jd.recovery_hold_seconds", cfg.sv2.jd.recovery_hold_seconds,
+        "Healthy hold before returning to a higher priority pool, from 1 to 3600 seconds (default 60).");
+    app.add_option("--sv2.jd.probe_interval_seconds", cfg.sv2.jd.probe_interval_seconds,
+        "Background probe spacing, from 1 to 600 seconds (default 10).");
+    app.add_option("--sv2.jd.max_latency_milliseconds", cfg.sv2.jd.max_latency_milliseconds,
+        "Maximum upstream response latency, from 1 to 600000 milliseconds (default 5000).");
+    app.add_option("--sv2.jd.max_stale_percent", cfg.sv2.jd.max_stale_percent,
+        "Maximum stale share percentage, from 1 to 100 (default 20).");
+    app.add_option("--sv2.jd.max_reject_percent", cfg.sv2.jd.max_reject_percent,
+        "Maximum rejected share percentage, from 1 to 100 (default 10).");
+    app.add_option("--sv2.jd.health_window", cfg.sv2.jd.health_window,
+        "Share results per health window, from 1 to 1024 (default 20).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
@@ -311,6 +379,29 @@ void apply_environment(configuration& cfg) {
     }
 }
 
+struct flat_config : CLI::ConfigBase {
+    std::vector<CLI::ConfigItem> from_config(std::istream& input) const override {
+        auto parsed = CLI::ConfigBase::from_config(input);
+        std::vector<CLI::ConfigItem> result;
+        std::optional<size_t> upstream;
+        for (auto& item : parsed) {
+            if (item.parents.empty() && item.name == "sv2.jd.upstream") {
+                // CLI11 otherwise ignores repeated keys separated by another
+                // setting. Only this ordered list needs them combined.
+                if (upstream) {
+                    auto& first = result[*upstream];
+                    first.inputs.insert(first.inputs.end(), item.inputs.begin(), item.inputs.end());
+                    first.multiline = first.multiline || item.multiline;
+                    continue;
+                }
+                upstream = result.size();
+            }
+            result.push_back(std::move(item));
+        }
+        return result;
+    }
+};
+
 // Load a config file into `app`. KTH config files use flat, dotted keys
 // (`network.inbound_port = 8433`) that map one-to-one to the options registered
 // by add_settings. CLI11 treats a `.` in a config key as subcommand nesting by
@@ -319,6 +410,7 @@ void apply_environment(configuration& cfg) {
 // The loader option name is distinct from `--config,-c` (already registered by
 // add_command_options) to avoid an OptionAlreadyAdded clash.
 void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
+    app.config_formatter(std::make_shared<flat_config>());
     // '\x1f' (unit separator) never appears in an option name or value, so
     // section splitting is effectively turned off.
     app.get_config_formatter_base()->parentSeparator('\x1f');

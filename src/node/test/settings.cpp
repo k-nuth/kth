@@ -12,6 +12,48 @@ using namespace kth;
 // constructors
 //-----------------------------------------------------------------------------
 
+TEST_CASE("sv2 settings default to disabled localhost listener with Noise", "[settings tests][sv2 noise]") {
+    node::sv2_settings const configuration;
+    REQUIRE_FALSE(configuration.enabled);
+    REQUIRE(configuration.bind == "127.0.0.1");
+    REQUIRE(configuration.port == 8442u);
+    REQUIRE(configuration.noise);
+    REQUIRE(configuration.static_key_file == ".sv2-static-key");
+    REQUIRE(configuration.authority_key_file == ".sv2-authority-key");
+    REQUIRE(configuration.certificate_file.empty());
+    REQUIRE(configuration.authority_public_key.empty());
+    REQUIRE(configuration.certificate_validity_seconds == 2592000u);
+    REQUIRE(configuration.handshake_timeout_seconds == 10u);
+}
+
+TEST_CASE("sv2 mining defaults to disabled without a payout address", "[settings tests][sv2 mining]") {
+    node::sv2_settings const configuration;
+    CHECK_FALSE(configuration.mining.enabled);
+    CHECK(configuration.mining.address.empty());
+}
+
+TEST_CASE("sv2 Job Declaration defaults to disabled without upstreams or a mode", "[settings tests][sv2 jd]") {
+    node::sv2_settings const configuration;
+    CHECK_FALSE(configuration.jd.enabled);
+    CHECK(configuration.jd.mining_address.empty());
+    CHECK(configuration.jd.mining_authority_public_key.empty());
+    CHECK(configuration.jd.jds_address.empty());
+    CHECK(configuration.jd.jds_authority_public_key.empty());
+    CHECK(configuration.jd.user_identity.empty());
+    CHECK(configuration.jd.mode == "coinbase-only");
+    CHECK(configuration.jd.upstreams.empty());
+    CHECK(configuration.jd.response_timeout_seconds == 10u);
+    CHECK(configuration.jd.retry_initial_seconds == 5u);
+    CHECK(configuration.jd.retry_max_seconds == 300u);
+    CHECK(configuration.jd.authority_hold_seconds == 3600u);
+    CHECK(configuration.jd.recovery_hold_seconds == 60u);
+    CHECK(configuration.jd.probe_interval_seconds == 10u);
+    CHECK(configuration.jd.max_latency_milliseconds == 5000u);
+    CHECK(configuration.jd.max_stale_percent == 20u);
+    CHECK(configuration.jd.max_reject_percent == 10u);
+    CHECK(configuration.jd.health_window == 20u);
+}
+
 TEST_CASE("settings construct default context expected", "[settings tests]") {
     node::settings configuration;
     REQUIRE(configuration.sync_peers == 0u);

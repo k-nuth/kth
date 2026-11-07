@@ -32,6 +32,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/domain/message/compact_block.hpp>
+#include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>

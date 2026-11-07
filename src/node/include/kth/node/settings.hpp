@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure/display_mode.hpp>
@@ -36,6 +37,64 @@ struct KND_API rpc_settings {
     /// -gbtstoretime.
     uint32_t gbt_cache_size;
     uint32_t gbt_store_time;
+};
+
+/// Stratum V2 listener settings. The listener is disabled by default.
+/// `mining` is the Mining Protocol on that same listener, also off by default.
+struct KND_API sv2_settings {
+    struct mining_settings {
+        mining_settings();
+
+        bool enabled;
+        std::string address;
+    };
+
+    struct jd_upstream {
+        std::string mining_address;
+        std::string mining_authority_public_key;
+        std::string jds_address;
+        std::string jds_authority_public_key;
+        std::string user_identity;
+        std::string mode;
+    };
+
+    struct jd_settings {
+        jd_settings();
+
+        bool enabled;
+        std::string mining_address;
+        std::string mining_authority_public_key;
+        std::string jds_address;
+        std::string jds_authority_public_key;
+        std::string user_identity;
+        std::string mode;
+        std::vector<std::string> upstreams;
+        uint32_t response_timeout_seconds;
+        uint32_t retry_initial_seconds;
+        uint32_t retry_max_seconds;
+        uint32_t authority_hold_seconds;
+        uint32_t recovery_hold_seconds;
+        uint32_t probe_interval_seconds;
+        uint32_t max_latency_milliseconds;
+        uint32_t max_stale_percent;
+        uint32_t max_reject_percent;
+        uint32_t health_window;
+    };
+
+    sv2_settings();
+
+    bool enabled;
+    std::string bind;
+    uint16_t port;
+    bool noise;
+    std::string static_key_file;
+    std::string authority_key_file;
+    std::string certificate_file;
+    std::string authority_public_key;
+    uint32_t certificate_validity_seconds;
+    uint32_t handshake_timeout_seconds;
+    mining_settings mining;
+    jd_settings jd;
 };
 
 /// Common database configuration settings, properties not thread safe.
