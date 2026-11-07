@@ -71,6 +71,10 @@ struct mempool {
     // pool transaction that conflicts with them (recursively, with descendants).
     void remove_for_block(domain::chain::block const& block);
 
+    // Remove every transaction first seen before `seen_before` (unix seconds),
+    // with its descendants (BCHN's mempool expiry). Returns how many left.
+    std::size_t expire(uint64_t seen_before);
+
     // A reorg happened: re-admit transactions from the disconnected blocks that
     // are not in the new chain, then apply remove_for_block for the new blocks.
     void update_for_reorg(block_const_ptr_list_const_ptr outgoing,

@@ -6,6 +6,7 @@
 #define KTH_BLOCKCHAIN_BLOCK_CHAIN_HPP
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
@@ -52,6 +53,7 @@
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
+#include <stop_token>
 #include <asio/experimental/concurrent_channel.hpp>
 
 
@@ -783,6 +785,19 @@ struct KB_API block_chain {
 
     // The same, for a caller that has already parsed the block.
     void mempool_remove_for_block(domain::chain::block const& block);
+
+    // Expire every pool transaction first seen before `seen_before` (unix
+    // seconds), with its descendants. The walk and the removal run on the
+    // chain's executor under the validation mutex, like the other mempool
+    // writers; the caller only waits for the count of what left the pool.
+    ::asio::awaitable<size_t> mempool_expire(uint64_t seen_before);
+
+    // BCHN -mempoolexpiry: until `stop` is requested or the chain stops, every
+    // `period` expire what was first seen more than `expiry` ago. Waiting is a
+    // timer raced against `stop`, so a stop wakes it; a stop requested before
+    // it begins returns without expiring anything.
+    ::asio::awaitable<void> run_mempool_expiry(std::chrono::seconds expiry,
+        std::chrono::steady_clock::duration period, std::stop_token stop);
 
     blockchain::mempool& mempool_ref();
     blockchain::mempool const& mempool_ref() const;

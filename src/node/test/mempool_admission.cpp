@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <future>
+#include <stop_token>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -175,6 +177,161 @@ TEST_CASE("organizing a valid transaction admits it to the mempool", "[mempool][
     CHECK(ec == error::success);
     CHECK(chain.mempool_ref().size() == 1);
     CHECK(chain.mempool_ref().contains(tx->hash()));
+}
+
+// Expiry counts from when the node first saw a transaction, as BCHN's does, so
+// a restart must not reset it: mempool.dat records that time, and the reload
+// used to admit every transaction as seen at the restart.
+TEST_CASE("a reloaded transaction keeps its age and expires with its descendants",
+          "[mempool][admission][expiry]") {
+    admission_chain built("mempool_expiry", trunk_len);
+    auto& chain = built.chain();
+    auto const parent = built.matured_spend(fee);
+    auto const child = test::spend_p2pkh(parent, 0, parent.outputs()[0].value() - fee,
+        chain.chain_settings().enabled_flags());
+
+    auto const now = uint64_t(zulu_time());
+    auto const expiry = uint64_t(chain.chain_settings().mempool_expiry_hours) * 3600;
+    REQUIRE(expiry > 0);
+    auto const parent_seen = now - expiry - 3600;
+    auto const child_seen = now - 60;
+    std::vector<database::mempool_stored_tx> stored{
+        {std::make_shared<domain::message::transaction>(parent), parent_seen},
+        {std::make_shared<domain::message::transaction>(child), child_seen}};
+    REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+    auto const reloaded = ::asio::co_spawn(chain.executor(), chain.load_mempool_from_disk(),
+        ::asio::use_future).get();
+    REQUIRE(reloaded == 2);
+
+    auto const parent_entry = chain.mempool_ref().entry(parent.hash());
+    auto const child_entry = chain.mempool_ref().entry(child.hash());
+    REQUIRE(parent_entry);
+    REQUIRE(child_entry);
+    CHECK(parent_entry->time_seen == parent_seen);
+    CHECK(child_entry->time_seen == child_seen);
+
+    auto const expire = [&](uint64_t seen_before) {
+        return ::asio::co_spawn(chain.executor(), chain.mempool_expire(seen_before),
+            ::asio::use_future).get();
+    };
+
+    // Nothing first seen within the period goes.
+    CHECK(expire(parent_seen) == 0);
+    CHECK(chain.mempool_ref().size() == 2);
+
+    // The parent is past it; its child, seen a minute ago, goes with it.
+    CHECK(expire(now - expiry) == 2);
+    CHECK_FALSE(chain.mempool_ref().contains(parent.hash()));
+    CHECK_FALSE(chain.mempool_ref().contains(child.hash()));
+}
+
+namespace {
+
+// A chain whose mempool holds one transaction first seen `age` seconds ago.
+struct aged_pool {
+    admission_chain built;
+    domain::chain::transaction tx;
+
+    aged_pool(char const* tag, uint64_t age)
+        : built(tag, trunk_len)
+        , tx(built.matured_spend(fee))
+    {
+        std::vector<database::mempool_stored_tx> stored{
+            {std::make_shared<domain::message::transaction>(tx), uint64_t(zulu_time()) - age}};
+        REQUIRE(database::store_mempool(built.fixture.dir() / "mempool.dat", std::move(stored)));
+        REQUIRE(::asio::co_spawn(built.chain().executor(), built.chain().load_mempool_from_disk(),
+            ::asio::use_future).get() == 1);
+    }
+
+    bool pooled() { return built.chain().mempool_ref().contains(tx.hash()); }
+};
+
+// The sweep on an executor of its own, as the orchestrator runs it beside the
+// chain's.
+struct sweep_runner {
+    ::asio::io_context context;
+    std::future<void> done;
+    std::thread thread;
+
+    sweep_runner(blockchain::block_chain& chain, std::chrono::seconds expiry,
+                 std::chrono::steady_clock::duration period, std::stop_token stop)
+        : done(::asio::co_spawn(context, chain.run_mempool_expiry(expiry, period, stop),
+              ::asio::use_future))
+        , thread([this] { context.run(); }) {}
+
+    ~sweep_runner() {
+        context.stop();
+        thread.join();
+    }
+
+    bool ended_within(std::chrono::milliseconds limit) {
+        return done.wait_for(limit) == std::future_status::ready;
+    }
+};
+
+} // namespace
+
+// The sweep the node runs: its own timer, not a caller, removes what aged out,
+// and a stop wakes it from its wait.
+TEST_CASE("the expiry sweep removes what aged out on its timer and ends when stopped",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep", 7200);
+    REQUIRE(pool.pooled());
+
+    std::stop_source stop;
+    sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(20),
+        stop.get_token());
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (pool.pooled() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK_FALSE(pool.pooled());
+    CHECK_FALSE(sweep.ended_within(std::chrono::milliseconds(0)));
+
+    stop.request_stop();
+    CHECK(sweep.ended_within(std::chrono::seconds(5)));
+}
+
+TEST_CASE("the expiry sweep keeps what is younger than the expiry",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_young", 60);
+    std::stop_source stop;
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(5),
+            stop.get_token());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        stop.request_stop();
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
+}
+
+// A stop that arrives first: the sweep neither waits a period nor expires.
+TEST_CASE("the expiry sweep stopped before it begins expires nothing",
+          "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_stopped", 7200);
+    std::stop_source stop;
+    stop.request_stop();
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::milliseconds(0),
+            stop.get_token());
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
+}
+
+// A stop during a long wait wakes it: shutdown does not wait out the period.
+TEST_CASE("a stop wakes the expiry sweep from its wait", "[mempool][admission][expiry]") {
+    aged_pool pool("expiry_sweep_wake", 7200);
+    std::stop_source stop;
+    {
+        sweep_runner sweep(pool.built.chain(), std::chrono::hours(1), std::chrono::hours(1),
+            stop.get_token());
+        CHECK_FALSE(sweep.ended_within(std::chrono::milliseconds(50)));
+        stop.request_stop();
+        REQUIRE(sweep.ended_within(std::chrono::seconds(5)));
+    }
+    CHECK(pool.pooled());
 }
 
 #if defined(KTH_CURRENCY_BCH)

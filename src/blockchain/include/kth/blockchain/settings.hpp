@@ -28,6 +28,9 @@ struct KB_API settings {
     bool priority = true;
     float byte_fee_satoshis = 0.1f;
     float sigop_fee_satoshis= 100.0f;
+    // BCHN -mempoolexpiry: a transaction still unconfirmed this long after the
+    // node first saw it leaves the mempool, with its descendants. 0 keeps them.
+    uint32_t mempool_expiry_hours = 336;
 #if defined(KTH_CURRENCY_BCH)
     uint64_t minimum_output_satoshis = 0;
     domain::policy::transaction_standardness_parameters standardness;
