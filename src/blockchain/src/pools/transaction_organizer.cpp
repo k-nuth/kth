@@ -352,7 +352,20 @@ awaitable_expected<size_t> transaction_organizer::test_accept(transaction_const_
         }
     }
 
-    co_return co_await validate_attempt(tx);
+    auto const sigchecks = co_await validate_attempt(tx);
+    if ( ! sigchecks) {
+        co_return sigchecks;
+    }
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"). Admission asks it only when it records the transaction
+    // (block_chain::commit_validated_transaction), which a test never reaches,
+    // so the test asks it here, per virtual byte as admission does.
+    auto const minimum = chain_.mempool_minimum_fee_per_kb();
+    if (tx->fees() < fee_for(minimum, virtual_size(tx->serialized_size(true), *sigchecks))) {
+        co_return std::unexpected(error::insufficient_fee);
+    }
+    co_return sigchecks;
 }
 
 // Subscription.

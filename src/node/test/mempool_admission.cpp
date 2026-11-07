@@ -291,6 +291,34 @@ TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
     CHECK(chain.mempool_ref().contains(paying->hash()));
 }
 
+// Admission asks a full pool's raised minimum only when it records the
+// transaction, a step testing never reaches; testing asks it too, so the two
+// give the same answer either side of it.
+TEST_CASE("testing acceptance asks the pool's raised minimum fee", "[mempool][admission][limit]") {
+    admission_chain built("test_accept_minimum_fee", trunk_len);
+    auto& chain = built.chain();
+
+    auto const pooled = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(run_on_chain(chain, [&] { return chain.organize(pooled); }) == error::success);
+    REQUIRE(chain.mempool_trim(0) == 1);
+    auto const raised = chain.mempool_minimum_fee_per_kb();
+    REQUIRE(raised > 0);
+
+    // Below it: testing refuses as admission does.
+    auto const cheap = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    REQUIRE(blockchain::fee_per_kb(1000, cheap->serialized_size(true)) < raised);
+    auto const refused = test_accept_on_chain(chain, cheap);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == error::insufficient_fee);
+    CHECK(run_on_chain(chain, [&] { return chain.organize(cheap); }) == error::insufficient_fee);
+
+    // Above it: testing passes and still admits nothing.
+    auto const paying = std::make_shared<domain::message::transaction>(built.matured_spend(2000));
+    REQUIRE(blockchain::fee_per_kb(2000, paying->serialized_size(true)) >= raised);
+    CHECK(test_accept_on_chain(chain, paying).has_value());
+    CHECK(chain.mempool_ref().size() == 0);
+}
+
 #if defined(KTH_CURRENCY_BCH)
 namespace {
 
