@@ -274,7 +274,7 @@ void kth_chain_async_organize_transaction(kth_chain_t chain, void* ctx, kth_tran
     auto& bc = safe_chain(chain);
     auto tx_cpp = tx_shared(transaction);
     ::asio::co_spawn(bc.executor(), [&bc, tx_cpp, chain, ctx, handler]() -> ::asio::awaitable<void> {
-        auto ec = co_await bc.organize(tx_cpp);
+        auto ec = co_await bc.submit_transaction(tx_cpp);
         handler(chain, ctx, kth::to_c_err(ec));
     }, ::asio::detached);
 }
