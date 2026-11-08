@@ -5,9 +5,11 @@
 #ifndef KTH_NODE_RPC_DISPATCH_HPP
 #define KTH_NODE_RPC_DISPATCH_HPP
 
+#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <functional>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +34,12 @@ struct job_store;
 
 namespace kth::node::rpc {
 
+// How long a long-polled getblocktemplate is held before a mempool change
+// alone answers it, BIP22's "after some time". Transactions arrive all the
+// time, so a pool answered on each one would be polling again. A new tip
+// answers at once.
+inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
+
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
 // cache and the P2P node. Passed by reference; owned by the server for the
 // connection's lifetime.
@@ -41,6 +49,13 @@ struct method_context {
     // Null when the server runs without one (tests); the network methods then
     // report it as unavailable.
     p2p_node const* network = nullptr;
+    // Requested when the server stops. A handler that waits on the chain, a
+    // long-polled getblocktemplate, ends its wait on it, so the server's drain
+    // of its connections never waits on a client.
+    std::stop_token stop{};
+    // The long-polled getblocktemplate's minimum wait for a mempool change.
+    // Tests shorten it.
+    std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or

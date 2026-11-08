@@ -16,12 +16,15 @@
 #include <future>
 #include <system_error>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 #include <asio/this_coro.hpp>
 #include <variant>
 
+#include <asio/as_tuple.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/use_awaitable.hpp>
 #include <asio/use_future.hpp>
 
 #include <asio/co_spawn.hpp>
@@ -183,10 +186,8 @@ struct rpc_server_fixture {
     uint16_t port = 0;
 };
 
-// A POST of getblockcount with Basic auth for test:test.
-std::string request(int id, std::string_view connection) {
-    auto const body = R"({"jsonrpc":"1.0","id":)" + std::to_string(id)
-        + R"(,"method":"getblockcount","params":[]})";
+// A POST of `body` with Basic auth for test:test.
+std::string post(std::string const& body, std::string_view connection) {
     return "POST / HTTP/1.1\r\n"
            "Host: 127.0.0.1\r\n"
            "Authorization: Basic dGVzdDp0ZXN0\r\n"
@@ -194,6 +195,12 @@ std::string request(int id, std::string_view connection) {
            "Connection: " + std::string(connection) + "\r\n"
            "Content-Length: " + std::to_string(body.size()) + "\r\n"
            "\r\n" + body;
+}
+
+// A POST of getblockcount with Basic auth for test:test.
+std::string request(int id, std::string_view connection) {
+    return post(R"({"jsonrpc":"1.0","id":)" + std::to_string(id)
+        + R"(,"method":"getblockcount","params":[]})", connection);
 }
 
 // The bodies of the HTTP responses in a reply stream, framed by Content-Length.
@@ -213,6 +220,110 @@ std::vector<std::string> bodies(std::string_view reply) {
         reply.remove_prefix(start + length);
     }
     return out;
+}
+
+// A keep-alive getblocktemplate, long-polling when `longpollid` is not empty.
+std::string template_request(std::string_view longpollid) {
+    auto const params = longpollid.empty() ? std::string("[]")
+        : R"([{"longpollid":")" + std::string(longpollid) + R"("}])";
+    return post(R"({"jsonrpc":"1.0","id":9,"method":"getblocktemplate","params":)" + params + "}",
+        "keep-alive");
+}
+
+// The longpollid in a getblocktemplate reply, empty when it has none.
+std::string longpollid_of(std::string_view reply) {
+    constexpr std::string_view field = R"("longpollid":")";
+    auto const begin = reply.find(field);
+    if (begin == std::string_view::npos) return {};
+    auto const start = begin + field.size();
+    return std::string(reply.substr(start, reply.find('"', start) - start));
+}
+
+// `work`, unless `limit` passes first: then timed_out, so a reply that never
+// comes fails the test instead of leaving it waiting.
+template <typename T>
+::asio::awaitable<T> within(::asio::awaitable<T> work, std::chrono::steady_clock::duration limit) {
+    using namespace ::asio::experimental::awaitable_operators;
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer deadline(executor, limit);
+    auto result = co_await (std::move(work) || deadline.async_wait(::asio::use_awaitable));
+    if (result.index() != 0) {
+        throw std::system_error(::asio::error::timed_out);
+    }
+    co_return std::get<0>(std::move(result));
+}
+
+// Whether anything arrives on `socket` within `wait`; a held long poll sends
+// nothing. It peeks, so what does arrive is still there to read.
+::asio::awaitable<bool> replies_within(::asio::ip::tcp::socket& socket,
+    std::chrono::steady_clock::duration wait) {
+    using namespace ::asio::experimental::awaitable_operators;
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::steady_timer timer(executor, wait);
+    std::array<char, 1> byte{};
+    auto const result = co_await (
+        socket.async_receive(::asio::buffer(byte), ::asio::socket_base::message_peek,
+            ::asio::as_tuple(::asio::use_awaitable))
+        || timer.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+    co_return result.index() == 0;
+}
+
+// Ask for a template on a new connection, then send its longpollid back. True
+// once that long poll is held: nothing comes back within `wait`.
+::asio::awaitable<bool> hold_long_poll(::asio::ip::tcp::socket& socket, uint16_t port,
+    std::chrono::steady_clock::duration wait) {
+    co_await socket.async_connect({::asio::ip::make_address("127.0.0.1"), port},
+        ::asio::use_awaitable);
+    auto const first = template_request({});
+    co_await ::asio::async_write(socket, ::asio::buffer(first), ::asio::use_awaitable);
+    auto const id = longpollid_of(co_await rpc_server_fixture::read_response(socket));
+    if (id.empty()) {
+        co_return false;
+    }
+    auto const poll = template_request(id);
+    co_await ::asio::async_write(socket, ::asio::buffer(poll), ::asio::use_awaitable);
+    co_return ! co_await replies_within(socket, wait);
+}
+
+// One request on a new connection; the reply as it came off the wire.
+::asio::awaitable<std::string> ask(uint16_t port, std::string message) {
+    auto executor = co_await ::asio::this_coro::executor;
+    ::asio::ip::tcp::socket socket(executor);
+    co_await socket.async_connect({::asio::ip::make_address("127.0.0.1"), port},
+        ::asio::use_awaitable);
+    co_await ::asio::async_write(socket, ::asio::buffer(message), ::asio::use_awaitable);
+    co_return co_await rpc_server_fixture::read_response(socket);
+}
+
+// Everything left on `socket` until the server closes it.
+::asio::awaitable<std::string> read_to_end(::asio::ip::tcp::socket& socket) {
+    std::string rest;
+    auto const result = co_await ::asio::async_read(socket, ::asio::dynamic_buffer(rest),
+        ::asio::as_tuple(::asio::use_awaitable));
+    auto const& ec = std::get<0>(result);
+    if (ec != ::asio::error::eof && ec != ::asio::error::connection_reset) {
+        throw std::system_error(ec);
+    }
+    co_return rest;
+}
+
+// Run a client coroutine on the test's thread until it ends.
+template <typename T>
+T run_client(::asio::io_context& client, ::asio::awaitable<T> work) {
+    auto done = ::asio::co_spawn(client, std::move(work), ::asio::use_future);
+    client.restart();
+    client.run();
+    return done.get();
+}
+
+// Change the mempool without announcing it. A held long poll then answers at
+// its minimum wait at the latest, so a test that stops the server cannot wait
+// on it for ever, even if the stop does not reach it.
+void bound_hold(test::chain_fixture& chain) {
+    auto const tx = std::make_shared<domain::message::transaction>(
+        domain::chain::transaction{1u, 7u, {}, {}});
+    REQUIRE(chain.chain().mempool_ref().add(blockchain::mempool_entry{
+        tx, 0u, uint32_t(tx->serialized_size(true)), 0u, 0u}));
 }
 
 } // namespace
@@ -421,4 +532,55 @@ TEST_CASE("rpc server accepts a later keep-alive request", "[rpc server]") {
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
     CHECK(answers[1].find(R"("result":0)") != std::string::npos);
     CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server answers other connections while a long poll is held", "[rpc server][rpc longpoll]") {
+    rpc_server_fixture fixture("rpc_server_longpoll_others");
+    // A limit of zero keeps the chain synchronized whatever its tip's age, so
+    // the node serves templates.
+    fixture.chain.settings().notify_limit_hours = 0;
+    REQUIRE(fixture.start());
+
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket held(client);
+    REQUIRE(run_client(client, within(hold_long_poll(held, fixture.port,
+        std::chrono::milliseconds(300)), std::chrono::seconds(5))));
+
+    auto const other = run_client(client, within(ask(fixture.port, request(5, "close")),
+        std::chrono::seconds(5)));
+    auto const answers = bodies(other);
+    REQUIRE(answers.size() == 1);
+    CHECK(answers[0].find(R"("id":5)") != std::string::npos);
+    CHECK(answers[0].find(R"("result":0)") != std::string::npos);
+    CHECK_FALSE(run_client(client, replies_within(held, std::chrono::milliseconds(200))));
+
+    bound_hold(fixture.chain);
+    CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server stop ends a held long poll at once", "[rpc server][rpc longpoll]") {
+    rpc_server_fixture fixture("rpc_server_longpoll_stop");
+    fixture.chain.settings().notify_limit_hours = 0;
+    REQUIRE(fixture.start());
+
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket held(client);
+    REQUIRE(run_client(client, within(hold_long_poll(held, fixture.port,
+        std::chrono::milliseconds(300)), std::chrono::seconds(5))));
+    bound_hold(fixture.chain);
+
+    // The server drains its connections before it returns, the held one
+    // included. Unless the stop reaches the hold, that waits out the minimum
+    // wait, a minute away.
+    auto const began = std::chrono::steady_clock::now();
+    CHECK_NOTHROW(fixture.finish());
+    CHECK(std::chrono::steady_clock::now() - began < std::chrono::seconds(10));
+
+    // The connection is closed. If an answer came first, it is the shutdown
+    // error, not a template.
+    auto const rest = run_client(client, within(read_to_end(held), std::chrono::seconds(5)));
+    for (auto const& body : bodies(rest)) {
+        CHECK(body.find(R"("code":-9)") != std::string::npos);
+    }
+    CHECK(rest.find(R"("previousblockhash")") == std::string::npos);
 }

@@ -89,7 +89,7 @@ counterpart.
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
-| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
+| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` (long polling: `chain_view()`, `mempool_ref().generation()`, `subscribe_blockchain()`, `subscribe_transaction()`) |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblock` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
@@ -196,12 +196,36 @@ submit the whole block: `capabilities`, `version`, `previousblockhash`,
 `transactions` (each with `data`, `txid`, `hash`, `depends` when it spends an
 earlier template transaction, and `fee` and `sigops`, the transaction's
 sigchecks, from the captured selection), `coinbaseaux`, `coinbasevalue`,
-`target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
+`longpollid`, `target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
 block's sigchecks limit), `sizelimit`, `curtime`, `bits` and `height`. It is the
 same template `getblocktemplatelight` serves, so the two agree on the selection.
-Only `template` mode is supported; long polling is unsupported, so `longpollid`
-is omitted. Fees and sigchecks are captured with the selected transactions and
-remain unchanged when a cached template is served after mempool changes.
+Only `template` mode is supported. Fees and sigchecks are captured with the
+selected transactions and remain unchanged when a cached template is served
+after mempool changes.
+
+### Long polling
+
+`longpollid` names what the template was built on: the tip, and the mempool's
+change counter when its transactions were selected. A request that sends it
+back in its `template_request`, `[{"longpollid":"<id>"}]`, long-polls as BIP22
+describes:
+
+- If the tip has moved on, or the id is not one this node gave out, it is
+  answered at once.
+- Otherwise it is held. A new tip answers it as soon as the block is connected.
+  A mempool change answers it only once it has been held for 60 seconds, since
+  transactions arrive all the time: then at once if the mempool has changed
+  since the template, or else at the next transaction the mempool admits.
+- If the node shuts down while the request is held, the request ends at once:
+  with error `-9` (`Shutting down`), or with its connection closed.
+
+The answer is a fresh template with its own `longpollid`. Pools that wait for
+new work this way, instead of asking for a template every few seconds, need it
+to learn of a new block the moment it connects. Requests on other connections
+are answered while one is held; requests pipelined behind it on the same
+connection wait for it. `longpollid` must be a string; any other value is a
+`-32602` error. `getblocktemplatelight` does not long-poll and has no
+`longpollid`.
 
 ## getnetworkinfo
 

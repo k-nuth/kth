@@ -27,11 +27,27 @@ std::string render_mining_template(
     blockchain::mining_template const& tmpl, std::string_view job_id,
     std::optional<chain_progress> progress = std::nullopt);
 
+// What a getblocktemplate longpollid names: the tip a template was built on
+// and the mempool generation its selection was copied at.
+struct longpoll_state {
+    hash_digest tip;
+    uint64_t mempool_generation;
+};
+
+// The longpollid of `tmpl`: its tip in display hex, then its mempool
+// generation in decimal. Clients only send it back.
+std::string make_longpollid(blockchain::mining_template const& tmpl);
+
+// Read back a longpollid as make_longpollid writes it. Nullopt for anything
+// else: it names no state this node gave out.
+std::optional<longpoll_state> parse_longpollid(std::string_view id);
+
 // Serialize a mining template as the getblocktemplate "result" object (BIP22,
 // with the transactions in full): the transactions in template order with
 // their data, txid, the 1-based indexes of earlier template transactions they
-// spend from, and fee and sigchecks captured with the selection; then the header
-// fields, coinbase value, target and limits. Long polling is unsupported.
+// spend from, and fee and sigchecks captured with the selection; then the
+// header fields, coinbase value, the longpollid naming what the template was
+// built on, target and limits.
 std::string render_block_template(blockchain::mining_template const& tmpl,
     std::optional<chain_progress> progress = std::nullopt);
 
