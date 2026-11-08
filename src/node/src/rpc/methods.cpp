@@ -485,26 +485,26 @@ submit_block_light(method_context& ctx, request const& req) {
 
 // ---- blockchain query methods --------------------------------------------
 
-// getbestblockhash -> the tip block hash.
+// getbestblockhash -> the connected tip's hash.
 // C-API counterpart: kth_chain_sync_block_hash (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_best_block_hash(method_context& ctx, request const& /*req*/) {
-    auto const heights = ctx.chain.get_last_heights();
-    if ( ! heights) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
         co_return kth::fail(make_error(error_code::internal_error,
-            "chain height unavailable"));
-    }
-    auto const hash = ctx.chain.get_block_hash(heights->block);
-    if ( ! hash) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "best block hash unavailable"));
+            "chain state unavailable"));
     }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(view->tip_hash));
     co_return w.str();
 }
 
-// getblockhash <height> -> the block hash at that height.
+// getblockhash <height> -> the hash of the connected block at that height.
+// The header store runs ahead of the connected chain while blocks download,
+// and is rewritten from the fork point before a reorganization connects
+// anything, so the hash is taken from the connected tip's ancestry instead.
+// A height past the connected tip is out of range even when its header is
+// stored: getblock could not return that block yet.
 // C-API counterpart: kth_chain_sync_block_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_hash(method_context& ctx, request const& req) {
@@ -513,13 +513,26 @@ get_block_hash(method_context& ctx, request const& req) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "getblockhash requires [height] (a non-negative integer)"));
     }
-    auto const hash = ctx.chain.get_block_hash(size_t(*height));
-    if ( ! hash) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    if (*height > view->connected_tip_height) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "block height out of range"));
     }
+    auto const& index = ctx.chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    auto const found = tip == blockchain::header_index::null_index
+        ? blockchain::header_index::null_index
+        : index.get_ancestor(tip, int32_t(*height));
+    if (found == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected chain not in the header index"));
+    }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(index.get_hash(found)));
     co_return w.str();
 }
 

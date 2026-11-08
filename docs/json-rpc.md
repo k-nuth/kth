@@ -67,8 +67,8 @@ counterpart.
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
-| `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
-| `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
+| `getbestblockhash` | `kth_chain_sync_block_hash` | `chain_view().tip_hash` |
+| `getblockhash` (connected blocks only: a stored header past the connected tip is out of range) | `kth_chain_sync_block_hash` | `chain_view()` + `headers()` (the connected tip's ancestor) |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
