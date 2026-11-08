@@ -92,6 +92,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_stats": [True, False],
         "rpc": ["jsonrpc", "grpc", "capnproto", "none"],
         "wasm_simd": [True, False],
+        "with_websocket": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -134,6 +135,7 @@ class KthRecipe(KnuthConanFileV2):
         "with_stats": False,
         "rpc": "jsonrpc",
         "wasm_simd": True,
+        "with_websocket": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -166,6 +168,8 @@ class KthRecipe(KnuthConanFileV2):
             check_min_cppstd(self, "23")
 
     def requirements(self):
+        if self.options.with_websocket and self.settings.os != "Emscripten":
+            self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
         self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
@@ -276,6 +280,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             self.options.tests = False
             self.options.rpc = "none"
+            self.options.with_websocket = False
             self.output.info("Tests and RPC disabled for Emscripten build")
 
     def configure(self):
@@ -364,6 +369,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_RPC_BACKEND"] = str(self.options.rpc)
         if self.settings.os == "Emscripten":
             tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
+        tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.with_websocket)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -572,6 +578,9 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain and simdjson (for peer_database JSON parsing)
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
+            if self.options.with_websocket:
+                self.cpp_info.components["network"].defines.append("KTH_WITH_WEBSOCKET")
+                self.cpp_info.components["network"].requires.append("wslay::wslay")
         
         # Node implementation
         self.cpp_info.components["node"].libs = ["node"]

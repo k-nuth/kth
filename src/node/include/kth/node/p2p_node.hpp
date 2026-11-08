@@ -42,6 +42,7 @@
 #include <asio/thread_pool.hpp>
 
 namespace kth::node::detail { struct p2p_node_test_seam; }
+namespace kth::node::detail { struct ws_discovery_inbox; }
 
 namespace kth::node {
 using namespace kth::network;
@@ -253,7 +254,7 @@ public:
     using ptr = std::shared_ptr<p2p_node>;
     using address = domain::message::network_address;
 
-    explicit p2p_node(settings const& settings);
+    explicit p2p_node(network::settings const& settings);
     ~p2p_node();
 
     // Lifecycle
@@ -297,7 +298,7 @@ public:
     // -------------------------------------------------------------------------
 
     [[nodiscard]]
-    settings const& network_settings() const;
+    network::settings const& network_settings() const;
 
     [[nodiscard]]
     bool stopped() const;
@@ -561,7 +562,7 @@ private:
     static
     uint64_t generate_ping_nonce();
 
-    settings const& settings_;
+    network::settings const& settings_;
     threadpool pool_;
     peer_manager manager_;
     peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
@@ -580,6 +581,11 @@ private:
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
+
+    /// Native WS listener owns its acceptor on its own execution context.
+    ::asio::awaitable<void> run_websocket_inbound();
+    ::asio::awaitable<void> run_websocket_discovery();
+    std::unique_ptr<detail::ws_discovery_inbox> ws_discovery_;
 
     /// The whole lifecycle, in one atomic word.
     ///
