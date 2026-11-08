@@ -192,10 +192,11 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
         outcome.accepted_count, outcome.shares_sum});
     out.solution = outcome.block;
     if (outcome.renew) {
-        // Renew before duplicate history fills, so even a block found at the
-        // limit still goes through the found-block path. Accepted work keeps
-        // its validated template: note_tip stales jobs before clearing it.
-        // Renewal changes only a fixed-width generation in the coinbase.
+        // Renew as duplicate history fills. The job replaced stays valid on
+        // this tip, so a block found on it still goes through the found-block
+        // path. Accepted work keeps its validated template: note_tip stales
+        // jobs before clearing it. Renewal changes only a fixed-width
+        // generation in the coinbase.
         auto const& current = current_.value();
         auto const job = engine_.on_channel(share.channel_id, current,
             coinbase_outputs(current.coinbase_value)).value();

@@ -184,8 +184,8 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   is available during a chain transition.
 - When fees rise on the same tip, every open channel receives a replacement
   job, sent the same way. It follows the same rule and settings as a Template
-  Distribution template with higher fees. Earlier jobs on that tip become
-  stale, as after any other replacement.
+  Distribution template with higher fees. Shares already in flight on the
+  jobs it replaces are still taken, within the bound described below.
 - Jobs use the same `fetch_mining_template` transaction selection as Template
   Distribution. The engine accepts a list of coinbase outputs; this server
   supplies one payout output. BCH coinbases start with the BIP34 height push,
@@ -211,9 +211,16 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
 - Each connection allows 32 open channels and 1024 channel-open requests.
   Client frames are limited to 1 MiB, and job and duplicate histories are
   bounded. After 1024 accepted shares on one job, that channel receives fresh
-  work with a different coinbase, without waiting for the next tip. Previous
-  jobs become stale. A slow connection has its own bounded input queue; found
-  blocks are submitted before waiting for the miner to read their acknowledgements.
+  work with a different coinbase, without waiting for the next tip. A slow
+  connection has its own bounded input queue; found blocks are submitted
+  before waiting for the miner to read their acknowledgements.
+- Only a new tip makes jobs stale. Work replaced on the same tip can still
+  find a block, so each channel keeps its three newest jobs of the tip, and a
+  share on any of them is checked against that job's own coinbase and merkle
+  data and the channel's current target. Each job has its own duplicate
+  history of 1024 shares; a share that meets the network target is accepted
+  and submitted even once that history is full. A share on an older job of
+  the tip gets `stale-share`.
 
 Mining errors are printable strings (SV2 section 3.5 allows implementation
 specific codes):
@@ -231,13 +238,13 @@ specific codes):
 | `SubmitShares.Error` | `invalid-channel-id` | No such channel is open. |
 | | `invalid-channel-type` | The submission type does not match the channel. |
 | | `invalid-job-id` | The job is unknown or no longer retained. |
-| | `stale-share` | A retained job has been invalidated. |
+| | `stale-share` | The job is from an earlier tip, or past the three newest of this one. |
 | | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
 | | `invalid-ntime` | The timestamp is outside the job's bounds. |
 | | `invalid-version` | The miner changed bits outside the rolling mask. |
 | | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
 | | `duplicate-share` | This proof of work was already accepted. |
-| | `share-limit` | The bounded share history is full; fresh work replaces this job. |
+| | `share-limit` | This job's share history is full; fresh work replaces it. A block is still taken. |
 
 Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
 zero), and server-only messages close the connection. Job Declaration, custom

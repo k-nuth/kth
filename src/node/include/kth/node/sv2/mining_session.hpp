@@ -35,8 +35,8 @@ struct mining_session {
     result process(message_header const& header, byte_span payload);
 
     // Future job, then the Mining Protocol SetNewPrevHash, for every channel.
-    // On the tip already being mined this is replacement work: earlier jobs
-    // become stale.
+    // On the tip already being mined this is replacement work: the engine
+    // keeps the tip's newest earlier jobs valid for shares in flight.
     [[nodiscard]]
     result apply(blockchain::mining_template value);
 
