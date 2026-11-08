@@ -465,6 +465,13 @@ bool jd_client::dispatch(jd_declaration::result result) {
     co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
 }
 
+::asio::awaitable<void> jd_client::drain() {
+    // The strand runs handlers in the order they were posted, so this empty
+    // one runs after every observe_share and observe_hash_rate before it.
+    co_await ::asio::co_spawn(owner_, []() -> ::asio::awaitable<void> { co_return; },
+        ::asio::use_awaitable);
+}
+
 void jd_client::stop() {
     bool const first = ! stopped_.exchange(true);
     if (first) {
