@@ -330,8 +330,10 @@ A share that meets the upstream channel's target is forwarded as
 `SubmitSharesExtended` with the custom job id and the extranonce bytes after
 the pool's prefix, using exactly the granted extranonce size. A share that does
 not meet that target is not forwarded.
-The target is the one the custom job was sent with; a later `SetTarget` does
-not retarget it. A share that meets the network target is submitted locally
+The target is the last one the pool sets before `SetCustomMiningJob.Success`,
+including a `SetTarget` that crosses `SetCustomMiningJob`. A `SetTarget` after
+the Success does not retarget the accepted job (specification section 5.3.21).
+A share that meets the network target is submitted locally
 through the same block-connection path as solo mining. In `full-template`,
 after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
 JDS (specification section 6.4.9). `coinbase-only` has no declared job for
