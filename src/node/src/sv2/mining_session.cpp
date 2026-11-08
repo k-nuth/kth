@@ -188,8 +188,10 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     }
     auto const outcome = engine_.submit(share);
     if (outcome.status == mining::share_status::rejected) {
+        // A refused share can still be a block, one that misses only a share
+        // target harder than the network's.
         return {frame(submit_shares_error{outcome.channel_id, outcome.sequence_number,
-            outcome.error_code}), false, false, {}, {}};
+            outcome.error_code}), false, false, outcome.block, {}};
     }
     result out;
     out.response = frame(submit_shares_success{outcome.channel_id, outcome.sequence_number,
@@ -197,13 +199,14 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     out.solution = outcome.block;
     out.pool = outcome.pool;
     if (outcome.renew) {
-        // A pooled channel cannot change the declared generation. Roll the
-        // bytes that identify it inside the upstream extranonce instead.
+        // Renew as duplicate history fills. The job replaced stays valid on
+        // this tip, so a block found on it still goes through the found-block
+        // path. Accepted work keeps its validated template: note_tip stales
+        // jobs before clearing it. Renewal changes only a fixed-width
+        // generation in the coinbase. A pooled channel cannot change the
+        // declared generation. Roll the bytes that identify it inside the
+        // upstream extranonce instead.
         engine_.bump_pool_roll(share.channel_id);
-        // Renew before duplicate history fills, so even a block found at the
-        // limit still goes through the found-block path. Accepted work keeps
-        // its validated template: note_tip stales jobs before clearing it.
-        // Renewal changes only a fixed-width generation in the coinbase.
         auto const& current = current_.value();
         auto const job = engine_.on_channel(share.channel_id, current,
             coinbase_outputs(current.coinbase_value));

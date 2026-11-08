@@ -531,9 +531,11 @@ template_provider::template_provider(sv2_settings const& settings,
         return out;
     };
     // Last publication generation applied on this connection. A second apply
-    // of that notice, pool or solo, assigns new job ids and clears share
-    // history while its template is still installed. A cleared template still
-    // takes the notice. The open path records the generation it binds.
+    // of that notice, pool or solo, assigns new job ids while its template is
+    // still installed, and the jobs it replaces stay valid on this tip. A
+    // pooled one repeats their coinbase, so one proof of work would count on
+    // two jobs. A cleared template still takes the notice. The open path
+    // records the generation it binds.
     uint64_t applied_generation = 0;
     auto refresh_mining = [&]() -> ::asio::awaitable<template_provider_session::result> {
         if ( ! miner->ready()) co_return template_provider_session::result{};
