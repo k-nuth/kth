@@ -911,6 +911,32 @@ share_outcome work_engine::submit(share_request const& share) {
     bool const repeated = std::find(job->shares.begin(), job->shares.end(), key) != job->shares.end();
     auto& uncredited = job->uncredited_blocks;
     bool const submitted = std::find(uncredited.begin(), uncredited.end(), key) != uncredited.end();
+    // What the pool needs for work on this job's declared coinbase: the job's
+    // own extranonce prefix and generation, not the channel's current ones.
+    auto const pool_proof_of = [&]() -> std::optional<pool_proof> {
+        if ( ! job->pool) return std::nullopt;
+        data_chunk full = job->extranonce_prefix;
+        full.insert(full.end(), share.extranonce.begin(), share.extranonce.end());
+        auto const width = job->pool_prefix_length + size_t{job->pool_extranonce_size};
+        if (full.size() != width || job->pool_prefix_length > full.size()) {
+            spdlog::warn("[mining] Channel {} pool extranonce does not match the declared width",
+                slot->id);
+            return std::nullopt;
+        }
+        pool_proof proof;
+        proof.header_hash = digest;
+        proof.full_extranonce = full;
+        proof.upstream_extranonce.assign(
+            full.begin() + static_cast<std::ptrdiff_t>(job->pool_prefix_length),
+            full.begin() + static_cast<std::ptrdiff_t>(width));
+        proof.prev_hash = job->prev_hash;
+        proof.version = share.version;
+        proof.ntime = share.ntime;
+        proof.nonce = share.nonce;
+        proof.bits = job->bits;
+        proof.generation = job->generation;
+        return proof;
+    };
     // The channel's latest target, not the one when the job was built: a
     // SetTarget applies to future jobs already received (sv2-spec 5.3.21).
     if (to_uint256(digest) > to_uint256(slot->share_target)) {
@@ -918,10 +944,16 @@ share_outcome work_engine::submit(share_request const& share) {
         // A share target harder than the network's, as a device maximum can
         // set, still leaves a valid block. It is submitted once. The share
         // stays uncredited, so a later easier target can still credit it.
+        // On a pool job the block goes upstream as well, but not the share.
         if (block && ! repeated && ! submitted) {
             uncredited.push_back(std::move(key));
             refused.block = std::make_shared<domain::message::block>(
                 assemble_block(solved, *coinbase, *job->txs));
+            refused.pool = pool_proof_of();
+            if (refused.pool) {
+                refused.pool->block = true;
+                refused.pool->block_only = true;
+            }
         }
         return refused;
     }
@@ -943,29 +975,7 @@ share_outcome work_engine::submit(share_request const& share) {
     outcome.shares_sum = share_difficulty(slot->share_target);
     // Only for the newest job: an earlier one was replaced already.
     outcome.renew = &*job == &slot->jobs.back() && job->shares.size() == max_remembered_shares;
-    if (job->pool) {
-        data_chunk full = job->extranonce_prefix;
-        full.insert(full.end(), share.extranonce.begin(), share.extranonce.end());
-        auto const width = job->pool_prefix_length + size_t{job->pool_extranonce_size};
-        if (full.size() == width && job->pool_prefix_length <= full.size()) {
-            pool_proof proof;
-            proof.header_hash = digest;
-            proof.full_extranonce = full;
-            proof.upstream_extranonce.assign(
-                full.begin() + static_cast<std::ptrdiff_t>(job->pool_prefix_length),
-                full.begin() + static_cast<std::ptrdiff_t>(width));
-            proof.prev_hash = job->prev_hash;
-            proof.version = share.version;
-            proof.ntime = share.ntime;
-            proof.nonce = share.nonce;
-            proof.bits = job->bits;
-            proof.generation = job->generation;
-            outcome.pool = std::move(proof);
-        } else {
-            spdlog::warn("[mining] Channel {} pool extranonce does not match the declared width",
-                slot->id);
-        }
-    }
+    outcome.pool = pool_proof_of();
     if (block && ! submitted) {
         outcome.status = share_status::block;
         if (outcome.pool) outcome.pool->block = true;

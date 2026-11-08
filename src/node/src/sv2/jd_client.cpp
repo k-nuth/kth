@@ -581,30 +581,34 @@ void jd_client::publish_solo() {
 }
 
 void jd_client::note_share(mining::pool_proof const& proof) {
+    auto const& work = jobs_.work();
+    // A share mined on another declaration's coinbase must not be cached,
+    // submitted or pushed against the work installed now. generation is the
+    // declared coinbase, not the downstream job id.
+    bool const current = work && proof.generation == work->generation;
     // Spec 6.4.9: PushSolution is defined once the JDS has accepted the
     // declaration (DeclareMiningJob.Success), which is full-template only.
     // A block found earlier is held until that reply. Coinbase-only still
     // connects the block locally and never pushes. The full extranonce is
     // the pool prefix plus the nested miner bytes. BCH has no witness bytes.
-    if (proof.block && proof.full_extranonce.size() <= 32) {
+    if (proof.block && proof.full_extranonce.size() <= 32 && current) {
         if (jobs_.can_push_solution()) {
             if ( ! push_block(proof)) return;
-        } else if (jobs_.full_template()) {
-            auto const& declared = jobs_.work();
-            // Only this coinbase can become the job the JDS accepts. A proof
-            // from another generation would be dropped at the flush.
-            if (declared && proof.generation == declared->generation
-                && pending_solutions_.size() < max_pending_solutions) {
-                pending_solutions_.push_back(proof);
-            }
+        } else if (jobs_.full_template() && pending_solutions_.size() < max_pending_solutions) {
+            // Only this coinbase can become the job the JDS accepts.
+            pending_solutions_.push_back(proof);
         }
     }
-    auto const& work = jobs_.work();
-    // A share mined on another declaration's coinbase must not be cached or
-    // submitted against the work installed now. generation is the declared
-    // coinbase, not the downstream job id.
-    if ( ! work || proof.generation != work->generation
-        || to_uint256(proof.header_hash) > to_uint256(work->upstream_target)) return;
+    // A replacement leaves the tip's recent jobs valid, so a block can still
+    // come from a coinbase the JDS no longer holds. The caller submits it.
+    if (proof.block && ! current && jobs_.full_template()) {
+        spdlog::info("[sv2 jd] Block from replaced declaration {} is submitted locally, not to the JDS",
+            proof.generation);
+    }
+    // The downstream channel refused this share for its harder target. Only
+    // its block goes upstream.
+    if (proof.block_only) return;
+    if ( ! current || to_uint256(proof.header_hash) > to_uint256(work->upstream_target)) return;
     if ( ! work->upstream_accepted) {
         if (cached_.size() < max_cached_shares) cached_.push_back(proof);
         return;
