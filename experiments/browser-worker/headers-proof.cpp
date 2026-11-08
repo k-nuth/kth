@@ -13,6 +13,7 @@
 #include <kth/infrastructure/utility/browser_runtime.hpp>
 #include <kth/node/header_sync.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_awaitable.hpp>
 #include <chrono>
 #include <cstdio>
@@ -140,6 +141,46 @@ struct stop_result {
     co_await wait_for([] { return queued_state.handlers == 2; }, "the queued operations did not complete");
     require(queued_state.destroyed, "the handle could not be destroyed from its last handler");
     std::puts("queued operations held the handle");
+
+    // A heavier branch announced while following: the client reorganizes to
+    // it on the same connection, and keeps following.
+    {
+        header_sync client("ws://127.0.0.1:18787", regtest, 10'000);
+        auto watch = [&]() -> ::asio::awaitable<void> {
+            co_await wait_for([&] { return client.last_height() == 2510 || (client.status() != "idle" && !client.running()); },
+                "the heavier branch was not followed");
+            (void)co_await client.request_stop();
+        };
+        using namespace ::asio::experimental::awaitable_operators;
+        auto const followed = co_await (client.follow() && watch());
+        if (client.last_height() != 2510) {
+            throw std::runtime_error("the heavier branch was not followed: height=" +
+                std::to_string(client.last_height()) + " status=" + client.status());
+        }
+        require(bool(followed), "following ended with an error after the reorganization");
+        std::puts("heavier branch followed height=2510");
+    }
+
+    // A branch whose stored headers are announced again, after a batch that
+    // failed past them: the retry adopts it, as progress.
+    {
+        header_sync client("ws://127.0.0.1:18788", regtest, 10'000);
+        auto watch = [&]() -> ::asio::awaitable<void> {
+            co_await wait_for([&] { return client.status() != "idle" && !client.running(); },
+                "the invalid branch did not end the first session");
+        };
+        using namespace ::asio::experimental::awaitable_operators;
+        auto const first = co_await (client.follow() && watch());
+        require(!first, "a branch with an invalid header was followed");
+        require(client.last_height() == 2500, "the first session moved the tip");
+        require(!client.reset(), "the client could not be reset");
+        auto const retried = co_await client.run();
+        if (!retried || *retried != 2504) {
+            throw std::runtime_error("the stored branch was not adopted on retry: height=" +
+                std::to_string(client.last_height()) + " status=" + client.status());
+        }
+        std::puts("stored branch adopted on retry height=2504");
+    }
 
     // Following the tip, through the C API.
     {

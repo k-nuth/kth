@@ -269,9 +269,19 @@ header_sync::~header_sync() { assert(settled()); }
                     if (headers->elements().size() > capacity - index.size()) throw std::runtime_error("header capacity exceeded");
                     auto before = index.size();
                     auto accepted = organizer.add_headers(headers->elements());
-                    if (accepted.error) throw std::runtime_error(accepted.error.message());
-                    if (accepted.reorg_candidate) organizer.adopt_tip(accepted.reorg_branch_head);
-                    if (index.size() == before) throw std::runtime_error("peer made no header progress");
+                    // A heavier branch is reported as stale_chain with a reorg
+                    // candidate: the client follows it. Otherwise stale_chain is
+                    // a batch that did not advance the tip (a lighter branch,
+                    // headers already known), judged below by its progress.
+                    // Adopting a branch is progress even when its headers were
+                    // already stored (a retry after a batch that failed past them).
+                    if (accepted.reorg_candidate) {
+                        organizer.adopt_tip(accepted.reorg_branch_head);
+                    } else if (accepted.error && accepted.error != error::stale_chain) {
+                        throw std::runtime_error(accepted.error.message());
+                    } else if (index.size() == before) {
+                        throw std::runtime_error("peer made no header progress");
+                    }
 
                     received = true;
                     break;
