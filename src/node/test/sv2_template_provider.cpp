@@ -32,6 +32,7 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/template_provider.hpp>
 
 using namespace kth;
@@ -49,7 +50,7 @@ setup_connection setup() {
 }
 
 template <typename Message>
-data_chunk frame(Message const& message, uint16_t extension_type = 0) {
+data_chunk frame(Message const& message, uint16_t extension_type = framed_extension_type<Message>()) {
     auto const payload = to_data_chunk(message);
     auto bytes = to_data_chunk(message_header{extension_type, Message::message_type,
         static_cast<uint32_t>(payload.size())});
@@ -65,7 +66,7 @@ template_provider_session::result process(template_provider_session& session,
 
 template <typename Message>
 template_provider_session::result process(template_provider_session& session, Message const& message) {
-    return process(session, 0, Message::message_type, to_data_chunk(message));
+    return process(session, framed_extension_type<Message>(), Message::message_type, to_data_chunk(message));
 }
 
 template <typename Message>
@@ -73,7 +74,7 @@ Message response(data_chunk const& bytes) {
     byte_reader source(bytes);
     auto const header = message_header::from_data(source);
     REQUIRE(header.has_value());
-    REQUIRE(header->extension_type == 0);
+    REQUIRE(header->extension_type == framed_extension_type<Message>());
     REQUIRE(header->msg_type == Message::message_type);
     REQUIRE(header->msg_length == source.remaining_size());
     auto const message = Message::from_data(source);
@@ -636,6 +637,43 @@ TEST_CASE("sv2 session discards messages of unknown extensions", "[sv2 template_
     // On extension 0 the channel_msg bit is never set by this protocol.
     require_closed(process(session, message_header::channel_msg_flag,
         coinbase_output_constraints::message_type, to_data_chunk(coinbase_output_constraints{100, 2})));
+}
+
+TEST_CASE("sv2 session answers extension negotiation only before constraints", "[sv2 template_provider]") {
+    auto session = ready_session(false);
+    // None of these is implemented on Template Distribution and nothing is
+    // required, so the answer lists each as unsupported (extension 0x0001,
+    // section 4.1), and the connection stays standard.
+    auto const refused = process(session, request_extensions{3, {0x0002, requested_payout_outputs_extension}});
+    REQUIRE_FALSE(refused.close);
+    auto const error = response<request_extensions_error>(refused.response);
+    REQUIRE(error.request_id == 3);
+    REQUIRE(error.unsupported_extensions == std::vector<uint16_t>{0x0002, requested_payout_outputs_extension});
+    REQUIRE(error.required_extensions.empty());
+    auto const empty = response<request_extensions_error>(process(session, request_extensions{4, {}}).response);
+    REQUIRE(empty.request_id == 4);
+    REQUIRE(empty.unsupported_extensions.empty());
+    REQUIRE(empty.required_extensions.empty());
+    require_silent(process(session, coinbase_output_constraints{100, 2}));
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{7}).response).error_code == "template-id-not-found");
+
+    // Once Template Distribution has begun, negotiation is out of order.
+    require_closed(process(session, request_extensions{5, {0x0002}}));
+
+    auto malformed = ready_session(false);
+    auto bytes = to_data_chunk(request_extensions{1, {0x0002}});
+    bytes.pop_back();
+    require_closed(process(malformed, extensions_negotiation_type, request_extensions::message_type, bytes));
+
+    // The extension's server-only messages, and any with the channel bit,
+    // are discarded like an unknown extension's and do not count as messages.
+    auto discarded = ready_session(false);
+    require_silent(process(discarded, request_extensions_success{1, {}}));
+    require_silent(process(discarded, request_extensions_error{1, {}, {}}));
+    require_silent(process(discarded, static_cast<uint16_t>(extensions_negotiation_type | message_header::channel_msg_flag),
+        request_extensions::message_type, to_data_chunk(request_extensions{1, {}})));
+    require_silent(process(discarded, coinbase_output_constraints{100, 2}));
 }
 
 TEST_CASE("sv2 session closes on malformed, server-only and undefined messages", "[sv2 template_provider]") {

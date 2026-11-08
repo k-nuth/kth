@@ -84,6 +84,12 @@ file loading requires POSIX file permissions.
   2, or a Template Distribution feature flag get `SetupConnection.Error` and
   the connection is closed.
   No Template Distribution flags are defined yet.
+- After `SetupConnection.Success`, and before `CoinbaseOutputConstraints`, a
+  client may send `RequestExtensions` (extension 0x0001). No extension is
+  implemented on Template Distribution and none is required, so the answer is
+  `RequestExtensions.Error` listing every requested extension as unsupported,
+  and the connection continues as standard SV2. A malformed request, or one
+  after `CoinbaseOutputConstraints`, closes the connection.
 - The client sends `CoinbaseOutputConstraints` right after setup. Each constraints
   message gets a `NewTemplate` for the current tip, followed by `SetNewPrevHash`
   naming that template. Template IDs strictly increase within each connection.

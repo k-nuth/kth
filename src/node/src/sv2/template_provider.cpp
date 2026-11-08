@@ -43,6 +43,7 @@
 #include <kth/node/mining/work.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/jd_client.hpp>
+#include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/jd_settings.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
 #include <kth/node/sv2/mining_session.hpp>
@@ -57,8 +58,8 @@ constexpr uint16_t protocol_version = 2;
 template <typename Message>
 data_chunk frame(Message const& message) {
     auto const payload = to_data_chunk(message);
-    auto bytes = to_data_chunk(message_header{0, Message::message_type,
-        static_cast<uint32_t>(payload.size())});
+    auto bytes = to_data_chunk(message_header{framed_extension_type<Message>(),
+        Message::message_type, static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -248,6 +249,21 @@ template_provider_session::result template_provider_session::process(
         }
         state_ = state::ready;
         return {frame(setup_connection_success{protocol_version, 0}), false};
+    }
+
+    // Extensions Negotiation (extension 0x0001) comes right after setup, before
+    // any Template Distribution message. No extension is implemented here yet
+    // and none is required, so every request is answered with all it asked
+    // for as unsupported. The extension's other messages are only a server's;
+    // they are discarded with those of extensions this server lacks.
+    if (header.extension_type == extensions_negotiation_type
+        && header.msg_type == request_extensions::message_type) {
+        auto const request = parse<request_extensions>(payload);
+        if (constraints_ || ! request) {
+            return close();
+        }
+        return {frame(request_extensions_error{request->request_id,
+            request->requested_extensions, {}}), false};
     }
 
     // Messages of an extension this server does not implement are discarded
