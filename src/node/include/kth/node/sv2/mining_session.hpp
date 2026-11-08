@@ -93,8 +93,8 @@ private:
     // Only the first message after SetupConnection.Success can be
     // RequestExtensions (extension 0x0001, section 4).
     bool negotiable_ = false;
-    // Worker-Specific Hashrate Tracking (0x0002) was granted, so
-    // SubmitSharesExtended may carry TLV fields after its own.
+    // Worker-Specific Hashrate Tracking (0x0002) was granted, so the
+    // user_identity field after SubmitSharesExtended names the worker.
     bool worker_identities_ = false;
     std::vector<pending_channel> pending_;
     std::optional<blockchain::mining_template> current_;

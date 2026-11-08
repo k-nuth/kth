@@ -178,9 +178,12 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     if (share.extended) {
         byte_reader source(payload);
         auto message = submit_shares_extended::from_data(source);
-        // Without Worker-Specific Hashrate Tracking the payload ends with the
-        // message's own fields.
-        if ( ! message || ( ! worker_identities_ && ! source.is_exhausted())) return close();
+        if ( ! message) return close();
+        // Extension 0x0002 section 1.3: TLV fields after the message's own are
+        // ignored unless that extension was negotiated. Bytes that are not
+        // whole TLV fields are still a malformed frame.
+        auto const fields = read_tlv_fields(source);
+        if ( ! fields) return close();
         share.channel_id = message->channel_id;
         share.sequence_number = message->sequence_number;
         share.job_id = message->job_id;
@@ -189,10 +192,8 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
         share.version = message->version;
         share.extranonce = std::move(message->extranonce);
         if (worker_identities_) {
-            auto const fields = read_tlv_fields(source);
-            if ( ! fields) return close();
-            // Extension 0x0002 section 1.3: scan for its field and ignore any
-            // other. The first one names the worker.
+            // Once negotiated, scan for its field and ignore any other. The
+            // first one names the worker.
             for (auto const& field : *fields) {
                 if (field.extension_type != worker_hashrate_tracking_extension
                     || field.field_type != user_identity_field) continue;

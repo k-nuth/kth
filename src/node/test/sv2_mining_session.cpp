@@ -759,14 +759,18 @@ TEST_CASE("sv2 mining reads the worker TLV once granted and ignores other fields
     require_closed(submit(data_chunk{0x02, 0x00, 0x01}));
 }
 
-TEST_CASE("sv2 mining keeps standard shares and unnegotiated connections strict", "[sv2 mining]") {
+TEST_CASE("sv2 mining ignores whole TLV fields after an extended share and closes on malformed bytes", "[sv2 mining]") {
     // The user_identity field 0x0002|0x01 with "rig-7", written out byte by byte.
     data_chunk const field{0x02, 0x00, 0x01, 0x05, 0x00, 'r', 'i', 'g', '-', '7'};
-    // No request, a refused one, and a granted one. Only the granted connection
-    // reads fields, and then only after SubmitSharesExtended.
-    for (int const negotiation : {0, 1, 2}) {
-        CAPTURE(negotiation);
-        auto session = ready();
+    // Bytes that are not whole TLV fields: one stray byte, a header cut short,
+    // and a length that runs past the payload.
+    std::vector<data_chunk> const malformed{{0x00}, {0x02, 0x00, 0x01},
+        {0x02, 0x00, 0x01, 0x05, 0x00, 'r', 'i'}};
+    struct shares {
+        submit_shares_standard standard;
+        submit_shares_extended extended;
+    };
+    auto const open_channels = [](mining_session& session, int negotiation) {
         if (negotiation == 1) (void)process(session, request_extensions{1, {0x0003}});
         if (negotiation == 2) (void)process(session, request_extensions{1, {worker_hashrate_tracking_extension}});
         auto frames = packets(process(session, standard()).response);
@@ -777,20 +781,35 @@ TEST_CASE("sv2 mining keeps standard shares and unnegotiated connections strict"
         auto const opened = parse<open_extended_mining_channel_success>(frames[0]);
         auto const job = parse<new_extended_mining_job>(frames[1]);
         auto const prev = parse<mining_set_new_prev_hash>(frames[2]);
-
-        auto standard_share = to_data_chunk(submit_shares_standard{standard_opened.channel_id, 1,
-            standard_job.job_id, 0, standard_prev.ntime_start, standard_job.version});
-        standard_share.insert(standard_share.end(), field.begin(), field.end());
-        auto standard_session = session;
-        require_closed(process(standard_session, extension<submit_shares_standard>(),
-            submit_shares_standard::message_type, standard_share));
-
-        auto share = to_data_chunk(submit_shares_extended{opened.channel_id, 2, job.job_id, 0,
-            prev.ntime_start, job.version, data_chunk(opened.extranonce_size, 0)});
-        share.insert(share.end(), field.begin(), field.end());
-        auto const result = process(session, extension<submit_shares_extended>(),
-            submit_shares_extended::message_type, share);
-        if (negotiation == 2) REQUIRE(single<submit_shares_success>(result).last_sequence_number == 2);
-        else require_closed(result);
+        return shares{{standard_opened.channel_id, 1, standard_job.job_id, 0,
+            standard_prev.ntime_start, standard_job.version},
+            {opened.channel_id, 2, job.job_id, 0, prev.ntime_start, job.version,
+                data_chunk(opened.extranonce_size, 0)}};
+    };
+    auto const followed = [](auto const& message, data_chunk const& trailing) {
+        auto bytes = to_data_chunk(message);
+        bytes.insert(bytes.end(), trailing.begin(), trailing.end());
+        return bytes;
+    };
+    // No request, a refused one, and a granted one.
+    for (int const negotiation : {0, 1, 2}) {
+        CAPTURE(negotiation);
+        // Extension 0x0002 section 1.3: a server ignores TLV fields it did not
+        // negotiate. The share is accepted with or without the grant.
+        auto session = ready();
+        auto const sent = open_channels(session, negotiation);
+        auto const accepted = process(session, extension<submit_shares_extended>(),
+            submit_shares_extended::message_type, followed(sent.extended, field));
+        REQUIRE(single<submit_shares_success>(accepted).last_sequence_number == 2);
+        // The extension covers only SubmitSharesExtended.
+        require_closed(process(session, extension<submit_shares_standard>(),
+            submit_shares_standard::message_type, followed(sent.standard, field)));
+        for (auto const& trailing : malformed) {
+            CAPTURE(trailing.size());
+            auto strict = ready();
+            auto const fresh = open_channels(strict, negotiation);
+            require_closed(process(strict, extension<submit_shares_extended>(),
+                submit_shares_extended::message_type, followed(fresh.extended, trailing)));
+        }
     }
 }

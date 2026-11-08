@@ -199,15 +199,16 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   Worker-Specific Hashrate Tracking (0x0002) gets `RequestExtensions.Success`
   listing only 0x0002. Any other request gets `RequestExtensions.Error` naming
   the requested extensions as unsupported and requiring none.
-- Once 0x0002 is granted, `SubmitSharesExtended` may end with TLV fields
-  (specification section 3.4.3). The `user_identity` field (extension 0x0002,
-  field 0x01) names the worker behind that share; other fields are ignored, and
-  a share without the field is still accepted. A field over 32 bytes refuses
-  the share with `user-identity-too-long`, and a field cut short closes the
-  connection. The node keeps no per-worker statistics: the name only goes
-  upstream with pool shares, as described under Job Declaration. Without the
-  grant, any bytes after a share still close the connection, and
-  `SubmitSharesStandard` never carries fields.
+- `SubmitSharesExtended` may end with TLV fields (specification section
+  3.4.3). Without the 0x0002 grant they are ignored, as section 1.3 of that
+  extension requires. Once granted, the `user_identity` field (extension
+  0x0002, field 0x01) names the worker behind that share; other fields are
+  ignored, and a share without the field is still accepted. A field over 32
+  bytes refuses the share with `user-identity-too-long`. Either way, bytes that
+  are not whole TLV fields, such as a header cut short or a length past the end
+  of the payload, close the connection. The node keeps no per-worker
+  statistics: the name only goes upstream with pool shares, as described under
+  Job Declaration. `SubmitSharesStandard` never carries fields.
 
 Mining errors are printable strings (SV2 section 3.5 allows implementation
 specific codes):
@@ -395,9 +396,10 @@ pool can then track each worker's hash rate inside the one extended channel.
 The field holds at most 32 bytes of UTF-8 and is never padded. A longer name
 is cut to 32 bytes between code points, and a name that is not valid UTF-8 is
 cut before its first invalid byte. The frame keeps extension type 0
-(section 3.4.1). The field's type and length are little-endian U16 values like
-every other SV2 integer, as the reference implementation encodes them; the
-byte examples in section 3.4.3 print them big-endian.
+(section 3.4.1). The extension's own example bytes, like those in section
+3.4.3, print the field's type and length big-endian; Knuth follows the
+specification's little-endian rule for every integer (section 3.1) and the
+reference implementation's codec.
 
 A success that does not list 0x0002, or `RequestExtensions.Error` with an
 empty required list, leaves the extension off and shares are sent as before.
