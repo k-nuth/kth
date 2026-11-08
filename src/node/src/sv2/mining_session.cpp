@@ -189,9 +189,9 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     auto const outcome = engine_.submit(share);
     if (outcome.status == mining::share_status::rejected) {
         // A refused share can still be a block, one that misses only a share
-        // target harder than the network's.
+        // target harder than the network's. On a pool job it has a proof too.
         return {frame(submit_shares_error{outcome.channel_id, outcome.sequence_number,
-            outcome.error_code}), false, false, outcome.block, {}};
+            outcome.error_code}), false, false, outcome.block, outcome.pool};
     }
     result out;
     out.response = frame(submit_shares_success{outcome.channel_id, outcome.sequence_number,
