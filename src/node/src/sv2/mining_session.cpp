@@ -108,7 +108,8 @@ data_chunk mining_session::job_frames(mining::work_job const& job) const {
         append_frame(bytes, message);
     }
     // ntime stays unset above: the first job on a channel is a future job.
-    // SetNewPrevHash is what activates it (sv2-spec 5.3.15 and 5.3.17).
+    // SetNewPrevHash is what activates it (sv2-spec 5.3.15 and 5.3.17). Later
+    // jobs are sent the same way, so SetTarget always applies to them (5.3.21).
     append_frame(bytes, mining_set_new_prev_hash{job.channel_id, job.job_id,
         job.prev_hash, job.ntime_start, job.nbits});
     return bytes;

@@ -162,12 +162,15 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
 - The initial target aims for one share per 20 seconds at `nominal_hash_rate`,
   capped by the miner's `max_target`. A zero rate uses that maximum, which lets
   regtest miners request easy shares. `UpdateChannel` can change the rate or
-  maximum; `SetTarget` announces a changed target for subsequent jobs. Already
-  activated jobs keep their target.
+  maximum; `SetTarget` announces the changed target. Every job is sent as a
+  future job, so the new target applies at once to the job being mined as well
+  as to later ones (SV2 section 5.3.21). There is no grace period: once a
+  harder target is sent, shares that meet only the previous one are refused.
 - Shares must name the right channel type and active job, use exactly the
-  negotiated extranonce size, and hash at or below the job target. Version
-  rolling is limited to bits 5 through 28. The timestamp must be at least the
-  job's `ntime_start` and at most 7200 seconds above it (local policy).
+  negotiated extranonce size, and hash at or below the channel's current
+  target. Version rolling is limited to bits 5 through 28. The timestamp must
+  be at least the job's `ntime_start` and at most 7200 seconds above it (local
+  policy).
   Successful shares are acknowledged individually. A hash meeting the network
   target is submitted through the same validation, connection and relay path
   as Template Distribution's `SubmitSolution`.
@@ -198,7 +201,7 @@ specific codes):
 | | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
 | | `invalid-ntime` | The timestamp is outside the job's bounds. |
 | | `invalid-version` | The miner changed bits outside the rolling mask. |
-| | `difficulty-too-low` | The header hash exceeds the job's share target. |
+| | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
 | | `duplicate-share` | This proof of work was already accepted. |
 | | `share-limit` | The bounded share history is full; fresh work replaces this job. |
 

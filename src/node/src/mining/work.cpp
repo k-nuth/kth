@@ -394,9 +394,9 @@ update_result work_engine::update(uint32_t channel_id, float nominal_hash_rate,
     slot->hashrate = nominal_hash_rate;
     slot->max_target = max_target;
     auto const next = choose_target(nominal_hash_rate, max_target);
-    // A smaller max_target has to be reflected (sv2-spec 5.3.7). The new
-    // target applies to later jobs; the active job keeps the target it was
-    // activated with (sv2-spec 5.3.21).
+    // A smaller max_target has to be reflected (sv2-spec 5.3.7). Every job is
+    // sent as a future job, so the new target applies to the jobs already
+    // sent as well as to later ones (sv2-spec 5.3.21).
     if (next != previous || to_uint256(max_target) < to_uint256(previous)) {
         slot->share_target = next;
         result.target = next;
@@ -478,8 +478,6 @@ std::optional<work_job> work_engine::build(channel& slot,
     created.prev_hash = tmpl.previous_block_hash;
     created.ntime_start = tmpl.current_time;
     created.bits = tmpl.bits;
-    // Frozen at activation. A later SetTarget does not retarget this job.
-    created.share_target = slot.share_target;
     created.merkle_root = fold_merkle(parts->txid, path);
     created.merkle_path = std::move(path);
     created.coinbase_tx_prefix = std::move(parts->prefix);
@@ -570,7 +568,9 @@ share_outcome work_engine::submit(share_request const& share) {
     domain::chain::header const solved(share.version, job->prev_hash, root,
         share.ntime, job->bits, share.nonce);
     auto const digest = domain::chain::hash(solved);
-    if (to_uint256(digest) > to_uint256(job->share_target)) {
+    // The channel's latest target, not the one when the job was built: a
+    // SetTarget applies to future jobs already received (sv2-spec 5.3.21).
+    if (to_uint256(digest) > to_uint256(slot->share_target)) {
         return rejected_share(share, error_difficulty_too_low);
     }
 
@@ -589,7 +589,7 @@ share_outcome work_engine::submit(share_request const& share) {
     outcome.channel_id = share.channel_id;
     outcome.sequence_number = share.sequence_number;
     outcome.accepted_count = 1;
-    outcome.shares_sum = share_difficulty(job->share_target);
+    outcome.shares_sum = share_difficulty(slot->share_target);
     outcome.renew = slot->shares.size() == max_remembered_shares;
     auto const network = domain::chain::compact::from_compact(job->bits);
     if (network && to_uint256(digest) <= network->big()) {

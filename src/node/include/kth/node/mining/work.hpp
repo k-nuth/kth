@@ -105,8 +105,9 @@ struct opened_channel {
 };
 
 // One future job plus the prevhash that activates it. The front end sends the
-// job with nTime unset, then SetNewPrevHash. `merkle_root` is meaningful for
-// a standard channel; an extended channel uses `merkle_path` instead.
+// job with nTime unset, then SetNewPrevHash. Shares on it are therefore held
+// to the channel's latest target (sv2-spec 5.3.21). `merkle_root` is meaningful
+// for a standard channel; an extended channel uses `merkle_path` instead.
 struct work_job {
     bool extended = false;
     uint32_t channel_id = 0;
@@ -192,7 +193,6 @@ private:
         hash_digest prev_hash{};
         uint32_t ntime_start = 0;
         uint32_t bits = 0;
-        hash_digest share_target{};
         hash_digest merkle_root{};
         std::vector<hash_digest> merkle_path;
         data_chunk coinbase_tx_prefix;

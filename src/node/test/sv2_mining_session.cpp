@@ -421,6 +421,34 @@ TEST_CASE("sv2 mining refuses invalid rates and updates the target within the de
     REQUIRE(target.target == bound);
 }
 
+TEST_CASE("sv2 mining SetTarget applies to the future job already being mined", "[sv2 mining]") {
+    auto session = ready();
+    auto const frames = packets(process(session, standard()).response);
+    REQUIRE(frames.size() == 3);
+    auto const opened = parse<open_standard_mining_channel_success>(frames[0]);
+    auto const job = parse<new_mining_job>(frames[1]);
+    auto const prev = parse<mining_set_new_prev_hash>(frames[2]);
+    REQUIRE_FALSE(job.ntime_start);
+    submit_shares_standard share{opened.channel_id, 1, job.job_id, 0, prev.ntime_start, job.version};
+    domain::chain::header const header(job.version, prev.prev_hash, job.merkle_root,
+        prev.ntime_start, prev.nbits, share.nonce);
+    auto const digest = to_uint256(domain::chain::hash(header));
+    REQUIRE(digest > 0);
+
+    // Harder: a share that meets the opening target but not the new one is refused.
+    auto const below = to_hash_digest(digest - 1);
+    REQUIRE(single<set_target>(process(session, update_channel{opened.channel_id, 0, below})).target == below);
+    REQUIRE(single<submit_shares_error>(process(session, share)).error_code == "difficulty-too-low");
+
+    // Easier: the same share meets the new target but not the previous one.
+    auto const exact = to_hash_digest(digest);
+    REQUIRE(single<set_target>(process(session, update_channel{opened.channel_id, 0, exact})).target == exact);
+    ++share.sequence_number;
+    auto const accepted = single<submit_shares_success>(process(session, share));
+    REQUIRE(accepted.last_sequence_number == 2);
+    REQUIRE(accepted.new_submits_accepted_count == 1);
+}
+
 TEST_CASE("sv2 mining sends a future job before activation on every channel and stales old work", "[sv2 mining]") {
     auto session = ready();
     auto const first = single<open_standard_mining_channel_success>(process(session, standard()));
