@@ -17,6 +17,7 @@
 
 #include <kth/domain/message/get_data.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth::node::detail {
 
@@ -353,6 +354,121 @@ void recent_rejects::reset_for(hash_digest const& tip) {
 }
 
 // =============================================================================
+// tx_orphanage
+// =============================================================================
+
+tx_orphanage::tx_orphanage(pick_fn pick)
+    : pick_(std::move(pick))
+{
+    if ( ! pick_) {
+        pick_ = [](size_t size) { return pseudo_random::generate<size_t>(0, size - 1); };
+    }
+}
+
+bool tx_orphanage::add(domain::message::transaction::const_ptr tx, uint64_t peer, time_point now) {
+    auto const txid = tx->hash();
+    if (orphans_.contains(txid) || tx->serialized_size(true) > max_transaction_size) {
+        return false;
+    }
+    for (auto const& input : tx->inputs()) {
+        by_parent_[input.previous_output().hash()].insert(txid);
+    }
+    orphans_.emplace(txid, orphan{std::move(tx), peer, now + expire_time});
+    order_.push_back(txid);
+
+    sweep(now);
+    while (orphans_.size() > capacity) {
+        auto const victim = order_[pick_(order_.size())];
+        erase(victim);
+    }
+    return true;
+}
+
+bool tx_orphanage::contains(hash_digest const& txid) const {
+    return orphans_.contains(txid);
+}
+
+void tx_orphanage::parent_admitted(hash_digest const& parent) {
+    auto const it = by_parent_.find(parent);
+    if (it == by_parent_.end()) {
+        return;
+    }
+    for (auto const& child : it->second) {
+        auto& item = orphans_.at(child);
+        if ( ! item.ready) {
+            item.ready = true;
+            ready_.push_back(child);
+        }
+    }
+}
+
+std::optional<tx_admission> tx_orphanage::next_ready() const {
+    if (ready_.empty()) {
+        return std::nullopt;
+    }
+    auto const& item = orphans_.at(ready_.front());
+    return tx_admission{item.tx, item.peer};
+}
+
+void tx_orphanage::erase(hash_digest const& txid) {
+    auto const it = orphans_.find(txid);
+    if (it == orphans_.end()) {
+        return;
+    }
+    for (auto const& input : it->second.tx->inputs()) {
+        auto const parent = by_parent_.find(input.previous_output().hash());
+        if (parent == by_parent_.end()) {
+            continue;
+        }
+        parent->second.erase(txid);
+        if (parent->second.empty()) {
+            by_parent_.erase(parent);
+        }
+    }
+    if (it->second.ready) {
+        std::erase(ready_, txid);
+    }
+    orphans_.erase(it);
+
+    auto const at = std::ranges::find(order_, txid);
+    *at = order_.back();
+    order_.pop_back();
+}
+
+void tx_orphanage::erase_for_peer(uint64_t peer) {
+    std::vector<hash_digest> sent;
+    for (auto const& [txid, item] : orphans_) {
+        if (item.peer == peer) {
+            sent.push_back(txid);
+        }
+    }
+    for (auto const& txid : sent) {
+        erase(txid);
+    }
+}
+
+void tx_orphanage::sweep(time_point now) {
+    if (next_sweep_ > now) {
+        return;
+    }
+    // As BCHN: the next sweep is sweep_interval after the earliest expiry
+    // left, to batch the scan.
+    auto earliest = now + expire_time - sweep_interval;
+    std::vector<hash_digest> expired;
+    for (auto const& [txid, item] : orphans_) {
+        if (item.expires <= now) {
+            expired.push_back(txid);
+        } else {
+            earliest = std::min(earliest, item.expires);
+        }
+    }
+    for (auto const& txid : expired) {
+        erase(txid);
+    }
+    next_sweep_ = earliest + sweep_interval;
+}
+
+// =============================================================================
 // The channels
 // =============================================================================
 
@@ -429,14 +545,18 @@ namespace {
     co_return ! ec;
 }
 
+// Whether validation did not find inputs: an orphan.
+bool missing_inputs(code const& result) {
+    return result == error::missing_previous_output || result == error::orphan_transaction;
+}
+
 // Whether validation's answer means the transaction can never be valid on this
 // tip. Missing inputs is not that: its parent may arrive next. Nor is an
 // admission that raced a chain transition twice (stale_chain), or one that
 // was cut short: neither judged the transaction.
 bool rejected(code const& result) {
     return result
-        && result != error::missing_previous_output
-        && result != error::orphan_transaction
+        && ! missing_inputs(result)
         && result != error::stale_chain
         && result != error::service_stopped
         && result != code(::asio::error::operation_aborted);
@@ -514,16 +634,10 @@ private:
             return;
         }
         auto const peer = value.peer->nonce();
-        if ( ! peers_.contains(peer)) {
-            // A session whose end was not delivered (the channel was full)
-            // goes when the next one arrives: the peers held stay bounded by
-            // those connected.
-            forget_stopped_peers();
-            peers_[peer].session = value.peer;
-        }
+        remember(value.peer);
         auto const preferred = value.peer->is_preferred_download();
         for (auto const& txid : value.txids) {
-            if (rejects_.contains(txid) || view_.in_mempool(txid)) {
+            if (rejects_.contains(txid) || orphans_.contains(txid) || view_.in_mempool(txid)) {
                 continue;
             }
             (void)tracker_.announced(peer, preferred, txid, now);
@@ -542,20 +656,25 @@ private:
         if ( ! view_.synchronized()) {
             return;
         }
-        if (rejects_.contains(txid) || view_.in_mempool(txid)) {
+        // Unannounced or not, the sender is who its orphan's parents are
+        // asked of (BCHN, TX_MISSING_INPUTS, AddTxAnnouncement from pfrom).
+        if (value.session) {
+            remember(value.session);
+        }
+        if (rejects_.contains(txid) || orphans_.contains(txid) || view_.in_mempool(txid)) {
             tracker_.forget(txid);
             return;
         }
         if (tracker_.held(txid)) {
             return;                                 // a copy is being validated
         }
-        if (waiting_.empty() && admission_.try_send(tx_admission{value.tx})) {
+        if (waiting_.empty() && admission_.try_send(tx_admission{value.tx, value.peer})) {
             tracker_.hold(txid);
             return;
         }
         if (waiting_.size() < tx_waiting_capacity) {
             // Validation is behind: kept, in order, for when it has room.
-            waiting_.push_back(value.tx);
+            waiting_.push_back({value.tx, value.peer});
             tracker_.hold(txid);
             return;
         }
@@ -568,8 +687,7 @@ private:
     }
 
     void on(tx_peer_gone& value, tx_request_tracker::time_point) {
-        tracker_.disconnected(value.peer);
-        peers_.erase(value.peer);
+        leave(value.peer);
     }
 
     void on(tx_request_sent& value, tx_request_tracker::time_point) {
@@ -580,26 +698,95 @@ private:
         it->second.sending = false;
         if ( ! value.sent) {
             // The session is stopping: what it was asked fails over now.
-            tracker_.disconnected(value.peer);
-            peers_.erase(it);
+            leave(value.peer);
             return;
         }
         send_next(value.peer, it->second);
     }
 
     void on(tx_admitted& value, tx_request_tracker::time_point now) {
-        if (rejected(value.result)) {
-            rejects_.insert(value.txid);
+        auto const txid = value.tx->hash();
+        tracker_.forget(txid);
+        if ( ! value.result) {
+            orphans_.parent_admitted(txid);
+        } else if (missing_inputs(value.result)) {
+            orphan(value, now);
+        } else if (rejected(value.result)) {
+            rejects_.insert(txid);
         }
-        tracker_.forget(value.txid);
+        feed(now);
+    }
 
-        // Validation took one: what waits goes next, in order.
-        while ( ! waiting_.empty() && admission_.try_send(tx_admission{waiting_.front()})) {
+    // BCHN, TX_MISSING_INPUTS: rejected with a rejected parent; otherwise its
+    // unknown parents are asked of the peer that sent it, and it is kept.
+    void orphan(tx_admitted& value, tx_request_tracker::time_point now) {
+        auto const txid = value.tx->hash();
+        auto parents = std::move(value.missing_parents);
+        std::ranges::sort(parents);
+        parents.erase(std::unique(parents.begin(), parents.end()), parents.end());
+
+        if (std::ranges::any_of(parents, [this](hash_digest const& parent) {
+                return rejects_.contains(parent);
+            })) {
+            rejects_.insert(txid);
+            return;
+        }
+
+        // A peer the owner does not know (it sent without announcing) cannot
+        // be asked: the parents come from whoever announces them.
+        auto const peer = peers_.find(value.peer);
+        if (peer != peers_.end()) {
+            auto const preferred = peer->second.session->is_preferred_download();
+            for (auto const& parent : parents) {
+                if (orphans_.contains(parent) || tracker_.held(parent) || view_.in_mempool(parent)) {
+                    continue;
+                }
+                (void)tracker_.announced(value.peer, preferred, parent, now);
+            }
+        }
+
+        if ( ! orphans_.add(value.tx, value.peer, now)) {
+            spdlog::debug("[tx_relay] Orphan {} from peer {} not kept", encode_hash(txid), value.peer);
+        }
+    }
+
+    // Validation took one: what waits goes next, in order, then the orphans
+    // whose parent arrived. Each is taken from its place only once validation
+    // has it: what does not fit stays, and goes at the next answer.
+    void feed(tx_request_tracker::time_point now) {
+        while ( ! waiting_.empty() && admission_.try_send(tx_admission(waiting_.front()))) {
             waiting_.pop_front();
+        }
+        if (waiting_.empty()) {
+            while (auto next = orphans_.next_ready()) {
+                auto const txid = next->tx->hash();
+                if ( ! admission_.try_send(std::move(*next))) {
+                    break;
+                }
+                orphans_.erase(txid);
+                tracker_.hold(txid);
+            }
         }
         // And with room to keep what arrives, what was parked is asked again.
         if (waiting_.size() < tx_waiting_capacity && tracker_.parked() > 0) {
             tracker_.unpark(now);
+        }
+    }
+
+    // A peer is gone: what it was asked passes on, and its orphans go.
+    void leave(uint64_t peer) {
+        tracker_.disconnected(peer);
+        orphans_.erase_for_peer(peer);
+        peers_.erase(peer);
+    }
+
+    // A session whose end was not delivered (the channel was full) goes when
+    // the next one arrives: the peers held stay bounded by those connected.
+    void remember(network::peer_session::ptr const& session) {
+        auto const peer = session->nonce();
+        if ( ! peers_.contains(peer)) {
+            forget_stopped_peers();
+            peers_[peer].session = session;
         }
     }
 
@@ -611,8 +798,7 @@ private:
             }
         }
         for (auto const nonce : stopped) {
-            tracker_.disconnected(nonce);
-            peers_.erase(nonce);
+            leave(nonce);
         }
     }
 
@@ -649,8 +835,9 @@ private:
     tx_request_tracker tracker_;
     recent_rejects rejects_;
     boost::unordered_flat_map<uint64_t, relay_peer> peers_;
+    tx_orphanage orphans_;
     // Received, validation full: taken by it as it frees room. Bounded.
-    std::deque<domain::message::transaction::const_ptr> waiting_;
+    std::deque<tx_admission> waiting_;
 };
 
 } // namespace
@@ -709,13 +896,15 @@ private:
         if (ec) {
             break;
         }
-        auto const tx = std::move(selected.value<0>()->tx);
+        auto const [tx, peer] = std::move(*selected.value<0>());
         auto const result = co_await submit(tx);
         if (result) {
             spdlog::debug("[tx_relay] Transaction {} not admitted: {}",
                 encode_hash(tx->hash()), result.message());
         }
-        if ( ! co_await report(channels, tx_admitted{tx->hash(), result})) {
+        // What validation did not find is read off the inputs it populated.
+        auto missing = missing_inputs(result) ? tx->missing_previous_transactions() : hash_list{};
+        if ( ! co_await report(channels, tx_admitted{tx, peer, result, std::move(missing)})) {
             break;
         }
     }

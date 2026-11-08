@@ -329,7 +329,7 @@ hash_list transaction::missing_previous_transactions() const {
     hash_list hashes;
     hashes.reserve(points.size());
     auto const hasher = [&hashes](output_point const& point) {
-        return point.hash();
+        hashes.push_back(point.hash());
     };
 
     std::for_each(points.begin(), points.end(), hasher);

@@ -338,6 +338,8 @@ struct relay_rig {
     boost::unordered_flat_set<hash_digest> mempool;
     hash_digest tip = txid_of(0xaa);
     code verdict = error::success;
+    // Per transaction, when set; `verdict` otherwise.
+    std::function<code(domain::message::transaction const&)> judge;
     std::vector<domain::message::transaction::const_ptr> submitted;
 
     std::future<void> owner;
@@ -363,10 +365,11 @@ struct relay_rig {
             admitter = ::asio::co_spawn(ioc, tx_admission_task(admission,
                 [this](domain::message::transaction::const_ptr tx) -> ::asio::awaitable<code> {
                     submitted.push_back(tx);
-                    if ( ! verdict) {
+                    auto const result = judge ? judge(*tx) : verdict;
+                    if ( ! result) {
                         mempool.insert(tx->hash());
                     }
-                    co_return verdict;
+                    co_return result;
                 }, channels), ::asio::use_future);
         }
         drain(ioc);
@@ -521,10 +524,11 @@ TEST_CASE("tx relay: a rejected transaction is not asked for again until the tip
 
 TEST_CASE("tx relay: what validation did not judge is not remembered as rejected",
           "[tx_relay][owner]") {
-    // Missing inputs: its parent may come next. stale_chain: admission raced
-    // a chain transition twice. Neither says the transaction is invalid.
+    // stale_chain: admission raced a chain transition twice. service_stopped:
+    // it was cut short. Neither says the transaction is invalid. (Missing
+    // inputs is not either; that one is kept as an orphan, below.)
     relay_rig rig;
-    rig.verdict = GENERATE(code(error::missing_previous_output), code(error::stale_chain));
+    rig.verdict = GENERATE(code(error::stale_chain), code(error::service_stopped));
     auto peer = connect(rig.ioc, rig.config, 1);
     rig.start();
 
@@ -532,7 +536,7 @@ TEST_CASE("tx relay: what validation did not judge is not remembered as rejected
     rig.submit(tx_received{1, tx});
     REQUIRE(rig.submitted.size() == 1u);
 
-    // Its parent may arrive next: asked for again when announced.
+    // Asked for again when announced.
     rig.submit(tx_announced{peer.session, {tx->hash()}});
     CHECK(contains(read_requests(rig.ioc, peer, 2s), tx->hash()));
 }
@@ -559,7 +563,7 @@ hash_digest admit_one(relay_rig& rig) {
     std::error_code ec;
     auto const taken = rig.admission.try_receive(ec);
     REQUIRE(taken);
-    rig.submit(tx_admitted{taken->tx->hash(), error::success});
+    rig.submit(tx_admitted{taken->tx, taken->peer, error::success});
     return taken->tx->hash();
 }
 
@@ -707,6 +711,218 @@ TEST_CASE("tx relay: what a peer answers with notfound before its getdata leaves
     auto const sent = read_requests(rig.ioc, blocked, 2s, 2);
     REQUIRE(sent.size() == 2u);
     CHECK(sent[1] == hash_list{last->hash()});
+}
+
+// -----------------------------------------------------------------------------
+// Orphans
+// -----------------------------------------------------------------------------
+
+namespace {
+
+// A transaction spending output 0 of each of `parents`.
+domain::message::transaction::const_ptr make_child(uint32_t locktime, hash_list const& parents) {
+    domain::chain::input::list inputs;
+    for (auto const& parent : parents) {
+        inputs.emplace_back(domain::chain::output_point{parent, 0}, domain::chain::script{}, 0);
+    }
+    return std::make_shared<domain::message::transaction const>(
+        domain::message::transaction(1, locktime, std::move(inputs), domain::chain::output::list{}));
+}
+
+// A pool that knows nothing of the chain: inputs are found only in it.
+code by_pool(relay_rig const& rig, domain::message::transaction const& tx) {
+    for (auto const& input : tx.inputs()) {
+        if ( ! rig.mempool.contains(input.previous_output().hash())) {
+            return error::missing_previous_output;
+        }
+    }
+    return error::success;
+}
+
+tx_orphanage::time_point const o0 = tx_orphanage::time_point{} + 1h;
+
+} // namespace
+
+TEST_CASE("tx orphanage: kept once, not when too large, and found by its parent",
+          "[tx_relay][orphans]") {
+    tx_orphanage orphans;
+    auto const parent = make_tx(1)->hash();
+    auto const child = make_child(2, {parent});
+    REQUIRE(orphans.add(child, 1, o0));
+    CHECK(orphans.contains(child->hash()));
+    CHECK_FALSE(orphans.add(child, 2, o0));
+    CHECK_FALSE(orphans.next_ready());
+
+    domain::chain::output::list outputs;
+    outputs.emplace_back(0, domain::chain::script(data_chunk(tx_orphanage::max_transaction_size, 0x6a), false), std::nullopt);
+    auto const large = std::make_shared<domain::message::transaction const>(
+        domain::message::transaction(1, 3, domain::chain::input::list{
+            domain::chain::input(domain::chain::output_point{parent, 1}, domain::chain::script{}, 0)},
+            std::move(outputs)));
+    CHECK_FALSE(orphans.add(large, 1, o0));
+    CHECK(orphans.size() == 1u);
+
+    orphans.parent_admitted(make_tx(9)->hash());
+    CHECK(orphans.ready() == 0u);
+    orphans.parent_admitted(parent);
+    auto const ready = orphans.next_ready();
+    REQUIRE(ready);
+    CHECK(ready->tx->hash() == child->hash());
+    CHECK(ready->peer == 1u);
+    orphans.erase(child->hash());
+    CHECK(orphans.size() == 0u);
+    CHECK_FALSE(orphans.next_ready());
+}
+
+TEST_CASE("tx orphanage: bounded, what expired is swept, and a peer's go with it",
+          "[tx_relay][orphans]") {
+    // The pick is the controls': always the first kept.
+    tx_orphanage orphans([](size_t) { return size_t{0}; });
+    auto const parent = make_tx(1)->hash();
+    for (uint32_t i = 0; i < tx_orphanage::capacity; ++i) {
+        REQUIRE(orphans.add(make_child(100 + i, {parent}), 1 + i % 2, o0));
+    }
+    REQUIRE(orphans.size() == tx_orphanage::capacity);
+    REQUIRE(orphans.add(make_child(99, {parent}), 3, o0));
+    CHECK(orphans.size() == tx_orphanage::capacity);
+    CHECK_FALSE(orphans.contains(make_child(100, {parent})->hash()));
+
+    orphans.erase_for_peer(2);
+    CHECK(orphans.size() == tx_orphanage::capacity / 2);
+    CHECK_FALSE(orphans.contains(make_child(101, {parent})->hash()));
+
+    // Not yet expired: nothing swept.
+    REQUIRE(orphans.add(make_child(98, {parent}), 3, o0 + tx_orphanage::expire_time - 1s));
+    CHECK(orphans.size() == tx_orphanage::capacity / 2 + 1);
+    // Expired, and a sweep is due: only the late one is left.
+    REQUIRE(orphans.add(make_child(97, {parent}), 3, o0 + tx_orphanage::expire_time));
+    CHECK(orphans.size() == 2u);
+    CHECK(orphans.contains(make_child(98, {parent})->hash()));
+}
+
+TEST_CASE("tx relay: an orphan's parent is asked of its sender, and the orphan validated again when it arrives",
+          "[tx_relay][owner][orphans]") {
+    relay_rig rig;
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    auto peer = connect(rig.ioc, rig.config, 1);
+    rig.start();
+
+    auto const parent = make_tx(40);
+    auto const child = make_child(41, {parent->hash()});
+    rig.submit(tx_announced{peer.session, {child->hash()}});
+    REQUIRE(contains(read_requests(rig.ioc, peer, 2s), child->hash()));
+    rig.submit(tx_received{1, child});
+    REQUIRE(rig.submitted.size() == 1u);
+
+    auto const requests = read_requests(rig.ioc, peer, 2s, 2);
+    REQUIRE(requests.size() == 2u);
+    CHECK(requests[1] == hash_list{parent->hash()});
+
+    rig.submit(tx_received{1, parent});
+    REQUIRE(rig.submitted.size() == 3u);
+    CHECK(rig.submitted[2]->hash() == child->hash());
+    CHECK(rig.mempool.contains(child->hash()));
+}
+
+TEST_CASE("tx relay: an orphan sent without an announcement has its parents asked of its sender",
+          "[tx_relay][owner][orphans]") {
+    relay_rig rig;
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    auto peer = connect(rig.ioc, rig.config, 1);
+    rig.start();
+
+    // Nothing announced: the peer just sends it.
+    auto const parent = make_tx(50);
+    auto const child = make_child(51, {parent->hash()});
+    rig.submit(tx_received{1, child, peer.session});
+    REQUIRE(rig.submitted.size() == 1u);
+
+    auto const requests = read_requests(rig.ioc, peer, 2s);
+    REQUIRE(requests.size() == 1u);
+    CHECK(requests[0] == hash_list{parent->hash()});
+
+    rig.submit(tx_received{1, parent, peer.session});
+    REQUIRE(rig.submitted.size() == 3u);
+    CHECK(rig.submitted[2]->hash() == child->hash());
+    CHECK(rig.mempool.contains(child->hash()));
+}
+
+TEST_CASE("tx relay: a kept orphan is not asked for again",
+          "[tx_relay][owner][orphans]") {
+    relay_rig rig;
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    auto peer = connect(rig.ioc, rig.config, 1);
+    auto other = connect(rig.ioc, rig.config, 2);
+    rig.start();
+
+    auto const child = make_child(42, {make_tx(43)->hash()});
+    rig.submit(tx_received{1, child});
+    rig.submit(tx_announced{other.session, {child->hash()}});
+    rig.submit(tx_received{2, child});
+    CHECK(read_requests(rig.ioc, other, 200ms).empty());
+    CHECK(rig.submitted.size() == 1u);
+}
+
+TEST_CASE("tx relay: an orphan of a rejected transaction is rejected",
+          "[tx_relay][owner][orphans]") {
+    relay_rig rig;
+    auto const parent = make_tx(44);
+    rig.judge = [&rig, &parent](domain::message::transaction const& tx) {
+        return tx.hash() == parent->hash() ? code(error::insufficient_fee) : by_pool(rig, tx);
+    };
+    auto peer = connect(rig.ioc, rig.config, 1);
+    rig.start();
+
+    rig.submit(tx_received{1, parent});
+    auto const child = make_child(45, {parent->hash()});
+    rig.submit(tx_announced{peer.session, {child->hash()}});
+    REQUIRE(contains(read_requests(rig.ioc, peer, 2s), child->hash()));
+    rig.submit(tx_received{1, child});
+    REQUIRE(rig.submitted.size() == 2u);
+
+    // Not kept, and not asked for again on this tip.
+    rig.submit(tx_announced{peer.session, {child->hash()}});
+    CHECK(read_requests(rig.ioc, peer, 200ms, 2).size() == 1u);
+}
+
+TEST_CASE("tx relay: a peer's orphans go when it does",
+          "[tx_relay][owner][orphans]") {
+    relay_rig rig;
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    auto peer = connect(rig.ioc, rig.config, 1);
+    rig.start();
+
+    auto const parent = make_tx(46);
+    auto const child = make_child(47, {parent->hash()});
+    rig.submit(tx_received{1, child});
+    rig.submit(tx_peer_gone{1});
+    rig.submit(tx_received{2, parent});
+    REQUIRE(rig.mempool.contains(parent->hash()));
+    CHECK(rig.submitted.size() == 2u);
+    CHECK_FALSE(rig.mempool.contains(child->hash()));
+}
+
+TEST_CASE("tx relay: an orphan ready while validation is full is validated when it has room",
+          "[tx_relay][owner][orphans][admission]") {
+    // No admission task: the controls take from its channel and answer.
+    relay_rig rig;
+    rig.start(false);
+    auto const parent = make_tx(48);
+    auto const child = make_child(49, {parent->hash()});
+    rig.submit(tx_received{1, child});
+    std::error_code ec;
+    auto const taken = rig.admission.try_receive(ec);
+    REQUIRE(taken);
+    rig.submit(tx_admitted{taken->tx, 1, error::missing_previous_output, {parent->hash()}});
+
+    for (uint32_t i = 0; i < tx_admission_capacity; ++i) {
+        rig.submit(tx_received{2, make_tx(2000 + i)});
+    }
+    rig.submit(tx_admitted{parent, 2, error::success});
+    REQUIRE_FALSE(admission_holds(rig, child->hash()));
+
+    (void)admit_one(rig);
+    CHECK(admission_holds(rig, child->hash()));
 }
 
 TEST_CASE("tx relay: closing the channel ends both tasks, also before they ever ran",

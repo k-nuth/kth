@@ -824,7 +824,7 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
             return true;
         }
         auto tx = std::make_shared<domain::message::transaction const>(std::move(*parsed));
-        if ( ! backlog.submit(*tx_relay_, detail::tx_received{peer->nonce(), std::move(tx)})) {
+        if ( ! backlog.submit(*tx_relay_, detail::tx_received{peer->nonce(), std::move(tx), peer})) {
             // Its request stays out and fails over when it expires.
             spdlog::debug("[p2p_node] tx from [{}] not kept: past what a peer may have pending",
                 peer->authority());
