@@ -11,6 +11,7 @@
 
 #include <kth/domain/chain/output.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/extensions.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
 #include <kth/node/sv2/template_provider.hpp>
 
@@ -21,20 +22,12 @@ namespace {
 constexpr uint16_t protocol_version = 2;
 
 template <typename Message>
-uint16_t channel_extension() {
-    // SetupConnection messages are shared with Template Distribution and do
-    // not carry the Mining Protocol channel_message constant.
-    if constexpr (requires { Message::channel_message; }) {
-        return Message::channel_message ? message_header::channel_msg_flag : 0;
-    } else {
-        return 0;
-    }
-}
-
-template <typename Message>
 data_chunk frame(Message const& message) {
+    // SetupConnection messages are shared with Template Distribution and do
+    // not carry the Mining Protocol channel_message constant, so their
+    // channel bit stays clear.
     auto const payload = to_data_chunk(message);
-    auto bytes = to_data_chunk(message_header{channel_extension<Message>(), Message::message_type,
+    auto bytes = to_data_chunk(message_header{framed_extension_type<Message>(), Message::message_type,
         static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
@@ -128,6 +121,22 @@ data_chunk mining_session::job_frames(mining::work_job const& job) const {
     return bytes;
 }
 
+mining_session::result mining_session::negotiate(byte_span payload) {
+    auto const request = parse<request_extensions>(payload);
+    if ( ! request) return close();
+    auto const& requested = request->requested_extensions;
+    if (std::find(requested.begin(), requested.end(), worker_hashrate_tracking_extension)
+            == requested.end()) {
+        // Extension 0x0001, section 4: Error when none of the requested
+        // extensions is supported. This server requires none.
+        return {frame(request_extensions_error{request->request_id, requested, {}}),
+            false, false, {}, {}};
+    }
+    worker_identities_ = true;
+    return {frame(request_extensions_success{request->request_id,
+        {worker_hashrate_tracking_extension}}), false, false, {}, {}};
+}
+
 mining_session::result mining_session::finish_open(mining::open_request const& request) {
     auto const opened = engine_.open(request);
     if (opened.status == mining::open_status::protocol_error) return close();
@@ -167,8 +176,11 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
     mining::share_request share;
     share.extended = message_type == submit_shares_extended::message_type;
     if (share.extended) {
-        auto message = parse<submit_shares_extended>(payload);
-        if ( ! message) return close();
+        byte_reader source(payload);
+        auto message = submit_shares_extended::from_data(source);
+        // Without Worker-Specific Hashrate Tracking the payload ends with the
+        // message's own fields.
+        if ( ! message || ( ! worker_identities_ && ! source.is_exhausted())) return close();
         share.channel_id = message->channel_id;
         share.sequence_number = message->sequence_number;
         share.job_id = message->job_id;
@@ -176,6 +188,22 @@ mining_session::result mining_session::finish_share(uint8_t message_type, byte_s
         share.ntime = message->ntime;
         share.version = message->version;
         share.extranonce = std::move(message->extranonce);
+        if (worker_identities_) {
+            auto const fields = read_tlv_fields(source);
+            if ( ! fields) return close();
+            // Extension 0x0002 section 1.3: scan for its field and ignore any
+            // other. The first one names the worker.
+            for (auto const& field : *fields) {
+                if (field.extension_type != worker_hashrate_tracking_extension
+                    || field.field_type != user_identity_field) continue;
+                // sv2-spec 3.4.3: a field over its maximum length rejects the message.
+                if (field.value.size() > max_user_identity_size) {
+                    return {frame(submit_shares_error{share.channel_id, share.sequence_number,
+                        std::string(error_user_identity_too_long)}), false, false, {}, {}};
+                }
+                if ( ! share.worker) share.worker.emplace(field.value.begin(), field.value.end());
+            }
+        }
     } else {
         auto const message = parse<submit_shares_standard>(payload);
         if ( ! message) return close();
@@ -295,12 +323,22 @@ mining_session::result mining_session::process(message_header const& header, byt
         }
         state_ = state::ready;
         standard_only_ = (setup->flags & mining_flag_requires_standard_jobs) != 0;
+        negotiable_ = true;
         // Success flags are zero: version rolling is allowed and standard
         // channels are accepted (sv2-spec 5.3.1).
         return {frame(setup_connection_success{protocol_version, 0}), false, false, {}, {}};
     }
 
-    if (header.extension() != 0) return {};
+    bool const negotiable = std::exchange(negotiable_, false);
+    if (header.extension() != 0) {
+        // A RequestExtensions later than that, and every other extension
+        // frame, is discarded as before.
+        if (negotiable && header.extension() == extensions_negotiation_type
+            && ! header.channel_msg() && header.msg_type == request_extensions::message_type) {
+            return negotiate(payload);
+        }
+        return {};
+    }
     if (header.channel_msg() != (
             header.msg_type == update_channel::message_type
             || header.msg_type == close_channel::message_type
@@ -318,6 +356,7 @@ mining_session::result mining_session::process(message_header const& header, byt
             request.nominal_hash_rate = message->nominal_hash_rate;
             request.max_target = message->max_target;
             request.kind = mining::channel_kind::standard;
+            request.user_identity = message->user_identity;
             return finish_open(request);
         }
         case open_extended_mining_channel::message_type: {
@@ -330,6 +369,7 @@ mining_session::result mining_session::process(message_header const& header, byt
             request.min_extranonce_size = message->min_extranonce_size;
             request.kind = mining::channel_kind::extended;
             request.standard_only = standard_only_;
+            request.user_identity = message->user_identity;
             return finish_open(request);
         }
         case update_channel::message_type: {

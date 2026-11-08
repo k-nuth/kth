@@ -97,6 +97,8 @@ struct open_request {
     channel_kind kind = channel_kind::standard;
     // The caller asked only for header-only channels (SV2 REQUIRES_STANDARD_JOBS).
     bool standard_only = false;
+    // The miner label the channel was opened with. Pool shares carry it upstream.
+    std::string user_identity;
 };
 
 enum class open_status { opened, rejected, protocol_error };
@@ -150,6 +152,9 @@ struct pool_proof {
     // A pooled job keeps that generation; it is not the downstream job id.
     // Flushing a cache under a later declaration would submit the old coinbase.
     uint32_t generation = 0;
+    // The worker that found it: the name the share itself carried, else the
+    // channel's user_identity. Sent to a pool that tracks workers.
+    std::string worker;
 };
 
 // One coinbase and transaction selection shared by every downstream channel.
@@ -205,6 +210,9 @@ struct share_request {
     uint32_t ntime = 0;
     uint32_t version = 0;
     data_chunk extranonce;
+    // A worker name sent with this share, by a front end that negotiated one
+    // per share. Absent means the channel's user_identity.
+    std::optional<std::string> worker;
 };
 
 enum class share_status { accepted, block, rejected };
@@ -308,6 +316,7 @@ private:
         uint32_t id = 0;
         uint32_t group_id = 0;
         channel_kind kind = channel_kind::standard;
+        std::string user_identity;
         float hashrate = 0;
         hash_digest max_target{};
         hash_digest share_target{};

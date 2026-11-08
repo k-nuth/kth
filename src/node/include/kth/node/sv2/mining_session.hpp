@@ -77,6 +77,7 @@ private:
     };
 
     [[nodiscard]] result close();
+    [[nodiscard]] result negotiate(byte_span payload);
     [[nodiscard]] result finish_open(mining::open_request const& request);
     [[nodiscard]] result finish_share(uint8_t message_type, byte_span payload);
     [[nodiscard]] result emit(std::vector<mining::work_job> const& jobs,
@@ -89,6 +90,12 @@ private:
     state state_ = state::awaiting_setup;
     bool standard_only_ = false;
     bool channel_opened_ = false;
+    // Only the first message after SetupConnection.Success can be
+    // RequestExtensions (extension 0x0001, section 4).
+    bool negotiable_ = false;
+    // Worker-Specific Hashrate Tracking (0x0002) was granted, so
+    // SubmitSharesExtended may carry TLV fields after its own.
+    bool worker_identities_ = false;
     std::vector<pending_channel> pending_;
     std::optional<blockchain::mining_template> current_;
     std::optional<hash_digest> template_prev_;

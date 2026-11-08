@@ -17,6 +17,7 @@
 #include <kth/domain/chain/script.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/extensions.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
 #include <kth/node/sv2/mining_session.hpp>
 #include <kth/node/sv2/template_provider.hpp>
@@ -28,11 +29,7 @@ namespace {
 
 template <typename Message>
 constexpr uint16_t extension() {
-    if constexpr (requires { Message::channel_message; }) {
-        return Message::channel_message ? message_header::channel_msg_flag : 0;
-    } else {
-        return 0;
-    }
+    return framed_extension_type<Message>();
 }
 
 setup_connection setup(uint32_t flags = 0) {
@@ -677,5 +674,123 @@ TEST_CASE("sv2 mining holds channel success until its first job is available", "
         REQUIRE_FALSE(closed.needs_template());
         auto const reopened = single<open_standard_mining_channel_success>(process(closed, standard(1)));
         REQUIRE(reopened.channel_id != 1);
+    }
+}
+
+TEST_CASE("sv2 mining grants worker tracking only to a RequestExtensions right after setup", "[sv2 mining]") {
+    // Extension 0x0001, section 4: Success lists what is supported, and Error
+    // answers a request for nothing this server supports. It requires none.
+    auto session = ready();
+    auto const granted = single<request_extensions_success>(process(session,
+        request_extensions{5, {0x0003, worker_hashrate_tracking_extension}}));
+    REQUIRE(granted.request_id == 5);
+    REQUIRE(granted.supported_extensions == std::vector<uint16_t>{worker_hashrate_tracking_extension});
+    // Only the first message after setup is a negotiation. Later ones are
+    // discarded like any other extension frame.
+    require_silent(process(session, request_extensions{6, {worker_hashrate_tracking_extension}}));
+    REQUIRE(session.ready());
+
+    for (auto const& requested : {std::vector<uint16_t>{0x0003}, std::vector<uint16_t>{}}) {
+        CAPTURE(requested.size());
+        auto refusing = ready();
+        auto const refused = single<request_extensions_error>(process(refusing, request_extensions{7, requested}));
+        REQUIRE(refused.request_id == 7);
+        REQUIRE(refused.unsupported_extensions == requested);
+        REQUIRE(refused.required_extensions.empty());
+        REQUIRE(refusing.ready());
+    }
+
+    auto late = ready();
+    REQUIRE_FALSE(process(late, standard()).close);
+    require_silent(process(late, request_extensions{8, {worker_hashrate_tracking_extension}}));
+    auto flagged = ready();
+    require_silent(process(flagged, static_cast<uint16_t>(extensions_negotiation_type | message_header::channel_msg_flag),
+        request_extensions::message_type, to_data_chunk(request_extensions{9, {worker_hashrate_tracking_extension}})));
+    auto malformed = ready();
+    require_closed(process(malformed, extensions_negotiation_type, request_extensions::message_type, {0x01}));
+}
+
+TEST_CASE("sv2 mining reads the worker TLV once granted and ignores other fields", "[sv2 mining]") {
+    auto session = ready();
+    (void)single<request_extensions_success>(process(session,
+        request_extensions{1, {worker_hashrate_tracking_extension}}));
+    auto const frames = packets(process(session, extended(1)).response);
+    REQUIRE(frames.size() == 3);
+    auto const opened = parse<open_extended_mining_channel_success>(frames[0]);
+    auto const job = parse<new_extended_mining_job>(frames[1]);
+    auto const prev = parse<mining_set_new_prev_hash>(frames[2]);
+    uint32_t sequence = 0;
+    auto const submit = [&](data_chunk const& trailing) {
+        ++sequence;
+        submit_shares_extended const share{opened.channel_id, sequence, job.job_id, sequence,
+            prev.ntime_start, job.version, data_chunk(opened.extranonce_size, 0)};
+        auto bytes = to_data_chunk(share);
+        bytes.insert(bytes.end(), trailing.begin(), trailing.end());
+        return process(session, extension<submit_shares_extended>(), submit_shares_extended::message_type, bytes);
+    };
+    auto const fields = [](std::vector<tlv_field> const& list) {
+        data_chunk bytes;
+        for (auto const& field : list) {
+            auto const encoded = to_data_chunk(field);
+            bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+        }
+        return bytes;
+    };
+    // The share is submitted before its sequence number is compared.
+    auto const accepted = [&](mining_session::result const& result) {
+        REQUIRE(single<submit_shares_success>(result).last_sequence_number == sequence);
+    };
+
+    // Extension 0x0002 section 1.3: other fields, including unknown fields
+    // of this extension, are ignored, and a share without the field is taken.
+    accepted(submit(fields({tlv_field{0x0003, 0x01, {1, 2}}, user_identity_tlv("rig-7"),
+        tlv_field{worker_hashrate_tracking_extension, 0x02, {9}}})));
+    accepted(submit({}));
+    accepted(submit(fields({user_identity_tlv(std::string(32, 'w'))})));
+
+    // sv2-spec 3.4.3: a field over its 32-byte maximum rejects the message.
+    tlv_field const long_name{worker_hashrate_tracking_extension, user_identity_field, data_chunk(33, 'w')};
+    auto const refused = single<submit_shares_error>(submit(fields({long_name})));
+    REQUIRE(refused.sequence_number == sequence);
+    REQUIRE(refused.error_code == error_user_identity_too_long);
+    REQUIRE(session.ready());
+
+    // A field cut short is a malformed frame.
+    require_closed(submit(data_chunk{0x02, 0x00, 0x01}));
+}
+
+TEST_CASE("sv2 mining keeps standard shares and unnegotiated connections strict", "[sv2 mining]") {
+    // The user_identity field 0x0002|0x01 with "rig-7", written out byte by byte.
+    data_chunk const field{0x02, 0x00, 0x01, 0x05, 0x00, 'r', 'i', 'g', '-', '7'};
+    // No request, a refused one, and a granted one. Only the granted connection
+    // reads fields, and then only after SubmitSharesExtended.
+    for (int const negotiation : {0, 1, 2}) {
+        CAPTURE(negotiation);
+        auto session = ready();
+        if (negotiation == 1) (void)process(session, request_extensions{1, {0x0003}});
+        if (negotiation == 2) (void)process(session, request_extensions{1, {worker_hashrate_tracking_extension}});
+        auto frames = packets(process(session, standard()).response);
+        auto const standard_opened = parse<open_standard_mining_channel_success>(frames[0]);
+        auto const standard_job = parse<new_mining_job>(frames[1]);
+        auto const standard_prev = parse<mining_set_new_prev_hash>(frames[2]);
+        frames = packets(process(session, extended(1)).response);
+        auto const opened = parse<open_extended_mining_channel_success>(frames[0]);
+        auto const job = parse<new_extended_mining_job>(frames[1]);
+        auto const prev = parse<mining_set_new_prev_hash>(frames[2]);
+
+        auto standard_share = to_data_chunk(submit_shares_standard{standard_opened.channel_id, 1,
+            standard_job.job_id, 0, standard_prev.ntime_start, standard_job.version});
+        standard_share.insert(standard_share.end(), field.begin(), field.end());
+        auto standard_session = session;
+        require_closed(process(standard_session, extension<submit_shares_standard>(),
+            submit_shares_standard::message_type, standard_share));
+
+        auto share = to_data_chunk(submit_shares_extended{opened.channel_id, 2, job.job_id, 0,
+            prev.ntime_start, job.version, data_chunk(opened.extranonce_size, 0)});
+        share.insert(share.end(), field.begin(), field.end());
+        auto const result = process(session, extension<submit_shares_extended>(),
+            submit_shares_extended::message_type, share);
+        if (negotiation == 2) REQUIRE(single<submit_shares_success>(result).last_sequence_number == 2);
+        else require_closed(result);
     }
 }

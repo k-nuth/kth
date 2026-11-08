@@ -409,6 +409,7 @@ opened_channel work_engine::open(open_request const& request) {
     slot.id = next_channel_++;
     slot.group_id = group_bit | slot.id;
     slot.kind = request.kind;
+    slot.user_identity = request.user_identity;
     slot.hashrate = request.nominal_hash_rate;
     slot.max_target = request.max_target;
     slot.share_target = choose_target(request.nominal_hash_rate, request.max_target);
@@ -785,6 +786,7 @@ share_outcome work_engine::submit(share_request const& share) {
             proof.nonce = share.nonce;
             proof.bits = job->bits;
             proof.generation = job->generation;
+            proof.worker = share.worker.value_or(slot->user_identity);
             outcome.pool = std::move(proof);
         } else {
             spdlog::warn("[mining] Channel {} pool extranonce does not match the declared width",

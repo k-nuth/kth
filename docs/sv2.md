@@ -193,6 +193,21 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   work with a different coinbase, without waiting for the next tip. Previous
   jobs become stale. A slow connection has its own bounded input queue; found
   blocks are submitted before waiting for the miner to read their acknowledgements.
+- Extensions Negotiation (extension 0x0001) is answered only as the first
+  message after `SetupConnection.Success`; a later `RequestExtensions` is
+  discarded like other extension messages. A request that includes
+  Worker-Specific Hashrate Tracking (0x0002) gets `RequestExtensions.Success`
+  listing only 0x0002. Any other request gets `RequestExtensions.Error` naming
+  the requested extensions as unsupported and requiring none.
+- Once 0x0002 is granted, `SubmitSharesExtended` may end with TLV fields
+  (specification section 3.4.3). The `user_identity` field (extension 0x0002,
+  field 0x01) names the worker behind that share; other fields are ignored, and
+  a share without the field is still accepted. A field over 32 bytes refuses
+  the share with `user-identity-too-long`, and a field cut short closes the
+  connection. The node keeps no per-worker statistics: the name only goes
+  upstream with pool shares, as described under Job Declaration. Without the
+  grant, any bytes after a share still close the connection, and
+  `SubmitSharesStandard` never carries fields.
 
 Mining errors are printable strings (SV2 section 3.5 allows implementation
 specific codes):
@@ -217,6 +232,7 @@ specific codes):
 | | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
 | | `duplicate-share` | This proof of work was already accepted. |
 | | `share-limit` | The bounded share history is full; fresh work replaces this job. |
+| | `user-identity-too-long` | The share's Worker-Specific Hashrate Tracking name exceeds 32 bytes. |
 
 Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
 zero), and server-only messages close the connection. Downstream custom jobs
