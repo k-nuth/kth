@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(kth VERSION 0.0.0 LANGUAGES CXX C)
 
+include(cmake/KthRpcBackend.cmake)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -40,6 +42,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KthCompilerChecks.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KthTests.cmake)
 
 option(BUILD_NODE_EXE "Build the node executable." ON)
 option(BUILD_C_API "Build the C-API." ON)

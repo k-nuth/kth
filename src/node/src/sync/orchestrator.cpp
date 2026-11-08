@@ -9,6 +9,8 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 
@@ -1279,14 +1281,7 @@ static
     // closes the relay's channel, and the owner closes the admission channel.
     detail::tx_admission_channel tx_admission(detail::tx_admission_capacity);
     if (network.network_settings().relay_transactions) {
-        detail::tx_relay_view relay_view{
-            .synchronized = [&chain] { return chain.synchronization().synchronized(); },
-            .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
-            .tip = [&chain] {
-                auto const view = chain.chain_view();
-                return view ? view->tip_hash : null_hash;
-            },
-        };
+        auto relay_view = detail::chain_relay_view(chain);
         auto spawn_relay_task = [&all_tasks](::asio::awaitable<void> task) {
             all_tasks.spawn("tx_relay_request", std::move(task));
         };
@@ -1301,6 +1296,30 @@ static
                     ::asio::use_awaitable);
             },
             network.tx_relay()));
+    }
+
+    // Fee filter watch: when the mempool's minimum may have moved, each peer's
+    // service hears the new value and decides whether its next fee filter
+    // (BIP133) is due sooner. Only when the node relays transactions, as the
+    // fee filter itself. Ends with the network.
+    if (network.network_settings().relay_transactions) {
+        all_tasks.spawn("fee_filter_watch", detail::fee_filter_watch(chain.mempool_fee_events(),
+            detail::fee_filter_sources{
+                .minimum = [&chain] { return chain.mempool_minimum_fee(); },
+                .peers = [&network] { return network.peers().all(); },
+            },
+            network.stop_token()));
+
+        // Transaction announcement watch: when transactions are admitted,
+        // each peer's service hears how far the mempool's order reaches and
+        // when the inbound peers are next due. Ends with the network.
+        all_tasks.spawn("tx_announcement_watch", detail::tx_announcement_watch(chain.mempool_admission_events(),
+            detail::tx_announcement_watch_sources{
+                .last = [&chain] { return chain.mempool_last_admission(); },
+                .peers = [&network] { return network.peers().all(); },
+                .draw = detail::unit_draw,
+            },
+            network.stop_token()));
     }
 
     // -------------------------------------------------------------------------
@@ -2435,6 +2454,8 @@ static
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
                 announce_connected_tip();
+                // The orphans a connected block resolves (detail/tx_relay.hpp).
+                network.tx_relay().tip_moved();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

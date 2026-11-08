@@ -132,8 +132,8 @@ network::settings node_settings(std::string const& tag) {
     settings.inbound_connections = 0;
     settings.outbound_connections = 0;          // nothing dials out
     settings.threads = 1;
-    settings.hosts_file = "/tmp/kth_" + tag + "_hosts_nonexistent.dat";
-    settings.banlist_file = "/tmp/kth_" + tag + "_banlist_nonexistent.dat";
+    settings.hosts_file = std::filesystem::temp_directory_path() / ("kth_" + tag + "_hosts_nonexistent.dat");
+    settings.banlist_file = std::filesystem::temp_directory_path() / ("kth_" + tag + "_banlist_nonexistent.dat");
     // Each case its own, and fresh: the node saves the peer database when it
     // stops, and the default shared file would carry one case's scores into
     // the next run's.

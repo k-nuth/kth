@@ -72,11 +72,12 @@ std::optional<domain::message::block_transactions> block_transactions_for(
 ::asio::awaitable<message_result> handle_get_headers(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_headers const& request);
 
-/// getdata -> one block message per requested block, in request order, and a
-/// notfound for the blocks that cannot be served. A compact block request for
+/// getdata -> one block or tx message per requested entry, in request order,
+/// and a notfound for those that cannot be served. A compact block request for
 /// a block near the connected tip is answered with a cmpctblock that prefills
-/// the coinbase, and for an older one with the full block. Transaction entries
-/// are not handled here.
+/// the coinbase, and for an older one with the full block. A transaction is
+/// served while it is pooled and was announced to the peer or listed in its
+/// answer to `mempool`.
 [[nodiscard]] KN_API
 ::asio::awaitable<message_result> handle_get_data(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_data const& request);

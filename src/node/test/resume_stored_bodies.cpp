@@ -122,8 +122,8 @@ network::settings node_settings(std::string const& tag) {
     settings.inbound_connections = 0;
     settings.outbound_connections = 0;
     settings.threads = 1;
-    settings.hosts_file = "/tmp/kth_" + tag + "_hosts_nonexistent.dat";
-    settings.banlist_file = "/tmp/kth_" + tag + "_banlist_nonexistent.dat";
+    settings.hosts_file = std::filesystem::temp_directory_path() / ("kth_" + tag + "_hosts_nonexistent.dat");
+    settings.banlist_file = std::filesystem::temp_directory_path() / ("kth_" + tag + "_banlist_nonexistent.dat");
     auto const peers = std::filesystem::temp_directory_path() / ("kth_" + tag + "_peers.dat");
     std::filesystem::remove(peers);
     settings.peers_file = peers;

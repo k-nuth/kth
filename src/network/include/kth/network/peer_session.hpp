@@ -12,12 +12,14 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <variant>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/net_permissions.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/tx_inventory.hpp>
 
 // Asio includes for coroutines
 #include <asio/awaitable.hpp>
@@ -203,6 +205,50 @@ public:
 
     [[nodiscard]]
     tip_channel& tip_announcements();
+
+    /// The mempool's minimum fee per 1000 bytes, as it moved, not yet taken by
+    /// the peer's service, which decides from it whether the fee filter it
+    /// sends this peer is due sooner. Holds one value; a newer one replaces
+    /// one not taken yet. Closed by stop().
+    using fee_filter_channel = select_channel<uint64_t>;
+
+    /// Record that the minimum moved to `fee_per_kb`. One producer: the
+    /// node's fee filter watch. Never waits.
+    void announce_fee_filter(uint64_t fee_per_kb);
+
+    [[nodiscard]]
+    fee_filter_channel& fee_filter_changes();
+
+    // -------------------------------------------------------------------------
+    // Transaction announcements
+    // -------------------------------------------------------------------------
+
+    /// The transactions admitted since the peer's service last looked: the
+    /// last admission, which the service walks the mempool's order up to.
+    /// Holds one; a newer one replaces one not taken yet. Closed by stop().
+    using admission_channel = select_channel<tx_admissions>;
+
+    /// Record that transactions were admitted up to `admissions.last`. One
+    /// producer: the node's announcement watch. Never waits.
+    void announce_admissions(tx_admissions const& admissions);
+
+    [[nodiscard]]
+    admission_channel& admissions();
+
+    /// The peer asked for the mempool (BIP35) and may be answered. Holds
+    /// one: requests coalesce until the service answers. Closed by stop().
+    using mempool_request_channel = select_channel<std::monostate>;
+
+    /// From the read loop, never waiting.
+    void request_mempool();
+
+    [[nodiscard]]
+    mempool_request_channel& mempool_requests();
+
+    /// What the peer knows and filters (tx_inventory). Only on this session's
+    /// strand: its read loop and its service.
+    [[nodiscard]]
+    network::tx_inventory& tx_inventory() { return tx_inventory_; }
 
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
@@ -487,6 +533,10 @@ private:
     inbound_channel inbound_;
     served_channel served_requests_;
     tip_channel tip_announcements_;
+    fee_filter_channel fee_filter_changes_;
+    admission_channel admissions_;
+    mempool_request_channel mempool_requests_;
+    network::tx_inventory tx_inventory_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive

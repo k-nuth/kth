@@ -256,7 +256,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
     using type_id = inventory_vector::type_id;
     auto const request = domain::message::get_data::create({
         {type_id::block, c.trunk[1].hash()},
-        {type_id::transaction, c.trunk[0].transactions().front().hash()},   // not handled here
+        {type_id::transaction, c.trunk[0].transactions().front().hash()},   // confirmed, not pooled
         {type_id::block, c.side.hash()},                                    // off the connected chain
         {type_id::compact_block, c.trunk[3].hash()},                        // the tip: a cmpctblock
         {type_id::block, c.trunk[4].hash()},                                // header only
@@ -284,6 +284,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
     auto const missing = domain::message::not_found::from_data(reader, peer.session->negotiated_version());
     REQUIRE(missing);
     CHECK(missing->inventories() == inventory_vector::list{
+        {type_id::transaction, c.trunk[0].transactions().front().hash()},
         {type_id::block, c.side.hash()},
         {type_id::block, c.trunk[4].hash()},
         {type_id::block, unknown_hash()}});

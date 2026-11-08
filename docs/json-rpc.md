@@ -10,16 +10,36 @@ of truth for that mapping.
 
 ## Building
 
-The server is **off by default** and gated at compile time:
+The build selects exactly one RPC backend. JSON-RPC is compiled by default;
+the listener remains **off at runtime by default**.
 
-```
-conanfile option  rpc=True   →   CMake KTH_WITH_RPC   →   #if defined(KTH_WITH_RPC)
-```
+| Backend | Conan option | CMake option | Status |
+| --- | --- | --- | --- |
+| JSON-RPC | `-o '&:rpc=jsonrpc'` | `-DKTH_RPC_BACKEND=jsonrpc` | Implemented; default |
+| None | `-o '&:rpc=none'` | `-DKTH_RPC_BACKEND=none` | No RPC listener or llhttp dependency |
+| gRPC + Protobuf | `-o '&:rpc=grpc'` | `-DKTH_RPC_BACKEND=grpc` | Implemented; typed read-only API, see [grpc.md](grpc.md) |
+| Cap'n Proto RPC | `-o '&:rpc=capnproto'` | `-DKTH_RPC_BACKEND=capnproto` | Implemented; typed read-only API, see [capnproto-rpc.md](capnproto-rpc.md) |
+
+One backend per binary: selecting another one leaves JSON-RPC out, with every
+method only it offers (mining, `sendrawtransaction`, `help`, ...).
+
+The former Conan values `rpc=True` and `rpc=False` must be migrated to
+`rpc=jsonrpc` and `rpc=none`. A CMake configuration without the Conan toolchain
+and without `KTH_RPC_BACKEND` follows the legacy `KTH_WITH_RPC`: `ON` selects
+`jsonrpc`; `OFF` or unset selects `none`, as before. A later `-DKTH_WITH_RPC=...`
+that contradicts the selected backend fails the configuration instead of being
+ignored. Emscripten forces `none`, whatever was asked.
+
+`KTH_WITH_RPC` remains the derived C++ feature macro for the JSON-RPC backend;
+the gRPC backend has its own `KTH_WITH_GRPC` and the Cap'n Proto one its own
+`KTH_WITH_CAPNPROTO_RPC`, so no two share a guard. Neither falls back to
+JSON-RPC: each reuses `rpc.enabled/bind/port/user/password` with its own
+transport and serves no JSON.
 
 The transport uses [llhttp](https://github.com/nodejs/llhttp) (the Node.js HTTP
 parser, sans-io) fed by the node's existing standalone-asio coroutine loop, plus
 [simdjson](https://github.com/simdjson/simdjson) for both request parsing and
-response serialization. `llhttp` is only pulled in when the `rpc` option is enabled.
+response serialization. `llhttp` is only pulled in when `rpc=jsonrpc` is selected.
 
 ## Running
 
@@ -34,7 +54,8 @@ rpc.password = mypass
 ```
 
 Starting a build without RPC support but with `rpc.enabled = true` logs a warning
-and continues without the server.
+and continues without the server. The warning identifies `rpc=jsonrpc` as the
+required build selection.
 
 ### Authentication
 

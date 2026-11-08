@@ -149,6 +149,26 @@ std::optional<domain::message::block_transactions> block_transactions_for(
     auto const view = chain.chain_view();
     domain::message::inventory_vector::list missing;
     for (auto const& item : request.inventories()) {
+        if (item.type() == type_id::transaction) {
+            // Only what this peer was announced, or listed in its answer to
+            // `mempool`, while it is pooled: a transaction not yet announced
+            // to it is not given away, whatever the peer says it knows (BCHN
+            // answers from what it relayed, and from the pool what was pooled
+            // when the peer's `mempool` was answered).
+            auto const entry = chain.get_mempool_transaction(item.hash());
+            auto const listed = [&] {
+                auto const answered = peer.tx_inventory().mempool_answered();
+                return answered && entry->entry_id <= *answered;
+            };
+            if (entry && (peer.tx_inventory().announced(item.hash()) || listed())) {
+                if (co_await peer.send_data(*entry->tx)) {
+                    co_return message_result::handled;
+                }
+                continue;
+            }
+            missing.push_back(item);
+            continue;
+        }
         if (item.type() != type_id::block && item.type() != type_id::compact_block) {
             continue;
         }

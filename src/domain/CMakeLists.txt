@@ -686,15 +686,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   endif()
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    catch_discover_tests(kth_domain_test)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_domain_test COMMAND kth_domain_test)
-  endif()
+  kth_register_tests(kth_domain_test)
 endif()
 
 # Benchmarks
