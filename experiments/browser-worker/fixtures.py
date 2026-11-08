@@ -62,9 +62,9 @@ def regtest_genesis():
     return header_bytes(1, bytes(32), merkle, GENESIS_TIME, REGTEST_BITS, 2)
 
 
-def mine(prev_header, height, valid=True):
+def mine(prev_header, height, valid=True, branch=0):
     prev = dsha(prev_header)
-    merkle = hashlib.sha256(struct.pack("<I", height)).digest()
+    merkle = hashlib.sha256(struct.pack("<I", height) + (struct.pack("<I", branch) if branch else b"")).digest()
     nonce = 0
     while True:
         header = header_bytes(0x20000000, prev, merkle, GENESIS_TIME + 600 * height, REGTEST_BITS, nonce)
@@ -78,6 +78,14 @@ def chain(length, invalid_at=None):
     for height in range(1, length + 1):
         headers.append(mine(headers[-1], height, valid=height != invalid_at))
     return headers
+
+
+def extend(headers, length, branch=0, invalid_at=None):
+    """The chain `headers` grown to `length`; with a branch number, a fork."""
+    result = list(headers)
+    for height in range(len(result), length + 1):
+        result.append(mine(result[-1], height, valid=height != invalid_at, branch=branch))
+    return result
 
 
 def varint(value):
@@ -226,7 +234,42 @@ async def bch_oversize(socket):
     await socket.wait_closed()
 
 
+@quiet
+async def bch_reorg(socket):
+    # The client catches up at 2500; then a heavier branch from 2495 to 2510
+    # is announced on the same connection.
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake()
+    await session.serve_headers()
+    session.headers = BCH_REORG
+    await session.send("inv", varint(1) + struct.pack("<I", 2) + dsha(BCH_REORG[-1]))
+    await session.serve_headers(until_empty=False)
+
+
+RETRY_CONNECTIONS = 0
+
+
+@quiet
+async def bch_retry(socket):
+    # First connection: the chain to 2500, then a heavier branch from 2495
+    # whose header at 2505 has invalid proof of work. Next connection: the
+    # branch only to 2504, every header of it already stored by the client.
+    global RETRY_CONNECTIONS
+    RETRY_CONNECTIONS += 1
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake()
+    if RETRY_CONNECTIONS == 1:
+        await session.serve_headers()
+        session.headers = BCH_RETRY_INVALID
+        await session.send("inv", varint(1) + struct.pack("<I", 2) + dsha(BCH_RETRY_INVALID[-1]))
+    else:
+        session.headers = BCH_RETRY_INVALID[:2505]
+    await session.serve_headers(until_empty=False)
+
+
 BCH_CHAIN = chain(2500)
+BCH_REORG = extend(BCH_CHAIN[:2496], 2510, branch=1)
+BCH_RETRY_INVALID = extend(BCH_CHAIN[:2496], 2510, branch=2, invalid_at=2505)
 BCH_INVALID = chain(20, invalid_at=10)
 
 
@@ -234,7 +277,8 @@ async def main(scenario):
     controls = {'echo': (18765, echo), 'stall': (18767, stall),
                 'cap': (18768, cap), 'eof': (18769, eof), 'abrupt': (18770, abrupt),
                 'bch_sync': (18780, bch_sync), 'bch_invalid': (18781, bch_invalid),
-                'bch_follow': (18782, bch_follow), 'bch_oversize': (18783, bch_oversize)}
+                'bch_follow': (18782, bch_follow), 'bch_oversize': (18783, bch_oversize),
+                'bch_reorg': (18787, bch_reorg), 'bch_retry': (18788, bch_retry)}
     selected = controls if scenario == 'all' else {scenario: controls[scenario]}
     async with AsyncExitStack() as stack:
         for port, handler in selected.values():
@@ -244,6 +288,7 @@ async def main(scenario):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('scenario', choices=['all', 'echo', 'stall', 'cap', 'eof', 'abrupt',
-                                             'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize'],
+                                             'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize',
+                                             'bch_reorg', 'bch_retry'],
                         default='all', nargs='?')
     asyncio.run(main(parser.parse_args().scenario))
