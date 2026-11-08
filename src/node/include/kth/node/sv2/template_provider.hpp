@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <system_error>
+#include <vector>
 
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
@@ -49,6 +50,11 @@ struct template_provider_session {
     // fixed coinbase fields and a full 100-byte scriptSig. Outputs are extra.
     static constexpr uint64_t coinbase_fixed_reserve = 248;
 
+    // With BCH large templates, transaction data goes out in frames of at
+    // most this payload, built one at a time as the socket drains. A BCH
+    // transaction is at most 1,000,000 bytes, so each frame holds at least one.
+    static constexpr size_t data_page_size = 1024 * 1024;
+
     struct result {
         data_chunk response;    // A complete frame to send, or empty.
         bool close = false;     // Close the connection after the response.
@@ -75,6 +81,20 @@ struct template_provider_session {
         return constraints_;
     }
 
+    // A connection that negotiated BCH large templates (0x4C54) is pushed
+    // each template's transactions after its NewTemplate and SetNewPrevHash,
+    // and is answered RequestTransactionData in pages. That data is taken a
+    // frame at a time with next_data_frame() while sending_data().
+    [[nodiscard]] bool sending_data() const;
+
+    // An answer the client asked for is still to be sent. The caller reads no
+    // further message until it is; any push ahead of it is finished first.
+    [[nodiscard]] bool answering() const;
+
+    // The next frame of that data. Empty when the template went away before
+    // its push finished.
+    [[nodiscard]] data_chunk next_data_frame();
+
 private:
     enum class state { awaiting_setup, ready, closed };
 
@@ -95,6 +115,26 @@ private:
     [[nodiscard]] entry const* find_solvable(uint64_t id) const;
     [[nodiscard]] bool stale(uint64_t id) const;
 
+    // One template's transactions on their way: a push, or the answer to a
+    // request, which leaves the push base alone.
+    struct transfer {
+        uint64_t id;
+        bool push;
+        // A push's transaction ids in block order, the next base once sent.
+        std::vector<hash_digest> txids;
+        // A delta sends Kept, then only what the base lacks.
+        bool delta = false;
+        bool kept_sent = false;
+        size_t next = 0;        // The template's next transaction.
+        size_t base_next = 0;   // The base's next id, for a delta.
+    };
+
+    void push(uint64_t id, std::vector<hash_digest> txids);
+    void abandon();
+    void skip_kept();
+    [[nodiscard]] data_chunk kept_frame() const;
+    [[nodiscard]] data_chunk page_frame(std::vector<transaction_const_ptr> const& txs);
+
     state state_ = state::awaiting_setup;
     std::optional<coinbase_output_constraints> constraints_;
     std::optional<hash_digest> previous_;
@@ -103,6 +143,15 @@ private:
     std::deque<entry> replaced_;
     uint64_t next_id_ = 1;
     uint64_t stale_through_ = 0;
+
+    bool large_templates_ = false;
+    std::optional<transfer> transfer_;
+    // At most one answer waits: the listener reads nothing until it is sent.
+    std::optional<uint64_t> requested_;
+    // The last template whose push finished, which the next push names as its
+    // base, and its transaction ids in block order. The client tracks it too.
+    uint64_t base_id_ = 0;
+    std::vector<hash_digest> base_txids_;
 };
 
 struct jd_client;

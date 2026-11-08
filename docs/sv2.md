@@ -85,8 +85,9 @@ file loading requires POSIX file permissions.
   the connection is closed.
   No Template Distribution flags are defined yet.
 - After `SetupConnection.Success`, and before `CoinbaseOutputConstraints`, a
-  client may send `RequestExtensions` (extension 0x0001). No extension is
-  implemented on Template Distribution and none is required, so the answer is
+  client may send `RequestExtensions` (extension 0x0001). BCH large templates,
+  described below, is the only extension implemented on Template Distribution,
+  and none is required. A request without it is answered with
   `RequestExtensions.Error` listing every requested extension as unsupported,
   and the connection continues as standard SV2. A malformed request, or one
   after `CoinbaseOutputConstraints`, closes the connection.
@@ -111,8 +112,8 @@ file loading requires POSIX file permissions.
 - A BCH block can hold more than `RequestTransactionData.Success` carries: one
   frame is under 16 MiB, and its list at most 65,535 transactions. Such a
   template is still sent, since a client that mines on the merkle path never
-  needs the transactions. A request for them gets `template-too-large`; a
-  solution is taken as for any other template.
+  needs the transactions. Without BCH large templates, a request for them gets
+  `template-too-large`; a solution is taken as for any other template.
 - `SubmitSolution` reconstructs the full block from the supplied header fields
   and coinbase plus the template's transactions, then submits it through the
   node's block validation and connection pipeline. The outcome is logged; the
@@ -124,6 +125,49 @@ file loading requires POSIX file permissions.
   requires.
 - Closes the connection on a malformed frame, a message only a server sends, a
   message type the protocol does not define, or a client payload over 1 MiB.
+
+BCH large templates (`large_templates_extension`, `0x4C54`), the extension Job
+Declaration uses below, also lift the limits of `RequestTransactionData.Success`
+on Template Distribution. The goal is that only the block size limit bounds a
+template: there is no transaction-count or frame limit, and each transaction
+is sent once per connection. A `RequestExtensions` that lists `0x4C54` is
+answered with `RequestExtensions.Success` listing only `0x4C54`. With the
+extension on:
+
+- Each template's transactions follow its `NewTemplate` and `SetNewPrevHash`
+  without a request, before the next `NewTemplate`. The first push on the
+  connection is full: `RequestTransactionData.Transactions` pages (`0x03`:
+  template id, then `SEQ0_64K[B0_16M]`) followed by the core
+  `RequestTransactionData.Success` with the last transactions and empty
+  `excess_data`. The template's list is every page in order, then the
+  Success list.
+- A later push is a delta against the base, the last template whose push
+  finished, on any tip. It starts with `RequestTransactionData.Kept` (`0x04`:
+  template id, base template id, then a `B0_16M` bitmap). Bit i, least
+  significant first, is set when the base's i-th transaction is also in the
+  new template; the bitmap is exactly ceil(base count / 8) bytes and its unused
+  high bits are zero. Pages and the Success then carry only the added
+  transactions. The template's list is the kept and added transactions sorted
+  by transaction id (CTOR, BCH's block order). The client checks the list it
+  rebuilt against the template's `merkle_path`.
+- A page holds at most 65,535 transactions in a frame of at most 1 MiB. A
+  Bitcoin Cash transaction is at most 1,000,000 bytes, so every page holds at
+  least one. Pages are built one at a time as the socket drains, never a whole
+  template per connection. Each connection has its own loop, so a slow client
+  holds up only itself: its messages are still read between pages, and a new
+  template abandons a push it has not finished. Nothing more is sent for that
+  template, and the next push is full.
+- `RequestTransactionData` is answered after any push under way, with the
+  whole list in pages and the core Success, or with `stale-template-id` or
+  `template-id-not-found`. It never gets `template-too-large`, does not change
+  the base, and the client's next message is read once the answer is sent.
+- A transaction is sent again only in such an answer, in the full push after
+  an abandoned one, or when it comes back after leaving a template. A base
+  whose bitmap would not fit one frame, over 134 million transactions, is
+  followed by a full push.
+- A client that half-closes still receives the push under way. The
+  extension's messages from a client close the connection once it is on;
+  before that they are discarded like any other unknown extension's.
 
 ## Mining Protocol
 

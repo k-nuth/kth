@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <asio/buffer.hpp>
@@ -524,6 +525,153 @@ submit_solution solution_message(template_pair const& job, domain::chain::block 
         block.header().nonce(), std::move(bytes)};
 }
 
+// A session that negotiated BCH large templates, then sent its constraints.
+template_provider_session large_session() {
+    auto session = ready_session(false);
+    auto const granted = process(session, request_extensions{1, {large_templates_extension}});
+    REQUIRE_FALSE(granted.close);
+    REQUIRE(response<request_extensions_success>(granted.response).supported_extensions
+        == std::vector<uint16_t>{large_templates_extension});
+    require_silent(process(session, coinbase_output_constraints{100, 2}));
+    return session;
+}
+
+std::vector<uint32_t> numbers(uint32_t first, uint32_t last) {
+    std::vector<uint32_t> values;
+    for (auto value = first; value <= last; ++value) values.push_back(value);
+    return values;
+}
+
+bool ctor_less(hash_digest const& left, hash_digest const& right) {
+    return std::lexicographical_compare(left.rbegin(), left.rend(), right.rbegin(), right.rend());
+}
+
+// Distinct transactions in CTOR order, as the chain selects them. Each number
+// is a lock time; `script_size` pads the output.
+blockchain::mining_template numbered_template(std::vector<uint32_t> const& locktimes,
+    hash_digest const& previous = null_hash, size_t script_size = 0) {
+    std::vector<std::pair<hash_digest, transaction_const_ptr>> sorted;
+    for (auto const locktime : locktimes) {
+        domain::chain::output::list outputs;
+        outputs.emplace_back(1000, domain::chain::script(data_chunk(script_size, 0), false),
+            domain::chain::token_data_opt{});
+        auto tx = std::make_shared<domain::message::transaction const>(
+            domain::chain::transaction(1, locktime, {}, std::move(outputs)));
+        auto const id = tx->hash();
+        sorted.emplace_back(id, std::move(tx));
+    }
+    std::sort(sorted.begin(), sorted.end(), [](auto const& left, auto const& right) {
+        return ctor_less(left.first, right.first);
+    });
+    auto value = empty_template();
+    value.previous_block_hash = previous;
+    for (auto& item : sorted) value.selection.txs.push_back(std::move(item.second));
+    return value;
+}
+
+std::vector<data_chunk> raw_transactions(blockchain::mining_template const& value) {
+    std::vector<data_chunk> raw;
+    for (auto const& tx : value.selection.txs) {
+        domain::chain::transaction const& transaction = *tx;
+        raw.push_back(to_data_chunk(transaction, true));
+    }
+    return raw;
+}
+
+message_header header_of(data_chunk const& bytes) {
+    REQUIRE(bytes.size() >= message_header::size);
+    auto const header = from_data_chunk<message_header>(byte_span(bytes).first(message_header::size));
+    REQUIRE(header.has_value());
+    REQUIRE(header->msg_length == bytes.size() - message_header::size);
+    return *header;
+}
+
+// Every data frame the session has, taken one at a time as the listener does
+// while the socket drains. Bounded, so data that never ends fails the test.
+std::vector<data_chunk> drain(template_provider_session& session) {
+    std::vector<data_chunk> frames;
+    for (size_t count = 0; session.sending_data(); ++count) {
+        REQUIRE(count < 100000);
+        auto bytes = session.next_data_frame();
+        if ( ! bytes.empty()) frames.push_back(std::move(bytes));
+    }
+    return frames;
+}
+
+// One template's data as a client reads it: Kept first for a delta, then
+// pages, then the core Success, every frame naming the template.
+struct template_data {
+    std::optional<request_transaction_data_kept> kept;
+    std::vector<data_chunk> transactions;
+    size_t pages = 0;
+};
+
+template_data collect(std::vector<data_chunk> const& frames, uint64_t id) {
+    REQUIRE_FALSE(frames.empty());
+    template_data data;
+    for (size_t index = 0; index < frames.size(); ++index) {
+        auto const& bytes = frames[index];
+        auto const header = header_of(bytes);
+        REQUIRE(header.msg_length <= template_provider_session::data_page_size);
+        if (index + 1 == frames.size()) {
+            auto const success = response<request_transaction_data_success>(bytes);
+            REQUIRE(success.template_id == id);
+            REQUIRE(success.excess_data.empty());
+            data.transactions.insert(data.transactions.end(),
+                success.transaction_list.begin(), success.transaction_list.end());
+        } else if (index == 0 && header.msg_type == request_transaction_data_kept::message_type) {
+            data.kept = response<request_transaction_data_kept>(bytes);
+            REQUIRE(data.kept->template_id == id);
+        } else {
+            auto const page = response<request_transaction_data_transactions>(bytes);
+            REQUIRE(page.template_id == id);
+            REQUIRE_FALSE(page.transaction_list.empty());
+            ++data.pages;
+            data.transactions.insert(data.transactions.end(),
+                page.transaction_list.begin(), page.transaction_list.end());
+        }
+    }
+    return data;
+}
+
+// The client's list: as sent for a full push, or for a delta the base's kept
+// transactions and the added ones, sorted by transaction id.
+std::vector<data_chunk> rebuild(template_data const& data, std::vector<data_chunk> const& base) {
+    if ( ! data.kept) return data.transactions;
+    auto const& kept = data.kept->kept;
+    REQUIRE(kept.size() == (base.size() + 7) / 8);
+    if (base.size() % 8 != 0) REQUIRE((kept.back() >> (base.size() % 8)) == 0);
+    std::vector<std::pair<hash_digest, data_chunk>> list;
+    for (size_t index = 0; index < base.size(); ++index) {
+        if (((kept[index / 8] >> (index % 8)) & 1) != 0) list.emplace_back(bitcoin_hash(base[index]), base[index]);
+    }
+    for (auto const& tx : data.transactions) list.emplace_back(bitcoin_hash(tx), tx);
+    std::sort(list.begin(), list.end(), [](auto const& left, auto const& right) {
+        return ctor_less(left.first, right.first);
+    });
+    std::vector<data_chunk> rebuilt;
+    for (auto& item : list) rebuilt.push_back(std::move(item.second));
+    return rebuilt;
+}
+
+// The check a client makes before it uses a list: the coinbase merkle path of
+// a placeholder coinbase followed by the list must be the template's.
+std::vector<hash_digest> client_merkle_path(std::vector<data_chunk> const& list) {
+    std::vector<hash_digest> hashes{null_hash};
+    for (auto const& tx : list) hashes.push_back(bitcoin_hash(tx));
+    std::vector<hash_digest> path;
+    while (hashes.size() > 1) {
+        if (hashes.size() % 2 != 0) hashes.push_back(hashes.back());
+        path.push_back(hashes[1]);
+        std::vector<hash_digest> parents;
+        for (size_t index = 0; index < hashes.size(); index += 2) {
+            parents.push_back(bitcoin_hash(build_chunk({hashes[index], hashes[index + 1]})));
+        }
+        hashes = std::move(parents);
+    }
+    return path;
+}
+
 } // namespace
 
 // Session rules, without sockets.
@@ -831,6 +979,348 @@ TEST_CASE("sv2 sends a template too large for its transaction data and refuses o
     REQUIRE(data.transaction_list == std::vector<data_chunk>{bytes});
     REQUIRE(response<request_transaction_data_error>(process(session,
         request_transaction_data{large.work.template_id}).response).error_code == "template-too-large");
+}
+
+// BCH large templates (0x4C54) on Template Distribution.
+
+TEST_CASE("sv2 session grants BCH large templates and only that extension", "[sv2 template_provider]") {
+    auto session = ready_session(false);
+    auto const granted = process(session, request_extensions{2,
+        {0x0002, large_templates_extension, requested_payout_outputs_extension}});
+    REQUIRE_FALSE(granted.close);
+    auto const success = response<request_extensions_success>(granted.response);
+    REQUIRE(success.request_id == 2);
+    REQUIRE(success.supported_extensions == std::vector<uint16_t>{large_templates_extension});
+    require_silent(process(session, coinbase_output_constraints{100, 2}));
+    REQUIRE_FALSE(session.sending_data());
+    (void)template_messages(session.set_template(empty_template()));
+    REQUIRE(session.sending_data());
+
+    // Once it is on, its messages come only from the server.
+    for (uint16_t const extension : {large_templates_extension,
+            static_cast<uint16_t>(large_templates_extension | message_header::channel_msg_flag)}) {
+        for (uint8_t const type : {request_transaction_data_transactions::message_type,
+                request_transaction_data_kept::message_type, uint8_t{0x01}}) {
+            CAPTURE(extension, type);
+            auto large = large_session();
+            require_closed(process(large, extension, type, data_chunk{1, 2, 3}));
+        }
+    }
+
+    // Without it they are an unknown extension's, discarded as before.
+    auto standard = ready_session();
+    require_silent(process(standard, large_templates_extension,
+        request_transaction_data_kept::message_type, data_chunk{1, 2, 3}));
+
+    // The latest answer decides: one without the extension leaves it off.
+    auto changed = ready_session(false);
+    (void)response<request_extensions_success>(process(changed,
+        request_extensions{1, {large_templates_extension}}).response);
+    auto const refused = response<request_extensions_error>(process(changed,
+        request_extensions{2, {0x0002}}).response);
+    REQUIRE(refused.unsupported_extensions == std::vector<uint16_t>{0x0002});
+    require_silent(process(changed, coinbase_output_constraints{100, 2}));
+    (void)template_messages(changed.set_template(empty_template()));
+    REQUIRE_FALSE(changed.sending_data());
+}
+
+TEST_CASE("sv2 session without BCH large templates sends no data it was not asked for", "[sv2 template_provider]") {
+    // A refused or absent negotiation leaves standard SV2 exactly as it was:
+    // nothing follows SetNewPrevHash, the answer is one Success, and a list
+    // that does not fit one is refused.
+    for (bool const negotiated : {false, true}) {
+        CAPTURE(negotiated);
+        auto session = ready_session(false);
+        if (negotiated) {
+            (void)response<request_extensions_error>(process(session, request_extensions{1, {0x0002}}).response);
+        }
+        require_silent(process(session, coinbase_output_constraints{100, 2}));
+        auto value = numbered_template(numbers(1, 3));
+        auto const expected = raw_transactions(value);
+        auto const job = template_messages(session.set_template(std::move(value)));
+        REQUIRE_FALSE(session.sending_data());
+        REQUIRE(session.next_data_frame().empty());
+        auto const served = process(session, request_transaction_data{job.work.template_id});
+        REQUIRE_FALSE(served.close);
+        REQUIRE(response<request_transaction_data_success>(served.response).transaction_list == expected);
+        REQUIRE_FALSE(session.sending_data());
+
+        auto large = empty_template();
+        auto tx = std::make_shared<domain::message::transaction const>(domain::chain::transaction{});
+        large.selection.txs.assign(0x10000, tx);
+        auto const refused = template_messages(session.set_template(std::move(large)));
+        REQUIRE_FALSE(session.sending_data());
+        REQUIRE(response<request_transaction_data_error>(process(session,
+            request_transaction_data{refused.work.template_id}).response).error_code == "template-too-large");
+    }
+}
+
+TEST_CASE("sv2 session pushes a template too large for one Success in pages a client rebuilds", "[sv2 template_provider]") {
+    // The same templates the core Success cannot carry.
+    auto value = empty_template();
+    SECTION("transaction count exceeds U16") {
+        auto tx = std::make_shared<domain::message::transaction const>(domain::chain::transaction{});
+        value.selection.txs.assign(0x10000, tx);
+    }
+    SECTION("transaction data exceeds one U24 frame") {
+        domain::chain::output::list outputs;
+        outputs.emplace_back(0, domain::chain::script(data_chunk(1024, 0), false), domain::chain::token_data_opt{});
+        auto tx = std::make_shared<domain::message::transaction const>(
+            domain::chain::transaction(1, 0, {}, std::move(outputs)));
+        value.selection.txs.assign(20000, tx);
+    }
+    auto const expected = raw_transactions(value);
+    auto session = large_session();
+    // The template's own frames are NewTemplate and SetNewPrevHash only. Its
+    // data is built a frame at a time, as the socket drains.
+    auto const job = template_messages(session.set_template(std::move(value)));
+    REQUIRE(session.sending_data());
+    REQUIRE_FALSE(session.answering());
+    auto const data = collect(drain(session), job.work.template_id);
+    REQUIRE_FALSE(data.kept);
+    REQUIRE(data.pages > 0);
+    REQUIRE(data.transactions == expected);
+    REQUIRE(client_merkle_path(data.transactions) == job.work.merkle_path);
+    REQUIRE(session.next_data_frame().empty());
+}
+
+TEST_CASE("sv2 session sizes the Kept bitmap to its base", "[sv2 template_provider]") {
+    for (uint32_t const count : {0u, 1u, 7u, 8u, 9u, 17u}) {
+        CAPTURE(count);
+        auto session = large_session();
+        auto base_value = numbered_template(numbers(1, count));
+        auto const base = raw_transactions(base_value);
+        auto const first = template_messages(session.set_template(std::move(base_value)));
+        REQUIRE(collect(drain(session), first.work.template_id).transactions == base);
+
+        // Everything is kept and one transaction is added.
+        auto locktimes = numbers(1, count);
+        locktimes.push_back(1000);
+        auto value = numbered_template(locktimes);
+        auto const expected = raw_transactions(value);
+        auto const next = template_messages(session.set_template(std::move(value)));
+        auto const delta = collect(drain(session), next.work.template_id);
+        REQUIRE(delta.kept);
+        REQUIRE(delta.kept->base_template_id == first.work.template_id);
+        // Exactly ceil(count / 8) bytes, every base bit set, unused high bits clear.
+        REQUIRE(delta.kept->kept.size() == (count + 7) / 8);
+        for (size_t index = 0; index < delta.kept->kept.size(); ++index) {
+            auto const bits = std::min<size_t>(8, count - index * 8);
+            REQUIRE(delta.kept->kept[index] == static_cast<uint8_t>((1u << bits) - 1));
+        }
+        REQUIRE(delta.transactions.size() == 1);
+        REQUIRE(rebuild(delta, base) == expected);
+        REQUIRE(client_merkle_path(rebuild(delta, base)) == next.work.merkle_path);
+    }
+}
+
+TEST_CASE("sv2 session pushes only what a refresh on the same tip adds", "[sv2 template_provider]") {
+    auto session = large_session();
+    // Twenty-one transactions, so the last bitmap byte has unused high bits.
+    auto first_value = numbered_template(numbers(1, 21));
+    auto const base = raw_transactions(first_value);
+    auto const first = template_messages(session.set_template(std::move(first_value)));
+    auto const full = collect(drain(session), first.work.template_id);
+    REQUIRE_FALSE(full.kept);
+    REQUIRE(full.transactions == base);
+    REQUIRE(client_merkle_path(full.transactions) == first.work.merkle_path);
+
+    // The refresh loses two transactions and gains three.
+    auto locktimes = numbers(1, 21);
+    std::erase(locktimes, 5u);
+    std::erase(locktimes, 17u);
+    locktimes.insert(locktimes.end(), {100, 101, 102});
+    auto second_value = numbered_template(locktimes);
+    auto const expected = raw_transactions(second_value);
+    auto const second = template_messages(session.set_template(std::move(second_value)));
+    REQUIRE(second.prev.prev_hash == first.prev.prev_hash);
+    auto const delta = collect(drain(session), second.work.template_id);
+    REQUIRE(delta.kept);
+    REQUIRE(delta.kept->base_template_id == first.work.template_id);
+    REQUIRE(delta.kept->kept.size() == 3);
+    for (size_t index = 0; index < base.size(); ++index) {
+        CAPTURE(index);
+        bool const kept = std::find(expected.begin(), expected.end(), base[index]) != expected.end();
+        REQUIRE(((delta.kept->kept[index / 8] >> (index % 8)) & 1) == (kept ? 1 : 0));
+    }
+    REQUIRE((delta.kept->kept.back() >> (base.size() % 8)) == 0);
+    REQUIRE(delta.transactions.size() == 3);
+    for (auto const& tx : delta.transactions) {
+        REQUIRE(std::find(base.begin(), base.end(), tx) == base.end());
+    }
+    auto const rebuilt = rebuild(delta, base);
+    REQUIRE(rebuilt == expected);
+    REQUIRE(client_merkle_path(rebuilt) == second.work.merkle_path);
+}
+
+TEST_CASE("sv2 session pushes a delta after a new tip, against a base it keeps itself", "[sv2 template_provider]") {
+    auto session = large_session();
+    auto tip = [](uint8_t mark) {
+        hash_digest hash{};
+        hash[0] = mark;
+        return hash;
+    };
+    auto first_value = numbered_template(numbers(1, 10), tip(1));
+    auto const first_raw = raw_transactions(first_value);
+    auto const first = template_messages(session.set_template(std::move(first_value)));
+    (void)collect(drain(session), first.work.template_id);
+
+    // The block on the first tip took 1 to 6; 7 to 10 stay and 11 and 12 join.
+    auto second_value = numbered_template(numbers(7, 12), tip(2));
+    auto const second_raw = raw_transactions(second_value);
+    auto const second = template_messages(session.set_template(std::move(second_value)));
+    auto const after_tip = collect(drain(session), second.work.template_id);
+    REQUIRE(after_tip.kept);
+    REQUIRE(after_tip.kept->base_template_id == first.work.template_id);
+    REQUIRE(after_tip.transactions.size() == 2);
+    REQUIRE(rebuild(after_tip, first_raw) == second_raw);
+    REQUIRE(client_merkle_path(rebuild(after_tip, first_raw)) == second.work.merkle_path);
+
+    // Two more tips drop the second template itself. The base is the
+    // session's copy of its ids, so the next push is still a delta against it.
+    session.set_tip(tip(3));
+    session.set_tip(tip(4));
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{second.work.template_id}).response).error_code == "stale-template-id");
+    auto third_value = numbered_template(numbers(11, 13), tip(4));
+    auto const third_raw = raw_transactions(third_value);
+    auto const third = template_messages(session.set_template(std::move(third_value)));
+    auto const later = collect(drain(session), third.work.template_id);
+    REQUIRE(later.kept);
+    REQUIRE(later.kept->base_template_id == second.work.template_id);
+    REQUIRE(rebuild(later, second_raw) == third_raw);
+    REQUIRE(client_merkle_path(rebuild(later, second_raw)) == third.work.merkle_path);
+}
+
+TEST_CASE("sv2 session abandons an unfinished push and sends the next one full", "[sv2 template_provider]") {
+    auto session = large_session();
+    // A finished push, so the one abandoned below has a base.
+    auto const base = template_messages(session.set_template(numbered_template(numbers(1, 10))));
+    (void)collect(drain(session), base.work.template_id);
+    // About 2.5 MiB of transactions: Kept, two pages, then the Success.
+    auto const first = template_messages(session.set_template(numbered_template(numbers(1, 2500), null_hash, 1024)));
+    auto const take = [&](uint8_t type) {
+        auto const bytes = session.next_data_frame();
+        REQUIRE(header_of(bytes).extension_type == large_templates_extension);
+        REQUIRE(header_of(bytes).msg_type == type);
+        REQUIRE(session.sending_data());
+    };
+    SECTION("the next template arrives after a page") {
+        take(request_transaction_data_kept::message_type);
+        take(request_transaction_data_transactions::message_type);
+    }
+    SECTION("the next template arrives before the first frame") {
+        REQUIRE(session.sending_data());
+    }
+    SECTION("the template is dropped two tips later") {
+        take(request_transaction_data_kept::message_type);
+        take(request_transaction_data_transactions::message_type);
+        hash_digest tip{};
+        tip[0] = 1;
+        // The tip just replaced still continues its push...
+        session.set_tip(tip);
+        take(request_transaction_data_transactions::message_type);
+        // ...but not once its template is gone.
+        tip[0] = 2;
+        session.set_tip(tip);
+        REQUIRE(session.next_data_frame().empty());
+        REQUIRE_FALSE(session.sending_data());
+    }
+    // Nothing more is sent for the first template, and the next push is full
+    // although a base was pushed before it.
+    auto value = numbered_template(numbers(1, 2501), null_hash, 1024);
+    auto const expected = raw_transactions(value);
+    auto const next = template_messages(session.set_template(std::move(value)));
+    REQUIRE(next.work.template_id > first.work.template_id);
+    auto const data = collect(drain(session), next.work.template_id);
+    REQUIRE_FALSE(data.kept);
+    REQUIRE(data.pages > 0);
+    REQUIRE(data.transactions == expected);
+    REQUIRE(client_merkle_path(data.transactions) == next.work.merkle_path);
+
+    // That push finished, so the one after it is a delta again.
+    auto const after = template_messages(session.set_template(numbered_template(numbers(1, 2502), null_hash, 1024)));
+    auto const delta = collect(drain(session), after.work.template_id);
+    REQUIRE(delta.kept);
+    REQUIRE(delta.kept->base_template_id == next.work.template_id);
+    REQUIRE(delta.transactions.size() == 1);
+}
+
+TEST_CASE("sv2 session answers RequestTransactionData in pages after any push and keeps the base", "[sv2 template_provider]") {
+    auto session = large_session();
+    auto first_value = numbered_template(numbers(1, 2000), null_hash, 1024);
+    auto const first_raw = raw_transactions(first_value);
+    auto const first = template_messages(session.set_template(std::move(first_value)));
+    (void)drain(session);
+    auto second_value = numbered_template(numbers(1, 2001), null_hash, 1024);
+    auto const second_raw = raw_transactions(second_value);
+    auto const second = template_messages(session.set_template(std::move(second_value)));
+
+    // Asked for while the second push is under way: that push ends first and
+    // the answer follows, so the two never interleave.
+    auto frames = std::vector<data_chunk>{session.next_data_frame()};
+    require_silent(process(session, request_transaction_data{first.work.template_id}));
+    REQUIRE(session.answering());
+    auto const rest = drain(session);
+    REQUIRE_FALSE(session.answering());
+    auto const end = std::find_if(rest.begin(), rest.end(), [](data_chunk const& bytes) {
+        return header_of(bytes).extension_type == 0;
+    });
+    REQUIRE(end != rest.end());
+    frames.insert(frames.end(), rest.begin(), end + 1);
+    auto const pushed = collect(frames, second.work.template_id);
+    REQUIRE(pushed.kept);
+    REQUIRE(rebuild(pushed, first_raw) == second_raw);
+    auto const answer = collect(std::vector<data_chunk>(end + 1, rest.end()), first.work.template_id);
+    REQUIRE_FALSE(answer.kept);
+    REQUIRE(answer.pages > 0);
+    REQUIRE(answer.transactions == first_raw);
+
+    // The answer leaves the base alone: the next push is a delta against the
+    // second template, the last one pushed.
+    auto third_value = numbered_template(numbers(1, 2002), null_hash, 1024);
+    auto const third_raw = raw_transactions(third_value);
+    auto const third = template_messages(session.set_template(std::move(third_value)));
+    auto const delta = collect(drain(session), third.work.template_id);
+    REQUIRE(delta.kept);
+    REQUIRE(delta.kept->base_template_id == second.work.template_id);
+    REQUIRE(rebuild(delta, second_raw) == third_raw);
+
+    // With nothing under way the answer starts at once, even for a template
+    // whose list exceeds one Success.
+    auto const started = process(session, request_transaction_data{third.work.template_id});
+    REQUIRE_FALSE(started.close);
+    REQUIRE(header_of(started.response).msg_type == request_transaction_data_transactions::message_type);
+    REQUIRE(session.answering());
+    auto replay = std::vector<data_chunk>{started.response};
+    auto const remaining = drain(session);
+    replay.insert(replay.end(), remaining.begin(), remaining.end());
+    REQUIRE(collect(replay, third.work.template_id).transactions == third_raw);
+
+    // Unknown ids get the usual error, also behind a push.
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{999}).response).error_code == "template-id-not-found");
+    auto const fourth = template_messages(session.set_template(numbered_template(numbers(1, 2003), null_hash, 1024)));
+    (void)session.next_data_frame();
+    require_silent(process(session, request_transaction_data{999}));
+    auto const behind = drain(session);
+    REQUIRE(response<request_transaction_data_error>(behind.back()).error_code == "template-id-not-found");
+    REQUIRE(header_of(behind[behind.size() - 2]).msg_type == request_transaction_data_success::message_type);
+    REQUIRE(response<request_transaction_data_success>(behind[behind.size() - 2]).template_id
+        == fourth.work.template_id);
+
+    // Templates of an earlier tip are stale.
+    hash_digest tip{};
+    tip[0] = 1;
+    session.set_tip(tip);
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{fourth.work.template_id}).response).error_code == "stale-template-id");
+
+    // One answer waits at a time: the listener reads nothing more until it is
+    // sent, so a second request then breaks the protocol.
+    auto const fifth = template_messages(session.set_template(numbered_template(numbers(1, 2), tip)));
+    require_silent(process(session, request_transaction_data{fifth.work.template_id}));
+    require_closed(process(session, request_transaction_data{fifth.work.template_id}));
 }
 
 TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted frames", "[sv2 noise]") {
@@ -1426,4 +1916,64 @@ TEST_CASE("sv2 keeps a client through a moment without a template and sends one 
     CHECK(work.future_template);
     fixture.stop();
     fixture.require_closed(*client);
+}
+
+TEST_CASE("sv2 listener pushes chain templates to a client that negotiated BCH large templates", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto const trunk = seed_chain(fixture, 101);
+    auto const view = fixture.chain.chain().chain_view();
+    REQUIRE(view);
+    auto const& first_coinbase = trunk.front().transactions().front();
+    auto const parent = test::spend_p2pkh(first_coinbase, 0,
+        first_coinbase.outputs().front().value() - 1000, view->state->enabled_flags());
+    auto const child = test::spend_p2pkh(parent, 0,
+        parent.outputs().front().value() - 1000, view->state->enabled_flags());
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(parent))) == error::success);
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(child))) == error::success);
+    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));
+    REQUIRE(expected.has_value());
+    REQUIRE(expected->selection.txs.size() == 2);
+    auto const raw = raw_transactions(*expected);
+
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    fixture.write(*client, frame(request_extensions{1, {large_templates_extension}}));
+    auto const granted = fixture.receive<request_extensions_success>(*client);
+    REQUIRE(granted.request_id == 1);
+    REQUIRE(granted.supported_extensions == std::vector<uint16_t>{large_templates_extension});
+
+    // The first push is full, without a request. Two transactions fit the
+    // core Success alone.
+    auto const job = request_template(fixture, *client);
+    auto const data = fixture.receive<request_transaction_data_success>(*client);
+    REQUIRE(data.template_id == job.work.template_id);
+    REQUIRE(data.transaction_list == raw);
+    REQUIRE(client_merkle_path(data.transaction_list) == job.work.merkle_path);
+    (void)solution_block(job, data.transaction_list);
+
+    // A refresh on the same tip keeps both, and adds nothing.
+    auto const refreshed = request_template(fixture, *client, {200, 4});
+    REQUIRE(refreshed.prev.prev_hash == job.prev.prev_hash);
+    auto const kept = fixture.receive<request_transaction_data_kept>(*client);
+    REQUIRE(kept.template_id == refreshed.work.template_id);
+    REQUIRE(kept.base_template_id == job.work.template_id);
+    REQUIRE(kept.kept == data_chunk{0x03});
+    auto const added = fixture.receive<request_transaction_data_success>(*client);
+    REQUIRE(added.template_id == refreshed.work.template_id);
+    REQUIRE(added.transaction_list.empty());
+    REQUIRE(client_merkle_path(raw) == refreshed.work.merkle_path);
+
+    // The core request is answered with the whole list and leaves the base.
+    fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).transaction_list == raw);
+    auto const third = request_template(fixture, *client, {300, 5});
+    REQUIRE(fixture.receive<request_transaction_data_kept>(*client).base_template_id
+        == refreshed.work.template_id);
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == third.work.template_id);
+    fixture.require_closed(*client);
+    fixture.stop();
 }

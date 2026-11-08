@@ -341,6 +341,48 @@ struct provide_missing_transactions_positions {
     [[nodiscard]] static expect<provide_missing_transactions_positions> from_data(byte_reader& source);
 };
 
+// On Template Distribution the same extension lifts the limits of
+// RequestTransactionData.Success, a SEQ0_64K list in one frame. The Template
+// Provider pushes each template's transactions to a client that negotiated it,
+// after the template's NewTemplate and SetNewPrevHash, and ends each push with
+// the core RequestTransactionData.Success.
+
+// RequestTransactionData.Transactions. One page of a template's transactions
+// in order, at most 65,535 in one frame. The list is every page in order
+// followed by the core Success's own list.
+struct request_transaction_data_transactions {
+    static constexpr uint8_t message_type = 0x03;
+    static constexpr bool channel_message = false;
+    static constexpr uint16_t extension_id = large_templates_extension;
+
+    uint64_t template_id = 0;
+    std::vector<data_chunk> transaction_list;
+
+    [[nodiscard]] size_t serialized_size() const;
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<request_transaction_data_transactions> from_data(byte_reader& source);
+};
+
+// RequestTransactionData.Kept. Starts a push that sends only what the base, the
+// template pushed before it, lacks. Bit i, least significant first, is set when
+// the base's i-th transaction (block order, without the coinbase) is also in
+// this template. It is ceil(base count / 8) bytes and unused high bits are
+// clear. The pages and Success that follow carry the added transactions; the
+// template's list is the kept and added transactions in CTOR order.
+struct request_transaction_data_kept {
+    static constexpr uint8_t message_type = 0x04;
+    static constexpr bool channel_message = false;
+    static constexpr uint16_t extension_id = large_templates_extension;
+
+    uint64_t template_id = 0;
+    uint64_t base_template_id = 0;
+    data_chunk kept;
+
+    [[nodiscard]] size_t serialized_size() const { return 8 + 8 + 3 + kept.size(); }
+    [[nodiscard]] expect<void> to_data(byte_writer& sink) const;
+    [[nodiscard]] static expect<request_transaction_data_kept> from_data(byte_reader& source);
+};
+
 } // namespace kth::node::sv2
 
 #endif // KTH_NODE_SV2_JD_MESSAGES_HPP

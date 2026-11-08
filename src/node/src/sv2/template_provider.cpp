@@ -47,6 +47,7 @@
 #include <kth/node/sv2/jd_settings.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
 #include <kth/node/sv2/mining_session.hpp>
+#include <kth/node/sv2/primitives.hpp>
 
 namespace kth::node::sv2 {
 
@@ -98,11 +99,28 @@ bool mining_setup(message_header const& header, byte_span payload) {
         && message->protocol == setup_connection::protocol_mining;
 }
 
-std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr> const& txs) {
+// The largest Kept bitmap one frame carries: two U64 ids and a U24 length
+// come first. A base with more transactions is followed by a full push.
+constexpr size_t max_kept_size = jd_frame_max_payload - (8 + 8 + 3);
+
+// CTOR, BCH's block order after the coinbase: ascending transaction id,
+// compared from the last byte (domain::chain::block::is_canonical_ordered).
+bool ctor_less(hash_digest const& left, hash_digest const& right) {
+    return std::lexicographical_compare(left.rbegin(), left.rend(), right.rbegin(), right.rend());
+}
+
+std::vector<hash_digest> transaction_ids(std::vector<transaction_const_ptr> const& txs) {
+    std::vector<hash_digest> ids;
+    ids.reserve(txs.size());
+    for (auto const& tx : txs) ids.push_back(tx->hash());
+    return ids;
+}
+
+std::vector<hash_digest> coinbase_merkle_path(std::vector<hash_digest> const& txids) {
     // The unknown coinbase occupies index zero. Its hash does not affect any
     // sibling on its branch, so a placeholder gives the same path.
     std::vector<hash_digest> hashes{null_hash};
-    for (auto const& tx : txs) hashes.push_back(tx->hash());
+    hashes.insert(hashes.end(), txids.begin(), txids.end());
     std::vector<hash_digest> path;
     while (hashes.size() > 1) {
         if (hashes.size() % 2 != 0) hashes.push_back(hashes.back());
@@ -175,7 +193,8 @@ template_provider_session::set_template(blockchain::mining_template value) {
     message.coinbase_tx_input_sequence = 0xffffffffu;
     message.coinbase_tx_value_remaining = value.coinbase_value;
     message.coinbase_tx_locktime = 0;
-    message.merkle_path = coinbase_merkle_path(value.selection.txs);
+    auto txids = transaction_ids(value.selection.txs);
+    message.merkle_path = coinbase_merkle_path(txids);
 
     if (message.coinbase_prefix.size() > 8) {
         spdlog::warn("[sv2] Template coinbase prefix exceeds 8 bytes");
@@ -205,9 +224,119 @@ template_provider_session::set_template(blockchain::mining_template value) {
     bytes.insert(bytes.end(), activation.begin(), activation.end());
 
     set_tip(value.previous_block_hash);
-    templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
+    auto const id = next_id_++;
+    templates_.push_back({id, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
+    if (large_templates_) push(id, std::move(txids));
     return {std::move(bytes), false};
+}
+
+void template_provider_session::push(uint64_t id, std::vector<hash_digest> txids) {
+    // A push still under way when the next template is ready is abandoned.
+    // The client then drops what it got, so this push must be full.
+    if (transfer_) abandon();
+    bool const delta = base_id_ != 0 && (base_txids_.size() + 7) / 8 <= max_kept_size;
+    transfer_ = transfer{id, true, std::move(txids), delta};
+}
+
+void template_provider_session::abandon() {
+    transfer_.reset();
+    base_id_ = 0;
+    base_txids_ = {};
+}
+
+bool template_provider_session::sending_data() const {
+    return transfer_ || requested_;
+}
+
+bool template_provider_session::answering() const {
+    return requested_ || (transfer_ && ! transfer_->push);
+}
+
+data_chunk template_provider_session::next_data_frame() {
+    if ( ! transfer_) {
+        if ( ! requested_) return {};
+        auto const id = *requested_;
+        requested_.reset();
+        if ( ! find_template(id)) {
+            return frame(request_transaction_data_error{id,
+                stale(id) ? "stale-template-id" : "template-id-not-found"});
+        }
+        transfer_ = transfer{id, false};
+    }
+    // A push for the tip just replaced still finishes. Two tips later its
+    // template is gone: the push is abandoned and the next one is full.
+    auto const* item = find_solvable(transfer_->id);
+    if ( ! item) {
+        abandon();
+        return {};
+    }
+    if (transfer_->delta && ! transfer_->kept_sent) {
+        transfer_->kept_sent = true;
+        return kept_frame();
+    }
+    return page_frame(item->value.selection.txs);
+}
+
+data_chunk template_provider_session::kept_frame() const {
+    auto const& txids = transfer_->txids;
+    request_transaction_data_kept message{transfer_->id, base_id_,
+        data_chunk((base_txids_.size() + 7) / 8, 0)};
+    // Both lists are in CTOR order, so one merge finds the kept transactions.
+    size_t next = 0;
+    for (size_t index = 0; index < base_txids_.size(); ++index) {
+        auto const& id = base_txids_[index];
+        while (next < txids.size() && ctor_less(txids[next], id)) ++next;
+        if (next < txids.size() && txids[next] == id) {
+            message.kept[index / 8] |= static_cast<uint8_t>(1u << (index % 8));
+        }
+    }
+    return frame(message);
+}
+
+// Moves past the template's transactions that its base already has, so a
+// delta sends only the added ones.
+void template_provider_session::skip_kept() {
+    auto& sending = *transfer_;
+    if ( ! sending.delta) return;
+    auto const& txids = sending.txids;
+    while (sending.next < txids.size()) {
+        auto const& id = txids[sending.next];
+        while (sending.base_next < base_txids_.size() && ctor_less(base_txids_[sending.base_next], id)) {
+            ++sending.base_next;
+        }
+        if (sending.base_next == base_txids_.size() || base_txids_[sending.base_next] != id) return;
+        ++sending.base_next;
+        ++sending.next;
+    }
+}
+
+data_chunk template_provider_session::page_frame(std::vector<transaction_const_ptr> const& txs) {
+    auto& sending = *transfer_;
+    std::vector<data_chunk> list;
+    // Counted as the core Success, whose excess_data adds two bytes to a page.
+    size_t size = 8 + 2 + 2;
+    skip_kept();
+    while (sending.next < txs.size() && list.size() < b0_64k_max) {
+        domain::chain::transaction const& transaction = *txs[sending.next];
+        auto const added = 3 + transaction.serialized_size(true);
+        if ( ! list.empty() && size + added > data_page_size) break;
+        list.push_back(to_data_chunk(transaction, true));
+        size += added;
+        ++sending.next;
+        skip_kept();
+    }
+    if (sending.next < txs.size()) {
+        return frame(request_transaction_data_transactions{sending.id, std::move(list)});
+    }
+    // The core Success ends the data. A finished push is the next base.
+    request_transaction_data_success const last{sending.id, {}, std::move(list)};
+    if (sending.push) {
+        base_id_ = sending.id;
+        base_txids_ = std::move(sending.txids);
+    }
+    transfer_.reset();
+    return frame(last);
 }
 
 template_provider_session::result template_provider_session::close() {
@@ -252,18 +381,31 @@ template_provider_session::result template_provider_session::process(
     }
 
     // Extensions Negotiation (extension 0x0001) comes right after setup, before
-    // any Template Distribution message. No extension is implemented here yet
-    // and none is required, so every request is answered with all it asked
-    // for as unsupported. The extension's other messages are only a server's;
-    // they are discarded with those of extensions this server lacks.
+    // any Template Distribution message. BCH large templates is the only
+    // extension implemented here and none is required; a request without it
+    // is answered with all it asked for as unsupported. The extension's other
+    // messages are only a server's; they are discarded with those of
+    // extensions this server lacks.
     if (header.extension_type == extensions_negotiation_type
         && header.msg_type == request_extensions::message_type) {
         auto const request = parse<request_extensions>(payload);
         if (constraints_ || ! request) {
             return close();
         }
-        return {frame(request_extensions_error{request->request_id,
-            request->requested_extensions, {}}), false};
+        auto const& requested = request->requested_extensions;
+        large_templates_ = std::find(requested.begin(), requested.end(), large_templates_extension)
+            != requested.end();
+        if (large_templates_) {
+            return {frame(request_extensions_success{request->request_id,
+                {large_templates_extension}}), false};
+        }
+        return {frame(request_extensions_error{request->request_id, requested, {}}), false};
+    }
+
+    // Every BCH large templates message on Template Distribution is one only a
+    // server sends.
+    if (large_templates_ && header.extension() == large_templates_extension) {
+        return close();
     }
 
     // Messages of an extension this server does not implement are discarded
@@ -295,6 +437,17 @@ template_provider_session::result template_provider_session::process(
             auto const request = parse<request_transaction_data>(payload);
             if ( ! request) {
                 return close();
+            }
+            if (large_templates_) {
+                // The whole list in pages, after any push under way so the two
+                // never interleave. The listener reads nothing more until this
+                // answer is sent, so a second request cannot be waiting.
+                if (requested_) {
+                    return close();
+                }
+                requested_ = request->template_id;
+                if (transfer_) return {};
+                return {next_data_frame(), false};
             }
             auto* item = find_template(request->template_id);
             if ( ! item) {
@@ -595,13 +748,56 @@ template_provider::template_provider(sv2_settings const& settings,
         }
         co_return adopt(miner->apply(std::move(*value)));
     };
+    // Writes complete frames, each encrypted on its own under Noise.
+    auto send = [&](data_chunk bytes) -> ::asio::awaitable<bool> {
+        if (transport) {
+            data_chunk encrypted;
+            byte_span remaining(bytes);
+            while ( ! remaining.empty()) {
+                auto const header = from_data_chunk<message_header>(
+                    remaining.first(message_header::size));
+                auto const size = message_header::size + header->msg_length;
+                auto frame_bytes = transport->encrypt_frame(remaining.first(size));
+                if ( ! frame_bytes) co_return false;
+                encrypted.insert(encrypted.end(), frame_bytes->begin(), frame_bytes->end());
+                remaining = remaining.subspan(size);
+            }
+            bytes = std::move(encrypted);
+        }
+        auto [write_error, written] = co_await ::asio::async_write(socket,
+            ::asio::buffer(bytes), ::asio::as_tuple(::asio::use_awaitable));
+        co_return ! write_error;
+    };
+    // Sends the next frame of the transaction data under way.
+    auto send_data = [&]() -> ::asio::awaitable<bool> {
+        auto bytes = session.next_data_frame();
+        if (bytes.empty()) co_return true;
+        co_return co_await send(std::move(bytes));
+    };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
         // Close both producers even when parsing, allocation or a chain call
         // throws. The group below joins them before any captured locals go.
         detail::scope_action finish(end_inputs, true);
         for (;;) {
+            // Transaction data for a large templates client is built a frame
+            // at a time as the socket drains, never whole, and input is read
+            // between frames: a new template abandons a push the client is
+            // still reading, and a solution is not held behind one. An answer
+            // the client asked for, with any push ahead of it, goes out before
+            // its next message is read. Other connections have their own loop.
+            if (session.sending_data() && (session.answering() || ! inbox.ready())) {
+                if ( ! co_await send_data()) co_return;
+                continue;
+            }
             auto [error, input] = co_await next_event();
-            if (error || input.kind == event_kind::end) co_return;
+            if (error) co_return;
+            if (input.kind == event_kind::end) {
+                // A client that half-closes still receives the data under way.
+                while (session.sending_data()) {
+                    if ( ! co_await send_data()) co_return;
+                }
+                co_return;
+            }
             auto const view = chain_.chain_view();
             if (view) {
                 if (miner) miner->note_tip(view->tip_hash);
@@ -684,23 +880,7 @@ template_provider::template_provider(sv2_settings const& settings,
                     submitted.duplicate ? " (a duplicate)" : "");
             }
             if ( ! result.response.empty()) {
-                if (transport) {
-                    data_chunk encrypted;
-                    byte_span remaining(result.response);
-                    while ( ! remaining.empty()) {
-                        auto const header = from_data_chunk<message_header>(
-                            remaining.first(message_header::size));
-                        auto const size = message_header::size + header->msg_length;
-                        auto bytes = transport->encrypt_frame(remaining.first(size));
-                        if ( ! bytes) co_return;
-                        encrypted.insert(encrypted.end(), bytes->begin(), bytes->end());
-                        remaining = remaining.subspan(size);
-                    }
-                    result.response = std::move(encrypted);
-                }
-                auto [write_error, written] = co_await ::asio::async_write(socket,
-                    ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
-                if (write_error) co_return;
+                if ( ! co_await send(std::move(result.response))) co_return;
             }
             if (result.close) co_return;
         }

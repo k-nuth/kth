@@ -522,6 +522,56 @@ expect<provide_missing_transactions_positions> provide_missing_transactions_posi
     return complete(source, provide_missing_transactions_positions{*request_id, std::move(*positions)});
 }
 
+size_t request_transaction_data_transactions::serialized_size() const {
+    size_t size = 8 + 2;
+    for (auto const& tx : transaction_list) size += 3 + tx.size();
+    return size;
+}
+
+expect<void> request_transaction_data_transactions::to_data(byte_writer& sink) const {
+    // A page fills at most one frame.
+    if (serialized_size() > jd_frame_max_payload) return std::unexpected(error::operation_failed);
+    if (auto r = sink.write_little_endian<uint64_t>(template_id); ! r) return r;
+    return write_bytes_seq_u16(sink, transaction_list);
+}
+
+expect<request_transaction_data_transactions> request_transaction_data_transactions::from_data(
+    byte_reader& source) {
+    if (source.remaining_size() > jd_frame_max_payload) return std::unexpected(error::operation_failed);
+    auto const template_id = source.read_little_endian<uint64_t>();
+    if ( ! template_id) return std::unexpected(template_id.error());
+    auto const count = source.read_little_endian<uint16_t>();
+    if ( ! count) return std::unexpected(count.error());
+    if (*count > source.remaining_size() / 3) return std::unexpected(error::operation_failed);
+    std::vector<data_chunk> transactions;
+    transactions.reserve(*count);
+    for (size_t i = 0; i < *count; ++i) {
+        auto const tx = read_bytes_u24(source);
+        if ( ! tx) return std::unexpected(tx.error());
+        transactions.emplace_back(tx->begin(), tx->end());
+    }
+    return complete(source, request_transaction_data_transactions{*template_id, std::move(transactions)});
+}
+
+expect<void> request_transaction_data_kept::to_data(byte_writer& sink) const {
+    if (serialized_size() > jd_frame_max_payload) return std::unexpected(error::operation_failed);
+    if (auto r = sink.write_little_endian<uint64_t>(template_id); ! r) return r;
+    if (auto r = sink.write_little_endian<uint64_t>(base_template_id); ! r) return r;
+    return write_bytes_u24(sink, kept);
+}
+
+expect<request_transaction_data_kept> request_transaction_data_kept::from_data(byte_reader& source) {
+    if (source.remaining_size() > jd_frame_max_payload) return std::unexpected(error::operation_failed);
+    auto const template_id = source.read_little_endian<uint64_t>();
+    if ( ! template_id) return std::unexpected(template_id.error());
+    auto const base_template_id = source.read_little_endian<uint64_t>();
+    if ( ! base_template_id) return std::unexpected(base_template_id.error());
+    auto const kept = read_bytes_u24(source);
+    if ( ! kept) return std::unexpected(kept.error());
+    return complete(source, request_transaction_data_kept{*template_id, *base_template_id,
+        data_chunk(kept->begin(), kept->end())});
+}
+
 expect<void> set_custom_mining_job_error::to_data(byte_writer& sink) const {
     if (auto r = sink.write_little_endian<uint32_t>(channel_id); ! r) return r;
     if (auto r = sink.write_little_endian<uint32_t>(request_id); ! r) return r;

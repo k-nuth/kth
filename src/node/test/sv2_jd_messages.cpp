@@ -415,3 +415,51 @@ TEST_CASE("sv2 jd BCH large template messages keep their field order", "[sv2 jd]
     over_ask.unknown_tx_position_list.resize(b0_64k_max + 1);
     require_refused(over_ask);
 }
+
+TEST_CASE("sv2 tdp BCH large template messages keep their field order and one frame", "[sv2 jd]") {
+    REQUIRE(request_transaction_data_transactions::extension_id == large_templates_extension);
+    REQUIRE(request_transaction_data_transactions::message_type == 0x03);
+    REQUIRE(request_transaction_data_kept::extension_id == large_templates_extension);
+    REQUIRE(request_transaction_data_kept::message_type == 0x04);
+    REQUIRE_FALSE(request_transaction_data_transactions::channel_message);
+    REQUIRE_FALSE(request_transaction_data_kept::channel_message);
+
+    // U64 template id, then SEQ0_64K[B0_16M] transactions.
+    request_transaction_data_transactions const page{0x0807060504030201u,
+        {data_chunk{0xaa}, data_chunk{0xbb, 0xcc}}};
+    REQUIRE(to_data_chunk(page) == data_chunk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x02, 0x00, 0x01, 0x00, 0x00, 0xaa, 0x02, 0x00, 0x00, 0xbb, 0xcc});
+    REQUIRE(require_codec(page).transaction_list == page.transaction_list);
+    REQUIRE(require_codec(request_transaction_data_transactions{}).transaction_list.empty());
+    request_transaction_data_transactions over_page;
+    over_page.transaction_list.resize(b0_64k_max + 1);
+    require_refused(over_page);
+    // A page fills at most one frame: the id, the count and one B0_16M length
+    // prefix are 13 bytes of overhead.
+    request_transaction_data_transactions full_page{1, {data_chunk(jd_frame_max_payload - 13, 0xab)}};
+    REQUIRE(full_page.serialized_size() == jd_frame_max_payload);
+    auto const parsed_page = from_data_chunk<request_transaction_data_transactions>(to_data_chunk(full_page));
+    REQUIRE(parsed_page.has_value());
+    REQUIRE(parsed_page->transaction_list == full_page.transaction_list);
+    full_page.transaction_list.front().push_back(0);
+    require_refused(full_page);
+    REQUIRE_FALSE(from_data_chunk<request_transaction_data_transactions>(
+        data_chunk(jd_frame_max_payload + 1)).has_value());
+
+    // U64 template id, U64 base template id, then the B0_16M bitmap as given.
+    request_transaction_data_kept const kept{7, 6, data_chunk{0x05, 0x01}};
+    REQUIRE(to_data_chunk(kept) == data_chunk{0x07, 0, 0, 0, 0, 0, 0, 0, 0x06, 0, 0, 0, 0, 0, 0, 0,
+        0x02, 0x00, 0x00, 0x05, 0x01});
+    REQUIRE(require_codec(kept).kept == kept.kept);
+    // A base without transactions has an empty bitmap.
+    REQUIRE(require_codec(request_transaction_data_kept{7, 6, {}}).kept.empty());
+    request_transaction_data_kept full_kept{1, 2, data_chunk(jd_frame_max_payload - 19, 0xff)};
+    REQUIRE(full_kept.serialized_size() == jd_frame_max_payload);
+    auto const parsed_kept = from_data_chunk<request_transaction_data_kept>(to_data_chunk(full_kept));
+    REQUIRE(parsed_kept.has_value());
+    REQUIRE(parsed_kept->kept == full_kept.kept);
+    full_kept.kept.push_back(0);
+    require_refused(full_kept);
+    REQUIRE_FALSE(from_data_chunk<request_transaction_data_kept>(
+        data_chunk(jd_frame_max_payload + 1)).has_value());
+}
