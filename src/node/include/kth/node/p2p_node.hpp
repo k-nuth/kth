@@ -146,16 +146,32 @@ public:
     /// Set the handler for the tips owed to each peer (peer_session::announce_tip).
     void set_tip_announcement_handler(tip_announcement_fn handler);
 
+    /// The fee filter (BIP133) to send `peer` now, or nothing when it gets
+    /// none (it predates BIP133, or the node does not relay transactions).
+    using fee_filter_fn = std::function<::asio::awaitable<std::optional<uint64_t>>(peer_session&)>;
+
+    /// Set it. Without one, no peer is sent a fee filter.
+    void set_fee_filter_handler(fee_filter_fn handler);
+
+    /// A draw in [0, 1), for the fee filter schedule's random delays.
+    using unit_draw_fn = std::function<double()>;
+
+    /// Set it. Uniformly random when unset; controls set their own.
+    void set_fee_filter_draw(unit_draw_fn draw);
+
     /// The peer's service: runs the served handlers on the requests dispatch()
-    /// handed over, in arrival order, and announces the tip owed to the peer,
-    /// until the session closes its queues. A handler asking to disconnect
-    /// stops the session.
+    /// handed over, in arrival order, announces the tip owed to the peer, and
+    /// sends it the fee filter on its schedule (detail/fee_filter.hpp), until
+    /// the session closes its queues. A handler asking to disconnect stops the
+    /// session.
     ::asio::awaitable<void> serve(peer_session& peer);
 
 private:
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
     boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
     tip_announcement_fn tip_announcement_;
+    fee_filter_fn fee_filter_;
+    unit_draw_fn fee_filter_draw_;
     message_handler_fn default_handler_;
 };
 
@@ -307,6 +323,11 @@ public:
     /// Set the node's handler for the tips owed to each peer.
     void set_tip_announcement_handler(message_dispatcher::tip_announcement_fn handler) {
         dispatcher_.set_tip_announcement_handler(std::move(handler));
+    }
+
+    /// Set the node's handler for the fee filter each peer is sent.
+    void set_fee_filter_handler(message_dispatcher::fee_filter_fn handler) {
+        dispatcher_.set_fee_filter_handler(std::move(handler));
     }
 
     // Manual connections

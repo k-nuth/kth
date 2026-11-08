@@ -5,6 +5,7 @@
 #include <kth/node/p2p_node.hpp>
 
 #include <kth/node/detail/block_announcements.hpp>
+#include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 
@@ -465,17 +466,46 @@ void message_dispatcher::set_tip_announcement_handler(tip_announcement_fn handle
     tip_announcement_ = std::move(handler);
 }
 
+void message_dispatcher::set_fee_filter_handler(fee_filter_fn handler) {
+    fee_filter_ = std::move(handler);
+}
+
+void message_dispatcher::set_fee_filter_draw(unit_draw_fn draw) {
+    fee_filter_draw_ = std::move(draw);
+}
+
+namespace {
+
+// A uniform draw in [0, 1), for the schedule's random delays.
+double unit_draw() {
+    return double(pseudo_random::generate<uint64_t>(0, (uint64_t(1) << 53) - 1)) / double(uint64_t(1) << 53);
+}
+
+} // namespace
+
 ::asio::awaitable<void> message_dispatcher::serve(peer_session& peer) {
+    using detail::fee_filter_schedule;
     auto executor = co_await ::asio::this_coro::executor;
     // Requests before announcements when both are ready: a request was the
     // peer's own, and the owed tip only grows more current while it waits.
     ::asio::experimental::channel_select_options options;
     options.biased = true;
     std::optional<hash_digest> last_announced;
+
+    // This peer's fee filter schedule, owned here. The first is due at once;
+    // without a handler none is ever due.
+    fee_filter_schedule fee_filter;
+    auto const fee_filter_due = [&] {
+        return fee_filter_ ? fee_filter.due() : fee_filter_schedule::time_point::max();
+    };
+    auto const draw = [this] { return fee_filter_draw_ ? fee_filter_draw_() : unit_draw(); };
+
     while (true) {
         auto completion = co_await ::asio::experimental::make_select(
             ::asio::experimental::receive(peer.served_requests()),
-            ::asio::experimental::receive(peer.tip_announcements())
+            ::asio::experimental::receive(peer.tip_announcements()),
+            ::asio::experimental::receive(peer.fee_filter_changes()),
+            ::asio::experimental::after(fee_filter_due())
         ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) {
@@ -485,6 +515,29 @@ void message_dispatcher::set_tip_announcement_handler(tip_announcement_fn handle
         if (selected.index == 1) {
             if (tip_announcement_) {
                 co_await tip_announcement_(peer, *selected.value<1>(), last_announced);
+            }
+            continue;
+        }
+        if (selected.index == 2) {
+            // The minimum moved: a send due later than max_change_delay may
+            // come sooner, within it.
+            auto const delay = std::chrono::duration_cast<fee_filter_schedule::clock::duration>(
+                fee_filter_schedule::max_change_delay * draw());
+            fee_filter.on_changed(*selected.value<2>(), fee_filter_schedule::clock::now(), delay);
+            continue;
+        }
+        if (selected.index == 3) {
+            auto const to_send = co_await fee_filter_(peer);
+            auto const now = fee_filter_schedule::clock::now();
+            if ( ! to_send) {
+                // This peer gets none: nothing is due again.
+                fee_filter.never();
+                continue;
+            }
+            auto const interval = detail::poisson_delay(fee_filter_schedule::average_interval, draw());
+            if (auto const sending = fee_filter.on_due(*to_send, now, interval)) {
+                spdlog::trace("[dispatcher] Fee filter {} to [{}]", *sending, peer.authority());
+                (void)co_await peer.send(domain::message::fee_filter{*sending});
             }
             continue;
         }
@@ -1640,12 +1693,12 @@ void p2p_node::wake_status_task() noexcept {
                         }
 
                         // Announce our capabilities right after the handshake,
-                        // the way BCHN does: prefer header announcements, offer
-                        // compact blocks (BIP-152 v1), and advertise our relay
-                        // fee filter (1 sat/byte). Best-effort.
+                        // the way BCHN does: prefer header announcements and
+                        // offer compact blocks (BIP-152 v1). Best-effort. The
+                        // fee filter is the peer's service's: its first is due
+                        // as the service starts.
                         co_await peer->send(domain::message::send_headers{});
                         co_await peer->send(domain::message::send_compact(true, 1));
-                        co_await peer->send(domain::message::fee_filter{1000});
 
                         // Send success response to caller
                         if (response_channel) {

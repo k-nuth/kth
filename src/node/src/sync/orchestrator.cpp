@@ -9,6 +9,7 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 
@@ -1301,6 +1302,19 @@ static
                     ::asio::use_awaitable);
             },
             network.tx_relay()));
+    }
+
+    // Fee filter watch: when the mempool's minimum may have moved, each peer's
+    // service hears the new value and decides whether its next fee filter
+    // (BIP133) is due sooner. Only when the node relays transactions, as the
+    // fee filter itself. Ends with the network.
+    if (network.network_settings().relay_transactions) {
+        all_tasks.spawn("fee_filter_watch", detail::fee_filter_watch(chain.mempool_fee_events(),
+            detail::fee_filter_sources{
+                .minimum = [&chain] { return chain.mempool_minimum_fee(); },
+                .peers = [&network] { return network.peers().all(); },
+            },
+            network.stop_token()));
     }
 
     // -------------------------------------------------------------------------
