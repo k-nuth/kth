@@ -75,7 +75,7 @@ add_definitions(-DKTH_NODE_BUILD_TIMESTAMP=${KTH_NODE_BUILD_TIMESTAMP})
 
 if (NOT GLOBAL_BUILD)
   find_package(blockchain REQUIRED)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
     find_package(network REQUIRED)
   endif()
 endif()
@@ -182,6 +182,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/messages.cpp
     src/sv2/connection.cpp
   )
+endif()
+
+# A browser node compiles what an ordinary WebAssembly node does, plus the
+# headers-only client and the network layer it runs on.
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
@@ -347,6 +353,10 @@ set(kth_headers
   include/kth/node/sync/tip_announcement.hpp
 )
 
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+endif()
+
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 if(TARGET kth_node_proto)
@@ -375,7 +385,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC blockchain::blockchain)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC network::network)
 endif()
 

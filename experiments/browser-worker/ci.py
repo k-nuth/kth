@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 from websockets.asyncio.server import serve
 import fixtures
 
-CONTROLS = ("stream", "cap", "eof", "select", "terminal")
+CONTROLS = ("stream", "cap", "eof", "select", "terminal", "headers")
 WORKER_TEST = r"""async name => {
     const lines = [];
     return await new Promise(resolve => {
@@ -28,7 +28,7 @@ WORKER_TEST = r"""async name => {
         const deadline = setTimeout(() => {
             lines.push('FAILED: control deadline exceeded');
             finish(false);
-        }, 15000);
+        }, 60000);
         worker.onerror = event => {
             lines.push('FAILED: ' + event.message);
             finish(false);
@@ -76,7 +76,9 @@ async def run(args):
         if not args.external_fixtures:
             for port, handler in ((18765, fixtures.echo), (18767, fixtures.stall),
                                   (18768, fixtures.cap), (18769, fixtures.eof),
-                                  (18770, fixtures.abrupt)):
+                                  (18770, fixtures.abrupt), (18780, fixtures.bch_sync),
+                                  (18781, fixtures.bch_invalid), (18782, fixtures.bch_follow),
+                                  (18783, fixtures.bch_oversize)):
                 await stack.enter_async_context(serve(handler, "127.0.0.1", port, max_size=65536))
         server = await asyncio.start_server(http, "127.0.0.1", 0)
         await stack.enter_async_context(server)

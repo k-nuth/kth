@@ -584,8 +584,12 @@ class KthRecipe(KnuthConanFileV2):
         # "every direct dependency must be used by some component" check
         # happy. It's a no-op for library consumers.
         node_requires = ["blockchain"]
-        if self.settings.os != "Emscripten":
+        if self.settings.os != "Emscripten" or self.options.browser_node:
+            # A browser node's header client runs on the network layer.
             node_requires.append("network")
+        # FTXUI is only required natively (requirements()): a browser node has
+        # no dashboard, and no FTXUI to name.
+        if self.settings.os != "Emscripten":
             node_requires.append("ftxui::ftxui")
         if self.options.rpc == "jsonrpc" and self.settings.os != "Emscripten":
             node_requires.append("llhttp::llhttp")
