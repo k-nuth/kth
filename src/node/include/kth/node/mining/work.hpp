@@ -161,6 +161,8 @@ struct share_outcome {
     uint32_t sequence_number = 0;
     uint32_t accepted_count = 0;
     uint64_t shares_sum = 0;
+    // A block to submit. A share refused only for missing a share target
+    // harder than the network's carries one too.
     block_const_ptr block;
     // Issue fresh work before the bounded duplicate history fills up.
     bool renew = false;

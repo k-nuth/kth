@@ -544,12 +544,38 @@ TEST_CASE("Mining shares enforce channel job extranonce time version and target"
         require_share_error(engine, value, error_duplicate_share);
     }
     SECTION("low difficulty") {
+        // Every hash misses this share target, but about half meet regtest's
+        // network target: those are refused as shares and still submitted.
         auto target = request(3);
         target.max_target = {};
         auto const hard = engine.open(target);
         auto const job = engine.on_channel(hard.channel_id, tmpl, outputs(tmpl.coinbase_value));
         REQUIRE(job.has_value());
-        require_share_error(engine, share(*job), error_difficulty_too_low);
+        auto const network = domain::chain::compact::from_compact(tmpl.bits);
+        REQUIRE(network.has_value());
+        bool found_block = false;
+        bool found_share = false;
+        for (uint32_t nonce = 0; nonce < 256 && ( ! found_block || ! found_share); ++nonce) {
+            domain::chain::header const header(job->version, tmpl.previous_block_hash,
+                job->merkle_root, job->ntime_start, tmpl.bits, nonce);
+            bool const is_block = to_uint256(domain::chain::hash(header)) <= network->big();
+            if (is_block && ! found_block) {
+                auto const result = engine.submit(share(*job, nonce));
+                REQUIRE(result.status == share_status::rejected);
+                REQUIRE(result.error_code == error_difficulty_too_low);
+                REQUIRE(result.block);
+                REQUIRE(result.block->header() == header);
+                REQUIRE(result.block->is_valid_merkle_root());
+                // Submitted once: a replay is refused without it.
+                require_share_error(engine, share(*job, nonce), error_difficulty_too_low);
+                found_block = true;
+            } else if ( ! is_block && ! found_share) {
+                require_share_error(engine, share(*job, nonce), error_difficulty_too_low);
+                found_share = true;
+            }
+        }
+        REQUIRE(found_block);
+        REQUIRE(found_share);
     }
 }
 
