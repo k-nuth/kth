@@ -12,8 +12,12 @@
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
 #include <asio/bind_cancellation_slot.hpp>
+#include <spdlog/spdlog.h>
 #include <asio/cancellation_signal.hpp>
 #include <array>
+#include <filesystem>
+#include <fstream>
+#include <string_view>
 #include <cassert>
 #include <stdexcept>
 #include <optional>
@@ -150,6 +154,10 @@ using refresh_channel = kth::select_channel<unsigned>;
     }
 }
 
+constexpr size_t header_size = 80;
+constexpr std::string_view cache_root = "/kth-header-cache/";
+constexpr std::string_view cache_file = "chain-v1.bin";
+
 } // namespace
 
 struct header_sync::impl {
@@ -167,6 +175,106 @@ struct header_sync::impl {
     bool stop_requested = false;
     std::string message = "idle";
 
+    // The cache: the active chain's headers, 80 bytes each from genesis, in a
+    // file the embedding Worker keeps on IndexedDB (IDBFS). Never trusted: a
+    // restore validates every header again.
+    std::string cache_path;
+    int32_t cache_height = -1;
+    hash_digest cache_tip{};
+
+    // Replays the cached chain through the header organizer. Throws if the
+    // file is not this network's valid active chain.
+    void restore(std::string const& path, size_t capacity) {
+        cache_path = path;
+        std::ifstream input(path, std::ios::binary | std::ios::ate);
+        if (!input) return;
+        auto const length = uint64_t(std::streamoff(input.tellg()));
+        if (length == 0) return;
+        if (length % header_size != 0 || length / header_size > capacity) {
+            throw std::runtime_error("its size is not a whole chain within capacity");
+        }
+        auto const count = length / header_size;
+        input.seekg(0);
+        std::array<uint8_t, header_size> bytes{};
+        auto read_header = [&] {
+            if (!input.read(reinterpret_cast<char*>(bytes.data()), bytes.size())) {
+                throw std::runtime_error("it is truncated");
+            }
+            byte_reader reader(bytes);
+            auto header = domain::chain::header::from_data(reader);
+            if (!header) throw std::runtime_error("a header does not decode");
+            return *header;
+        };
+        if (domain::chain::hash(read_header()) != index.get_hash(index.active_at(0))) {
+            throw std::runtime_error("it starts at another genesis");
+        }
+        organizer.start();
+        for (uint64_t height = 1; height < count;) {
+            domain::message::header::list batch;
+            auto const end = std::min(count, height + max_get_headers);
+            for (; height < end; ++height) batch.emplace_back(read_header());
+            auto const result = organizer.add_headers(batch);
+            if (result.error || result.headers_added != batch.size()) {
+                throw std::runtime_error("a header fails validation");
+            }
+            if (result.reorg_candidate) organizer.adopt_tip(result.reorg_branch_head);
+        }
+        organizer.stop();
+        if (uint64_t(organizer.header_height()) + 1 != count) {
+            throw std::runtime_error("it is not one active chain");
+        }
+        cache_height = organizer.header_height();
+        cache_tip = index.get_hash(index.active_at(cache_height));
+    }
+
+    // The file ends with this client's last written tip, at its height.
+    bool holds_own_tip() const {
+        std::error_code ec;
+        if (std::filesystem::file_size(cache_path, ec) != uint64_t(cache_height + 1) * header_size || ec) return false;
+        std::ifstream input(cache_path, std::ios::binary);
+        input.seekg(std::streamoff(uint64_t(cache_height) * header_size));
+        std::array<uint8_t, header_size> bytes{};
+        if (!input.read(reinterpret_cast<char*>(bytes.data()), bytes.size())) return false;
+        byte_reader reader(bytes);
+        auto const header = domain::chain::header::from_data(reader);
+        return header && domain::chain::hash(*header) == cache_tip;
+    }
+
+    // Brings the file up to the active chain: appends while the chain it holds
+    // is still active, rewrites it after a reorganization. A failure disables
+    // the cache (synchronization goes on in memory).
+    void persist() noexcept {
+        if (cache_path.empty()) return;
+        try {
+            auto const height = organizer.header_height();
+            // Appended only to the file this client last wrote: another client
+            // of the same network may have written it since. Otherwise the
+            // whole active chain is written again.
+            auto const append = cache_height >= 0 && cache_height <= height &&
+                index.get_hash(index.active_at(cache_height)) == cache_tip && holds_own_tip();
+            if (append && cache_height == height) return;
+            std::ofstream output(cache_path, std::ios::binary | (append ? std::ios::app : std::ios::trunc));
+            if (!output) throw std::runtime_error("it cannot be opened");
+            for (int32_t at = append ? cache_height + 1 : 0; at <= height; ++at) {
+                std::array<uint8_t, header_size> bytes{};
+                byte_writer writer(bytes);
+                if (!index.get_header(index.active_at(at)).to_data(writer, true)) {
+                    throw std::runtime_error("a header does not encode");
+                }
+                output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+            }
+            output.flush();
+            if (!output) throw std::runtime_error("the write failed");
+            cache_height = height;
+            cache_tip = index.get_hash(index.active_at(height));
+        } catch (std::exception const& e) {
+            spdlog::warn("[header_sync] Header cache disabled: {}", e.what());
+            std::error_code ignored;
+            std::filesystem::remove(cache_path, ignored);
+            cache_path.clear();
+        }
+    }
+
     impl(std::string const& url, domain::config::network net, size_t capacity)
         : bridge(url), network(net), index(checked_capacity(capacity)), consensus(validation_settings(net)),
           organizer(index, consensus, net) {
@@ -178,7 +286,23 @@ struct header_sync::impl {
 };
 
 header_sync::header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity)
-    : state_(std::make_unique<impl>(bridge_url, network, capacity)) {}
+    : state_(std::make_unique<impl>(bridge_url, network, capacity)) {
+    // Opt-in: only when the embedding Worker mounted this network's directory.
+    auto const directory = std::string(cache_root) + std::string(domain::config::chain_name(network,
+        domain::config::chain_name_format::display));
+    std::error_code ec;
+    if (!std::filesystem::is_directory(directory, ec)) return;
+    auto const path = directory + "/" + std::string(cache_file);
+    try {
+        state_->restore(path, capacity);
+    } catch (std::exception const& e) {
+        // An invalid cache is discarded and the client starts at genesis.
+        spdlog::warn("[header_sync] Header cache discarded: {}", e.what());
+        std::filesystem::remove(path, ec);
+        state_ = std::make_unique<impl>(bridge_url, network, capacity);
+        state_->cache_path = path;
+    }
+}
 
 header_sync::~header_sync() { assert(settled()); }
 
@@ -282,6 +406,7 @@ header_sync::~header_sync() { assert(settled()); }
                     } else if (index.size() == before) {
                         throw std::runtime_error("peer made no header progress");
                     }
+                    state.persist();
 
                     received = true;
                     break;

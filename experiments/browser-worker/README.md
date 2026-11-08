@@ -30,6 +30,23 @@ announced blocks' headers and refreshes every 120 s; `request_stop()` and
 lets an exception cross it: destruct and reset are refused while a run is
 pending.
 
+## Header cache
+
+A header client keeps its validated chain across reloads when the embedding
+Worker opts in: it mounts `/kth-header-cache/<Network>` (the network's display
+name: `Mainnet`, `Testnet4`, `Chipnet`, `Tempnet`, ...) on IndexedDB (IDBFS)
+before constructing `HeaderSync`, and commits it with `FS.syncfs` (for
+example every few seconds while it advances, and after a joined stop).
+
+There the client keeps `chain-v1.bin`: the active chain's 80-byte headers from
+genesis. It appends as the chain grows and rewrites the file after a
+reorganization. A new client restores it by replaying every header through
+the same contextual validation as P2P synchronization, then resumes from the
+restored tip. A file that does not validate is discarded and the client starts
+at genesis; a failed write disables the cache and synchronization goes on in
+memory. Nothing else is stored: no index image, branch or block data. Without
+the directory nothing is written.
+
 ## Controls
 
 `ci.py` runs the controls below as real WASM in Chromium Workers against the
@@ -43,6 +60,7 @@ loopback fixtures in `fixtures.py`:
 | `select` | channel selection deadlines fire through the runtime's timer |
 | `terminal` | a terminal error is kept for every later operation |
 | `headers` | against a scripted BCH regtest peer (`fixtures.py`): 2500 headers in two batches; a header with invalid proof of work ends the session; a message declaring more than 256 KiB ends it at its heading; `follow()` answers a ping, fetches an announced block on the same connection and stops; the C API refuses destruct and reset while it runs |
+| `persist` | the header cache, against scripted regtest peers: nothing is written without the directory; a synchronized chain is restored, validated, by the next client before it connects; it is extended in place, rewritten after a reorganization, and discarded when a header does not validate |
 
 Build (Emscripten 6, `ci_utils/conan/profiles/ems6`):
 
@@ -56,6 +74,6 @@ cmake -S . -B build/browser -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
   -DKTH_BROWSER_NODE=ON -DKTH_BROWSER_CONTROLS=ON
 cmake --build build/browser --target browser_stream_control browser_cap_control \
-  browser_eof_control browser_select_control browser_terminal_control browser_headers_control
+  browser_eof_control browser_select_control browser_terminal_control browser_headers_control browser_persist_control
 python experiments/browser-worker/ci.py build/browser/experiments/browser-worker
 ```
