@@ -93,6 +93,10 @@ struct fake_reader final : crpc::reader {
     std::mutex watch_mutex;
     kj::Own<const kj::CrossThreadPromiseFulfiller<void>> watcher;
 
+    // kj::Own's destructor may throw, which would make this one's looser than
+    // the reader it overrides.
+    ~fake_reader() noexcept override = default;
+
     kj::Promise<void> next_change() {
         auto paf = kj::newPromiseAndCrossThreadFulfiller<void>();
         std::lock_guard const lock(watch_mutex);
