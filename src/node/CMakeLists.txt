@@ -402,17 +402,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    # Bound stalled coroutine tests on platforms that run plain CTest.
-    catch_discover_tests(kth_node_test PROPERTIES TIMEOUT 600)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_node_test COMMAND kth_node_test)
-    set_tests_properties(kth_node_test PROPERTIES TIMEOUT 600)
-  endif()
+  kth_register_tests(kth_node_test TIMEOUT 600)
 
   # README C++ snippet checks disabled: v1.0 switched the public API
   # to coroutines (start/run/stop/join), so the legacy start_chain /

@@ -236,16 +236,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    # Exclude [integration] tests - they require real TCP connections
-    catch_discover_tests(kth_network_test TEST_SPEC "~[integration]")
-  else()
-    # Fallback to manual test registration (excludes integration tests)
-    add_test(NAME kth_network_test COMMAND kth_network_test "~[integration]")
-  endif()
+  kth_register_tests(kth_network_test TEST_SPEC "~[integration]")
 endif()
 
 
