@@ -86,21 +86,34 @@ std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr>
     return path;
 }
 
+template <typename Entries>
+auto find_entry(Entries& entries, uint64_t id) {
+    auto const it = std::find_if(entries.begin(), entries.end(),
+        [id](auto const& item) { return item.id == id; });
+    return it == entries.end() ? nullptr : &*it;
+}
+
 } // namespace
 
 void template_provider_session::set_tip(hash_digest const& previous) {
     if (previous_ && *previous_ != previous) {
         stale_through_ = next_id_ - 1;
-        templates_.clear();
+        // A block found on the replaced tip's work still competes at its
+        // height (sv2-spec 7). Work from any earlier tip is dropped.
+        replaced_ = std::exchange(templates_, {});
     }
     previous_ = previous;
 }
 
 template_provider_session::entry*
 template_provider_session::find_template(uint64_t id) {
-    auto const it = std::find_if(templates_.begin(), templates_.end(),
-        [id](auto const& item) { return item.id == id; });
-    return it == templates_.end() ? nullptr : &*it;
+    return find_entry(templates_, id);
+}
+
+template_provider_session::entry const*
+template_provider_session::find_solvable(uint64_t id) const {
+    auto const* item = find_entry(templates_, id);
+    return item ? item : find_entry(replaced_, id);
 }
 
 bool template_provider_session::stale(uint64_t id) const {
@@ -265,7 +278,7 @@ template_provider_session::result template_provider_session::process(
             if ( ! solution) {
                 return close();
             }
-            auto const* item = find_template(solution->template_id);
+            auto const* item = find_solvable(solution->template_id);
             if ( ! item) {
                 spdlog::debug("[sv2] Ignoring a solution for {} template {}",
                     stale(solution->template_id) ? "stale" : "unknown", solution->template_id);

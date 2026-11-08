@@ -986,7 +986,8 @@ TEST_CASE("sv2 solved templates connect and notify ready clients without a reque
     auto const stale = fixture.receive<request_transaction_data_error>(*miner);
     REQUIRE(stale.template_id == job.work.template_id);
     REQUIRE(stale.error_code == "stale-template-id");
-    // Neither a stale solution nor an id never issued gets a TDP reply. The
+    // Neither a repeated solution (on the replaced tip's work, so submitted
+    // again and found a duplicate) nor an id never issued gets a TDP reply. The
     // request after them proves they were consumed and the read loop continued.
     fixture.write(*miner, frame(solution_message(job, solved)));
     auto unknown = solution_message(next, solved);
@@ -997,6 +998,52 @@ TEST_CASE("sv2 solved templates connect and notify ready clients without a reque
     REQUIRE(fixture.receive<request_transaction_data_success>(*miner).template_id == next.work.template_id);
     REQUIRE(fixture.chain.chain().chain_view()->tip_hash == solved.hash());
     fixture.require_closed(*miner);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 submits solutions for the replaced tip's templates, not older ones", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings(), true);
+    (void)seed_chain(fixture, 5);
+    submission_pipeline pipeline(fixture);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const job = request_template(fixture, *client);
+    auto const solved = solution_block(job, {});
+    fixture.write(*client, frame(solution_message(job, solved)));
+    auto const next = receive_template(fixture, *client);
+    REQUIRE(next.prev.prev_hash == solved.hash());
+
+    // A block found on the replaced tip's work, sent after the new tip: a
+    // rival at the same height, which the chain judges and keeps as a side
+    // branch. Another timestamp makes it another block.
+    auto late = job;
+    late.prev.header_timestamp += 1;
+    auto const rival = solution_block(late, {});
+    fixture.write(*client, frame(solution_message(late, rival)));
+    // Its transaction data stays stale. This reply follows the submission's
+    // answer, so the chain has judged the rival by now.
+    fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+    REQUIRE(fixture.receive<request_transaction_data_error>(*client).error_code == "stale-template-id");
+    auto const& index = fixture.chain.organizer().index();
+    REQUIRE(index.find(rival.hash()) != blockchain::header_index::null_index);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == solved.hash());
+
+    // One tip later that work is two tips back, and a solution on it is
+    // ignored. Had it been submitted, its header would be kept like the rival's.
+    auto const extended = solution_block(next, {});
+    fixture.write(*client, frame(solution_message(next, extended)));
+    auto const latest = receive_template(fixture, *client);
+    REQUIRE(latest.prev.prev_hash == extended.hash());
+    late.prev.header_timestamp += 1;
+    auto const older = solution_block(late, {});
+    fixture.write(*client, frame(solution_message(late, older)));
+    fixture.write(*client, frame(request_transaction_data{latest.work.template_id}));
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == latest.work.template_id);
+    REQUIRE(index.find(older.hash()) == blockchain::header_index::null_index);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == extended.hash());
+    fixture.require_closed(*client);
     fixture.stop();
 }
 
