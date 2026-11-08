@@ -914,6 +914,12 @@ void template_provider::stop() {
         }
     };
     co_await (accept_connections() && receive_stop() && run_upstreams());
+    // A connection that ends posts its last hash rate to the client. Those
+    // posts are queued by now; let them run before `upstream` is destroyed.
+    if (upstream) {
+        co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
+        co_await upstream->drain();
+    }
     spdlog::info("[sv2] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }
