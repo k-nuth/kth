@@ -164,7 +164,6 @@ peer_session::~peer_session() {
         co_return error::channel_stopped;
     }
 
-    stopped_ = false;
     spdlog::debug("[peer_session] run() - about to start loops for [{}]", authority());
 
     // 2026-01-28: Fix for ASAN heap-use-after-free in cancellation_signal::emit()
@@ -184,15 +183,21 @@ peer_session::~peer_session() {
     // all operations (including cancellation) run on the strand.
 
     try {
-        // Run all loops concurrently on the strand - when any completes/fails, all stop
-        // Using co_spawn with use_awaitable ensures all operations run on the strand,
-        // which serializes the || operator's cancellation mechanism.
-        co_await (
-            ::asio::co_spawn(strand_, read_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, write_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, inactivity_timer(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, expiration_timer(), ::asio::use_awaitable)
-        );
+        // Completion and cancellation machinery belongs to the same strand as
+        // the I/O. Binding only the children leaves the outer selection on the
+        // caller's potentially multithreaded executor.
+        auto loops = [this]() -> ::asio::awaitable<void> {
+            if (stopped()) co_return;
+#if defined(KTH_WITH_WEBSOCKET)
+            if (websocket_) {
+                co_await (websocket_->run() || read_loop() || write_loop() ||
+                    inactivity_timer() || expiration_timer());
+                co_return;
+            }
+#endif
+            co_await (read_loop() || write_loop() || inactivity_timer() || expiration_timer());
+        };
+        co_await ::asio::co_spawn(strand_, loops(), ::asio::use_awaitable);
     } catch (std::exception const& e) {
         spdlog::debug("[peer_session] Exception in run loop [{}]: {}", authority(), e.what());
     }
@@ -232,7 +237,6 @@ void peer_session::stop(code const& ec) {
     spdlog::debug("[peer_session] Stopping session [{}]: {}", auth_str, ec_msg);
     spdlog::debug("[peer_session] stop() checkpoint 5: canceling timers");
 
-    // Cancel timers first - this is safe from any thread
     // The timers are waited on by run()'s loops, on the strand, and a timer is
     // not safe to cancel from another thread while it is being waited on —
     // stop() is called from any thread. So their cancellation goes to the
@@ -244,21 +248,26 @@ void peer_session::stop(code const& ec) {
         ::asio::post(strand_, [self] {
             self->inactivity_timer_.cancel();
             self->expiration_timer_.cancel();
+#if defined(KTH_WITH_WEBSOCKET)
+            if (self->websocket_) self->websocket_->stop();
+#endif
+            // Socket cancellation is also an owner operation. The associated
+            // executor does not make direct calls from another thread safe.
+            boost_code ignored;
+            self->socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignored);
+            self->socket_.cancel(ignored);
         });
     }
     spdlog::debug("[peer_session] stop() checkpoint 6-7: timer cancellation posted to the strand");
 
-    // Cancel pending socket operations - this causes read_loop to exit with an error.
-    // The || operator will then cancel write_loop and other awaitables.
-    // IMPORTANT: Use cancel() instead of close()! close() is not thread-safe when
-    // there are pending async operations - it can corrupt internal epoll_reactor state.
-    // The socket will be properly closed when peer_session is destroyed.
-    spdlog::debug("[peer_session] stop() checkpoint 8: canceling socket");
-    boost_code ignore;
-    socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignore);
-    spdlog::debug("[peer_session] stop() checkpoint 9: socket shutdown");
-    socket_.cancel(ignore);
-    spdlog::debug("[peer_session] stop() checkpoint 10: socket canceled");
+    // A stack-owned direct-I/O peer or the destructor has no shared owner to
+    // post. Those callers must already have joined their operations; there is
+    // no borrowed pointer queued past destruction.
+    if (weak_from_this().expired()) {
+        boost_code ignored;
+        socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignored);
+        socket_.cancel(ignored);
+    }
 
     // 2026-01-29: Close ALL channels to unblock any coroutines waiting on them.
     //
@@ -696,10 +705,7 @@ void peer_session::set_prefers_headers(bool value) {
             ? std::move(*selected.value<0>()) : std::move(*selected.value<1>());
 
         // Write to socket
-        auto [write_ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto [write_ec, bytes_written] = co_await write_exact(::asio::buffer(data));
 
         // Track bytes sent (before clearing data)
         bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
@@ -767,6 +773,11 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
     // operation with its own cancellation, not a race against a timer).
     bool const timed = deadline != std::chrono::steady_clock::time_point::max();
     auto read = [&](auto buffer) -> ::asio::awaitable<std::error_code> {
+#if defined(KTH_WITH_WEBSOCKET)
+        // Its messages arrive decoded by the transport run() pumps; only the
+        // run loop reads them, untimed (direct, timed reads are refused).
+        if (websocket_) co_return (co_await websocket_->read_exact(buffer)).first;
+#endif
 #if defined(KTH_BROWSER_NODE)
         // asio::cancel_at arms an asio timer, which nothing in the browser
         // runtime wakes: the read races the runtime's own timer instead.
@@ -830,6 +841,12 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
         co_return std::unexpected(error::bad_stream);
     }
 
+    // Unknown/unnegotiated discovery frames never allocate a generic BCH-size payload.
+    if ((head.command() == "getwsaddr" && head.payload_size() != 10) ||
+        (head.command() == "wsaddr" && head.payload_size() > 16384)) {
+        co_return std::unexpected(error::bad_stream);
+    }
+
     // Read payload
     data_chunk payload(head.payload_size());
 
@@ -862,7 +879,37 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
 // Direct I/O (for handshake before run() starts)
 // =============================================================================
 
+bool peer_session::is_websocket() const {
+#if defined(KTH_WITH_WEBSOCKET)
+    return bool(websocket_);
+#else
+    return false;
+#endif
+}
+
+::asio::awaitable<std::pair<std::error_code, size_t>> peer_session::write_exact(::asio::const_buffer buffer) {
+#if defined(KTH_WITH_WEBSOCKET)
+    if (websocket_) co_return co_await websocket_->write_exact(buffer);
+#endif
+    auto [ec, count] = co_await ::asio::async_write(socket_, buffer, ::asio::as_tuple(::asio::use_awaitable));
+    co_return std::pair{ec, count};
+}
+
+#if defined(KTH_WITH_WEBSOCKET)
+awaitable_expected<peer_session::ptr> async_accept_websocket(
+    peer_session::socket_type socket, settings const& settings, websocket_server_options options) {
+    auto peer = std::make_shared<peer_session>(std::move(socket), settings, true);
+    peer->websocket_ = std::make_unique<websocket_transport>(peer->socket_);
+    auto ec = co_await ::asio::co_spawn(peer->strand_, peer->websocket_->accept(options), ::asio::use_awaitable);
+    if (ec) co_return std::unexpected(error::boost_to_error_code(ec));
+    co_return peer;
+}
+#endif
+
 awaitable_expected<raw_message> peer_session::read_message_direct(std::chrono::steady_clock::time_point deadline) {
+    // WebSocket peers have their codec pumped by run(): they handshake over the
+    // channels, concurrently with it, never with direct reads.
+    if (is_websocket()) co_return std::unexpected(error::not_implemented);
     // The timed reads (asio::cancel_at) must complete on a strand, and the
     // caller may be running on the pool, so run them on the session's strand.
     co_return co_await ::asio::co_spawn(strand_,

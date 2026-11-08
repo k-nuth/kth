@@ -295,7 +295,7 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS --format=json --out-file=build/dependency-graph.json
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o with_websocket=True --format=json --out-file=build/dependency-graph.json
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"

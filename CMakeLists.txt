@@ -74,6 +74,7 @@ if(KTH_BROWSER_NODE)
         ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"
         ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
 endif()
+option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
