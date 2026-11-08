@@ -287,6 +287,115 @@ TEST_CASE("getblockheader dispatch counts confirmations from the connected tip",
     REQUIRE(confirmations(trunk[4].hash()) == -1);
 }
 
+TEST_CASE("getblockhash and getbestblockhash name only connected blocks", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_hash_connected");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":12}";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const hash_reply = [](hash_digest const& hash) {
+        return node::rpc::build_success("12", '"' + encode_hash(hash) + '"');
+    };
+
+    REQUIRE(request("getblockhash", "[0]") == hash_reply(domain::chain::block::genesis_regtest().hash()));
+    REQUIRE(request("getblockhash", "[3]") == hash_reply(trunk[2].hash()));
+    REQUIRE(request("getbestblockhash", "[]") == hash_reply(trunk[2].hash()));
+    // Stored, but its block is not connected yet, so getblock could not return it.
+    auto const ahead = request("getblockhash", "[4]");
+    CHECK(ahead.find("block height out of range") != std::string::npos);
+    CHECK(ahead.find(encode_hash(trunk[3].hash())) == std::string::npos);
+    CHECK(request("getblockhash", "[6]").find("block height out of range") != std::string::npos);
+}
+
+TEST_CASE("getblockhash names the connected branch while a reorganization rewrites the headers", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_hash_reorg_window");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const stamp = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    auto const common = test::mine_block(genesis, 1, stamp, 0, {}, 0);
+    std::vector<domain::chain::block> a;
+    auto previous = common.hash();
+    for (uint32_t height = 2; height <= 3; ++height) {
+        a.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing, 1, {}, 0));
+        previous = a.back().hash();
+    }
+    std::vector<domain::chain::block> connected{common};
+    connected.insert(connected.end(), a.begin(), a.end());
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(connected)).headers_added == 3);
+    test::persist_headers(fixture, connected, 1);
+    test::connect_bodies(fixture, connected, 1);
+    REQUIRE(chain.chain_view()->connected_tip_height == 3);
+    std::vector<domain::chain::block> b;
+    previous = common.hash();
+    for (uint32_t height = 2; height <= 4; ++height) {
+        b.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing + 60, 2, {}, 0));
+        previous = b.back().hash();
+    }
+    auto const candidate = fixture.organizer().add_headers(test::headers_of(b));
+    REQUIRE(candidate.reorg_candidate);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{chain, jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context rpc_io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":13}";
+        auto result = ::asio::co_spawn(rpc_io, dispatcher.handle(context, body), ::asio::use_future);
+        rpc_io.run();
+        return result.get();
+    };
+    auto const hash_reply = [](hash_digest const& hash) {
+        return node::rpc::build_success("13", '"' + encode_hash(hash) + '"');
+    };
+    std::string at_fork;
+    std::string best;
+    size_t captured_height = 0;
+    // Ask once the header store holds branch b from height 2 on, while branch
+    // a is still the connected chain.
+    auto persist = [&](domain::chain::header::list const& headers, size_t start) {
+        auto const ec = chain.replace_headers_from(headers, start);
+        if ( ! ec) {
+            captured_height = chain.chain_view()->connected_tip_height;
+            at_fork = request("getblockhash", "[2]");
+            best = request("getbestblockhash", "[]");
+        }
+        return ec;
+    };
+    ::asio::io_context io;
+    auto switched = ::asio::co_spawn(io, node::sync::execute_reorg(chain, fixture.organizer(),
+        candidate.reorg_branch_head, 1, [] { return false; }, persist), ::asio::use_future);
+    io.run();
+    REQUIRE(switched.get().result.ok);
+    REQUIRE(captured_height == 3);
+    CHECK(at_fork == hash_reply(a[0].hash()));
+    CHECK(best == hash_reply(a[1].hash()));
+}
+
 TEST_CASE("unconnected replacement header never gets positive confirmations during reorg", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_confirmations_reorg_window");
     REQUIRE(fixture.created());
