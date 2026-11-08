@@ -55,6 +55,8 @@ sv2_settings::sv2_settings()
     , authority_public_key()
     , certificate_validity_seconds(30 * 24 * 60 * 60)
     , handshake_timeout_seconds(10)
+    , template_refresh_seconds(10)
+    , minimum_fee_gain_satoshis(1000)
     , mining()
 {}
 

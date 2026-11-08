@@ -318,6 +318,10 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Lifetime in seconds of certificates signed at startup (default 2592000).");
     app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
         "Deadline in seconds for the complete Noise handshake (default 10).");
+    app.add_option("--sv2.template_refresh_seconds", cfg.sv2.template_refresh_seconds,
+        "Fewest seconds between looks for a higher-fee template on the same tip (default 10).");
+    app.add_option("--sv2.minimum_fee_gain_satoshis", cfg.sv2.minimum_fee_gain_satoshis,
+        "Coinbase value gain in satoshis that sends a new template on the same tip (default 1000).");
     app.add_option("--sv2.mining.enabled", cfg.sv2.mining.enabled,
         "Accept Mining Protocol clients on the Stratum V2 listener.");
     app.add_option("--sv2.mining.address", cfg.sv2.mining.address,

@@ -24,6 +24,8 @@ TEST_CASE("sv2 settings default to disabled localhost listener with Noise", "[se
     REQUIRE(configuration.authority_public_key.empty());
     REQUIRE(configuration.certificate_validity_seconds == 2592000u);
     REQUIRE(configuration.handshake_timeout_seconds == 10u);
+    REQUIRE(configuration.template_refresh_seconds == 10u);
+    REQUIRE(configuration.minimum_fee_gain_satoshis == 1000u);
 }
 
 TEST_CASE("sv2 mining defaults to disabled without a payout address", "[settings tests][sv2 mining]") {

@@ -90,6 +90,23 @@ file loading requires POSIX file permissions.
 - When the node connects a new tip, ready clients receive a `NewTemplate` with
   `future_template = true`, then `SetNewPrevHash`, without making another request.
   Templates use the same transaction selection as Knuth's mining RPCs.
+- On the same tip, a client also receives a template when fees rise: once the
+  coinbase value available is at least `sv2.minimum_fee_gain_satoshis` (default
+  1000) above that of its latest template, it gets a `NewTemplate` with
+  `future_template = false`. The client mines it at once, under the
+  `SetNewPrevHash` it already has, and earlier templates of the tip keep taking
+  requests and solutions. If the header bits differ from that `SetNewPrevHash`,
+  as under a test network's minimum-difficulty rule, the template is sent with
+  `future_template = true` and a new `SetNewPrevHash` instead.
+- Knuth looks for such a template only when a transaction has entered or left
+  the mempool since it last fetched one for the client, and no sooner than
+  `sv2.template_refresh_seconds` (default 10) after that fetch. A new tip is
+  never held back: its template goes out at once and replaces any look still
+  pending for the tip before it. Both settings must be positive, or the
+  listener does not start. Looks read the same template cache as
+  `getblocktemplate`, which follows the mempool at most every
+  `chain.gbt_template_refresh_seconds` (default 5); keep
+  `sv2.template_refresh_seconds` above that.
 - Selection reserves room for the client's additional coinbase outputs, a
   100-byte coinbase scriptSig, the fixed coinbase fields, and block overhead.
   The wire field `coinbase_output_max_additional_sigops` reserves part of BCH's
@@ -165,6 +182,10 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   to activate it. Every open channel receives fresh work when a tip connects.
   Jobs from the previous tip are refused, including before replacement work
   is available during a chain transition.
+- When fees rise on the same tip, every open channel receives a replacement
+  job, sent the same way. It follows the same rule and settings as a Template
+  Distribution template with higher fees. Earlier jobs on that tip become
+  stale, as after any other replacement.
 - Jobs use the same `fetch_mining_template` transaction selection as Template
   Distribution. The engine accepts a list of coinbase outputs; this server
   supplies one payout output. BCH coinbases start with the BIP34 height push,

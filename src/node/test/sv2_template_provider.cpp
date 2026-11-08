@@ -149,6 +149,9 @@ struct listener_fixture {
         : submissions(local_admission ? std::make_shared<blockchain::block_submission_channel>(4, 1) : nullptr)
     {
         REQUIRE(chain.created());
+        // Every mempool change rebuilds the next template the chain serves, so
+        // a fee refresh is paced only by the provider's own interval.
+        chain.settings().gbt_template_refresh_seconds = 0;
         REQUIRE(chain.start(submissions));
         provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain());
     }
@@ -523,6 +526,35 @@ submit_solution solution_message(template_pair const& job, domain::chain::block 
         block.header().nonce(), std::move(bytes)};
 }
 
+// Loopback settings that look for a better template every `seconds` and send
+// one that pays at least `gain` more.
+node::sv2_settings refresh_settings(uint32_t seconds, uint64_t gain) {
+    auto settings = loopback_settings();
+    settings.template_refresh_seconds = seconds;
+    settings.minimum_fee_gain_satoshis = gain;
+    return settings;
+}
+
+// Admits a spend of `funding`'s first output that leaves `fee`, and returns it
+// so the next spend can build on it.
+domain::chain::transaction admit_spend(listener_fixture& fixture,
+    domain::chain::transaction const& funding, uint64_t fee) {
+    auto const view = fixture.chain.chain().chain_view();
+    REQUIRE(view);
+    auto const tx = test::spend_p2pkh(funding, 0, funding.outputs().front().value() - fee,
+        view->state->enabled_flags());
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(tx))) == error::success);
+    return tx;
+}
+
+data_chunk raw_transaction(domain::chain::transaction const& tx) {
+    data_chunk bytes(tx.serialized_size(true));
+    byte_writer writer(bytes);
+    REQUIRE(tx.to_data(writer, true));
+    return bytes;
+}
+
 } // namespace
 
 // Session rules, without sockets.
@@ -793,6 +825,44 @@ TEST_CASE("sv2 sends a template too large for its transaction data and refuses o
     REQUIRE(data.transaction_list == std::vector<data_chunk>{bytes});
     REQUIRE(response<request_transaction_data_error>(process(session,
         request_transaction_data{large.work.template_id}).response).error_code == "template-too-large");
+}
+
+TEST_CASE("sv2 session sends a better template on the activated tip as non-future work", "[sv2 template_provider]") {
+    auto session = ready_session();
+    REQUIRE_FALSE(session.coinbase_value().has_value());
+    auto value = empty_template();
+    auto const first = template_messages(session.set_template(value));
+    REQUIRE(session.coinbase_value() == value.coinbase_value);
+
+    // The latest SetNewPrevHash names the same parent and nBits: one frame.
+    value.coinbase_value += 5000;
+    auto const refreshed = session.refresh_template(value);
+    REQUIRE_FALSE(refreshed.close);
+    auto const work = response<new_template>(refreshed.response);
+    REQUIRE_FALSE(work.future_template);
+    REQUIRE(work.template_id > first.work.template_id);
+    REQUIRE(work.coinbase_tx_value_remaining == value.coinbase_value);
+    REQUIRE(work.coinbase_prefix == first.work.coinbase_prefix);
+    REQUIRE(session.coinbase_value() == value.coinbase_value);
+    // The template it improves on is still current on this tip.
+    REQUIRE(response<request_transaction_data_success>(process(session,
+        request_transaction_data{first.work.template_id}).response).template_id == first.work.template_id);
+
+    // Other nBits on the same parent, as a test network's minimum-difficulty
+    // rule gives a late block, need a SetNewPrevHash of their own.
+    value.bits = 0x1d00ffff;
+    auto const retargeted = template_messages(session.refresh_template(value));
+    REQUIRE(retargeted.work.future_template);
+    REQUIRE(retargeted.prev.prev_hash == value.previous_block_hash);
+    REQUIRE(retargeted.prev.n_bits == value.bits);
+
+    // So does another parent, which is a new tip.
+    value.previous_block_hash[0] = 1;
+    auto const moved = template_messages(session.refresh_template(value));
+    REQUIRE(moved.work.future_template);
+    REQUIRE(moved.prev.prev_hash == value.previous_block_hash);
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{work.template_id}).response).error_code == "stale-template-id");
 }
 
 TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted frames", "[sv2 noise]") {
@@ -1153,6 +1223,19 @@ TEST_CASE("sv2 listener reports a bind failure as its startup outcome", "[sv2 te
     }
 }
 
+TEST_CASE("sv2 listener refuses a zero refresh interval or fee gain before binding", "[sv2 template_provider]") {
+    auto settings = loopback_settings();
+    SECTION("refresh interval") { settings.template_refresh_seconds = 0; }
+    SECTION("minimum fee gain") { settings.minimum_fee_gain_satoshis = 0; }
+    listener_fixture fixture(settings);
+    fixture.run();
+    auto const state = fixture.listening();
+    REQUIRE(state->error == std::make_error_code(std::errc::invalid_argument));
+    REQUIRE(state->port == 0);
+    REQUIRE(fixture.wait_until([&] { return fixture.completed->done; }));
+    REQUIRE_FALSE(fixture.completed->error);
+}
+
 TEST_CASE("sv2 constraints send the chain template and its transactions in block order", "[sv2 template_provider]") {
     listener_fixture fixture(loopback_settings());
     auto const trunk = seed_chain(fixture, 101);
@@ -1388,4 +1471,136 @@ TEST_CASE("sv2 keeps a client through a moment without a template and sends one 
     CHECK(work.future_template);
     fixture.stop();
     fixture.require_closed(*client);
+}
+
+TEST_CASE("sv2 sends a non-future template on the same tip once fees rise enough", "[sv2 template_provider]") {
+    listener_fixture fixture(refresh_settings(1, 1000));
+    auto const trunk = seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const first = request_template(fixture, *client);
+    REQUIRE(first.work.merkle_path.empty());
+
+    // Unrequested, and one interval on, within the bounded read.
+    auto const tx = admit_spend(fixture, trunk.front().transactions().front(), 3000);
+    auto const refreshed = fixture.receive<new_template>(*client);
+    REQUIRE_FALSE(refreshed.future_template);
+    REQUIRE(refreshed.template_id > first.work.template_id);
+    REQUIRE(refreshed.version == first.work.version);
+    REQUIRE(refreshed.coinbase_prefix == first.work.coinbase_prefix);
+    REQUIRE(refreshed.coinbase_tx_value_remaining == first.work.coinbase_tx_value_remaining + 3000);
+    REQUIRE(refreshed.merkle_path == std::vector<hash_digest>{tx.hash()});
+
+    // No SetNewPrevHash follows it: the answer to this request is the next frame.
+    fixture.write(*client, frame(request_transaction_data{refreshed.template_id}));
+    auto const data = fixture.receive<request_transaction_data_success>(*client);
+    REQUIRE(data.template_id == refreshed.template_id);
+    REQUIRE(data.transaction_list == std::vector<data_chunk>{raw_transaction(tx)});
+    // The template it improves on is still work on this tip.
+    fixture.write(*client, frame(request_transaction_data{first.work.template_id}));
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).transaction_list.empty());
+    fixture.require_closed(*client);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 sends no fee refresh without a mempool change or below the minimum gain", "[sv2 template_provider]") {
+    listener_fixture fixture(refresh_settings(1, 5000));
+    auto const trunk = seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const first = request_template(fixture, *client);
+
+    // Past the interval, the answer to a request is the next frame, so
+    // nothing was sent before it.
+    auto const nothing_sent = [&] {
+        auto const past = std::chrono::steady_clock::now() + 1500ms;
+        REQUIRE(fixture.wait_until([&] { return std::chrono::steady_clock::now() >= past; }));
+        fixture.write(*client, frame(request_transaction_data{first.work.template_id}));
+        REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id
+            == first.work.template_id);
+    };
+    nothing_sent();
+    auto const small = admit_spend(fixture, trunk.front().transactions().front(), 1000);
+    nothing_sent();
+
+    // A rise is measured from the template the client has: 4500 is below the
+    // gain on its own, but not with the 1000 before it.
+    (void)admit_spend(fixture, small, 4500);
+    auto const refreshed = fixture.receive<new_template>(*client);
+    REQUIRE_FALSE(refreshed.future_template);
+    REQUIRE(refreshed.coinbase_tx_value_remaining == first.work.coinbase_tx_value_remaining + 5500);
+    REQUIRE(refreshed.merkle_path.size() == 2);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 fee refreshes on one tip are at least the refresh interval apart", "[sv2 template_provider]") {
+    listener_fixture fixture(refresh_settings(1, 1000));
+    auto const trunk = seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    // The provider fetches the first template after this moment. Each fetch,
+    // a refresh included, holds the next look back by one interval.
+    auto const asked = std::chrono::steady_clock::now();
+    auto const first = request_template(fixture, *client);
+    auto const parent = admit_spend(fixture, trunk.front().transactions().front(), 2000);
+    auto const second = fixture.receive<new_template>(*client);
+    auto const second_at = std::chrono::steady_clock::now();
+    // Admitted as soon as the refresh is in, so only pacing holds the next back.
+    (void)admit_spend(fixture, parent, 2000);
+    auto const third = fixture.receive<new_template>(*client);
+    auto const third_at = std::chrono::steady_clock::now();
+    REQUIRE(second_at - asked >= 1s);
+    REQUIRE(third_at - asked >= 2s);
+    REQUIRE_FALSE(second.future_template);
+    REQUIRE_FALSE(third.future_template);
+    REQUIRE(second.coinbase_tx_value_remaining == first.work.coinbase_tx_value_remaining + 2000);
+    REQUIRE(third.coinbase_tx_value_remaining == second.coinbase_tx_value_remaining + 2000);
+    REQUIRE(third.template_id > second.template_id);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 sends a new tip at once and drops the refresh pending for the old one", "[sv2 template_provider]") {
+    listener_fixture fixture(refresh_settings(3, 1000), true);
+    auto const trunk = seed_chain(fixture, 105);
+    submission_pipeline pipeline(fixture);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const asked = std::chrono::steady_clock::now();
+    auto const first = request_template(fixture, *client);
+    (void)admit_spend(fixture, trunk.front().transactions().front(), 3000);
+    // The client mines it under the SetNewPrevHash it already has.
+    template_pair const refreshed{fixture.receive<new_template>(*client), first.prev};
+    auto const refreshed_at = std::chrono::steady_clock::now();
+    REQUIRE_FALSE(refreshed.work.future_template);
+
+    // The next rise waits for another interval, so it is not due until twice
+    // the interval after the request. A block found on the refreshed template
+    // ends this tip before then.
+    auto const pending = admit_spend(fixture, trunk[1].transactions().front(), 3000);
+    fixture.write(*client, frame(request_transaction_data{refreshed.work.template_id}));
+    auto const data = fixture.receive<request_transaction_data_success>(*client);
+    auto const solved = solution_block(refreshed, data.transaction_list);
+    fixture.write(*client, frame(solution_message(refreshed, solved)));
+    auto const next = receive_template(fixture, *client);
+    REQUIRE(std::chrono::steady_clock::now() - asked < 6s);
+    REQUIRE(next.work.future_template);
+    REQUIRE(next.prev.prev_hash == solved.hash());
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == solved.hash());
+    REQUIRE(next.work.merkle_path == std::vector<hash_digest>{pending.hash()});
+
+    // Past the time the old tip's look was due, nothing more was sent: the
+    // answer to this request is the next frame.
+    auto const past = refreshed_at + 4s;
+    REQUIRE(fixture.wait_until([&] { return std::chrono::steady_clock::now() >= past; }, 10s));
+    fixture.write(*client, frame(request_transaction_data{next.work.template_id}));
+    fixture.finish_writing(*client);
+    REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id
+        == next.work.template_id);
+    fixture.require_closed(*client);
+    fixture.stop();
 }

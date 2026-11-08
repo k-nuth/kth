@@ -155,6 +155,9 @@ struct listener_fixture {
         : submissions(local_admission ? std::make_shared<blockchain::block_submission_channel>(4, 1) : nullptr)
     {
         REQUIRE(chain.created());
+        // Every mempool change rebuilds the next template the chain serves, so
+        // a fee refresh is paced only by the provider's own interval.
+        chain.settings().gbt_template_refresh_seconds = 0;
         REQUIRE(chain.start(submissions));
         provider = std::make_shared<template_provider>(settings, io.get_executor(),
             chain.chain(), domain::config::network::regtest);
@@ -921,5 +924,54 @@ TEST_CASE("sv2 mining shares the authenticated Noise transport", "[sv2 mining]")
     fixture.require_closed(*client);
     fixture.stop();
     fixture.require_closed(*partial);
+}
+
+TEST_CASE("sv2 mining channels get replacement jobs on the same tip once fees rise", "[sv2 mining]") {
+    auto settings = loopback_settings();
+    settings.template_refresh_seconds = 1;
+    settings.minimum_fee_gain_satoshis = 1000;
+    listener_fixture fixture(settings, true);
+    auto const trunk = seed_chain(fixture, 101);
+    submission_pipeline pipeline(fixture);
+    auto client = fixture.connect(fixture.start());
+    require_setup(fixture, *client);
+    auto const standard = open_standard(fixture, *client, 1);
+    auto const extended = open_extended(fixture, *client, 2);
+    data_chunk const extranonce(extended.channel.extranonce_size, 0x21);
+    auto const paid = coinbase(extended, extranonce).outputs().front().value();
+
+    auto const view = fixture.chain.chain().chain_view();
+    REQUIRE(view);
+    auto const& funding = trunk.front().transactions().front();
+    auto const tx = test::spend_p2pkh(funding, 0, funding.outputs().front().value() - 4000,
+        view->state->enabled_flags());
+    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+        std::make_shared<domain::message::transaction const>(tx))) == error::success);
+
+    // Unrequested, one interval on, for every channel in the order it opened.
+    auto const replaced_standard = receive_standard(fixture, *client, standard.channel);
+    auto const replaced_extended = receive_extended(fixture, *client, extended.channel);
+    REQUIRE(replaced_standard.prev.prev_hash == standard.prev.prev_hash);
+    REQUIRE(replaced_extended.prev.prev_hash == extended.prev.prev_hash);
+    REQUIRE(replaced_standard.job.job_id != standard.job.job_id);
+    REQUIRE(replaced_extended.job.job_id != extended.job.job_id);
+    REQUIRE(replaced_standard.job.merkle_root != standard.job.merkle_root);
+    REQUIRE(replaced_extended.job.merkle_path == std::vector<hash_digest>{tx.hash()});
+    REQUIRE(coinbase(replaced_extended, extranonce).outputs().front().value() == paid + 4000);
+
+    // The replacement is the work to mine: its block connects, fee and all.
+    auto const solved = solve(replaced_extended.job.version,
+        merkle_root(replaced_extended, extranonce), replaced_extended.prev);
+    fixture.write(*client, frame(submit_shares_extended{extended.channel.channel_id, 7,
+        replaced_extended.job.job_id, solved.nonce(), solved.timestamp(), solved.version(),
+        extranonce}));
+    REQUIRE(fixture.receive<submit_shares_success>(*client).last_sequence_number == 7);
+    auto const block_hash = domain::chain::hash(solved);
+    REQUIRE(receive_standard(fixture, *client, standard.channel).prev.prev_hash == block_hash);
+    REQUIRE(receive_extended(fixture, *client, extended.channel).prev.prev_hash == block_hash);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == block_hash);
+    fixture.finish_writing(*client);
+    fixture.require_closed(*client);
+    fixture.stop();
 }
 

@@ -61,6 +61,8 @@ struct KND_API sv2_settings {
     std::string authority_public_key;
     uint32_t certificate_validity_seconds;
     uint32_t handshake_timeout_seconds;
+    uint32_t template_refresh_seconds;
+    uint64_t minimum_fee_gain_satoshis;
     mining_settings mining;
 };
 

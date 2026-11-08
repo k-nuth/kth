@@ -82,6 +82,27 @@ TEST_CASE("sv2 listener settings survive network selection and config loading", 
     CHECK(overridden.configured.sv2.port == 8442u);
 }
 
+TEST_CASE("sv2 fee refresh settings survive config loading and overrides", "[configuration tests][parser][sv2 template_provider]") {
+    config_file file("sv2_refresh", "sv2.enabled=true\nsv2.template_refresh_seconds=3\n"
+        "sv2.minimum_fee_gain_satoshis=2500");
+    std::ostringstream error;
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    CHECK(from_file.configured.sv2.template_refresh_seconds == 3u);
+    CHECK(from_file.configured.sv2.minimum_fee_gain_satoshis == 2500u);
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.template_refresh_seconds == 3u);
+    CHECK(copied.sv2.minimum_fee_gain_satoshis == 2500u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.template_refresh_seconds", "7", "--sv2.minimum_fee_gain_satoshis", "5000"};
+    REQUIRE(overridden.parse(9, override_argv, error));
+    CHECK(overridden.configured.sv2.template_refresh_seconds == 7u);
+    CHECK(overridden.configured.sv2.minimum_fee_gain_satoshis == 5000u);
+}
+
 TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][parser][sv2 template_provider]") {
     for (auto const* port : {"-1", "65536", "invalid"}) {
         node::parser parser(domain::config::network::regtest);

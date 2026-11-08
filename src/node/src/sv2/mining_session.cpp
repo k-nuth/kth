@@ -85,6 +85,11 @@ bool mining_session::awaiting_channel() const {
     return ready() && ! channel_opened_;
 }
 
+std::optional<uint64_t> mining_session::coinbase_value() const {
+    if ( ! ready() || engine_.channel_count() == 0 || ! current_) return std::nullopt;
+    return current_->coinbase_value;
+}
+
 domain::chain::output::list mining_session::coinbase_outputs(uint64_t value) const {
     // This connection pays one output. The engine takes a list so a later
     // payout split can pass several without another job builder.

@@ -63,6 +63,18 @@ struct template_provider_session {
     [[nodiscard]]
     result set_template(blockchain::mining_template value);
 
+    // A template that pays more on the tip already activated: NewTemplate with
+    // future_template unset, which the client mines at once under the latest
+    // SetNewPrevHash (sv2-spec 7.3). A template that SetNewPrevHash does not
+    // describe, on another parent or with other nBits, is activated as by
+    // set_template instead.
+    [[nodiscard]]
+    result refresh_template(blockchain::mining_template value);
+
+    // The coinbase value of the latest template for the current tip, if any.
+    [[nodiscard]]
+    std::optional<uint64_t> coinbase_value() const;
+
     // Retire old work, but remember which issued ids belonged to an old tip.
     // The replaced tip's templates still take solutions until the next tip.
     void set_tip(hash_digest const& previous);
@@ -78,6 +90,7 @@ private:
     enum class state { awaiting_setup, ready, closed };
 
     result close();
+    result publish(blockchain::mining_template value, bool activate);
 
     struct entry {
         uint64_t id;
@@ -97,6 +110,8 @@ private:
     state state_ = state::awaiting_setup;
     std::optional<coinbase_output_constraints> constraints_;
     std::optional<hash_digest> previous_;
+    // The latest SetNewPrevHash sent: the one a non-future template relates to.
+    std::optional<set_new_prev_hash> activation_;
     std::deque<entry> templates_;
     // The templates of the tip just replaced, at most max_templates.
     std::deque<entry> replaced_;

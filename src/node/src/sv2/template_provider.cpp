@@ -148,6 +148,26 @@ bool template_provider_session::stale(uint64_t id) const {
 
 template_provider_session::result
 template_provider_session::set_template(blockchain::mining_template value) {
+    return publish(std::move(value), true);
+}
+
+template_provider_session::result
+template_provider_session::refresh_template(blockchain::mining_template value) {
+    // The client completes a non-future template's header from the latest
+    // SetNewPrevHash. Where nBits depend on the block time, as under a test
+    // network's minimum-difficulty rule, a later template can need other ones.
+    bool const described = activation_ && activation_->prev_hash == value.previous_block_hash
+        && activation_->n_bits == value.bits;
+    return publish(std::move(value), ! described);
+}
+
+std::optional<uint64_t> template_provider_session::coinbase_value() const {
+    if (state_ != state::ready || templates_.empty()) return std::nullopt;
+    return templates_.back().value.coinbase_value;
+}
+
+template_provider_session::result
+template_provider_session::publish(blockchain::mining_template value, bool activate) {
     if (state_ != state::ready || ! constraints_) return close();
 
     auto const size_reserve = coinbase_fixed_reserve
@@ -164,7 +184,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
 
     new_template message;
     message.template_id = next_id_;
-    message.future_template = true;
+    message.future_template = activate;
     message.version = value.version;
     message.coinbase_tx_version = 1;
     message.coinbase_prefix = domain::machine::operation(height->data()).to_data();
@@ -196,9 +216,13 @@ template_provider_session::set_template(blockchain::mining_template value) {
         big >>= 8;
     }
     auto bytes = frame(message);
-    auto const activation = frame(set_new_prev_hash{message.template_id,
-        value.previous_block_hash, value.current_time, value.bits, target_bytes});
-    bytes.insert(bytes.end(), activation.begin(), activation.end());
+    if (activate) {
+        set_new_prev_hash activation{message.template_id, value.previous_block_hash,
+            value.current_time, value.bits, target_bytes};
+        auto const framed = frame(activation);
+        bytes.insert(bytes.end(), framed.begin(), framed.end());
+        activation_ = std::move(activation);
+    }
 
     set_tip(value.previous_block_hash);
     templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
@@ -381,18 +405,27 @@ template_provider::template_provider(sv2_settings const& settings,
 
     template_provider_session session;
     auto tips = chain_.subscribe_blockchain();
-    if ( ! tips) co_return;
+    auto transactions = chain_.subscribe_transaction();
+    if ( ! tips || ! transactions) {
+        chain_.unsubscribe_blockchain(tips);
+        chain_.unsubscribe_transaction(transactions);
+        co_return;
+    }
 
-    enum class event_kind { frame, tip, end };
+    enum class event_kind { frame, tip, refresh, end };
     struct event {
         event_kind kind = event_kind::end;
         message_header header;
         data_chunk payload;
     };
     // Only dispatch touches session state or writes to the socket. Producers
-    // queue complete frames and tip wake-ups, so a tip cannot cancel a partial
-    // read or interleave its messages with a transaction-data response.
+    // queue complete frames and tip and fee refresh wake-ups, so a tip cannot
+    // cancel a partial read or interleave its messages with a transaction-data
+    // response.
     ::asio::experimental::channel<void(std::error_code, event)> inbox(owner_, 8);
+    // Holds a fee refresh back until its interval has passed.
+    ::asio::steady_timer pacing(owner_);
+    bool ending = false;
     // Closing a channel does not wake an operation already waiting on it in
     // the pinned Asio; cancelling first does.
     auto const end_inputs = [&] {
@@ -402,11 +435,25 @@ template_provider::template_provider(sv2_settings const& settings,
         inbox.close();
         tips->cancel();
         tips->close();
+        transactions->cancel();
+        transactions->close();
+        ending = true;
+        pacing.cancel();
     };
     detail::scope_action cleanup([&] {
         end_inputs();
         chain_.unsubscribe_blockchain(tips);
+        chain_.unsubscribe_transaction(transactions);
     }, true);
+
+    // A fee refresh (sv2-spec 7) looks for a better template only once the
+    // mempool has changed since this connection's latest fetch, and no sooner
+    // than sv2.template_refresh_seconds after it. Every fetch counts, whether
+    // for a tip, new constraints, a channel or a refresh.
+    auto const refresh_interval = std::chrono::seconds(settings_.template_refresh_seconds);
+    std::optional<uint64_t> looked_generation;
+    std::optional<std::chrono::steady_clock::time_point> next_look;
+    bool refresh_queued = false;
 
     auto read_frames = [&]() -> ::asio::awaitable<void> {
         std::array<uint8_t, message_header::size> header_bytes{};
@@ -463,6 +510,30 @@ template_provider::template_provider(sv2_settings const& settings,
             if (send_error) co_return;
         }
     };
+    // A transaction only says that the mempool moved. Dispatch reads the pool's
+    // own generation, so a notification the chain dropped for a full channel,
+    // or a wake-up dropped for a full inbox, loses nothing. However busy the
+    // pool, this connection wakes for a refresh once per interval.
+    auto receive_transactions = [&]() -> ::asio::awaitable<void> {
+        for (;;) {
+            auto [error, tx] = co_await transactions->async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (error) co_return;
+            // The first template counts every transaction admitted before it.
+            if ( ! next_look) continue;
+            while ( ! ending && std::chrono::steady_clock::now() < *next_look) {
+                pacing.expires_at(*next_look);
+                auto [wait_error] = co_await pacing.async_wait(
+                    ::asio::as_tuple(::asio::use_awaitable));
+                if (wait_error) co_return;
+            }
+            if (ending) co_return;
+            if ( ! refresh_queued) {
+                refresh_queued = inbox.try_send(std::error_code{},
+                    event{event_kind::refresh, {}, {}});
+            }
+        }
+    };
     std::optional<mining_session> miner;
     bool decided = false;
     std::optional<hash_digest> sent_previous;
@@ -480,12 +551,37 @@ template_provider::template_provider(sv2_settings const& settings,
             settings_.mining.open_channel_timeout_seconds);
         co_return std::tuple<std::error_code, event>{std::make_error_code(std::errc::timed_out), event{}};
     };
-    auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
+    // The coinbase room this connection's templates leave: the client's
+    // constraints, or the payout output of a Mining connection.
+    auto const reserve = [&] {
+        if (miner) {
+            // Outputs are outside the fixed coinbase reserve. One payout output is
+            // what this connection will actually place in the coinbase.
+            domain::chain::output const payout_output(0, *payout_, std::nullopt);
+            return blockchain::coinbase_reserve{template_provider_session::coinbase_fixed_reserve
+                + uint64_t{payout_output.serialized_size(true)}, 0};
+        }
         auto const& constraints = *session.constraints();
-        auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{
-            template_provider_session::coinbase_fixed_reserve
+        return blockchain::coinbase_reserve{template_provider_session::coinbase_fixed_reserve
                 + uint64_t{constraints.coinbase_output_max_additional_size},
-            constraints.coinbase_output_max_additional_sigops});
+            constraints.coinbase_output_max_additional_sigops};
+    };
+    auto fetch_template = [&]() -> awaitable_expected<blockchain::mining_template> {
+        // Read before the fetch: a transaction admitted during it may be
+        // missing from the template, and must still count as a change.
+        looked_generation = chain_.mempool_ref().generation();
+        next_look = std::chrono::steady_clock::now() + refresh_interval;
+        co_return co_await chain_.fetch_mining_template(reserve());
+    };
+    auto const mined = [](mining_session::result produced) {
+        template_provider_session::result out;
+        out.response = std::move(produced.response);
+        out.close = produced.close;
+        out.solution = std::move(produced.solution);
+        return out;
+    };
+    auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
+        auto value = co_await fetch_template();
         if ( ! value) {
             // A node that has a new header but not yet its block, or is in a
             // chain transition, has no template for a moment; the tip wake-up
@@ -499,31 +595,83 @@ template_provider::template_provider(sv2_settings const& settings,
         co_return session.set_template(std::move(*value));
     };
     auto refresh_mining = [&]() -> ::asio::awaitable<template_provider_session::result> {
-        // Outputs are outside the fixed coinbase reserve. One payout output is
-        // what this connection will actually place in the coinbase.
-        domain::chain::output const payout_output(0, *payout_, std::nullopt);
-        auto const reserve = template_provider_session::coinbase_fixed_reserve
-            + uint64_t{payout_output.serialized_size(true)};
-        auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{reserve, 0});
+        auto value = co_await fetch_template();
         if ( ! value) {
             spdlog::info("[sv2] No template yet ({}); waiting for the next tip",
                 value.error().message());
             co_return template_provider_session::result{};
         }
-        auto produced = miner->apply(std::move(*value));
-        template_provider_session::result out;
-        out.response = std::move(produced.response);
-        out.close = produced.close;
-        out.solution = produced.solution;
-        co_return out;
+        co_return mined(miner->apply(std::move(*value)));
+    };
+    // The current template's coinbase value, once a look for a better one is due.
+    auto const refresh_due = [&]() -> std::optional<uint64_t> {
+        if ( ! looked_generation || ! next_look
+            || chain_.mempool_ref().generation() == *looked_generation
+            || std::chrono::steady_clock::now() < *next_look) {
+            return std::nullopt;
+        }
+        return miner ? miner->coinbase_value() : session.coinbase_value();
+    };
+    // A template on the tip being mined that pays at least
+    // sv2.minimum_fee_gain_satoshis more, through the same session paths as any
+    // other, so constraints and channel rules apply. A tip that moved meanwhile
+    // has its own wake-up, which sends its template at once; nothing more is
+    // sent for the tip it replaced.
+    auto refresh_fees = [&](hash_digest const& tip, uint64_t current)
+        -> ::asio::awaitable<template_provider_session::result> {
+        auto value = co_await fetch_template();
+        auto const view = chain_.chain_view();
+        if ( ! value || ! view || view->tip_hash != tip || value->previous_block_hash != tip
+            || value->coinbase_value < current
+            || value->coinbase_value - current < settings_.minimum_fee_gain_satoshis) {
+            co_return template_provider_session::result{};
+        }
+        if (miner) co_return mined(miner->apply(std::move(*value)));
+        co_return session.refresh_template(std::move(*value));
+    };
+    // Submit a found block, then write the response. False once the connection
+    // is to end.
+    auto deliver = [&](template_provider_session::result& result) -> ::asio::awaitable<bool> {
+        if (result.solution) {
+            // A miner that stops reading must not delay connecting a block
+            // while its share acknowledgement waits for socket space. A
+            // local block, admitted through the sync pipeline as a
+            // submitblock is: the answer comes once it is refused or
+            // connected.
+            auto const submitted = co_await chain_.submit_block(result.solution);
+            spdlog::info("[sv2] Submitted block {}: {}{}", encode_hash(result.solution->hash()),
+                submitted.error ? submitted.error.message() : "accepted",
+                submitted.duplicate ? " (a duplicate)" : "");
+        }
+        if ( ! result.response.empty()) {
+            if (transport) {
+                data_chunk encrypted;
+                byte_span remaining(result.response);
+                while ( ! remaining.empty()) {
+                    auto const header = from_data_chunk<message_header>(
+                        remaining.first(message_header::size));
+                    auto const size = message_header::size + header->msg_length;
+                    auto bytes = transport->encrypt_frame(remaining.first(size));
+                    if ( ! bytes) co_return false;
+                    encrypted.insert(encrypted.end(), bytes->begin(), bytes->end());
+                    remaining = remaining.subspan(size);
+                }
+                result.response = std::move(encrypted);
+            }
+            auto [write_error, written] = co_await ::asio::async_write(socket,
+                ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
+            if (write_error) co_return false;
+        }
+        co_return ! result.close;
     };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
-        // Close both producers even when parsing, allocation or a chain call
+        // Close every producer even when parsing, allocation or a chain call
         // throws. The group below joins them before any captured locals go.
         detail::scope_action finish(end_inputs, true);
         for (;;) {
             auto [error, input] = co_await next_event();
             if (error || input.kind == event_kind::end) co_return;
+            if (input.kind == event_kind::refresh) refresh_queued = false;
             auto const view = chain_.chain_view();
             if (view) {
                 if (miner) miner->note_tip(view->tip_hash);
@@ -533,13 +681,11 @@ template_provider::template_provider(sv2_settings const& settings,
             template_provider_session::result result;
             if (input.kind == event_kind::tip) {
                 if (miner) {
-                    if ( ! miner->needs_template()) continue;
-                    result = co_await refresh_mining();
-                } else {
-                    if ( ! session.constraints() || (view && sent_previous == view->tip_hash)) continue;
+                    if (miner->needs_template()) result = co_await refresh_mining();
+                } else if (session.constraints() && ! (view && sent_previous == view->tip_hash)) {
                     result = co_await next_template();
                 }
-            } else {
+            } else if (input.kind == event_kind::frame) {
                 if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
                     miner.emplace(connection_salt, *payout_);
                     // The answer to this setup starts the wait for a first channel.
@@ -564,40 +710,16 @@ template_provider::template_provider(sv2_settings const& settings,
                     if (result.constraints_changed) result = co_await next_template();
                 }
             }
-            if (result.solution) {
-                // A miner that stops reading must not delay connecting a block
-                // while its share acknowledgement waits for socket space. A
-                // local block, admitted through the sync pipeline as a
-                // submitblock is: the answer comes once it is refused or
-                // connected.
-                auto const submitted = co_await chain_.submit_block(result.solution);
-                spdlog::info("[sv2] Submitted block {}: {}{}", encode_hash(result.solution->hash()),
-                    submitted.error ? submitted.error.message() : "accepted",
-                    submitted.duplicate ? " (a duplicate)" : "");
+            if ( ! co_await deliver(result)) co_return;
+            // After every event, not only a refresh wake-up: one may have been
+            // dropped, and the pool itself says whether a look is due.
+            if (auto const current = refresh_due(); view && current) {
+                auto better = co_await refresh_fees(view->tip_hash, *current);
+                if ( ! co_await deliver(better)) co_return;
             }
-            if ( ! result.response.empty()) {
-                if (transport) {
-                    data_chunk encrypted;
-                    byte_span remaining(result.response);
-                    while ( ! remaining.empty()) {
-                        auto const header = from_data_chunk<message_header>(
-                            remaining.first(message_header::size));
-                        auto const size = message_header::size + header->msg_length;
-                        auto bytes = transport->encrypt_frame(remaining.first(size));
-                        if ( ! bytes) co_return;
-                        encrypted.insert(encrypted.end(), bytes->begin(), bytes->end());
-                        remaining = remaining.subspan(size);
-                    }
-                    result.response = std::move(encrypted);
-                }
-                auto [write_error, written] = co_await ::asio::async_write(socket,
-                    ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
-                if (write_error) co_return;
-            }
-            if (result.close) co_return;
         }
     };
-    co_await (read_frames() && receive_tips() && dispatch());
+    co_await (read_frames() && receive_tips() && receive_transactions() && dispatch());
 }
 
 void template_provider::stop() {
@@ -626,6 +748,14 @@ void template_provider::stop() {
     if (ec) {
         spdlog::error("[sv2] invalid bind address '{}': {}", settings_.bind, ec.message());
         (void)listening_.try_send(ec, uint16_t{});
+        co_return;
+    }
+
+    // Zero would look again on every pool change, or send templates that gain nothing.
+    if (settings_.template_refresh_seconds == 0 || settings_.minimum_fee_gain_satoshis == 0) {
+        spdlog::error("[sv2] sv2.template_refresh_seconds and sv2.minimum_fee_gain_satoshis "
+            "must be positive");
+        (void)listening_.try_send(std::make_error_code(std::errc::invalid_argument), uint16_t{});
         co_return;
     }
 
