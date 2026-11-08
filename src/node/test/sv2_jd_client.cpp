@@ -2161,6 +2161,82 @@ TEST_CASE("sv2 JD coinbase-only does not push a block to the JDS", "[sv2 jd]") {
     expect_idle(fixture, fixture.jds.socket);
 }
 
+TEST_CASE("sv2 JD pushes a block only for the declaration it was mined on", "[sv2 jd]") {
+    // A replacement leaves a channel's recent jobs valid, and a proof can be
+    // in flight when its declaration is replaced. Either way a block can come
+    // from a coinbase the JDS no longer holds. The listener still submits it
+    // locally; it must not be pushed against the job the JDS accepted since.
+    bool current = false;
+    SECTION("older declaration") {}
+    SECTION("current declaration") { current = true; }
+    auto chain = started_chain(current ? "sv2_jd_push_current" : "sv2_jd_push_older");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    // Both declarations stay outstanding past connect_bodies.
+    configuration.jd.response_timeout_seconds = 30;
+    fixture.start(configuration, &chain->chain());
+    handshake_upstreams(fixture, true);
+    fixture.await(fixture.ready);
+    REQUIRE_NOTHROW(fixture.ready.get());
+    // Through DeclareMiningJob.Success, from which PushSolution is defined.
+    auto const declare = [&] {
+        auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
+        fixture.jds.send(allocate_mining_job_token_success{allocation.request_id,
+            {1, 2, 3}, output_bytes(pool_output_list())});
+        auto const declaration = fixture.jds.receive<declare_mining_job>();
+        REQUIRE(declaration.request_id == allocation.request_id);
+        auto const notice = fixture.client->notice();
+        REQUIRE(notice);
+        REQUIRE(notice->pool);
+        fixture.jds.send(declare_mining_job_success{declaration.request_id, {9, 8, 7}});
+        auto const custom = fixture.pool.receive<set_custom_mining_job>();
+        REQUIRE(custom.request_id == declaration.request_id);
+        return notice;
+    };
+    auto const older = declare();
+    auto const block = test::mine_block(older->previous, 2, uint32_t(zulu_time()), 0, {}, 0);
+    std::vector<domain::chain::block> const blocks{block};
+    REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
+    test::persist_headers(*chain, blocks, 2);
+    test::connect_bodies(*chain, blocks, 2);
+    auto const latest = declare();
+    REQUIRE(latest->pooled.generation != older->pooled.generation);
+
+    auto const& mined = current ? latest->pooled : older->pooled;
+    node::mining::pool_proof proof;
+    proof.generation = mined.generation;
+    proof.prev_hash = mined.tmpl.previous_block_hash;
+    proof.upstream_extranonce.assign(mined.upstream_extranonce_size, 0x44);
+    proof.full_extranonce = mined.upstream_extranonce_prefix;
+    proof.full_extranonce.insert(proof.full_extranonce.end(),
+        proof.upstream_extranonce.begin(), proof.upstream_extranonce.end());
+    proof.version = mined.tmpl.version;
+    proof.ntime = mined.tmpl.current_time;
+    proof.nonce = 5;
+    proof.bits = mined.tmpl.bits;
+    proof.block = true;
+    captured_log log;
+    fixture.client->observe_share(proof);
+    if ( ! current) {
+        REQUIRE(fixture.wait_until([&] {
+            return log.count("Block from replaced declaration "
+                + std::to_string(mined.generation) + " is submitted locally, not to the JDS") >= 1;
+        }));
+        expect_idle(fixture, fixture.jds.socket);
+        return;
+    }
+    auto const pushed = fixture.jds.receive<push_solution>();
+    REQUIRE(pushed.extranonce == proof.full_extranonce);
+    REQUIRE(pushed.prev_hash == block.hash());
+    REQUIRE(pushed.nonce == proof.nonce);
+    REQUIRE(pushed.ntime == proof.ntime);
+    REQUIRE(pushed.nbits == proof.bits);
+    REQUIRE(pushed.version == proof.version);
+    REQUIRE(fixture.jds.frames.empty());
+    expect_idle(fixture, fixture.jds.socket);
+    REQUIRE(log.count("is submitted locally, not to the JDS") == 0);
+}
+
 TEST_CASE("sv2 JD opens a new channel on the live pool coinbase without SetExtranoncePrefix", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_open_pool");
     client_fixture fixture;
