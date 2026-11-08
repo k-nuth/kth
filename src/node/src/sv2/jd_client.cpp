@@ -547,6 +547,9 @@ void jd_client::note_share(mining::pool_proof const& proof) {
         spdlog::info("[sv2 jd] Block from replaced declaration {} is submitted locally, not to the JDS",
             proof.generation);
     }
+    // The downstream channel refused this share for its harder target. Only
+    // its block goes upstream.
+    if (proof.block_only) return;
     if ( ! current || to_uint256(proof.header_hash) > to_uint256(work->upstream_target)) return;
     if ( ! work->upstream_accepted) {
         if (cached_.size() < max_cached_shares) cached_.push_back(proof);

@@ -2237,6 +2237,57 @@ TEST_CASE("sv2 JD pushes a block only for the declaration it was mined on", "[sv
     REQUIRE(log.count("is submitted locally, not to the JDS") == 0);
 }
 
+TEST_CASE("sv2 JD pushes a block whose share misses a harder downstream target", "[sv2 jd]") {
+    // A device maximum can make a downstream share target harder than the
+    // network's. A hash between the two is refused as a share, but it is a
+    // block on the pool coinbase. The JDS gets it; the pool gets no share.
+    //
+    // No submission pipeline: a connected block would move the tip and start
+    // the next declaration on the JDS socket.
+    auto chain = started_chain("sv2_jd_refused_block");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.response_timeout_seconds = 30;
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, true);
+    auto const solved = to_uint256(share_hash(declared.pooled, extranonce, nonce));
+    REQUIRE(solved > 0);
+    auto const harder = to_hash_digest(solved - 1);
+    fixture.write(miner.socket, frame(update_channel{miner.opened.channel_id, 0.f, harder}));
+    auto const retarget = receive_plain<set_target>(fixture, miner.socket);
+    REQUIRE(retarget.channel_id == miner.opened.channel_id);
+    REQUIRE(retarget.target == harder);
+
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const refused = receive_plain<submit_shares_error>(fixture, miner.socket);
+    REQUIRE(refused.channel_id == miner.opened.channel_id);
+    REQUIRE(refused.sequence_number == 1);
+    REQUIRE(refused.error_code == node::mining::error_difficulty_too_low);
+    auto const pushed = fixture.jds.receive<push_solution>();
+    data_chunk full = declared.pooled.prefix;
+    full.insert(full.end(), extranonce.begin(), extranonce.end());
+    REQUIRE(pushed.extranonce == full);
+    REQUIRE(pushed.prev_hash == declared.pooled.prev.prev_hash);
+    REQUIRE(pushed.nonce == nonce);
+    REQUIRE(pushed.ntime == declared.pooled.prev.ntime_start);
+    REQUIRE(pushed.nbits == declared.pooled.prev.nbits);
+    REQUIRE(pushed.version == declared.pooled.job.version);
+    REQUIRE(fixture.jds.frames.empty());
+    expect_idle(fixture, fixture.jds.socket);
+    // accept() gave the upstream channel the maximum target, so a forwarded
+    // share would be here.
+    REQUIRE(fixture.pool.frames.empty());
+    expect_idle(fixture, fixture.pool.socket);
+}
+
 TEST_CASE("sv2 JD opens a new channel on the live pool coinbase without SetExtranoncePrefix", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_open_pool");
     client_fixture fixture;
