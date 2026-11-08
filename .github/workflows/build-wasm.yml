@@ -230,7 +230,7 @@ jobs:
        !startsWith(github.head_ref, 'dev-publish/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    name: 🧭 Browser node — Runtime and transport controls
+    name: 🧭 Browser node — Runtime, transport and header controls
     permissions:
       contents: read
     steps:
@@ -271,12 +271,12 @@ jobs:
           source build/browser-deps/build/Release/generators/conanbuild.sh
           cmake -S . -B build/browser -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/build/browser-deps/build/Release/generators/conan_toolchain.cmake" \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=OFF \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
             -DKTH_BROWSER_NODE=ON -DKTH_BROWSER_CONTROLS=ON \
             2>&1 | tee build/browser-results/configure.log
           cmake --build build/browser --parallel 4 --target \
             browser_stream_control browser_cap_control browser_eof_control \
-            browser_select_control browser_terminal_control \
+            browser_select_control browser_terminal_control browser_headers_control \
             2>&1 | tee build/browser-results/build.log
       - name: 🌐 Run real WASM in Chromium Workers
         run: |

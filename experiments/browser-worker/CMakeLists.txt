@@ -8,3 +8,13 @@ foreach(control IN ITEMS stream cap eof select terminal)
       -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
   set_target_properties(browser_${control}_control PROPERTIES SUFFIX ".js")
 endforeach()
+
+# header_sync and its C API against the scripted BCH regtest peer.
+if(TARGET c-api)
+  add_executable(browser_headers_control headers-proof.cpp)
+  target_link_libraries(browser_headers_control PRIVATE c-api::c-api)
+  target_link_options(browser_headers_control PRIVATE
+      -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+      -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+  set_target_properties(browser_headers_control PROPERTIES SUFFIX ".js")
+endif()

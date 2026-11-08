@@ -56,5 +56,24 @@ class BrowserRecipeTests(unittest.TestCase):
         self.assertNotIn("-lwebsocket.js", native.cpp_info.components["network"].exelinkflags)
 
 
+    def test_browser_node_names_no_ftxui(self):
+        # FTXUI is only required natively: a browser node's component must not
+        # name it, or a consumer's Conan graph does not resolve.
+        browser = recipe("Emscripten", True)
+        browser.requirements()
+        self.assertNotIn("ftxui", {r.ref.name for r in browser.requires.values()})
+        browser.package_info()
+        node = browser.cpp_info.components["node"].requires
+        self.assertIn("network", node)
+        self.assertNotIn("ftxui::ftxui", node)
+
+    def test_native_node_keeps_ftxui(self):
+        native = recipe("Linux", False)
+        native.requirements()
+        self.assertIn("ftxui", {r.ref.name for r in native.requires.values()})
+        native.package_info()
+        self.assertIn("ftxui::ftxui", native.cpp_info.components["node"].requires)
+
+
 if __name__ == "__main__":
     unittest.main()
