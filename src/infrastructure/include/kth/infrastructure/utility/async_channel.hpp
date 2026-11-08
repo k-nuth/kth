@@ -5,7 +5,7 @@
 #ifndef KTH_INFRASTRUCTURE_ASYNC_CHANNEL_HPP
 #define KTH_INFRASTRUCTURE_ASYNC_CHANNEL_HPP
 
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && !defined(KTH_BROWSER_NODE)
 #error "async_channel.hpp requires coroutine support, which is not available under Emscripten."
 #endif
 

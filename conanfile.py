@@ -95,6 +95,9 @@ class KthRecipe(KnuthConanFileV2):
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
+        # Experimental: a Worker-owned WebSocket transport for the browser
+        # (Emscripten only). See experiments/browser-worker.
+        "browser_node": [True, False],
 
         # secp256k1 assembly selection (modern SECP256K1_ASM). "off" is used by
         # the ASan CI build, whose field_5x52 asm otherwise exhausts registers.
@@ -134,6 +137,7 @@ class KthRecipe(KnuthConanFileV2):
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
+        "browser_node": False,
         "secp256k1_asm": "auto",
     }
 
@@ -156,6 +160,8 @@ class KthRecipe(KnuthConanFileV2):
 
     def validate(self):
         KnuthConanFileV2.validate(self)
+        if self.options.browser_node and (self.settings.os != "Emscripten" or not self.options.asio_standalone):
+            raise ConanInvalidConfiguration("browser_node requires Emscripten and standalone Asio")
         if self.info.settings.compiler.cppstd:
             check_min_cppstd(self, "23")
 
@@ -188,7 +194,8 @@ class KthRecipe(KnuthConanFileV2):
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
-        if self.settings.os != "Emscripten":
+        # The browser transport's network component uses it too.
+        if self.settings.os != "Emscripten" or self.options.browser_node:
             self.requires("simdjson/5.0.5", transitive_headers=True, transitive_libs=True)
 
         # llhttp (Node.js HTTP parser) backs the optional JSON-RPC server. It is a
@@ -292,6 +299,9 @@ class KthRecipe(KnuthConanFileV2):
         KnuthConanFileV2.configure(self)
 
         self.options["fmt/*"].header_only = True
+        if self.options.browser_node:
+            # A Worker has no threads (ASIO_DISABLE_THREADS).
+            self.options["simdjson/*"].threads = False
         # log os
         self.output.info("Compiling for OS: %s" % (self.settings.os,))
         if self.settings.os == "Emscripten":
@@ -357,6 +367,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
+        tc.variables["KTH_BROWSER_NODE"] = option_on_off(self.options.browser_node)
 
         # secp256k1 is vendored (bitcoin-core/secp256k1) and configured directly
         # in src/CMakeLists.txt; the modern build self-generates its precomputed
@@ -434,8 +445,8 @@ class KthRecipe(KnuthConanFileV2):
             # Always include database and blockchain
             static_defines.extend(["KDB_STATIC", "KB_STATIC"])
 
-            # Add network if not Emscripten
-            if self.settings.os != "Emscripten":
+            # Add network if not Emscripten, or for the browser transport
+            if self.settings.os != "Emscripten" or self.options.browser_node:
                 static_defines.append("KN_STATIC")
 
             # Always include node
@@ -456,7 +467,22 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten" and self.options.wasm_simd:
             self.cpp_info.components["infrastructure"].exelinkflags.append("-msimd128")
             self.cpp_info.components["infrastructure"].sharedlinkflags.append("-msimd128")
+        if self.options.browser_node:
+            # Built with WebAssembly exceptions: a consumer compiles and links
+            # the same way, or exceptions do not cross into its code.
+            infrastructure = self.cpp_info.components["infrastructure"]
+            infrastructure.cxxflags.append("-fwasm-exceptions")
+            infrastructure.exelinkflags.append("-fwasm-exceptions")
+            infrastructure.sharedlinkflags.append("-fwasm-exceptions")
         infrastructure_defines = list(static_defines)
+        if self.options.browser_node:
+            # The same in every consumer translation unit: selections wait on the
+            # Worker runtime's timer (asio 1.38.3-kth.3).
+            infrastructure_defines.extend([
+                "KTH_BROWSER_NODE", "ASIO_DISABLE_THREADS",
+                'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
+                "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
+            ])
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
@@ -534,11 +560,15 @@ class KthRecipe(KnuthConanFileV2):
             blockchain_requires.append("consensus")
         self.cpp_info.components["blockchain"].requires = blockchain_requires
         
-        # Network layer (not available in Emscripten builds)
-        if self.settings.os != "Emscripten":
+        # Network layer (in Emscripten builds, only for the browser transport)
+        if self.settings.os != "Emscripten" or self.options.browser_node:
             self.cpp_info.components["network"].libs = ["network"]
             self.cpp_info.components["network"].names["cmake_find_package"] = "network"
             self.cpp_info.components["network"].names["cmake_find_package_multi"] = "network"
+            if self.options.browser_node:
+                # The browser stream is Emscripten's WebSocket API.
+                self.cpp_info.components["network"].exelinkflags.append("-lwebsocket.js")
+                self.cpp_info.components["network"].sharedlinkflags.append("-lwebsocket.js")
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain and simdjson (for peer_database JSON parsing)
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
@@ -598,7 +628,7 @@ class KthRecipe(KnuthConanFileV2):
         main_requires = ["infrastructure", "domain", "database", "blockchain", "node", "secp256k1"]
         if self.options.consensus:
             main_requires.append("consensus")
-        if self.settings.os != "Emscripten":
+        if self.settings.os != "Emscripten" or self.options.browser_node:
             main_requires.append("network")
         
         self.cpp_info.components["kth"].requires = main_requires
