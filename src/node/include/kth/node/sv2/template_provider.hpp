@@ -61,7 +61,8 @@ struct template_provider_session {
     [[nodiscard]]
     result set_template(blockchain::mining_template value);
 
-    // Discard old work, but remember which issued ids belonged to an old tip.
+    // Retire old work, but remember which issued ids belonged to an old tip.
+    // The replaced tip's templates still take solutions until the next tip.
     void set_tip(hash_digest const& previous);
 
     // The latest CoinbaseOutputConstraints from this client, if any. Templates
@@ -80,15 +81,23 @@ private:
         uint64_t id;
         blockchain::mining_template value;
         std::vector<hash_digest> merkle_path;
+        // Its transactions do not fit RequestTransactionData.Success.
+        bool too_large;
+        bool refusal_logged;
     };
 
-    [[nodiscard]] entry const* find_template(uint64_t id) const;
+    // A current template, for any request. A solution may also name one of
+    // the replaced tip's.
+    [[nodiscard]] entry* find_template(uint64_t id);
+    [[nodiscard]] entry const* find_solvable(uint64_t id) const;
     [[nodiscard]] bool stale(uint64_t id) const;
 
     state state_ = state::awaiting_setup;
     std::optional<coinbase_output_constraints> constraints_;
     std::optional<hash_digest> previous_;
     std::deque<entry> templates_;
+    // The templates of the tip just replaced, at most max_templates.
+    std::deque<entry> replaced_;
     uint64_t next_id_ = 1;
     uint64_t stale_through_ = 0;
 };

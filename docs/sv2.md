@@ -97,14 +97,21 @@ file loading requires POSIX file permissions.
   mandatory coinbase outputs; BCH has no SegWit witness commitment.
 - `RequestTransactionData.Success` contains the template's transactions in block
   order, excluding the coinbase, with empty `excess_data`. Each connection keeps
-  a bounded set of recent templates. A new tip discards the previous tip's
-  templates. Requests for those IDs get `stale-template-id`; unknown IDs get
+  a bounded set of recent templates. Once a new tip arrives, requests for the
+  templates of earlier tips get `stale-template-id`; unknown IDs get
   `template-id-not-found`.
+- A BCH block can hold more than `RequestTransactionData.Success` carries: one
+  frame is under 16 MiB, and its list at most 65,535 transactions. Such a
+  template is still sent, since a client that mines on the merkle path never
+  needs the transactions. A request for them gets `template-too-large`; a
+  solution is taken as for any other template.
 - `SubmitSolution` reconstructs the full block from the supplied header fields
   and coinbase plus the template's transactions, then submits it through the
   node's block validation and connection pipeline. The outcome is logged; the
-  protocol defines no response. Solutions for unknown or stale IDs are logged
-  and ignored.
+  protocol defines no response. The templates of the tip just replaced still
+  take solutions until the next tip: such a block competes at the same height
+  as the new tip, and the chain decides which one it keeps. Solutions for
+  unknown IDs, or for templates of an older tip, are logged and ignored.
 - Discards messages of extensions it does not implement, as the specification
   requires.
 - Closes the connection on a malformed frame, a message only a server sends, a
