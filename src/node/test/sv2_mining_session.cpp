@@ -600,7 +600,31 @@ TEST_CASE("sv2 mining renews exhausted duplicate history without waiting for a n
     REQUIRE_FALSE(replacement.ntime_start);
     REQUIRE(activation.job_id == replacement.job_id);
     REQUIRE(activation.prev_hash == old_prev.prev_hash);
-    REQUIRE(single<submit_shares_error>(process(session, share)).error_code == "stale-share");
+
+    // The replaced job is still work on this tip. A repeat is a duplicate,
+    // a plain share finds its history full, and another block is still taken.
+    REQUIRE(single<submit_shares_error>(process(session, share)).error_code == "duplicate-share");
+    auto late = share;
+    bool late_block = false;
+    bool late_share = false;
+    for (uint32_t nonce = share.nonce + 1; nonce < 20000 && ! (late_block && late_share); ++nonce) {
+        late.nonce = nonce;
+        domain::chain::header const header(old_job.version, old_prev.prev_hash,
+            old_job.merkle_root, old_prev.ntime_start, old_prev.nbits, nonce);
+        bool const block = to_uint256(domain::chain::hash(header)) <= target->big();
+        if (block && ! late_block) {
+            auto const taken = process(session, late);
+            REQUIRE(taken.solution);
+            REQUIRE(taken.solution->header() == header);
+            REQUIRE(single<submit_shares_success>(taken).new_submits_accepted_count == 1);
+            late_block = true;
+        } else if ( ! block && ! late_share) {
+            REQUIRE(single<submit_shares_error>(process(session, late)).error_code == "share-limit");
+            late_share = true;
+        }
+    }
+    REQUIRE(late_block);
+    REQUIRE(late_share);
 
     share.job_id = replacement.job_id;
     share.nonce = 0;
