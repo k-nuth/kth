@@ -85,7 +85,7 @@ Known build constraints, with their reasons:
   (`grpc_tls_crl_provider.cc`: `X509_CRL_get_issuer` now returns a const pointer).
   The recipe fails with that explanation rather than repin OpenSSL.
 * `asio-grpc` asks for `asio/[>=1.17 <2]`, which never matches the
-  `1.38.3-kth.1` fork pre-release, so the recipe requires the fork with
+  `1.38.3-kth.3` fork pre-release, so the recipe requires the fork with
   `force=True` for this backend only.
 
 ## Running
