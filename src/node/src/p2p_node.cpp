@@ -9,6 +9,7 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
+#include <kth/node/detail/ws_discovery_task.hpp>
 
 #include <algorithm>
 
@@ -32,7 +33,7 @@ using namespace std::chrono_literals;
 // P2P Node implementation
 // =============================================================================
 
-p2p_node::p2p_node(settings const& settings)
+p2p_node::p2p_node(network::settings const& settings)
     : settings_(settings)
     , pool_("network", thread_ceiling(settings.threads))  // default 4, 0 = all cores
     , manager_(pool_.get_executor())
@@ -47,6 +48,7 @@ p2p_node::p2p_node(settings const& settings)
     , header_ingest_(std::make_unique<detail::header_ingest_channels>(pool_.get_executor()))
     , tx_relay_(std::make_unique<detail::tx_relay_channels>())
 {
+    ws_discovery_ = std::make_unique<detail::ws_discovery_inbox>();
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
     // Register default message handlers using typed registration
     // The make_handler<> wrapper handles parsing automatically
@@ -70,6 +72,52 @@ p2p_node::~p2p_node() {
 }
 
 ::asio::awaitable<code> p2p_node::start() {
+    if (settings_.ws_enabled) {
+#if !defined(KTH_WITH_WEBSOCKET)
+        spdlog::error("[p2p_node] net.ws_enabled requires a build with KTH_WITH_WEBSOCKET=ON");
+        co_return error::operation_failed;
+#else
+        std::error_code address_error;
+        (void)::asio::ip::make_address(settings_.ws_bind, address_error);
+        if (address_error || settings_.ws_port == 0 || settings_.ws_max_connections == 0 ||
+            settings_.ws_max_connections > 1024 || settings_.ws_handshake_seconds == 0 ||
+            settings_.ws_handshake_seconds > 60 || settings_.ws_path.empty() ||
+            settings_.ws_path.front() != '/' || settings_.ws_path.size() > 1024 ||
+            settings_.ws_origins.empty()) {
+            spdlog::error("[p2p_node] Invalid WebSocket bind, path, Origin policy, limits or timeout");
+            co_return error::operation_failed;
+        }
+        for (auto const& proxy : settings_.ws_trusted_proxies) {
+            std::error_code proxy_error;
+            (void)::asio::ip::make_address(proxy, proxy_error);
+            if (proxy_error) {
+                spdlog::error("[p2p_node] Invalid WebSocket trusted proxy address: {}", proxy);
+                co_return error::operation_failed;
+            }
+        }
+#endif
+    }
+    if (settings_.ws_public_endpoints.size() > network::ws_discovery::maximum_endpoints) {
+        spdlog::error("[p2p_node] Too many explicitly advertised WebSocket endpoints");
+        co_return error::operation_failed;
+    }
+    if (settings_.ws_discovery) {
+        auto now = static_cast<uint32_t>(zulu_time());
+        if (!network::ws_discovery::advertise(settings_.user_agent)) {
+            spdlog::error("[p2p_node] User agent is too long for WebSocket discovery negotiation");
+            co_return error::operation_failed;
+        }
+        for (auto const& url : settings_.ws_public_endpoints) {
+            if (!network::ws_discovery::from_url(url, now + network::ws_discovery::maximum_ttl,
+                    now, settings_.ws_allow_private)) {
+                spdlog::error("[p2p_node] Invalid or nonpublic WebSocket advertised endpoint: {}", url);
+                co_return error::operation_failed;
+            }
+        }
+    } else if (!settings_.ws_public_endpoints.empty()) {
+        spdlog::error("[p2p_node] net.ws_public_endpoints requires net.ws_discovery=true");
+        co_return error::operation_failed;
+    }
     // One transition, and this object is single-use.
     //
     // A stop closes new_peer_channel_, stop_signal_ and peer_notification_channel_
@@ -175,6 +223,15 @@ p2p_node::~p2p_node() {
         spdlog::debug("[p2p_node] run_outbound coroutine finished");
     });
 
+    network_tasks.spawn("websocket_inbound", [this]() -> ::asio::awaitable<void> {
+        co_await run_websocket_inbound();
+    });
+
+    network_tasks.spawn("websocket_discovery", [this]() -> ::asio::awaitable<void> {
+        co_await ::asio::co_spawn(::asio::make_strand(pool_.get_executor()),
+            run_websocket_discovery(), ::asio::use_awaitable);
+    });
+
     // Wait for supervisor to be ready before connecting manual peers
     while (!supervisor_ready_.load(std::memory_order_acquire) && !stopped()) {
         co_await ::asio::post(pool_.get_executor(), ::asio::use_awaitable);
@@ -268,6 +325,7 @@ void p2p_node::stop() {
     if (tx_relay_) {
         tx_relay_->close();
     }
+    ws_discovery_->commands.close();
 
     // Stop acceptor - this causes run_inbound() to exit
     if (acceptor_) {
@@ -300,7 +358,7 @@ void p2p_node::join() {
 // Properties
 // -----------------------------------------------------------------------------
 
-settings const& p2p_node::network_settings() const {
+network::settings const& p2p_node::network_settings() const {
     return settings_;
 }
 
@@ -1322,6 +1380,20 @@ select_channel<peer_notification>& p2p_node::peer_events() {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
+    namespace ws = network::ws_discovery;
+    auto remote_version = peer->peer_version();
+    ws::session_policy discovery(settings_.ws_discovery && remote_version &&
+        ws::understands(remote_version->user_agent()));
+    auto now = static_cast<uint32_t>(zulu_time());
+    ws::request initial{ws::all_transports, generate_nonce() | uint64_t{1}};
+    if (discovery.begin_request(initial, now)) {
+        auto payload = ws::encode(initial);
+        if (!payload || !peer->try_send_raw(detail::ws_packet(settings_.identifier,
+                ws::request_command, std::move(*payload)))) {
+            peer->stop(error::channel_stopped);
+            co_return;
+        }
+    }
     auto const ping_interval = std::chrono::seconds(settings_.channel_heartbeat_minutes * 60);
     auto const check_interval = std::chrono::seconds(5);  // Check stopped flag every 5s
 
@@ -1377,6 +1449,29 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         auto& raw = *received;
 
         auto const& command = raw.heading.command();
+
+        if (command == ws::request_command || command == ws::response_command) {
+            auto now = static_cast<uint32_t>(zulu_time());
+            bool accepted = false;
+            if (command == ws::request_command) {
+                auto request = ws::decode_request(raw.payload);
+                accepted = request && discovery.accept_request(*request, now) &&
+                    ws_discovery_->commands.try_send(detail::ws_discovery_command{
+                        detail::ws_query{peer, *request}});
+            } else {
+                auto response = ws::decode_response(raw.payload, now, settings_.ws_allow_private);
+                accepted = response && discovery.accept_response(*response, now) &&
+                    ws_discovery_->commands.try_send(detail::ws_discovery_command{
+                        detail::ws_candidates{std::move(response->endpoints)}});
+            }
+            if (!accepted) {
+                // Refused protocol work ends this session explicitly. It never
+                // stalls control-message reads or silently loses an owed reply.
+                peer->stop(error::bad_stream);
+                break;
+            }
+            continue;
+        }
 
         // Headers and announcements first: every `headers` is consumed here
         // and goes to the header ingest, answer or not, because the wire cannot
@@ -1733,7 +1828,7 @@ void p2p_node::wake_status_task() noexcept {
     // Track ALL spawned peers (including those not yet in manager)
     // This is needed for clean shutdown - manager_.stop_all() only stops
     // peers that completed handshake, but we need to stop ALL peers.
-    std::vector<peer_session::ptr> all_spawned_peers;
+    std::vector<std::weak_ptr<peer_session>> all_spawned_peers;
 
     // Signal that we're ready to receive peers (deterministic synchronization)
     supervisor_ready_.store(true, std::memory_order_release);
@@ -1756,7 +1851,12 @@ void p2p_node::wake_status_task() noexcept {
         auto direction = event.direction;
         auto response_channel = event.response_channel;
 
-        // Track this peer for shutdown
+        // Lifecycle tasks own peers. Tracking shutdown must not retain every
+        // closed session/socket forever as clients disconnect and reconnect.
+        std::erase_if(all_spawned_peers, [](auto const& weak) {
+            auto current = weak.lock();
+            return !current || current->stopped();
+        });
         all_spawned_peers.push_back(peer);
 
         spdlog::debug("[p2p_node] peer_supervisor received {} peer [{}]",
@@ -1865,24 +1965,20 @@ void p2p_node::wake_status_task() noexcept {
                         // Run protocols until peer disconnects
                         co_await run_peer_protocols(peer);
 
-                        // Check if connection was too short (quick disconnect = unreliable peer)
+                        // A short connection is not evidence of a protocol offence:
+                        // a browser may close a tab, or a transport/proxy may restart.
+                        // Keep an outbound retry cooldown, but never turn normal
+                        // session lifecycle into IP-wide misbehavior points. Actual
+                        // malformed/invalid protocol data keeps its existing scoring.
                         auto const connection_duration = std::chrono::steady_clock::now() - connection_start;
                         constexpr auto min_connection_duration = 5s;
-                        if (connection_duration < min_connection_duration) {
-                            // Add to cooldown to prevent rapid reconnection
+                        if (direction == peer_direction::outbound &&
+                            connection_duration < min_connection_duration) {
                             constexpr auto quick_disconnect_cooldown = 30s;
                             failed_connections_.insert_or_assign(
                                 peer->authority().asio_ip(),
                                 std::chrono::steady_clock::now() + quick_disconnect_cooldown);
-
-                            // Report misbehavior (20 points per quick disconnect)
-                            // After 5 quick disconnects (100 points), peer gets auto-banned by peer_database
-                            if (peer_db_.add_misbehavior(peer->authority(), 20)) {
-                                spdlog::info("[p2p_node] Peer {} auto-banned due to repeated quick disconnects",
-                                    peer->authority());
-                            }
-
-                            spdlog::debug("[p2p_node] Quick disconnect from {} ({}ms), adding to cooldown and misbehavior",
+                            spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms), cooling down retries",
                                 peer->authority(),
                                 std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
                         }
@@ -1929,16 +2025,16 @@ void p2p_node::wake_status_task() noexcept {
     // Stop ALL spawned peers (including those not yet in manager)
     // This ensures peers still in handshake phase are also stopped,
     // allowing their run() to exit and peer_tasks.join() to complete.
-    for (auto& peer : all_spawned_peers) {
-        peer->stop();
+    for (auto const& weak : all_spawned_peers) {
+        if (auto peer = weak.lock()) peer->stop();
     }
 
     spdlog::debug("[p2p_node] peer_supervisor waiting for {} active peer tasks",
         peer_tasks.active_count());
 
     // Debug: identify which peers might be stuck
-    for (auto& peer : all_spawned_peers) {
-        if (!peer->stopped()) {
+    for (auto const& weak : all_spawned_peers) {
+        if (auto peer = weak.lock(); peer && !peer->stopped()) {
             spdlog::warn("[p2p_node] Peer [{}] still not stopped after stop() call!", peer->authority());
         }
     }
