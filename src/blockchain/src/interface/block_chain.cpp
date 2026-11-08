@@ -2125,6 +2125,11 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
+    // Consumers may build mining work as soon as they receive this wake-up,
+    // so publishing it while capture is still closed would lose the update.
+    if (auto const view = chain_view()) {
+        block_organizer_.notify_tip(view->connected_tip_height);
+    }
 }
 
 bool block_chain::transition_in_progress() const {

@@ -824,6 +824,9 @@ struct KB_API block_chain {
     using transaction_channel_ptr = transaction_organizer::transaction_broadcaster::channel_ptr;
     using ds_proof_channel_ptr = transaction_organizer::ds_proof_broadcaster::channel_ptr;
 
+    // A completed transition also sends a wake-up with the connected height
+    // and empty block lists. Read chain_view() for the current tip; capture
+    // has reopened before this notification is published.
     [[nodiscard]]
     block_channel_ptr subscribe_blockchain();
     [[nodiscard]]
