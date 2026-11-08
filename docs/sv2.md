@@ -186,13 +186,22 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   policy).
   Successful shares are acknowledged individually. A hash meeting the network
   target is submitted through the same validation, connection and relay path
-  as Template Distribution's `SubmitSolution`.
+  as Template Distribution's `SubmitSolution`. That includes a hash that
+  misses a share target harder than the network's, which a device maximum can
+  set: the share itself is still refused as `difficulty-too-low`.
 - Each connection allows 32 open channels and 1024 channel-open requests.
   Client frames are limited to 1 MiB, and job and duplicate histories are
   bounded. After 1024 accepted shares on one job, that channel receives fresh
-  work with a different coinbase, without waiting for the next tip. Previous
-  jobs become stale. A slow connection has its own bounded input queue; found
-  blocks are submitted before waiting for the miner to read their acknowledgements.
+  work with a different coinbase, without waiting for the next tip. A slow
+  connection has its own bounded input queue; found blocks are submitted
+  before waiting for the miner to read their acknowledgements.
+- Only a new tip makes jobs stale. Work replaced on the same tip can still
+  find a block, so each channel keeps its three newest jobs of the tip, and a
+  share on any of them is checked against that job's own coinbase and merkle
+  data and the channel's current target. Each job has its own duplicate
+  history of 1024 shares; a share that meets the network target is accepted
+  and submitted even once that history is full. A share on an older job of
+  the tip gets `stale-share`.
 
 Mining errors are printable strings (SV2 section 3.5 allows implementation
 specific codes):
@@ -210,13 +219,13 @@ specific codes):
 | `SubmitShares.Error` | `invalid-channel-id` | No such channel is open. |
 | | `invalid-channel-type` | The submission type does not match the channel. |
 | | `invalid-job-id` | The job is unknown or no longer retained. |
-| | `stale-share` | A retained job has been invalidated. |
+| | `stale-share` | The job is from an earlier tip, or past the three newest of this one. |
 | | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
 | | `invalid-ntime` | The timestamp is outside the job's bounds. |
 | | `invalid-version` | The miner changed bits outside the rolling mask. |
-| | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
+| | `difficulty-too-low` | The header hash exceeds the channel's current share target. A hash that meets the network target is still submitted as a block. |
 | | `duplicate-share` | This proof of work was already accepted. |
-| | `share-limit` | The bounded share history is full; fresh work replaces this job. |
+| | `share-limit` | This job's share history is full; fresh work replaces it. A block is still taken. |
 
 Malformed frames, invalid hash rates (NaN, infinity, negative values or negative
 zero), and server-only messages close the connection. Custom jobs, pool
@@ -383,8 +392,10 @@ A share that meets the upstream channel's target is forwarded as
 `SubmitSharesExtended` with the custom job id and the extranonce bytes after
 the pool's prefix, using exactly the granted extranonce size. A share that does
 not meet that target is not forwarded.
-The target is the one the custom job was sent with; a later `SetTarget` does
-not retarget it. A share that meets the network target is submitted locally
+The target is the last one the pool sets before `SetCustomMiningJob.Success`,
+including a `SetTarget` that crosses `SetCustomMiningJob`. A `SetTarget` after
+the Success does not retarget the accepted job (specification section 5.3.21).
+A share that meets the network target is submitted locally
 through the same block-connection path as solo mining. In `full-template`,
 after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
 JDS (specification section 6.4.9). `coinbase-only` has no declared job for

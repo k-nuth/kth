@@ -350,7 +350,7 @@ TEST_CASE("Mining rejects malformed templates and coinbases before advertising w
     REQUIRE_FALSE(engine.has_active_job());
 }
 
-TEST_CASE("Mining replacement jobs give fresh hash space and invalidate old work even on failure", "[sv2 mining]") {
+TEST_CASE("Mining replacement jobs give fresh hash space and only a new tip invalidates old work, even on failure", "[sv2 mining]") {
     for (auto const kind : {channel_kind::standard, channel_kind::extended}) {
         work_engine engine(0);
         auto const opened = engine.open(request(0, kind));
@@ -365,15 +365,121 @@ TEST_CASE("Mining replacement jobs give fresh hash space and invalidate old work
         REQUIRE(next.has_value());
         REQUIRE(next->coinbase_tx_prefix != first->coinbase_tx_prefix);
         REQUIRE(next->merkle_root != first->merkle_root);
-        require_share_error(engine, value, error_stale_share);
+        // The replaced job is still work on this tip, and remembers its shares.
+        require_share_error(engine, value, error_duplicate_share);
+        auto earlier = value;
+        earlier.nonce = 1;
+        require_accepted(engine.submit(earlier));
         value.job_id = next->job_id;
         require_accepted(engine.submit(value));
 
+        // A replacement that cannot be built leaves the tip's jobs. A new tip
+        // makes them stale even when its own job cannot be built.
         tmpl.bits = 0;
         REQUIRE(engine.on_template(tmpl, paid).empty());
+        REQUIRE(engine.has_active_job());
+        tmpl.previous_block_hash[0] = 1;
+        REQUIRE(engine.on_template(tmpl, paid).empty());
         REQUIRE_FALSE(engine.has_active_job());
+        value.nonce = 2;
         require_share_error(engine, value, error_stale_share);
+        earlier.nonce = 2;
+        require_share_error(engine, earlier, error_stale_share);
     }
+}
+
+TEST_CASE("Mining takes a block found on a job that renewal replaced on the same tip", "[sv2 mining]") {
+    for (auto const kind : {channel_kind::standard, channel_kind::extended}) {
+        work_engine engine(0);
+        auto const opened = engine.open(request(0, kind));
+        auto tmpl = mining_template();
+        auto const tx = std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1, 42, {}, {}});
+        tmpl.selection.txs.push_back(tx);
+        auto const paid = outputs(tmpl.coinbase_value);
+        auto const first = engine.on_channel(opened.channel_id, tmpl, paid);
+        REQUIRE(first.has_value());
+        data_chunk const extranonce(opened.extranonce_size, 0x42);
+        auto const cb = coinbase(*first, opened, extranonce);
+        auto const root = bitcoin_hash(build_chunk({cb.hash(), tx->hash()}));
+        auto const network = domain::chain::compact::from_compact(tmpl.bits);
+        REQUIRE(network.has_value());
+        auto const on_first = [&](uint32_t nonce) {
+            auto value = share(*first, nonce);
+            value.extranonce = extranonce;
+            return value;
+        };
+        for (uint32_t nonce = 0; nonce < max_remembered_shares; ++nonce) {
+            auto const outcome = engine.submit(on_first(nonce));
+            require_accepted(outcome);
+            REQUIRE(outcome.renew == (nonce + 1 == max_remembered_shares));
+        }
+        // What the session does on renew: fresh work for this channel, same tip.
+        auto const renewed = engine.on_channel(opened.channel_id, tmpl, paid);
+        REQUIRE(renewed.has_value());
+
+        bool found_block = false;
+        bool found_share = false;
+        for (uint32_t nonce = max_remembered_shares; nonce < max_remembered_shares + 256
+                && ( ! found_block || ! found_share); ++nonce) {
+            domain::chain::header const header(first->version, tmpl.previous_block_hash, root,
+                first->ntime_start, tmpl.bits, nonce);
+            bool const is_block = to_uint256(domain::chain::hash(header)) <= network->big();
+            if (is_block && ! found_block) {
+                // Checked against the replaced job's own coinbase and merkle
+                // root, and taken although that job's history is full.
+                auto const result = engine.submit(on_first(nonce));
+                require_accepted(result);
+                REQUIRE(result.status == share_status::block);
+                REQUIRE(result.block);
+                REQUIRE(result.block->header() == header);
+                REQUIRE(result.block->transactions().front() == cb);
+                REQUIRE(result.block->is_valid_merkle_root());
+                REQUIRE_FALSE(result.renew);
+                require_share_error(engine, on_first(nonce), error_duplicate_share);
+                found_block = true;
+            } else if ( ! is_block && ! found_share) {
+                // A plain share needs room in that history.
+                require_share_error(engine, on_first(nonce), error_share_limit);
+                found_share = true;
+            }
+        }
+        REQUIRE(found_block);
+        REQUIRE(found_share);
+        require_share_error(engine, on_first(0), error_duplicate_share);
+        auto fresh = share(*renewed);
+        fresh.extranonce = extranonce;
+        require_accepted(engine.submit(fresh));
+    }
+}
+
+TEST_CASE("Mining keeps the tip's newest jobs valid and a new tip stales them all", "[sv2 mining]") {
+    work_engine engine(0);
+    auto const opened = engine.open(request());
+    auto tmpl = mining_template();
+    auto const paid = outputs(tmpl.coinbase_value);
+    std::vector<work_job> jobs;
+    for (size_t count = 0; count <= tip_jobs_per_channel; ++count) {
+        auto const built = engine.on_template(tmpl, paid);
+        REQUIRE(built.size() == 1);
+        jobs.push_back(built.front());
+    }
+    // Past the bound, the oldest job of the tip is stale; the newer ones take
+    // shares and still refuse a repeat.
+    require_share_error(engine, share(jobs.front()), error_stale_share);
+    for (size_t index = 1; index < jobs.size(); ++index) {
+        CAPTURE(index);
+        require_accepted(engine.submit(share(jobs[index])));
+        require_share_error(engine, share(jobs[index]), error_duplicate_share);
+    }
+
+    tmpl.previous_block_hash[0] = 1;
+    auto const next = engine.on_channel(opened.channel_id, tmpl, paid);
+    REQUIRE(next.has_value());
+    for (auto const& job : jobs) {
+        require_share_error(engine, share(job, 1), error_stale_share);
+    }
+    require_accepted(engine.submit(share(*next)));
 }
 
 TEST_CASE("Mining block size includes the header and transaction count", "[sv2 mining]") {
@@ -389,7 +495,8 @@ TEST_CASE("Mining block size includes the header and transaction count", "[sv2 m
     REQUIRE(engine.on_channel(opened.channel_id, tmpl, paid));
     --tmpl.size_limit;
     REQUIRE_FALSE(engine.on_channel(opened.channel_id, tmpl, paid));
-    REQUIRE_FALSE(engine.has_active_job());
+    // The jobs already sent on this tip stay valid.
+    REQUIRE(engine.has_active_job());
 }
 
 TEST_CASE("Mining coinbase preserves the bounded output list across CompactSize encoding", "[sv2 mining]") {
@@ -437,12 +544,38 @@ TEST_CASE("Mining shares enforce channel job extranonce time version and target"
         require_share_error(engine, value, error_duplicate_share);
     }
     SECTION("low difficulty") {
+        // Every hash misses this share target, but about half meet regtest's
+        // network target: those are refused as shares and still submitted.
         auto target = request(3);
         target.max_target = {};
         auto const hard = engine.open(target);
         auto const job = engine.on_channel(hard.channel_id, tmpl, outputs(tmpl.coinbase_value));
         REQUIRE(job.has_value());
-        require_share_error(engine, share(*job), error_difficulty_too_low);
+        auto const network = domain::chain::compact::from_compact(tmpl.bits);
+        REQUIRE(network.has_value());
+        bool found_block = false;
+        bool found_share = false;
+        for (uint32_t nonce = 0; nonce < 256 && ( ! found_block || ! found_share); ++nonce) {
+            domain::chain::header const header(job->version, tmpl.previous_block_hash,
+                job->merkle_root, job->ntime_start, tmpl.bits, nonce);
+            bool const is_block = to_uint256(domain::chain::hash(header)) <= network->big();
+            if (is_block && ! found_block) {
+                auto const result = engine.submit(share(*job, nonce));
+                REQUIRE(result.status == share_status::rejected);
+                REQUIRE(result.error_code == error_difficulty_too_low);
+                REQUIRE(result.block);
+                REQUIRE(result.block->header() == header);
+                REQUIRE(result.block->is_valid_merkle_root());
+                // Submitted once: a replay is refused without it.
+                require_share_error(engine, share(*job, nonce), error_difficulty_too_low);
+                found_block = true;
+            } else if ( ! is_block && ! found_share) {
+                require_share_error(engine, share(*job, nonce), error_difficulty_too_low);
+                found_share = true;
+            }
+        }
+        REQUIRE(found_block);
+        REQUIRE(found_share);
     }
 }
 
@@ -457,10 +590,18 @@ TEST_CASE("Mining target updates apply to future jobs already sent", "[sv2 minin
         value.extranonce.resize(opened.extranonce_size, 0x42);
         auto root = coinbase(*job, opened, value.extranonce).hash();
         for (auto const& sibling : job->merkle_path) root = bitcoin_hash(build_chunk({root, sibling}));
-        domain::chain::header const header(value.version, tmpl.previous_block_hash, root,
-            value.ntime, tmpl.bits, value.nonce);
-        auto const digest = to_uint256(domain::chain::hash(header));
-        REQUIRE(digest > 0);
+        auto const digest_of = [&](uint32_t nonce) {
+            domain::chain::header const header(value.version, tmpl.previous_block_hash, root,
+                value.ntime, tmpl.bits, nonce);
+            return to_uint256(domain::chain::hash(header));
+        };
+        auto const network = domain::chain::compact::from_compact(tmpl.bits);
+        REQUIRE(network.has_value());
+        // About half of regtest hashes are blocks. Above the network target,
+        // only the share target decides.
+        while (value.nonce < 256 && digest_of(value.nonce) <= network->big()) ++value.nonce;
+        auto const digest = digest_of(value.nonce);
+        REQUIRE(digest > network->big());
         REQUIRE_FALSE(engine.update(opened.channel_id, 0, maximum_target()).target);
 
         // Harder: the share meets the target the job was sent with, not the new one.
@@ -476,6 +617,29 @@ TEST_CASE("Mining target updates apply to future jobs already sent", "[sv2 minin
         REQUIRE(easier.target.has_value());
         REQUIRE(*easier.target == exact);
         require_accepted(engine.submit(value));
+
+        // A block hash follows the same rules as a share, and its block is
+        // submitted once, when the harder target refuses the share.
+        auto block_share = value;
+        block_share.nonce = 0;
+        while (block_share.nonce < 256 && digest_of(block_share.nonce) > network->big()) {
+            ++block_share.nonce;
+        }
+        auto const block_digest = digest_of(block_share.nonce);
+        REQUIRE(block_digest <= network->big());
+        REQUIRE(block_digest > 0);
+        REQUIRE(engine.update(opened.channel_id, 0, to_hash_digest(block_digest - 1)).target.has_value());
+        auto const refused = engine.submit(block_share);
+        REQUIRE(refused.status == share_status::rejected);
+        REQUIRE(refused.error_code == error_difficulty_too_low);
+        REQUIRE(refused.block);
+        require_share_error(engine, block_share, error_difficulty_too_low);
+        REQUIRE(engine.update(opened.channel_id, 0, to_hash_digest(block_digest)).target.has_value());
+        auto const credited = engine.submit(block_share);
+        require_accepted(credited);
+        REQUIRE(credited.status == share_status::accepted);
+        REQUIRE_FALSE(credited.block);
+        require_share_error(engine, block_share, error_duplicate_share);
     }
 }
 
@@ -491,7 +655,19 @@ TEST_CASE("Mining duplicate history is bounded without accepting replays", "[sv2
         REQUIRE(outcome.renew == (nonce + 1 == max_remembered_shares));
     }
     require_share_error(engine, share(*job), error_duplicate_share);
-    require_share_error(engine, share(*job, max_remembered_shares), error_share_limit);
+    // Past the limit only a block is taken, and about half of regtest hashes
+    // are blocks: the refused share is one above the network target.
+    auto const network = domain::chain::compact::from_compact(tmpl.bits);
+    REQUIRE(network.has_value());
+    auto const is_block = [&](uint32_t nonce) {
+        domain::chain::header const header(job->version, tmpl.previous_block_hash,
+            job->merkle_root, job->ntime_start, tmpl.bits, nonce);
+        return to_uint256(domain::chain::hash(header)) <= network->big();
+    };
+    auto plain = static_cast<uint32_t>(max_remembered_shares);
+    while (plain < max_remembered_shares + 256 && is_block(plain)) ++plain;
+    REQUIRE_FALSE(is_block(plain));
+    require_share_error(engine, share(*job, plain), error_share_limit);
     engine.stale_all();
     REQUIRE_FALSE(engine.has_active_job());
     require_share_error(engine, share(*job), error_stale_share);
