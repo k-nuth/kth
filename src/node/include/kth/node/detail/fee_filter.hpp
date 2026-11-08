@@ -94,6 +94,10 @@ private:
     std::optional<uint64_t> last_sent_;
 };
 
+/// A uniform draw in [0, 1), for the schedules' random delays.
+[[nodiscard]]
+double unit_draw();
+
 /// A Poisson-process delay averaging `average` (BCHN PoissonNextSend), from a
 /// uniform draw `unit` in [0, 1).
 [[nodiscard]]

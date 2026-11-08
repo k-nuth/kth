@@ -4,6 +4,8 @@
 
 #include <kth/node/detail/fee_filter.hpp>
 
+#include <kth/infrastructure/utility/pseudo_random.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -61,6 +63,10 @@ fee_filter_schedule::clock::duration poisson_delay(fee_filter_schedule::clock::d
                                                    double unit) {
     auto const scale = -std::log1p(-std::clamp(unit, 0.0, 0.999999999));
     return std::chrono::duration_cast<fee_filter_schedule::clock::duration>(average * scale);
+}
+
+double unit_draw() {
+    return double(pseudo_random::generate<uint64_t>(0, (uint64_t(1) << 53) - 1)) / double(uint64_t(1) << 53);
 }
 
 ::asio::awaitable<void> fee_filter_watch(

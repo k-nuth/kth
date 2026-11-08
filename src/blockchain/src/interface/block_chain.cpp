@@ -601,6 +601,7 @@ bool block_chain::stop() {
     stopped_ = true;
     reorg_barrier_events_.close();
     mempool_fee_events_.close();
+    mempool_admission_events_.close();
     if (block_submissions_) {
         block_submissions_->close();
         std::error_code ec;
@@ -2544,6 +2545,7 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     }
 
     auto const txid = entry.tx->hash();
+    entry.entry_id = mempool_admissions_.next_id();
     auto const tracked = entry;
     if ( ! mempool_.add(std::move(entry))) {
         return error::double_spend_mempool;
@@ -2554,7 +2556,34 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     // descendants (BCHN LimitMempoolSize). When that is this transaction, it
     // is refused as paying too little ("mempool full").
     (void)trim_mempool(limit);
-    return mempool_.contains(txid) ? error::success : error::insufficient_fee;
+    if ( ! mempool_.contains(txid)) {
+        return error::insufficient_fee;
+    }
+    // Owed to every peer that relays: its service reads it from the order.
+    mempool_admissions_.record(tracked.entry_id, txid, mempool_);
+    (void)mempool_admission_events_.try_send(std::monostate{});
+    return error::success;
+}
+
+::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_admitted_after(uint64_t after, size_t limit) {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, after, limit]() -> ::asio::awaitable<mempool_admitted> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            co_return mempool_admitted{mempool_admissions_.after(after, limit, mempool_),
+                                       mempool_admissions_.last()};
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<uint64_t> block_chain::mempool_last_admission() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<uint64_t> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            co_return mempool_admissions_.last();
+        }, ::asio::use_awaitable);
+}
+
+std::optional<mempool_entry> block_chain::get_mempool_transaction(hash_digest const& txid) const {
+    return mempool_.entry(txid);
 }
 
 blockchain::mempool& block_chain::mempool_ref() {

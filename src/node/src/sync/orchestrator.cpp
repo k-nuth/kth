@@ -10,6 +10,7 @@
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
 #include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 
@@ -1313,6 +1314,17 @@ static
             detail::fee_filter_sources{
                 .minimum = [&chain] { return chain.mempool_minimum_fee(); },
                 .peers = [&network] { return network.peers().all(); },
+            },
+            network.stop_token()));
+
+        // Transaction announcement watch: when transactions are admitted,
+        // each peer's service hears how far the mempool's order reaches and
+        // when the inbound peers are next due. Ends with the network.
+        all_tasks.spawn("tx_announcement_watch", detail::tx_announcement_watch(chain.mempool_admission_events(),
+            detail::tx_announcement_watch_sources{
+                .last = [&chain] { return chain.mempool_last_admission(); },
+                .peers = [&network] { return network.peers().all(); },
+                .draw = detail::unit_draw,
             },
             network.stop_token()));
     }

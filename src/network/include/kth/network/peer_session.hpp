@@ -18,6 +18,7 @@
 #include <kth/network/define.hpp>
 #include <kth/network/net_permissions.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/tx_inventory.hpp>
 
 // Asio includes for coroutines
 #include <asio/awaitable.hpp>
@@ -203,6 +204,27 @@ public:
 
     [[nodiscard]]
     fee_filter_channel& fee_filter_changes();
+
+    // -------------------------------------------------------------------------
+    // Transaction announcements
+    // -------------------------------------------------------------------------
+
+    /// The transactions admitted since the peer's service last looked: the
+    /// last admission, which the service walks the mempool's order up to.
+    /// Holds one; a newer one replaces one not taken yet. Closed by stop().
+    using admission_channel = select_channel<tx_admissions>;
+
+    /// Record that transactions were admitted up to `admissions.last`. One
+    /// producer: the node's announcement watch. Never waits.
+    void announce_admissions(tx_admissions const& admissions);
+
+    [[nodiscard]]
+    admission_channel& admissions();
+
+    /// What the peer knows and filters (tx_inventory). Only on this session's
+    /// strand: its read loop and its service.
+    [[nodiscard]]
+    network::tx_inventory& tx_inventory() { return tx_inventory_; }
 
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
@@ -477,6 +499,8 @@ private:
     served_channel served_requests_;
     tip_channel tip_announcements_;
     fee_filter_channel fee_filter_changes_;
+    admission_channel admissions_;
+    network::tx_inventory tx_inventory_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive

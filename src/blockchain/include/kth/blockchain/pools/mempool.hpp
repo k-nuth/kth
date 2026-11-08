@@ -32,6 +32,10 @@ struct mempool_entry {
     uint32_t size;
     uint32_t sigchecks;
     uint64_t time_seen;
+    // Its place in the order of admission (BCHN entryId): set by the chain as
+    // it admits a relayed or submitted transaction, increasing. Zero for one
+    // pooled otherwise (a mempool loaded from disk), which is never announced.
+    uint64_t entry_id{0};
 };
 
 // Aggregate figures over the whole pool (== the BCHN getmempoolinfo fields KTH

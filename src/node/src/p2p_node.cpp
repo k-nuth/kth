@@ -8,6 +8,7 @@
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 
 #include <algorithm>
 
@@ -474,14 +475,9 @@ void message_dispatcher::set_fee_filter_draw(unit_draw_fn draw) {
     fee_filter_draw_ = std::move(draw);
 }
 
-namespace {
-
-// A uniform draw in [0, 1), for the schedule's random delays.
-double unit_draw() {
-    return double(pseudo_random::generate<uint64_t>(0, (uint64_t(1) << 53) - 1)) / double(uint64_t(1) << 53);
+void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sources sources) {
+    tx_announcement_ = std::move(sources);
 }
-
-} // namespace
 
 ::asio::awaitable<void> message_dispatcher::serve(peer_session& peer) {
     using detail::fee_filter_schedule;
@@ -498,19 +494,51 @@ double unit_draw() {
     auto const fee_filter_due = [&] {
         return fee_filter_ ? fee_filter.due() : fee_filter_schedule::time_point::max();
     };
-    auto const draw = [this] { return fee_filter_draw_ ? fee_filter_draw_() : unit_draw(); };
+    auto const draw = [this] { return fee_filter_draw_ ? fee_filter_draw_() : detail::unit_draw(); };
+
+    // This peer's transaction announcements, owned here: only when the node
+    // announces and the peer's version asked for transactions. Owed what is
+    // admitted from now on.
+    using detail::tx_announcement_schedule;
+    std::optional<tx_announcement_schedule> announcing;
+    if (tx_announcement_.last && peer.peer_version() && peer.peer_version()->relay()) {
+        announcing.emplace(peer.is_inbound(), co_await tx_announcement_.last());
+    }
+    auto const announcement_due = [&] {
+        return announcing ? announcing->due() : tx_announcement_schedule::time_point::max();
+    };
+    // Outbound peers' interval is half the inbound one (BCHN).
+    auto const announcement_delay = [&] {
+        return std::chrono::duration_cast<tx_announcement_schedule::clock::duration>(detail::poisson_delay(
+            announcing->inbound() ? detail::inventory_broadcast_interval
+                                  : detail::inventory_broadcast_interval / 2, draw()));
+    };
 
     while (true) {
+        // One deadline for both schedules; what is due is decided on waking.
         auto completion = co_await ::asio::experimental::make_select(
             ::asio::experimental::receive(peer.served_requests()),
             ::asio::experimental::receive(peer.tip_announcements()),
             ::asio::experimental::receive(peer.fee_filter_changes()),
-            ::asio::experimental::after(fee_filter_due())
+            ::asio::experimental::receive(peer.admissions()),
+            ::asio::experimental::after(std::min(fee_filter_due(), announcement_due()))
         ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) {
             // eof: the session stopped and closed the queues.
             co_return;
+        }
+        if (selected.index == 3) {
+            if (announcing) {
+                auto const now = tx_announcement_schedule::clock::now();
+                announcing->on_admitted(*selected.value<3>(), now, announcement_delay());
+            }
+            continue;
+        }
+        if (selected.index == 4 && announcement_due() <= tx_announcement_schedule::clock::now()) {
+            co_await announce_transactions(peer, *announcing);
+            announcing->on_announced(tx_announcement_schedule::clock::now(), announcement_delay());
+            continue;
         }
         if (selected.index == 1) {
             if (tip_announcement_) {
@@ -526,7 +554,10 @@ double unit_draw() {
             fee_filter.on_changed(*selected.value<2>(), fee_filter_schedule::clock::now(), delay);
             continue;
         }
-        if (selected.index == 3) {
+        if (selected.index == 4) {
+            if (fee_filter_due() > fee_filter_schedule::clock::now()) {
+                continue;
+            }
             auto const to_send = co_await fee_filter_(peer);
             auto const now = fee_filter_schedule::clock::now();
             if ( ! to_send) {
@@ -552,6 +583,38 @@ double unit_draw() {
             co_return;
         }
     }
+}
+
+::asio::awaitable<void> message_dispatcher::announce_transactions(peer_session& peer,
+                                                                 detail::tx_announcement_schedule& schedule) {
+    auto const limit = tx_announcement_.limit();
+    std::vector<hash_digest> announced;
+    // Batches of the order until one announcement's worth, or its end.
+    while (announced.size() < limit) {
+        auto const batch = co_await tx_announcement_.admitted_after(schedule.cursor(), limit);
+        auto const complete = batch.entries.size() < limit;
+        schedule.take(batch, complete, peer.tx_inventory(), limit, announced);
+        if (complete) {
+            break;
+        }
+    }
+    if (announced.empty()) {
+        co_return;
+    }
+    using domain::message::inventory_vector;
+    inventory_vector::list entries;
+    entries.reserve(announced.size());
+    for (auto const& txid : announced) {
+        entries.emplace_back(inventory_vector::type_id::transaction, txid);
+    }
+    // Never past max_inventory: an announcement is a few hundred at most.
+    auto inv = domain::message::inventory::create(std::move(entries));
+    if ( ! inv) {
+        co_return;
+    }
+    spdlog::trace("[dispatcher] Announcing {} transaction(s) to [{}]", inv->inventories().size(),
+        peer.authority());
+    (void)co_await peer.send(*inv);
 }
 
 void message_dispatcher::register_handler(std::string const& command, message_handler_fn handler) {
@@ -783,6 +846,11 @@ void p2p_node::announce_from_inventory(peer_session::ptr const& peer, raw_messag
                                        detail::tx_relay_backlog& backlog) {
     auto announced = detail::announced_in_inventory(raw.payload, peer->negotiated_version());
 
+    // The peer knows these: they are not announced back to it.
+    for (auto const& txid : announced.transactions) {
+        peer->tx_inventory().add_known(txid);
+    }
+
     if ( ! announced.transactions.empty() && settings_.relay_transactions) {
         auto const count = announced.transactions.size();
         // Handed over, or kept by this read loop until the relay has room.
@@ -824,11 +892,26 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
             return true;
         }
         auto tx = std::make_shared<domain::message::transaction const>(std::move(*parsed));
+        peer->tx_inventory().add_known(tx->hash());
         if ( ! backlog.submit(*tx_relay_, detail::tx_received{peer->nonce(), std::move(tx), peer})) {
             // Its request stays out and fails over when it expires.
             spdlog::debug("[p2p_node] tx from [{}] not kept: past what a peer may have pending",
                 peer->authority());
         }
+        return true;
+    }
+    if (command == domain::message::fee_filter::command) {
+        // BIP133: the peer's minimum fee per 1000 bytes for what it is
+        // announced, kept when it is a valid amount (BCHN MoneyRange).
+        // Consumed: nothing else handles a `feefilter`.
+        byte_reader reader(raw.payload);
+        auto const parsed = domain::message::fee_filter::from_data(reader, peer->negotiated_version());
+        if ( ! parsed || parsed->minimum_fee() > max_money()) {
+            spdlog::debug("[p2p_node] Invalid feefilter from [{}]; ignored", peer->authority());
+            return true;
+        }
+        peer->tx_inventory().set_fee_filter(parsed->minimum_fee());
+        spdlog::trace("[p2p_node] feefilter of {} from [{}]", parsed->minimum_fee(), peer->authority());
         return true;
     }
     if (command == domain::message::not_found::command) {

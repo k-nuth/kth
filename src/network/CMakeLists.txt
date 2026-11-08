@@ -98,6 +98,7 @@ set(kth_headers
   include/kth/network/peer_record.hpp
   include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
+  include/kth/network/tx_inventory.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
@@ -145,6 +146,7 @@ set(kth_sources
   src/net_permissions.cpp
   src/peer_database.cpp
   src/peer_session.cpp
+  src/tx_inventory.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
   src/settings.cpp

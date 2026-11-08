@@ -21,6 +21,7 @@
 
 #include <boost/unordered/unordered_flat_set.hpp>
 
+#include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/inventory.hpp>
 #include <kth/domain/message/not_found.hpp>
@@ -1125,4 +1126,51 @@ TEST_CASE("relay backlog: bounded per peer, in order", "[tx_relay][routing][satu
     auto const* received = std::get_if<tx_received>(&*first);
     REQUIRE(received != nullptr);
     CHECK(received->tx->hash() == make_tx(7000)->hash());
+}
+
+// -----------------------------------------------------------------------------
+// What the read loop records for announcing
+// -----------------------------------------------------------------------------
+
+TEST_CASE("relay routing: what a peer announces or sends is known to it, and not announced back",
+          "[tx_relay][routing][tx_announcement]") {
+    using domain::message::inventory_vector;
+    ::asio::io_context ioc;
+    auto const settings = relay_settings();
+    p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9510);
+
+    auto const announced = txid_of(0x81);
+    auto inv = domain::message::inventory::create(inventory_vector::list{
+        {inventory_vector::type_id::transaction, announced}});
+    REQUIRE(inv.has_value());
+    CHECK_FALSE(node.observe_block_message(peer, wire(domain::message::inventory::command, payload_of(*inv, peer))));
+    auto const sent = make_tx(81);
+    CHECK(node.observe_transaction_message(peer, wire(domain::message::transaction::command, payload_of(*sent, peer))));
+
+    CHECK(peer->tx_inventory().known(announced));
+    CHECK(peer->tx_inventory().known(sent->hash()));
+    CHECK_FALSE(peer->tx_inventory().known(txid_of(0x82)));
+}
+
+TEST_CASE("relay routing: a feefilter is consumed and kept, unless it is not a valid amount",
+          "[tx_relay][routing][tx_announcement]") {
+    ::asio::io_context ioc;
+    auto const settings = relay_settings();
+    p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9511);
+    CHECK(peer->tx_inventory().fee_filter() == 0u);
+
+    domain::message::fee_filter const filter{3000};
+    CHECK(node.observe_transaction_message(peer, wire(domain::message::fee_filter::command, payload_of(filter, peer))));
+    CHECK(peer->tx_inventory().fee_filter() == 3000u);
+
+    domain::message::fee_filter const invalid{max_money() + 1};
+    CHECK(node.observe_transaction_message(peer, wire(domain::message::fee_filter::command, payload_of(invalid, peer))));
+    CHECK(peer->tx_inventory().fee_filter() == 3000u);
+
+    // Zero filters nothing again.
+    domain::message::fee_filter const none{0};
+    CHECK(node.observe_transaction_message(peer, wire(domain::message::fee_filter::command, payload_of(none, peer))));
+    CHECK(peer->tx_inventory().fee_filter() == 0u);
 }

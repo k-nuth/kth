@@ -17,6 +17,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
@@ -167,6 +168,27 @@ full_node::~full_node() {
                 auto const step_down = pseudo_random::generate<uint32_t>(0, 2) != 0;
                 co_return detail::fee_filter_to_send(*rounder, minimum, floor, step_down);
             });
+        // The transactions each peer's service announces: the mempool's order
+        // of admission, at most an announcement's worth for the next block's
+        // size limit at a time.
+        network_.set_tx_announcement_handler(detail::tx_announcement_sources{
+            .last = [this] { return chain_.mempool_last_admission(); },
+            .admitted_after = [this](uint64_t after, size_t limit) -> ::asio::awaitable<detail::admitted_batch> {
+                auto admitted = co_await chain_.mempool_admitted_after(after, limit);
+                co_return detail::admitted_batch{std::move(admitted.entries), admitted.last};
+            },
+            .limit = [this] {
+#if defined(KTH_CURRENCY_BCH)
+                // The next block's size limit (BCHN: ceil(7 * MB * 0.5 s)).
+                auto const state = chain_.chain_state();
+                return detail::max_announcements(state ? state->dynamic_max_block_size()
+                                                       : chain_settings_.default_consensus_block_size);
+#else
+                // A fixed one-million-byte limit.
+                return detail::max_announcements(max_block_size);
+#endif
+            },
+        });
     }
 
 #if ! defined(__EMSCRIPTEN__)
