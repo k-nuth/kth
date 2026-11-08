@@ -234,7 +234,7 @@ class KthRecipe(KnuthConanFileV2):
             # asio::asio and ASIO_VERSION stays 103802.
             # asio-grpc asks for asio/[>=1.17 <2], which never matches a -kth
             # pre-release; force=True makes the fork win that range as well.
-            self.requires("asio/1.38.3-kth.1#350bc1a8f6021cd9973a02957d9972c4",
+            self.requires("asio/1.38.3-kth.3#2d7621a6648b50ebe07f9b0d46ac0918",
                           transitive_headers=True, transitive_libs=True,
                           force=self._with_grpc)
 

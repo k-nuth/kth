@@ -82,7 +82,7 @@ class RpcRecipeTests(unittest.TestCase):
                     self.assertTrue(refs["protobuf"].ref.revision)
                     # The kth asio fork must beat asio-grpc's asio/[>=1.17 <2] range.
                     self.assertTrue(refs["asio"].force)
-                    self.assertEqual(str(refs["asio"].ref.version), "1.38.3-kth.1")
+                    self.assertEqual(str(refs["asio"].ref.version), "1.38.3-kth.3")
                     # Existing pins stay put: no openssl is added or overridden here.
                     self.assertNotIn("openssl", refs)
                 else:
