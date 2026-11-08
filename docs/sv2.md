@@ -143,6 +143,12 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   rolling requirements are supported. Work selection and unknown flags are
   refused. Success flags are zero: the server accepts both channel types and
   permits version rolling.
+- A Mining connection that opens no channel within
+  `sv2.mining.open_channel_timeout_seconds` (default 60) of its
+  `SetupConnection.Success` is closed for inactivity, and the closure is logged
+  (SV2 section 5.3.2). A refused open does not count. Only the wait for the
+  first channel is limited: a connection whose channels all close later stays
+  open. Template Distribution connections have no channels and no such deadline.
 - Standard channels receive `NewMiningJob` with a merkle root computed by the
   node. Extended channels receive `NewExtendedMiningJob` with coinbase prefix
   and suffix, the merkle branch, a unique extranonce prefix and 12 to 32 bytes

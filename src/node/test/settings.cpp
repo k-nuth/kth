@@ -30,6 +30,7 @@ TEST_CASE("sv2 mining defaults to disabled without a payout address", "[settings
     node::sv2_settings const configuration;
     CHECK_FALSE(configuration.mining.enabled);
     CHECK(configuration.mining.address.empty());
+    CHECK(configuration.mining.open_channel_timeout_seconds == 60u);
 }
 
 TEST_CASE("settings construct default context expected", "[settings tests]") {

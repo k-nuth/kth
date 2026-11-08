@@ -81,6 +81,10 @@ bool mining_session::needs_template() const {
     return ready() && engine_.channel_count() > 0 && ! template_prev_;
 }
 
+bool mining_session::awaiting_channel() const {
+    return ready() && ! channel_opened_;
+}
+
 domain::chain::output::list mining_session::coinbase_outputs(uint64_t value) const {
     // This connection pays one output. The engine takes a list so a later
     // payout split can pass several without another job builder.
@@ -122,6 +126,7 @@ mining_session::result mining_session::finish_open(mining::open_request const& r
         return {frame(open_mining_channel_error{request.request_id, opened.error_code}),
             false, false, {}};
     }
+    channel_opened_ = true;
 
     result out;
     if (request.kind == mining::channel_kind::extended) {

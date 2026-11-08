@@ -13,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -440,6 +441,20 @@ template_provider::template_provider(sv2_settings const& settings,
     std::optional<mining_session> miner;
     bool decided = false;
     std::optional<hash_digest> sent_previous;
+    // Until its first channel, a Mining connection only holds one of the
+    // listener's slots (sv2-spec 5.3.2). Template Distribution has no channels.
+    ::asio::steady_timer channel_deadline(owner_);
+    auto next_event = [&]() -> ::asio::awaitable<std::tuple<std::error_code, event>> {
+        if ( ! miner || ! miner->awaiting_channel()) {
+            co_return co_await inbox.async_receive(::asio::as_tuple(::asio::use_awaitable));
+        }
+        auto outcome = co_await (inbox.async_receive(::asio::as_tuple(::asio::use_awaitable))
+            || channel_deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+        if (outcome.index() == 0) co_return std::move(std::get<0>(outcome));
+        spdlog::info("[sv2] Closing a Mining connection that opened no channel within {} seconds",
+            settings_.mining.open_channel_timeout_seconds);
+        co_return std::tuple<std::error_code, event>{std::make_error_code(std::errc::timed_out), event{}};
+    };
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
         auto const& constraints = *session.constraints();
         auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{
@@ -482,8 +497,7 @@ template_provider::template_provider(sv2_settings const& settings,
         // throws. The group below joins them before any captured locals go.
         detail::scope_action finish(end_inputs, true);
         for (;;) {
-            auto [error, input] = co_await inbox.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto [error, input] = co_await next_event();
             if (error || input.kind == event_kind::end) co_return;
             auto const view = chain_.chain_view();
             if (view) {
@@ -503,6 +517,9 @@ template_provider::template_provider(sv2_settings const& settings,
             } else {
                 if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
                     miner.emplace(connection_salt, *payout_);
+                    // The answer to this setup starts the wait for a first channel.
+                    channel_deadline.expires_after(
+                        std::chrono::seconds(settings_.mining.open_channel_timeout_seconds));
                 }
                 decided = true;
                 if (miner) {

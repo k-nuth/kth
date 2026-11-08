@@ -70,8 +70,9 @@ struct payout {
     domain::chain::script script;
 };
 
-// Empty when mining is off. Otherwise a reason the node must not start it:
-// the listener is off, or the address is missing or not a cashaddr for `network`.
+// Empty when mining is off. Otherwise a reason the node must not start it: the
+// listener is off, the address is missing or not a cashaddr for `network`, or
+// the deadline for a first channel is zero.
 [[nodiscard]]
 std::string mining_startup_reason(sv2_settings const& settings, domain::config::network network);
 

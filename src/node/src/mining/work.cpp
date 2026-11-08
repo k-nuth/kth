@@ -226,6 +226,9 @@ std::string mining_startup_reason(sv2_settings const& settings, domain::config::
     if ( ! settings.mining.enabled) return {};
     if ( ! settings.enabled) return "sv2.mining.enabled requires sv2.enabled";
     if (settings.mining.address.empty()) return "sv2.mining.enabled requires sv2.mining.address";
+    if (settings.mining.open_channel_timeout_seconds == 0) {
+        return "sv2.mining.open_channel_timeout_seconds must be positive";
+    }
     std::string error;
     if ( ! payout_from_address(settings.mining.address, network, error)) return error;
     return {};

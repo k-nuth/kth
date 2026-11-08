@@ -185,6 +185,8 @@ TEST_CASE("Mining payout is a supported cashaddr for the selected network", "[sv
     REQUIRE_FALSE(mining_startup_reason(settings, domain::config::network::regtest).empty());
     settings.mining.address = valid;
     REQUIRE(mining_startup_reason(settings, domain::config::network::regtest).empty());
+    settings.mining.open_channel_timeout_seconds = 0;
+    REQUIRE_FALSE(mining_startup_reason(settings, domain::config::network::regtest).empty());
 #else
     REQUIRE_FALSE(payout_from_address("bitcoincash:q", domain::config::network::mainnet, error));
     REQUIRE_FALSE(error.empty());

@@ -322,6 +322,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Accept Mining Protocol clients on the Stratum V2 listener.");
     app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
         "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
+    app.add_option("--sv2.mining.open_channel_timeout_seconds", cfg.sv2.mining.open_channel_timeout_seconds,
+        "Deadline in seconds for a Mining Protocol connection to open its first channel (default 60).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11

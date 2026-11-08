@@ -396,6 +396,27 @@ TEST_CASE("sv2 mining opens closes and bounds independent channels", "[sv2 minin
     REQUIRE_FALSE(process(standard_only, standard(1)).close);
 }
 
+TEST_CASE("sv2 mining awaits a first channel only until one opens", "[sv2 mining]") {
+    mining_session fresh(1, domain::chain::script{});
+    REQUIRE_FALSE(fresh.awaiting_channel());
+    auto session = ready();
+    REQUIRE(session.awaiting_channel());
+    auto too_large = extended();
+    too_large.min_extranonce_size = 33;
+    REQUIRE(single<open_mining_channel_error>(process(session, too_large)).error_code == "min-extranonce-size-too-large");
+    REQUIRE(session.awaiting_channel());
+    auto const opened = single<open_standard_mining_channel_success>(process(session, standard(1)));
+    REQUIRE_FALSE(session.awaiting_channel());
+    require_silent(process(session, close_channel{opened.channel_id, "done"}));
+    REQUIRE_FALSE(session.awaiting_channel());
+
+    // A channel whose success waits for a template has still been opened.
+    auto pending = ready();
+    require_silent(process(pending, 0, open_standard_mining_channel::message_type,
+        to_data_chunk(standard())));
+    REQUIRE_FALSE(pending.awaiting_channel());
+}
+
 TEST_CASE("sv2 mining refuses invalid rates and updates the target within the device bound", "[sv2 mining]") {
     for (float const rate : {-0.f, -1.f, std::numeric_limits<float>::infinity(),
             -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {

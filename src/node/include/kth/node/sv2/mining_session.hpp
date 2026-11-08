@@ -48,6 +48,11 @@ struct mining_session {
     [[nodiscard]]
     bool needs_template() const;
 
+    // Set up, but no channel has been opened yet. Closing every channel later
+    // does not return to this state.
+    [[nodiscard]]
+    bool awaiting_channel() const;
+
 private:
     enum class state { awaiting_setup, ready, closed };
 
@@ -67,6 +72,7 @@ private:
     domain::chain::script payout_;
     state state_ = state::awaiting_setup;
     bool standard_only_ = false;
+    bool channel_opened_ = false;
     std::vector<pending_channel> pending_;
     std::optional<blockchain::mining_template> current_;
     std::optional<hash_digest> template_prev_;
