@@ -2574,6 +2574,24 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
         }, ::asio::use_awaitable);
 }
 
+::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_snapshot() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<mempool_admitted> {
+            mempool_admitted out{};
+            {
+                validation_low_priority_lock const lock(validation_mutex_);
+                out.last = mempool_admissions_.last();
+                out.entries.reserve(mempool_.size());
+                mempool_.for_each([&](mempool_entry const& entry) {
+                    out.entries.push_back(entry);
+                });
+            }
+            // A copy now: sorted without holding the lock.
+            std::ranges::sort(out.entries, {}, &mempool_entry::entry_id);
+            co_return out;
+        }, ::asio::use_awaitable);
+}
+
 ::asio::awaitable<uint64_t> block_chain::mempool_last_admission() {
     co_return co_await ::asio::co_spawn(executor(),
         [this]() -> ::asio::awaitable<uint64_t> {

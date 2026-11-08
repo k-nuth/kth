@@ -12,6 +12,7 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <variant>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -220,6 +221,16 @@ public:
 
     [[nodiscard]]
     admission_channel& admissions();
+
+    /// The peer asked for the mempool (BIP35) and may be answered. Holds
+    /// one: requests coalesce until the service answers. Closed by stop().
+    using mempool_request_channel = select_channel<std::monostate>;
+
+    /// From the read loop, never waiting.
+    void request_mempool();
+
+    [[nodiscard]]
+    mempool_request_channel& mempool_requests();
 
     /// What the peer knows and filters (tx_inventory). Only on this session's
     /// strand: its read loop and its service.
@@ -500,6 +511,7 @@ private:
     tip_channel tip_announcements_;
     fee_filter_channel fee_filter_changes_;
     admission_channel admissions_;
+    mempool_request_channel mempool_requests_;
     network::tx_inventory tx_inventory_;
 
     // Response channels for request/response patterns

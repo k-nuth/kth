@@ -121,18 +121,6 @@ full_node::~full_node() {
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
 
-    // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
-    // chain-backed handler into the network layer, which stays chain-agnostic.
-    network_.register_message_handler<domain::message::memory_pool>(
-        [this](peer_session& peer, domain::message::memory_pool const&)
-            -> ::asio::awaitable<message_result> {
-            auto const inv = co_await chain_.fetch_mempool(50000, 0);
-            if (inv && *inv) {
-                co_await peer.send(**inv);
-            }
-            co_return message_result::handled;
-        });
-
     // Serve the connected chain: headers for a locator, and the blocks a
     // peer asks for after an announcement or during its own sync. Both run in
     // the peer's service, off its read loop: their answers wait on the peer's
@@ -187,6 +175,10 @@ full_node::~full_node() {
                 // A fixed one-million-byte limit.
                 return detail::max_announcements(max_block_size);
 #endif
+            },
+            .pool = [this]() -> ::asio::awaitable<detail::admitted_batch> {
+                auto pooled = co_await chain_.mempool_snapshot();
+                co_return detail::admitted_batch{std::move(pooled.entries), pooled.last};
             },
         });
     }

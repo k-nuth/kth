@@ -90,6 +90,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , tip_announcements_(1)
     , fee_filter_changes_(1)
     , admissions_(1)
+    , mempool_requests_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -128,6 +129,7 @@ peer_session::~peer_session() {
     tip_announcements_.close();
     fee_filter_changes_.close();
     admissions_.close();
+    mempool_requests_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -270,6 +272,7 @@ void peer_session::stop(code const& ec) {
     tip_announcements_.close();
     fee_filter_changes_.close();
     admissions_.close();
+    mempool_requests_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -370,6 +373,14 @@ void peer_session::announce_admissions(tx_admissions const& admissions) {
 
 peer_session::admission_channel& peer_session::admissions() {
     return admissions_;
+}
+
+void peer_session::request_mempool() {
+    (void)mempool_requests_.try_send(std::monostate{});
+}
+
+peer_session::mempool_request_channel& peer_session::mempool_requests() {
+    return mempool_requests_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {
