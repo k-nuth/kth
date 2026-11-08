@@ -127,22 +127,45 @@ std::optional<jd_endpoint> parse_jd_endpoint(std::string_view text) {
 
 std::optional<sv2_settings::jd_upstream> parse_jd_upstream(std::string_view text) {
     if (text.size() > 1100) return std::nullopt;
-    std::array<std::string_view, 6> fields;
-    for (size_t i = 0; i < fields.size(); ++i) {
+    std::array<std::string_view, 7> fields;
+    size_t count = 0;
+    for (;;) {
+        if (count == fields.size()) return std::nullopt;
         auto const end = text.find('|');
-        if ((i + 1 == fields.size()) != (end == std::string_view::npos)) return std::nullopt;
-        fields[i] = text.substr(0, end);
-        if (fields[i].empty()) return std::nullopt;
-        if (end != std::string_view::npos) text.remove_prefix(end + 1);
+        fields[count] = text.substr(0, end);
+        if (fields[count].empty()) return std::nullopt;
+        ++count;
+        if (end == std::string_view::npos) break;
+        text.remove_prefix(end + 1);
     }
+    if (count < 6 || (count == 7 && fields[6] != jd_own_upstream)) return std::nullopt;
     return sv2_settings::jd_upstream{std::string(fields[0]), std::string(fields[1]),
-        std::string(fields[2]), std::string(fields[3]), std::string(fields[4]), std::string(fields[5])};
+        std::string(fields[2]), std::string(fields[3]), std::string(fields[4]), std::string(fields[5]),
+        count == 7};
+}
+
+bool jd_local_host(std::string_view host) {
+    if (host == "::1") return true;
+    if (host.size() == 9 && std::equal(host.begin(), host.end(), "localhost",
+            [](char a, char b) { return (a >= 'A' && a <= 'Z' ? static_cast<char>(a - 'A' + 'a') : a) == b; })) {
+        return true;
+    }
+    // parse_jd_endpoint has already refused a dotted number that is not IPv4.
+    return host.starts_with("127.") && std::all_of(host.begin(), host.end(),
+        [](char c) { return (c >= '0' && c <= '9') || c == '.'; });
+}
+
+bool jd_sends_worker_names(sv2_settings::jd_upstream const& upstream) {
+    if (upstream.own) return true;
+    auto const mining = parse_jd_endpoint(upstream.mining_address);
+    return mining && jd_local_host(mining->host);
 }
 
 std::vector<sv2_settings::jd_upstream> jd_upstreams(sv2_settings::jd_settings const& settings) {
     if (settings.upstreams.empty()) {
         return {{settings.mining_address, settings.mining_authority_public_key,
-            settings.jds_address, settings.jds_authority_public_key, settings.user_identity, settings.mode}};
+            settings.jds_address, settings.jds_authority_public_key, settings.user_identity, settings.mode,
+            settings.own_upstream}};
     }
     std::vector<sv2_settings::jd_upstream> result;
     result.reserve(settings.upstreams.size());
@@ -165,7 +188,7 @@ bool validate_jd_settings(sv2_settings const& settings, std::string& error) {
     if ( ! jd.upstreams.empty()) {
         if ( ! jd.mining_address.empty() || ! jd.mining_authority_public_key.empty()
             || ! jd.jds_address.empty() || ! jd.jds_authority_public_key.empty()
-            || ! jd.user_identity.empty()
+            || ! jd.user_identity.empty() || jd.own_upstream
             || ( ! jd.mode.empty() && jd.mode != sv2_settings::jd_settings{}.mode)) {
             error = "sv2.jd.upstream cannot be combined with legacy single-pool settings";
             return false;
@@ -173,7 +196,8 @@ bool validate_jd_settings(sv2_settings const& settings, std::string& error) {
         for (size_t i = 0; i < jd.upstreams.size(); ++i) {
             auto const value = parse_jd_upstream(jd.upstreams[i]);
             if ( ! value) {
-                error = "sv2.jd.upstream requires six nonempty fields separated by '|'";
+                error = "sv2.jd.upstream requires six nonempty fields separated by '|', "
+                    "optionally followed by |own";
                 return false;
             }
             if ( ! validate_upstream(*value, "sv2.jd.upstream[" + std::to_string(i) + "].", error)) {

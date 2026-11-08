@@ -127,8 +127,10 @@ struct jd_client::attempt {
         , declaration(executor, declaration_at.host, declaration_at.port,
             authority(upstream.jds_authority_public_key),
             std::chrono::seconds(settings.handshake_timeout_seconds))
+        // Worker names follow the configured entry, not a Reconnect address:
+        // the new server proves the same authority.
         , mining_session(jd_peer::mining, mining_at.host, mining_at.port,
-            upstream.user_identity, upstream.mode == "full-template")
+            upstream.user_identity, upstream.mode == "full-template", jd_sends_worker_names(upstream))
         , declaration_session(jd_peer::declaration, declaration_at.host, declaration_at.port,
             upstream.user_identity, upstream.mode == "full-template")
         , jobs(upstream.user_identity, upstream.mode == "full-template")

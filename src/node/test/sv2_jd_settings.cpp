@@ -330,3 +330,71 @@ TEST_CASE("sv2 JD upstream lists accept the default single-pool mode and refuse 
     CHECK_FALSE(validate_jd_settings(settings, error));
     CHECK(error.find("legacy single-pool settings") != std::string::npos);
 }
+
+TEST_CASE("sv2 JD list entries take an optional seventh field marking the operator's own upstream", "[sv2 jd]") {
+    auto const six = parse_jd_upstream("a|b|c|d|e|f");
+    REQUIRE(six);
+    CHECK_FALSE(six->own);
+    auto const seven = parse_jd_upstream("a|b|c|d|e|f|own");
+    REQUIRE(seven);
+    CHECK(seven->own);
+    CHECK(seven->mode == "f");
+    for (auto const* text : {"a|b|c|d|e|f|", "a|b|c|d|e|f|Own", "a|b|c|d|e|f|own ",
+        "a|b|c|d|e|f|yes", "a|b|c|d|e|f|own|own", "a|b|c|d|e|f|own|"}) {
+        INFO(text);
+        CHECK_FALSE(parse_jd_upstream(text));
+    }
+
+    auto settings = configured_list();
+    settings.jd.upstreams.push_back(settings.jd.upstreams.front() + "|own");
+    std::string error;
+    REQUIRE(validate_jd_settings(settings, error));
+    auto const entries = jd_upstreams(settings.jd);
+    REQUIRE(entries.size() == 2);
+    CHECK_FALSE(entries[0].own);
+    CHECK(entries[1].own);
+    CHECK(entries[1].mode == entries[0].mode);
+}
+
+TEST_CASE("sv2 JD own_upstream marks the single-pool upstream and is off by default", "[sv2 jd]") {
+    REQUIRE_FALSE(node::sv2_settings{}.jd.own_upstream);
+    auto legacy = configured_jd();
+    CHECK_FALSE(jd_upstreams(legacy.jd).front().own);
+    legacy.jd.own_upstream = true;
+    std::string error;
+    REQUIRE(validate_jd_settings(legacy, error));
+    CHECK(jd_upstreams(legacy.jd).front().own);
+
+    // Like the other single-pool settings, it cannot be combined with a list.
+    auto settings = configured_list();
+    settings.jd.own_upstream = true;
+    CHECK_FALSE(validate_jd_settings(settings, error));
+    CHECK(error.find("legacy single-pool settings") != std::string::npos);
+}
+
+TEST_CASE("sv2 JD sends worker names only to a marked upstream or one on this machine", "[sv2 jd]") {
+    auto upstream = jd_upstreams(configured_jd().jd).front();
+    // The configured host string decides. Names are not resolved, and a LAN
+    // address is someone else's pool unless it is marked.
+    for (auto const* address : {"127.0.0.1:3333", "127.1.2.3:3333", "[::1]:3333",
+        "localhost:3333", "LocalHost:3333"}) {
+        INFO(address);
+        upstream.mining_address = address;
+        upstream.own = false;
+        CHECK(jd_sends_worker_names(upstream));
+    }
+    for (auto const* address : {"10.0.0.5:3333", "192.168.1.2:3333", "128.0.0.1:3333",
+        "[::2]:3333", "127.example:3333", "localhost.example:3333", "pool.example:3333"}) {
+        INFO(address);
+        upstream.mining_address = address;
+        upstream.own = false;
+        CHECK_FALSE(jd_sends_worker_names(upstream));
+        upstream.own = true;
+        CHECK(jd_sends_worker_names(upstream));
+    }
+    // Only the Mining address counts: the names travel on that connection.
+    upstream.mining_address = "10.0.0.5:3333";
+    upstream.jds_address = "127.0.0.1:3334";
+    upstream.own = false;
+    CHECK_FALSE(jd_sends_worker_names(upstream));
+}

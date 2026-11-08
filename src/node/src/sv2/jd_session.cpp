@@ -64,12 +64,14 @@ std::string printable_error_code(std::string const& code) {
 } // namespace
 
 jd_session::jd_session(jd_peer peer, std::string host, uint16_t port,
-    std::string user_identity, bool full_template)
+    std::string user_identity, bool full_template, bool worker_names)
     : peer_(peer)
     , host_(std::move(host))
     , port_(port)
     , identity_(std::move(user_identity))
     , full_template_(full_template)
+    , worker_names_(peer == jd_peer::mining && worker_names)
+    , negotiate_extensions_(worker_names_)
 {}
 
 data_chunk jd_session::start() {
@@ -352,8 +354,19 @@ jd_session::result jd_session::process(message_header const& header, byte_span p
     if (header.msg_length != payload.size() || payload.size() > max_payload_size) {
         return fail("invalid upstream frame length");
     }
-    if (extensions_pending_ && header.extension() == extensions_negotiation_type) {
-        return process_extensions(header, payload);
+    if (peer_ == jd_peer::mining && header.extension() == extensions_negotiation_type) {
+        if (extensions_pending_) return process_extensions(header, payload);
+        // Nothing was asked, so this answers nothing. Extension 0x0001,
+        // section 4: a pool disconnects a client without the extensions it
+        // requires. An entry that is not the operator's own never sends worker
+        // names, so such a pool is incompatible with it.
+        if ( ! header.channel_msg() && header.msg_type == request_extensions_error::message_type) {
+            auto const error = parse<request_extensions_error>(payload);
+            if (error && ! error->required_extensions.empty()) {
+                return fail("upstream requires an extension this connection did not negotiate",
+                    ! worker_names_);
+            }
+        }
     }
     if (header.extension() != 0) return {{}, false, ready(), {}};
     if (state_ == state::awaiting_setup) return process_setup(header, payload);

@@ -184,6 +184,24 @@ TEST_CASE("sv2 JD settings survive network selection config copying and command 
     char const* enabled_only[]{"kth", "--network", "regtest", "--sv2.jd.enabled=true"};
     REQUIRE(defaulted.parse(4, enabled_only, error));
     CHECK(defaulted.configured.sv2.jd.mode == "coinbase-only");
+    CHECK_FALSE(defaulted.configured.sv2.jd.own_upstream);
+}
+
+TEST_CASE("sv2 JD own_upstream reads from the command line and the config file", "[configuration tests][parser][sv2 jd]") {
+    std::ostringstream error;
+    node::parser marked(domain::config::network::regtest);
+    char const* argv[]{"kth", "--sv2.jd.own_upstream=true"};
+    REQUIRE(marked.parse(2, argv, error));
+    CHECK(marked.configured.sv2.jd.own_upstream);
+
+    config_file file("sv2_jd_own", "sv2.jd.own_upstream=true");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    CHECK(from_file.configured.sv2.jd.own_upstream);
+
+    node::parser invalid(domain::config::network::regtest);
+    char const* bad[]{"kth", "--sv2.jd.own_upstream=invalid"};
+    CHECK_FALSE(invalid.parse(2, bad, error));
 }
 
 TEST_CASE("sv2 JD parser refuses malformed enable and deadline values", "[configuration tests][parser][sv2 jd]") {

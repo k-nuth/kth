@@ -32,8 +32,10 @@ struct jd_session {
         bool incompatible = false;
     };
 
+    // `worker_names` marks a Mining upstream the operator runs. Only such a
+    // session asks for Worker-Specific Hashrate Tracking (0x0002).
     jd_session(jd_peer peer, std::string host, uint16_t port,
-        std::string user_identity, bool full_template);
+        std::string user_identity, bool full_template, bool worker_names = false);
 
     // Single use. Empty means the session could not be started.
     [[nodiscard]] data_chunk start();
@@ -41,10 +43,10 @@ struct jd_session {
     [[nodiscard]] bool ready() const;
     [[nodiscard]] std::optional<open_extended_mining_channel_success> const& channel() const;
 
-    // A Mining session sends RequestExtensions for Worker-Specific Hashrate
-    // Tracking (0x0002) after SetupConnection.Success and opens the channel
-    // once it is answered. Call before start() to open it without asking: the
-    // previous connection to this pool got no answer.
+    // A marked Mining session sends RequestExtensions for 0x0002 after
+    // SetupConnection.Success and opens the channel once it is answered. Call
+    // before start() to open it without asking: the previous connection to
+    // this pool got no answer.
     void skip_extensions();
     // RequestExtensions is unanswered and no channel request has been sent.
     [[nodiscard]] bool awaiting_extensions() const;
@@ -81,8 +83,9 @@ private:
     float hash_rate_ = 0;
     // Sent in the channel request or the last UpdateChannel.
     float reported_hash_rate_ = 0;
-    // Cleared only by skip_extensions(). A declaration session never asks.
-    bool negotiate_extensions_ = true;
+    bool worker_names_;
+    // worker_names_ until skip_extensions(). A declaration session never asks.
+    bool negotiate_extensions_;
     // A RequestExtensions is outstanding. Only the latest request_id answers it.
     bool extensions_pending_ = false;
     uint16_t extensions_request_ = 0;

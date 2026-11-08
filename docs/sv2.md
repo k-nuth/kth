@@ -270,10 +270,11 @@ sv2.jd.response_timeout_seconds    = 10
 
 Those single-pool settings remain supported as a one-entry priority list. To
 configure several pools, use `sv2.jd.upstream` instead. Each quoted entry has
-exactly six nonempty fields, in this order:
+exactly six nonempty fields, in this order, and may add a seventh, `own`, for
+an upstream the operator runs (see worker-specific hashrate tracking below):
 
 ```text
-mining-address|mining-authority-key|jds-address|jds-authority-key|user-identity|mode
+mining-address|mining-authority-key|jds-address|jds-authority-key|user-identity|mode[|own]
 ```
 
 For example, replace the key placeholders with the pools' public keys:
@@ -286,10 +287,10 @@ sv2.jd.upstream = "backup.example:4444|<backup-key>|backup-jds.example:4445|<bac
 The first entry typed has the highest priority; entries are never sorted by
 address. A quoted array of entries is also accepted. On the command line,
 repeat `--sv2.jd.upstream` in priority order; an explicit command-line list
-replaces the file's list. A list cannot be combined with any of the six legacy
-single-pool fields. A list identity cannot contain `|`; the legacy identity
-setting still accepts it. No explicit solo entry is needed: the local solo
-payout is always the final fallback.
+replaces the file's list. A list cannot be combined with any of the seven
+legacy single-pool settings, `sv2.jd.own_upstream` included. A list identity
+cannot contain `|`; the legacy identity setting still accepts it. No explicit
+solo entry is needed: the local solo payout is always the final fallback.
 
 Addresses are `host:port` or `[IPv6]:port`, with an explicit port from 1 to
 65535. DNS labels are at most 63 bytes and the whole hostname at most 253;
@@ -381,12 +382,27 @@ JDS (specification section 6.4.9). `coinbase-only` has no declared job for
 
 ### Worker-specific hashrate tracking
 
-After `SetupConnection.Success` on the Mining connection, and before the
-channel request, the node sends `RequestExtensions` (extension 0x0001) asking
-for Worker-Specific Hashrate Tracking (0x0002). The Job Declaration connection
-does not negotiate extensions. Every pair negotiates for itself, including a
-probe and a pair connecting again after a followed `Reconnect`. The answer
-counts toward `sv2.jd.max_latency_milliseconds` like any setup reply.
+Downstream worker names go only to an upstream the operator runs. Section 4.2
+of Worker-Specific Hashrate Tracking (extension 0x0002) notes that per-worker
+names tell a pool how a farm is organized, so a stranger's pool never receives
+them. An upstream counts as the operator's own when its entry ends with
+`|own`, when `sv2.jd.own_upstream=true` is set for the single-pool settings
+(default false), or when its configured Mining host is on this machine:
+`localhost`, `::1` or any `127.x.x.x`. Only that host string is checked; other
+names are not resolved, and a LAN address is not the operator's own unless
+marked. There is no setting to stop a same-machine upstream from receiving the
+names. A pool cannot make any other upstream send them: that upstream never
+requests the extension, and when its pool answers that it requires one, the
+entry is disabled until restart, like a missing required feature.
+
+For an upstream the operator runs, after `SetupConnection.Success` on the
+Mining connection, and before the channel request, the node sends
+`RequestExtensions` (extension 0x0001) asking for 0x0002. Other upstreams open
+the channel straight after setup, as before, and their pool sees one combined
+channel. The Job Declaration connection does not negotiate extensions. Every
+pair negotiates for itself, including a probe and a pair connecting again
+after a followed `Reconnect`. The answer counts toward
+`sv2.jd.max_latency_milliseconds` like any setup reply.
 
 `RequestExtensions.Success` that lists 0x0002 turns the extension on for that
 connection. Each forwarded `SubmitSharesExtended` then ends with the TLV field
@@ -409,9 +425,6 @@ restart, like a missing required feature. No answer within
 an unanswered request on that connection, so the pair is closed and connects
 again at once, without a retry hold, and the new pair opens its channel
 without asking. The pair after any later failure asks again.
-
-Section 4.2 of the extension notes that per-worker names tell the pool how a
-farm is organized. A pool that does not grant the extension receives none.
 
 ### Failover and recovery
 

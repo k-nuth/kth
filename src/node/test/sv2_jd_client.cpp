@@ -3516,17 +3516,23 @@ TEST_CASE("sv2 JD reports the hash rate from the active pair, and from a probe o
 }
 
 TEST_CASE("sv2 JD tags forwarded shares with the downstream worker only when the pool grants it", "[sv2 jd]") {
-    enum class kind { refused, channel, proxy };
+    // The fake pool listens on 127.0.0.1. An upstream on this machine is the
+    // operator's own without the mark, so it asks; jd_sends_worker_names and
+    // the session tests cover an unmarked LAN or remote pool, which never asks.
+    enum class kind { refused, channel, proxy, marked };
     auto mode = kind::refused;
     SECTION("the pool refuses worker tracking") {}
     SECTION("granted: the channel's user_identity") { mode = kind::channel; }
     SECTION("granted: the worker a downstream proxy names") { mode = kind::proxy; }
+    SECTION("granted: an upstream marked as the operator's own") { mode = kind::marked; }
     char const* tag = "sv2_jd_worker_refused";
     if (mode == kind::channel) tag = "sv2_jd_worker_channel";
     if (mode == kind::proxy) tag = "sv2_jd_worker_proxy";
+    if (mode == kind::marked) tag = "sv2_jd_worker_marked";
     auto chain = started_chain(tag);
     client_fixture fixture;
-    auto const configuration = settings(fixture.pool, fixture.jds);
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.own_upstream = mode == kind::marked;
     provider_run provider(fixture, configuration, chain);
     handshake_upstreams(fixture, true, nullptr, mode != kind::refused);
     miner_link miner(fixture, provider.port, 0.f, mode == kind::proxy);

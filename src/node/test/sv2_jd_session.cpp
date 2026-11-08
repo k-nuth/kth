@@ -64,9 +64,29 @@ open_extended_mining_channel_success opened() {
     return {1, 7, target(), jd_session::min_extranonce_size, {1, 2}, 9};
 }
 
-jd_session waiting(jd_peer peer = jd_peer::mining, bool full_template = true) {
-    jd_session session(peer, "pool.example", 8442, "worker", full_template);
+jd_session waiting(jd_peer peer = jd_peer::mining, bool full_template = true,
+    bool worker_names = false) {
+    jd_session session(peer, "pool.example", 8442, "worker", full_template, worker_names);
     REQUIRE_FALSE(session.start().empty());
+    return session;
+}
+
+jd_session opening() {
+    auto session = waiting();
+    auto const response = process(session, setup_connection_success{2, 0});
+    REQUIRE_FALSE(response.close);
+    REQUIRE_FALSE(response.ready);
+    REQUIRE_FALSE(response.response.empty());
+    return session;
+}
+
+jd_session ready() {
+    auto session = opening();
+    auto const response = process(session, opened());
+    REQUIRE_FALSE(response.close);
+    REQUIRE(response.ready);
+    REQUIRE(session.ready());
+    REQUIRE(session.channel().has_value());
     return session;
 }
 
@@ -74,9 +94,10 @@ std::vector<uint16_t> worker_tracking() {
     return {worker_hashrate_tracking_extension};
 }
 
-// A Mining session after SetupConnection.Success, with RequestExtensions unanswered.
+// A session for an upstream the operator runs, after SetupConnection.Success,
+// with RequestExtensions unanswered.
 jd_session asking() {
-    auto session = waiting();
+    auto session = waiting(jd_peer::mining, true, true);
     auto const response = process(session, setup_connection_success{2, 0});
     REQUIRE_FALSE(response.close);
     REQUIRE_FALSE(response.ready);
@@ -100,32 +121,15 @@ open_extended_mining_channel answer(jd_session& session, bool grant) {
     return single<open_extended_mining_channel>(response.response);
 }
 
-jd_session opening_with(bool grant) {
+// A marked session whose pool granted 0x0002, with its channel open.
+jd_session ready_granted() {
     auto session = asking();
-    (void)answer(session, grant);
-    return session;
-}
-
-jd_session opening() {
-    return opening_with(false);
-}
-
-jd_session ready_with(bool grant) {
-    auto session = opening_with(grant);
+    (void)answer(session, true);
     auto const response = process(session, opened());
     REQUIRE_FALSE(response.close);
     REQUIRE(response.ready);
-    REQUIRE(session.ready());
     REQUIRE(session.channel().has_value());
     return session;
-}
-
-jd_session ready() {
-    return ready_with(false);
-}
-
-jd_session ready_granted() {
-    return ready_with(true);
 }
 
 void require_closed(jd_session& session, jd_session::result const& result) {
@@ -194,8 +198,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE_FALSE(result.close);
         REQUIRE_FALSE(result.ready);
         REQUIRE_FALSE(session.ready());
-        REQUIRE(single<request_extensions>(result.response).requested_extensions == worker_tracking());
-        auto const request = answer(session, false);
+        auto const request = single<open_extended_mining_channel>(result.response);
         REQUIRE(request.request_id == 1);
         REQUIRE(request.user_identity == "worker");
         REQUIRE(request.nominal_hash_rate == 0.f);
@@ -336,8 +339,9 @@ TEST_CASE("sv2 jd extended channel replies must match and leave bounded extranon
 }
 
 TEST_CASE("sv2 jd upstream request fits eight bytes and accepts larger grants", "[sv2 jd]") {
-    auto session = asking();
-    auto const request = answer(session, false);
+    auto session = waiting();
+    auto const result = process(session, setup_connection_success{2, 0});
+    auto const request = single<open_extended_mining_channel>(result.response);
     REQUIRE(request.min_extranonce_size == 8);
     for (uint16_t size = 8; size <= 32; ++size) {
         CAPTURE(size);
@@ -459,16 +463,10 @@ TEST_CASE("sv2 jd ready upstream refuses malformed misplaced and unsolicited bas
     require_closed(jd, process(jd, 0, 0x51, {}));
 }
 
-TEST_CASE("sv2 jd ChannelEndpointChanged keeps the channel, asks again and refuses another or a misplaced one", "[sv2 jd]") {
+TEST_CASE("sv2 jd ChannelEndpointChanged keeps the channel and refuses another or a misplaced one", "[sv2 jd]") {
     for (uint32_t const id : {7u, 9u}) {
         auto session = ready();
-        // sv2-spec 3.6.4: negotiation begins again on the moved channel.
-        auto const result = process(session, channel_endpoint_changed{id});
-        REQUIRE_FALSE(result.close);
-        REQUIRE(result.ready);
-        auto const again = single<request_extensions>(result.response);
-        REQUIRE(again.request_id == 2);
-        REQUIRE(again.requested_extensions == worker_tracking());
+        require_silent(process(session, channel_endpoint_changed{id}));
         REQUIRE(session.channel()->channel_id == 7);
         REQUIRE(session.channel()->extranonce_prefix == data_chunk{1, 2});
     }
@@ -625,7 +623,7 @@ TEST_CASE("sv2 jd extension negotiation refuses misplaced, mismatched and requir
 }
 
 TEST_CASE("sv2 jd a session told to skip extensions opens the channel straight after setup", "[sv2 jd]") {
-    jd_session session(jd_peer::mining, "pool.example", 8442, "worker", true);
+    jd_session session(jd_peer::mining, "pool.example", 8442, "worker", true, true);
     session.skip_extensions();
     REQUIRE_FALSE(session.start().empty());
     auto const result = process(session, setup_connection_success{2, 0});
@@ -671,4 +669,46 @@ TEST_CASE("sv2 jd ChannelEndpointChanged clears worker tracking until the pool g
     auto const closed = process(required, request_extensions_error{2, worker_tracking(), {0x0005}});
     require_closed(required, closed);
     REQUIRE(closed.incompatible);
+}
+
+TEST_CASE("sv2 jd an upstream that is not the operator's own never asks for worker names", "[sv2 jd]") {
+    // The miner's side decides. An unmarked session opens its channel straight
+    // after setup, and a grant it never asked for changes nothing.
+    auto session = waiting();
+    auto const result = process(session, setup_connection_success{2, 0});
+    REQUIRE_FALSE(session.awaiting_extensions());
+    REQUIRE(single<open_extended_mining_channel>(result.response).user_identity == "worker");
+    require_silent(process(session, request_extensions_success{1, worker_tracking()}), false);
+    require_silent(process(session, opened()));
+    require_silent(process(session, request_extensions_success{1, worker_tracking()}));
+    require_silent(process(session, request_extensions_error{1, worker_tracking(), {}}));
+    REQUIRE_FALSE(session.worker_identities());
+    require_silent(process(session, channel_endpoint_changed{7}));
+    REQUIRE_FALSE(session.worker_identities());
+}
+
+TEST_CASE("sv2 jd a pool that requires worker names is incompatible with an unmarked upstream", "[sv2 jd]") {
+    // Extension 0x0001, section 4: the pool disconnects a client without the
+    // extensions it requires, and an unmarked entry never sends the names.
+    for (bool const opened_channel : {false, true}) {
+        CAPTURE(opened_channel);
+        auto session = opened_channel ? ready() : opening();
+        auto const refused = process(session, request_extensions_error{0, {}, worker_tracking()});
+        require_closed(session, refused);
+        REQUIRE(refused.incompatible);
+        REQUIRE(refused.error == "upstream requires an extension this connection did not negotiate");
+    }
+    // A marked pair that connected again without asking is retried, and the
+    // next pair asks.
+    jd_session skipped(jd_peer::mining, "pool.example", 8442, "worker", true, true);
+    skipped.skip_extensions();
+    REQUIRE_FALSE(skipped.start().empty());
+    (void)process(skipped, setup_connection_success{2, 0});
+    auto const transient = process(skipped, request_extensions_error{0, {}, worker_tracking()});
+    require_closed(skipped, transient);
+    REQUIRE_FALSE(transient.incompatible);
+    // The Job Declaration connection does not take part in this.
+    auto jd = waiting(jd_peer::declaration);
+    require_silent(process(jd, setup_connection_success{2, 0}));
+    require_silent(process(jd, request_extensions_error{0, {}, worker_tracking()}));
 }

@@ -57,6 +57,9 @@ struct KND_API sv2_settings {
         std::string jds_authority_public_key;
         std::string user_identity;
         std::string mode;
+        // The operator runs this upstream, so it is sent downstream worker
+        // names (Worker-Specific Hashrate Tracking). Off unless marked.
+        bool own = false;
     };
 
     struct jd_settings {
@@ -69,6 +72,8 @@ struct KND_API sv2_settings {
         std::string jds_authority_public_key;
         std::string user_identity;
         std::string mode;
+        // jd_upstream::own for the single-pool settings (sv2.jd.own_upstream).
+        bool own_upstream;
         std::vector<std::string> upstreams;
         uint32_t response_timeout_seconds;
         uint32_t retry_initial_seconds;

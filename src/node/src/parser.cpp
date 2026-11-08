@@ -343,10 +343,12 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Pool account identity (1 to 255 UTF-8 bytes).");
     app.add_option("--sv2.jd.mode", cfg.sv2.jd.mode,
         "Job Declaration mode: coinbase-only or full-template (default coinbase-only).");
+    app.add_option("--sv2.jd.own_upstream", cfg.sv2.jd.own_upstream,
+        "The operator runs this pool, so send it downstream worker names (default false).");
     app.add_option("--sv2.jd.response_timeout_seconds", cfg.sv2.jd.response_timeout_seconds,
         "Upstream response deadline in seconds, from 1 to 600 (default 10).");
     app.add_option("--sv2.jd.upstream", cfg.sv2.jd.upstreams,
-        "Repeat in priority order: mining-address|mining-key|jds-address|jds-key|identity|mode.")
+        "Repeat in priority order: mining-address|mining-key|jds-address|jds-key|identity|mode[|own].")
         ->take_all();
     app.add_option("--sv2.jd.retry_initial_seconds", cfg.sv2.jd.retry_initial_seconds,
         "Initial retry delay, from 1 to 3600 seconds (default 5).");
