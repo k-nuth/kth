@@ -5,6 +5,7 @@
 #include <kth/node/p2p_node.hpp>
 
 #include <kth/node/detail/block_announcements.hpp>
+#include <kth/node/detail/outbound_connections.hpp>
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
@@ -1632,18 +1633,21 @@ void p2p_node::wake_status_task() noexcept {
                 break;
             }
 
-            auto const current = manager_.count_snapshot();
+            auto const peers = co_await manager_.all();
+            auto const current = detail::count_peers(peers);
             auto const target = settings_.outbound_connections;
             auto const [hosts, banned] = peer_db_.count_by_status();
             auto const pending = pending_connections_.size();
             probe_status_task(status_probe_point::reported);
-            spdlog::info("[p2p_node:status] Peers: {}/{} (target), pending: {}, hosts: {}, banned: {}",
-                current, target, pending, hosts, banned);
+            spdlog::info("[p2p_node:status] Peers: {}/{} outbound (target), {} inbound, pending: {}, hosts: {}, banned: {}",
+                current.outbound, target, current.inbound, pending, hosts, banned);
         }
     }, ::asio::detached);
 
     while (!stopped()) {
-        auto const current_count = manager_.count_snapshot();
+        // Inbound peers do not count: a node full of clients that connected
+        // to it still has to open its own outbound connections.
+        auto const current_count = detail::count_peers(co_await manager_.all()).outbound;
         auto const target = settings_.outbound_connections;
         auto const [host_count, ban_count] = peer_db_.count_by_status();
         auto const pending_count = pending_connections_.size();

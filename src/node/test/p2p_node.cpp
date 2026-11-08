@@ -306,3 +306,34 @@ TEST_CASE("p2p_node destructor stops node", "[p2p_node]") {
     // (no crash = success)
     REQUIRE(true);
 }
+
+#include <kth/node/detail/outbound_connections.hpp>
+
+TEST_CASE("p2p_node - inbound peers do not count toward the outbound target", "[p2p_node]") {
+    // Clients that connected to the node (browsers over WebSocket among them)
+    // are not connections it opened: they leave its outbound target unmet.
+    ::asio::io_context context;
+    ::asio::ip::tcp::acceptor acceptor(context, {::asio::ip::address_v4::loopback(), 0});
+    network::settings settings(domain::config::network::regtest);
+    std::vector<::asio::ip::tcp::socket> clients;
+    std::vector<peer_session::ptr> peers;
+    auto session = [&](bool inbound) {
+        clients.emplace_back(context);
+        clients.back().connect(acceptor.local_endpoint());
+        peers.push_back(std::make_shared<peer_session>(acceptor.accept(), settings, inbound));
+    };
+    for (int i = 0; i < 5; ++i) session(true);
+    session(false);
+    session(false);
+
+    auto counts = kth::node::detail::count_peers(peers);
+    CHECK(counts.inbound == 5);
+    CHECK(counts.outbound == 2);
+
+    // A stopped peer is no longer connected either way.
+    peers[5]->stop();
+    peers[0]->stop();
+    counts = kth::node::detail::count_peers(peers);
+    CHECK(counts.inbound == 4);
+    CHECK(counts.outbound == 1);
+}
