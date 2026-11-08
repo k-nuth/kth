@@ -893,7 +893,7 @@ send_raw_transaction(method_context& ctx, request const& req) {
 
     auto const txid = encode_hash(tx->hash());
     auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
-    auto const ec = co_await ctx.chain.organize(pooled);
+    auto const ec = co_await ctx.chain.submit_transaction(pooled);
     if (ec) {
         co_return kth::fail(make_error(error_code::misc_error, ec.message()));
     }
