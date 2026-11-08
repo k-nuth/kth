@@ -45,6 +45,11 @@ trusted interface.
   a bounded set of recent templates. A new tip discards the previous tip's
   templates. Requests for those IDs get `stale-template-id`; unknown IDs get
   `template-id-not-found`.
+- A BCH block can hold more than `RequestTransactionData.Success` carries: one
+  frame is under 16 MiB, and its list at most 65,535 transactions. Such a
+  template is still sent, since a client that mines on the merkle path never
+  needs the transactions. A request for them gets `template-too-large`; a
+  solution is taken as for any other template.
 - `SubmitSolution` reconstructs the full block from the supplied header fields
   and coinbase plus the template's transactions, then submits it through the
   node's block validation and connection pipeline. The outcome is logged; the

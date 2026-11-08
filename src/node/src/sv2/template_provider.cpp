@@ -96,8 +96,8 @@ void template_provider_session::set_tip(hash_digest const& previous) {
     previous_ = previous;
 }
 
-template_provider_session::entry const*
-template_provider_session::find_template(uint64_t id) const {
+template_provider_session::entry*
+template_provider_session::find_template(uint64_t id) {
     auto const it = std::find_if(templates_.begin(), templates_.end(),
         [id](auto const& item) { return item.id == id; });
     return it == templates_.end() ? nullptr : &*it;
@@ -134,18 +134,21 @@ template_provider_session::set_template(blockchain::mining_template value) {
     message.coinbase_tx_locktime = 0;
     message.merkle_path = coinbase_merkle_path(value.selection.txs);
 
-    // BCH blocks may exceed TDP's frame or transaction-count limits. Do not
-    // advertise work whose transaction data cannot be returned intact.
+    if (message.coinbase_prefix.size() > 8) {
+        spdlog::warn("[sv2] Template coinbase prefix exceeds 8 bytes");
+        return close();
+    }
+
+    // BCH blocks may exceed the frame or transaction-count limits of
+    // RequestTransactionData.Success. Such work is still sent: a client that
+    // mines the merkle path never asks for the transactions, and a request
+    // for them is refused.
     uint64_t data_size = 8 + 2 + 2;
     for (auto const& tx : value.selection.txs) {
         domain::chain::transaction const& transaction = *tx;
         data_size += 3 + transaction.serialized_size(true);
     }
-    if (message.coinbase_prefix.size() > 8 || data_size > u24_max
-        || value.selection.txs.size() > 0xffffu) {
-        spdlog::warn("[sv2] Template exceeds the Template Distribution message limits");
-        return close();
-    }
+    bool const too_large = data_size > u24_max || value.selection.txs.size() > 0xffffu;
 
     hash_digest target_bytes{};
     auto big = target->big();
@@ -159,7 +162,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
     bytes.insert(bytes.end(), activation.begin(), activation.end());
 
     set_tip(value.previous_block_hash);
-    templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path)});
+    templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
     return {std::move(bytes), false};
 }
@@ -235,10 +238,19 @@ template_provider_session::result template_provider_session::process(
             if ( ! request) {
                 return close();
             }
-            auto const* item = find_template(request->template_id);
+            auto* item = find_template(request->template_id);
             if ( ! item) {
                 return {frame(request_transaction_data_error{request->template_id,
                     stale(request->template_id) ? "stale-template-id" : "template-id-not-found"}), false};
+            }
+            if (item->too_large) {
+                // Once per template, however often a client asks for it.
+                if ( ! item->refusal_logged) {
+                    item->refusal_logged = true;
+                    spdlog::warn("[sv2] Refusing transaction data for template {}: too large "
+                        "for RequestTransactionData.Success", item->id);
+                }
+                return {frame(request_transaction_data_error{item->id, "template-too-large"}), false};
             }
             request_transaction_data_success reply;
             reply.template_id = item->id;

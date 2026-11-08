@@ -80,9 +80,12 @@ private:
         uint64_t id;
         blockchain::mining_template value;
         std::vector<hash_digest> merkle_path;
+        // Its transactions do not fit RequestTransactionData.Success.
+        bool too_large;
+        bool refusal_logged;
     };
 
-    [[nodiscard]] entry const* find_template(uint64_t id) const;
+    [[nodiscard]] entry* find_template(uint64_t id);
     [[nodiscard]] bool stale(uint64_t id) const;
 
     state state_ = state::awaiting_setup;

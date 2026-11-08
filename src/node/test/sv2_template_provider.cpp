@@ -399,8 +399,7 @@ template_pair request_template(listener_fixture& fixture, ::asio::ip::tcp::socke
 }
 
 // Use the fields received on the wire, including the actual coinbase prefix.
-domain::chain::block solution_block(template_pair const& job,
-    std::vector<data_chunk> const& raw_transactions, bool valid_work = true) {
+domain::chain::transaction coinbase_for(template_pair const& job) {
     auto script = job.work.coinbase_prefix;
     script.resize(100, 0);
     domain::chain::input::list inputs;
@@ -409,9 +408,14 @@ domain::chain::block solution_block(template_pair const& job,
     domain::chain::output::list outputs;
     outputs.emplace_back(job.work.coinbase_tx_value_remaining,
         test::miner_script(), domain::chain::token_data_opt{});
-    domain::chain::transaction::list transactions;
-    transactions.emplace_back(job.work.coinbase_tx_version, job.work.coinbase_tx_locktime,
+    return domain::chain::transaction(job.work.coinbase_tx_version, job.work.coinbase_tx_locktime,
         std::move(inputs), std::move(outputs));
+}
+
+domain::chain::block solution_block(template_pair const& job,
+    std::vector<data_chunk> const& raw_transactions, bool valid_work = true) {
+    domain::chain::transaction::list transactions;
+    transactions.push_back(coinbase_for(job));
     for (auto const& raw : raw_transactions) {
         byte_reader reader(raw);
         auto tx = domain::chain::transaction::from_data(reader, true);
@@ -662,6 +666,15 @@ TEST_CASE("sv2 does not advertise templates outside coinbase or TDP limits", "[s
     SECTION("height prefix exceeds eight bytes") {
         value.height = static_cast<size_t>(std::numeric_limits<int64_t>::max());
     }
+    auto session = ready_session();
+    require_closed(session.set_template(std::move(value)));
+}
+
+TEST_CASE("sv2 sends a template too large for its transaction data and refuses only that data", "[sv2 template_provider]") {
+    // A BCH block can outgrow RequestTransactionData.Success. A client that
+    // mines the merkle path never asks for the transactions, so it keeps the
+    // connection and gets the work.
+    auto value = empty_template();
     SECTION("transaction count exceeds U16") {
         auto tx = std::make_shared<domain::message::transaction const>(domain::chain::transaction{});
         value.selection.txs.assign(0x10000, tx);
@@ -673,8 +686,42 @@ TEST_CASE("sv2 does not advertise templates outside coinbase or TDP limits", "[s
             domain::chain::transaction(1, 0, {}, std::move(outputs)));
         value.selection.txs.assign(20000, tx);
     }
+    auto const count = value.selection.txs.size();
     auto session = ready_session();
-    require_closed(session.set_template(std::move(value)));
+    auto const large = template_messages(session.set_template(std::move(value)));
+    REQUIRE_FALSE(large.work.merkle_path.empty());
+    // Every request gets the same refusal; only the first is logged.
+    for (int request = 0; request < 2; ++request) {
+        auto const refused = process(session, request_transaction_data{large.work.template_id});
+        REQUIRE_FALSE(refused.close);
+        auto const error = response<request_transaction_data_error>(refused.response);
+        REQUIRE(error.template_id == large.work.template_id);
+        REQUIRE(error.error_code == "template-too-large");
+    }
+    // Its solution is still assembled for submission, as for any template.
+    auto const solved = process(session, solution_message(large,
+        domain::chain::block({}, {coinbase_for(large)})));
+    require_silent(solved);
+    REQUIRE(solved.solution);
+    REQUIRE(solved.solution->transactions().size() == count + 1);
+
+    // A template that fits, on the same connection, gets its transactions.
+    domain::chain::output::list outputs;
+    outputs.emplace_back(1000, test::miner_script(), domain::chain::token_data_opt{});
+    domain::chain::transaction const tx(1, 0, {}, std::move(outputs));
+    auto normal = empty_template();
+    normal.selection.txs.push_back(std::make_shared<domain::message::transaction const>(tx));
+    auto const fits = template_messages(session.set_template(std::move(normal)));
+    auto const served = process(session, request_transaction_data{fits.work.template_id});
+    REQUIRE_FALSE(served.close);
+    auto const data = response<request_transaction_data_success>(served.response);
+    REQUIRE(data.template_id == fits.work.template_id);
+    data_chunk bytes(tx.serialized_size(true));
+    byte_writer writer(bytes);
+    REQUIRE(tx.to_data(writer, true));
+    REQUIRE(data.transaction_list == std::vector<data_chunk>{bytes});
+    REQUIRE(response<request_transaction_data_error>(process(session,
+        request_transaction_data{large.work.template_id}).response).error_code == "template-too-large");
 }
 
 TEST_CASE("sv2 listener reports its port and serves a client whose frames arrive in pieces", "[sv2 template_provider]") {
