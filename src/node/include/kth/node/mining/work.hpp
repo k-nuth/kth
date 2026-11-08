@@ -225,6 +225,9 @@ private:
         uint16_t extranonce_size = 0;
         std::shared_ptr<std::vector<transaction_const_ptr> const> txs;
         std::vector<share_key> shares;
+        // Blocks submitted from shares refused for missing a harder share
+        // target. Kept apart from `shares`, which only credited shares enter.
+        std::vector<share_key> uncredited_blocks;
     };
 
     struct channel {
