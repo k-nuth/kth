@@ -255,6 +255,23 @@ A fixed-version upstream is refused.
 The node retains its own transaction selection; jobs supplied by the pool do
 not replace local work.
 
+Every downstream channel mines on that one upstream channel, so its
+`nominal_hash_rate` is the sum of the `nominal_hash_rate` of every open
+downstream channel, standard and extended, over all Mining Protocol connections
+(specification sections 5.3.2 and 5.3.9). The pool may set the channel's target
+from it. The channel request carries the sum when it is sent, which is zero
+while no miner is connected; a change while the request is outstanding is sent
+once the channel opens. Whenever the sum changes, because a channel opens, a
+miner sends `UpdateChannel`, or a channel or its whole connection closes, the
+node sends `UpdateChannel` with the new sum and the channel's opening
+`max_target`, so an update never asks the pool for a harder target. Updates go
+out at most once a second, as section 5.3.7 allows; changes within that second
+are sent together as the latest sum. A sum beyond the F32 range is sent as the
+largest finite F32 value. An `UpdateChannel.Error` naming this channel is logged
+and mining continues: the pool keeps the channel as it was, and the refused sum
+is not sent again. One naming another channel, including the group channel, or
+a malformed one ends the attempt like any other invalid upstream message.
+
 `full-template` sets `DECLARE_TX_DATA` (specification section 6.2) on the JD
 connection. `coinbase-only` leaves that flag clear. For each new template the
 node asks the JDS for `AllocateMiningJobToken` and builds the coinbase from
@@ -332,5 +349,5 @@ than one frame, is not declared: that template is mined solo and the log says
 why. `coinbase-only` has neither limit. The output queue holds at most eight
 frames. Shares that arrive before the custom
 job id is known are retained up to 32 and then dropped. An output queue that
-refuses a declaration or a share ends the attempt and continues solo. No
-reconnect or alternate pool is tried.
+refuses a declaration, a share or a hash rate update ends the attempt and
+continues solo. No reconnect or alternate pool is tried.

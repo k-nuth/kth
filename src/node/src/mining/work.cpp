@@ -801,6 +801,12 @@ size_t work_engine::channel_count() const {
     return channels_.size();
 }
 
+double work_engine::nominal_hash_rate() const {
+    double total = 0;
+    for (auto const& slot : channels_) total += slot.hashrate;
+    return total;
+}
+
 bool work_engine::has_active_job() const {
     for (auto const& slot : channels_) {
         for (auto const& item : slot.jobs) {

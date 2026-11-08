@@ -574,7 +574,7 @@ struct miner_link {
     open_extended_mining_channel_success opened;
     downstream_work work;
 
-    miner_link(io_driver& driver, uint16_t port)
+    miner_link(io_driver& driver, uint16_t port, float hash_rate = 0.f)
         : driver(driver)
         , socket(driver.io) {
         auto connected = std::make_shared<operation>();
@@ -594,7 +594,7 @@ struct miner_link {
         driver.write(socket, frame(setup));
         REQUIRE(receive_plain<setup_connection_success>(driver, socket).used_version == 2);
         // With JD enabled a downstream channel rolls JD's fixed reserve.
-        driver.write(socket, frame(open_extended_mining_channel{1, "miner", 0.f, target,
+        driver.write(socket, frame(open_extended_mining_channel{1, "miner", hash_rate, target,
             node::mining::jd_downstream_extranonce_size}));
         opened = receive_plain<open_extended_mining_channel_success>(driver, socket);
         REQUIRE(opened.request_id == 1);
@@ -913,6 +913,17 @@ data_chunk truncated_share_error() {
     payload[0] = 7;
     auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
         submit_shares_error::message_type, static_cast<uint32_t>(payload.size())});
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+// UpdateChannel.Error is a U32 and a U8 string, at least 5 bytes. Channel 7's
+// id alone is a complete frame whose body still fails from_data.
+data_chunk truncated_update_error() {
+    data_chunk payload(4, 0);
+    payload[0] = 7;
+    auto bytes = to_data_chunk(message_header{message_header::channel_msg_flag,
+        update_channel_error::message_type, static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -2142,4 +2153,148 @@ TEST_CASE("sv2 JD installs a pool publication once while a template fetch is in 
     fixture.io.poll();
     REQUIRE(miner.socket.available(error) == 0);
     REQUIRE_FALSE(error);
+}
+
+TEST_CASE("sv2 JD reports the summed downstream hash rate on the upstream channel", "[sv2 jd]") {
+    // sv2-spec 5.3.7 and 5.3.9: a proxy that aggregates downstream channels into
+    // one upstream channel keeps the pool told their summed nominal hash rate.
+    auto chain = started_chain("sv2_jd_hash_rate");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    // The token request stays unanswered while the sums are checked.
+    configuration.jd.response_timeout_seconds = 30;
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    // The max_target the upstream channel was opened with.
+    hash_digest unlimited;
+    unlimited.fill(0xff);
+    auto const next_update = [&](float expected) {
+        auto const update = fixture.pool.receive<update_channel>();
+        REQUIRE(update.channel_id == 7);
+        REQUIRE(update.nominal_hash_rate == expected);
+        REQUIRE(update.max_target == unlimited);
+    };
+
+    miner_link first(fixture, provider.port, 1000.f);
+    next_update(1000.f);
+
+    // The same rate again leaves the sum as it was. The unknown channel id is
+    // answered only after that update has been processed.
+    auto same = frame(update_channel{first.opened.channel_id, 1000.f, unlimited});
+    auto const unknown = frame(update_channel{0xffffffffu, 0.f, unlimited});
+    same.insert(same.end(), unknown.begin(), unknown.end());
+    fixture.write(first.socket, std::move(same));
+    REQUIRE(receive_plain<update_channel_error>(fixture, first.socket).channel_id == 0xffffffffu);
+
+    // A repeated 1000 would arrive before this sum.
+    miner_link second(fixture, provider.port, 500.f);
+    next_update(1500.f);
+
+    // Both changes land inside the one-second hold that follows that update,
+    // so the pool gets their latest sum once, never 2500.
+    auto burst = frame(update_channel{first.opened.channel_id, 2000.f, unlimited});
+    auto const latest = frame(update_channel{first.opened.channel_id, 3000.f, unlimited});
+    burst.insert(burst.end(), latest.begin(), latest.end());
+    fixture.write(first.socket, std::move(burst));
+    next_update(3500.f);
+
+    fixture.write(first.socket, frame(close_channel{first.opened.channel_id, "done"}));
+    next_update(500.f);
+
+    // A closed connection leaves the sum like a closed channel. No miner is left.
+    std::error_code ignored;
+    second.socket.close(ignored);
+    next_update(0.f);
+}
+
+TEST_CASE("sv2 JD opens the upstream channel with the hash rate already connected", "[sv2 jd]") {
+    bool early = true;
+    SECTION("miner connected before the channel request") {}
+    SECTION("miner connected while the channel request is outstanding") { early = false; }
+    auto chain = started_chain(early ? "sv2_jd_open_rate" : "sv2_jd_open_rate_late");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.response_timeout_seconds = 30;
+    provider_run provider(fixture, configuration, chain);
+    fixture.pool.handshake();
+    fixture.jds.handshake();
+    (void)fixture.pool.receive<setup_connection>();
+    (void)fixture.jds.receive<setup_connection>();
+    fixture.jds.send(setup_connection_success{2, 0});
+    // Solo work does not wait for the pool, so a miner can be mining before
+    // the upstream channel exists.
+    std::optional<miner_link> miner;
+    if (early) miner.emplace(fixture, provider.port, 1500.f);
+    auto const request = fixture.open();
+    REQUIRE(request.nominal_hash_rate == (early ? 1500.f : 0.f));
+    if ( ! early) miner.emplace(fixture, provider.port, 1500.f);
+    fixture.accept(request);
+    if ( ! early) {
+        // The request went out with zero. The open channel reports the change.
+        auto const update = fixture.pool.receive<update_channel>();
+        REQUIRE(update.channel_id == 7);
+        REQUIRE(update.nominal_hash_rate == 1500.f);
+        REQUIRE(update.max_target == request.max_target);
+    }
+
+    // A repeat of the sum the pool already has would arrive before this one.
+    miner_link other(fixture, provider.port, 500.f);
+    auto const update = fixture.pool.receive<update_channel>();
+    REQUIRE(update.channel_id == 7);
+    REQUIRE(update.nominal_hash_rate == 2000.f);
+    REQUIRE(update.max_target == request.max_target);
+}
+
+TEST_CASE("sv2 JD keeps mining after the pool refuses a hash rate update", "[sv2 jd]") {
+    enum class reply { refused, group_channel, truncated };
+    auto which = reply::refused;
+    SECTION("UpdateChannel.Error for the channel") {}
+    SECTION("UpdateChannel.Error for the group channel") { which = reply::group_channel; }
+    SECTION("truncated UpdateChannel.Error") { which = reply::truncated; }
+    char const* tag = "sv2_jd_rate_refused";
+    if (which == reply::group_channel) tag = "sv2_jd_rate_group";
+    if (which == reply::truncated) tag = "sv2_jd_rate_truncated";
+    auto chain = started_chain(tag);
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.response_timeout_seconds = 30;
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port, 1000.f);
+    auto const update = fixture.pool.receive<update_channel>();
+    REQUIRE(update.channel_id == 7);
+    REQUIRE(update.nominal_hash_rate == 1000.f);
+
+    captured_log log;
+    if (which == reply::refused) {
+        fixture.pool.send(update_channel_error{7, "max-target-out-of-range"});
+        REQUIRE(fixture.wait_until([&] {
+            return log.count("Pool refused the channel hash rate update (max-target-out-of-range)") >= 1;
+        }));
+        // sv2-spec 5.3.8: the pool keeps the channel as it was. The declaration
+        // completes on it and the miner moves onto the pool coinbase.
+        auto const declared = declare_local_template(fixture, miner, true);
+        REQUIRE(declared.custom.channel_id == 7);
+        // The refused 1000 is not sent again; the next change is.
+        hash_digest unlimited;
+        unlimited.fill(0xff);
+        fixture.write(miner.socket, frame(update_channel{miner.opened.channel_id, 2000.f, unlimited}));
+        auto const changed = fixture.pool.receive<update_channel>();
+        REQUIRE(changed.channel_id == 7);
+        REQUIRE(changed.nominal_hash_rate == 2000.f);
+        REQUIRE(log.count("continuing solo mining") == 0);
+        return;
+    }
+
+    // accept() opened channel 7 in group 8. Only channel 7 is ever updated, so
+    // an error for the group, or one that does not parse, ends the attempt.
+    (void)fixture.jds.receive<allocate_mining_job_token>();
+    if (which == reply::group_channel) fixture.pool.send(update_channel_error{8, "invalid-channel-id"});
+    else fixture.pool.send_plain(truncated_update_error());
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    REQUIRE(fixture.wait_until([&] {
+        return log.count("invalid upstream channel update error") >= 1;
+    }));
+    require_no_reconnect(fixture);
 }

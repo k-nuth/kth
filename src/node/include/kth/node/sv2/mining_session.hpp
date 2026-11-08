@@ -57,6 +57,11 @@ struct mining_session {
     [[nodiscard]]
     bool needs_template() const;
 
+    // The sum of this connection's open channels' nominal hash rates. With JD
+    // the upstream channel reports the sum over every connection.
+    [[nodiscard]]
+    double nominal_hash_rate() const;
+
 private:
     enum class state { awaiting_setup, ready, closed };
 

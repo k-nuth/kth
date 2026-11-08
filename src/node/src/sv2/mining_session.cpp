@@ -82,6 +82,10 @@ bool mining_session::needs_template() const {
     return ready() && engine_.channel_count() > 0 && ! template_prev_;
 }
 
+double mining_session::nominal_hash_rate() const {
+    return engine_.nominal_hash_rate();
+}
+
 domain::chain::output::list mining_session::coinbase_outputs(uint64_t value) const {
     // This connection pays one output. The engine takes a list so a later
     // payout split can pass several without another job builder.

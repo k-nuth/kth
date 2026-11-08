@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -78,12 +79,19 @@ struct jd_client {
     // Returns without waiting for either socket. The block is organized by the caller.
     void observe_share(mining::pool_proof proof);
 
+    // One downstream connection's summed channel hash rate, keyed by its
+    // connection salt; zero forgets the connection. The upstream channel
+    // reports the sum over every connection. Returns without waiting for the pool.
+    void observe_hash_rate(uint64_t connection, double rate);
+
 private:
     ::asio::awaitable<void> run_owned();
     ::asio::awaitable<void> serve(jd_connection& connection, jd_session& session,
         char const* name);
     ::asio::awaitable<void> declare_templates();
     void wake_declarations();
+    ::asio::awaitable<void> report_hash_rate();
+    void wake_hash_rate();
     bool dispatch(jd_declaration::result result);
     void publish_pool();
     void publish_solo();
@@ -112,6 +120,12 @@ private:
     std::chrono::seconds const response_timeout_;
     std::optional<std::chrono::steady_clock::time_point> job_deadline_;
     ::asio::steady_timer declaration_wake_;
+    // Wakes report_hash_rate() for a changed sum, unless an update was just
+    // sent: then it expires at the end of the hold and the loop reads the sum.
+    ::asio::steady_timer hash_rate_wake_;
+    bool hash_rate_held_ = false;
+    // Each downstream connection's summed channel hash rate, by connection salt.
+    std::map<uint64_t, double> hash_rates_;
     // Installed and cleared by run_owned(), and invoked only on owner_.
     // Client stop has to finish a parked receive. The channel is created on
     // owner_, so the close notice is posted there rather than on the chain

@@ -259,6 +259,9 @@ public:
 
     [[nodiscard]] size_t channel_count() const;
     [[nodiscard]] bool has_active_job() const;
+    // The open channels' nominal hash rates added up, for a proxy that reports
+    // them on one upstream channel. Each rate is finite; a double cannot overflow.
+    [[nodiscard]] double nominal_hash_rate() const;
 
 private:
     struct job {

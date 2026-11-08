@@ -399,6 +399,31 @@ TEST_CASE("sv2 jd channel closes request solo fallback for the channel or its gr
     }
 }
 
+TEST_CASE("sv2 jd a refused channel update keeps the channel and other update errors close it", "[sv2 jd]") {
+    // sv2-spec 5.3.8: the pool keeps the channel as it was, so it stays open
+    // and still follows the pool's later messages.
+    auto session = ready();
+    require_silent(process(session, update_channel_error{7, "max-target-out-of-range"}));
+    REQUIRE(session.channel()->channel_id == 7);
+    auto updated = target();
+    updated.back() = 0x7f;
+    require_silent(process(session, set_target{7, updated}));
+    REQUIRE(session.channel()->target == updated);
+
+    // Only channel 7 is ever updated: its group 9 and other ids are not replies.
+    for (uint32_t const id : {8u, 9u}) {
+        CAPTURE(id);
+        auto other = ready();
+        auto const result = process(other, update_channel_error{id, "invalid-channel-id"});
+        require_closed(other, result);
+        REQUIRE(result.error == "invalid upstream channel update error");
+    }
+    refuse_incomplete(update_channel_error{7, "max-target-out-of-range"}, ready);
+    auto missing_flag = ready();
+    require_closed(missing_flag, process(missing_flag, 0, update_channel_error::message_type,
+        to_data_chunk(update_channel_error{7, "max-target-out-of-range"})));
+}
+
 TEST_CASE("sv2 jd extensions are discarded only within the frame length bound", "[sv2 jd]") {
     auto setup = waiting();
     require_silent(process(setup, 0x4000, 0xff, {1, 2, 3}), false);

@@ -448,6 +448,21 @@ template_provider::template_provider(sv2_settings const& settings,
         }
     };
     std::optional<mining_session> miner;
+    // The channel hash rate sum this connection last gave the JD client. Its
+    // end gives zero, so the upstream sum drops it (sv2-spec 5.3.9).
+    double reported_rate = 0;
+    detail::scope_action forget_rate([&] {
+        if (upstream && reported_rate != 0) upstream->observe_hash_rate(connection_salt, 0);
+    }, true);
+    // Only open, update and close frames change it; summing at most 32
+    // channels after any frame is cheap.
+    auto report_rate = [&] {
+        if ( ! upstream) return;
+        auto const rate = miner->nominal_hash_rate();
+        if (rate == reported_rate) return;
+        reported_rate = rate;
+        upstream->observe_hash_rate(connection_salt, rate);
+    };
     bool decided = false;
     std::optional<hash_digest> sent_previous;
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
@@ -581,6 +596,7 @@ template_provider::template_provider(sv2_settings const& settings,
                         // The pool send is queued on the declaration strand. organize()
                         // below does not wait for the JDS or the pool to answer.
                         if (produced.pool && upstream) upstream->observe_share(std::move(*produced.pool));
+                        report_rate();
                         result.response.insert(result.response.end(),
                             produced.response.begin(), produced.response.end());
                         result.close = produced.close;
