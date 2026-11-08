@@ -8,6 +8,7 @@
 #include <chrono>
 #include <deque>
 #include <exception>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -95,6 +96,10 @@ constexpr size_t max_tracked_shares = mining::max_remembered_shares;
 // One declaration is accepted or replaced before a run of blocks. Two covers
 // a pair found on the same coinbase before DeclareMiningJob.Success.
 constexpr size_t max_pending_solutions = 2;
+
+// sv2-spec 5.3.7 lets a proxy debounce UpdateChannel to once a second. A burst
+// of downstream opens, updates and closes reaches the pool as one latest sum.
+constexpr auto hash_rate_hold = std::chrono::seconds(1);
 
 } // namespace
 
@@ -832,6 +837,20 @@ void jd_client::observe_share(mining::pool_proof proof) {
     ::asio::post(owner_, [this, proof = std::move(proof)] {
         if (stopped_ || ! active_ || active_->stopped) return;
         note_share(*active_, proof);
+    });
+}
+
+void jd_client::observe_hash_rate(uint64_t connection, double rate) {
+    ::asio::post(owner_, [this, connection, rate] {
+        if (stopped_) return;
+        if (rate == 0) hash_rates_.erase(connection);
+        else hash_rates_[connection] = rate;
+        double total = 0;
+        for (auto const& entry : hash_rates_) total += entry.second;
+        // The wire field is F32. A pool refuses infinity as an invalid rate, so
+        // a sum past its range is sent as the largest finite value.
+        if (active_) active_->mining_session.note_hash_rate(static_cast<float>(
+            std::min(total, double{std::numeric_limits<float>::max()})));
     });
 }
 

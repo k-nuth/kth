@@ -41,6 +41,13 @@ struct jd_session {
     [[nodiscard]] bool ready() const;
     [[nodiscard]] std::optional<open_extended_mining_channel_success> const& channel() const;
 
+    // The downstream channels' summed nominal hash rate (sv2-spec 5.3.2), zero
+    // until a miner connects. The channel request carries the value noted last.
+    void note_hash_rate(float value);
+    // UpdateChannel once the channel is open and the noted rate is not the one
+    // the pool last received. It repeats the max_target the channel opened with.
+    [[nodiscard]] std::optional<update_channel> hash_rate_update();
+
 private:
     enum class state { idle, awaiting_setup, awaiting_channel, ready, closed };
 
@@ -58,6 +65,9 @@ private:
     state state_ = state::idle;
     std::string error_;
     std::optional<open_extended_mining_channel_success> channel_;
+    float hash_rate_ = 0;
+    // Sent in the channel request or the last UpdateChannel.
+    float reported_hash_rate_ = 0;
 };
 
 } // namespace kth::node::sv2

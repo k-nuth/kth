@@ -47,6 +47,7 @@ struct KND_API sv2_settings {
 
         bool enabled;
         std::string address;
+        uint32_t open_channel_timeout_seconds;
     };
 
     struct jd_upstream {

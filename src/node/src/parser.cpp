@@ -327,6 +327,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Accept Mining Protocol clients on the Stratum V2 listener.");
     app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
         "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
+    app.add_option("--sv2.mining.open_channel_timeout_seconds", cfg.sv2.mining.open_channel_timeout_seconds,
+        "Deadline in seconds for a Mining Protocol connection to open its first channel (default 60).");
     app.add_option("--sv2.jd.enabled", cfg.sv2.jd.enabled,
         "Enable the Stratum V2 Job Declaration client (default false).");
     app.add_option("--sv2.jd.mining_address", cfg.sv2.jd.mining_address,

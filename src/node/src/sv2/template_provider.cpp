@@ -13,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -114,21 +115,34 @@ std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr>
     return path;
 }
 
+template <typename Entries>
+auto find_entry(Entries& entries, uint64_t id) {
+    auto const it = std::find_if(entries.begin(), entries.end(),
+        [id](auto const& item) { return item.id == id; });
+    return it == entries.end() ? nullptr : &*it;
+}
+
 } // namespace
 
 void template_provider_session::set_tip(hash_digest const& previous) {
     if (previous_ && *previous_ != previous) {
         stale_through_ = next_id_ - 1;
-        templates_.clear();
+        // A block found on the replaced tip's work still competes at its
+        // height (sv2-spec 7). Work from any earlier tip is dropped.
+        replaced_ = std::exchange(templates_, {});
     }
     previous_ = previous;
 }
 
+template_provider_session::entry*
+template_provider_session::find_template(uint64_t id) {
+    return find_entry(templates_, id);
+}
+
 template_provider_session::entry const*
-template_provider_session::find_template(uint64_t id) const {
-    auto const it = std::find_if(templates_.begin(), templates_.end(),
-        [id](auto const& item) { return item.id == id; });
-    return it == templates_.end() ? nullptr : &*it;
+template_provider_session::find_solvable(uint64_t id) const {
+    auto const* item = find_entry(templates_, id);
+    return item ? item : find_entry(replaced_, id);
 }
 
 bool template_provider_session::stale(uint64_t id) const {
@@ -162,18 +176,21 @@ template_provider_session::set_template(blockchain::mining_template value) {
     message.coinbase_tx_locktime = 0;
     message.merkle_path = coinbase_merkle_path(value.selection.txs);
 
-    // BCH blocks may exceed TDP's frame or transaction-count limits. Do not
-    // advertise work whose transaction data cannot be returned intact.
+    if (message.coinbase_prefix.size() > 8) {
+        spdlog::warn("[sv2] Template coinbase prefix exceeds 8 bytes");
+        return close();
+    }
+
+    // BCH blocks may exceed the frame or transaction-count limits of
+    // RequestTransactionData.Success. Such work is still sent: a client that
+    // mines the merkle path never asks for the transactions, and a request
+    // for them is refused.
     uint64_t data_size = 8 + 2 + 2;
     for (auto const& tx : value.selection.txs) {
         domain::chain::transaction const& transaction = *tx;
         data_size += 3 + transaction.serialized_size(true);
     }
-    if (message.coinbase_prefix.size() > 8 || data_size > u24_max
-        || value.selection.txs.size() > 0xffffu) {
-        spdlog::warn("[sv2] Template exceeds the Template Distribution message limits");
-        return close();
-    }
+    bool const too_large = data_size > u24_max || value.selection.txs.size() > 0xffffu;
 
     hash_digest target_bytes{};
     auto big = target->big();
@@ -187,7 +204,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
     bytes.insert(bytes.end(), activation.begin(), activation.end());
 
     set_tip(value.previous_block_hash);
-    templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path)});
+    templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
     return {std::move(bytes), false};
 }
@@ -263,10 +280,19 @@ template_provider_session::result template_provider_session::process(
             if ( ! request) {
                 return close();
             }
-            auto const* item = find_template(request->template_id);
+            auto* item = find_template(request->template_id);
             if ( ! item) {
                 return {frame(request_transaction_data_error{request->template_id,
                     stale(request->template_id) ? "stale-template-id" : "template-id-not-found"}), false};
+            }
+            if (item->too_large) {
+                // Once per template, however often a client asks for it.
+                if ( ! item->refusal_logged) {
+                    item->refusal_logged = true;
+                    spdlog::warn("[sv2] Refusing transaction data for template {}: too large "
+                        "for RequestTransactionData.Success", item->id);
+                }
+                return {frame(request_transaction_data_error{item->id, "template-too-large"}), false};
             }
             request_transaction_data_success reply;
             reply.template_id = item->id;
@@ -281,7 +307,7 @@ template_provider_session::result template_provider_session::process(
             if ( ! solution) {
                 return close();
             }
-            auto const* item = find_template(solution->template_id);
+            auto const* item = find_solvable(solution->template_id);
             if ( ! item) {
                 spdlog::debug("[sv2] Ignoring a solution for {} template {}",
                     stale(solution->template_id) ? "stale" : "unknown", solution->template_id);
@@ -448,8 +474,37 @@ template_provider::template_provider(sv2_settings const& settings,
         }
     };
     std::optional<mining_session> miner;
+    // The channel hash rate sum this connection last gave the JD client. Its
+    // end gives zero, so the upstream sum drops it (sv2-spec 5.3.9).
+    double reported_rate = 0;
+    detail::scope_action forget_rate([&] {
+        if (upstream && reported_rate != 0) upstream->observe_hash_rate(connection_salt, 0);
+    }, true);
+    // Only open, update and close frames change it; summing at most 32
+    // channels after any frame is cheap.
+    auto report_rate = [&] {
+        if ( ! upstream) return;
+        auto const rate = miner->nominal_hash_rate();
+        if (rate == reported_rate) return;
+        reported_rate = rate;
+        upstream->observe_hash_rate(connection_salt, rate);
+    };
     bool decided = false;
     std::optional<hash_digest> sent_previous;
+    // Until its first channel, a Mining connection only holds one of the
+    // listener's slots (sv2-spec 5.3.2). Template Distribution has no channels.
+    ::asio::steady_timer channel_deadline(owner_);
+    auto next_event = [&]() -> ::asio::awaitable<std::tuple<std::error_code, event>> {
+        if ( ! miner || ! miner->awaiting_channel()) {
+            co_return co_await inbox.async_receive(::asio::as_tuple(::asio::use_awaitable));
+        }
+        auto outcome = co_await (inbox.async_receive(::asio::as_tuple(::asio::use_awaitable))
+            || channel_deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+        if (outcome.index() == 0) co_return std::move(std::get<0>(outcome));
+        spdlog::info("[sv2] Closing a Mining connection that opened no channel within {} seconds",
+            settings_.mining.open_channel_timeout_seconds);
+        co_return std::tuple<std::error_code, event>{std::make_error_code(std::errc::timed_out), event{}};
+    };
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
         auto const& constraints = *session.constraints();
         auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{
@@ -529,8 +584,7 @@ template_provider::template_provider(sv2_settings const& settings,
         // throws. The group below joins them before any captured locals go.
         detail::scope_action finish(end_inputs, true);
         for (;;) {
-            auto [error, input] = co_await inbox.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
+            auto [error, input] = co_await next_event();
             if (error || input.kind == event_kind::end) co_return;
             auto const view = chain_.chain_view();
             if (view) {
@@ -554,6 +608,9 @@ template_provider::template_provider(sv2_settings const& settings,
                 if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
                     miner.emplace(connection_salt, *payout_,
                         settings_.jd.enabled ? pool_allocations_ : std::shared_ptr<uint64_t>{});
+                    // The answer to this setup starts the wait for a first channel.
+                    channel_deadline.expires_after(
+                        std::chrono::seconds(settings_.mining.open_channel_timeout_seconds));
                 }
                 decided = true;
                 if (miner) {
@@ -581,6 +638,7 @@ template_provider::template_provider(sv2_settings const& settings,
                         // The pool send is queued on the declaration strand. organize()
                         // below does not wait for the JDS or the pool to answer.
                         if (produced.pool && upstream) upstream->observe_share(std::move(*produced.pool));
+                        report_rate();
                         result.response.insert(result.response.end(),
                             produced.response.begin(), produced.response.end());
                         result.close = produced.close;

@@ -102,22 +102,26 @@ TEST_CASE("sv2 mining settings survive network selection config and overrides", 
     CHECK(parser.configured.sv2.mining.address == "bchreg:payout");
 
     config_file file("sv2_mining", "sv2.enabled=true\nsv2.mining.enabled=true\n"
-        "sv2.mining.address=bchreg:configured");
+        "sv2.mining.address=bchreg:configured\nsv2.mining.open_channel_timeout_seconds=30");
     node::parser from_file(domain::config::network::regtest);
     REQUIRE(from_file.parse_from_file(file.path(), error));
     CHECK(from_file.configured.sv2.mining.enabled);
     CHECK(from_file.configured.sv2.mining.address == "bchreg:configured");
+    CHECK(from_file.configured.sv2.mining.open_channel_timeout_seconds == 30u);
     node::configuration const copied(from_file.configured);
     CHECK(copied.sv2.mining.enabled);
     CHECK(copied.sv2.mining.address == "bchreg:configured");
+    CHECK(copied.sv2.mining.open_channel_timeout_seconds == 30u);
 
     auto const path = file.path().string();
     node::parser overridden(domain::config::network::mainnet);
     char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
-        "--sv2.mining.enabled=false", "--sv2.mining.address", "bchreg:selected"};
-    REQUIRE(overridden.parse(8, override_argv, error));
+        "--sv2.mining.enabled=false", "--sv2.mining.address", "bchreg:selected",
+        "--sv2.mining.open_channel_timeout_seconds", "45"};
+    REQUIRE(overridden.parse(10, override_argv, error));
     CHECK_FALSE(overridden.configured.sv2.mining.enabled);
     CHECK(overridden.configured.sv2.mining.address == "bchreg:selected");
+    CHECK(overridden.configured.sv2.mining.open_channel_timeout_seconds == 45u);
 }
 
 TEST_CASE("sv2 mining enable option rejects an invalid boolean", "[configuration tests][parser][sv2 mining]") {

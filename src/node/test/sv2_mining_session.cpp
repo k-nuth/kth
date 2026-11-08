@@ -396,6 +396,27 @@ TEST_CASE("sv2 mining opens closes and bounds independent channels", "[sv2 minin
     REQUIRE_FALSE(process(standard_only, standard(1)).close);
 }
 
+TEST_CASE("sv2 mining awaits a first channel only until one opens", "[sv2 mining]") {
+    mining_session fresh(1, domain::chain::script{});
+    REQUIRE_FALSE(fresh.awaiting_channel());
+    auto session = ready();
+    REQUIRE(session.awaiting_channel());
+    auto too_large = extended();
+    too_large.min_extranonce_size = 33;
+    REQUIRE(single<open_mining_channel_error>(process(session, too_large)).error_code == "min-extranonce-size-too-large");
+    REQUIRE(session.awaiting_channel());
+    auto const opened = single<open_standard_mining_channel_success>(process(session, standard(1)));
+    REQUIRE_FALSE(session.awaiting_channel());
+    require_silent(process(session, close_channel{opened.channel_id, "done"}));
+    REQUIRE_FALSE(session.awaiting_channel());
+
+    // A channel whose success waits for a template has still been opened.
+    auto pending = ready();
+    require_silent(process(pending, 0, open_standard_mining_channel::message_type,
+        to_data_chunk(standard())));
+    REQUIRE_FALSE(pending.awaiting_channel());
+}
+
 TEST_CASE("sv2 mining refuses invalid rates and updates the target within the device bound", "[sv2 mining]") {
     for (float const rate : {-0.f, -1.f, std::numeric_limits<float>::infinity(),
             -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
@@ -419,6 +440,34 @@ TEST_CASE("sv2 mining refuses invalid rates and updates the target within the de
     auto const target = single<set_target>(process(session, update_channel{opened.channel_id, 0, bound}));
     REQUIRE(target.channel_id == opened.channel_id);
     REQUIRE(target.target == bound);
+}
+
+TEST_CASE("sv2 mining SetTarget applies to the future job already being mined", "[sv2 mining]") {
+    auto session = ready();
+    auto const frames = packets(process(session, standard()).response);
+    REQUIRE(frames.size() == 3);
+    auto const opened = parse<open_standard_mining_channel_success>(frames[0]);
+    auto const job = parse<new_mining_job>(frames[1]);
+    auto const prev = parse<mining_set_new_prev_hash>(frames[2]);
+    REQUIRE_FALSE(job.ntime_start);
+    submit_shares_standard share{opened.channel_id, 1, job.job_id, 0, prev.ntime_start, job.version};
+    domain::chain::header const header(job.version, prev.prev_hash, job.merkle_root,
+        prev.ntime_start, prev.nbits, share.nonce);
+    auto const digest = to_uint256(domain::chain::hash(header));
+    REQUIRE(digest > 0);
+
+    // Harder: a share that meets the opening target but not the new one is refused.
+    auto const below = to_hash_digest(digest - 1);
+    REQUIRE(single<set_target>(process(session, update_channel{opened.channel_id, 0, below})).target == below);
+    REQUIRE(single<submit_shares_error>(process(session, share)).error_code == "difficulty-too-low");
+
+    // Easier: the same share meets the new target but not the previous one.
+    auto const exact = to_hash_digest(digest);
+    REQUIRE(single<set_target>(process(session, update_channel{opened.channel_id, 0, exact})).target == exact);
+    ++share.sequence_number;
+    auto const accepted = single<submit_shares_success>(process(session, share));
+    REQUIRE(accepted.last_sequence_number == 2);
+    REQUIRE(accepted.new_submits_accepted_count == 1);
 }
 
 TEST_CASE("sv2 mining sends a future job before activation on every channel and stales old work", "[sv2 mining]") {

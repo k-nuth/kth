@@ -41,6 +41,7 @@ rpc_settings::rpc_settings()
 sv2_settings::mining_settings::mining_settings()
     : enabled(false)
     , address()
+    , open_channel_timeout_seconds(60)
 {}
 
 sv2_settings::jd_settings::jd_settings()

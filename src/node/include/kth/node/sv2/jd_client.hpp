@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -79,6 +80,11 @@ struct jd_client {
     // Returns without waiting for either socket. The block is organized by the caller.
     void observe_share(mining::pool_proof proof);
 
+    // One downstream connection's summed channel hash rate, keyed by its
+    // connection salt; zero forgets the connection. The upstream channel
+    // reports the sum over every connection. Returns without waiting for the pool.
+    void observe_hash_rate(uint64_t connection, double rate);
+
 private:
     struct attempt;
     ::asio::awaitable<void> run_owned();
@@ -124,6 +130,8 @@ private:
     std::shared_ptr<attempt> probe_;
     blockchain::block_chain* const chain_;
     std::chrono::seconds const response_timeout_;
+    // Each downstream connection's summed channel hash rate, by connection salt.
+    std::map<uint64_t, double> hash_rates_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> ready_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> wake_;
     boost::atomic_shared_ptr<jd_notice> notice_;

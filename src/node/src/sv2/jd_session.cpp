@@ -5,8 +5,12 @@
 #include <kth/node/sv2/jd_session.hpp>
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
+#include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/primitives.hpp>
 
@@ -16,6 +20,14 @@ namespace {
 
 constexpr uint32_t channel_request_id = 1;
 constexpr uint32_t jd_flag_declare_tx_data = 1u << 0;
+
+// The channel asks for no target ceiling. Each UpdateChannel repeats it, so a
+// hash rate change never also asks the pool for harder shares (sv2-spec 5.3.7).
+hash_digest open_max_target() {
+    hash_digest target;
+    target.fill(0xff);
+    return target;
+}
 
 template <typename Message>
 data_chunk frame(Message const& message) {
@@ -81,7 +93,10 @@ data_chunk jd_session::start() {
         : full_template_ ? jd_flag_declare_tx_data : 0;
     setup.endpoint_host = host_;
     setup.endpoint_port = port_;
-    setup.vendor = "Knuth";
+    // sv2-spec 3.6.1: vendor names the developer and its version, and
+    // hardware_version the package in use. A node has no telemetry device id.
+    setup.vendor = std::format("{} {}", kth::client_name, kth::version);
+    setup.hardware_version = std::format("{} {} full node", kth::client_name, kth::currency_name);
     state_ = state::awaiting_setup;
     return frame(setup);
 }
@@ -92,6 +107,16 @@ bool jd_session::ready() const {
 
 std::optional<open_extended_mining_channel_success> const& jd_session::channel() const {
     return channel_;
+}
+
+void jd_session::note_hash_rate(float value) {
+    hash_rate_ = value;
+}
+
+std::optional<update_channel> jd_session::hash_rate_update() {
+    if ( ! ready() || ! channel_ || hash_rate_ == reported_hash_rate_) return std::nullopt;
+    reported_hash_rate_ = hash_rate_;
+    return update_channel{channel_->channel_id, hash_rate_, open_max_target()};
 }
 
 jd_session::result jd_session::fail(std::string error, bool incompatible) {
@@ -130,8 +155,11 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
     open_extended_mining_channel request;
     request.request_id = channel_request_id;
     request.user_identity = identity_;
-    request.max_target.fill(0xff);
+    // Miners that connected before the pool answered setup are already counted.
+    request.nominal_hash_rate = hash_rate_;
+    request.max_target = open_max_target();
     request.min_extranonce_size = min_extranonce_size;
+    reported_hash_rate_ = hash_rate_;
     state_ = state::awaiting_channel;
     return {frame(request), false, false, {}};
 }
@@ -230,6 +258,19 @@ jd_session::result jd_session::process_mining(message_header const& header, byte
             if ( ! message || ! matches_channel(message->channel_id)) {
                 return fail("invalid upstream channel endpoint change");
             }
+            break;
+        }
+        case update_channel_error::message_type: {
+            auto const message = parse<update_channel_error>(payload);
+            // Only this channel id is ever updated. An error naming its group
+            // or another id answers nothing this client sent.
+            if ( ! message || message->channel_id != channel_->channel_id) {
+                return fail("invalid upstream channel update error");
+            }
+            // The pool keeps the channel as it was, so jobs and shares go on
+            // (sv2-spec 5.3.8). The refused sum is not sent again.
+            spdlog::warn("[sv2 jd] Pool refused the channel hash rate update ({}); mining continues",
+                printable_error_code(message->error_code));
             break;
         }
         default:
