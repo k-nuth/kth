@@ -588,15 +588,17 @@ share_outcome work_engine::submit(share_request const& share) {
     bool const block = network && to_uint256(digest) <= network->big();
     share_key key{share.job_id, share.nonce, share.ntime, share.version, share.extranonce};
     bool const repeated = std::find(job->shares.begin(), job->shares.end(), key) != job->shares.end();
+    auto& uncredited = job->uncredited_blocks;
+    bool const submitted = std::find(uncredited.begin(), uncredited.end(), key) != uncredited.end();
     // The channel's latest target, not the one when the job was built: a
     // SetTarget applies to future jobs already received (sv2-spec 5.3.21).
     if (to_uint256(digest) > to_uint256(slot->share_target)) {
         auto refused = rejected_share(share, error_difficulty_too_low);
         // A share target harder than the network's, as a device maximum can
-        // set, still leaves a valid block. It is submitted once: the key is
-        // kept so that a replay is not.
-        if (block && ! repeated) {
-            job->shares.push_back(std::move(key));
+        // set, still leaves a valid block. It is submitted once. The share
+        // stays uncredited, so a later easier target can still credit it.
+        if (block && ! repeated && ! submitted) {
+            uncredited.push_back(std::move(key));
             refused.block = std::make_shared<domain::message::block>(
                 assemble_block(solved, *coinbase, *job->txs));
         }
@@ -620,7 +622,7 @@ share_outcome work_engine::submit(share_request const& share) {
     outcome.shares_sum = share_difficulty(slot->share_target);
     // Only for the newest job: an earlier one was replaced already.
     outcome.renew = &*job == &slot->jobs.back() && job->shares.size() == max_remembered_shares;
-    if (block) {
+    if (block && ! submitted) {
         outcome.status = share_status::block;
         outcome.block = std::make_shared<domain::message::block>(
             assemble_block(solved, *coinbase, *job->txs));

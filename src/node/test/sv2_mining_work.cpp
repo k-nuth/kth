@@ -590,10 +590,18 @@ TEST_CASE("Mining target updates apply to future jobs already sent", "[sv2 minin
         value.extranonce.resize(opened.extranonce_size, 0x42);
         auto root = coinbase(*job, opened, value.extranonce).hash();
         for (auto const& sibling : job->merkle_path) root = bitcoin_hash(build_chunk({root, sibling}));
-        domain::chain::header const header(value.version, tmpl.previous_block_hash, root,
-            value.ntime, tmpl.bits, value.nonce);
-        auto const digest = to_uint256(domain::chain::hash(header));
-        REQUIRE(digest > 0);
+        auto const digest_of = [&](uint32_t nonce) {
+            domain::chain::header const header(value.version, tmpl.previous_block_hash, root,
+                value.ntime, tmpl.bits, nonce);
+            return to_uint256(domain::chain::hash(header));
+        };
+        auto const network = domain::chain::compact::from_compact(tmpl.bits);
+        REQUIRE(network.has_value());
+        // About half of regtest hashes are blocks. Above the network target,
+        // only the share target decides.
+        while (value.nonce < 256 && digest_of(value.nonce) <= network->big()) ++value.nonce;
+        auto const digest = digest_of(value.nonce);
+        REQUIRE(digest > network->big());
         REQUIRE_FALSE(engine.update(opened.channel_id, 0, maximum_target()).target);
 
         // Harder: the share meets the target the job was sent with, not the new one.
@@ -609,6 +617,29 @@ TEST_CASE("Mining target updates apply to future jobs already sent", "[sv2 minin
         REQUIRE(easier.target.has_value());
         REQUIRE(*easier.target == exact);
         require_accepted(engine.submit(value));
+
+        // A block hash follows the same rules as a share, and its block is
+        // submitted once, when the harder target refuses the share.
+        auto block_share = value;
+        block_share.nonce = 0;
+        while (block_share.nonce < 256 && digest_of(block_share.nonce) > network->big()) {
+            ++block_share.nonce;
+        }
+        auto const block_digest = digest_of(block_share.nonce);
+        REQUIRE(block_digest <= network->big());
+        REQUIRE(block_digest > 0);
+        REQUIRE(engine.update(opened.channel_id, 0, to_hash_digest(block_digest - 1)).target.has_value());
+        auto const refused = engine.submit(block_share);
+        REQUIRE(refused.status == share_status::rejected);
+        REQUIRE(refused.error_code == error_difficulty_too_low);
+        REQUIRE(refused.block);
+        require_share_error(engine, block_share, error_difficulty_too_low);
+        REQUIRE(engine.update(opened.channel_id, 0, to_hash_digest(block_digest)).target.has_value());
+        auto const credited = engine.submit(block_share);
+        require_accepted(credited);
+        REQUIRE(credited.status == share_status::accepted);
+        REQUIRE_FALSE(credited.block);
+        require_share_error(engine, block_share, error_duplicate_share);
     }
 }
 
@@ -624,7 +655,19 @@ TEST_CASE("Mining duplicate history is bounded without accepting replays", "[sv2
         REQUIRE(outcome.renew == (nonce + 1 == max_remembered_shares));
     }
     require_share_error(engine, share(*job), error_duplicate_share);
-    require_share_error(engine, share(*job, max_remembered_shares), error_share_limit);
+    // Past the limit only a block is taken, and about half of regtest hashes
+    // are blocks: the refused share is one above the network target.
+    auto const network = domain::chain::compact::from_compact(tmpl.bits);
+    REQUIRE(network.has_value());
+    auto const is_block = [&](uint32_t nonce) {
+        domain::chain::header const header(job->version, tmpl.previous_block_hash,
+            job->merkle_root, job->ntime_start, tmpl.bits, nonce);
+        return to_uint256(domain::chain::hash(header)) <= network->big();
+    };
+    auto plain = static_cast<uint32_t>(max_remembered_shares);
+    while (plain < max_remembered_shares + 256 && is_block(plain)) ++plain;
+    REQUIRE_FALSE(is_block(plain));
+    require_share_error(engine, share(*job, plain), error_share_limit);
     engine.stale_all();
     REQUIRE_FALSE(engine.has_active_job());
     require_share_error(engine, share(*job), error_stale_share);
