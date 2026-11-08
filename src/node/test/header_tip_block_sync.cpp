@@ -2437,7 +2437,9 @@ namespace {
 
 // Finish the version handshake with the node's session from the test's end,
 // as a peer of `protocol_version`, and read what the node sends after it up
-// to the fee filter, which goes last. The sendcmpct among it, if any.
+// to the fee filter: the peer's service sends its first one as it starts,
+// after the handshake's sendheaders and sendcmpct. The sendcmpct among it, if
+// any.
 std::optional<domain::message::send_compact> handshake(wire_peer& peer, uint64_t nonce,
     uint32_t protocol_version) {
 
@@ -2483,6 +2485,12 @@ TEST_CASE("integrated: up to three peers are asked for high-bandwidth compact bl
     std::vector<std::unique_ptr<wire_peer>> peers;
     p2p_node network(config);
     network.set_compact_high_bandwidth(high_bandwidth);
+    // A fee filter for every peer, so each peer's service sends one as it
+    // starts, after what the handshake sends.
+    network.set_fee_filter_handler(
+        [](kth::network::peer_session&) -> ::asio::awaitable<std::optional<uint64_t>> {
+            co_return uint64_t{1000};
+        });
     auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
         [&network]() -> ::asio::awaitable<int> {
             auto const ec = co_await network.start();
