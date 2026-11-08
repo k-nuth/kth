@@ -183,11 +183,36 @@ full_node::~full_node() {
         });
     }
 
+// The gRPC server binds first: if it cannot, nothing else has started yet.
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        grpc_server_ = std::make_unique<grpc_rpc::server>(rpc_settings_, chain_, network_type_);
+        auto const port = grpc_server_->start();
+        if ( ! port) {
+            // Asked for and unavailable is a failed start, not a node quietly
+            // running without the service it was configured to offer. Before the
+            // network starts, so a failed start leaves only the chain, closed here
+            // as for a network that fails to start.
+            spdlog::error("[node] gRPC server failed to start: {}", port.error());
+            grpc_server_.reset();
+            (void)chain_.stop();
+            co_return error::listen_failed;
+        }
+    } else {
+        spdlog::info("[node] gRPC server disabled (rpc.enabled=false).");
+    }
+#endif
+
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
         spdlog::error("[node] Failure starting network: {}", ec.message());
+#if defined(KTH_WITH_GRPC)
+        // Asked to wind down, not joined here: join() of the node ends it, before
+        // the chain is destroyed. Its calls see the stopped chain meanwhile.
+        if (grpc_server_) grpc_server_->stop();
+#endif
         (void)chain_.stop();
         co_return ec;
     }
@@ -200,12 +225,13 @@ full_node::~full_node() {
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
-#elif ! defined(__EMSCRIPTEN__)
+#elif ! defined(__EMSCRIPTEN__) && ! defined(KTH_WITH_GRPC)
     if (rpc_settings_.enabled) {
-        spdlog::warn("[node] rpc.enabled=true but this build has no JSON-RPC support "
-            "(compile with Conan rpc=jsonrpc or CMake KTH_RPC_BACKEND=jsonrpc).");
+        spdlog::warn("[node] rpc.enabled=true but this build has no RPC server "
+            "(compile with Conan rpc=jsonrpc or rpc=grpc, or CMake KTH_RPC_BACKEND=jsonrpc|grpc).");
     }
 #endif
+
 
     spdlog::info("[node] Node started successfully.");
     co_return error::success;
@@ -249,6 +275,9 @@ full_node::~full_node() {
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
         if (rpc_server_) rpc_server_->stop();
+#endif
+#if defined(KTH_WITH_GRPC)
+        if (grpc_server_) grpc_server_->stop();
 #endif
     };
     co_await (core() && run_rpc());
@@ -394,6 +423,10 @@ void full_node::stop() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // Only asks (never blocks): this can run on a node executor thread.
+    if (grpc_server_) grpc_server_->stop();
+#endif
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
@@ -404,6 +437,16 @@ void full_node::stop() {
 }
 
 void full_node::join() {
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // First: in-flight calls still run chain work on the network executor and
+    // read the chain, so both must outlive them. join() is the owner's thread,
+    // not an executor thread, so waiting here blocks no node work. Ask first, in
+    // case the owner went straight to join().
+    if (grpc_server_) {
+        grpc_server_->stop();
+        grpc_server_->join();
+    }
+#endif
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
 #endif

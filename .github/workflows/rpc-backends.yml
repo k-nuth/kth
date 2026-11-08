@@ -43,6 +43,10 @@ jobs:
           - backend: none
             targets: kth_node_test
             tests: ''
+          # gRPC + Protobuf (docs/grpc.md), with its example client.
+          - backend: grpc
+            targets: kth_node_test kth-grpc-smoke-client
+            tests: '"[grpc transport],[grpc chain],[grpc real],[grpc cookie],[grpc]"'
 
     steps:
       - name: 📥 Checkout
