@@ -31,6 +31,7 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/extensions.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/mining_messages.hpp>
@@ -52,9 +53,12 @@ hash_digest authority(std::string const& text) {
     return *value;
 }
 
+// TLV fields follow the message's own fields. The header keeps the message's
+// extension type (sv2-spec 3.4.1).
 template <typename Message>
-data_chunk frame(Message const& message) {
-    auto const payload = to_data_chunk(message);
+data_chunk frame(Message const& message, data_chunk const& fields = {}) {
+    auto payload = to_data_chunk(message);
+    payload.insert(payload.end(), fields.begin(), fields.end());
     auto bytes = to_data_chunk(message_header{Message::channel_message
         ? message_header::channel_msg_flag : uint16_t{0}, Message::message_type,
         static_cast<uint32_t>(payload.size())});
@@ -213,6 +217,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
     , upstreams_(jd_upstreams(settings.jd))
     , policy_(upstreams_.size(), settings.jd)
     , redirects_(upstreams_.size())
+    , unanswered_(upstreams_.size(), false)
     , chain_(chain)
     , response_timeout_(settings.jd.response_timeout_seconds)
     , ready_(owner_, 1)
@@ -319,7 +324,10 @@ void jd_client::mark_ready(attempt& value) {
                 std::move(result.error));
             return false;
         }
-        if ( ! was_ready && header->extension() == 0
+        // The answer to RequestExtensions is a setup reply as well.
+        bool const setup_reply = header->extension() == 0
+            || (peer == jd_peer::mining && header->extension() == extensions_negotiation_type);
+        if ( ! was_ready && setup_reply
             && std::chrono::steady_clock::now() - sent
                 > std::chrono::milliseconds(settings_.jd.max_latency_milliseconds)) {
             fail(value, jd_failure::transient, "upstream setup latency exceeded threshold");
@@ -358,6 +366,10 @@ void jd_client::mark_ready(attempt& value) {
             auto [error] = co_await deadline.async_wait(::asio::as_tuple(::asio::use_awaitable));
             if (done || session.ready()) co_return;
             if (error == ::asio::error::operation_aborted) continue;
+            if (session.awaiting_extensions()) {
+                restart_without_extensions(value);
+                co_return;
+            }
             fail(value, jd_failure::transient, "setup response deadline expired");
             co_return;
         }
@@ -407,6 +419,12 @@ void jd_client::start_attempt(size_t index, bool probe) {
     // Before its channel request is built. Only the active pair's pool is sent
     // shares, so a probe opens with zero and an active pair with the sum.
     value->mining_session.note_hash_rate(probe ? 0.f : hash_rate_total());
+    // Only the pair that replaces an unanswered RequestExtensions skips it.
+    // A later pair, after any failure, asks again.
+    if (unanswered_[index]) {
+        unanswered_[index] = false;
+        value->mining_session.skip_extensions();
+    }
     if (probe) probe_ = value;
     else active_ = value;
     ::asio::co_spawn(owner_, run_attempt(value), [this, value](std::exception_ptr error) {
@@ -835,6 +853,21 @@ bool jd_client::follow_reconnect(attempt& value, jd_peer peer, byte_span payload
     return false;
 }
 
+void jd_client::restart_without_extensions(attempt& value) {
+    if (value.stopped) return;
+    // Extension 0x0001, section 4: no other message may follow an unanswered
+    // RequestExtensions on that socket. The entry connects again at once, like
+    // a followed Reconnect, and that pair opens its channel without asking.
+    // Nothing was declared yet: the pool channel was never requested.
+    unanswered_[value.index] = true;
+    value.moving = true;
+    value.stop();
+    policy_.restart(value.index);
+    update_status();
+    spdlog::info("[sv2 jd] Entry {} pool did not answer RequestExtensions within "
+        "sv2.jd.response_timeout_seconds; connecting again without extensions", value.index + 1);
+}
+
 ::asio::awaitable<void> jd_client::run() {
     detail::scope_action finish([this] { ready_.cancel(); ready_.close(); }, true);
     co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
@@ -985,7 +1018,10 @@ void jd_client::forward_share(attempt& value, mining::pool_proof const& proof) {
     message.ntime = proof.ntime;
     message.version = proof.version;
     message.extranonce = proof.upstream_extranonce;
-    if ( ! value.mining.send(frame(message))) {
+    // Extension 0x0002: once granted, every share names the downstream worker.
+    auto const fields = value.mining_session.worker_identities()
+        ? to_data_chunk(user_identity_tlv(proof.worker)) : data_chunk{};
+    if ( ! value.mining.send(frame(message, fields))) {
         fail(value, jd_failure::transient, "pool output queue refused a share");
         return;
     }

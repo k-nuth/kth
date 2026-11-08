@@ -106,6 +106,9 @@ private:
     // Always false: the attempt ends, and the entry starts again at the new
     // address now or, before the pair was healthy, after its retry hold.
     bool follow_reconnect(attempt& value, jd_peer peer, byte_span payload);
+    // The pool left RequestExtensions unanswered. The entry starts again at
+    // once with a pair that does not ask (extension 0x0001, section 4).
+    void restart_without_extensions(attempt& value);
     void publish_pool(attempt& value);
     void publish_solo(attempt const& value);
     void note_share(attempt& value, mining::pool_proof const& proof);
@@ -130,6 +133,9 @@ private:
         std::optional<jd_endpoint> declaration;
     };
     std::vector<redirect> redirects_;
+    // Entries whose last pair got no RequestExtensions answer. Their next pair
+    // opens its channel without asking; starting it clears the mark.
+    std::vector<bool> unanswered_;
     std::shared_ptr<attempt> active_;
     std::shared_ptr<attempt> probe_;
     blockchain::block_chain* const chain_;

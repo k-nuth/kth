@@ -12,6 +12,7 @@
 
 #include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/extensions.hpp>
 #include <kth/node/sv2/primitives.hpp>
 
 namespace kth::node::sv2 {
@@ -32,7 +33,7 @@ hash_digest open_max_target() {
 template <typename Message>
 data_chunk frame(Message const& message) {
     auto const payload = to_data_chunk(message);
-    auto bytes = to_data_chunk(message_header{0, Message::message_type,
+    auto bytes = to_data_chunk(message_header{framed_extension_type<Message>(), Message::message_type,
         static_cast<uint32_t>(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
@@ -109,6 +110,18 @@ std::optional<open_extended_mining_channel_success> const& jd_session::channel()
     return channel_;
 }
 
+void jd_session::skip_extensions() {
+    negotiate_extensions_ = false;
+}
+
+bool jd_session::awaiting_extensions() const {
+    return state_ == state::awaiting_extensions;
+}
+
+bool jd_session::worker_identities() const {
+    return worker_identities_;
+}
+
 void jd_session::note_hash_rate(float value) {
     hash_rate_ = value;
 }
@@ -152,6 +165,57 @@ jd_session::result jd_session::process_setup(message_header const& header, byte_
         state_ = state::ready;
         return {{}, false, true, {}};
     }
+    if ( ! negotiate_extensions_) return open_channel();
+    // Extension 0x0001, section 4: the answer has to arrive before the channel
+    // request. Silence is not a refusal; the caller replaces this connection
+    // with one that does not ask.
+    state_ = state::awaiting_extensions;
+    return {request_worker_identities(), false, false, {}};
+}
+
+data_chunk jd_session::request_worker_identities() {
+    request_extensions request;
+    request.request_id = ++extensions_request_;
+    request.requested_extensions.push_back(worker_hashrate_tracking_extension);
+    extensions_pending_ = true;
+    return frame(request);
+}
+
+jd_session::result jd_session::process_extensions(message_header const& header, byte_span payload) {
+    if (header.channel_msg()) return fail("invalid extension negotiation frame");
+    uint16_t answered = 0;
+    bool granted = false;
+    bool required = false;
+    if (header.msg_type == request_extensions_success::message_type) {
+        auto const success = parse<request_extensions_success>(payload);
+        if ( ! success) return fail("invalid extension negotiation success");
+        answered = success->request_id;
+        // Only what the pool lists may be used (extension 0x0001, section 1.1).
+        granted = std::find(success->supported_extensions.begin(), success->supported_extensions.end(),
+            worker_hashrate_tracking_extension) != success->supported_extensions.end();
+    } else if (header.msg_type == request_extensions_error::message_type) {
+        auto const error = parse<request_extensions_error>(payload);
+        if ( ! error) return fail("invalid extension negotiation error");
+        answered = error->request_id;
+        required = ! error->required_extensions.empty();
+    } else {
+        return fail("unexpected extension negotiation message");
+    }
+    if (answered != extensions_request_) {
+        // A later ChannelEndpointChanged asked again, so only that answer counts.
+        if (state_ == state::ready) return {{}, false, true, {}};
+        return fail("invalid extension negotiation reply");
+    }
+    // The pool requires an extension this node does not implement, and
+    // disconnects a client that goes on without it.
+    if (required) return fail("upstream requires an unsupported extension", true);
+    extensions_pending_ = false;
+    worker_identities_ = granted;
+    if (state_ == state::awaiting_extensions) return open_channel();
+    return {{}, false, true, {}};
+}
+
+jd_session::result jd_session::open_channel() {
     open_extended_mining_channel request;
     request.request_id = channel_request_id;
     request.user_identity = identity_;
@@ -251,14 +315,17 @@ jd_session::result jd_session::process_mining(message_header const& header, byte
             return fail("upstream closed extended channel");
         }
         case channel_endpoint_changed::message_type: {
-            // A proxy in front of the pool moved this channel. The Mining
-            // connection negotiates no extensions, so the channel has no
-            // extension state to reset and keeps its work.
+            // A proxy in front of the pool moved this channel, which keeps its
+            // work. sv2-spec 3.6.4: extension state resets and negotiation
+            // begins again, so shares go without the worker until the new
+            // answer grants it. A connection that never asked has none.
             auto const message = parse<channel_endpoint_changed>(payload);
             if ( ! message || ! matches_channel(message->channel_id)) {
                 return fail("invalid upstream channel endpoint change");
             }
-            break;
+            if ( ! negotiate_extensions_) break;
+            worker_identities_ = false;
+            return {request_worker_identities(), false, true, {}};
         }
         case update_channel_error::message_type: {
             auto const message = parse<update_channel_error>(payload);
@@ -285,8 +352,14 @@ jd_session::result jd_session::process(message_header const& header, byte_span p
     if (header.msg_length != payload.size() || payload.size() > max_payload_size) {
         return fail("invalid upstream frame length");
     }
+    if (extensions_pending_ && header.extension() == extensions_negotiation_type) {
+        return process_extensions(header, payload);
+    }
     if (header.extension() != 0) return {{}, false, ready(), {}};
     if (state_ == state::awaiting_setup) return process_setup(header, payload);
+    if (state_ == state::awaiting_extensions) {
+        return fail("unexpected upstream message during extension negotiation");
+    }
     if (state_ == state::awaiting_channel) return process_channel(header, payload);
     if (peer_ == jd_peer::mining) return process_mining(header, payload);
     return fail("unexpected upstream declaration message");

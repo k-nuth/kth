@@ -378,6 +378,39 @@ after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
 JDS (specification section 6.4.9). `coinbase-only` has no declared job for
 `PushSolution` to name, so the block is connected locally and not pushed.
 
+### Worker-specific hashrate tracking
+
+After `SetupConnection.Success` on the Mining connection, and before the
+channel request, the node sends `RequestExtensions` (extension 0x0001) asking
+for Worker-Specific Hashrate Tracking (0x0002). The Job Declaration connection
+does not negotiate extensions. Every pair negotiates for itself, including a
+probe and a pair connecting again after a followed `Reconnect`. The answer
+counts toward `sv2.jd.max_latency_milliseconds` like any setup reply.
+
+`RequestExtensions.Success` that lists 0x0002 turns the extension on for that
+connection. Each forwarded `SubmitSharesExtended` then ends with the TLV field
+0x0002|0x01 naming the worker that found the share: the name a downstream
+proxy sent with it, otherwise the downstream channel's `user_identity`. The
+pool can then track each worker's hash rate inside the one extended channel.
+The field holds at most 32 bytes of UTF-8 and is never padded. A longer name
+is cut to 32 bytes between code points, and a name that is not valid UTF-8 is
+cut before its first invalid byte. The frame keeps extension type 0
+(section 3.4.1). The field's type and length are little-endian U16 values like
+every other SV2 integer, as the reference implementation encodes them; the
+byte examples in section 3.4.3 print them big-endian.
+
+A success that does not list 0x0002, or `RequestExtensions.Error` with an
+empty required list, leaves the extension off and shares are sent as before.
+A required extension this node does not implement disables the entry until
+restart, like a missing required feature. No answer within
+`sv2.jd.response_timeout_seconds` is not a refusal. No other message may follow
+an unanswered request on that connection, so the pair is closed and connects
+again at once, without a retry hold, and the new pair opens its channel
+without asking. The pair after any later failure asks again.
+
+Section 4.2 of the extension notes that per-worker names tell the pool how a
+farm is organized. A pool that does not grant the extension receives none.
+
 ### Failover and recovery
 
 Only one upstream supplies the payout at a time. Knuth first connects the
@@ -431,10 +464,13 @@ naming an address the configuration would refuse, demotes the entry for its
 retry delay.
 
 `ChannelEndpointChanged` (section 3.6.4) is how a proxy in front of the pool
-says it moved the extended channel to another endpoint. The Mining connection
-negotiates no extensions, so there is nothing to negotiate again: the channel
-and its work stay as they are. One naming another channel, or arriving before
-the channel is open, ends the attempt like any other misaddressed message.
+says it moved the extended channel to another endpoint. The channel and its
+work stay as they are. Extension state resets, so shares go without the
+worker field and the node sends `RequestExtensions` again. Only the answer to
+that latest request can turn the field back on; a refusal leaves it off and
+mining continues. A pair that opened its channel without asking does not ask
+then either. One naming another channel, or arriving before the channel is
+open, ends the attempt like any other misaddressed message.
 
 Response latency above `sv2.jd.max_latency_milliseconds` also demotes an
 entry. Share health uses a rolling window of `sv2.jd.health_window` results;

@@ -13,6 +13,7 @@
 
 #include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
+#include <kth/node/sv2/extensions.hpp>
 #include <kth/node/sv2/jd_session.hpp>
 
 using namespace kth;
@@ -26,11 +27,7 @@ std::string knuth_vendor() {
 
 template <typename Message>
 constexpr uint16_t extension() {
-    if constexpr (requires { Message::channel_message; }) {
-        return Message::channel_message ? message_header::channel_msg_flag : 0;
-    } else {
-        return 0;
-    }
+    return framed_extension_type<Message>();
 }
 
 jd_session::result process(jd_session& session, uint16_t extension_type,
@@ -73,23 +70,62 @@ jd_session waiting(jd_peer peer = jd_peer::mining, bool full_template = true) {
     return session;
 }
 
-jd_session opening() {
+std::vector<uint16_t> worker_tracking() {
+    return {worker_hashrate_tracking_extension};
+}
+
+// A Mining session after SetupConnection.Success, with RequestExtensions unanswered.
+jd_session asking() {
     auto session = waiting();
     auto const response = process(session, setup_connection_success{2, 0});
     REQUIRE_FALSE(response.close);
     REQUIRE_FALSE(response.ready);
-    REQUIRE_FALSE(response.response.empty());
+    auto const request = single<request_extensions>(response.response);
+    REQUIRE(request.request_id == 1);
+    REQUIRE(request.requested_extensions == worker_tracking());
+    REQUIRE(session.awaiting_extensions());
     return session;
 }
 
-jd_session ready() {
-    auto session = opening();
+// The channel request that follows the pool's answer: a grant of
+// Worker-Specific Hashrate Tracking or its refusal.
+open_extended_mining_channel answer(jd_session& session, bool grant) {
+    auto const response = grant
+        ? process(session, request_extensions_success{1, worker_tracking()})
+        : process(session, request_extensions_error{1, worker_tracking(), {}});
+    REQUIRE_FALSE(response.close);
+    REQUIRE_FALSE(response.ready);
+    REQUIRE_FALSE(session.awaiting_extensions());
+    REQUIRE(session.worker_identities() == grant);
+    return single<open_extended_mining_channel>(response.response);
+}
+
+jd_session opening_with(bool grant) {
+    auto session = asking();
+    (void)answer(session, grant);
+    return session;
+}
+
+jd_session opening() {
+    return opening_with(false);
+}
+
+jd_session ready_with(bool grant) {
+    auto session = opening_with(grant);
     auto const response = process(session, opened());
     REQUIRE_FALSE(response.close);
     REQUIRE(response.ready);
     REQUIRE(session.ready());
     REQUIRE(session.channel().has_value());
     return session;
+}
+
+jd_session ready() {
+    return ready_with(false);
+}
+
+jd_session ready_granted() {
+    return ready_with(true);
 }
 
 void require_closed(jd_session& session, jd_session::result const& result) {
@@ -158,7 +194,8 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE_FALSE(result.close);
         REQUIRE_FALSE(result.ready);
         REQUIRE_FALSE(session.ready());
-        auto const request = single<open_extended_mining_channel>(result.response);
+        REQUIRE(single<request_extensions>(result.response).requested_extensions == worker_tracking());
+        auto const request = answer(session, false);
         REQUIRE(request.request_id == 1);
         REQUIRE(request.user_identity == "worker");
         REQUIRE(request.nominal_hash_rate == 0.f);
@@ -299,9 +336,8 @@ TEST_CASE("sv2 jd extended channel replies must match and leave bounded extranon
 }
 
 TEST_CASE("sv2 jd upstream request fits eight bytes and accepts larger grants", "[sv2 jd]") {
-    auto session = waiting();
-    auto const result = process(session, setup_connection_success{2, 0});
-    auto const request = single<open_extended_mining_channel>(result.response);
+    auto session = asking();
+    auto const request = answer(session, false);
     REQUIRE(request.min_extranonce_size == 8);
     for (uint16_t size = 8; size <= 32; ++size) {
         CAPTURE(size);
@@ -423,10 +459,16 @@ TEST_CASE("sv2 jd ready upstream refuses malformed misplaced and unsolicited bas
     require_closed(jd, process(jd, 0, 0x51, {}));
 }
 
-TEST_CASE("sv2 jd ChannelEndpointChanged keeps the channel and refuses another or a misplaced one", "[sv2 jd]") {
+TEST_CASE("sv2 jd ChannelEndpointChanged keeps the channel, asks again and refuses another or a misplaced one", "[sv2 jd]") {
     for (uint32_t const id : {7u, 9u}) {
         auto session = ready();
-        require_silent(process(session, channel_endpoint_changed{id}));
+        // sv2-spec 3.6.4: negotiation begins again on the moved channel.
+        auto const result = process(session, channel_endpoint_changed{id});
+        REQUIRE_FALSE(result.close);
+        REQUIRE(result.ready);
+        auto const again = single<request_extensions>(result.response);
+        REQUIRE(again.request_id == 2);
+        REQUIRE(again.requested_extensions == worker_tracking());
         REQUIRE(session.channel()->channel_id == 7);
         REQUIRE(session.channel()->extranonce_prefix == data_chunk{1, 2});
     }
@@ -511,4 +553,122 @@ TEST_CASE("sv2 jd SetGroupChannel regroups this extended channel and ignores the
     auto flagged = ready();
     require_closed(flagged, process(flagged, message_header::channel_msg_flag,
         set_group_channel::message_type, to_data_chunk(set_group_channel{42, {7}})));
+}
+
+TEST_CASE("sv2 jd Mining setup asks for worker tracking and opens the channel on any answer", "[sv2 jd]") {
+    // Extension 0x0001, section 4: RequestExtensions follows SetupConnection.Success
+    // and its answer comes before the channel request. Only a listed 0x0002 grants it.
+    struct reply {
+        bool success;
+        std::vector<uint16_t> extensions;
+        bool granted;
+    };
+    for (auto const& [success, extensions, granted] : std::vector<reply>{
+            {true, {worker_hashrate_tracking_extension}, true},
+            {true, {0x0003, worker_hashrate_tracking_extension}, true},
+            {true, {0x0003}, false},
+            {true, {}, false},
+            {false, {worker_hashrate_tracking_extension}, false}}) {
+        CAPTURE(success, extensions.size(), granted);
+        auto session = asking();
+        REQUIRE_FALSE(session.ready());
+        auto const response = success
+            ? process(session, request_extensions_success{1, extensions})
+            : process(session, request_extensions_error{1, extensions, {}});
+        REQUIRE_FALSE(response.close);
+        REQUIRE_FALSE(response.ready);
+        auto const request = single<open_extended_mining_channel>(response.response);
+        REQUIRE(request.request_id == 1);
+        REQUIRE(request.user_identity == "worker");
+        REQUIRE(session.worker_identities() == granted);
+        require_silent(process(session, opened()));
+        REQUIRE(session.worker_identities() == granted);
+    }
+    // The Job Declaration connection never asks.
+    auto jd = waiting(jd_peer::declaration);
+    require_silent(process(jd, setup_connection_success{2, 0}));
+    REQUIRE_FALSE(jd.awaiting_extensions());
+    REQUIRE_FALSE(jd.worker_identities());
+}
+
+TEST_CASE("sv2 jd extension negotiation refuses misplaced, mismatched and required answers", "[sv2 jd]") {
+    // A required extension this node lacks cannot be supplied on a retry.
+    auto required = asking();
+    auto const refused = process(required, request_extensions_error{1, worker_tracking(), {0x0005}});
+    require_closed(required, refused);
+    REQUIRE(refused.incompatible);
+    REQUIRE(refused.error == "upstream requires an unsupported extension");
+
+    auto wrong_id = asking();
+    require_closed(wrong_id, process(wrong_id, request_extensions_success{2, worker_tracking()}));
+    auto wrong_error_id = asking();
+    require_closed(wrong_error_id, process(wrong_error_id, request_extensions_error{0, {}, {}}));
+    // A base message before the answer is out of order, the channel reply too.
+    auto early_channel = asking();
+    require_closed(early_channel, process(early_channel, opened()));
+    auto early_target = asking();
+    require_closed(early_target, process(early_target, set_target{7, target()}));
+    auto flagged = asking();
+    require_closed(flagged, process(flagged,
+        static_cast<uint16_t>(extensions_negotiation_type | message_header::channel_msg_flag),
+        request_extensions_success::message_type, to_data_chunk(request_extensions_success{1, worker_tracking()})));
+    auto client_message = asking();
+    require_closed(client_message, process(client_message, request_extensions{1, worker_tracking()}));
+    refuse_incomplete(request_extensions_success{1, worker_tracking()}, asking);
+    refuse_incomplete(request_extensions_error{1, worker_tracking(), {}}, asking);
+
+    // Another extension's frame is not the answer and does not end the wait.
+    auto other = asking();
+    require_silent(process(other, 0x4000, 0x00, {1}), false);
+    REQUIRE(other.awaiting_extensions());
+    REQUIRE(answer(other, true).request_id == 1);
+}
+
+TEST_CASE("sv2 jd a session told to skip extensions opens the channel straight after setup", "[sv2 jd]") {
+    jd_session session(jd_peer::mining, "pool.example", 8442, "worker", true);
+    session.skip_extensions();
+    REQUIRE_FALSE(session.start().empty());
+    auto const result = process(session, setup_connection_success{2, 0});
+    REQUIRE_FALSE(result.close);
+    REQUIRE_FALSE(session.awaiting_extensions());
+    REQUIRE(single<open_extended_mining_channel>(result.response).user_identity == "worker");
+    require_silent(process(session, opened()));
+    REQUIRE_FALSE(session.worker_identities());
+    // It never asked, so a moved channel has nothing to negotiate again.
+    require_silent(process(session, channel_endpoint_changed{7}));
+    // An unsolicited answer is discarded like any extension frame.
+    require_silent(process(session, request_extensions_success{1, worker_tracking()}));
+    REQUIRE_FALSE(session.worker_identities());
+}
+
+TEST_CASE("sv2 jd ChannelEndpointChanged clears worker tracking until the pool grants it again", "[sv2 jd]") {
+    auto session = ready_granted();
+    REQUIRE(session.worker_identities());
+    // Nothing is outstanding, so an unsolicited answer changes nothing.
+    require_silent(process(session, request_extensions_error{1, worker_tracking(), {}}));
+    REQUIRE(session.worker_identities());
+
+    auto const first = process(session, channel_endpoint_changed{7});
+    REQUIRE(single<request_extensions>(first.response).request_id == 2);
+    REQUIRE_FALSE(session.worker_identities());
+    auto const second = process(session, channel_endpoint_changed{7});
+    REQUIRE(single<request_extensions>(second.response).request_id == 3);
+    // The answer to the request a later change replaced does not count.
+    require_silent(process(session, request_extensions_success{2, worker_tracking()}));
+    REQUIRE_FALSE(session.worker_identities());
+    require_silent(process(session, request_extensions_success{3, worker_tracking()}));
+    REQUIRE(session.worker_identities());
+    REQUIRE(session.channel()->channel_id == 7);
+
+    // A refusal leaves it off and mining goes on; a required extension ends the attempt.
+    auto refused = ready_granted();
+    (void)process(refused, channel_endpoint_changed{7});
+    require_silent(process(refused, request_extensions_error{2, worker_tracking(), {}}));
+    REQUIRE_FALSE(refused.worker_identities());
+    REQUIRE(refused.ready());
+    auto required = ready_granted();
+    (void)process(required, channel_endpoint_changed{7});
+    auto const closed = process(required, request_extensions_error{2, worker_tracking(), {0x0005}});
+    require_closed(required, closed);
+    REQUIRE(closed.incompatible);
 }
