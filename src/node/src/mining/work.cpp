@@ -584,18 +584,26 @@ share_outcome work_engine::submit(share_request const& share) {
     domain::chain::header const solved(share.version, job->prev_hash, root,
         share.ntime, job->bits, share.nonce);
     auto const digest = domain::chain::hash(solved);
+    auto const network = domain::chain::compact::from_compact(job->bits);
+    bool const block = network && to_uint256(digest) <= network->big();
+    share_key key{share.job_id, share.nonce, share.ntime, share.version, share.extranonce};
+    bool const repeated = std::find(job->shares.begin(), job->shares.end(), key) != job->shares.end();
     // The channel's latest target, not the one when the job was built: a
     // SetTarget applies to future jobs already received (sv2-spec 5.3.21).
     if (to_uint256(digest) > to_uint256(slot->share_target)) {
-        return rejected_share(share, error_difficulty_too_low);
+        auto refused = rejected_share(share, error_difficulty_too_low);
+        // A share target harder than the network's, as a device maximum can
+        // set, still leaves a valid block. It is submitted once: the key is
+        // kept so that a replay is not.
+        if (block && ! repeated) {
+            job->shares.push_back(std::move(key));
+            refused.block = std::make_shared<domain::message::block>(
+                assemble_block(solved, *coinbase, *job->txs));
+        }
+        return refused;
     }
 
-    share_key key{share.job_id, share.nonce, share.ntime, share.version, share.extranonce};
-    if (std::find(job->shares.begin(), job->shares.end(), key) != job->shares.end()) {
-        return rejected_share(share, error_duplicate_share);
-    }
-    auto const network = domain::chain::compact::from_compact(job->bits);
-    bool const block = network && to_uint256(digest) <= network->big();
+    if (repeated) return rejected_share(share, error_duplicate_share);
     // Forgetting accepted keys would allow replay on this still-valid job.
     // Keep the history until a new tip makes all those keys stale. A block is
     // taken past the limit, as on a job that renewal replaced: it has to meet

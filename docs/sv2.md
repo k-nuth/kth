@@ -207,7 +207,9 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   policy).
   Successful shares are acknowledged individually. A hash meeting the network
   target is submitted through the same validation, connection and relay path
-  as Template Distribution's `SubmitSolution`.
+  as Template Distribution's `SubmitSolution`. That includes a hash that
+  misses a share target harder than the network's, which a device maximum can
+  set: the share itself is still refused as `difficulty-too-low`.
 - Each connection allows 32 open channels and 1024 channel-open requests.
   Client frames are limited to 1 MiB, and job and duplicate histories are
   bounded. After 1024 accepted shares on one job, that channel receives fresh
@@ -242,7 +244,7 @@ specific codes):
 | | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
 | | `invalid-ntime` | The timestamp is outside the job's bounds. |
 | | `invalid-version` | The miner changed bits outside the rolling mask. |
-| | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
+| | `difficulty-too-low` | The header hash exceeds the channel's current share target. A hash that meets the network target is still submitted as a block. |
 | | `duplicate-share` | This proof of work was already accepted. |
 | | `share-limit` | This job's share history is full; fresh work replaces it. A block is still taken. |
 

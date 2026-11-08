@@ -12,6 +12,7 @@
 #include <exception>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -820,6 +821,44 @@ TEST_CASE("sv2 mining network shares connect blocks and advance every channel", 
     REQUIRE(fixture.wait_until([&] { return blocked->done; }));
     fixture.require_closed(*silent);
     fixture.require_closed(*partial);
+}
+
+TEST_CASE("sv2 mining submits a block that misses a harder share target", "[sv2 mining]") {
+    listener_fixture fixture(loopback_settings(), true);
+    (void)seed_chain(fixture, 5);
+    submission_pipeline pipeline(fixture);
+    auto client = fixture.connect(fixture.start());
+    require_setup(fixture, *client);
+    // A device maximum far below regtest's network target.
+    auto const network = domain::chain::compact::from_compact(test::regtest_bits);
+    REQUIRE(network.has_value());
+    auto const hard = to_hash_digest(network->big() >> 16);
+    fixture.write(*client, frame(open_standard_mining_channel{1, "miner", 0.f, hard}));
+    auto const channel = fixture.receive<open_standard_mining_channel_success>(*client);
+    REQUIRE(channel.target == hard);
+    auto const work = receive_standard(fixture, *client, channel);
+
+    // A hash between the two targets is a valid block, but not a share.
+    std::optional<domain::chain::header> solved;
+    for (uint32_t nonce = 0; nonce < 10000 && ! solved; ++nonce) {
+        domain::chain::header const header(work.job.version, work.prev.prev_hash,
+            work.job.merkle_root, work.prev.ntime_start, work.prev.nbits, nonce);
+        auto const value = to_uint256(domain::chain::hash(header));
+        if (value <= network->big() && value > to_uint256(hard)) solved = header;
+    }
+    REQUIRE(solved.has_value());
+    fixture.write(*client, frame(submit_shares_standard{channel.channel_id, 9, work.job.job_id,
+        solved->nonce(), solved->timestamp(), solved->version()}));
+    auto const refused = fixture.receive<submit_shares_error>(*client);
+    REQUIRE(refused.sequence_number == 9);
+    REQUIRE(refused.error_code == "difficulty-too-low");
+    // The chain validated and connected it, and the channel moves to it.
+    auto const block_hash = domain::chain::hash(*solved);
+    REQUIRE(receive_standard(fixture, *client, channel).prev.prev_hash == block_hash);
+    REQUIRE(fixture.chain.chain().chain_view()->tip_hash == block_hash);
+    fixture.finish_writing(*client);
+    fixture.require_closed(*client);
+    fixture.stop();
 }
 
 TEST_CASE("sv2 mining keeps an open channel through a chain transition", "[sv2 mining]") {
