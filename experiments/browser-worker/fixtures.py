@@ -267,9 +267,29 @@ async def bch_retry(socket):
     await session.serve_headers(until_empty=False)
 
 
+@quiet
+async def bch_longer(socket):
+    # The same chain, 100 headers longer.
+    session = bch_session(socket, BCH_LONGER)
+    await session.handshake()
+    await session.serve_headers()
+    await socket.wait_closed()
+
+
+@quiet
+async def bch_fork(socket):
+    # A longer chain that leaves BCH_LONGER at height 2595, five deep.
+    session = bch_session(socket, BCH_FORK)
+    await session.handshake()
+    await session.serve_headers()
+    await socket.wait_closed()
+
+
 BCH_CHAIN = chain(2500)
 BCH_REORG = extend(BCH_CHAIN[:2496], 2510, branch=1)
 BCH_RETRY_INVALID = extend(BCH_CHAIN[:2496], 2510, branch=2, invalid_at=2505)
+BCH_LONGER = extend(BCH_CHAIN, 2600)
+BCH_FORK = extend(BCH_LONGER[:2596], 2610, branch=1)
 BCH_INVALID = chain(20, invalid_at=10)
 
 
@@ -278,7 +298,8 @@ async def main(scenario):
                 'cap': (18768, cap), 'eof': (18769, eof), 'abrupt': (18770, abrupt),
                 'bch_sync': (18780, bch_sync), 'bch_invalid': (18781, bch_invalid),
                 'bch_follow': (18782, bch_follow), 'bch_oversize': (18783, bch_oversize),
-                'bch_reorg': (18787, bch_reorg), 'bch_retry': (18788, bch_retry)}
+                'bch_reorg': (18787, bch_reorg), 'bch_retry': (18788, bch_retry),
+                'bch_longer': (18785, bch_longer), 'bch_fork': (18786, bch_fork)}
     selected = controls if scenario == 'all' else {scenario: controls[scenario]}
     async with AsyncExitStack() as stack:
         for port, handler in selected.values():
@@ -289,6 +310,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('scenario', choices=['all', 'echo', 'stall', 'cap', 'eof', 'abrupt',
                                              'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize',
-                                             'bch_reorg', 'bch_retry'],
+                                             'bch_reorg', 'bch_retry', 'bch_longer', 'bch_fork'],
                         default='all', nargs='?')
     asyncio.run(main(parser.parse_args().scenario))
