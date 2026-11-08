@@ -136,7 +136,7 @@ void process_0(kth_chain_t chain, std::string const& blocks_filename) {
 
     size_t block_h = 0;
     for (auto const& block_ptr : blocks) {
-        auto res = kth_chain_sync_organize_block(chain,  block_ptr);
+        auto res = kth_chain_sync_submit_block(chain,  block_ptr);
         // std::println("res: {} ...", res);
         if (res != 0) {
             std::println("****** INVALID BLOCK ORGANIZATION: {} -- res: {} ******", block_h, res);
@@ -178,8 +178,8 @@ void process_1(kth_chain_t chain, std::string const& blocks_filename) {
 
         size_t block_h = 0;
         for (auto const& block_ptr : blocks) {
-            auto res = kth_chain_sync_organize_block(chain, block_ptr);
-            // void kth_chain_async_organize_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler);
+            auto res = kth_chain_sync_submit_block(chain, block_ptr);
+            // void kth_chain_async_submit_block(kth_chain_t chain, void* ctx, kth_block_t block, kth_result_handler_t handler);
 
             // std::println("res: {} ...", res);
             if (res != 0 && res != 51) {
@@ -243,8 +243,8 @@ void process_2(kth_chain_t chain, std::string const& blocks_filename) {
         size_t block_h = 0;
         for (auto const& block_ptr : blocks) {
 
-            // auto res = kth_chain_sync_organize_block(chain, block_ptr);
-            kth_chain_async_organize_block(chain, nullptr, block_ptr, on_block_organized);
+            // auto res = kth_chain_sync_submit_block(chain, block_ptr);
+            kth_chain_async_submit_block(chain, nullptr, block_ptr, on_block_organized);
             ++sent;
 
             if (block_h % 1000 == 0) {

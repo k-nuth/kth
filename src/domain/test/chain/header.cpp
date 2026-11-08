@@ -513,4 +513,22 @@ TEST_CASE("chain header operator boolean not equals differs returns true", "[cha
     REQUIRE(instance != expected);
 }
 
+TEST_CASE("header proof of work selects the limit on every network call", "[header][pow_limit]") {
+    auto const regtest = chain::block::genesis_regtest().header();
+    auto const digest = chain::hash(regtest);
+    // Neither an earlier mainnet check nor an earlier regtest check may
+    // choose the limit for the other network. A zero hash removes mining luck
+    // from the too-easy-target checks: only the target limit can reject it.
+    CHECK_FALSE(regtest.is_valid_proof_of_work(null_hash, true));
+    CHECK(regtest.is_valid_proof_of_work(digest, false));
+    CHECK_FALSE(regtest.is_valid_proof_of_work(null_hash, true));
+    CHECK(regtest.is_valid_proof_of_work(digest, false));
+}
+
+TEST_CASE("header proof of work retains the mainnet limit after regtest checks", "[header][pow_limit]") {
+    auto const regtest = chain::block::genesis_regtest().header();
+    CHECK(regtest.is_valid_proof_of_work(chain::hash(regtest), false));
+    CHECK_FALSE(regtest.is_valid_proof_of_work(null_hash, true));
+}
+
 // End Test Suite

@@ -6,6 +6,7 @@
 
 #include <kth/node/full_node.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <thread>
@@ -15,7 +16,12 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
+#include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -45,21 +51,27 @@ full_node::full_node(configuration const& configuration)
     , network_type_(configuration.net)
     , network_settings_(configuration.network)
     , network_(network_settings_)
+    , block_submissions_(std::make_shared<blockchain::block_submission_channel>(4, 1))
     , chain_(
         configuration.chain,
         configuration.database,
         network_type_,
-        configuration.network.relay_transactions
+        configuration.network.relay_transactions,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
     , network_type_(configuration.net)
+    // No sync owner exists in the browser build. Refuse instead of queueing.
+    , block_submissions_()
     , chain_(
         configuration.chain,
         configuration.database,
-        network_type_
+        network_type_,
+        true,
+        block_submissions_
     )
     , rpc_settings_(configuration.rpc)
 #endif
@@ -120,6 +132,64 @@ full_node::~full_node() {
             }
             co_return message_result::handled;
         });
+
+    // Serve the connected chain: headers for a locator, and the blocks a
+    // peer asks for after an announcement or during its own sync. Both run in
+    // the peer's service, off its read loop: their answers wait on the peer's
+    // data queue.
+    network_.register_served_message_handler<domain::message::get_headers>(
+        [this](peer_session& peer, domain::message::get_headers const& request) {
+            return handlers::chain_data::handle_get_headers(chain_, peer, request);
+        });
+    network_.register_served_message_handler<domain::message::get_data>(
+        [this](peer_session& peer, domain::message::get_data const& request) {
+            return handlers::chain_data::handle_get_data(chain_, peer, request);
+        });
+    // Each newly connected tip, owed to every peer by the sync coordinator, is
+    // announced by the peer's own service.
+    network_.set_tip_announcement_handler(
+        [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
+        });
+    // The fee filter (BIP133) each peer's service sends on its schedule: the
+    // mempool's minimum, rounded as BCHN rounds it, never below the relay
+    // floor. Only when the node relays transactions, and only to peers that
+    // understand it.
+    if (network_settings_.relay_transactions) {
+        auto const floor = uint64_t(std::llround(chain_settings_.byte_fee_satoshis * 1000.0));
+        auto rounder = std::make_shared<detail::fee_filter_rounder const>(floor);
+        network_.set_fee_filter_handler(
+            [this, floor, rounder](peer_session& peer) -> ::asio::awaitable<std::optional<uint64_t>> {
+                if (peer.negotiated_version() < domain::message::version::level::bip133) {
+                    co_return std::nullopt;
+                }
+                auto const minimum = co_await chain_.mempool_minimum_fee();
+                // BCHN rounds down two times in three.
+                auto const step_down = pseudo_random::generate<uint32_t>(0, 2) != 0;
+                co_return detail::fee_filter_to_send(*rounder, minimum, floor, step_down);
+            });
+        // The transactions each peer's service announces: the mempool's order
+        // of admission, at most an announcement's worth for the next block's
+        // size limit at a time.
+        network_.set_tx_announcement_handler(detail::tx_announcement_sources{
+            .last = [this] { return chain_.mempool_last_admission(); },
+            .admitted_after = [this](uint64_t after, size_t limit) -> ::asio::awaitable<detail::admitted_batch> {
+                auto admitted = co_await chain_.mempool_admitted_after(after, limit);
+                co_return detail::admitted_batch{std::move(admitted.entries), admitted.last};
+            },
+            .limit = [this] {
+#if defined(KTH_CURRENCY_BCH)
+                // The next block's size limit (BCHN: ceil(7 * MB * 0.5 s)).
+                auto const state = chain_.chain_state();
+                return detail::max_announcements(state ? state->dynamic_max_block_size()
+                                                       : chain_settings_.default_consensus_block_size);
+#else
+                // A fixed one-million-byte limit.
+                return detail::max_announcements(max_block_size);
+#endif
+            },
+        });
+    }
 
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
@@ -299,7 +369,8 @@ full_node::~full_node() {
     co_await ::asio::co_spawn(
         network_.thread_pool().get_executor(),
         sync::sync_orchestrator(chain_, organizer, network_, network_type_,
-            [this](std::string const& reason) { notify_fatal(reason); }),
+            [this](std::string const& reason) { notify_fatal(reason); },
+            sync::node_header_walk_timing, block_submissions_.get()),
         ::asio::use_awaitable
     );
 
@@ -334,7 +405,7 @@ void full_node::stop() {
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
-    // run_sync() may still be inside chain.organize() when this is called.
+    // run_sync() may still be inside chain.submit_block() when this is called.
     // chain_.stop() is called in join() after run() has fully exited.
     network_.stop();
 #endif
@@ -346,7 +417,7 @@ void full_node::join() {
 #endif
 
     // Now that run() has exited (all coroutines done), it's safe to stop the chain.
-    // This must happen AFTER run() completes to avoid crashes in chain.organize().
+    // This must happen AFTER run() completes to avoid crashes in chain.submit_block().
     if (!chain_.stop()) {
         spdlog::error("[node] Failed to stop blockchain.");
     }

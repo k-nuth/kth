@@ -741,15 +741,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_infrastructure_test PRIVATE Catch2::Catch2WithMain)
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    catch_discover_tests(kth_infrastructure_test)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_infrastructure_test COMMAND kth_infrastructure_test)
-  endif()
+  kth_register_tests(kth_infrastructure_test)
 
   _group_sources(kth_infrastructure_test "${CMAKE_CURRENT_LIST_DIR}/test")
 

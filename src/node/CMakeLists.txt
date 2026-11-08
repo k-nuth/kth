@@ -142,14 +142,19 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     ${kth_sources_just_legacy}
     src/full_node.cpp
     src/detail/block_announcements.cpp
+    src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/local_admission_tasks.cpp
+    src/detail/tx_announcements.cpp
+    src/detail/tx_relay.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
+    src/handlers/chain_data.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -163,6 +168,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
     src/sync/reorg.cpp
+    src/sync/tip_announcement.cpp
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
@@ -204,6 +210,7 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
+  include/kth/node/handlers/chain_data.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp
@@ -247,6 +254,7 @@ set(kth_headers
   include/kth/node/sync/header_tasks.hpp
   include/kth/node/sync/block_tasks.hpp
   include/kth/node/sync/orchestrator.hpp
+  include/kth/node/sync/tip_announcement.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -324,6 +332,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
+          test/block_reads.cpp
+          test/chain_data.cpp
+          test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
@@ -335,8 +346,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
+          test/tx_relay.cpp
+          test/fee_filter.cpp
+          test/tx_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
+          test/local_block_admission.cpp
+          test/local_admission_tasks.cpp
+          test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
@@ -389,17 +406,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    # Bound stalled coroutine tests on platforms that run plain CTest.
-    catch_discover_tests(kth_node_test PROPERTIES TIMEOUT 600)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_node_test COMMAND kth_node_test)
-    set_tests_properties(kth_node_test PROPERTIES TIMEOUT 600)
-  endif()
+  kth_register_tests(kth_node_test TIMEOUT 600)
 
   # README C++ snippet checks disabled: v1.0 switched the public API
   # to coroutines (start/run/stop/join), so the legacy start_chain /

@@ -21,9 +21,18 @@
 #include <kth/domain.hpp>
 
 #include <asio/co_spawn.hpp>
+#include <asio/cancellation_state.hpp>
+#include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
 namespace kth::blockchain {
+
+namespace {
+struct return_admission {
+    ::asio::experimental::concurrent_channel<void(std::error_code)>& channel;
+    ~return_admission() { (void)channel.try_send(std::error_code{}); }
+};
+} // namespace
 
 using namespace std::placeholders;
 
@@ -38,10 +47,13 @@ transaction_organizer::transaction_organizer(prioritized_mutex& mutex, executor_
     , settings_(settings)
     , executor_(std::move(executor))
     , threads_(threads)
+    , admission_(executor_, 1)
     , validator_(executor_, threads_, chain_, settings)
     , broadcaster_(executor_)
     , ds_proof_broadcaster_(executor_)
-{}
+{
+    (void)admission_.try_send(std::error_code{});
+}
 
 // Properties.
 //-----------------------------------------------------------------------------
@@ -62,6 +74,7 @@ bool transaction_organizer::start() {
 }
 
 bool transaction_organizer::stop() {
+    admission_.close();
     validator_.stop();
     broadcaster_.stop();
     ds_proof_broadcaster_.stop();
@@ -74,6 +87,20 @@ bool transaction_organizer::stop() {
 
 // This is called from blockchain::transaction_validate.
 ::asio::awaitable<code> transaction_organizer::transaction_validate(transaction_const_ptr tx) const {
+    if (stopped()) co_return error::service_stopped;
+    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (wait_error) {
+        if (wait_error == ::asio::experimental::error::channel_cancelled ||
+            wait_error == ::asio::error::operation_aborted) {
+            co_return ::asio::error::operation_aborted;
+        }
+        co_return error::service_stopped;
+    }
+    return_admission const admission{admission_};
+    if (stopped()) co_return error::service_stopped;
+    // Once admitted, drain the validator's posted work before transferring the
+    // token. Waiting callers can still cancel before they acquire it.
+    co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
     // Checks that are independent of chain state.
     auto ec = co_await validator_.check(tx);
 
@@ -86,11 +113,8 @@ bool transaction_organizer::stop() {
     }
 
     // Checks that are dependent on chain state and prevouts.
-    // NOTE: this path (c-api single-tx validate) runs lock-free, so the store
-    // entry that validator_.accept creates is written off the validation mutex.
-    // That is safe only because this path is not run concurrently with block or
-    // mempool organization (same pre-existing assumption as the accept-time
-    // insert). Erase on every exit after the entry was created so the store does
+    // The admission channel serializes validation-only and admitting callers.
+    // Erase on every exit after the entry was created so the store does
     // not accumulate one entry per validated tx (idempotent if none was made).
     ec = co_await validator_.accept(tx);
 
@@ -159,13 +183,37 @@ bool transaction_organizer::stop() {
 //-----------------------------------------------------------------------------
 
 // This is called from blockchain::organize.
-::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx) {
-    // Critical Section
-    ///////////////////////////////////////////////////////////////////////////
-    mutex_.lock_low_priority();
+::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx,
+    std::optional<uint64_t> first_seen) {
+    if (stopped()) co_return error::service_stopped;
+    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (wait_error) {
+        if (wait_error == ::asio::experimental::error::channel_cancelled ||
+            wait_error == ::asio::error::operation_aborted) {
+            co_return ::asio::error::operation_aborted;
+        }
+        co_return error::service_stopped;
+    }
+    return_admission const admission{admission_};
+    if (stopped()) co_return error::service_stopped;
+    // Once admitted, drain the validator's posted work before transferring the
+    // token. Waiting callers can still cancel before they acquire it.
+    co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
+
+    // Keep the admission token across both attempts. A new publication requires
+    // fresh prevouts, consensus checks and scripts, not just another insertion.
+    auto result = co_await organize_attempt(tx, first_seen);
+    if (result == error::stale_chain && !stopped()) {
+        result = co_await organize_attempt(tx, first_seen);
+    }
+    co_return result;
+}
+
+::asio::awaitable<code> transaction_organizer::organize_attempt(transaction_const_ptr tx,
+    std::optional<uint64_t> first_seen) {
+    auto const published = chain_.chain_view();
 
     if (stopped()) {
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
@@ -173,12 +221,10 @@ bool transaction_organizer::stop() {
     auto ec = co_await validator_.check(tx);
 
     if (stopped()) {
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
@@ -187,7 +233,7 @@ bool transaction_organizer::stop() {
     // returns (a mempool tx that is later mined has its entry recreated by the
     // block populator, and mempool eviction — including mempool_v2's internal
     // has_room_for drop — never needs it). So erase it on every exit after it
-    // was created. All erases run under the low-priority validation mutex.
+    // was created. All erases run while this admission owns the validator token.
     auto const erase_tx_validation = [this, tx] {
         chain_.transaction_validations().erase(tx->hash());
     };
@@ -197,19 +243,16 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if (ec) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
     if (tx->fees() < price(tx)) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::insufficient_fee;
     }
 
@@ -217,7 +260,6 @@ bool transaction_organizer::stop() {
     if ( ! settings_.accept_non_standard_transactions &&
          tx->is_dusty(settings_.minimum_output_satoshis)) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::dusty_transaction;
     }
 #endif
@@ -227,13 +269,11 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return error::service_stopped;
     }
 
     if ( ! connected) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return connected.error();
     }
 
@@ -241,7 +281,6 @@ bool transaction_organizer::stop() {
     ec = validator_.check_standardness(tx);
     if (ec) {
         erase_tx_validation();
-        mutex_.unlock_low_priority();
         co_return ec;
     }
 
@@ -253,23 +292,17 @@ bool transaction_organizer::stop() {
     // Admit to the mempool. The tx is already validated (accept / fee / dust /
     // connect above); this only records it. add() enforces first-seen: it
     // returns false on a double-spend conflict with a pooled tx (or a duplicate).
-    auto const seen = static_cast<uint64_t>(
+    auto const seen = first_seen.value_or(uint64_t(
         std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    auto const admitted = chain_.mempool_ref().add(mempool_entry{
+            std::chrono::system_clock::now().time_since_epoch()).count()));
+    auto const committed = chain_.commit_validated_transaction(mempool_entry{
         tx,
         tx->fees(),
         static_cast<uint32_t>(tx->serialized_size(true)),
         static_cast<uint32_t>(*connected),
-        seen});
-    if ( ! admitted) {
-        mutex_.unlock_low_priority();
-        co_return error::double_spend_mempool;
-    }
+        seen}, published);
+    if (committed) co_return committed;
     //#########################################################################
-
-    mutex_.unlock_low_priority();
-    ///////////////////////////////////////////////////////////////////////////
 
     // This gets picked up by node tx-out protocol for announcement to peers.
     notify(tx);

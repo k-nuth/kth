@@ -4,7 +4,9 @@
 
 #include <test_helpers.hpp>
 #include <algorithm>
+#include <atomic>
 #include <optional>
+#include <thread>
 #include <utility>
 
 #include <kth/blockchain.hpp>
@@ -271,6 +273,45 @@ TEST_CASE("header_index chain work", "[header_index]") {
     uint256_t const new_work = 12345678u;
     index.set_chain_work(idx, new_work);
     REQUIRE(index.get_chain_work(idx) == new_work);
+}
+
+TEST_CASE("header_index publishes a block location whole", "[header_index]") {
+    header_index index(100);
+    auto const hdr = make_header_at(0, null_hash);
+    auto const idx = index.add(kth::domain::chain::hash(hdr), hdr).index;
+
+    CHECK(index.get_block_pos(idx).is_null());
+    CHECK_FALSE(index.has_block_data(idx));
+
+    // Storage records a block's location while readers outside it look it up.
+    // A reader must get one location or the other, never the file of one with
+    // the offset of the other.
+    database::flat_file_pos const first{3, 1000};
+    database::flat_file_pos const second{7, 2000};
+    index.set_block_pos(idx, int16_t(first.file), first.pos);
+
+    std::atomic<bool> done{false};
+    std::thread writer([&] {
+        for (int i = 0; i < 200000; ++i) {
+            auto const& next = (i % 2 == 0) ? second : first;
+            index.set_block_pos(idx, int16_t(next.file), next.pos);
+        }
+        done.store(true, std::memory_order_release);
+    });
+    size_t mixed = 0;
+    while ( ! done.load(std::memory_order_acquire)) {
+        auto const seen = index.get_block_pos(idx);
+        if (seen != first && seen != second) {
+            ++mixed;
+        }
+    }
+    writer.join();
+    CHECK(mixed == 0);
+
+    index.set_block_pos(idx, -1, 0);
+    CHECK(index.get_block_pos(idx).is_null());
+    CHECK(index.get_file_number(idx) == -1);
+    CHECK(index.get_data_pos(idx) == 0);
 }
 
 // =============================================================================

@@ -7,10 +7,8 @@
 #include <crypto/sha256.h>
 
 #include <algorithm>
-#include <memory>
 #include <utility>
 
-#include <kth/blockchain/interface/block_chain.hpp>
 
 namespace kth::node::mining {
 
@@ -60,17 +58,6 @@ domain::message::block assemble_block(
         txs.push_back(*tx); // slice message::transaction -> chain::transaction
     }
     return domain::message::block(header, std::move(txs));
-}
-
-::asio::awaitable<code> submit_block_light(
-    blockchain::block_chain& chain,
-    domain::chain::header const& header,
-    domain::chain::transaction const& coinbase,
-    std::vector<transaction_const_ptr> const& job_txs) {
-
-    auto const block = std::make_shared<domain::message::block>(
-        assemble_block(header, coinbase, job_txs));
-    co_return co_await chain.organize(block);
 }
 
 } // namespace kth::node::mining
