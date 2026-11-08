@@ -30,6 +30,8 @@
 #include <kth/network/protocols_coro.hpp>
 #include <kth/network/settings.hpp>
 
+#include <kth/node/detail/tx_announcements.hpp>
+
 #include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -129,8 +131,59 @@ public:
     /// Register a default handler for unhandled messages
     void set_default_handler(message_handler_fn handler);
 
+    /// Register a handler that runs in the peer's service instead of in its
+    /// read loop: dispatch() hands the message to the peer's bounded
+    /// served_requests() queue and returns, and serve() runs the handler.
+    /// For requests whose answer waits on the peer's data queue.
+    template <typename Message>
+    void register_served_handler(typed_message_handler_fn<Message> handler) {
+        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+    }
+
+    /// Announces a tip to one peer. `last_announced` is what this peer's
+    /// service last announced to it; the handler updates it.
+    using tip_announcement_fn = std::function<::asio::awaitable<void>(
+        peer_session&, hash_digest const& tip, std::optional<hash_digest>& last_announced)>;
+
+    /// Set the handler for the tips owed to each peer (peer_session::announce_tip).
+    void set_tip_announcement_handler(tip_announcement_fn handler);
+
+    /// The fee filter (BIP133) to send `peer` now, or nothing when it gets
+    /// none (it predates BIP133, or the node does not relay transactions).
+    using fee_filter_fn = std::function<::asio::awaitable<std::optional<uint64_t>>(peer_session&)>;
+
+    /// Set it. Without one, no peer is sent a fee filter.
+    void set_fee_filter_handler(fee_filter_fn handler);
+
+    /// A draw in [0, 1), for the fee filter schedule's random delays.
+    using unit_draw_fn = std::function<double()>;
+
+    /// Set it. Uniformly random when unset; controls set their own. The
+    /// announcements' delays draw from it too.
+    void set_fee_filter_draw(unit_draw_fn draw);
+
+    /// Set where each peer's service reads the transactions it announces
+    /// (detail/tx_announcements.hpp). Without it, none are announced.
+    void set_tx_announcement_handler(detail::tx_announcement_sources sources);
+
+    /// The peer's service: runs the served handlers on the requests dispatch()
+    /// handed over, in arrival order, announces the tip owed to the peer, and
+    /// sends it the fee filter on its schedule (detail/fee_filter.hpp) and
+    /// the admitted transactions it is owed on theirs
+    /// (detail/tx_announcements.hpp), until the session closes its queues. A
+    /// handler asking to disconnect stops the session.
+    ::asio::awaitable<void> serve(peer_session& peer);
+
 private:
+    ::asio::awaitable<void> announce_transactions(peer_session& peer,
+                                                  detail::tx_announcement_schedule& schedule);
+
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
+    boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
+    tip_announcement_fn tip_announcement_;
+    fee_filter_fn fee_filter_;
+    unit_draw_fn fee_filter_draw_;
+    detail::tx_announcement_sources tx_announcement_;
     message_handler_fn default_handler_;
 };
 
@@ -179,6 +232,8 @@ struct peer_notification {
 
 namespace detail {
 struct header_ingest_channels;
+struct tx_relay_channels;
+class tx_relay_backlog;
 } // namespace detail
 
 /// Woken when at least one block has been announced. Carries nothing: the
@@ -270,6 +325,28 @@ public:
         dispatcher_.register_handler<Message>(std::move(handler));
     }
 
+    /// Register a node handler that runs in each peer's service, off its read
+    /// loop (see message_dispatcher::register_served_handler).
+    template <typename Message>
+    void register_served_message_handler(typed_message_handler_fn<Message> handler) {
+        dispatcher_.register_served_handler<Message>(std::move(handler));
+    }
+
+    /// Set the node's handler for the tips owed to each peer.
+    void set_tip_announcement_handler(message_dispatcher::tip_announcement_fn handler) {
+        dispatcher_.set_tip_announcement_handler(std::move(handler));
+    }
+
+    /// Set the node's handler for the fee filter each peer is sent.
+    void set_fee_filter_handler(message_dispatcher::fee_filter_fn handler) {
+        dispatcher_.set_fee_filter_handler(std::move(handler));
+    }
+
+    /// Set where each peer's service reads the transactions it announces.
+    void set_tx_announcement_handler(detail::tx_announcement_sources sources) {
+        dispatcher_.set_tx_announcement_handler(std::move(sources));
+    }
+
     // Manual connections
     // -------------------------------------------------------------------------
 
@@ -329,10 +406,40 @@ public:
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 
+    /// The same, keeping in `backlog` the transaction entries the relay could
+    /// not take: the read loop's own, handed over again at its next turn.
+    /// Without one (above), what the relay refuses is dropped.
+    [[nodiscard]]
+    bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw,
+                               detail::tx_relay_backlog& backlog);
+
+    /// What the read loop does next with `tx` and `notfound`: hands them to the
+    /// transaction relay when the node relays transactions, never waiting.
+    /// Answers whether the message was consumed: `tx` is, whatever becomes of
+    /// it; `notfound` carries on. A `feefilter` is consumed and kept in the
+    /// peer's tx_inventory, as is every transaction the peer sends or
+    /// announces, as known to it. Any other command is left alone. The
+    /// transaction entries of an `inv` go to the relay from
+    /// observe_block_message, which reads the `inv` once for both.
+    [[nodiscard]]
+    bool observe_transaction_message(peer_session::ptr const& peer, raw_message const& raw);
+
+    [[nodiscard]]
+    bool observe_transaction_message(peer_session::ptr const& peer, raw_message const& raw,
+                                     detail::tx_relay_backlog& backlog);
+
     /// The channels into the header ingest: what the read loops submit to, and
     /// what the sync layer's ingest task owns and drains. Closed by stop().
     [[nodiscard]]
     detail::header_ingest_channels& header_ingest();
+
+    /// The channel into the transaction relay: the transaction entries of each
+    /// `inv` and `notfound`, every `tx`, and the sessions that end, submitted
+    /// by the read loops when the node relays transactions
+    /// (network.relay_transactions). Owned and drained by the relay task.
+    /// Closed by stop().
+    [[nodiscard]]
+    detail::tx_relay_channels& tx_relay();
 
     /// What was announced since the last take. `overflowed` says the registry
     /// refused hashes for want of room, so the list is not the whole story and
@@ -434,6 +541,7 @@ private:
     ::asio::awaitable<void> run_inbound();
     ::asio::awaitable<void> run_i2p_inbound();
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
     ::asio::awaitable<void> maintain_outbound_connections();
     [[nodiscard]] bool ingest_peer_addresses(raw_message const& raw, uint32_t version);
 
@@ -623,13 +731,16 @@ private:
     std::unique_ptr<concurrent_channel<blocks_announced>> block_announcement_channel_;
 
     std::unique_ptr<detail::header_ingest_channels> header_ingest_;
+    std::unique_ptr<detail::tx_relay_channels> tx_relay_;
 
     /// Each form a header or an announcement arrives in. Every one of them
     /// states what it does with the message; none accepts a message and
     /// discards it without saying so.
     void ingest_headers(peer_session::ptr const& peer, raw_message const& raw);
     void ingest_compact_block(peer_session::ptr const& peer, raw_message const& raw);
-    void announce_from_inventory(peer_session& peer, raw_message const& raw);
+    void announce_from_inventory(peer_session::ptr const& peer, raw_message const& raw,
+                                 detail::tx_relay_backlog& backlog);
+
 
     // Peers choose what goes in here, so it is bounded and its membership test
     // is constant time. Beyond the bound new hashes are refused and the refusal

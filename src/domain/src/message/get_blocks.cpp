@@ -41,6 +41,12 @@ expect<get_blocks> get_blocks::from_data(byte_reader& reader, [[maybe_unused]] u
         return std::unexpected(count.error());
     }
 
+    // The count is the peer's claim. Every hash it announces must be in the
+    // payload, together with the stop hash, before anything is reserved for it.
+    if (*count > reader.remaining_size() / hash_size) {
+        return std::unexpected(error::invalid_size);
+    }
+
     hash_list start_hashes;
     start_hashes.reserve(*count);
 

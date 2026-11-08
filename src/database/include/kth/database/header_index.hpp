@@ -15,6 +15,7 @@
 #include <boost/unordered/concurrent_flat_map.hpp>
 
 #include <kth/database/define.hpp>
+#include <kth/database/flat_file_pos.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::database {
@@ -222,6 +223,12 @@ struct KD_API header_index {
     // Status Management
     // =========================================================================
 
+    // Startup only, before publishing the index to consumers. Keep these hashes
+    // even when truncation removed their headers from the persisted height table.
+    // After restoration the list is immutable; live verdicts use status flags.
+    void restore_failed_blocks(std::vector<hash_digest> hashes);
+    [[nodiscard]] bool is_restored_failure(hash_digest const& hash) const;
+
     /// Set status flags for a header.
     void set_status(index_t idx, header_status status);
 
@@ -247,6 +254,8 @@ struct KD_API header_index {
     /// @param idx Header index.
     /// @param file File number (blk*.dat).
     /// @param pos Byte offset within file.
+    /// File and offset are published together: a concurrent get_block_pos()
+    /// sees either the previous location or this one, never a mix of both.
     void set_block_pos(index_t idx, int16_t file, uint32_t pos);
 
     /// Set undo file position.
@@ -267,6 +276,12 @@ struct KD_API header_index {
     /// Get the header's reception time (unix seconds), or 0 if never set.
     [[nodiscard]]
     uint32_t get_received_time(index_t idx) const;
+
+    /// Block file location, read in one load: null when the block has no data.
+    /// The one to use from outside the storage path, where a writer may be
+    /// recording the location concurrently.
+    [[nodiscard]]
+    flat_file_pos get_block_pos(index_t idx) const;
 
     /// Get file number for block.
     /// @return File number or -1 if no data.
@@ -404,6 +419,9 @@ private:
     [[nodiscard]]
     index_t get_ancestor_internal(index_t start_idx, int32_t target_height) const;
 
+    // Written only during startup; read without mutation during admission.
+    std::vector<hash_digest> restored_failures_;
+
     // SoA storage - one vector per field
     std::vector<hash_digest> hashes_;  // Block hash (stored, not recomputed)
     std::vector<hash_digest> prev_block_hashes_;
@@ -423,8 +441,10 @@ private:
     std::vector<uint32_t> nonces_;
 
     // Block file location (flat file storage)
-    std::vector<int16_t> file_numbers_;    // -1 = no data
-    std::vector<uint32_t> data_positions_; // Position in blk*.dat
+    // File number and position in blk*.dat, packed into one word so a reader
+    // never pairs one location's file with another's offset: 0 = no data,
+    // otherwise (file + 1) << 32 | position.
+    std::unique_ptr<std::atomic<uint64_t>[]> block_positions_;
     std::vector<uint32_t> undo_positions_; // Position in rev*.dat
 
     // Wall-clock reception time (unix seconds) per header; 0 = loaded from store

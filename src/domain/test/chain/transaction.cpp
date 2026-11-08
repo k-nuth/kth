@@ -774,6 +774,25 @@ TEST_CASE("chain transaction missing previous outputs non null input with cache 
     REQUIRE(instance.missing_previous_outputs().empty());
 }
 
+TEST_CASE("chain transaction missing previous transactions are those of the missing outputs, once each", "[chain transaction]") {
+    auto const first = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash;
+    auto const second = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"_hash;
+    auto const found = "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"_hash;
+    chain::input::list inputs;
+    inputs.emplace_back(chain::output_point{first, 0}, chain::script{}, 0);
+    inputs.emplace_back(chain::output_point{second, 1}, chain::script{}, 0);
+    inputs.emplace_back(chain::output_point{first, 2}, chain::script{}, 0);
+    inputs.emplace_back(chain::output_point{found, 0}, chain::script{}, 0);
+    inputs.back().previous_output().validation.cache.set_value(123u);
+    chain::transaction const instance(0, 0, std::move(inputs), {});
+
+    auto result = instance.missing_previous_transactions();
+    std::sort(result.begin(), result.end());
+    hash_list expected{first, second};
+    std::sort(expected.begin(), expected.end());
+    REQUIRE(result == expected);
+}
+
 TEST_CASE("chain transaction is double spend empty inputs returns false", "[chain transaction]") {
     chain::transaction instance;
     REQUIRE( ! instance.is_double_spend(false));

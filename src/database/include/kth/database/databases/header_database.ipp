@@ -416,6 +416,45 @@ result_code internal_database_basis<Clock>::replace_headers_from(
     return result_code::success;
 }
 
+template <typename Clock>
+result_code internal_database_basis<Clock>::truncate_headers_after(uint32_t height) {
+    KTH_DB_txn* txn;
+    if (kth_db_txn_begin(env_, nullptr, 0, &txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+    auto const retained = get_header(height, txn);
+    if ( ! retained) {
+        kth_db_txn_abort(txn);
+        return retained.error();
+    }
+    // Read errors are not the end of the table. Only a proven absent row
+    // finishes the contiguous suffix, and every deletion shares this txn.
+    for (uint64_t next = uint64_t(height) + 1; next <= UINT32_MAX; ++next) {
+        auto const displaced = get_header(uint32_t(next), txn);
+        if ( ! displaced) {
+            if (displaced.error() == result_code::key_not_found) {
+                break;
+            }
+            kth_db_txn_abort(txn);
+            return displaced.error();
+        }
+        auto const removed = remove_block_header(domain::chain::hash(*displaced), uint32_t(next), txn);
+        if (removed != result_code::success) {
+            kth_db_txn_abort(txn);
+            return removed;
+        }
+    }
+    auto const saved = set_property_height(property_code::last_header_height, height, txn);
+    if (saved != result_code::success) {
+        kth_db_txn_abort(txn);
+        return saved;
+    }
+    if (kth_db_txn_commit(txn) != KTH_DB_SUCCESS) {
+        return result_code::other;
+    }
+    return result_code::success;
+}
+
 #endif // ! defined(KTH_DB_READONLY)
 
 } // namespace kth::database
