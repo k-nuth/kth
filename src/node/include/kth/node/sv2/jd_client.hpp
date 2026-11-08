@@ -59,6 +59,11 @@ struct jd_client {
     ::asio::awaitable<void> run();
     void stop();
 
+    // Completes once every hand-off posted to this client before the call has
+    // run. The owner awaits it after joining the connections that post them,
+    // so none can run on a destroyed client.
+    [[nodiscard]] ::asio::awaitable<void> drain();
+
     // Both protocol setups and the extended channel, or a terminal error.
     // Local listener readiness never waits for this result.
     [[nodiscard]] ::asio::awaitable<void> wait_until_ready();

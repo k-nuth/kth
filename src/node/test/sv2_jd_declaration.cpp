@@ -555,7 +555,7 @@ TEST_CASE("sv2 JD custom job replies must match the channel request and directio
     refuse_incomplete(set_custom_mining_job_error{7, 1, "refused"}, jd_peer::mining, [] { return installing(); });
 }
 
-TEST_CASE("sv2 JD snapshots a target for the custom job and preserves it after submission", "[sv2 jd]") {
+TEST_CASE("sv2 JD takes the custom job target from the last SetTarget before its Success", "[sv2 jd]") {
     auto first_target = target();
     first_target.back() = 0x32;
     auto second_target = first_target;
@@ -570,11 +570,21 @@ TEST_CASE("sv2 JD snapshots a target for the custom job and preserves it after s
     state.note_target(second_target);
     REQUIRE(state.work()->upstream_target == second_target);
     REQUIRE(process(state, jd_peer::declaration, declare_mining_job_success{1, {9}}).error.empty());
+    // SetCustomMiningJob is sent. The pool has not read it yet, so a target
+    // that arrives now is the one it gives the job.
     state.note_target(later_target);
-    REQUIRE(state.work()->upstream_target == second_target);
+    REQUIRE(state.work()->upstream_target == later_target);
     REQUIRE(process(state, jd_peer::mining, set_custom_mining_job_success{7, 1, 123}).accepted);
     state.note_target(target());
-    REQUIRE(state.work()->upstream_target == second_target);
+    REQUIRE(state.work()->upstream_target == later_target);
+
+    // Coinbase-only sends SetCustomMiningJob straight from the token.
+    auto coinbase_only = installing(false);
+    coinbase_only.note_target(later_target);
+    REQUIRE(coinbase_only.work()->upstream_target == later_target);
+    REQUIRE(process(coinbase_only, jd_peer::mining, set_custom_mining_job_success{7, 1, 123}).accepted);
+    coinbase_only.note_target(first_target);
+    REQUIRE(coinbase_only.work()->upstream_target == later_target);
 }
 
 TEST_CASE("sv2 JD superseded declaration ignores a late reply and PushSolution follows full-template success", "[sv2 jd]") {

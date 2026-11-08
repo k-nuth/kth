@@ -840,6 +840,13 @@ bool jd_client::follow_reconnect(attempt& value, jd_peer peer, byte_span payload
     co_await ::asio::co_spawn(owner_, run_owned(), ::asio::use_awaitable);
 }
 
+::asio::awaitable<void> jd_client::drain() {
+    // The strand runs handlers in the order they were posted, so this empty
+    // one runs after every observe_share and observe_hash_rate before it.
+    co_await ::asio::co_spawn(owner_, []() -> ::asio::awaitable<void> { co_return; },
+        ::asio::use_awaitable);
+}
+
 void jd_client::stop() {
     stopped_ = true;
     // Early blocks are flushed only on this strand. Drop them before a

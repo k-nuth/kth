@@ -158,9 +158,12 @@ bool jd_declaration::retired(uint32_t id) const {
 }
 
 void jd_declaration::note_target(hash_digest const& target) {
-    // A custom job's target is fixed when it is sent with nTime. Updates
-    // received while obtaining its token still apply to that future job.
-    if (state_ == state::allocating || state_ == state::declaring) {
+    // A SetTarget applies to every job the pool receives after it (sv2-spec
+    // 5.3.21). The pool fixes the custom job's target when it reads
+    // SetCustomMiningJob, and a SetTarget it sent before that arrives ahead
+    // of the Success. So the last one before the Success is the job's, and
+    // the job keeps it after the Success.
+    if (pending()) {
         channel_.target = target;
         if (work_) work_->upstream_target = target;
     }

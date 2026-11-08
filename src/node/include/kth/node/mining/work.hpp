@@ -44,6 +44,16 @@ inline constexpr uint32_t version_rolling_mask = 0x1fffffe0u;
 
 inline constexpr size_t max_mining_channels = 32;
 inline constexpr size_t max_jobs_per_channel = 8;
+
+// Only a new tip makes a job stale: a share on an older job of the same tip
+// can still be a valid block. A miner moves to a replacement job as soon as
+// it arrives, so only shares already in flight name an earlier one. A channel
+// keeps this many of the tip's newest jobs, which covers a burst of
+// replacements, such as a renewal and a fee refresh, within one round trip.
+// Each holds its own coinbase, merkle data and share history.
+inline constexpr size_t tip_jobs_per_channel = 3;
+
+// Accepted shares remembered per job, so that a replay is refused.
 inline constexpr size_t max_remembered_shares = 1024;
 inline constexpr size_t max_remembered_requests = 1024;
 inline constexpr size_t extranonce_prefix_size = 12;
@@ -216,6 +226,8 @@ struct share_outcome {
     uint32_t sequence_number = 0;
     uint32_t accepted_count = 0;
     uint64_t shares_sum = 0;
+    // A block to submit. A share refused only for missing a share target
+    // harder than the network's carries one too.
     block_const_ptr block;
     // Issue fresh work before the bounded duplicate history fills up.
     bool renew = false;
@@ -240,6 +252,8 @@ public:
 
     // Rebuild every open channel onto this template. Outputs are copied into
     // the coinbase; their values must sum to the template's coinbase value.
+    // Jobs on another parent become stale, even if the new job cannot be
+    // built; the newest tip_jobs_per_channel jobs on this one stay valid.
     [[nodiscard]] std::vector<work_job> on_template(blockchain::mining_template const& tmpl,
         domain::chain::output::list const& outputs);
 
@@ -269,6 +283,15 @@ public:
     [[nodiscard]] double nominal_hash_rate() const;
 
 private:
+    struct share_key {
+        uint32_t job_id = 0;
+        uint32_t nonce = 0;
+        uint32_t ntime = 0;
+        uint32_t version = 0;
+        data_chunk extranonce;
+        bool operator==(share_key const&) const = default;
+    };
+
     struct job {
         uint32_t id = 0;
         bool active = false;
@@ -293,15 +316,10 @@ private:
         // declared_work::generation, not `id`.
         uint32_t generation = 0;
         std::shared_ptr<std::vector<transaction_const_ptr> const> txs;
-    };
-
-    struct share_key {
-        uint32_t job_id = 0;
-        uint32_t nonce = 0;
-        uint32_t ntime = 0;
-        uint32_t version = 0;
-        data_chunk extranonce;
-        bool operator==(share_key const&) const = default;
+        std::vector<share_key> shares;
+        // Blocks submitted from shares refused for missing a harder share
+        // target. Kept apart from `shares`, which only credited shares enter.
+        std::vector<share_key> uncredited_blocks;
     };
 
     struct channel {
@@ -320,8 +338,8 @@ private:
         size_t pool_prefix_length = 0;
         uint16_t pool_extranonce_size = 0;
         uint16_t extranonce_size = 0;
+        // Oldest first. The jobs still valid are always the newest entries.
         std::vector<job> jobs;
-        std::vector<share_key> shares;
     };
 
     struct pool_state {

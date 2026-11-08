@@ -2993,6 +2993,120 @@ TEST_CASE("sv2 JD falls back when the pool rejects a share on the accepted decla
     REQUIRE(provider.result.wait_for(0s) != std::future_status::ready);
 }
 
+TEST_CASE("sv2 JD applies a SetTarget that crosses SetCustomMiningJob to the custom job", "[sv2 jd]") {
+    bool full = true;
+    SECTION("full-template") {}
+    SECTION("coinbase-only") { full = false; }
+    auto chain = started_chain(full ? "sv2_jd_crossed_target_full" : "sv2_jd_crossed_target_cb");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.mode = full ? "full-template" : "coinbase-only";
+    std::string error;
+    auto const payout = node::mining::payout_from_address(configuration.mining.address,
+        domain::config::network::regtest, error);
+    REQUIRE(payout);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, full);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, full);
+
+    // Two shares on the declared coinbase, and a target between them.
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto meets = find_nonce(declared.pooled, extranonce, false);
+    auto misses = meets + 1;
+    for (; misses < 10000; ++misses) {
+        if ( ! meets_network_target(share_hash(declared.pooled, extranonce, misses),
+            declared.pooled.prev.nbits)) break;
+    }
+    REQUIRE(misses < 10000);
+    if (to_uint256(share_hash(declared.pooled, extranonce, meets))
+        > to_uint256(share_hash(declared.pooled, extranonce, misses))) {
+        std::swap(meets, misses);
+    }
+    auto const raised = share_hash(declared.pooled, extranonce, meets);
+    REQUIRE(to_uint256(share_hash(declared.pooled, extranonce, misses)) > to_uint256(raised));
+
+    // SetCustomMiningJob is on its way. The pool raised the difficulty before
+    // reading it, so the job gets the raised target (sv2-spec 5.3.21), and
+    // that SetTarget arrives ahead of the Success.
+    fixture.pool.send(set_target{declared.custom.channel_id, raised});
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    auto const submit = [&](uint32_t sequence, uint32_t nonce) {
+        fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id,
+            sequence, declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+            declared.pooled.job.version, extranonce}));
+        auto const local = receive_plain<submit_shares_success>(fixture, miner.socket);
+        REQUIRE(local.last_sequence_number == sequence);
+    };
+    submit(1, misses);
+    submit(2, meets);
+    // Only the share that meets the raised target goes to the pool.
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.sequence_number == 0);
+    REQUIRE(forwarded.job_id == 77);
+    REQUIRE(forwarded.nonce == meets);
+
+    // That share met the job's target, so refusing it still ends JD mining.
+    captured_log log;
+    fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
+        "difficulty-too-low"});
+    require_solo_again(miner, declared.pooled, payout->script);
+    REQUIRE(log.count("pool refused a valid share on an accepted job (difficulty-too-low)") >= 1);
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    require_no_reconnect(fixture);
+}
+
+TEST_CASE("sv2 JD keeps the custom job target after SetCustomMiningJob.Success", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_kept_target");
+    client_fixture fixture;
+    auto const configuration = settings(fixture.pool, fixture.jds);
+    std::string error;
+    auto const payout = node::mining::payout_from_address(configuration.mining.address,
+        domain::config::network::regtest, error);
+    REQUIRE(payout);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+
+    // The job was accepted with nTime, so a later SetTarget does not apply to
+    // it (sv2-spec 5.3.21). The share error behind the SetTarget is a
+    // barrier: once it is logged, the SetTarget has been read.
+    hash_digest tiny{};
+    tiny[0] = 1;
+    captured_log log;
+    fixture.pool.send(set_target{declared.custom.channel_id, tiny});
+    fixture.pool.send(submit_shares_error{declared.custom.channel_id, 99, "never-sent"});
+    REQUIRE(fixture.wait_until([&] {
+        return log.count("ignoring share error for unknown sequence 99") >= 1;
+    }));
+
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, false);
+    REQUIRE(to_uint256(share_hash(declared.pooled, extranonce, nonce)) > to_uint256(tiny));
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.sequence_number == 0);
+    REQUIRE(forwarded.job_id == 77);
+    REQUIRE(forwarded.nonce == nonce);
+
+    // The share met the target the job was accepted with. A refusal is not
+    // excused by the later SetTarget.
+    fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
+        "difficulty-too-low"});
+    require_solo_again(miner, declared.pooled, payout->script);
+    REQUIRE(log.count("pool refused a valid share on an accepted job (difficulty-too-low)") >= 1);
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+    require_no_reconnect(fixture);
+}
+
 TEST_CASE("sv2 JD closes on a malformed or misaddressed share reply", "[sv2 jd]") {
     enum class fault { truncated, truncated_error, success_channel, error_channel };
     auto which = fault::truncated;
