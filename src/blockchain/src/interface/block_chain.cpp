@@ -3525,6 +3525,9 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
         , state->ticks()
 #endif
         , settings_.retarget);
+    // Sampled inside the lease, so it names these entries; a cache hit serves
+    // it with them.
+    built.mempool_generation = view.generation;
 
     auto next = boost::make_shared<template_snapshot>(
         template_snapshot{std::move(built), previous, view.generation, now, coinbase_reserve_size});

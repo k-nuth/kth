@@ -105,6 +105,11 @@ struct mining_template {
     uint64_t size_limit;                // consensus max block size
     uint64_t sigchecks_limit;           // consensus max block sigchecks
     block_template selection;           // CTOR-ordered txs + totals (no coinbase)
+    // The mempool generation the selection was copied at. A cached template is
+    // served after the pool has moved on, so a caller asking whether the pool
+    // has changed since this template (getblocktemplate long polling) compares
+    // against this, not against the pool's current generation.
+    uint64_t mempool_generation = 0;
 };
 
 // Assemble a mining_template from the next-block parameters and the selection.
