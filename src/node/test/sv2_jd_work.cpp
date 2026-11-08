@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <kth/domain/chain/block.hpp>
+#include <kth/domain/chain/compact.hpp>
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/output_point.hpp>
 #include <kth/domain/chain/token_data.hpp>
@@ -514,6 +515,83 @@ TEST_CASE("sv2 JD downstream reserve fits an eight-byte pool grant", "[sv2 jd]")
     REQUIRE(outcome.status != share_status::rejected);
     REQUIRE(outcome.pool);
     REQUIRE(outcome.pool->upstream_extranonce.size() == 8);
+}
+
+TEST_CASE("sv2 JD pool proof carries a block whose share misses a harder share target", "[sv2 jd]") {
+    // A device maximum can make the share target harder than the network's.
+    // A hash between the two is refused as a share and still submitted as a
+    // block. On pool work that block needs the proof an accepted share gets,
+    // from this job's own extranonce prefix and generation.
+    auto const counter = std::make_shared<uint64_t>(0);
+    work_engine engine(0x0102030405060708ull, counter);
+    auto const extended = engine.open(channel_request(1, channel_kind::extended, 0));
+    REQUIRE(extended.status == open_status::opened);
+    auto const tmpl = mining_template();
+    auto const pool_outputs = outputs(tmpl.coinbase_value);
+    short_hash solo_hash{};
+    solo_hash.fill(0x43);
+    domain::chain::output::list const solo_outputs{{tmpl.coinbase_value,
+        domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern(solo_hash)),
+        std::nullopt}};
+    data_chunk const pool_prefix(4, 0x12);
+    pool_binding const binding{pool_prefix, 8, 7};
+    auto const jobs = engine.on_pool_template(tmpl, pool_outputs, solo_outputs, binding);
+    REQUIRE(jobs);
+    REQUIRE(jobs->size() == 1);
+    auto const& job = jobs->front();
+    REQUIRE(job.extranonce_prefix_update);
+
+    auto value = channel_share(job, extended.extranonce_size);
+    auto full = *job.extranonce_prefix_update;
+    full.insert(full.end(), value.extranonce.begin(), value.extranonce.end());
+    auto raw = job.coinbase_tx_prefix;
+    raw.insert(raw.end(), full.begin(), full.end());
+    raw.insert(raw.end(), job.coinbase_tx_suffix.begin(), job.coinbase_tx_suffix.end());
+    byte_reader source(raw);
+    auto const tx = domain::chain::transaction::from_data(source, true);
+    REQUIRE(tx.has_value());
+    REQUIRE(source.is_exhausted());
+    auto root = tx->hash();
+    for (auto const& sibling : job.merkle_path) root = bitcoin_hash(build_chunk({root, sibling}));
+    auto const digest_of = [&](uint32_t nonce) {
+        domain::chain::header const header(value.version, job.prev_hash, root,
+            value.ntime, job.nbits, nonce);
+        return to_uint256(domain::chain::hash(header));
+    };
+    auto const network = domain::chain::compact::from_compact(tmpl.bits);
+    REQUIRE(network.has_value());
+    // About half of regtest hashes are blocks.
+    while (value.nonce < 256 && digest_of(value.nonce) > network->big()) ++value.nonce;
+    auto const digest = digest_of(value.nonce);
+    REQUIRE(digest <= network->big());
+    REQUIRE(digest > 0);
+    REQUIRE(engine.update(extended.channel_id, 0, to_hash_digest(digest - 1)).target.has_value());
+
+    auto const refused = engine.submit(value);
+    REQUIRE(refused.status == share_status::rejected);
+    REQUIRE(refused.error_code == error_difficulty_too_low);
+    REQUIRE(refused.accepted_count == 0);
+    REQUIRE(refused.block);
+    REQUIRE(refused.pool);
+    REQUIRE(refused.pool->block);
+    REQUIRE(refused.pool->block_only);
+    REQUIRE(to_uint256(refused.pool->header_hash) == digest);
+    REQUIRE(refused.pool->full_extranonce == full);
+    REQUIRE(refused.pool->upstream_extranonce == data_chunk(
+        full.begin() + static_cast<std::ptrdiff_t>(pool_prefix.size()), full.end()));
+    REQUIRE(refused.pool->upstream_extranonce.size() == binding.extranonce_size);
+    REQUIRE(refused.pool->generation == binding.generation);
+    REQUIRE(refused.pool->prev_hash == tmpl.previous_block_hash);
+    REQUIRE(refused.pool->version == value.version);
+    REQUIRE(refused.pool->ntime == value.ntime);
+    REQUIRE(refused.pool->nonce == value.nonce);
+    REQUIRE(refused.pool->bits == tmpl.bits);
+    // The block is submitted once. A replay carries neither it nor a proof.
+    auto const replay = engine.submit(value);
+    REQUIRE(replay.status == share_status::rejected);
+    REQUIRE(replay.error_code == error_difficulty_too_low);
+    REQUIRE_FALSE(replay.block);
+    REQUIRE_FALSE(replay.pool);
 }
 
 TEST_CASE("sv2 JD downstream reserve works for every grant from 8 to 32 bytes", "[sv2 jd]") {

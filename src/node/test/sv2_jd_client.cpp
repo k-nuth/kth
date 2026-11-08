@@ -3287,6 +3287,121 @@ TEST_CASE("sv2 JD coinbase-only does not push a block to the JDS", "[sv2 jd]") {
     expect_idle(fixture, fixture.jds.socket);
 }
 
+TEST_CASE("sv2 JD pushes a block only for the declaration it was mined on", "[sv2 jd]") {
+    // A replacement leaves a channel's recent jobs valid, and a proof can be
+    // in flight when its declaration is replaced. Either way a block can come
+    // from a coinbase the JDS no longer holds. The listener still submits it
+    // locally; it must not be pushed against the job the JDS accepted since.
+    bool current = false;
+    SECTION("older declaration") {}
+    SECTION("current declaration") { current = true; }
+    auto chain = started_chain(current ? "sv2_jd_push_current" : "sv2_jd_push_older");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    // Both declarations stay outstanding past connect_bodies.
+    configuration.jd.response_timeout_seconds = 30;
+    fixture.start(configuration, &chain->chain());
+    handshake_upstreams(fixture, true);
+    fixture.await(fixture.ready);
+    REQUIRE_NOTHROW(fixture.ready.get());
+    // Through DeclareMiningJob.Success, from which PushSolution is defined.
+    auto const declare = [&] {
+        auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
+        fixture.jds.send(allocate_mining_job_token_success{allocation.request_id,
+            {1, 2, 3}, output_bytes(pool_output_list())});
+        auto const declaration = fixture.jds.receive<declare_mining_job>();
+        REQUIRE(declaration.request_id == allocation.request_id);
+        auto const notice = fixture.client->notice();
+        REQUIRE(notice);
+        REQUIRE(notice->pool);
+        fixture.jds.send(declare_mining_job_success{declaration.request_id, {9, 8, 7}});
+        auto const custom = fixture.pool.receive<set_custom_mining_job>();
+        REQUIRE(custom.request_id == declaration.request_id);
+        return notice;
+    };
+    auto const older = declare();
+    auto const block = test::mine_block(older->previous, 2, uint32_t(zulu_time()), 0, {}, 0);
+    std::vector<domain::chain::block> const blocks{block};
+    REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
+    test::persist_headers(*chain, blocks, 2);
+    test::connect_bodies(*chain, blocks, 2);
+    auto const latest = declare();
+    REQUIRE(latest->pooled.generation != older->pooled.generation);
+
+    auto const& mined = current ? *latest : *older;
+    auto proof = proof_for(mined);
+    proof.full_extranonce = mined.pooled.upstream_extranonce_prefix;
+    proof.full_extranonce.insert(proof.full_extranonce.end(),
+        proof.upstream_extranonce.begin(), proof.upstream_extranonce.end());
+    proof.nonce = 5;
+    proof.block = true;
+    fixture.client->observe_share(proof);
+    if ( ! current) {
+        expect_idle(fixture, fixture.jds.socket);
+        return;
+    }
+    auto const pushed = fixture.jds.receive<push_solution>();
+    REQUIRE(pushed.extranonce == proof.full_extranonce);
+    REQUIRE(pushed.prev_hash == block.hash());
+    REQUIRE(pushed.nonce == proof.nonce);
+    REQUIRE(pushed.ntime == proof.ntime);
+    REQUIRE(pushed.nbits == proof.bits);
+    REQUIRE(pushed.version == proof.version);
+    REQUIRE(fixture.jds.frames.empty());
+    expect_idle(fixture, fixture.jds.socket);
+}
+
+TEST_CASE("sv2 JD pushes a block whose share misses a harder downstream target", "[sv2 jd]") {
+    // A device maximum can make a downstream share target harder than the
+    // network's. A hash between the two is refused as a share, but it is a
+    // block on the pool coinbase. The JDS gets it; the pool gets no share.
+    //
+    // No submission pipeline: a connected block would move the tip and start
+    // the next declaration on the JDS socket.
+    auto chain = started_chain("sv2_jd_refused_block");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    configuration.jd.response_timeout_seconds = 30;
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, true);
+    auto const solved = to_uint256(share_hash(declared.pooled, extranonce, nonce));
+    REQUIRE(solved > 0);
+    auto const harder = to_hash_digest(solved - 1);
+    fixture.write(miner.socket, frame(update_channel{miner.opened.channel_id, 0.f, harder}));
+    auto const retarget = receive_plain<set_target>(fixture, miner.socket);
+    REQUIRE(retarget.channel_id == miner.opened.channel_id);
+    REQUIRE(retarget.target == harder);
+
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const refused = receive_plain<submit_shares_error>(fixture, miner.socket);
+    REQUIRE(refused.channel_id == miner.opened.channel_id);
+    REQUIRE(refused.sequence_number == 1);
+    REQUIRE(refused.error_code == node::mining::error_difficulty_too_low);
+    auto const pushed = fixture.jds.receive<push_solution>();
+    data_chunk full = declared.pooled.prefix;
+    full.insert(full.end(), extranonce.begin(), extranonce.end());
+    REQUIRE(pushed.extranonce == full);
+    REQUIRE(pushed.prev_hash == declared.pooled.prev.prev_hash);
+    REQUIRE(pushed.nonce == nonce);
+    REQUIRE(pushed.ntime == declared.pooled.prev.ntime_start);
+    REQUIRE(pushed.nbits == declared.pooled.prev.nbits);
+    REQUIRE(pushed.version == declared.pooled.job.version);
+    REQUIRE(fixture.jds.frames.empty());
+    expect_idle(fixture, fixture.jds.socket);
+    // accept() gave the upstream channel the maximum target, so a forwarded
+    // share would be here.
+    REQUIRE(fixture.pool.frames.empty());
+    expect_idle(fixture, fixture.pool.socket);
+}
+
 TEST_CASE("sv2 JD opens a new channel on the live pool coinbase without SetExtranoncePrefix", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_open_pool");
     client_fixture fixture;

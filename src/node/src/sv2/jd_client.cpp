@@ -999,6 +999,9 @@ void jd_client::note_share(attempt& value, mining::pool_proof const& proof) {
             value.pending_solutions.push_back(proof);
         }
     }
+    // The downstream channel refused this share for its harder target. Only
+    // its block goes upstream.
+    if (proof.block_only) return;
     if ( ! current || to_uint256(proof.header_hash) > to_uint256(work->upstream_target)) return;
     // SetCustomMiningJob.Success may assign job id zero. That is still accepted.
     if ( ! work->upstream_accepted) {
