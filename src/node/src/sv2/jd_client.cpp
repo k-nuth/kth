@@ -130,11 +130,17 @@ struct jd_client::attempt {
         , jobs(upstream.user_identity, upstream.mode == "full-template")
         , health(settings.jd)
         , declaration_wake(executor)
+        , hash_rate_wake(executor)
     {}
 
     void wake_declarations() {
         declaration_changed = true;
         declaration_wake.cancel();
+    }
+
+    void wake_hash_rate() {
+        // During the hold the reporter reads the latest sum when the timer expires.
+        if ( ! hash_rate_held) hash_rate_wake.cancel();
     }
 
     void stop() {
@@ -143,6 +149,8 @@ struct jd_client::attempt {
         // after this attempt has failed or the client has stopped.
         pending_solutions.clear();
         wake_declarations();
+        // The reporter sees `stopped` and ends, so run_attempt can finish.
+        hash_rate_wake.cancel();
         mining.stop();
         declaration.stop();
     }
@@ -157,6 +165,10 @@ struct jd_client::attempt {
     jd_declaration jobs;
     jd_health_window health;
     ::asio::steady_timer declaration_wake;
+    // Wakes report_hash_rate() for a changed sum, unless an update was just
+    // sent: then it expires at the end of the hold and the loop reads the sum.
+    ::asio::steady_timer hash_rate_wake;
+    bool hash_rate_held = false;
     std::optional<std::chrono::steady_clock::time_point> job_sent;
     std::optional<std::chrono::steady_clock::time_point> job_deadline;
     std::vector<mining::pool_proof> cached;
@@ -313,6 +325,9 @@ void jd_client::mark_ready(attempt& value) {
             fail(value, jd_failure::transient, "upstream setup latency exceeded threshold");
             return false;
         }
+        // The channel request carried the sum noted before it was built. One
+        // that changed while the request was outstanding is reported now.
+        if ( ! was_ready && session.ready() && peer == jd_peer::mining) value.wake_hash_rate();
         if (session.ready() && peer == jd_peer::mining && (value.jobs.pending() || value.jobs.work())
             && previous_prefix != value.mining_session.channel()->extranonce_prefix) {
             fail(value, jd_failure::transient, "pool changed the extranonce prefix of declared work");
@@ -356,7 +371,7 @@ void jd_client::mark_ready(attempt& value) {
     try {
         co_await (serve(*value, value->mining, value->mining_session, jd_peer::mining)
             && serve(*value, value->declaration, value->declaration_session, jd_peer::declaration)
-            && declare_templates(*value));
+            && declare_templates(*value) && report_hash_rate(*value));
     } catch (std::exception const& e) {
         if ( ! stopped_) fail(*value, jd_failure::transient, e.what());
     }
@@ -372,6 +387,10 @@ bool jd_client::recover_at_boundary() {
         active_->stop();
     }
     active_.swap(probe_);
+    // The probe's channel carried zero. Its pool now gets the shares, so it
+    // is told the current sum at once.
+    active_->mining_session.note_hash_rate(hash_rate_total());
+    active_->wake_hash_rate();
     publish_pool(*active_);
     update_status();
     spdlog::info("[sv2 jd] Entry {} recovered; active at job boundary", active_->index + 1);
@@ -385,6 +404,9 @@ void jd_client::start_attempt(size_t index, bool probe) {
         moved.mining.value_or(endpoint(upstream.mining_address)),
         moved.declaration.value_or(endpoint(upstream.jds_address)), upstream, settings_, owner_);
     value->redirected = moved.mining || moved.declaration;
+    // Before its channel request is built. Only the active pair's pool is sent
+    // shares, so a probe opens with zero and an active pair with the sum.
+    value->mining_session.note_hash_rate(probe ? 0.f : hash_rate_total());
     if (probe) probe_ = value;
     else active_ = value;
     ::asio::co_spawn(owner_, run_attempt(value), [this, value](std::exception_ptr error) {
@@ -635,6 +657,24 @@ bool jd_client::dispatch(attempt& value, jd_declaration::result result) {
     }
 }
 
+::asio::awaitable<void> jd_client::report_hash_rate(attempt& value) {
+    // After an update is sent, later changes wait out the hold and go
+    // together; otherwise the loop sleeps until a change. A probe's sum stays
+    // zero, so it sends nothing until it becomes the active pair.
+    while ( ! stopped_ && ! value.stopped) {
+        auto const update = value.mining_session.hash_rate_update();
+        if (update && ! value.mining.send(frame(*update))) {
+            fail(value, jd_failure::transient, "pool output queue refused a hash rate update");
+            co_return;
+        }
+        value.hash_rate_held = update.has_value();
+        value.hash_rate_wake.expires_at(update
+            ? std::chrono::steady_clock::now() + hash_rate_hold
+            : std::chrono::steady_clock::time_point::max());
+        (void)co_await value.hash_rate_wake.async_wait(::asio::as_tuple(::asio::use_awaitable));
+    }
+}
+
 bool jd_client::share_response(attempt& value, message_header const& header, byte_span payload) {
     auto const acknowledgement = header.msg_type == submit_shares_success::message_type;
     auto const kind = acknowledgement ? "acknowledgement" : "refusal";
@@ -845,13 +885,19 @@ void jd_client::observe_hash_rate(uint64_t connection, double rate) {
         if (stopped_) return;
         if (rate == 0) hash_rates_.erase(connection);
         else hash_rates_[connection] = rate;
-        double total = 0;
-        for (auto const& entry : hash_rates_) total += entry.second;
-        // The wire field is F32. A pool refuses infinity as an invalid rate, so
-        // a sum past its range is sent as the largest finite value.
-        if (active_) active_->mining_session.note_hash_rate(static_cast<float>(
-            std::min(total, double{std::numeric_limits<float>::max()})));
+        // A pair started or promoted later takes the sum from hash_rates_.
+        if ( ! active_ || active_->stopped) return;
+        active_->mining_session.note_hash_rate(hash_rate_total());
+        active_->wake_hash_rate();
     });
+}
+
+float jd_client::hash_rate_total() const {
+    double total = 0;
+    for (auto const& entry : hash_rates_) total += entry.second;
+    // The wire field is F32. A pool refuses infinity as an invalid rate, so
+    // a sum past its range is sent as the largest finite value.
+    return static_cast<float>(std::min(total, double{std::numeric_limits<float>::max()}));
 }
 
 void jd_client::publish_pool(attempt& value) {

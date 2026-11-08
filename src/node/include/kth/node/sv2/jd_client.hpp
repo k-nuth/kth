@@ -92,6 +92,10 @@ private:
     ::asio::awaitable<void> serve(attempt& value, jd_connection& connection,
         jd_session& session, jd_peer peer);
     ::asio::awaitable<void> declare_templates(attempt& value);
+    // The only sender of this pair's UpdateChannel. Ends once the pair stops.
+    ::asio::awaitable<void> report_hash_rate(attempt& value);
+    // hash_rates_ added up, as the F32 the pool is sent.
+    [[nodiscard]] float hash_rate_total() const;
     void start_attempt(size_t index, bool probe);
     void fail(attempt& value, jd_failure kind, std::string reason);
     void update_status();
@@ -131,6 +135,7 @@ private:
     blockchain::block_chain* const chain_;
     std::chrono::seconds const response_timeout_;
     // Each downstream connection's summed channel hash rate, by connection salt.
+    // Only the active pair reports their total; a probe's channel carries zero.
     std::map<uint64_t, double> hash_rates_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> ready_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> wake_;

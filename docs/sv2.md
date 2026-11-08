@@ -392,6 +392,13 @@ when recovering from solo after all entries failed. Probe attempts are spaced by
 `sv2.jd.probe_interval_seconds`. There are at most two upstream pairs open:
 the active pair and one probe pair.
 
+Only the active pair reports the downstream hash rate, since only its pool is
+sent shares. A probe opens its channel with a `nominal_hash_rate` of zero and
+sends no `UpdateChannel` while it probes. When it takes over at a job
+boundary, it sends a nonzero current sum in `UpdateChannel` at once. A pair
+started as the active one, including one connecting again after a followed
+`Reconnect`, opens its channel with the current sum.
+
 A pool can move either connection to another of its servers with `Reconnect`
 (specification sections 3.3 and 3.6.5), for example before maintenance. Knuth
 closes that entry's pair and connects it again with the new address, keeping

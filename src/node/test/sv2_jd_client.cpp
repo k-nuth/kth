@@ -3385,7 +3385,8 @@ TEST_CASE("sv2 JD keeps mining after the pool refuses a hash rate update", "[sv2
         auto const changed = fixture.pool.receive<update_channel>();
         REQUIRE(changed.channel_id == 7);
         REQUIRE(changed.nominal_hash_rate == 2000.f);
-        REQUIRE(log.count("continuing solo mining") == 0);
+        // Every ended attempt logs its entry's retry hold.
+        REQUIRE(log.count("retry hold") == 0);
         return;
     }
 
@@ -3400,4 +3401,92 @@ TEST_CASE("sv2 JD keeps mining after the pool refuses a hash rate update", "[sv2
         return log.count("invalid upstream channel update error") >= 1;
     }));
     require_no_reconnect(fixture);
+}
+
+TEST_CASE("sv2 JD reports the hash rate from the active pair, and from a probe once it takes over", "[sv2 jd]") {
+    // Only the active pair's pool is sent shares, so only it is told the sum.
+    auto chain = started_chain("sv2_jd_probe_rate");
+    client_fixture fixture;
+    fake_upstream backup_pool(fixture, 6);
+    fake_upstream backup_jds(fixture, 7);
+    auto configuration = settings(fixture.pool, fixture.jds, backup_pool, backup_jds, "coinbase-only");
+    configuration.jd.retry_initial_seconds = 1;
+    configuration.jd.probe_interval_seconds = 1;
+    configuration.jd.recovery_hold_seconds = 1;
+    fixture.start(configuration, &chain->chain());
+    handshake_upstreams(fixture, false);
+    (void)accept_coinbase_template(fixture.pool, fixture.jds);
+    REQUIRE(fixture.wait_until([&] {
+        return fixture.client->status()->entries[0].health == jd_health::healthy;
+    }));
+    fixture.pool.finish_writing();
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
+
+    // The backup is started as the active pair, so its channel opens with the sum.
+    fixture.client->observe_hash_rate(1, 1500.);
+    backup_pool.handshake();
+    backup_jds.handshake();
+    (void)backup_pool.receive<setup_connection>();
+    (void)backup_jds.receive<setup_connection>();
+    backup_jds.send(setup_connection_success{2, 0});
+    backup_pool.send(setup_connection_success{2, mining_flag_requires_extended_channels});
+    auto const active_open = backup_pool.receive<open_extended_mining_channel>();
+    REQUIRE(active_open.nominal_hash_rate == 1500.f);
+    backup_pool.send(open_extended_mining_channel_success{active_open.request_id, 7,
+        active_open.max_target, jd_session::min_extranonce_size, data_chunk(8, 0x12), 8});
+    (void)accept_coinbase_template(backup_pool, backup_jds, 88);
+    REQUIRE(fixture.wait_until([&] {
+        auto const status = fixture.client->status();
+        return status->active == std::optional<size_t>{1}
+            && status->entries[1].health == jd_health::healthy;
+    }));
+
+    // The first entry returns as a probe. Its channel opens with zero.
+    fixture.pool.accept_again();
+    fixture.jds.accept_again();
+    fixture.setup();
+    (void)fixture.jds.receive<setup_connection>();
+    fixture.jds.send(setup_connection_success{2, 0});
+    auto const probe_open = fixture.open();
+    REQUIRE(probe_open.nominal_hash_rate == 0.f);
+    fixture.accept(probe_open);
+    REQUIRE(fixture.client->status()->probe == std::optional<size_t>{0});
+    // A change while it probes goes to the active pair only.
+    fixture.client->observe_hash_rate(2, 500.);
+    REQUIRE(backup_pool.receive<update_channel>().nominal_hash_rate == 2000.f);
+    auto const token = fixture.jds.receive<allocate_mining_job_token>();
+    fixture.jds.send(allocate_mining_job_token_success{token.request_id,
+        {1, 2, 3}, output_bytes(pool_output_list())});
+    // An UpdateChannel from the probe would arrive before its custom job.
+    auto const custom = fixture.pool.receive<set_custom_mining_job>();
+    fixture.pool.send(set_custom_mining_job_success{custom.channel_id, custom.request_id, 99});
+    REQUIRE(fixture.wait_until([&] {
+        return fixture.client->status()->entries[0].healthy_since.has_value();
+    }));
+    auto const hold_end = *fixture.client->status()->entries[0].healthy_since + 1s;
+    REQUIRE(fixture.wait_until([&] { return std::chrono::steady_clock::now() >= hold_end; }, 2s));
+
+    // A connected tip is the job boundary where the probe takes over and sends
+    // the current sum at once.
+    auto const view = chain->chain().chain_view();
+    REQUIRE(view);
+    auto const block = test::mine_block(view->tip_hash, 2, uint32_t(zulu_time()), 0, {}, 0);
+    std::vector<domain::chain::block> const blocks{block};
+    REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
+    test::persist_headers(*chain, blocks, 2);
+    test::connect_bodies(*chain, blocks, 2);
+    REQUIRE(fixture.wait_until([&] {
+        return fixture.client->status()->active == std::optional<size_t>{0};
+    }));
+    auto const promoted = fixture.pool.receive<update_channel>();
+    REQUIRE(promoted.channel_id == 7);
+    REQUIRE(promoted.nominal_hash_rate == 2000.f);
+    REQUIRE(promoted.max_target == probe_open.max_target);
+    fixture.eof_after_pending(backup_pool.socket);
+    fixture.eof_after_pending(backup_jds.socket);
+    // Each pair's reporter ends with it, so the client joins both and returns.
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
 }
