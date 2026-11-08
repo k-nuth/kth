@@ -447,6 +447,35 @@ void tx_orphanage::erase_for_peer(uint64_t peer) {
     }
 }
 
+size_t tx_orphanage::erase_for_block(domain::chain::block const& block) {
+    std::vector<hash_digest> resolved;
+    for (auto const& tx : block.transactions()) {
+        for (auto const& input : tx.inputs()) {
+            auto const& spent = input.previous_output();
+            auto const parent = by_parent_.find(spent.hash());
+            if (parent == by_parent_.end()) {
+                continue;
+            }
+            for (auto const& child : parent->second) {
+                auto const& inputs = orphans_.at(child).tx->inputs();
+                auto const spends = std::ranges::any_of(inputs, [&](auto const& own) {
+                    return own.previous_output().hash() == spent.hash()
+                        && own.previous_output().index() == spent.index();
+                });
+                if (spends) {
+                    resolved.push_back(child);
+                }
+            }
+        }
+    }
+    std::ranges::sort(resolved);
+    resolved.erase(std::unique(resolved.begin(), resolved.end()), resolved.end());
+    for (auto const& txid : resolved) {
+        erase(txid);
+    }
+    return resolved.size();
+}
+
 void tx_orphanage::sweep(time_point now) {
     if (next_sweep_ > now) {
         return;
@@ -474,14 +503,20 @@ void tx_orphanage::sweep(time_point now) {
 
 tx_relay_channels::tx_relay_channels()
     : commands(command_capacity)
+    , tip_events(1)
 {}
 
 bool tx_relay_channels::submit(tx_relay_command command) {
     return commands.try_send(std::move(command));
 }
 
+void tx_relay_channels::tip_moved() {
+    (void)tip_events.try_send(std::monostate{});
+}
+
 void tx_relay_channels::close() {
     commands.close();
+    tip_events.close();
 }
 
 namespace {
@@ -576,6 +611,62 @@ constexpr size_t max_getdata = 1000;
     (void)co_await report(channels, tx_request_sent{peer, ec == error::success});
 }
 
+// How far back the scan steps along the branch it had seen to rejoin the
+// connected chain after a reorganization. Past it, what the blocks in between
+// would have resolved goes by expiry.
+constexpr size_t max_scan_rewind = 100;
+
+// The connected blocks after `from`, up to `to`, handed to the owner in order,
+// then where the scan got to. A block whose parent is not the last one seen,
+// or a tip at or below it, means the chain reorganized there: the scan steps
+// back along what it had seen until it rejoins. A block that cannot be read
+// ends the scan where it is; the next ring reads on from there.
+::asio::awaitable<void> scan_connected(
+    std::function<::asio::awaitable<domain::message::block::const_ptr>(size_t)> block_at,
+    std::function<::asio::awaitable<std::optional<chain_point>>(hash_digest)> parent_of,
+    chain_point from, chain_point to, tx_relay_channels& channels) {
+    auto reached = from;
+    size_t rewound = 0;
+    auto const rewind = [&]() -> ::asio::awaitable<bool> {
+        if (rewound == max_scan_rewind) {
+            co_return false;
+        }
+        auto const parent = co_await parent_of(reached.hash);
+        if ( ! parent) {
+            co_return false;
+        }
+        reached = *parent;
+        ++rewound;
+        co_return true;
+    };
+
+    while (reached != to) {
+        if (reached.height >= to.height) {
+            if ( ! co_await rewind()) {
+                reached = to;
+            }
+            continue;
+        }
+        auto const height = reached.height + 1;
+        auto const block = co_await block_at(height);
+        if ( ! block) {
+            break;
+        }
+        if (block->header().previous_block_hash() != reached.hash) {
+            if ( ! co_await rewind()) {
+                reached = to;
+            }
+            continue;
+        }
+        chain_point const point{block->hash(), height};
+        if ( ! co_await report(channels, tx_block_connected{block, point})) {
+            co_return;
+        }
+        reached = point;
+    }
+    (void)co_await report(channels, tx_scan_ended{reached});
+}
+
 } // namespace
 
 // =============================================================================
@@ -599,10 +690,41 @@ public:
         , view_(std::move(view))
         , admission_(admission)
         , spawn_(std::move(spawn))
-    {}
+    {
+        if (view_.connected_tip) {
+            seen_ = view_.connected_tip();
+        }
+    }
 
     std::optional<tx_request_tracker::time_point> next_wakeup() const {
         return tracker_.next_wakeup();
+    }
+
+    // The connected tip moved: what it resolves is read from the blocks
+    // connected since the last one seen, by a task of its own. With no orphans,
+    // or before synchronization, there is nothing to resolve and the mark only
+    // moves. One scan at a time: a ring during it scans again after it.
+    void tip_moved() {
+        if ( ! view_.connected_tip) {
+            return;
+        }
+        if (scanning_) {
+            rescan_ = true;
+            return;
+        }
+        auto const tip = view_.connected_tip();
+        if ( ! tip) {
+            return;
+        }
+        if ( ! seen_ || orphans_.size() == 0 || ! view_.synchronized()) {
+            seen_ = tip;
+            return;
+        }
+        if (*seen_ == *tip) {
+            return;
+        }
+        scanning_ = true;
+        spawn_(scan_connected(view_.block_at, view_.parent_of, *seen_, *tip, channels_));
     }
 
     void handle(tx_relay_command command, tx_request_tracker::time_point now) {
@@ -702,6 +824,24 @@ private:
             return;
         }
         send_next(value.peer, it->second);
+    }
+
+    void on(tx_block_connected& value, tx_request_tracker::time_point) {
+        auto const gone = orphans_.erase_for_block(*value.block);
+        if (gone > 0) {
+            spdlog::debug("[tx_relay] {} orphan(s) resolved by block {}", gone,
+                encode_hash(value.point.hash));
+        }
+        seen_ = value.point;
+    }
+
+    void on(tx_scan_ended& value, tx_request_tracker::time_point) {
+        seen_ = value.reached;
+        scanning_ = false;
+        if (rescan_) {
+            rescan_ = false;
+            tip_moved();
+        }
     }
 
     void on(tx_admitted& value, tx_request_tracker::time_point now) {
@@ -838,6 +978,10 @@ private:
     tx_orphanage orphans_;
     // Received, validation full: taken by it as it frees room. Bounded.
     std::deque<tx_admission> waiting_;
+    // The last connected block whose orphans were resolved.
+    std::optional<chain_point> seen_;
+    bool scanning_{false};
+    bool rescan_{false};
 };
 
 } // namespace
@@ -859,6 +1003,7 @@ private:
         auto const wake = owner.next_wakeup().value_or(tx_request_tracker::time_point::max());
         auto completion = co_await ::asio::experimental::make_select(
             ::asio::experimental::receive(channels.commands),
+            ::asio::experimental::receive(channels.tip_events),
             ::asio::experimental::after(wake)
         ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
@@ -869,6 +1014,8 @@ private:
         auto const now = view_now();
         if (selected.index == 0) {
             owner.handle(std::move(*selected.value<0>()), now);
+        } else if (selected.index == 1) {
+            owner.tip_moved();
         }
         owner.dispatch(now);
     }
@@ -876,6 +1023,39 @@ private:
     // The admission task ends after the transaction in hand.
     admission.close();
     spdlog::info("[tx_relay] Task ended");
+}
+
+// =============================================================================
+// The chain, as the owner reads it
+// =============================================================================
+
+tx_relay_view chain_relay_view(blockchain::block_chain& chain) {
+    return {
+        .synchronized = [&chain] { return chain.synchronization().synchronized(); },
+        .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
+        .tip = [&chain] {
+            auto const view = chain.chain_view();
+            return view ? view->tip_hash : null_hash;
+        },
+        .connected_tip = [&chain]() -> std::optional<chain_point> {
+            auto const view = chain.chain_view();
+            if ( ! view) {
+                return std::nullopt;
+            }
+            return chain_point{view->tip_hash, view->connected_tip_height};
+        },
+        .block_at = [&chain](size_t height) -> ::asio::awaitable<domain::message::block::const_ptr> {
+            auto const read = co_await chain.fetch_block(height);
+            co_return read ? read->first : nullptr;
+        },
+        .parent_of = [&chain](hash_digest hash) -> ::asio::awaitable<std::optional<chain_point>> {
+            auto const read = co_await chain.fetch_block_header(hash);
+            if ( ! read || read->second == 0) {
+                co_return std::nullopt;
+            }
+            co_return chain_point{read->first->previous_block_hash(), read->second - 1};
+        },
+    };
 }
 
 // =============================================================================

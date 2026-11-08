@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <asio/read.hpp>
 #include <asio/use_future.hpp>
 
+#include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/domain/message/fee_filter.hpp>
@@ -348,13 +350,45 @@ struct relay_rig {
 
     std::function<tx_request_tracker::time_point()> clock;
 
+    // The connected chain, by height, when a control gives the relay one;
+    // every block ever connected under its parent, side branches included.
+    std::vector<domain::message::block::const_ptr> blocks;
+    boost::unordered_flat_map<hash_digest, chain_point> parents;
+    boost::unordered_flat_set<size_t> unreadable;
+    size_t reads = 0;
+    // Called as each block is read, before it is returned.
+    std::function<void(size_t)> reading;
+
     tx_relay_view view() {
-        return {
+        tx_relay_view result{
             .synchronized = [this] { return synchronized; },
             .in_mempool = [this](hash_digest const& txid) { return mempool.contains(txid); },
             .tip = [this] { return tip; },
             .now = clock,
         };
+        if ( ! blocks.empty()) {
+            result.connected_tip = [this]() -> std::optional<chain_point> {
+                return chain_point{blocks.back()->hash(), blocks.size() - 1};
+            };
+            result.block_at = [this](size_t height) -> ::asio::awaitable<domain::message::block::const_ptr> {
+                ++reads;
+                if (reading) {
+                    reading(height);
+                }
+                if (height >= blocks.size() || unreadable.contains(height)) {
+                    co_return nullptr;
+                }
+                co_return blocks[height];
+            };
+            result.parent_of = [this](hash_digest hash) -> ::asio::awaitable<std::optional<chain_point>> {
+                auto const it = parents.find(hash);
+                if (it == parents.end()) {
+                    co_return std::nullopt;
+                }
+                co_return it->second;
+            };
+        }
+        return result;
     }
 
     void start(bool admitting = true) {
@@ -924,6 +958,215 @@ TEST_CASE("tx relay: an orphan ready while validation is full is validated when 
 
     (void)admit_one(rig);
     CHECK(admission_holds(rig, child->hash()));
+}
+
+// -----------------------------------------------------------------------------
+// Orphans a connected block resolves
+// -----------------------------------------------------------------------------
+
+namespace {
+
+// A transaction spending output `index` of `parent`.
+domain::message::transaction::const_ptr make_spend(uint32_t locktime, hash_digest const& parent,
+                                                   uint32_t index) {
+    domain::chain::input::list inputs;
+    inputs.emplace_back(domain::chain::output_point{parent, index}, domain::chain::script{}, 0);
+    return std::make_shared<domain::message::transaction const>(
+        domain::message::transaction(1, locktime, std::move(inputs), domain::chain::output::list{}));
+}
+
+domain::message::block::const_ptr make_block(hash_digest const& previous, uint32_t nonce,
+    std::vector<domain::message::transaction::const_ptr> const& transactions) {
+    domain::chain::transaction::list list;
+    for (auto const& tx : transactions) {
+        list.push_back(*tx);
+    }
+    return std::make_shared<domain::message::block const>(
+        domain::chain::header(1, previous, null_hash, 0, 0, nonce), std::move(list));
+}
+
+// A chain of one block, before the relay starts.
+void genesis(relay_rig& rig) {
+    rig.blocks = {make_block(null_hash, 0, {})};
+}
+
+// One block more on the connected chain.
+void extend(relay_rig& rig, uint32_t nonce,
+            std::vector<domain::message::transaction::const_ptr> const& transactions = {}) {
+    auto const& tip = rig.blocks.back();
+    auto block = make_block(tip->hash(), nonce, transactions);
+    rig.parents[block->hash()] = chain_point{tip->hash(), rig.blocks.size() - 1};
+    rig.blocks.push_back(std::move(block));
+}
+
+void ring(relay_rig& rig) {
+    rig.channels.tip_moved();
+    drain(rig.ioc);
+}
+
+// Whether `child` is still kept: its parent arrives, and a kept orphan is
+// validated again.
+bool kept_until_parent(relay_rig& rig, domain::message::transaction::const_ptr const& parent,
+                       hash_digest const& child) {
+    auto const before = rig.submitted.size();
+    rig.submit(tx_received{9, parent});
+    return std::any_of(rig.submitted.begin() + std::ptrdiff_t(before), rig.submitted.end(),
+        [&](auto const& tx) { return tx->hash() == child; });
+}
+
+} // namespace
+
+TEST_CASE("tx orphanage: what spends an output a block spends goes, the block's own among them",
+          "[tx_relay][orphans][block]") {
+    tx_orphanage orphans;
+    auto const parent = make_tx(60)->hash();
+    auto const first = make_spend(61, parent, 0);
+    auto const second = make_spend(62, parent, 1);
+    auto const third = make_spend(63, parent, 2);
+    REQUIRE(orphans.add(first, 1, o0));
+    REQUIRE(orphans.add(second, 1, o0));
+    REQUIRE(orphans.add(third, 1, o0));
+
+    // Another spend of the same parent, of another output: none goes.
+    CHECK(orphans.erase_for_block(*make_block(null_hash, 1, {make_spend(64, parent, 7)})) == 0u);
+    CHECK(orphans.size() == 3u);
+
+    // A conflict: what spends the same output goes, what spends another stays.
+    CHECK(orphans.erase_for_block(*make_block(null_hash, 2, {make_spend(65, parent, 0)})) == 1u);
+    CHECK_FALSE(orphans.contains(first->hash()));
+    CHECK(orphans.contains(second->hash()));
+
+    // Confirmed: the orphan itself is in the block.
+    CHECK(orphans.erase_for_block(*make_block(null_hash, 3, {second})) == 1u);
+    CHECK_FALSE(orphans.contains(second->hash()));
+    CHECK(orphans.contains(third->hash()));
+
+    // Gone from every index: its parent arriving readies only what is kept.
+    orphans.parent_admitted(parent);
+    CHECK(orphans.ready() == 1u);
+    REQUIRE(orphans.next_ready());
+    CHECK(orphans.next_ready()->tx->hash() == third->hash());
+}
+
+TEST_CASE("tx relay: an orphan a connected block resolves goes, one it does not stays",
+          "[tx_relay][owner][orphans][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    rig.start();
+
+    auto const parent = make_tx(70);
+    auto const resolved = make_spend(71, parent->hash(), 0);
+    auto const unrelated = make_spend(72, parent->hash(), 1);
+    rig.submit(tx_received{1, resolved});
+    rig.submit(tx_received{1, unrelated});
+    REQUIRE(rig.submitted.size() == 2u);
+
+    extend(rig, 1, {make_spend(73, parent->hash(), 0)});
+    ring(rig);
+    CHECK(rig.reads == 1u);
+
+    auto const before = rig.submitted.size();
+    rig.submit(tx_received{9, parent});
+    std::vector<hash_digest> again;
+    for (auto i = before; i < rig.submitted.size(); ++i) {
+        again.push_back(rig.submitted[i]->hash());
+    }
+    CHECK(again == std::vector<hash_digest>{parent->hash(), unrelated->hash()});
+}
+
+TEST_CASE("tx relay: with no orphans no block is read, and what was connected before one is not",
+          "[tx_relay][owner][orphans][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    rig.start();
+
+    auto const parent = make_tx(80);
+    auto const child = make_spend(81, parent->hash(), 0);
+    // Blocks before the orphan, one of them spending what it will spend.
+    extend(rig, 1, {make_spend(82, parent->hash(), 0)});
+    extend(rig, 2);
+    ring(rig);
+    CHECK(rig.reads == 0u);
+
+    rig.submit(tx_received{1, child});
+    extend(rig, 3);
+    ring(rig);
+    // Only the block connected since: the orphan is kept.
+    CHECK(rig.reads == 1u);
+    CHECK(kept_until_parent(rig, parent, child->hash()));
+}
+
+TEST_CASE("tx relay: rings during a scan are not lost",
+          "[tx_relay][owner][orphans][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    rig.start();
+
+    auto const parent = make_tx(90);
+    auto const child = make_spend(91, parent->hash(), 0);
+    rig.submit(tx_received{1, child});
+
+    // While the first block is read, the one that resolves the orphan is
+    // connected, and rings.
+    rig.reading = [&rig, &parent, done = false](size_t) mutable {
+        if (done) {
+            return;
+        }
+        done = true;
+        extend(rig, 2, {make_spend(92, parent->hash(), 0)});
+        rig.channels.tip_moved();
+    };
+    extend(rig, 1);
+    ring(rig);
+    CHECK(rig.reads == 2u);
+    CHECK_FALSE(kept_until_parent(rig, parent, child->hash()));
+}
+
+TEST_CASE("tx relay: after a reorganization the new branch's blocks resolve orphans",
+          "[tx_relay][owner][orphans][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    extend(rig, 1);
+    rig.start();
+
+    auto const parent = make_tx(100);
+    auto const child = make_spend(101, parent->hash(), 0);
+    rig.submit(tx_received{1, child});
+
+    // The block the relay last saw is replaced, at its own height, by one
+    // that spends what the orphan spends, and another follows.
+    rig.blocks.resize(1);
+    extend(rig, 2, {make_spend(102, parent->hash(), 0)});
+    extend(rig, 3);
+    ring(rig);
+    CHECK_FALSE(kept_until_parent(rig, parent, child->hash()));
+}
+
+TEST_CASE("tx relay: a block that cannot be read is read at the next ring",
+          "[tx_relay][owner][orphans][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = [&rig](domain::message::transaction const& tx) { return by_pool(rig, tx); };
+    rig.start();
+
+    auto const parent = make_tx(110);
+    auto const child = make_spend(111, parent->hash(), 0);
+    rig.submit(tx_received{1, child});
+
+    extend(rig, 1, {make_spend(112, parent->hash(), 0)});
+    rig.unreadable.insert(1);
+    ring(rig);
+    CHECK(rig.reads == 1u);
+
+    rig.unreadable.clear();
+    extend(rig, 2);
+    ring(rig);
+    CHECK(rig.reads == 3u);
+    CHECK_FALSE(kept_until_parent(rig, parent, child->hash()));
 }
 
 TEST_CASE("tx relay: closing the channel ends both tasks, also before they ever ran",

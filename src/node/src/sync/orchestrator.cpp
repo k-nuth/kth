@@ -1281,14 +1281,7 @@ static
     // closes the relay's channel, and the owner closes the admission channel.
     detail::tx_admission_channel tx_admission(detail::tx_admission_capacity);
     if (network.network_settings().relay_transactions) {
-        detail::tx_relay_view relay_view{
-            .synchronized = [&chain] { return chain.synchronization().synchronized(); },
-            .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
-            .tip = [&chain] {
-                auto const view = chain.chain_view();
-                return view ? view->tip_hash : null_hash;
-            },
-        };
+        auto relay_view = detail::chain_relay_view(chain);
         auto spawn_relay_task = [&all_tasks](::asio::awaitable<void> task) {
             all_tasks.spawn("tx_relay_request", std::move(task));
         };
@@ -2461,6 +2454,8 @@ static
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
                 announce_connected_tip();
+                // The orphans a connected block resolves (detail/tx_relay.hpp).
+                network.tx_relay().tip_moved();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

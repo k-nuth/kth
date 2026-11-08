@@ -1255,3 +1255,54 @@ TEST_CASE("a submitted transaction is announced to a peer that relays",
     CHECK(service.wait_for(0s) == std::future_status::ready);
     CHECK(watch.wait_for(0s) == std::future_status::ready);
 }
+
+// -----------------------------------------------------------------------------
+// The chain as the relay reads it, for the orphans connected blocks resolve
+// -----------------------------------------------------------------------------
+
+namespace {
+
+template <typename T, typename Make>
+T read_on_chain(blockchain::block_chain& chain, Make make) {
+    return ::asio::co_spawn(chain.executor(),
+        [make = std::move(make)]() -> ::asio::awaitable<T> {
+            co_return co_await make();
+        },
+        ::asio::use_future).get();
+}
+
+} // namespace
+
+TEST_CASE("the relay reads the connected tip, its blocks by height and their parents from the chain",
+          "[mempool][admission][tx_relay][block]") {
+    using node::detail::chain_point;
+    constexpr uint32_t length = 4;
+    admission_chain built("relay_chain_view", length);
+    auto& chain = built.chain();
+    auto const view = node::detail::chain_relay_view(chain);
+
+    auto const tip = view.connected_tip();
+    REQUIRE(tip);
+    CHECK(*tip == chain_point{built.trunk.back().hash(), length});
+
+    auto const at = [&](size_t height) {
+        return read_on_chain<domain::message::block::const_ptr>(chain, [&] { return view.block_at(height); });
+    };
+    auto const last = at(length);
+    REQUIRE(last);
+    CHECK(last->hash() == built.trunk.back().hash());
+    auto const second = at(2);
+    REQUIRE(second);
+    CHECK(second->hash() == built.trunk[1].hash());
+    CHECK_FALSE(at(length + 1));
+
+    auto const parent = [&](hash_digest const& hash) {
+        return read_on_chain<std::optional<chain_point>>(chain, [&] { return view.parent_of(hash); });
+    };
+    CHECK(parent(built.trunk.back().hash()) == chain_point{built.trunk[length - 2].hash(), length - 1});
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    CHECK(parent(built.trunk.front().hash()) == chain_point{genesis, 0});
+    // The genesis has none, nor does a block the chain does not hold.
+    CHECK_FALSE(parent(genesis));
+    CHECK_FALSE(parent(hash_digest{0x42}));
+}

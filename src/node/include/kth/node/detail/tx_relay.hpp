@@ -39,7 +39,16 @@
 // one of the transactions it spends was rejected, so is it; otherwise those
 // not known are asked of the peer that sent it, as if that peer had
 // announced them, and it is kept until one of them reaches the mempool, then
-// validated again. A peer's orphans go when it does.
+// validated again. A peer's orphans go when it does, and so do those a
+// connected block resolves: what spends an output the block spends, the block's
+// own transactions among them (BCHN EraseForBlock).
+//
+// The blocks reach the owner without it waiting on storage: when the connected
+// tip moves, a one-slot doorbell wakes it, and a task of its own reads the
+// blocks from the last one the owner saw up to the tip and hands them over
+// through the command channel, waiting for room. The owner keeps where it got
+// to, so rings that coalesce lose nothing; with no orphans it only moves that
+// mark, and reads nothing.
 
 #include <chrono>
 #include <cstdint>
@@ -56,7 +65,9 @@
 
 #include <asio/awaitable.hpp>
 
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/constants.hpp>
+#include <kth/domain/message/block.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
@@ -289,6 +300,10 @@ public:
     /// `peer` is gone: what it sent goes (BCHN EraseForPeer).
     void erase_for_peer(uint64_t peer);
 
+    /// `block` was connected: what spends an output it spends goes, its own
+    /// transactions among them (BCHN EraseForBlock). Returns how many went.
+    size_t erase_for_block(domain::chain::block const& block);
+
     [[nodiscard]]
     size_t size() const { return orphans_.size(); }
 
@@ -350,6 +365,25 @@ struct tx_request_sent {
     bool sent;
 };
 
+/// A block of the connected chain, by hash and height.
+struct chain_point {
+    hash_digest hash;
+    size_t height;
+
+    friend bool operator==(chain_point const&, chain_point const&) = default;
+};
+
+/// A connected block the owner had not seen, read by the scan, in order.
+struct tx_block_connected {
+    domain::message::block::const_ptr block;
+    chain_point point;
+};
+
+/// The scan ended: the owner has seen the connected chain up to `reached`.
+struct tx_scan_ended {
+    chain_point reached;
+};
+
 /// Validation's answer for a transaction the relay handed over: the
 /// transaction, the peer it came from, and, when inputs were missing, the
 /// transactions they spend that validation did not find.
@@ -361,7 +395,7 @@ struct tx_admitted {
 };
 
 using tx_relay_command = std::variant<tx_announced, tx_not_found, tx_received,
-    tx_peer_gone, tx_request_sent, tx_admitted>;
+    tx_peer_gone, tx_request_sent, tx_admitted, tx_block_connected, tx_scan_ended>;
 
 /// Transactions handed to validation and not yet taken by it.
 inline constexpr size_t tx_admission_capacity = 64;
@@ -387,10 +421,15 @@ struct tx_relay_channels {
     /// From a read loop, never waiting. False when refused.
     bool submit(tx_relay_command command);
 
+    /// The connected tip moved. Never waits: rings coalesce, and the owner
+    /// reads from where it got to.
+    void tip_moved();
+
     /// End it: the owner sees the channel closed.
     void close();
 
     select_channel<tx_relay_command> commands;
+    select_channel<std::monostate> tip_events;
 };
 
 /// What one read loop handed the relay and the relay could not take yet,
@@ -442,10 +481,21 @@ struct tx_relay_view {
     std::function<bool(hash_digest const&)> in_mempool;
     /// The connected tip, which clears the recent rejects when it moves.
     std::function<hash_digest()> tip;
+    /// The connected tip with its height, where reading connected blocks for
+    /// the orphans ends. nullopt before the chain has one. When empty, no
+    /// block is read and orphans go only by expiry, size or peer.
+    std::function<std::optional<chain_point>()> connected_tip = {};
+    /// The block at `height` on the active chain; null when it cannot be read.
+    std::function<::asio::awaitable<domain::message::block::const_ptr>(size_t)> block_at = {};
+    /// The parent of the block `hash`; nullopt when it is not known.
+    std::function<::asio::awaitable<std::optional<chain_point>>(hash_digest)> parent_of = {};
     /// The clock the request deadlines are read on. The steady clock when
     /// empty; controls set their own.
     std::function<tx_request_tracker::time_point()> now = {};
 };
+
+/// What the owner reads from `chain`: the node's view.
+tx_relay_view chain_relay_view(blockchain::block_chain& chain);
 
 /// Hands a task to the caller's task group.
 using tx_relay_spawner = std::function<void(::asio::awaitable<void>)>;
