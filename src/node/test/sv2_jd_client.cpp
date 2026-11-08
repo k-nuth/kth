@@ -1231,7 +1231,7 @@ TEST_CASE("sv2 JD Reconnect cannot reach another authority, skip the retry hold 
     SECTION("Reconnect before the pair is healthy") { which = trigger::early; }
     SECTION("malformed Reconnect") { which = trigger::malformed; }
     SECTION("Reconnect to an invalid host") { which = trigger::invalid; }
-    SECTION("the new server closes during the handshake") { which = trigger::unreachable; }
+    SECTION("the new server drops the connection after its handshake") { which = trigger::unreachable; }
     client_fixture fixture;
     fake_upstream moved_pool(fixture, which == trigger::authority ? 9 : 4);
     auto configuration = settings(fixture.pool, fixture.jds);
@@ -1294,6 +1294,10 @@ TEST_CASE("sv2 JD Reconnect cannot reach another authority, skip the retry hold 
             REQUIRE(fixture.wait_until([&] {
                 return moved_pool.accepted->done && fixture.jds.accepted->done;
             }));
+            // Past the handshake, so the drop is a plain transient failure. A
+            // handshake cut short is held like an authentication failure.
+            moved_pool.handshake();
+            (void)moved_pool.receive<setup_connection>();
             std::error_code error;
             moved_pool.socket.close(error);
             REQUIRE_FALSE(error);
