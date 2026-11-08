@@ -241,6 +241,11 @@ Each upstream always uses Noise, including when the local listener explicitly
 uses plaintext. A different signing authority, a certificate outside its
 validity window or an unauthenticated frame ends that attempt.
 
+Both upstream `SetupConnection` messages identify the node (specification
+section 3.6.1): `vendor` is `Knuth` followed by the node's version, for example
+`Knuth 1.5.2`, and `hardware_version` is `Knuth Bitcoin Cash full node`.
+`firmware` and `device_id` are empty.
+
 The Mining connection requests work selection and version rolling, then opens
 one extended channel with the configured identity. It requests eight extranonce
 bytes: four for local channel allocation and four reserved for downstream

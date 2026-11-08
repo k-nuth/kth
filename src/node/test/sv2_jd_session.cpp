@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/jd_session.hpp>
 
@@ -18,6 +19,10 @@ using namespace kth;
 using namespace kth::node::sv2;
 
 namespace {
+
+std::string knuth_vendor() {
+    return std::string(kth::client_name) + " " + std::string(kth::version);
+}
 
 template <typename Message>
 constexpr uint16_t extension() {
@@ -134,7 +139,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(setup.flags == (full_template ? 1u : 0u));
         REQUIRE(setup.endpoint_host == "jds.example");
         REQUIRE(setup.endpoint_port == 8443);
-        REQUIRE(setup.vendor == "Knuth");
+        REQUIRE(setup.vendor == knuth_vendor());
         require_silent(process(session, setup_connection_success{2, 0}));
         REQUIRE(session.ready());
         REQUIRE_FALSE(session.channel());
@@ -165,6 +170,22 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(session.channel()->target == target());
         REQUIRE(session.channel()->extranonce_size == jd_session::min_extranonce_size);
         REQUIRE(session.channel()->extranonce_prefix == data_chunk{1, 2});
+    }
+}
+
+TEST_CASE("sv2 jd setup names the Knuth version and the software package", "[sv2 jd]") {
+    // sv2-spec 3.6.1: vendor MUST carry the developer and its version, and
+    // hardware_version SHOULD name the package in use.
+    REQUIRE_FALSE(kth::version.empty());
+    for (auto const peer : {jd_peer::mining, jd_peer::declaration}) {
+        CAPTURE(peer == jd_peer::mining);
+        jd_session session(peer, "pool.example", 8442, "worker", true);
+        auto const setup = single<setup_connection>(session.start());
+        REQUIRE(setup.vendor == knuth_vendor());
+        REQUIRE(setup.vendor.find(kth::version) != std::string::npos);
+        REQUIRE_FALSE(setup.hardware_version.empty());
+        REQUIRE(setup.hardware_version.starts_with(kth::client_name));
+        REQUIRE(setup.device_id.empty());
     }
 }
 

@@ -5,8 +5,10 @@
 #include <kth/node/sv2/jd_session.hpp>
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
+#include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/primitives.hpp>
 
@@ -81,7 +83,10 @@ data_chunk jd_session::start() {
         : full_template_ ? jd_flag_declare_tx_data : 0;
     setup.endpoint_host = host_;
     setup.endpoint_port = port_;
-    setup.vendor = "Knuth";
+    // sv2-spec 3.6.1: vendor names the developer and its version, and
+    // hardware_version the package in use. A node has no telemetry device id.
+    setup.vendor = std::format("{} {}", kth::client_name, kth::version);
+    setup.hardware_version = std::format("{} {} full node", kth::client_name, kth::currency_name);
     state_ = state::awaiting_setup;
     return frame(setup);
 }
