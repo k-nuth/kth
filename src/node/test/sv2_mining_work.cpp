@@ -185,6 +185,8 @@ TEST_CASE("Mining payout is a supported cashaddr for the selected network", "[sv
     REQUIRE_FALSE(mining_startup_reason(settings, domain::config::network::regtest).empty());
     settings.mining.address = valid;
     REQUIRE(mining_startup_reason(settings, domain::config::network::regtest).empty());
+    settings.mining.open_channel_timeout_seconds = 0;
+    REQUIRE_FALSE(mining_startup_reason(settings, domain::config::network::regtest).empty());
 #else
     REQUIRE_FALSE(payout_from_address("bitcoincash:q", domain::config::network::mainnet, error));
     REQUIRE_FALSE(error.empty());
@@ -444,21 +446,37 @@ TEST_CASE("Mining shares enforce channel job extranonce time version and target"
     }
 }
 
-TEST_CASE("Mining share target remains fixed for active jobs across updates", "[sv2 mining]") {
-    work_engine engine(0);
-    auto const opened = engine.open(request());
-    auto const tmpl = mining_template();
-    auto const job = engine.on_channel(opened.channel_id, tmpl, outputs(tmpl.coinbase_value));
-    REQUIRE(job.has_value());
-    REQUIRE_FALSE(engine.update(opened.channel_id, 0, maximum_target()).target);
-    auto const changed = engine.update(opened.channel_id, 0, {});
-    REQUIRE(changed.target.has_value());
-    REQUIRE(*changed.target == null_hash);
-    require_accepted(engine.submit(share(*job)));
-    auto const next = engine.on_channel(opened.channel_id, tmpl, outputs(tmpl.coinbase_value));
-    REQUIRE(next.has_value());
-    require_share_error(engine, share(*next), error_difficulty_too_low);
-    require_share_error(engine, share(*job), error_stale_share);
+TEST_CASE("Mining target updates apply to future jobs already sent", "[sv2 mining]") {
+    for (auto const kind : {channel_kind::standard, channel_kind::extended}) {
+        work_engine engine(0);
+        auto const opened = engine.open(request(0, kind));
+        auto const tmpl = mining_template();
+        auto const job = engine.on_channel(opened.channel_id, tmpl, outputs(tmpl.coinbase_value));
+        REQUIRE(job.has_value());
+        auto value = share(*job);
+        value.extranonce.resize(opened.extranonce_size, 0x42);
+        auto root = coinbase(*job, opened, value.extranonce).hash();
+        for (auto const& sibling : job->merkle_path) root = bitcoin_hash(build_chunk({root, sibling}));
+        domain::chain::header const header(value.version, tmpl.previous_block_hash, root,
+            value.ntime, tmpl.bits, value.nonce);
+        auto const digest = to_uint256(domain::chain::hash(header));
+        REQUIRE(digest > 0);
+        REQUIRE_FALSE(engine.update(opened.channel_id, 0, maximum_target()).target);
+
+        // Harder: the share meets the target the job was sent with, not the new one.
+        auto const below = to_hash_digest(digest - 1);
+        auto const harder = engine.update(opened.channel_id, 0, below);
+        REQUIRE(harder.target.has_value());
+        REQUIRE(*harder.target == below);
+        require_share_error(engine, value, error_difficulty_too_low);
+
+        // Easier: the same share meets the new target and still misses the previous one.
+        auto const exact = to_hash_digest(digest);
+        auto const easier = engine.update(opened.channel_id, 0, exact);
+        REQUIRE(easier.target.has_value());
+        REQUIRE(*easier.target == exact);
+        require_accepted(engine.submit(value));
+    }
 }
 
 TEST_CASE("Mining duplicate history is bounded without accepting replays", "[sv2 mining]") {

@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <kth/domain/version.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/jd_messages.hpp>
 #include <kth/node/sv2/jd_session.hpp>
@@ -19,6 +20,10 @@ using namespace kth;
 using namespace kth::node::sv2;
 
 namespace {
+
+std::string knuth_vendor() {
+    return std::string(kth::client_name) + " " + std::string(kth::version);
+}
 
 template <typename Message>
 constexpr uint16_t extension() {
@@ -165,7 +170,7 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(setup.flags == (full_template ? 1u : 0u));
         REQUIRE(setup.endpoint_host == "jds.example");
         REQUIRE(setup.endpoint_port == 8443);
-        REQUIRE(setup.vendor == "Knuth");
+        REQUIRE(setup.vendor == knuth_vendor());
         finish_extensions(session, false);
     }
     for (uint32_t const flags : {0u, mining_flag_requires_extended_channels}) {
@@ -197,6 +202,22 @@ TEST_CASE("sv2 jd setup selects the requested mode and opens one extended upstre
         REQUIRE(session.channel()->target == target());
         REQUIRE(session.channel()->extranonce_size == jd_session::min_extranonce_size);
         REQUIRE(session.channel()->extranonce_prefix == data_chunk{1, 2});
+    }
+}
+
+TEST_CASE("sv2 jd setup names the Knuth version and the software package", "[sv2 jd]") {
+    // sv2-spec 3.6.1: vendor MUST carry the developer and its version, and
+    // hardware_version SHOULD name the package in use.
+    REQUIRE_FALSE(kth::version.empty());
+    for (auto const peer : {jd_peer::mining, jd_peer::declaration}) {
+        CAPTURE(peer == jd_peer::mining);
+        jd_session session(peer, "pool.example", 8442, "worker", true);
+        auto const setup = single<setup_connection>(session.start());
+        REQUIRE(setup.vendor == knuth_vendor());
+        REQUIRE(setup.vendor.find(kth::version) != std::string::npos);
+        REQUIRE_FALSE(setup.hardware_version.empty());
+        REQUIRE(setup.hardware_version.starts_with(kth::client_name));
+        REQUIRE(setup.device_id.empty());
     }
 }
 
@@ -408,6 +429,31 @@ TEST_CASE("sv2 jd channel closes request solo fallback for the channel or its gr
         require_closed(session, result);
         REQUIRE(result.error == "upstream closed extended channel");
     }
+}
+
+TEST_CASE("sv2 jd a refused channel update keeps the channel and other update errors close it", "[sv2 jd]") {
+    // sv2-spec 5.3.8: the pool keeps the channel as it was, so it stays open
+    // and still follows the pool's later messages.
+    auto session = ready();
+    require_silent(process(session, update_channel_error{7, "max-target-out-of-range"}));
+    REQUIRE(session.channel()->channel_id == 7);
+    auto updated = target();
+    updated.back() = 0x7f;
+    require_silent(process(session, set_target{7, updated}));
+    REQUIRE(session.channel()->target == updated);
+
+    // Only channel 7 is ever updated: its group 9 and other ids are not replies.
+    for (uint32_t const id : {8u, 9u}) {
+        CAPTURE(id);
+        auto other = ready();
+        auto const result = process(other, update_channel_error{id, "invalid-channel-id"});
+        require_closed(other, result);
+        REQUIRE(result.error == "invalid upstream channel update error");
+    }
+    refuse_incomplete(update_channel_error{7, "max-target-out-of-range"}, ready);
+    auto missing_flag = ready();
+    require_closed(missing_flag, process(missing_flag, 0, update_channel_error::message_type,
+        to_data_chunk(update_channel_error{7, "max-target-out-of-range"})));
 }
 
 TEST_CASE("sv2 jd extensions are discarded only within the frame length bound", "[sv2 jd]") {

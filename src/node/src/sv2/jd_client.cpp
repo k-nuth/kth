@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -90,6 +91,10 @@ constexpr size_t max_tracked_shares = mining::max_remembered_shares;
 // a pair found on the same coinbase before DeclareMiningJob.Success.
 constexpr size_t max_pending_solutions = 2;
 
+// sv2-spec 5.3.7 lets a proxy debounce UpdateChannel to once a second. A burst
+// of downstream opens, updates and closes reaches the pool as one latest sum.
+constexpr auto hash_rate_hold = std::chrono::seconds(1);
+
 } // namespace
 
 jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
@@ -115,6 +120,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
     , chain_(chain)
     , response_timeout_(settings.jd.response_timeout_seconds)
     , declaration_wake_(owner_)
+    , hash_rate_wake_(owner_)
     , ready_(owner_, 1)
     , publications_(owner_, 1)
 {}
@@ -168,6 +174,7 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         }
         auto const previous_prefix = mining_session_.channel()
             ? mining_session_.channel()->extranonce_prefix : data_chunk{};
+        bool const opening = ! session.ready();
         auto result = session.process(*header, *payload);
         if (peer == jd_peer::declaration && session.ready()) {
             jobs_.use_payout_outputs(session.payout_outputs());
@@ -176,6 +183,9 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
             failure = result.error;
             return false;
         }
+        // The channel request carried the sum noted before it was built. One
+        // that changed while the request was outstanding is reported now.
+        if (opening && session.ready() && peer == jd_peer::mining) wake_hash_rate();
         if (session.ready() && peer == jd_peer::mining && (jobs_.pending() || jobs_.work())
             && previous_prefix != mining_session_.channel()->extranonce_prefix) {
             failure = "pool changed the extranonce prefix of declared work";
@@ -327,12 +337,35 @@ bool jd_client::send_declaration(data_chunk frame) {
     };
     co_await (serve(mining_, mining_session_, "pool")
         && serve_declaration()
-        && declarations() && receive_tips());
+        && declarations() && receive_tips() && report_hash_rate());
 }
 
 void jd_client::wake_declarations() {
     declaration_changed_ = true;
     declaration_wake_.cancel();
+}
+
+::asio::awaitable<void> jd_client::report_hash_rate() {
+    // The only sender of UpdateChannel. After one is sent, later changes wait
+    // out the hold and go together; otherwise the loop sleeps until a change.
+    while ( ! stopped_) {
+        auto const update = mining_session_.hash_rate_update();
+        if (update && ! mining_.send(frame(*update))) {
+            spdlog::warn("[sv2 jd] Pool output queue refused a hash rate update; continuing solo mining");
+            stop();
+            co_return;
+        }
+        hash_rate_held_ = update.has_value();
+        hash_rate_wake_.expires_at(update
+            ? std::chrono::steady_clock::now() + hash_rate_hold
+            : std::chrono::steady_clock::time_point::max());
+        (void)co_await hash_rate_wake_.async_wait(::asio::as_tuple(::asio::use_awaitable));
+    }
+}
+
+void jd_client::wake_hash_rate() {
+    // During the hold the loop reads the latest sum when the timer expires.
+    if ( ! hash_rate_held_) hash_rate_wake_.cancel();
 }
 
 bool jd_client::dispatch(jd_declaration::result result) {
@@ -440,12 +473,14 @@ void jd_client::stop() {
         if (owner_.running_in_this_thread()) {
             pending_solutions_.clear();
             wake_declarations();
+            hash_rate_wake_.cancel();
             if (cancel_tips_) cancel_tips_();
             if (pool_live_) publish_solo();
         } else {
             ::asio::post(owner_, [this] {
                 pending_solutions_.clear();
                 wake_declarations();
+                hash_rate_wake_.cancel();
                 if (cancel_tips_) cancel_tips_();
                 if (pool_live_) publish_solo();
             });
@@ -481,6 +516,21 @@ void jd_client::observe_share(mining::pool_proof proof) {
     ::asio::post(owner_, [this, proof = std::move(proof)] {
         if (stopped_) return;
         note_share(proof);
+    });
+}
+
+void jd_client::observe_hash_rate(uint64_t connection, double rate) {
+    ::asio::post(owner_, [this, connection, rate] {
+        if (stopped_) return;
+        if (rate == 0) hash_rates_.erase(connection);
+        else hash_rates_[connection] = rate;
+        double total = 0;
+        for (auto const& entry : hash_rates_) total += entry.second;
+        // The wire field is F32. A pool refuses infinity as an invalid rate, so
+        // a sum past its range is sent as the largest finite value.
+        mining_session_.note_hash_rate(static_cast<float>(
+            std::min(total, double{std::numeric_limits<float>::max()})));
+        wake_hash_rate();
     });
 }
 
