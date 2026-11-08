@@ -584,7 +584,7 @@ target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
-else()
+elseif(NOT KTH_BROWSER_NODE)
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
   target_link_options(${PROJECT_NAME} PUBLIC "-pthread")
   if(KTH_WASM_SIMD)

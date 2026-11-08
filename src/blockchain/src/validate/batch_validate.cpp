@@ -604,7 +604,11 @@ code validate_block_batch(
         return error::success;
     }
 
+#if defined(KTH_BROWSER_NODE)
+    unsigned hw = 1; // The Worker owns validation; no hidden native thread creation.
+#else
     unsigned hw = std::thread::hardware_concurrency();
+#endif
     size_t const workers = std::max<size_t>(1, std::min<size_t>(hw ? hw : 1, tasks.size()));
 
     // One verdict per task, written only by the worker that ran it and read
