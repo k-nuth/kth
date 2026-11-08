@@ -89,6 +89,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , served_requests_(served_requests_capacity)
     , tip_announcements_(1)
     , fee_filter_changes_(1)
+    , admissions_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -126,6 +127,7 @@ peer_session::~peer_session() {
     served_requests_.close();
     tip_announcements_.close();
     fee_filter_changes_.close();
+    admissions_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -267,6 +269,7 @@ void peer_session::stop(code const& ec) {
     served_requests_.close();
     tip_announcements_.close();
     fee_filter_changes_.close();
+    admissions_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -353,6 +356,20 @@ void peer_session::announce_fee_filter(uint64_t fee_per_kb) {
 
 peer_session::fee_filter_channel& peer_session::fee_filter_changes() {
     return fee_filter_changes_;
+}
+
+void peer_session::announce_admissions(tx_admissions const& admissions) {
+    if (admissions_.try_send(tx_admissions(admissions))) {
+        return;
+    }
+    // Full: replace what the service has not taken, as announce_tip does.
+    std::error_code ec;
+    (void)admissions_.try_receive(ec);
+    (void)admissions_.try_send(tx_admissions(admissions));
+}
+
+peer_session::admission_channel& peer_session::admissions() {
+    return admissions_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {

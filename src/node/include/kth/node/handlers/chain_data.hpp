@@ -54,9 +54,10 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
 ::asio::awaitable<message_result> handle_get_headers(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_headers const& request);
 
-/// getdata -> one block message per requested block, in request order, and a
-/// notfound for the blocks that cannot be served. A compact block request is
-/// answered with the full block. Transaction entries are not handled here.
+/// getdata -> one block or tx message per requested entry, in request order,
+/// and a notfound for those that cannot be served. A compact block request is
+/// answered with the full block. A transaction is served while it is pooled
+/// and the peer knows it (it was announced to the peer, or by it).
 [[nodiscard]] KN_API
 ::asio::awaitable<message_result> handle_get_data(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_data const& request);

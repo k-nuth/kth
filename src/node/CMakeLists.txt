@@ -147,6 +147,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/local_admission_tasks.cpp
+    src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
     src/executor/executor.cpp
 
@@ -347,6 +348,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/block_announcements.cpp
           test/tx_relay.cpp
           test/fee_filter.cpp
+          test/tx_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
           test/local_block_admission.cpp

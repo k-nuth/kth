@@ -44,6 +44,7 @@
 #include <kth/blockchain/pools/capture_gate.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
+#include <kth/blockchain/pools/mempool_admissions.hpp>
 #include <kth/blockchain/pools/mempool_limit.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
@@ -821,6 +822,35 @@ struct KB_API block_chain {
         return mempool_fee_events_;
     }
 
+    // Transactions admitted to the mempool, for announcing them (BCHN relays
+    // each one it admits, in the order it admitted them). Each carries its
+    // entry_id, increasing with admission; a peer's service walks them from
+    // where it last stopped.
+    struct mempool_admitted {
+        std::vector<mempool_entry> entries;
+        uint64_t last;   // the last admission's id, pooled or not
+    };
+
+    // Up to `limit` transactions still pooled and admitted after `after`, in
+    // order, on the chain's executor under the validation lock.
+    [[nodiscard]]
+    ::asio::awaitable<mempool_admitted> mempool_admitted_after(uint64_t after, size_t limit);
+
+    // The last admission's id, on the chain's executor; zero before any.
+    [[nodiscard]]
+    ::asio::awaitable<uint64_t> mempool_last_admission();
+
+    // Rung when a transaction is admitted. One slot, so rings coalesce: what
+    // it wakes reads the last admission afresh. Closed by stop().
+    [[nodiscard]]
+    ::asio::experimental::select_channel<std::monostate>& mempool_admission_events() noexcept {
+        return mempool_admission_events_;
+    }
+
+    // A pooled transaction with its entry_id, or nullopt (a peer's `getdata`).
+    [[nodiscard]]
+    std::optional<mempool_entry> get_mempool_transaction(hash_digest const& txid) const;
+
     // The mempool's estimated memory, in bytes, as its limit counts it.
     [[nodiscard]]
     uint64_t mempool_usage();
@@ -1218,6 +1248,10 @@ private:
     void note_mempool_block_connected();
     size_t trim_mempool(uint64_t limit);
     ::asio::experimental::select_channel<std::monostate> mempool_fee_events_{1};
+
+    // Under validation_mutex_: the order of admission, and its doorbell.
+    mempool_admissions mempool_admissions_;
+    ::asio::experimental::select_channel<std::monostate> mempool_admission_events_{1};
 
     // Immutable template publication. A one-token channel serializes rebuilds
     // across asynchronous input refresh without holding a thread-affine mutex.

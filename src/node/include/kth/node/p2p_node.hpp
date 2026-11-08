@@ -30,6 +30,8 @@
 #include <kth/network/protocols_coro.hpp>
 #include <kth/network/settings.hpp>
 
+#include <kth/node/detail/tx_announcements.hpp>
+
 #include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -156,22 +158,32 @@ public:
     /// A draw in [0, 1), for the fee filter schedule's random delays.
     using unit_draw_fn = std::function<double()>;
 
-    /// Set it. Uniformly random when unset; controls set their own.
+    /// Set it. Uniformly random when unset; controls set their own. The
+    /// announcements' delays draw from it too.
     void set_fee_filter_draw(unit_draw_fn draw);
+
+    /// Set where each peer's service reads the transactions it announces
+    /// (detail/tx_announcements.hpp). Without it, none are announced.
+    void set_tx_announcement_handler(detail::tx_announcement_sources sources);
 
     /// The peer's service: runs the served handlers on the requests dispatch()
     /// handed over, in arrival order, announces the tip owed to the peer, and
-    /// sends it the fee filter on its schedule (detail/fee_filter.hpp), until
-    /// the session closes its queues. A handler asking to disconnect stops the
-    /// session.
+    /// sends it the fee filter on its schedule (detail/fee_filter.hpp) and
+    /// the admitted transactions it is owed on theirs
+    /// (detail/tx_announcements.hpp), until the session closes its queues. A
+    /// handler asking to disconnect stops the session.
     ::asio::awaitable<void> serve(peer_session& peer);
 
 private:
+    ::asio::awaitable<void> announce_transactions(peer_session& peer,
+                                                  detail::tx_announcement_schedule& schedule);
+
     boost::unordered_flat_map<std::string, message_handler_fn> handlers_;
     boost::unordered_flat_map<std::string, message_handler_fn> served_handlers_;
     tip_announcement_fn tip_announcement_;
     fee_filter_fn fee_filter_;
     unit_draw_fn fee_filter_draw_;
+    detail::tx_announcement_sources tx_announcement_;
     message_handler_fn default_handler_;
 };
 
@@ -330,6 +342,11 @@ public:
         dispatcher_.set_fee_filter_handler(std::move(handler));
     }
 
+    /// Set where each peer's service reads the transactions it announces.
+    void set_tx_announcement_handler(detail::tx_announcement_sources sources) {
+        dispatcher_.set_tx_announcement_handler(std::move(sources));
+    }
+
     // Manual connections
     // -------------------------------------------------------------------------
 
@@ -399,7 +416,9 @@ public:
     /// What the read loop does next with `tx` and `notfound`: hands them to the
     /// transaction relay when the node relays transactions, never waiting.
     /// Answers whether the message was consumed: `tx` is, whatever becomes of
-    /// it; `notfound` carries on. Any other command is left alone. The
+    /// it; `notfound` carries on. A `feefilter` is consumed and kept in the
+    /// peer's tx_inventory, as is every transaction the peer sends or
+    /// announces, as known to it. Any other command is left alone. The
     /// transaction entries of an `inv` go to the relay from
     /// observe_block_message, which reads the `inv` once for both.
     [[nodiscard]]
