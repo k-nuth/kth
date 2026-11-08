@@ -82,6 +82,10 @@ bool mining_session::needs_template() const {
     return ready() && engine_.channel_count() > 0 && ! template_prev_;
 }
 
+bool mining_session::awaiting_channel() const {
+    return ready() && ! channel_opened_;
+}
+
 double mining_session::nominal_hash_rate() const {
     return engine_.nominal_hash_rate();
 }
@@ -117,7 +121,8 @@ data_chunk mining_session::job_frames(mining::work_job const& job) const {
         append_frame(bytes, message);
     }
     // ntime stays unset above: the first job on a channel is a future job.
-    // SetNewPrevHash is what activates it (sv2-spec 5.3.15 and 5.3.17).
+    // SetNewPrevHash is what activates it (sv2-spec 5.3.15 and 5.3.17). Later
+    // jobs are sent the same way, so SetTarget always applies to them (5.3.21).
     append_frame(bytes, mining_set_new_prev_hash{job.channel_id, job.job_id,
         job.prev_hash, job.ntime_start, job.nbits});
     return bytes;
@@ -130,6 +135,7 @@ mining_session::result mining_session::finish_open(mining::open_request const& r
         return {frame(open_mining_channel_error{request.request_id, opened.error_code}),
             false, false, {}, {}};
     }
+    channel_opened_ = true;
 
     result out;
     if (request.kind == mining::channel_kind::extended) {

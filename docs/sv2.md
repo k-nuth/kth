@@ -99,14 +99,21 @@ file loading requires POSIX file permissions.
   mandatory coinbase outputs; BCH has no SegWit witness commitment.
 - `RequestTransactionData.Success` contains the template's transactions in block
   order, excluding the coinbase, with empty `excess_data`. Each connection keeps
-  a bounded set of recent templates. A new tip discards the previous tip's
-  templates. Requests for those IDs get `stale-template-id`; unknown IDs get
+  a bounded set of recent templates. Once a new tip arrives, requests for the
+  templates of earlier tips get `stale-template-id`; unknown IDs get
   `template-id-not-found`.
+- A BCH block can hold more than `RequestTransactionData.Success` carries: one
+  frame is under 16 MiB, and its list at most 65,535 transactions. Such a
+  template is still sent, since a client that mines on the merkle path never
+  needs the transactions. A request for them gets `template-too-large`; a
+  solution is taken as for any other template.
 - `SubmitSolution` reconstructs the full block from the supplied header fields
   and coinbase plus the template's transactions, then submits it through the
   node's block validation and connection pipeline. The outcome is logged; the
-  protocol defines no response. Solutions for unknown or stale IDs are logged
-  and ignored.
+  protocol defines no response. The templates of the tip just replaced still
+  take solutions until the next tip: such a block competes at the same height
+  as the new tip, and the chain decides which one it keeps. Solutions for
+  unknown IDs, or for templates of an older tip, are logged and ignored.
 - Discards messages of extensions it does not implement, as the specification
   requires.
 - Closes the connection on a malformed frame, a message only a server sends, a
@@ -143,6 +150,12 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
   rolling requirements are supported. Work selection and unknown flags are
   refused. Success flags are zero: the server accepts both channel types and
   permits version rolling.
+- A Mining connection that opens no channel within
+  `sv2.mining.open_channel_timeout_seconds` (default 60) of its
+  `SetupConnection.Success` is closed for inactivity, and the closure is logged
+  (SV2 section 5.3.2). A refused open does not count. Only the wait for the
+  first channel is limited: a connection whose channels all close later stays
+  open. Template Distribution connections have no channels and no such deadline.
 - Standard channels receive `NewMiningJob` with a merkle root computed by the
   node. Extended channels receive `NewExtendedMiningJob` with coinbase prefix
   and suffix, the merkle branch, a unique extranonce prefix and 12 to 32 bytes
@@ -162,12 +175,15 @@ Plaintext still requires the explicit `sv2.noise=false` setting.
 - The initial target aims for one share per 20 seconds at `nominal_hash_rate`,
   capped by the miner's `max_target`. A zero rate uses that maximum, which lets
   regtest miners request easy shares. `UpdateChannel` can change the rate or
-  maximum; `SetTarget` announces a changed target for subsequent jobs. Already
-  activated jobs keep their target.
+  maximum; `SetTarget` announces the changed target. Every job is sent as a
+  future job, so the new target applies at once to the job being mined as well
+  as to later ones (SV2 section 5.3.21). There is no grace period: once a
+  harder target is sent, shares that meet only the previous one are refused.
 - Shares must name the right channel type and active job, use exactly the
-  negotiated extranonce size, and hash at or below the job target. Version
-  rolling is limited to bits 5 through 28. The timestamp must be at least the
-  job's `ntime_start` and at most 7200 seconds above it (local policy).
+  negotiated extranonce size, and hash at or below the channel's current
+  target. Version rolling is limited to bits 5 through 28. The timestamp must
+  be at least the job's `ntime_start` and at most 7200 seconds above it (local
+  policy).
   Successful shares are acknowledged individually. A hash meeting the network
   target is submitted through the same validation, connection and relay path
   as Template Distribution's `SubmitSolution`.
@@ -198,7 +214,7 @@ specific codes):
 | | `invalid-extranonce-size` | The extranonce length differs from the negotiated size. |
 | | `invalid-ntime` | The timestamp is outside the job's bounds. |
 | | `invalid-version` | The miner changed bits outside the rolling mask. |
-| | `difficulty-too-low` | The header hash exceeds the job's share target. |
+| | `difficulty-too-low` | The header hash exceeds the channel's current share target. |
 | | `duplicate-share` | This proof of work was already accepted. |
 | | `share-limit` | The bounded share history is full; fresh work replaces this job. |
 

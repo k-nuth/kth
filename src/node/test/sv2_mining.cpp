@@ -843,6 +843,51 @@ TEST_CASE("sv2 mining keeps an open channel through a chain transition", "[sv2 m
     fixture.stop();
 }
 
+TEST_CASE("sv2 mining closes a connection that opens no channel by its deadline", "[sv2 mining]") {
+    auto settings = loopback_settings();
+    settings.mining.open_channel_timeout_seconds = 1;
+    listener_fixture fixture(settings);
+    auto client = fixture.connect(fixture.start());
+    auto const begun = std::chrono::steady_clock::now();
+    require_setup(fixture, *client);
+    // The client's side stays open, so only the deadline can end the connection.
+    fixture.require_closed(*client);
+    REQUIRE(std::chrono::steady_clock::now() - begun >= 1s);
+    fixture.stop();
+}
+
+TEST_CASE("sv2 mining channel deadline spares channel and template connections", "[sv2 mining]") {
+    auto settings = loopback_settings();
+    settings.mining.open_channel_timeout_seconds = 1;
+    listener_fixture fixture(settings);
+    (void)seed_chain(fixture, 5);
+    auto const port = fixture.start();
+    auto kept = fixture.connect(port);
+    require_setup(fixture, *kept);
+    (void)open_standard(fixture, *kept, 1);
+    auto closed = fixture.connect(port);
+    require_setup(fixture, *closed);
+    auto const opened = open_standard(fixture, *closed, 1);
+    fixture.write(*closed, frame(close_channel{opened.channel.channel_id, "finished"}));
+    auto templates = fixture.connect(port);
+    auto tdp = setup();
+    tdp.protocol = setup_connection::protocol_template_distribution;
+    fixture.write(*templates, frame(tdp));
+    REQUIRE(fixture.receive<setup_connection_success>(*templates).used_version == 2);
+
+    // Twice the deadline after every setup, each connection still answers.
+    auto const past = std::chrono::steady_clock::now() + 2s;
+    REQUIRE(fixture.wait_until([&] { return std::chrono::steady_clock::now() >= past; }));
+    for (auto const& client : {kept, closed}) {
+        fixture.write(*client, frame(update_channel{0xffffffffu, 0.f, easiest_target()}));
+        REQUIRE(fixture.receive<update_channel_error>(*client).error_code == "invalid-channel-id");
+    }
+    fixture.write(*templates, frame(coinbase_output_constraints{100, 2}));
+    REQUIRE(fixture.receive<new_template>(*templates).future_template);
+    (void)fixture.receive<set_new_prev_hash>(*templates);
+    fixture.stop();
+}
+
 TEST_CASE("sv2 mining shares the authenticated Noise transport", "[sv2 mining]") {
     noise_listener_fixture fixture;
     (void)seed_chain(fixture, 5);
