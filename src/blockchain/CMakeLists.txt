@@ -373,15 +373,7 @@ if (ENABLE_TEST)
     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
     include(CTest)
-    # Try to use Catch2 automatic test discovery
-    find_package(Catch2 QUIET)
-    if(Catch2_FOUND)
-      include(Catch)
-      catch_discover_tests(kth_blockchain_test)
-    else()
-      # Fallback to manual test registration
-      add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
-    endif()
+    kth_register_tests(kth_blockchain_test)
 endif()
 
 # VM-Limits tests
@@ -413,7 +405,7 @@ if (ENABLE_TEST)
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(kth_blockchain_vmlimits_test)
+    kth_register_tests(kth_blockchain_vmlimits_test)
 endif()
 
 # Tools

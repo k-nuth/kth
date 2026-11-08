@@ -56,6 +56,29 @@ jobs:
   reusable-build-without-container:
     if: ${{ inputs.if }}
     runs-on: ${{ inputs.os }}
+    env:
+      # Hosted macOS runners change the workspace path between runs
+      # (`/Users/runner/work/_temp/<random>/…`), and apple-clang is
+      # invoked from `/Applications/Xcode_*.app/Contents/…`. Without
+      # the overrides below ccache hashes those absolute paths into
+      # its "Direct" key, falls through to "Preprocessed" mode for
+      # every TU and ends up at ~6 % hit rate — the build re-runs
+      # nearly from scratch. `CCACHE_BASEDIR` rewrites paths under
+      # the workspace to be relative before hashing; `compilercheck=
+      # content` keys off the compiler binary's contents instead of
+      # its mtime/path; the sloppiness list ignores macros that
+      # vary across runs but don't change generated code.
+      #
+      # Even with those, the previous fix attempt only got us to
+      # ~6 % hits. Adding `CCACHE_NOHASHDIR=true` so the working
+      # directory isn't part of the hash (it changes between runs
+      # on macOS-hosted runners regardless of BASEDIR), and
+      # `CCACHE_LOGFILE` so we can post-mortem when hits stay low.
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers,include_file_mtime,include_file_ctime
+      CCACHE_LOGFILE: ${{ github.workspace }}/ccache.log
     steps:
       - name: 🐛 Debug inputs
         run: |
@@ -69,7 +92,6 @@ jobs:
           echo "inputs.compiler:           ${{ inputs.compiler }}"
           echo "inputs.compiler-version:   ${{ inputs.compiler-version }}"
 
-          echo "inputs.version-file:       ${{ inputs.version-file }}"
           echo "inputs.upload:             ${{ inputs.upload }}"
           # echo "github.event_name:         ${{ github.event_name }}"
 
@@ -140,6 +162,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-closed-prs-selftest.sh"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials.py"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials-selftest.py"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package-selftest.py"
 
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
@@ -169,29 +192,6 @@ jobs:
 
       - name: 🔨 Build
         working-directory: .
-        env:
-          # Hosted macOS runners change the workspace path between runs
-          # (`/Users/runner/work/_temp/<random>/…`), and apple-clang is
-          # invoked from `/Applications/Xcode_*.app/Contents/…`. Without
-          # the overrides below ccache hashes those absolute paths into
-          # its "Direct" key, falls through to "Preprocessed" mode for
-          # every TU and ends up at ~6 % hit rate — the build re-runs
-          # nearly from scratch. `CCACHE_BASEDIR` rewrites paths under
-          # the workspace to be relative before hashing; `compilercheck=
-          # content` keys off the compiler binary's contents instead of
-          # its mtime/path; the sloppiness list ignores macros that
-          # vary across runs but don't change generated code.
-          #
-          # Even with those, the previous fix attempt only got us to
-          # ~6 % hits. Adding `CCACHE_NOHASHDIR=true` so the working
-          # directory isn't part of the hash (it changes between runs
-          # on macOS-hosted runners regardless of BASEDIR), and
-          # `CCACHE_LOGFILE` so we can post-mortem when hits stay low.
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_COMPILERCHECK: content
-          CCACHE_NOHASHDIR: "true"
-          CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers,include_file_mtime,include_file_ctime
-          CCACHE_LOGFILE: ${{ github.workspace }}/ccache.log
         run: |
           # Prepare sanitizer flags
           SANITIZER_FLAGS=""
@@ -248,10 +248,13 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True -o consensus=True
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b general-ci-cd -pr:h general-ci-cd -o tests=True -o consensus=True --format=json --out-file=build/dependency-graph.json
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"
+            if [ -f build/dependency-graph.json ]; then
+              python3 "${GITHUB_WORKSPACE}/.github/scripts/report-conan-binaries.py" build/dependency-graph.json
+            fi
             if [ "$rc" != 0 ]; then exit "$rc"; fi
 
             # The cache as it was restored, before the counters are zeroed. This
@@ -271,6 +274,7 @@ jobs:
                  -DGLOBAL_BUILD=ON \
                  -DENABLE_TEST=ON \
                  -DCMAKE_BUILD_TYPE=Release \
+                 -DKTH_CI_TEST_SHARDS=2 \
                  $CCACHE_OPT
             rc=$?
             set -e
@@ -389,19 +393,27 @@ jobs:
             fi
           fi
 
-          # Run unit tests (project was already built with tests in previous step).
+          # Run every registered check, grouping Catch cases into isolated shards.
           # Capture rc instead of swallowing it with `|| echo`; the step itself
           # still exits 0 so the rest of the workflow can run, but a non-zero
           # rc is recorded in $GITHUB_ENV and the gate step below fails the
           # job. Mirrors the pattern in build-with-container.yml.
           METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
           cd build/build/Release
+          mkdir -p "$PWD/ci-test-evidence"
+          export TMPDIR="$PWD/ci-test-evidence"
           rc=0
           "$METRICS" phase-start tests
-          if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
-            timeout 1800 ctest --output-on-failure --parallel 2 || rc=$?
-          else
-            ctest --output-on-failure --parallel 4 || rc=$?
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-ci-test-plan.py" "$PWD" || rc=$?
+          if [ "$rc" = 0 ]; then
+            python3 "${GITHUB_WORKSPACE}/.github/scripts/check-ci-test-plan-selftest.py" "$PWD" || rc=$?
+          fi
+          if [ "$rc" = 0 ]; then
+            if [ "${{ inputs.enable-asan }}" = "true" ] || [ "${{ inputs.enable-ubsan }}" = "true" ] || [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
+              timeout 1800 ctest --output-on-failure --parallel 2 --timeout 1800 --output-junit ci-test-results.xml || rc=$?
+            else
+              ctest --output-on-failure --parallel 2 --timeout 1800 --output-junit ci-test-results.xml || rc=$?
+            fi
           fi
           "$METRICS" phase-end tests "$rc"
           if [ "$rc" != 0 ]; then
@@ -426,6 +438,25 @@ jobs:
       # written at the end of the build step would not exist for any of them.
       # It reports; it does not decide. The steps that failed have already
       # failed, and nothing here changes that.
+
+      - name: ⏭️ Skip tests info
+        if: ${{ inputs.skip-tests == true }}
+        run: |
+          echo "⏭️ Unit tests skipped (skip-tests=true)"
+
+      - name: 🚀 Release build info
+        if: ${{ inputs.upload == true }}
+        run: |
+          echo "🚀 Release build completed - package validation included in conan create"
+          echo "📦 Package ready for upload"
+
+      # - uses: github/codeql-action/analyze@v2
+
+      - name: 📦 Validate installed package consumers
+        if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package.py" --version "${{ inputs.build-version }}" --profile general-ci-cd
+
       - name: 📊 Where the time went
         if: ${{ always() && inputs.upload != true }}
         run: |
@@ -458,6 +489,7 @@ jobs:
       # repository past its cache budget. This job's own save is a post-job
       # action that has not run yet, so what is pruned here is what earlier runs
       # left — which is exactly the accumulation that matters.
+
       - name: 🧹 Prune superseded ccache entries
         if: ${{ always() && inputs.upload != true && github.ref == 'refs/heads/master' }}
         continue-on-error: true
@@ -480,27 +512,21 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: ⏭️ Skip tests info
-        if: ${{ inputs.skip-tests == true }}
-        run: |
-          echo "⏭️ Unit tests skipped (skip-tests=true)"
-          
-      - name: 🚀 Release build info
-        if: ${{ inputs.upload == true }}
-        run: |
-          echo "🚀 Release build completed - package validation included in conan create"
-          echo "📦 Package ready for upload"
-
-      # - uses: github/codeql-action/analyze@v2
-
-      - name: 📦 Validate installed package consumers
-        if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
-        run: |
-          # Exercise the package/test_package boundary on PRs without publishing.
-          # Configure, link and native execution failures must fail this job.
-          for consensus in False True; do
-            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b general-ci-cd -pr:h general-ci-cd --build=missing -o tests=False -o consensus="$consensus"
-          done
+      - name: 📤 Upload test and package results
+        if: ${{ always() && !inputs.upload }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-tests-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}
+          path: |
+            build/build/Release/Testing/Temporary/
+            build/build/Release/ci-test-results.xml
+            build/build/Release/ci-test-evidence/**/*.log
+            build/build/Release/ci-test-evidence/**/*.json
+            build/build/Release/ci-test-evidence/**/*.cpp
+            build/build/Release/ci-test-evidence/**/*.rsp
+            build/package-validation.json
+            build/dependency-binaries.json
+          if-no-files-found: warn
 
       - name: 📦 Upload
         # if: github.event_name == 'push' && needs.check.outputs.permitted == 'true'
