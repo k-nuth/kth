@@ -26,6 +26,7 @@
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/memory_pool.hpp>
 #include <kth/domain/message/not_found.hpp>
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/transaction.hpp>
@@ -1394,6 +1395,53 @@ TEST_CASE("relay routing: what a peer announces or sends is known to it, and not
     CHECK(peer->tx_inventory().known(announced));
     CHECK(peer->tx_inventory().known(sent->hash()));
     CHECK_FALSE(peer->tx_inventory().known(txid_of(0x82)));
+}
+
+TEST_CASE("relay routing: a mempool is let through only with bloom filters offered or the peer's permission",
+          "[tx_relay][routing][bip35]") {
+    using network::permission_flags;
+    ::asio::io_context ioc;
+    auto const request = wire(domain::message::memory_pool::command, data_chunk{});
+    auto const requested = [](network::peer_session::ptr const& peer) {
+        std::error_code ec;
+        return peer->mempool_requests().try_receive(ec).has_value();
+    };
+
+    SECTION("neither: the peer is disconnected") {
+        auto const settings = relay_settings();
+        p2p_node node(settings);
+        auto peer = make_peer(ioc, settings, 9521);
+        CHECK(node.observe_transaction_message(peer, request));
+        CHECK(peer->stopped());
+        CHECK_FALSE(requested(peer));
+    }
+    SECTION("neither, but the peer may not be disconnected: ignored") {
+        auto const settings = relay_settings();
+        p2p_node node(settings);
+        auto peer = make_peer(ioc, settings, 9522);
+        peer->set_permissions(permission_flags::noban);
+        CHECK(node.observe_transaction_message(peer, request));
+        CHECK_FALSE(peer->stopped());
+        CHECK_FALSE(requested(peer));
+    }
+    SECTION("the peer may query the mempool") {
+        auto const settings = relay_settings();
+        p2p_node node(settings);
+        auto peer = make_peer(ioc, settings, 9523);
+        peer->set_permissions(permission_flags::mempool);
+        CHECK(node.observe_transaction_message(peer, request));
+        CHECK_FALSE(peer->stopped());
+        CHECK(requested(peer));
+    }
+    SECTION("the node offers bloom filters") {
+        auto settings = relay_settings();
+        settings.services |= domain::message::version::service::node_bloom;
+        p2p_node node(settings);
+        auto peer = make_peer(ioc, settings, 9524);
+        CHECK(node.observe_transaction_message(peer, request));
+        CHECK_FALSE(peer->stopped());
+        CHECK(requested(peer));
+    }
 }
 
 TEST_CASE("relay routing: a feefilter is consumed and kept, unless it is not a valid amount",

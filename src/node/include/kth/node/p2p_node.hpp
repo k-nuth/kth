@@ -175,6 +175,8 @@ public:
     ::asio::awaitable<void> serve(peer_session& peer);
 
 private:
+    ::asio::awaitable<void> answer_mempool(peer_session& peer,
+                                           detail::tx_announcement_schedule* announcing);
     ::asio::awaitable<void> announce_transactions(peer_session& peer,
                                                   detail::tx_announcement_schedule& schedule);
 

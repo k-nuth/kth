@@ -840,6 +840,13 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<uint64_t> mempool_last_admission();
 
+    // Everything pooled, in admission order (what was pooled otherwise, with
+    // id zero, first), with the last admission's id at the time: a peer's
+    // answer to `mempool` (BIP35). On the chain's executor under the
+    // validation lock.
+    [[nodiscard]]
+    ::asio::awaitable<mempool_admitted> mempool_snapshot();
+
     // Rung when a transaction is admitted. One slot, so rings coalesce: what
     // it wakes reads the last admission afresh. Closed by stop().
     [[nodiscard]]

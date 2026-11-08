@@ -508,10 +508,19 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
         return announcing ? announcing->due() : tx_announcement_schedule::time_point::max();
     };
     // Outbound peers' interval is half the inbound one (BCHN).
-    auto const announcement_delay = [&] {
+    auto const trickle_delay = [&](bool inbound) {
         return std::chrono::duration_cast<tx_announcement_schedule::clock::duration>(detail::poisson_delay(
-            announcing->inbound() ? detail::inventory_broadcast_interval
-                                  : detail::inventory_broadcast_interval / 2, draw()));
+            inbound ? detail::inventory_broadcast_interval
+                    : detail::inventory_broadcast_interval / 2, draw()));
+    };
+    auto const announcement_delay = [&] { return trickle_delay(announcing->inbound()); };
+
+    // A `mempool` the read loop let through (BIP35) is answered at the peer's
+    // next trickle, as BCHN answers it, whether or not the peer's version
+    // asked for transactions. Requests until then are one.
+    std::optional<tx_announcement_schedule::time_point> mempool_due;
+    auto const mempool_answer_due = [&] {
+        return mempool_due.value_or(tx_announcement_schedule::time_point::max());
     };
 
     while (true) {
@@ -521,7 +530,8 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
             ::asio::experimental::receive(peer.tip_announcements()),
             ::asio::experimental::receive(peer.fee_filter_changes()),
             ::asio::experimental::receive(peer.admissions()),
-            ::asio::experimental::after(std::min(fee_filter_due(), announcement_due()))
+            ::asio::experimental::receive(peer.mempool_requests()),
+            ::asio::experimental::after(std::min({fee_filter_due(), announcement_due(), mempool_answer_due()}))
         ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) {
@@ -535,7 +545,18 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
             }
             continue;
         }
-        if (selected.index == 4 && announcement_due() <= tx_announcement_schedule::clock::now()) {
+        if (selected.index == 4) {
+            if (tx_announcement_.pool && ! mempool_due) {
+                mempool_due = tx_announcement_schedule::clock::now() + trickle_delay(peer.is_inbound());
+            }
+            continue;
+        }
+        if (selected.index == 5 && mempool_answer_due() <= tx_announcement_schedule::clock::now()) {
+            mempool_due.reset();
+            co_await answer_mempool(peer, announcing ? &*announcing : nullptr);
+            continue;
+        }
+        if (selected.index == 5 && announcement_due() <= tx_announcement_schedule::clock::now()) {
             co_await announce_transactions(peer, *announcing);
             announcing->on_announced(tx_announcement_schedule::clock::now(), announcement_delay());
             continue;
@@ -554,7 +575,7 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
             fee_filter.on_changed(*selected.value<2>(), fee_filter_schedule::clock::now(), delay);
             continue;
         }
-        if (selected.index == 4) {
+        if (selected.index == 5) {
             if (fee_filter_due() > fee_filter_schedule::clock::now()) {
                 continue;
             }
@@ -583,6 +604,37 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
             co_return;
         }
     }
+}
+
+::asio::awaitable<void> message_dispatcher::answer_mempool(peer_session& peer,
+                                                          detail::tx_announcement_schedule* announcing) {
+    auto const pool = co_await tx_announcement_.pool();
+    std::vector<hash_digest> listed;
+    detail::take_mempool(pool, peer.tx_inventory(), listed);
+    // What the answer covers is not announced again: the known filter alone
+    // forgets the oldest of a large pool.
+    if (announcing) {
+        announcing->skip_to(pool.last);
+    }
+    // In messages of at most max_inventory entries (BCHN MAX_INV_SZ).
+    using domain::message::inventory_vector;
+    for (size_t at = 0; at < listed.size(); at += max_inventory) {
+        auto const end = std::min(listed.size(), at + size_t(max_inventory));
+        inventory_vector::list entries;
+        entries.reserve(end - at);
+        for (auto i = at; i < end; ++i) {
+            entries.emplace_back(inventory_vector::type_id::transaction, listed[i]);
+        }
+        auto inv = domain::message::inventory::create(std::move(entries));
+        if ( ! inv) {
+            co_return;
+        }
+        if (co_await peer.send(*inv) != error::success) {
+            co_return;
+        }
+    }
+    spdlog::debug("[dispatcher] Answered mempool from [{}] with {} transaction(s)",
+        peer.authority(), listed.size());
 }
 
 ::asio::awaitable<void> message_dispatcher::announce_transactions(peer_session& peer,
@@ -912,6 +964,28 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
         }
         peer->tx_inventory().set_fee_filter(parsed->minimum_fee());
         spdlog::trace("[p2p_node] feefilter of {} from [{}]", parsed->minimum_fee(), peer->authority());
+        return true;
+    }
+    if (command == domain::message::memory_pool::command) {
+        // BIP35, as BCHN takes it: only when the node offers bloom filters or
+        // the peer may query the mempool. Otherwise the peer is disconnected,
+        // unless it may not be. Answered later, by the peer's service.
+        // Consumed: nothing else handles a `mempool`.
+        using service = domain::message::version::service;
+        auto const allowed = (settings_.services & service::node_bloom) != 0
+            || peer->has_permission(network::permission_flags::mempool);
+        if (allowed) {
+            peer->request_mempool();
+            return true;
+        }
+        if (peer->has_permission(network::permission_flags::noban)) {
+            spdlog::debug("[p2p_node] mempool from [{}] ignored: bloom filters are not offered",
+                peer->authority());
+            return true;
+        }
+        spdlog::debug("[p2p_node] mempool from [{}] with bloom filters not offered; disconnecting",
+            peer->authority());
+        peer->stop(error::channel_stopped);
         return true;
     }
     if (command == domain::message::not_found::command) {

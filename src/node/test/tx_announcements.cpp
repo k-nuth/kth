@@ -444,6 +444,142 @@ std::optional<network::tx_admissions> heard(network::peer_session::ptr const& pe
 
 } // namespace
 
+// -----------------------------------------------------------------------------
+// A peer's mempool request (BIP35)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("a mempool answer lists what the peer does not filter out, and records it as known",
+          "[tx_announcement][bip35]") {
+    network::tx_inventory inventory;
+    inventory.set_fee_filter(1500);
+    CHECK_FALSE(inventory.mempool_answered());
+
+    admitted_batch pool;
+    // 0 was pooled from disk; 2 pays less than the peer's filter.
+    pool.entries = {entry(0, 2000), entry(1, 1500), entry(2, 1000), entry(3, 3000)};
+    pool.last = 5;
+    std::vector<hash_digest> out;
+    take_mempool(pool, inventory, out);
+    CHECK(out == txids({0, 1, 3}));
+    CHECK(inventory.known(txid(0)));
+    CHECK(inventory.known(txid(3)));
+    CHECK_FALSE(inventory.known(txid(2)));
+    // Known, not announced: they are served by the answer's mark.
+    CHECK_FALSE(inventory.announced(txid(1)));
+    CHECK(inventory.mempool_answered() == 5u);
+}
+
+TEST_CASE("the peer's service answers a mempool request at its next trickle, once for requests until then",
+          "[tx_announcement][service][bip35]") {
+    order pool;
+    pool.admit(1);
+    pool.admit(2, 500);
+    pool.admit(3);
+    size_t snapshots = 0;
+    auto sources = pool.sources();
+    sources.pool = [&pool, &snapshots]() -> ::asio::awaitable<admitted_batch> {
+        ++snapshots;
+        admitted_batch out;
+        for (auto const& [id, item] : pool.entries) {
+            out.entries.push_back(item);
+        }
+        out.last = pool.last;
+        co_return out;
+    };
+    // A peer that asked for no transactions in its version is answered too.
+    served_peer peer(false);
+    peer.session->tx_inventory().set_fee_filter(1000);
+    node::message_dispatcher dispatcher;
+    dispatcher.set_tx_announcement_handler(std::move(sources));
+    dispatcher.set_fee_filter_draw([] { return 0.5; });
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+
+    peer.session->request_mempool();
+    peer.session->request_mempool();
+    CHECK(peer.invs(100ms).empty());
+    CHECK(peer.invs(300ms) == std::vector<hash_list>{txids({1, 3})});
+    CHECK(snapshots == 1u);
+    CHECK(peer.session->tx_inventory().mempool_answered() == 3u);
+    // Nothing more without another request.
+    CHECK(peer.invs(400ms).size() == 1u);
+}
+
+TEST_CASE("a mempool answer leaves owed only what was admitted after it",
+          "[tx_announcement][bip35][schedule]") {
+    auto const t0 = clock_type::now();
+    tx_announcement_schedule schedule(false, 0);
+    schedule.on_admitted({5, t0}, t0, 7ms);
+    REQUIRE(schedule.due() == t0 + 7ms);
+
+    // Answered with the pool as it was at admission 3: the walk resumes after
+    // it (what is read next is admitted after the cursor), and 4 and 5 are
+    // still owed, and still due.
+    schedule.skip_to(3);
+    CHECK(schedule.cursor() == 3u);
+    CHECK(schedule.due() == t0 + 7ms);
+    // A later answer never moves the cursor back.
+    schedule.skip_to(2);
+    CHECK(schedule.cursor() == 3u);
+
+    // Answered past everything admitted: nothing is owed or due.
+    schedule.skip_to(9);
+    CHECK(schedule.cursor() == 9u);
+    CHECK(schedule.due() == clock_type::time_point::max());
+}
+
+TEST_CASE("the peer's service does not announce again what its mempool answer listed",
+          "[tx_announcement][service][bip35]") {
+    // More than the known filter keeps, so it forgets the first of them.
+    constexpr uint64_t pooled = 100'000;
+    order pool;
+    auto sources = pool.sources();
+    sources.pool = [&pool]() -> ::asio::awaitable<admitted_batch> {
+        admitted_batch out;
+        for (auto const& [id, item] : pool.entries) {
+            out.entries.push_back(item);
+        }
+        out.last = pool.last;
+        co_return out;
+    };
+    served_peer peer(true);
+    node::message_dispatcher dispatcher;
+    dispatcher.set_tx_announcement_handler(std::move(sources));
+    dispatcher.set_fee_filter_draw([] { return 0.5; });
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+    peer.run(50ms);
+
+    // Admitted after the service started, so owed to the peer; not rung yet.
+    for (uint64_t id = 1; id <= pooled; ++id) {
+        pool.admit(id);
+    }
+    peer.session->request_mempool();
+    auto const answered = peer.invs(1s);
+    REQUIRE(answered.size() == 2u);
+    CHECK(answered[0].size() + answered[1].size() == pooled);
+
+    // The admissions ring now, and one more arrives after the answer.
+    peer.session->announce_admissions({pooled, clock_type::now()});
+    pool.admit(pooled + 1);
+    peer.session->announce_admissions({pooled + 1, clock_type::now()});
+    auto const all = peer.invs(600ms);
+    REQUIRE(all.size() == 3u);
+    CHECK(all[2] == txids({pooled + 1}));
+}
+
+TEST_CASE("without a pool to read, a mempool request is not answered",
+          "[tx_announcement][service][bip35]") {
+    order pool;
+    pool.admit(1);
+    served_peer peer(true);
+    node::message_dispatcher dispatcher;
+    dispatcher.set_tx_announcement_handler(pool.sources());
+    dispatcher.set_fee_filter_draw([] { return 0.5; });
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+    peer.session->request_mempool();
+    CHECK(peer.invs(500ms).empty());
+    CHECK_FALSE(peer.session->tx_inventory().mempool_answered());
+}
+
 TEST_CASE("tx announcement watch: each ring hands every peer the last admission and the inbound schedule",
           "[tx_announcement][watch]") {
     ::asio::io_context io;
