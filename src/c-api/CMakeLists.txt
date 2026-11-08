@@ -681,7 +681,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(kth_capi_test)
+    kth_register_tests(kth_capi_test)
 
     if(CURRENCY STREQUAL "BCH")
         add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
@@ -707,7 +707,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             target_compile_definitions(kth_capi_exception_test PRIVATE KTH_CAPI_TEST_MALLOC_WRAP)
             target_link_options(kth_capi_exception_test PRIVATE -Wl,--wrap=malloc)
         endif()
-        catch_discover_tests(kth_capi_exception_test)
+        kth_register_tests(kth_capi_exception_test)
     endif()
 
     # README C snippet — compile-only check. Verbatim copy of the

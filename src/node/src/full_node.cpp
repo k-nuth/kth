@@ -6,6 +6,7 @@
 
 #include <kth/node/full_node.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <thread>
@@ -15,9 +16,12 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -147,6 +151,45 @@ full_node::~full_node() {
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
             return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
         });
+    // The fee filter (BIP133) each peer's service sends on its schedule: the
+    // mempool's minimum, rounded as BCHN rounds it, never below the relay
+    // floor. Only when the node relays transactions, and only to peers that
+    // understand it.
+    if (network_settings_.relay_transactions) {
+        auto const floor = uint64_t(std::llround(chain_settings_.byte_fee_satoshis * 1000.0));
+        auto rounder = std::make_shared<detail::fee_filter_rounder const>(floor);
+        network_.set_fee_filter_handler(
+            [this, floor, rounder](peer_session& peer) -> ::asio::awaitable<std::optional<uint64_t>> {
+                if (peer.negotiated_version() < domain::message::version::level::bip133) {
+                    co_return std::nullopt;
+                }
+                auto const minimum = co_await chain_.mempool_minimum_fee();
+                // BCHN rounds down two times in three.
+                auto const step_down = pseudo_random::generate<uint32_t>(0, 2) != 0;
+                co_return detail::fee_filter_to_send(*rounder, minimum, floor, step_down);
+            });
+        // The transactions each peer's service announces: the mempool's order
+        // of admission, at most an announcement's worth for the next block's
+        // size limit at a time.
+        network_.set_tx_announcement_handler(detail::tx_announcement_sources{
+            .last = [this] { return chain_.mempool_last_admission(); },
+            .admitted_after = [this](uint64_t after, size_t limit) -> ::asio::awaitable<detail::admitted_batch> {
+                auto admitted = co_await chain_.mempool_admitted_after(after, limit);
+                co_return detail::admitted_batch{std::move(admitted.entries), admitted.last};
+            },
+            .limit = [this] {
+#if defined(KTH_CURRENCY_BCH)
+                // The next block's size limit (BCHN: ceil(7 * MB * 0.5 s)).
+                auto const state = chain_.chain_state();
+                return detail::max_announcements(state ? state->dynamic_max_block_size()
+                                                       : chain_settings_.default_consensus_block_size);
+#else
+                // A fixed one-million-byte limit.
+                return detail::max_announcements(max_block_size);
+#endif
+            },
+        });
+    }
 
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network

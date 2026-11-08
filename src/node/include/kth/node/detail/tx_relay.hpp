@@ -11,9 +11,11 @@
 // Who owns what:
 //
 //   - Everything the relay knows — which peer announced which transaction,
-//     which request is out and until when, what was rejected — belongs to one
-//     coroutine, tx_relay_task. Nothing else touches it, so it needs no lock:
-//     `tx_request_tracker` and `recent_rejects` below are plain state.
+//     which request is out and until when, what was rejected, which
+//     transactions wait for their parents — belongs to one coroutine,
+//     tx_relay_task. Nothing else touches it, so it needs no lock:
+//     `tx_request_tracker`, `recent_rejects` and `tx_orphanage` below are
+//     plain state.
 //   - Read loops reach it through a bounded command channel, and only with
 //     try_send. A read loop never waits on the relay: what it cannot hand over
 //     is dropped there, and the tracker's deadlines recover what that loses.
@@ -31,6 +33,22 @@
 // first; the others, and peers with MAX_PEER_TX_REQUEST_IN_FLIGHT requests
 // out, only after a delay. A peer may have MAX_PEER_TX_ANNOUNCEMENTS
 // announcements tracked at once.
+//
+// A transaction whose inputs validation did not find is an orphan, handled as
+// BCHN does (net_processing.cpp, TX_MISSING_INPUTS; txorphanage.cpp): when
+// one of the transactions it spends was rejected, so is it; otherwise those
+// not known are asked of the peer that sent it, as if that peer had
+// announced them, and it is kept until one of them reaches the mempool, then
+// validated again. A peer's orphans go when it does, and so do those a
+// connected block resolves: what spends an output the block spends, the block's
+// own transactions among them (BCHN EraseForBlock).
+//
+// The blocks reach the owner without it waiting on storage: when the connected
+// tip moves, a one-slot doorbell wakes it, and a task of its own reads the
+// blocks from the last one the owner saw up to the tip and hands them over
+// through the command channel, waiting for room. The owner keeps where it got
+// to, so rings that coalesce lose nothing; with no orphans it only moves that
+// mark, and reads nothing.
 
 #include <chrono>
 #include <cstdint>
@@ -47,7 +65,9 @@
 
 #include <asio/awaitable.hpp>
 
+#include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/constants.hpp>
+#include <kth/domain/message/block.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/infrastructure/error.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
@@ -228,6 +248,88 @@ private:
     std::deque<hash_digest> order_;
 };
 
+/// The transactions handed to validation, one at a time, with the peer each
+/// came from.
+struct tx_admission {
+    domain::message::transaction::const_ptr tx;
+    uint64_t peer;
+};
+
+/// Transactions validation could not judge because inputs were missing,
+/// kept until a parent reaches the mempool (BCHN TxOrphanage). Bounded:
+/// what expires is swept, and past the capacity one is dropped at random.
+class tx_orphanage {
+public:
+    using clock = tx_request_tracker::clock;
+    using time_point = tx_request_tracker::time_point;
+
+    /// BCHN DEFAULT_MAX_ORPHAN_TRANSACTIONS.
+    static constexpr size_t capacity = 100;
+    /// BCHN MAX_STANDARD_TX_SIZE: a larger transaction is not kept.
+    static constexpr size_t max_transaction_size = 100'000;
+    /// BCHN ORPHAN_TX_EXPIRE_TIME.
+    static constexpr std::chrono::minutes expire_time{20};
+    /// BCHN ORPHAN_TX_EXPIRE_INTERVAL: how often what expired is swept.
+    static constexpr std::chrono::minutes sweep_interval{5};
+
+    /// Picks an index below its argument: which one goes past the capacity.
+    /// Uniformly random when empty; controls set their own.
+    using pick_fn = std::function<size_t(size_t)>;
+
+    explicit tx_orphanage(pick_fn pick = {});
+
+    /// Keep `tx`, from `peer`, until a parent of it reaches the mempool. False
+    /// when it is kept already or too large. Then, as BCHN does on each
+    /// addition, what expired goes (at most once per sweep_interval) and,
+    /// past the capacity, one at random until it is within it.
+    bool add(domain::message::transaction::const_ptr tx, uint64_t peer, time_point now);
+
+    [[nodiscard]]
+    bool contains(hash_digest const& txid) const;
+
+    /// `parent` reached the mempool: what spends it is ready to be validated
+    /// again, in the order it becomes ready.
+    void parent_admitted(hash_digest const& parent);
+
+    /// The first one ready, still kept: erase() it once validation takes it.
+    [[nodiscard]]
+    std::optional<tx_admission> next_ready() const;
+
+    void erase(hash_digest const& txid);
+
+    /// `peer` is gone: what it sent goes (BCHN EraseForPeer).
+    void erase_for_peer(uint64_t peer);
+
+    /// `block` was connected: what spends an output it spends goes, its own
+    /// transactions among them (BCHN EraseForBlock). Returns how many went.
+    size_t erase_for_block(domain::chain::block const& block);
+
+    [[nodiscard]]
+    size_t size() const { return orphans_.size(); }
+
+    [[nodiscard]]
+    size_t ready() const { return ready_.size(); }
+
+private:
+    struct orphan {
+        domain::message::transaction::const_ptr tx;
+        uint64_t peer;
+        time_point expires;
+        bool ready{false};
+    };
+
+    void sweep(time_point now);
+
+    boost::unordered_flat_map<hash_digest, orphan> orphans_;
+    // Each kept transaction under every transaction its inputs spend.
+    boost::unordered_flat_map<hash_digest, boost::unordered_flat_set<hash_digest>> by_parent_;
+    // What is kept, for a uniform pick.
+    std::vector<hash_digest> order_;
+    std::deque<hash_digest> ready_;
+    time_point next_sweep_{};
+    pick_fn pick_;
+};
+
 // -----------------------------------------------------------------------------
 // The channels around it
 // -----------------------------------------------------------------------------
@@ -244,10 +346,12 @@ struct tx_not_found {
     hash_list txids;
 };
 
-/// A peer's `tx`.
+/// A peer's `tx`, with its session: a peer that sends without announcing is
+/// asked for the parents of what it sends all the same.
 struct tx_received {
     uint64_t peer;
     domain::message::transaction::const_ptr tx;
+    network::peer_session::ptr session = {};
 };
 
 /// A session ended.
@@ -261,19 +365,37 @@ struct tx_request_sent {
     bool sent;
 };
 
-/// Validation's answer for a transaction the relay handed over.
+/// A block of the connected chain, by hash and height.
+struct chain_point {
+    hash_digest hash;
+    size_t height;
+
+    friend bool operator==(chain_point const&, chain_point const&) = default;
+};
+
+/// A connected block the owner had not seen, read by the scan, in order.
+struct tx_block_connected {
+    domain::message::block::const_ptr block;
+    chain_point point;
+};
+
+/// The scan ended: the owner has seen the connected chain up to `reached`.
+struct tx_scan_ended {
+    chain_point reached;
+};
+
+/// Validation's answer for a transaction the relay handed over: the
+/// transaction, the peer it came from, and, when inputs were missing, the
+/// transactions they spend that validation did not find.
 struct tx_admitted {
-    hash_digest txid;
+    domain::message::transaction::const_ptr tx;
+    uint64_t peer;
     code result;
+    hash_list missing_parents = {};
 };
 
 using tx_relay_command = std::variant<tx_announced, tx_not_found, tx_received,
-    tx_peer_gone, tx_request_sent, tx_admitted>;
-
-/// The transactions handed to validation, one at a time.
-struct tx_admission {
-    domain::message::transaction::const_ptr tx;
-};
+    tx_peer_gone, tx_request_sent, tx_admitted, tx_block_connected, tx_scan_ended>;
 
 /// Transactions handed to validation and not yet taken by it.
 inline constexpr size_t tx_admission_capacity = 64;
@@ -299,10 +421,15 @@ struct tx_relay_channels {
     /// From a read loop, never waiting. False when refused.
     bool submit(tx_relay_command command);
 
+    /// The connected tip moved. Never waits: rings coalesce, and the owner
+    /// reads from where it got to.
+    void tip_moved();
+
     /// End it: the owner sees the channel closed.
     void close();
 
     select_channel<tx_relay_command> commands;
+    select_channel<std::monostate> tip_events;
 };
 
 /// What one read loop handed the relay and the relay could not take yet,
@@ -354,10 +481,21 @@ struct tx_relay_view {
     std::function<bool(hash_digest const&)> in_mempool;
     /// The connected tip, which clears the recent rejects when it moves.
     std::function<hash_digest()> tip;
+    /// The connected tip with its height, where reading connected blocks for
+    /// the orphans ends. nullopt before the chain has one. When empty, no
+    /// block is read and orphans go only by expiry, size or peer.
+    std::function<std::optional<chain_point>()> connected_tip = {};
+    /// The block at `height` on the active chain; null when it cannot be read.
+    std::function<::asio::awaitable<domain::message::block::const_ptr>(size_t)> block_at = {};
+    /// The parent of the block `hash`; nullopt when it is not known.
+    std::function<::asio::awaitable<std::optional<chain_point>>(hash_digest)> parent_of = {};
     /// The clock the request deadlines are read on. The steady clock when
     /// empty; controls set their own.
     std::function<tx_request_tracker::time_point()> now = {};
 };
+
+/// What the owner reads from `chain`: the node's view.
+tx_relay_view chain_relay_view(blockchain::block_chain& chain);
 
 /// Hands a task to the caller's task group.
 using tx_relay_spawner = std::function<void(::asio::awaitable<void>)>;

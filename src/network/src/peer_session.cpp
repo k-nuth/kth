@@ -88,6 +88,8 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , inbound_(100)            // Buffer up to 100 inbound messages
     , served_requests_(served_requests_capacity)
     , tip_announcements_(1)
+    , fee_filter_changes_(1)
+    , admissions_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
@@ -124,6 +126,8 @@ peer_session::~peer_session() {
     inbound_.close();
     served_requests_.close();
     tip_announcements_.close();
+    fee_filter_changes_.close();
+    admissions_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -264,6 +268,8 @@ void peer_session::stop(code const& ec) {
     inbound_.close();
     served_requests_.close();
     tip_announcements_.close();
+    fee_filter_changes_.close();
+    admissions_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -336,6 +342,34 @@ void peer_session::announce_tip(hash_digest const& tip) {
 
 peer_session::tip_channel& peer_session::tip_announcements() {
     return tip_announcements_;
+}
+
+void peer_session::announce_fee_filter(uint64_t fee_per_kb) {
+    if (fee_filter_changes_.try_send(uint64_t(fee_per_kb))) {
+        return;
+    }
+    // Full: replace what the service has not taken, as announce_tip does.
+    std::error_code ec;
+    (void)fee_filter_changes_.try_receive(ec);
+    (void)fee_filter_changes_.try_send(uint64_t(fee_per_kb));
+}
+
+peer_session::fee_filter_channel& peer_session::fee_filter_changes() {
+    return fee_filter_changes_;
+}
+
+void peer_session::announce_admissions(tx_admissions const& admissions) {
+    if (admissions_.try_send(tx_admissions(admissions))) {
+        return;
+    }
+    // Full: replace what the service has not taken, as announce_tip does.
+    std::error_code ec;
+    (void)admissions_.try_receive(ec);
+    (void)admissions_.try_send(tx_admissions(admissions));
+}
+
+peer_session::admission_channel& peer_session::admissions() {
+    return admissions_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {
