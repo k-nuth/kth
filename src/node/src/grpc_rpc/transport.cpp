@@ -376,11 +376,17 @@ void transport::join() {
     if (impl_ && impl_->shutdown_thread.joinable()) {
         impl_->shutdown_thread.join();
     }
+    joined_ = true;
 }
 
 size_t transport::in_flight() const {
     if ( ! impl_) {
         return 0;
+    }
+    // Asking a thread that has ended would wait for ever; joined, its count is
+    // this thread's to read.
+    if (joined_) {
+        return impl_->in_flight;
     }
     std::promise<size_t> answer;
     auto counted = answer.get_future();
