@@ -120,8 +120,10 @@ public:
     [[nodiscard]]
     uint16_t port() const { return port_; }
 
-    /// Calls currently admitted, as the transport's thread counts them. Asks
-    /// that thread and waits for its answer: not from the thread itself.
+    /// Calls currently admitted, as the transport's thread counts them. While
+    /// the transport runs, asks that thread and waits for its answer (not from
+    /// the thread itself); after join(), that thread is gone and the count is
+    /// read as it left it.
     [[nodiscard]]
     size_t in_flight() const;
 
@@ -142,6 +144,8 @@ private:
     handlers handlers_;
     std::stop_source stop_;
     bool started_{false};
+    // The owner's: join() has ended the transport's thread.
+    bool joined_{false};
     uint16_t port_{0};
 
     std::unique_ptr<impl> impl_;
