@@ -285,15 +285,15 @@ void add_settings(CLI::App& app, configuration& cfg) {
 
     // [rpc]
     app.add_option("--rpc.enabled",  cfg.rpc.enabled,
-        "Enable the RPC server of the compiled-in backend: JSON-RPC or gRPC (requires a build with RPC support).");
+        "Enable the RPC server of the compiled-in backend: JSON-RPC, gRPC or Cap'n Proto (requires a build with RPC support).");
     app.add_option("--rpc.bind",     cfg.rpc.bind,
-        "Address the RPC listener binds to (default 127.0.0.1; gRPC accepts loopback only).");
+        "Address the RPC listener binds to (default 127.0.0.1; gRPC and Cap'n Proto accept loopback only).");
     app.add_option("--rpc.port",     cfg.rpc.port,
         "TCP port for the RPC listener (default 8332).");
     app.add_option("--rpc.user",     cfg.rpc.user,
-        "RPC Basic-Auth user (empty uses the .cookie file).");
+        "RPC user: Basic-Auth (JSON-RPC, gRPC) or login (Cap'n Proto); empty uses the .cookie file.");
     app.add_option("--rpc.password", cfg.rpc.password,
-        "RPC Basic-Auth password.");
+        "RPC password.");
     app.add_option("--rpc.gbt_cache_size", cfg.rpc.gbt_cache_size,
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,

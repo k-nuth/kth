@@ -18,7 +18,7 @@ the listener remains **off at runtime by default**.
 | JSON-RPC | `-o '&:rpc=jsonrpc'` | `-DKTH_RPC_BACKEND=jsonrpc` | Implemented; default |
 | None | `-o '&:rpc=none'` | `-DKTH_RPC_BACKEND=none` | No RPC listener or llhttp dependency |
 | gRPC + Protobuf | `-o '&:rpc=grpc'` | `-DKTH_RPC_BACKEND=grpc` | Implemented; typed read-only API, see [grpc.md](grpc.md) |
-| Cap'n Proto RPC | `-o '&:rpc=capnproto'` | `-DKTH_RPC_BACKEND=capnproto` | Reserved; configuration fails until implemented |
+| Cap'n Proto RPC | `-o '&:rpc=capnproto'` | `-DKTH_RPC_BACKEND=capnproto` | Implemented; typed read-only API, see [capnproto-rpc.md](capnproto-rpc.md) |
 
 One backend per binary: selecting another one leaves JSON-RPC out, with every
 method only it offers (mining, `sendrawtransaction`, `help`, ...).
@@ -31,11 +31,10 @@ that contradicts the selected backend fails the configuration instead of being
 ignored. Emscripten forces `none`, whatever was asked.
 
 `KTH_WITH_RPC` remains the derived C++ feature macro for the JSON-RPC backend;
-the gRPC backend has its own `KTH_WITH_GRPC`, so the two never share a guard.
-Neither the gRPC backend nor the reserved Cap'n Proto one falls back to
-JSON-RPC. Cap'n Proto's RPC runtime, cancellation and bounded admission need an
-explicit integration with the node's coroutine owners before that backend can be
-enabled.
+the gRPC backend has its own `KTH_WITH_GRPC` and the Cap'n Proto one its own
+`KTH_WITH_CAPNPROTO_RPC`, so no two share a guard. Neither falls back to
+JSON-RPC: each reuses `rpc.enabled/bind/port/user/password` with its own
+transport and serves no JSON.
 
 The transport uses [llhttp](https://github.com/nodejs/llhttp) (the Node.js HTTP
 parser, sans-io) fed by the node's existing standalone-asio coroutine loop, plus
