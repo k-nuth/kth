@@ -2,11 +2,14 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 
 project(c-api VERSION 0 LANGUAGES CXX C)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -254,12 +257,14 @@ set(kth_sources
         src/platform.cpp
 
         src/domain/chain/block.cpp
+        src/domain/chain/block_ticks.cpp
         src/domain/chain/block_list.cpp
 
         src/chain/chain_async.cpp
         src/chain/chain_other.cpp
         src/chain/chain_sync.cpp
         src/chain/chain_sync_generated.cpp
+        src/chain/chain_submission.cpp
         src/chain/chain_mempool.cpp
         src/chain/chain_mining.cpp
         src/chain/chain_query.cpp
@@ -454,6 +459,8 @@ set(kth_headers
     include/kth/capi/domain/chain/point.h
     include/kth/capi/domain/message/merkle_block.h
     include/kth/capi/domain/chain/block.h
+    include/kth/capi/domain/chain/block_ticks.h
+    include/kth/capi/chain/block_progress.h
     include/kth/capi/chain/mempool_transaction.h
     include/kth/capi/domain/message/prefilled_transaction.h
     include/kth/capi/domain/message/prefilled_transaction_list.h
@@ -509,6 +516,8 @@ endif()
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
+# Export the C language requirement to CMake consumers of the C API.
+target_compile_features(${PROJECT_NAME} PUBLIC c_std_23)
 
 
 if (ENABLE_POSITION_INDEPENDENT_CODE)
@@ -589,10 +598,16 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     enable_testing()
     find_package(Catch2 3 REQUIRED)
 
+    # Compile as C (not C++) and verify the selected language standard.
+    add_library(kth_capi_c23_compile_check OBJECT test/c23_compile_check.c)
+    target_include_directories(kth_capi_c23_compile_check PRIVATE include)
+
+
     add_executable(kth_capi_test
         test/helpers.cpp
         test/noexcept_contracts.cpp
         test/conversions.cpp
+        test/network_context.cpp
         test/binary.cpp
         test/chain/header.cpp
         test/chain/point.cpp
@@ -621,6 +636,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/token_data.cpp
         test/chain/utxo.cpp
         test/chain/abla.cpp
+        test/chain/progress.cpp
         test/wallet/bitcoin_uri.cpp
         test/wallet/cashaddr.cpp
         test/wallet/cashtoken_minting.cpp
@@ -657,12 +673,23 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             PROPERTIES COMPILE_DEFINITIONS KTH_CAPI_TEST_NO_CONSTRUCT_MOVE)
     endif()
 
+    set_source_files_properties(test/chain/progress.cpp PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../node/test")
+
     target_link_libraries(kth_capi_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_capi_test PRIVATE Catch2::Catch2WithMain)
 
     include(CTest)
     include(Catch)
     catch_discover_tests(kth_capi_test)
+
+    if(CURRENCY STREQUAL "BCH")
+        add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
+        set_target_properties(kth_payment_address_errors_test PROPERTIES LINKER_LANGUAGE CXX)
+        target_link_libraries(kth_payment_address_errors_test PRIVATE ${PROJECT_NAME})
+        add_test(NAME capi_payment_address_errors COMMAND kth_payment_address_errors_test)
+    endif()
+
 
     # Real C++ exceptions through the generated wrappers. The executable
     # replaces the global allocation functions to inject failures, so it is

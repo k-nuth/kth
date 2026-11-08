@@ -37,8 +37,10 @@
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
 
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/infrastructure/utility/stats.hpp>
+#include <kth/blockchain/abla_pipeline.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/network/protocols_coro.hpp>
@@ -1600,6 +1602,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         auto const chunk_start = chunk.start_height;
         auto const chunk_peer = chunk.source_peer;
         auto const chunk_generation = chunk.generation;
+        auto const chunk_submission = chunk.submission;
+        auto const chunk_local = chunk.local_result;
 
         // Track bytes before validation (blocks are still in memory)
         uint64_t chunk_bytes = 0;
@@ -1639,13 +1643,33 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         if (!result && storage) {
             // Valid chunk: forward to storage task (with block data intact)
-            if ( ! co_await try_send_with_retry(*storage, downloaded_chunk{
+            downloaded_chunk forward{
                 .start_height = chunk_start,
                 .chunk_id = chunk.chunk_id,
                 .blocks = std::move(chunk.blocks),
                 .source_peer = chunk_peer,
-                .generation = chunk_generation
-            })) {
+                .generation = chunk_generation,
+                .submission = chunk_submission,
+                .local_result = chunk_local
+            };
+            if (chunk_local) {
+                // A local body is owed a definitive outcome, so the handoff to
+                // storage is a suspended send, not a bounded retry. This task is
+                // not a barrier participant, so suspending here holds no switch.
+                auto [send_ec] = co_await storage->async_send(std::error_code{},
+                    std::move(forward), ::asio::as_tuple(::asio::use_awaitable));
+                if (send_ec) {
+                    // Storage is closed: the shutdown. The outcome is still owed.
+                    (void)chunk_local->try_send(chunk_validated{
+                        .start_height = chunk_start,
+                        .block_count = uint32_t(chunk_block_count),
+                        .result = error::service_stopped,
+                        .source_peer = nullptr,
+                        .submission = chunk_submission});
+                    spdlog::debug("[fast_validation] Storage closed; local body not handed over");
+                    break;
+                }
+            } else if ( ! co_await try_send_with_retry(*storage, std::move(forward), 20, std::chrono::milliseconds(10))) {
                 spdlog::error("[fast_validation] Storage channel full after retries!");
                 break;
             }
@@ -1656,12 +1680,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
             chunk.blocks.shrink_to_fit();
             chunk.source_peer.reset();
 
-            if ( ! co_await try_send_with_retry(output, chunk_validated{
+            chunk_validated verdict{
                 .start_height = chunk_start,
-                .block_count = static_cast<uint32_t>(chunk_block_count),
+                .block_count = uint32_t(chunk_block_count),
                 .result = result,
-                .source_peer = chunk_peer
-            })) {
+                .source_peer = chunk_peer,
+                .submission = chunk_submission
+            };
+            if (chunk_local) {
+                // The one terminal outcome of this body. The slot has room by
+                // construction: nothing else writes it.
+                (void)chunk_local->try_send(std::move(verdict));
+            } else if ( ! co_await try_send_with_retry(output, std::move(verdict))) {
                 spdlog::error("[fast_validation] Output channel full after retries!");
                 break;
             }
@@ -1790,6 +1820,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         auto const chunk_count = static_cast<uint32_t>(chunk.blocks.size());
         auto const chunk_peer = chunk.source_peer;
         auto const chunk_generation = chunk.generation;
+        auto const chunk_submission = chunk.submission;
+        auto const chunk_local = chunk.local_result;
 
         // Drop work from before a chain switch. Such a chunk was downloaded for
         // the abandoned branch, so its heights now name different blocks —
@@ -1803,6 +1835,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 chunk_start, chunk_generation, chain.chain_generation());
             chunk.blocks.clear();
             chunk.blocks.shrink_to_fit();
+            if (chunk_local) {
+                // A local body dropped as stale is still owed its outcome: it
+                // was never stored, and it says so. stale_chain, so the
+                // coordinator moves no counter for it.
+                (void)chunk_local->try_send(chunk_validated{
+                    .start_height = chunk_start,
+                    .block_count = chunk_count,
+                    .result = error::stale_chain,
+                    .source_peer = nullptr,
+                    .submission = chunk_submission});
+            }
             continue;
         }
 
@@ -1861,12 +1904,19 @@ std::atomic<uint32_t> g_active_download_peers{0};
         blocks_stored += chunk_count;
 
         // Send chunk_validated to coordinator
-        if ( ! co_await try_send_with_retry(output, chunk_validated{
+        chunk_validated stored{
             .start_height = chunk_start,
             .block_count = chunk_count,
             .result = store_error,
-            .source_peer = chunk_peer
-        })) {
+            .source_peer = chunk_peer,
+            .submission = chunk_submission
+        };
+        if (chunk_local) {
+            // The one terminal outcome of a local body. Never a wait: this
+            // task is a barrier participant, and a switch may be waiting for it
+            // to park while the coordinator is busy with that switch.
+            (void)chunk_local->try_send(std::move(stored));
+        } else if ( ! co_await try_send_with_retry(output, std::move(stored))) {
             spdlog::error("[block_storage] Output channel full after retries!");
             break;
         }
@@ -1948,8 +1998,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
         spdlog::info("[block_storage:header_index_dump] Dumping {} entries...", total);
 
         for (uint32_t idx = 0; idx < total; ++idx) {
-            auto const file_num = hdr.get_file_number(idx);
-            auto const data_pos = hdr.get_data_pos(idx);
+            auto const block_pos = hdr.get_block_pos(idx);
+            auto const file_num = block_pos.file;
+            auto const data_pos = block_pos.pos;
             auto const status = hdr.get_status(idx);
             auto const has_data = has_flag(status, blockchain::header_status::have_data);
 
@@ -2069,6 +2120,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress
+) {
+    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+        std::move(should_stop), std::move(on_fatal), progress, nullptr, nullptr);
+}
+
+::asio::awaitable<void> utxo_build_task(
+    blockchain::block_chain& chain,
+    std::atomic<uint32_t> const& contiguous_height,
+    uint32_t start_height,
+    domain::config::network network,
+    std::function<bool()> should_stop,
+    std::function<void(std::string const&)> on_fatal,
+    utxo_build_progress_channel* progress,
+    block_rejection_channel* rejections,
+    block_rejection_ack_channel* rejection_ack
 ) {
     spdlog::info("[utxo_build] Task started at height {}", start_height);
 
@@ -2248,6 +2314,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // cannot tell them apart from the code alone. Kept separate so each is
             // reported as what it is.
             bool parse_failed = false;
+            // Which block the validator refused, when it can say. Read only
+            // after the awaited validation below has completed.
+            blockchain::batch_rejection rejection;
 
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
@@ -2270,7 +2339,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, batch_start);
+                        chain, chain.chain_settings(), network, full_blocks, batch_start,
+                        rejection);
                 }, ::asio::use_awaitable);
 
             if (vc) {
@@ -2282,13 +2352,65 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     co_return;
                 }
 
-                // A block that does not satisfy consensus: a peer sent something
-                // invalid. Recoverable in principle — the range wants re-fetching
-                // from someone else — but the block is already stored and marked
-                // have_data, its peer is not recorded here, and the contiguous
-                // height has moved past it, so there is nothing this task can do
-                // about it beyond stopping. Recovering properly needs a way back to
-                // the coordinator with the failed height, which does not exist yet.
+                // A block that does not satisfy consensus. Nothing of the batch
+                // was applied. With a report channel and a block to name, this is
+                // the one definitive answer the pipeline gives about a body —
+                // whoever supplied it — and the coordinator is told which block,
+                // moves the chain off it, and answers; this task waits parked at
+                // the barrier meanwhile, so a switch that needs the barrier is not
+                // held by a builder that is doing nothing. The blocks before the
+                // rejected one are validated again next pass, as their own batch.
+                if (rejections != nullptr && rejection_ack != nullptr && rejection.block) {
+                    uint32_t const failed_height = batch_start + uint32_t(*rejection.block);
+                    auto const failed_idx = chain.headers().active_at(int32_t(failed_height));
+                    hash_digest const failed_hash = failed_idx == blockchain::header_index::null_index
+                        ? null_hash : chain.headers().get_hash(failed_idx);
+                    spdlog::error("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {} "
+                        "(block {} at height {}); reporting it and waiting for the chain to move",
+                        batch_start, batch_end, vc.message(), encode_hash(failed_hash), failed_height);
+
+                    // Cannot be refused: one report is outstanding at most, since
+                    // this task does not judge again until the answer arrives. A
+                    // closed channel is the shutdown.
+                    if ( ! rejections->try_send(std::error_code{}, block_rejected{
+                            .height = failed_height, .hash = failed_hash, .reason = vc})) {
+                        spdlog::info("[utxo_build] The rejection channel is closed; ending");
+                        co_return;
+                    }
+
+                    {
+                        // Parked for as long as the wait lasts, however it ends.
+                        // A bare pair around the await would leave the parked
+                        // count one too high on a cancellation or an exception,
+                        // after which the barrier reads as reached while a
+                        // writer is mid-unit. Same scope as the storage task's.
+                        struct parked_scope {
+                            blockchain::block_chain& chain;
+                            explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+                            ~parked_scope() { chain.leave_reorg_barrier(); }
+                            parked_scope(parked_scope const&) = delete;
+                            parked_scope& operator=(parked_scope const&) = delete;
+                        } const parked(chain);
+                        auto const [ack_ec] = co_await rejection_ack->async_receive(
+                            ::asio::as_tuple(::asio::use_awaitable));
+                        if (ack_ec) {
+                            co_return;      // shutdown: the owner closed the ack
+                        }
+                    }
+
+                    // The coordinator moved the chain and reset the shared cursor;
+                    // re-derive this task's own, as after a switch.
+                    if (auto const built = chain.get_utxo_built_height(); built) {
+                        utxo_built_height = *built;
+                        reload_timestamp_window(utxo_built_height);
+                    }
+                    continue;
+                }
+
+                // No way to report it, or no block to name: as before, the build
+                // stops here. A fault the validator could not attribute to a
+                // block is a store that did not answer, not a verdict, and is
+                // not reported as one.
                 spdlog::critical("[utxo_build] POST-CHECKPOINT VALIDATION FAILED at {}-{}: {}. "
                     "The UTXO build stops here and nothing re-drives it",
                     batch_start, batch_end, vc.message());
@@ -2296,6 +2418,85 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             }
             spdlog::info("[utxo_build] Full validation OK for {}-{}", batch_start, batch_end);
         }
+
+        // Step 1a. The headers this batch will need, made durable BEFORE anything
+        // is opened or mutated.
+        //
+        // ABLA publication needs a durable row for each connected block; make
+        // those rows available before deriving and checking the batch state.
+        // This also preserves the restart invariant -- the height markers this
+        // batch is about to publish must never name a block the durable table cannot describe,
+        // because a start reconciles to those markers and builds a chain state
+        // for them. A run that got that wrong ended consistent and unopenable,
+        // both markers at 966112 over a table that stopped at 966107 (#697).
+        //
+        // Placed before the first mutation and not later: a failure here costs
+        // nothing -- no transition open, no delta applied, no marker moved, and
+        // the next batch simply not attempted -- while after the delta it would
+        // find the set already changed and the markers already published, which
+        // is the state there is no recovery for.
+        //
+        // Not a per-block flush: the range is coalesced and gap-only, so once
+        // header sync has caught up this is a marker read.
+        if ( ! ensure_headers_persisted(chain, chain.headers(), batch_end)) {
+            spdlog::critical("[utxo_build] The headers through height {} could not be made "
+                "durable; this batch is not applied", batch_end);
+            on_fatal("a batch's headers could not be persisted before it mutated the stores");
+            co_return;
+        }
+
+#if defined(KTH_CURRENCY_BCH)
+        // The ABLA state of every block of this batch, computed BEFORE anything
+        // is mutated and published with the heights below. Header sync writes
+        // every row with no state; this is the only place a connected block's
+        // state is produced, from the persisted state of the connected tip and
+        // the size of each block (abla_pipeline.hpp). It runs on the fast path
+        // below the checkpoint too: the state is cumulative, so skipping those
+        // blocks would hand the first fully validated one a stale parent.
+        std::vector<database::header_abla_record> abla_records;
+        {
+            std::vector<uint64_t> sizes(raw_result->size());
+            for (size_t i = 0; i < sizes.size(); ++i) {
+                sizes[i] = (*raw_result)[i].size();
+                // Validation sizes the PARSED block; the record sizes the stored
+                // bytes. They must be the same number or the limit validated
+                // against is not the state that gets persisted.
+                if (i < validated_blocks.size() && validated_blocks[i]->serialized_size(1) != sizes[i]) {
+                    spdlog::critical("[utxo_build] Stored size {} of the block at height {} differs "
+                        "from its parsed size {}", sizes[i], batch_start + i,
+                        validated_blocks[i]->serialized_size(1));
+                    on_fatal("a stored block does not re-serialize to the bytes that were stored");
+                    co_return;
+                }
+            }
+
+            auto const last_idx = chain.headers().active_at(static_cast<int32_t>(batch_end));
+            if (last_idx == blockchain::header_index::null_index) {
+                spdlog::critical("[utxo_build] Height {} is not on the active chain", batch_end);
+                on_fatal("a height being built is not on the active chain");
+                co_return;
+            }
+            auto states = blockchain::abla_states_for_batch(chain, chain.chain_settings(), network, batch_start, sizes, last_idx);
+            if ( ! states) {
+                spdlog::critical("[utxo_build] Cannot derive the ABLA state of batch {}-{}: {}",
+                    batch_start, batch_end, states.error().message());
+                on_fatal("the ABLA state of a connected batch could not be derived");
+                co_return;
+            }
+            abla_records = blockchain::abla_records_for(batch_start, *states);
+
+            // Every row must exist to hold its state. Checked now because the
+            // publication below runs after the UTXO delta is applied, where a
+            // missing row could only be reported, not avoided.
+            for (uint32_t h = batch_start; h <= batch_end; ++h) {
+                if ( ! chain.get_header_and_abla_state(h)) {
+                    spdlog::critical("[utxo_build] No stored header row at height {} to hold its ABLA state", h);
+                    on_fatal("a connected block has no stored header row");
+                    co_return;
+                }
+            }
+        }
+#endif
 
         // Parse and process UTXO delta
         blockchain::utxo_raw_delta delta;
@@ -2328,10 +2529,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // Prune with the bloom only up to the checkpoint; above it keep every
             // output (live UTXO set) so full validation can resolve prevouts.
             auto const* block_bloom = (h <= checkpoint_height) ? bloom_ptr : nullptr;
+            auto const block_pos = chain.headers().get_block_pos(idx);
             auto block_delta_result = blockchain::process_compact_block_utxos(
                 *parsed, chain.headers().get_hash(idx), h, mtp, network,
-                chain.headers().get_file_number(idx),
-                chain.headers().get_data_pos(idx),
+                int16_t(block_pos.file), block_pos.pos,
                 block_bloom);
             if ( ! block_delta_result) {
                 // The header index has no file number for this block. Storing
@@ -2404,32 +2605,6 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 timestamp_window.pop_front();
             }
             timestamp_window.push_back(block_timestamp);
-        }
-
-        // Step 1a. The headers this batch will need, made durable BEFORE anything
-        // is opened or mutated.
-        //
-        // NOT because the chain state needs them: that reads the index now, and a
-        // batch can be described whether or not the table has caught up. This is
-        // the restart invariant instead -- the height markers this batch is about
-        // to publish must never name a block the durable table cannot describe,
-        // because a start reconciles to those markers and builds a chain state
-        // for them. A run that got that wrong ended consistent and unopenable,
-        // both markers at 966112 over a table that stopped at 966107 (#697).
-        //
-        // Placed before the first mutation and not later: a failure here costs
-        // nothing -- no transition open, no delta applied, no marker moved, and
-        // the next batch simply not attempted -- while after the delta it would
-        // find the set already changed and the markers already published, which
-        // is the state there is no recovery for.
-        //
-        // Not a per-block flush: the range is coalesced and gap-only, so once
-        // header sync has caught up this is a marker read.
-        if ( ! ensure_headers_persisted(chain, chain.headers(), batch_end)) {
-            spdlog::critical("[utxo_build] The headers through height {} could not be made "
-                "durable; this batch is not applied", batch_end);
-            on_fatal("a batch's headers could not be persisted before it mutated the stores");
-            co_return;
         }
 
         // Entry closes here, before the first mutation, and the captures already
@@ -2780,11 +2955,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // Published after step 9's barrier and inside the same transaction as the
         // record, so the marker cannot outrun the data it describes: either both
         // heights and the cleared record commit, or none of them do.
-        if (auto const published = chain.publish_transition(
+#if defined(KTH_CURRENCY_BCH)
+        auto const published = chain.publish_transition(
+                database::transition_heights{
+                    .last_block_height = utxo_built_height,
+                    .utxo_built_height = utxo_built_height},
+                abla_records);
+#else
+        auto const published = chain.publish_transition(
                 database::transition_heights{
                     .last_block_height = utxo_built_height,
                     .utxo_built_height = utxo_built_height});
-            published != database::result_code::success) {
+#endif
+        if (published != database::result_code::success) {
             spdlog::critical("[utxo_build] Could not publish batch {}-{} at built height {} ({}): "
                 "the UTXO set is ahead of what the next start will believe",
                 batch_start, batch_end, utxo_built_height,

@@ -43,7 +43,7 @@ hash_digest const parent_tx_b = {{
 payment_address make_addr(uint8_t fill) {
     short_hash h{};
     h.fill(fill);
-    return payment_address{h, payment_address::mainnet_p2kh};
+    return payment_address::from_shorthash(h, payment_address::mainnet_p2kh).value();
 }
 
 utxo make_bch_utxo(hash_digest const& parent, uint32_t index, uint64_t amount) {

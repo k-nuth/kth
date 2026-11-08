@@ -146,11 +146,14 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/local_admission_tasks.cpp
+    src/detail/tx_relay.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
+    src/handlers/chain_data.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -164,6 +167,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sync/block_tasks.cpp
     src/sync/orchestrator.cpp
     src/sync/reorg.cpp
+    src/sync/tip_announcement.cpp
 
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
@@ -205,6 +209,7 @@ set(kth_sources
 set(kth_headers
   include/kth/node.hpp
   include/kth/node/p2p_node.hpp
+  include/kth/node/handlers/chain_data.hpp
   include/kth/node/handlers/ping.hpp
   include/kth/node/handlers/pong.hpp
   include/kth/node/configuration.hpp
@@ -238,6 +243,7 @@ set(kth_headers
   include/kth/node/rpc/dispatch.hpp
   include/kth/node/rpc/mining.hpp
   include/kth/node/rpc/query.hpp
+  include/kth/node/rpc/chain_progress.hpp
   include/kth/node/rpc/server.hpp
 
   # CSP-based sync system
@@ -247,6 +253,7 @@ set(kth_headers
   include/kth/node/sync/header_tasks.hpp
   include/kth/node/sync/block_tasks.hpp
   include/kth/node/sync/orchestrator.hpp
+  include/kth/node/sync/tip_announcement.hpp
 )
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -324,18 +331,27 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
           test/reorg_cycle.cpp
+          test/block_reads.cpp
+          test/chain_data.cpp
+          test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
           test/reorg_storage_wakeup.cpp
           test/select_sync.cpp
           test/configuration.cpp
+        test/full_node_network.cpp
+          test/template_prevout_refresh.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
           test/chunk_result_bridge.cpp
           test/block_announcements.cpp
+          test/tx_relay.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
+          test/local_block_admission.cpp
+          test/local_admission_tasks.cpp
+          test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
@@ -357,7 +373,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_sources(kth_node_test PRIVATE
-      test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp)
+      test/rpc_json.cpp test/rpc_mining.cpp test/rpc_query.cpp test/rpc_dispatch.cpp
+      test/rpc_server.cpp)
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
@@ -370,6 +387,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # the process it terminates. This is how those cases find the binary to re-run.
   target_compile_definitions(kth_node_test PRIVATE
     KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_node_test>")
+
+  # Compile the real refresh worker with a test-only entry observer and TSan.
+  # Keep the observer out of production, and keep this focused instrumentation
+  # separate from a full sanitizer build. The runner consumes Makefiles recipes.
+  string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=address" _kth_node_asan_flags)
+  if(ENABLE_TSAN_TESTS AND Python3_Interpreter_FOUND AND UNIX
+     AND CURRENCY STREQUAL "BCH" AND CMAKE_GENERATOR STREQUAL "Unix Makefiles"
+     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND _kth_node_asan_flags EQUAL -1)
+    add_test(NAME kth_template_cancellation_owner
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/check_template_cancellation.py ${CMAKE_BINARY_DIR})
+    set_tests_properties(kth_template_cancellation_owner PROPERTIES TIMEOUT 600)
+  endif()
 
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
@@ -444,3 +474,8 @@ install(EXPORT ${PROJECT_NAME}-targets
     NAMESPACE ${PROJECT_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
+
+if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(kth_node_bench_coinbase_merkle bench/coinbase_merkle_branch.cpp)
+  target_link_libraries(kth_node_bench_coinbase_merkle PRIVATE ${PROJECT_NAME})
+endif()

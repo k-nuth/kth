@@ -4,8 +4,8 @@
 
 #include <kth/infrastructure/wallet/uri.hpp>
 
-#include <iomanip>
-#include <sstream>
+#include <algorithm>
+#include <utility>
 
 #include <kth/infrastructure/define.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -113,17 +113,21 @@ std::string unescape(std::string const& in) {
 // is_valid a function returning true for acceptable characters.
 static
 std::string escape(std::string const& in, bool (*is_valid)(char)) {
-    std::ostringstream stream;
-    stream << std::hex << std::uppercase << std::setfill('0');
+    constexpr char hex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(in.size());
     for (auto const c: in) {
         if (is_valid(c)) {
-            stream << c;
+            out.push_back(c);
         } else {
-            stream << '%' << std::setw(2) << +c;
+            auto const byte = uint8_t(c);
+            out.push_back('%');
+            out.push_back(hex[byte >> 4]);
+            out.push_back(hex[byte & 0x0f]);
         }
     }
 
-    return stream.str();
+    return out;
 }
 
 bool uri::decode(std::string const& encoded, bool strict) {
@@ -212,22 +216,24 @@ bool uri::decode(std::string const& encoded, bool strict) {
 }
 
 std::string uri::encoded() const {
-    std::ostringstream out;
-    out << scheme_ << ':';
+    auto out = scheme_;
+    out.push_back(':');
     if (has_authority_) {
-        out << "//" << authority_;
+        out.append("//").append(authority_);
     }
 
-    out << path_;
+    out.append(path_);
     if (has_query_) {
-        out << '?' << query_;
+        out.push_back('?');
+        out.append(query_);
     }
 
     if (has_fragment_) {
-        out << '#' << fragment_;
+        out.push_back('#');
+        out.append(fragment_);
     }
 
-    return out.str();
+    return out;
 }
 
 // Scheme accessors:
@@ -352,21 +358,22 @@ uri::query_map uri::decode_query() const {
 
 void uri::encode_query(const query_map& map) {
     auto first = true;
-    std::ostringstream query;
+    std::string query;
     for (auto const& term : map) {
         if ( ! first) {
-            query << '&';
+            query.push_back('&');
         }
 
         first = false;
-        query << escape(term.first, is_query_char);
+        query.append(escape(term.first, is_query_char));
         if ( ! term.second.empty()) {
-            query << '=' << escape(term.second, is_query_char);
+            query.push_back('=');
+            query.append(escape(term.second, is_query_char));
         }
     }
 
     has_query_ = !map.empty();
-    query_ = query.str();
+    query_ = std::move(query);
 }
 
 } // namespace kth::infrastructure::wallet

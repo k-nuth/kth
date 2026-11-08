@@ -163,18 +163,43 @@ and was not converted.
 * A selector outlives its waits and is used by one task at a time; every
   selector here is a local of the coroutine that uses it, destroyed with the
   frame after the last wait and after everything it started has been joined.
-* On GCC 16 a structured binding taken directly from a `co_await` of a tuple
-  that owns a payload and lives across a later suspension can retain
-  ownership (`csp/README.md`, "named tuple storage"). Every one-shot selection
-  with an owning result here is stored in a named `completion` and bound by
-  reference.
+* GCC 15 and 16.1 never destroy a structured binding taken directly from a
+  `co_await` of a tuple that owns a payload and lives across a later
+  suspension (`csp/README.md`, "named tuple storage"). GCC 16.2 fixes it and
+  is the minimum kth builds with; the configure step also runs the pattern and
+  refuses a compiler that still retains it (`cmake/KthCompilerChecks.cmake`).
+  The one-shot selections here store their result in a named `completion` and
+  bind it by reference, which is correct with any compiler.
+
+### The inbound message channel of a peer
+
+`peer_session::messages()` (`inbound_`) is a `select_channel<raw_message>`
+(capacity 100). The read loop hands each message in with a suspended send
+(broken_pipe once `stop()` has closed the channel), and every consumer takes
+messages through `peer_session::receive(deadline)`: one selection with a
+`receive` case and an `after` case, so the handshake, the ping/pong loop,
+`wait_for_message`, `run_peer_protocols` and the seeding loop no longer race
+`async_receive` against a timer with `||`. This closed a crash: a parallel
+group emits the cancellation of its losing branch from the winning branch's
+completion handler, with no synchronisation against the other branch
+completing on another thread, and the cancellation handler object (asio's
+per-thread recycling allocator) was freed while being read (SIGBUS in
+`cancellation_slot::clear()`, seen on arm64 during chipnet sync, the same
+race as the earlier ASAN report in `peer_session.cpp`). A selection commits
+one case under the channel's lock and has nothing to cancel across threads.
+
+The node's peer-event channel (`p2p_node::peer_events()`) is a
+`select_channel<peer_notification>` for the same reason; the orchestrator's
+bridge waits on it with the network's stop token instead of a 500 ms timer.
+The two remaining timeouts on sockets use asio's own per-operation
+cancellation (`cancel_after` on the connect, `cancel_at` on the direct
+handshake reads), and the per-peer lifecycle coroutine runs on the session's
+strand, so `run()`'s own `||` of its four loops completes on one strand.
 
 ## Not converted, and why
 
-* `peer_session::messages()` (`inbound_`) and `outbound_`: `concurrent_channel`s
-  bound to the session's strand, used by the read/write loops and by the
-  handshake, ping/pong and protocol loops through `||`. Converting them changes
-  the session's own loops and every protocol; out of scope for this change.
+* `outbound_`: a `concurrent_channel` bound to the session's strand, used by
+  the write loop and `send()` only (no `||`).
 * The sync coordinator's unified event channel and the header pipeline: many
   producers, one consumer, no `||`; nothing to gain from a selection there.
 * `block_storage_input`, `chunk_validated`, `validated_headers`: still

@@ -6,13 +6,20 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <future>
+#include <limits>
+#include <catch2/generators/catch_generators.hpp>
+#include <asio/use_future.hpp>
+#include <kth/blockchain/abla_pipeline.hpp>
 
 #include <chrono>
+#include <future>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
 
 #include <kth/node/sync/block_tasks.hpp>
 #include <kth/node/sync/messages.hpp>
@@ -23,6 +30,77 @@
 using namespace kth;
 using namespace kth::node::sync;
 using namespace kth::test;
+
+TEST_CASE("returning to a previously connected branch survives a second restart",
+          "[reorg][cycle][replayed_undo]") {
+    test::chain_fixture fixture("replayed_undo_restart");
+    REQUIRE(fixture.created());
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t fork_height = 12;
+    auto const base = uint32_t(zulu_time()) - 60 * block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= fork_height; ++h) {
+        trunk.push_back(test::mine_block(previous, h, base + h * block_spacing, 0, {}, 0));
+        previous = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    auto const make_branch = [&](uint32_t count, uint32_t salt) {
+        std::vector<domain::chain::block> blocks;
+        auto parent = trunk.back().hash();
+        for (uint32_t n = 1; n <= count; ++n) {
+            auto const h = fork_height + n;
+            blocks.push_back(test::mine_block(parent, h, base + h * block_spacing, salt, {}, 0));
+            parent = blocks.back().hash();
+        }
+        return blocks;
+    };
+    auto const a = make_branch(7, 1);
+    std::vector<domain::chain::block> const a_first{a.front()};
+    auto const b = make_branch(3, 2);
+    REQUIRE(fixture.organizer().add_headers(headers_of(a_first)).headers_added == 1);
+    persist_headers(fixture, a_first, fork_height + 1);
+    connect_bodies(fixture, a_first, fork_height + 1);
+
+    auto const adopt = [&](std::vector<domain::chain::block> const& branch) {
+        auto const added = fixture.organizer().add_headers(headers_of(branch));
+        REQUIRE(added.reorg_candidate);
+        auto& chain = fixture.chain();
+        ::asio::io_context io;
+        auto switched = ::asio::co_spawn(io,
+            execute_reorg(chain, fixture.organizer(), chain.headers().find(branch.back().hash()),
+                fork_height, [] { return false; }, real_persister(chain)), ::asio::use_future);
+        io.run();
+        auto const outcome = switched.get();
+        REQUIRE_FALSE(outcome.fatal);
+        REQUIRE(outcome.result.ok);
+        connect_bodies(fixture, branch, fork_height + 1);
+        REQUIRE(chain.chain_view()->tip_hash == branch.back().hash());
+    };
+    adopt(b);
+    REQUIRE(fixture.restart());
+    // Startup restored only B's index. The bytes of A's first undo record
+    // remain on disk, but replaying A can append the same record again.
+    adopt(a);
+    REQUIRE(utxo_present(fixture.chain(), a.front().transactions().front().hash(), 0, 19));
+    REQUIRE_FALSE(utxo_present(fixture.chain(), b.front().transactions().front().hash(), 0, 19));
+    REQUIRE(fixture.restart());
+    auto const restored = fixture.chain().chain_view();
+    REQUIRE(restored);
+    CHECK(restored->tip_hash == a.back().hash());
+    auto const heights = fixture.chain().get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->block == 19);
+    CHECK(utxo_present(fixture.chain(), a.front().transactions().front().hash(), 0, 19));
+    CHECK_FALSE(utxo_present(fixture.chain(), b.front().transactions().front().hash(), 0, 19));
+    auto const count = fixture.chain().utxo_count();
+    REQUIRE(count);
+    CHECK(*count == 19);
+}
 
 // =============================================================================
 // The reorganization, end to end
@@ -722,3 +800,241 @@ TEST_CASE("an undo record whose block hash was altered stops the node starting",
     // passes it over — and the block it belonged to is left without undo.
     CHECK_FALSE(fixture.restart());
 }
+
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("short-block chains survive a deep reorganization in both directions and restart",
+          "[reorg][cycle][faster_blocks][deep]") {
+    auto const depth = GENERATE(200u, 300u, 1088u);
+    CAPTURE(depth);
+    constexpr uint32_t activation_height = 120;
+    constexpr uint32_t fork_height = 1010;
+    constexpr uint64_t fee = 1000;
+    auto const schedule = domain::chain::block_ticks::activated_at(activation_height);
+    auto const b_length = 2 * depth + 1;
+    auto const final_a_length = 2 * b_length + 1;
+    auto const base = uint32_t(zulu_time())
+        - (fork_height + final_a_length + 40) * 60 - activation_height * 540;
+    auto const timestamp = [&](uint32_t h) {
+        return base + uint32_t(schedule.height_to_tick(h));
+    };
+    // Keep the whole generated history in the past. The generous recency
+    // limit lets the ordinary connect path drain partial batches while this
+    // test exercises consensus/reorg durability rather than IBD freshness.
+    test::chain_fixture fixture("short_deep_cycle", 14u * 24u);
+    REQUIRE(fixture.created());
+    fixture.settings().cantor_activation_time = timestamp(activation_height - 5);
+    fixture.settings().max_reorg_depth = -1; // Exercise consensus, not automatic finalization.
+    REQUIRE(fixture.start());
+
+    // All headers use the modern 0x20000000 version (>= 4), including regtest heights
+    // 1251/1351. Those upgrades remain height-based when maturity uses ticks.
+    auto const mine = [&](hash_digest const& prev, uint32_t h, uint32_t salt,
+                          std::vector<domain::chain::transaction> txs, uint64_t fees) {
+        domain::chain::transaction::list all;
+        auto cb = test::coinbase_tx(h, salt,
+            domain::chain::block::subsidy(schedule, h, false) + fees);
+        // The activation parent still receives the legacy subsidy, but Cantor's
+        // coinbase-shape rule already applies there. Use version 2 throughout.
+        cb = domain::chain::transaction(2, 0, domain::chain::input::list(cb.inputs()),
+            domain::chain::output::list(cb.outputs()));
+        if (salt == 2) {
+            auto inputs = cb.inputs();
+            auto ops = inputs.front().script().operations();
+            ops.emplace_back(data_chunk(20, 0x42), false);
+            inputs.front().set_script(domain::chain::script(std::move(ops)));
+            cb = domain::chain::transaction(2, 0, std::move(inputs),
+                domain::chain::output::list(cb.outputs()));
+        }
+        all.push_back(std::move(cb));
+        for (auto& tx : txs) all.push_back(std::move(tx));
+        domain::chain::block candidate(domain::chain::header{
+            0x20000000, prev, null_hash, timestamp(h), test::regtest_bits, 0}, std::move(all));
+        auto const merkle = candidate.generate_merkle_root();
+        for (uint64_t nonce = 0; nonce <= std::numeric_limits<uint32_t>::max(); ++nonce) {
+            domain::chain::header header{0x20000000, prev, merkle, timestamp(h),
+                test::regtest_bits, uint32_t(nonce)};
+            if (header.is_valid_proof_of_work(domain::chain::hash(header), false))
+                return domain::chain::block(std::move(header),
+                    domain::chain::transaction::list(candidate.transactions()));
+        }
+        throw std::runtime_error("regtest nonce space exhausted");
+    };
+
+    // Join both production connect tasks and propagate their exceptions. Fatal
+    // observations are checked on the test thread, never from an Asio callback.
+    auto const connect = [&](std::vector<domain::chain::block> const& blocks, uint32_t first) {
+        auto& chain = fixture.chain();
+        auto const last = first + uint32_t(blocks.size()) - 1;
+        bool stop = false;
+        ::asio::io_context io;
+        block_storage_input_channel input(io.get_executor(), 2);
+        chunk_validated_channel output(io.get_executor(), 2);
+        std::atomic<uint32_t> contiguous{first};
+        std::vector<std::shared_ptr<domain::chain::light_block const>> light;
+        for (auto const& blk : blocks) light.push_back(to_light(blk));
+        std::string fatal;
+        auto storage = ::asio::co_spawn(io,
+            block_storage_task(chain, input, output, first, fixture.organizer(), &contiguous),
+            ::asio::use_future);
+        auto builder = ::asio::co_spawn(io,
+            utxo_build_task(chain, contiguous, first, domain::config::network::regtest,
+                [&] { auto h = chain.get_utxo_built_height(); return stop || (h && *h >= last); },
+                [&](std::string const& why) { fatal = why; }), ::asio::use_future);
+        REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+            .start_height = first, .chunk_id = 0, .blocks = std::move(light),
+            .source_peer = nullptr, .generation = chain.headers().generation()}));
+        REQUIRE(input.try_send(std::error_code{}, stop_request{}));
+        io.run_for(std::chrono::seconds(120));
+        auto const completed = storage.wait_for(std::chrono::seconds(0)) == std::future_status::ready
+            && builder.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        if (!completed) {
+            // Wake the owned tasks before reporting the deadline on this thread.
+            // io's destruction also destroys any remaining suspended coroutine;
+            // no detached task, worker thread or borrowed fixture escapes.
+            stop = true;
+            input.close();
+            output.close();
+            io.restart();
+            io.run_for(std::chrono::seconds(5));
+        }
+        REQUIRE(completed);
+        storage.get();
+        builder.get();
+        REQUIRE(fatal.empty());
+        REQUIRE(chain.get_utxo_built_height());
+        REQUIRE(*chain.get_utxo_built_height() == last);
+    };
+    auto const switch_branch = [&](hash_digest const& tip) {
+        auto& chain = fixture.chain();
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io,
+            execute_reorg(chain, fixture.organizer(), chain.headers().find(tip), fork_height,
+                [] { return false; }, real_persister(chain)), ::asio::use_future);
+        io.run_for(std::chrono::seconds(120));
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        auto const outcome = result.get();
+        REQUIRE_FALSE(outcome.fatal);
+        REQUIRE(outcome.result.ok);
+        REQUIRE(outcome.result.validated_tip == fork_height);
+    };
+
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= fork_height; ++h) {
+        trunk.push_back(mine(prev, h, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    connect(trunk, 1);
+    REQUIRE(fixture.chain().chain_view());
+    REQUIRE(fixture.chain().chain_view()->state->ticks() == schedule);
+    REQUIRE(fixture.chain().chain_view()->state->block_interval() == 60);
+    auto const funding = trunk.front().transactions().front();
+    REQUIRE(schedule.height_to_tick(fork_height + 1) - schedule.height_to_tick(1) >= 60000);
+
+    auto const branch = [&](uint32_t length, uint32_t salt) {
+        std::vector<domain::chain::block> blocks;
+        auto parent = trunk.back().hash();
+        auto source = funding;
+        for (uint32_t n = 0; n < length; ++n) {
+            auto spend = test::spend_p2pkh(source, 0, source.outputs()[0].value() - fee - salt,
+                fixture.chain().chain_settings().enabled_flags());
+            blocks.push_back(mine(parent, fork_height + n + 1, salt, {spend}, fee + salt));
+            parent = blocks.back().hash();
+            source = std::move(spend);
+        }
+        return blocks;
+    };
+    auto a = branch(depth, 1);
+    // At these depths parking requires strictly more than twice the defending
+    // branch's post-fork work. Exercise that real policy, without overriding it.
+    auto const b = branch(b_length, 2);
+    REQUIRE(fixture.organizer().add_headers(headers_of(a)).headers_added == a.size());
+    persist_headers(fixture, a, fork_height + 1);
+    connect(a, fork_height + 1);
+
+    auto const check_tip = [&](std::vector<domain::chain::block> const& active,
+                               std::vector<domain::chain::block> const& abandoned) {
+        auto& chain = fixture.chain();
+        auto const height = fork_height + uint32_t(active.size());
+        REQUIRE(chain.get_last_heights());
+        CHECK(chain.get_last_heights()->block == height);
+        REQUIRE(chain.chain_view());
+        CHECK(chain.chain_view()->tip_hash == active.back().hash());
+        CHECK(chain.chain_view()->state->block_interval() == 60);
+        CHECK(chain.chain_view()->state->ticks().height_to_tick(height) == schedule.height_to_tick(height));
+        CHECK_FALSE(utxo_present(chain, funding.hash(), 0, height));
+        CHECK(utxo_present(chain, active.back().transactions()[1].hash(), 0, height));
+        CHECK_FALSE(utxo_present(chain, abandoned.back().transactions()[1].hash(), 0, height));
+        auto const fork_row = chain.get_header_and_abla_state(fork_height);
+        REQUIRE(fork_row);
+        domain::chain::abla::state expected;
+        expected.block_size = std::get<1>(*fork_row);
+        expected.control_block_size = std::get<2>(*fork_row);
+        expected.elastic_buffer_size = std::get<3>(*fork_row);
+        expected.block_interval = 60;
+        for (auto const& blk : active) {
+            auto const next_state = domain::chain::abla::next(expected,
+                chain.chain_settings().abla_config, blk.serialized_size(), 60);
+            REQUIRE(next_state);
+            expected = *next_state;
+            CHECK(utxo_present(chain, blk.transactions().front().hash(), 0, height));
+            auto const h = fork_height + uint32_t(&blk - active.data()) + 1;
+            auto const row = chain.get_header_and_abla_state(h);
+            REQUIRE(row);
+            CHECK(domain::chain::hash(std::get<0>(*row)) == blk.hash());
+            CHECK(std::get<1>(*row) == blk.serialized_size());
+            CHECK(std::get<2>(*row) == expected.control_block_size);
+            CHECK(std::get<3>(*row) == expected.elastic_buffer_size);
+        }
+        for (auto const& blk : abandoned)
+            CHECK_FALSE(utxo_present(chain, blk.transactions().front().hash(), 0, height));
+        REQUIRE(chain.utxo_count());
+        CHECK(*chain.utxo_count() == fork_height + active.size());
+        auto const row = chain.get_header_and_abla_state(height);
+        REQUIRE(row);
+        domain::chain::abla::state tip_state;
+        tip_state.block_size = std::get<1>(*row);
+        tip_state.control_block_size = std::get<2>(*row);
+        tip_state.elastic_buffer_size = std::get<3>(*row);
+        tip_state.block_interval = 60;
+        auto const next = domain::chain::abla::next(tip_state, chain.chain_settings().abla_config, 0, 60);
+        REQUIRE(next);
+        CHECK(chain.chain_view()->state->abla_state().control_block_size == next->control_block_size);
+        CHECK(chain.chain_view()->state->abla_state().elastic_buffer_size == next->elastic_buffer_size);
+    };
+
+    auto const b_headers = fixture.organizer().add_headers(headers_of(b));
+    REQUIRE(b_headers.reorg_candidate);
+    switch_branch(b.back().hash());
+    connect(b, fork_height + 1);
+    check_tip(b, a);
+    REQUIRE(fixture.restart());
+    check_tip(b, a);
+
+    // A's old bytes and undo history remain available. Extend A beyond B and
+    // replay its whole branch, including the chained spends previously undone.
+    auto parent = a.back().hash();
+    auto source = a.back().transactions()[1];
+    std::vector<domain::chain::block> extension;
+    for (uint32_t n = 1; n <= final_a_length - depth; ++n) {
+        auto spend = test::spend_p2pkh(source, 0, source.outputs()[0].value() - fee - 1,
+            fixture.chain().chain_settings().enabled_flags());
+        extension.push_back(mine(parent, fork_height + depth + n, 1, {spend}, fee + 1));
+        parent = extension.back().hash();
+        source = std::move(spend);
+    }
+    // Restart reconstructs only the active branch; resubmit A's headers too.
+    std::vector<domain::chain::block> full_a = a;
+    full_a.insert(full_a.end(), extension.begin(), extension.end());
+    auto const a_headers = fixture.organizer().add_headers(headers_of(full_a));
+    REQUIRE(a_headers.reorg_candidate);
+    switch_branch(full_a.back().hash());
+    connect(full_a, fork_height + 1);
+    check_tip(full_a, b);
+    REQUIRE(fixture.restart());
+    check_tip(full_a, b);
+}
+#endif

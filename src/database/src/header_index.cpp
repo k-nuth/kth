@@ -5,6 +5,11 @@
 #include <kth/database/header_index.hpp>
 
 #include <cstring>
+#include <bit>
+#include <kth/domain/chain/block_ticks.hpp>
+#include <kth/domain/chain/faster_blocks.hpp>
+#include <algorithm>
+#include <functional>
 
 #include <spdlog/spdlog.h>
 
@@ -36,8 +41,7 @@ header_index::header_index(size_t capacity)
     nonces_.resize(capacity_);
 
     // Block file location (initialized to "no data")
-    file_numbers_.resize(capacity_, -1);
-    data_positions_.resize(capacity_, 0);
+    block_positions_ = std::make_unique<std::atomic<uint64_t>[]>(capacity_);
     undo_positions_.resize(capacity_, 0);
 
     // Reception time (0 = loaded from store / not yet set)
@@ -161,6 +165,100 @@ uint256_t header_index::get_chain_work(index_t idx) const {
     return chain_works_[idx];
 }
 
+std::optional<uint256_t> header_index::total_chain_work(hash_digest const& tip) const {
+    auto const idx = find(tip);
+    if (idx == null_index) {
+        return std::nullopt;
+    }
+    auto const root = get_ancestor(idx, 0);
+    if (root == null_index) {
+        return std::nullopt;
+    }
+    return get_chain_work(idx) + domain::chain::header::proof(get_bits(root));
+}
+
+std::optional<std::vector<header_index::chain_tip>>
+header_index::get_chain_tips(hash_digest const& connected_tip) const {
+    return get_chain_tips(connected_tip, std::numeric_limits<uint64_t>::max());
+}
+
+std::optional<std::vector<header_index::chain_tip>>
+header_index::get_chain_tips(hash_digest const& connected_tip, uint64_t activation_time) const {
+    auto const active = find(connected_tip);
+    if (active == null_index) return std::nullopt;
+
+    // Index entries are append-only and a parent is published before its
+    // children. Compute each branch's fork and data availability once, instead
+    // of walking the same shared ancestry again for every leaf.
+    auto const count = size();
+    if (active >= count) return std::nullopt;
+    // Eleven threshold bits reproduce the upper median without sorting or
+    // walking shared ancestors again. Bit 11 records that this branch already
+    // crossed activation; the containing block still adds its parent's interval.
+    static_assert(domain::chain::faster_blocks_mtp_span < 16);
+    constexpr uint16_t window_mask = (1u << domain::chain::faster_blocks_mtp_span) - 1;
+    constexpr uint16_t activated_mask = 1u << domain::chain::faster_blocks_mtp_span;
+    struct branch_state {
+        uint64_t ticks = 0;
+        int32_t fork_height = -1; // -1: not connected to the published chain
+        uint16_t activation_window = 0;
+        bool all_data = false;
+        bool has_child = false;
+    };
+    std::vector<branch_state> branches(count);
+    for (auto idx = active; idx != header_index::null_index;
+         idx = get_parent_index(idx)) {
+        branches[idx].fork_height = get_height(idx);
+        branches[idx].all_data = true;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        auto const parent = get_parent_index(idx);
+        if (parent != header_index::null_index && parent < count) {
+            branches[parent].has_child = true;
+        }
+        auto& branch = branches[i];
+        auto const parent_window = parent != null_index && parent < i
+            ? branches[parent].activation_window : uint16_t{0};
+        auto const parent_activated = (parent_window & activated_mask) != 0;
+        if (parent != null_index && parent < i) {
+            branch.ticks = branches[parent].ticks + (parent_activated
+                ? domain::chain::faster_block_interval : domain::chain::base_block_interval);
+        }
+        auto const window = uint16_t(((parent_window << 1) |
+            (uint64_t(get_timestamp(idx)) >= activation_time ? 1u : 0u)) & window_mask);
+        auto const samples = std::min(size_t(get_height(idx)) + 1, domain::chain::faster_blocks_mtp_span);
+        auto const activated = parent_activated || size_t(std::popcount(window)) >= (samples + 1) / 2;
+        branch.activation_window = window | (activated ? activated_mask : 0);
+        if (branch.fork_height >= 0) continue; // already on the connected chain
+        if (parent == header_index::null_index || parent >= i) continue;
+        auto const& previous = branches[parent];
+        if (previous.fork_height < 0) continue; // a disconnected root
+        branch.fork_height = previous.fork_height;
+        branch.all_data = previous.all_data &&
+            has_status(idx, header_status::have_data);
+    }
+
+    std::vector<chain_tip> tips;
+    for (size_t i = 0; i < count; ++i) {
+        auto const idx = header_index::index_t(i);
+        if (idx == active) {
+            tips.push_back({size_t(get_height(active)), connected_tip, 0, tip_status::active, branches[i].ticks});
+            continue;
+        }
+        auto const& branch = branches[i];
+        if (branch.has_child || branch.fork_height < 0) continue;
+        auto const height = get_height(idx);
+        tips.push_back({size_t(height), get_hash(idx),
+            size_t(height - branch.fork_height),
+            branch.all_data ? tip_status::valid_headers : tip_status::headers_only, branch.ticks});
+    }
+    // O(N + T log T) time, O(N + T) storage for N headers and T tips.
+    std::ranges::stable_sort(tips, std::ranges::greater{}, &chain_tip::height);
+    return tips;
+}
+
 header_status header_index::get_status(index_t idx) const {
     return header_status(statuses_[idx]);
 }
@@ -186,6 +284,7 @@ uint32_t header_index::get_nonce(index_t idx) const {
 }
 
 header_entry header_index::get_entry(index_t idx) const {
+    auto const block_pos = get_block_pos(idx);
     return {
         get_header(idx),
         hashes_[idx],
@@ -194,8 +293,8 @@ header_entry header_index::get_entry(index_t idx) const {
         heights_[idx],
         chain_works_[idx],
         header_status(statuses_[idx]),
-        file_numbers_[idx],
-        data_positions_[idx],
+        int16_t(block_pos.file),
+        block_pos.pos,
         undo_positions_[idx]
     };
 }
@@ -218,6 +317,36 @@ domain::chain::header header_index::get_header(index_t idx) const {
 // =============================================================================
 // Status Management
 // =============================================================================
+
+void header_index::restore_failed_blocks(std::vector<hash_digest> hashes) {
+    std::ranges::sort(hashes);
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+    restored_failures_ = std::move(hashes);
+    if (restored_failures_.empty()) {
+        return;
+    }
+    for (auto const& hash : restored_failures_) {
+        auto const idx = find(hash);
+        if (idx != null_index) {
+            add_status(idx, header_status::failed_valid);
+        }
+    }
+    // Parents are inserted before children. One forward pass marks even deep
+    // descendants that were persisted before their ancestor's verdict committed.
+    auto const count = index_t(size());
+    for (index_t idx = 0; idx < count; ++idx) {
+        auto const parent = get_parent_index(idx);
+        if (parent != null_index &&
+            (has_status(parent, header_status::failed_valid) ||
+             has_status(parent, header_status::failed_child))) {
+            add_status(idx, header_status::failed_child);
+        }
+    }
+}
+
+bool header_index::is_restored_failure(hash_digest const& hash) const {
+    return std::binary_search(restored_failures_.begin(), restored_failures_.end(), hash);
+}
 
 void header_index::set_status(index_t idx, header_status status) {
     statuses_[idx] = uint32_t(status);
@@ -243,9 +372,24 @@ void header_index::set_chain_work(index_t idx, uint256_t const& work) {
 // Block File Location
 // =============================================================================
 
+namespace {
+
+constexpr uint64_t pack_block_pos(int16_t file, uint32_t pos) {
+    return file < 0 ? 0 : (uint64_t(file) + 1) << 32 | pos;
+}
+
+constexpr flat_file_pos unpack_block_pos(uint64_t packed) {
+    return packed == 0 ? flat_file_pos{} : flat_file_pos{int32_t(packed >> 32) - 1, uint32_t(packed)};
+}
+
+} // namespace
+
 void header_index::set_block_pos(index_t idx, int16_t file, uint32_t pos) {
-    file_numbers_[idx] = file;
-    data_positions_[idx] = pos;
+    block_positions_[idx].store(pack_block_pos(file, pos), std::memory_order_release);
+}
+
+flat_file_pos header_index::get_block_pos(index_t idx) const {
+    return unpack_block_pos(block_positions_[idx].load(std::memory_order_acquire));
 }
 
 void header_index::set_undo_pos(index_t idx, uint32_t pos) {
@@ -361,11 +505,11 @@ uint32_t header_index::get_received_time(index_t idx) const {
 }
 
 int16_t header_index::get_file_number(index_t idx) const {
-    return file_numbers_[idx];
+    return int16_t(get_block_pos(idx).file);
 }
 
 uint32_t header_index::get_data_pos(index_t idx) const {
-    return data_positions_[idx];
+    return get_block_pos(idx).pos;
 }
 
 uint32_t header_index::get_undo_pos(index_t idx) const {
@@ -373,14 +517,14 @@ uint32_t header_index::get_undo_pos(index_t idx) const {
 }
 
 bool header_index::has_block_data(index_t idx) const {
-    return file_numbers_[idx] >= 0;
+    return ! get_block_pos(idx).is_null();
 }
 
 bool header_index::has_undo_data(index_t idx) const {
     // Undo data exists if file_number is valid and undo_pos is non-zero
     // (position 0 is valid for block data but not for undo, since undo
     // is written after the block is connected)
-    return file_numbers_[idx] >= 0 && undo_positions_[idx] > 0;
+    return has_block_data(idx) && undo_positions_[idx] > 0;
 }
 
 // =============================================================================
@@ -500,8 +644,7 @@ size_t header_index::memory_usage() const {
     total += capacity_ * sizeof(uint32_t);       // timestamps_
     total += capacity_ * sizeof(uint32_t);       // bits_
     total += capacity_ * sizeof(uint32_t);       // nonces_
-    total += capacity_ * sizeof(int16_t);        // file_numbers_
-    total += capacity_ * sizeof(uint32_t);       // data_positions_
+    total += capacity_ * sizeof(uint64_t);       // block_positions_
     total += capacity_ * sizeof(uint32_t);       // undo_positions_
 
     // Estimate hash map overhead (~1.5x for load factor + bucket overhead)

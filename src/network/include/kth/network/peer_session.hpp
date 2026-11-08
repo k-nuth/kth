@@ -46,8 +46,8 @@ using kth::awaitable_expected;
 //   // Send a message
 //   co_await session->send(version_message);
 //
-//   // Receive messages via channel
-//   auto [ec, msg] = co_await session->messages().async_receive(...);
+//   // Receive the next message, or give up at a deadline
+//   auto msg = co_await session->receive(std::chrono::steady_clock::now() + 5s);
 //
 // =============================================================================
 
@@ -65,14 +65,34 @@ public:
     using strand_type = ::asio::strand<executor_type>;
     using socket_type = ::asio::ip::tcp::socket;
 
-    // Channel for outbound messages (serialized bytes ready to send)
-    using outbound_channel = concurrent_channel<data_chunk>;
+    // Outbound messages, serialized and ready to write. Two queues with one
+    // writer: control traffic (pings, pongs, requests, announcements) and
+    // data served to the peer (blocks, headers). The writer always drains
+    // control first, so a pong goes ahead of every queued block; it still
+    // waits for a block already being written to the socket.
+    // select_channels: executor-free, closed by stop().
+    using outbound_channel = select_channel<data_chunk>;
 
-    /// Messages the outbound queue holds before a send has to wait.
+    /// Messages the control queue holds before a send has to wait.
     static constexpr size_t outbound_capacity = 100;
 
-    // Channel for inbound messages (raw message with heading + payload)
-    using inbound_channel = concurrent_channel<raw_message>;
+    /// Messages the data queue holds before a send_data has to wait. Small:
+    /// a served block can be large, and the queue is per peer.
+    static constexpr size_t data_outbound_capacity = 2;
+
+    /// Requests waiting for the node's per-peer service (see served_requests).
+    static constexpr size_t served_requests_capacity = 16;
+
+    // Inbound messages (heading + payload). A select_channel (see
+    // async_channel.hpp): the read loop hands messages in with a suspended
+    // send, consumers take them with receive(deadline), one selection with an
+    // `after` case instead of `receive || timer`. A parallel group emits the
+    // cancellation of its losing branch from the winning branch's completion
+    // handler, unsynchronised with the other branch's completion on another
+    // thread; that race freed a cancellation handler while it was being read
+    // (SIGBUS in cancellation_slot::clear). A selection commits one case
+    // under the channel's lock and has no such cancellation.
+    using inbound_channel = select_channel<raw_message>;
 
     /// Construct a peer session from an established socket
     /// @param socket The connected socket
@@ -99,35 +119,90 @@ public:
     [[nodiscard]]
     bool stopped() const;
 
+    /// The strand all of this session's I/O completes on. The peer's whole
+    /// lifecycle (handshake, protocols) runs on it, so what remains of
+    /// `operator||` in that code (run()'s own loops) completes on one strand.
+    [[nodiscard]]
+    executor_type get_executor() const {
+        return strand_;
+    }
+
     // -------------------------------------------------------------------------
     // Messaging
     // -------------------------------------------------------------------------
 
-    /// Send a message to the peer (coroutine version)
+    /// Send a control message to the peer. Waits while the control queue is
+    /// full; error::channel_stopped once the session is stopped.
     template <typename Message>
     ::asio::awaitable<code> send(Message const& message) {
         if (stopped()) {
             co_return error::channel_stopped;
         }
-
-        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec] = co_await outbound_.async_send(
-            std::error_code{},
-            std::move(data),
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        if (ec) {
-            co_return error::channel_stopped;
-        }
-        co_return error::success;
+        co_return co_await enqueue(outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
-    /// Send raw bytes to the peer (coroutine version)
+    /// Send data served to the peer (blocks, headers answering its requests).
+    /// Waits while the data queue is full, without holding control traffic.
+    template <typename Message>
+    ::asio::awaitable<code> send_data(Message const& message) {
+        if (stopped()) {
+            co_return error::channel_stopped;
+        }
+        co_return co_await enqueue(data_outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
+    /// Send raw bytes to the peer as control traffic.
     ::asio::awaitable<code> send_raw(data_chunk data);
 
-    /// Get the inbound message channel for receiving messages
+    // -------------------------------------------------------------------------
+    // Served requests
+    // -------------------------------------------------------------------------
+
+    /// Requests the read loop hands to the node's per-peer service instead of
+    /// answering them itself (getheaders, getdata): serving them waits on the
+    /// data queue, and the read loop must keep reading. Bounded; the read loop
+    /// only try_sends, and a peer that fills it has too many requests pending.
+    /// Closed by stop(): a waiting service then sees eof.
+    using served_channel = select_channel<raw_message>;
+
+    [[nodiscard]]
+    served_channel& served_requests();
+
+    /// The data queue, for inspecting what is queued and not yet written.
+    [[nodiscard]]
+    outbound_channel& data_outbound();
+
+    // -------------------------------------------------------------------------
+    // Tip announcements
+    // -------------------------------------------------------------------------
+
+    /// The node's announcement debt to this peer: the latest connected tip
+    /// not yet taken by the peer's service. Holds one hash; a newer tip
+    /// replaces one not taken yet, so a peer that falls behind owes one
+    /// announcement, never one per block. Closed by stop().
+    using tip_channel = select_channel<hash_digest>;
+
+    /// Record that `tip` is owed to this peer. One producer: the sync
+    /// coordinator. Never waits.
+    void announce_tip(hash_digest const& tip);
+
+    [[nodiscard]]
+    tip_channel& tip_announcements();
+
+    /// The inbound message channel (for try_receive and selections of
+    /// several cases; plain consumers use receive()).
     [[nodiscard]]
     inbound_channel& messages();
+
+    /// The next inbound message, or by `deadline`: error::channel_timeout
+    /// when the deadline passes first, error::channel_stopped once the
+    /// session has closed the channel. A deadline that wins leaves the
+    /// message in the channel.
+    [[nodiscard]]
+    awaitable_expected<raw_message> receive(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     // -------------------------------------------------------------------------
     // Direct I/O (for handshake before run() starts)
@@ -136,9 +211,11 @@ public:
     // Use ONLY before calling run() - after run() starts, use send() and messages().
 
     /// Read a message directly from the socket (bypasses inbound channel)
-    /// Use this for handshake before run() is started
+    /// Use this for handshake before run() is started. The reads are
+    /// cancelled at `deadline` (error::channel_timeout).
     [[nodiscard]]
-    awaitable_expected<raw_message> read_message_direct();
+    awaitable_expected<raw_message> read_message_direct(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     /// Send a message directly to the socket (bypasses outbound channel)
     /// Use this for handshake before run() is started
@@ -334,6 +411,17 @@ public:
     /// Mark that peer supports addrv2 (called when sendaddrv2 received)
     void set_wants_addrv2(bool value);
 
+    // -------------------------------------------------------------------------
+    // BIP130 (sendheaders)
+    // -------------------------------------------------------------------------
+
+    /// True once the peer sent sendheaders: new blocks are announced to it
+    /// with headers instead of an inv.
+    [[nodiscard]]
+    bool prefers_headers() const;
+
+    void set_prefers_headers(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -352,7 +440,8 @@ private:
     ::asio::awaitable<void> expiration_timer();
 
     /// Read a complete message (heading + payload)
-    awaitable_expected<raw_message> read_message();
+    awaitable_expected<raw_message> read_message(
+        std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
 
     /// Signal activity (resets inactivity timer)
     void signal_activity();
@@ -365,9 +454,15 @@ private:
     socket_type socket_;
     strand_type strand_;
 
+    /// Queue `data` on `channel`, waiting while it is full.
+    ::asio::awaitable<code> enqueue(outbound_channel& channel, data_chunk data);
+
     // Channels for message passing
     outbound_channel outbound_;
+    outbound_channel data_outbound_;
     inbound_channel inbound_;
+    served_channel served_requests_;
+    tip_channel tip_announcements_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive
@@ -428,6 +523,9 @@ private:
     // BIP155 (addrv2) support
     // Set to true when peer sends sendaddrv2 during handshake
     std::atomic<bool> wants_addrv2_{false};
+
+    // BIP130: set when the peer sends sendheaders
+    std::atomic<bool> prefers_headers_{false};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

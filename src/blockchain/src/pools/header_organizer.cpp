@@ -11,6 +11,7 @@
 
 #include <kth/blockchain/parking.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/domain.hpp>
 
@@ -34,7 +35,25 @@ void header_organizer::note_block_validated(int32_t block_valid_height) {
     block_valid_height_.store(block_valid_height, std::memory_order_release);
 
     auto const before = finalizer_.finalized_height();
-    finalizer_.maybe_advance(tip_index(), block_valid_height, static_cast<int64_t>(zulu_time()));
+    // The active height map names the branch whose blocks are connected. The
+    // best header tip can be ahead or on a different unconnected branch.
+    auto const validated_tip = block_valid_height < 0
+        ? header_index::null_index : index_.active_at(block_valid_height);
+    if (validated_tip == header_index::null_index) {
+        return;
+    }
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = tick_schedule_for_tip(validator_, index_, validated_tip);
+    if (!schedule) {
+        spdlog::warn("[header_organizer] Finalization deferred: no schedule for validated height {}",
+            block_valid_height);
+        return;
+    }
+    finalizer_.maybe_advance(validated_tip, block_valid_height,
+        static_cast<int64_t>(zulu_time()), *schedule);
+#else
+    finalizer_.maybe_advance(validated_tip, block_valid_height, static_cast<int64_t>(zulu_time()));
+#endif
     auto const after = finalizer_.finalized_height();
     if (after != before) {
         spdlog::info("[header_organizer] Finalized block advanced to height {}", after);
@@ -70,14 +89,22 @@ void header_organizer::sync_tip() {
         return;
     }
 
-    index_t best_idx = 0;
-    uint256_t best_work = index_.get_chain_work(best_idx);
-    for (index_t i = 1; i < index_t(size); ++i) {
+    index_t best_idx = header_index::null_index;
+    uint256_t best_work{};
+    for (index_t i = 0; i < index_t(size); ++i) {
+        if (index_.has_status(i, header_status::failed_valid) ||
+            index_.has_status(i, header_status::failed_child)) {
+            continue;
+        }
         auto const w = index_.get_chain_work(i);
-        if (w > best_work) {
+        if (best_idx == header_index::null_index || w > best_work) {
             best_work = w;
             best_idx = i;
         }
+    }
+    if (best_idx == header_index::null_index) {
+        spdlog::critical("[header_organizer] No non-failed header is available at startup");
+        return;
     }
     {
         std::lock_guard<std::mutex> const lock(tip_mutex_);
@@ -154,6 +181,10 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
     //   (3) anchor unknown                       -> orphan; validation surfaces the
     //       missing-parent error (this is also the old ABC/BCHN duplicate-retry case).
     auto const first_prev_hash = headers.front().previous_block_hash();
+    if (index_.is_restored_failure(first_prev_hash)) {
+        result.error = error::invalid_previous_block;
+        return result;
+    }
     bool const extends_tip = (first_prev_hash == tip_hash);
 
     index_t anchor_idx = tip_idx;
@@ -166,11 +197,45 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         }
     }
 
+    // A header the connect path refused in context, or one that descends from
+    // such a header. The flag is the index's own, set by the execution layer
+    // while the writers are parked and before the tip steps back; `failed_child`
+    // is set here, lazily, on a known descendant the moment a batch walks onto
+    // it. Nothing builds on either: not a new header, and not a re-sent known
+    // one — a known header is skipped below on the strength of having been
+    // validated once, and this is the one verdict that came later.
+    auto const failed = [this](index_t idx) {
+        return idx != header_index::null_index &&
+            (index_.has_status(idx, header_status::failed_valid) ||
+             index_.has_status(idx, header_status::failed_child));
+    };
+
     // Running parent starts at the anchor (the tip for a forward extension, the fork
     // ancestor for a side branch) and advances as each header is stored.
     index_t parent_idx = anchor_idx;
     index_t branch_head_idx = anchor_idx;
     int32_t height = index_.get_height(anchor_idx) + 1;
+
+    // The anchor is the one entry a batch can name that nothing in this walk
+    // has checked. Refused if it is a failed block, and refused — and flagged
+    // — if it is the child of one: a descendant stored before its parent was
+    // refused carries no flag of its own, and this is where a batch first
+    // stands on it. Deeper descendants are caught the same way once their own
+    // parent has been flagged, and until then by the coordinator's memory of
+    // refused hashes, which filters every switch onto such a branch.
+    if (failed(anchor_idx)) {
+        // Nothing of the batch is stored and the tip does not move; the
+        // publication below is a no-op on the unchanged head, which is what
+        // carries the rejection out.
+        spdlog::warn("[header_organizer] Rejecting batch anchored on a failed block at height {}",
+            index_.get_height(anchor_idx));
+        result.error = error::invalid_previous_block;
+    } else if (anchor_idx != tip_idx && failed(index_.get_parent_index(anchor_idx))) {
+        index_.add_status(anchor_idx, header_status::failed_child);
+        spdlog::warn("[header_organizer] Rejecting batch anchored on a descendant of a failed block "
+            "at height {}; the descendant is now flagged", index_.get_height(anchor_idx));
+        result.error = error::invalid_previous_block;
+    }
 
     // Whether parent_idx is known to descend from the finalized block. A child of a
     // verified parent inherits the property, so a contiguous run of new headers costs
@@ -182,16 +247,50 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
         height, anchor_idx, extends_tip);
 
     for (auto const& header : headers) {
+        if (result.error) {
+            break;      // anchored on a failed block: nothing of this batch is looked at
+        }
+
         // Compute hash first (needed for validation)
         KTH_STATS_TIME_START(hash);
         auto const hash = domain::chain::hash(header);
         KTH_STATS_TIME_END(global_sync_stats(), hash, hash_time_ns, hash_calls);
+
+        if (index_.is_restored_failure(hash)) {
+            result.error = error::duplicate_block;
+            break;
+        }
 
         // Already known (duplicate/retry batch, or a re-announced branch header): it
         // was validated when first added, so skip re-validation and just advance the
         // running parent. Resync the height from the stored entry. This also covers
         // the below-tip retry batch the old early-return special-cased.
         if (auto const known_idx = index_.find(hash); known_idx != header_index::null_index) {
+            // Known is not enough to follow. The running parent only ever moves
+            // along the batch's own chain of previous-hashes: a known header
+            // that is not the running parent's child would move it to an
+            // arbitrary entry, and with the batch extending the tip, publish
+            // that entry as the tip without a single check — any branch at all,
+            // including one behind a refused block.
+            // A known first header establishes the batch's starting point.
+            // Its parent need not be in the index (for example a retry starting
+            // at the stored root); the tip fallback is not its claimed parent.
+            // Subsequent entries must still follow the preceding batch entry.
+            if (&header != &headers.front() && index_.get_parent_index(known_idx) != parent_idx) {
+                spdlog::warn("[header_organizer] Rejecting batch: known header at height {} does not "
+                    "follow the header before it", index_.get_height(known_idx));
+                result.error = error::invalid_previous_block;
+                break;
+            }
+            if (failed(known_idx)) {
+                // A refused block offered again. Validated once as a header,
+                // refused since as a block: the later verdict stands, and the
+                // tip is not moved back onto it.
+                spdlog::warn("[header_organizer] Rejecting batch: known header at height {} was "
+                    "refused by the connect path", index_.get_height(known_idx));
+                result.error = error::duplicate_block;
+                break;
+            }
             parent_idx = known_idx;
             branch_head_idx = known_idx;
             height = index_.get_height(known_idx) + 1;
@@ -200,6 +299,11 @@ header_organize_result header_organizer::add_headers(domain::message::header::li
             spdlog::debug("[header_organizer] Header already exists at index {}", known_idx);
             continue;
         }
+
+        // A NEW header's parent is the running parent: the anchor, a known
+        // header, or a header this batch just added. The first two were
+        // refused above if failed, and the batch ended there; the third never
+        // is. So a new header never builds on a failed block from here.
 
         // Header finalization (BCHN ContextualCheckBlockHeader / -finalizeheaders):
         // a NEW header whose parent does not descend from the finalized block extends
@@ -362,13 +466,23 @@ bool header_organizer::parked(index_t fork_idx, int32_t fork_height, uint256_t c
         return true;
     }
 
+#if defined(KTH_CURRENCY_BCH)
+    auto const schedule = tick_schedule_for_tip(validator_, index_, validated_tip_idx);
+    if (!schedule) {
+        spdlog::warn("[header_organizer] Parking branch: no schedule for validated height {}",
+            validated_height);
+        return true;
+    }
+    auto const required = parking::required_work(index_, fork_idx, validated_tip_idx, *schedule);
+#else
     auto const required = parking::required_work(index_, fork_idx, validated_tip_idx);
+#endif
     if (branch_work > required) {
         return false;
     }
 
     spdlog::warn("[header_organizer] Parking branch forking at height {}: it would rewind {} validated "
-        "blocks and has not accumulated twice the work the active chain gained since the fork",
+        "blocks and has not exceeded the defending chain's work threshold",
         fork_height, validated_height - fork_height);
     return true;
 }

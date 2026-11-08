@@ -17,6 +17,8 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/database/databases/generic_db.hpp>
+#include <span>
+
 #include <kth/database/databases/header_abla_entry.hpp>
 #include <kth/database/databases/property_code.hpp>
 #include <kth/database/databases/result_code.hpp>
@@ -139,9 +141,9 @@ inline std::atomic<bool> fail_publish_transition_before_commit{false};
 } // namespace testing
 
 
-constexpr size_t max_dbs_full_ = 3;        // KTH_DB_NEW_FULL
-constexpr size_t max_dbs_blocks_ = 3;      // KTH_DB_NEW_BLOCKS
-constexpr size_t max_dbs_pruned_ = 3;       // KTH_DB_NEW_PRUNED
+constexpr size_t max_dbs_full_ = 4;        // KTH_DB_NEW_FULL
+constexpr size_t max_dbs_blocks_ = 4;      // KTH_DB_NEW_BLOCKS
+constexpr size_t max_dbs_pruned_ = 4;       // KTH_DB_NEW_PRUNED
 
 constexpr size_t env_open_mode_ = 0664;
 constexpr int directory_exists = 0;
@@ -153,6 +155,13 @@ struct KD_API internal_database_basis {
     constexpr static char block_header_db_name[] = "block_header";
     constexpr static char block_header_by_hash_db_name[] = "block_header_by_hash";
     constexpr static char db_properties_name[] = "properties";
+    constexpr static char rejected_blocks_name[] = "rejected_blocks";
+
+    /// Durable contextual rejection identities, independent of the active height table.
+    [[nodiscard]] std::expected<std::vector<hash_digest>, result_code> rejected_blocks() const;
+#if ! defined(KTH_DB_READONLY)
+    [[nodiscard]] result_code record_rejected_block(hash_digest const& hash);
+#endif
 
     internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode);
     ~internal_database_basis();
@@ -223,6 +232,16 @@ struct KD_API internal_database_basis {
     [[nodiscard]]
     result_code publish_transition(transition_heights const& heights);
 
+    /// The same, and in the same transaction the ABLA state of every block the
+    /// transition connected. The header row of each named height is rewritten in
+    /// place (header bytes unchanged, state replaced), so the state that governs
+    /// a connected block becomes durable exactly when the height that says it is
+    /// connected does: no restart can find one without the other. Every record
+    /// must name an already stored header row; otherwise nothing is committed.
+    [[nodiscard]]
+    result_code publish_transition(transition_heights const& heights,
+                                   std::span<header_abla_record const> abla_records);
+
     /// Put every committed transaction on stable storage.
     ///
     /// The environment is opened MDB_NOSYNC, so a commit returns before
@@ -263,6 +282,10 @@ struct KD_API internal_database_basis {
     /// mean deleting the chain from that height, which is not what any caller
     /// means by it. Both are refused before the transaction opens.
     result_code replace_headers_from(domain::chain::header::list const& headers, uint32_t start_height);
+
+    /// Atomically remove rows strictly above an existing retained height.
+    /// Genesis and the retained row's ABLA state are never rewritten.
+    [[nodiscard]] result_code truncate_headers_after(uint32_t height);
 #endif
 
     // DEPRECATED: UTXO storage moved to UTXOZ
@@ -361,6 +384,9 @@ private:
     // Headers-first sync: store header with explicit ABLA state
     result_code push_header_with_abla(domain::chain::header const& header, uint32_t height, uint64_t block_size, uint64_t control_block_size, uint64_t elastic_buffer_size, KTH_DB_txn* db_txn);
 
+    // Replace the ABLA fields of an existing header row, keeping its header bytes.
+    result_code update_header_abla(header_abla_record const& record, KTH_DB_txn* db_txn);
+
     result_code remove_block_header(hash_digest const& hash, uint32_t height, KTH_DB_txn* db_txn);
 #endif
 
@@ -380,6 +406,7 @@ private:
     KTH_DB_dbi dbi_block_header_;
     KTH_DB_dbi dbi_block_header_by_hash_;
     KTH_DB_dbi dbi_properties_;
+    std::optional<KTH_DB_dbi> dbi_rejected_blocks_;
 };
 
 template <typename Clock>

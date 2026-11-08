@@ -15,6 +15,7 @@
 #include <boost/unordered/concurrent_flat_map.hpp>
 
 #include <kth/database/define.hpp>
+#include <kth/database/flat_file_pos.hpp>
 #include <kth/domain.hpp>
 
 namespace kth::database {
@@ -29,10 +30,10 @@ namespace kth::database {
 //   - Fork tracking and reorganization
 //   - Headers-first sync
 //
-// Memory layout (SoA — one vector per field). At default capacity (~1.18M
+// Memory layout (SoA — one vector per field). At the BCH default (~3.21M
 // entries) the footprint is dominated by the four 32-byte vectors — hashes,
-// prev_block_hashes, chain_works (uint256), merkle_roots (~37.7 MB each) — plus
-// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 205 MB total, plus the
+// prev_block_hashes, chain_works (uint256), merkle_roots (~102.8 MB each) — plus
+// ~a dozen 2-to-4-byte vectors. Roughly 174 bytes/entry ≈ 559 MB total, plus the
 // hash->index concurrent map. See the private members below for the full set.
 //
 // Thread safety:
@@ -41,10 +42,15 @@ namespace kth::database {
 //   - Traversal: safe via happens-before transitivity through ancestor chain
 // =============================================================================
 
-// Default capacity - enough for ~2030 (aligned to 2^20 + buffer)
+// Default: one-minute tempnet through 2030 after its 600-second history.
+// Aligned to 2^16; deployments can override this allocation bound.
 // Defined via CMake/Conan as KTH_HEADER_INDEX_CAPACITY
 #ifndef KTH_HEADER_INDEX_CAPACITY
+#if defined(KTH_CURRENCY_BCH)
+#define KTH_HEADER_INDEX_CAPACITY 3211264
+#else
 #define KTH_HEADER_INDEX_CAPACITY 1179648
+#endif
 #endif
 
 /// Status flags for indexed headers (similar to BCHN's BlockStatus)
@@ -170,6 +176,33 @@ struct KD_API header_index {
     [[nodiscard]] index_t get_skip_index(index_t idx) const;
     [[nodiscard]] int32_t get_height(index_t idx) const;
     [[nodiscard]] uint256_t get_chain_work(index_t idx) const;
+
+    /// Cumulative proof including genesis, or nullopt for an unknown root/tip.
+    /// Unlike get_chain_work(), this includes the root's own proof. Call from
+    /// the index owner's context or under its existing traversal contract.
+    [[nodiscard]] std::optional<uint256_t> total_chain_work(hash_digest const& tip) const;
+
+    enum class tip_status { active, valid_headers, headers_only };
+    struct chain_tip {
+        size_t height;
+        hash_digest hash;
+        size_t branch_length;
+        tip_status status;
+        uint64_t ticks = 0;
+    };
+
+    /// Owned tip records, highest first, relative to the supplied connected tip.
+    /// Returns nullopt when that tip is not in the indexed prefix. Computes
+    /// branch metadata once per entry: O(N + T log T) time, O(N + T) storage.
+    /// This synchronous query does not establish execution affinity or a
+    /// concurrent snapshot; callers must honor the index's ownership contract.
+    [[nodiscard]] std::optional<std::vector<chain_tip>>
+    get_chain_tips(hash_digest const& connected_tip) const;
+
+    /// Branch-local tick heights under the supplied network activation time.
+    /// The one-argument overload keeps a uniform schedule. No context is cached.
+    [[nodiscard]] std::optional<std::vector<chain_tip>>
+    get_chain_tips(hash_digest const& connected_tip, uint64_t activation_time) const;
     [[nodiscard]] header_status get_status(index_t idx) const;
     [[nodiscard]] uint32_t get_version(index_t idx) const;
     [[nodiscard]] hash_digest get_merkle(index_t idx) const;
@@ -189,6 +222,12 @@ struct KD_API header_index {
     // =========================================================================
     // Status Management
     // =========================================================================
+
+    // Startup only, before publishing the index to consumers. Keep these hashes
+    // even when truncation removed their headers from the persisted height table.
+    // After restoration the list is immutable; live verdicts use status flags.
+    void restore_failed_blocks(std::vector<hash_digest> hashes);
+    [[nodiscard]] bool is_restored_failure(hash_digest const& hash) const;
 
     /// Set status flags for a header.
     void set_status(index_t idx, header_status status);
@@ -215,6 +254,8 @@ struct KD_API header_index {
     /// @param idx Header index.
     /// @param file File number (blk*.dat).
     /// @param pos Byte offset within file.
+    /// File and offset are published together: a concurrent get_block_pos()
+    /// sees either the previous location or this one, never a mix of both.
     void set_block_pos(index_t idx, int16_t file, uint32_t pos);
 
     /// Set undo file position.
@@ -235,6 +276,12 @@ struct KD_API header_index {
     /// Get the header's reception time (unix seconds), or 0 if never set.
     [[nodiscard]]
     uint32_t get_received_time(index_t idx) const;
+
+    /// Block file location, read in one load: null when the block has no data.
+    /// The one to use from outside the storage path, where a writer may be
+    /// recording the location concurrently.
+    [[nodiscard]]
+    flat_file_pos get_block_pos(index_t idx) const;
 
     /// Get file number for block.
     /// @return File number or -1 if no data.
@@ -372,6 +419,9 @@ private:
     [[nodiscard]]
     index_t get_ancestor_internal(index_t start_idx, int32_t target_height) const;
 
+    // Written only during startup; read without mutation during admission.
+    std::vector<hash_digest> restored_failures_;
+
     // SoA storage - one vector per field
     std::vector<hash_digest> hashes_;  // Block hash (stored, not recomputed)
     std::vector<hash_digest> prev_block_hashes_;
@@ -391,8 +441,10 @@ private:
     std::vector<uint32_t> nonces_;
 
     // Block file location (flat file storage)
-    std::vector<int16_t> file_numbers_;    // -1 = no data
-    std::vector<uint32_t> data_positions_; // Position in blk*.dat
+    // File number and position in blk*.dat, packed into one word so a reader
+    // never pairs one location's file with another's offset: 0 = no data,
+    // otherwise (file + 1) << 32 | position.
+    std::unique_ptr<std::atomic<uint64_t>[]> block_positions_;
     std::vector<uint32_t> undo_positions_; // Position in rev*.dat
 
     // Wall-clock reception time (unix seconds) per header; 0 = loaded from store

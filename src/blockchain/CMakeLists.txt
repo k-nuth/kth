@@ -68,9 +68,13 @@ endif()
 message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 
 # Header index capacity (number of headers for static array allocation)
-# Default: 1,179,648 headers (~2030, aligned to 2^16)
+# Default: one-minute tempnet through 2030, with its 600-second history (aligned to 2^16)
 if(NOT DEFINED KTH_HEADER_INDEX_CAPACITY)
-  set(KTH_HEADER_INDEX_CAPACITY 1179648)
+  if(CURRENCY STREQUAL "BCH")
+    set(KTH_HEADER_INDEX_CAPACITY 3211264)
+  else()
+    set(KTH_HEADER_INDEX_CAPACITY 1179648)
+  endif()
 endif()
 message(STATUS "Knuth: Header index capacity: ${KTH_HEADER_INDEX_CAPACITY}")
 add_definitions(-DKTH_HEADER_INDEX_CAPACITY=${KTH_HEADER_INDEX_CAPACITY})
@@ -185,10 +189,13 @@ set(kth_sources_just_legacy
   src/pools/header_organizer.cpp
   src/pools/transaction_organizer.cpp
   src/pools/mempool.cpp
+  src/pools/mempool_limit.cpp
   src/pools/block_template.cpp
+  src/pools/template_prevouts.cpp
   src/pools/capture_gate.cpp
   src/pools/mempool_transaction_summary.cpp
   src/populate/populate_base.cpp
+  src/abla_pipeline.cpp
   src/populate/populate_chain_state.cpp
   src/populate/populate_transaction.cpp
   src/validate/batch_validate.cpp
@@ -223,6 +230,9 @@ set(kth_headers
   include/kth/blockchain/interface/block_chain.hpp
   include/kth/blockchain/define.hpp
   include/kth/blockchain/header_index.hpp
+  include/kth/blockchain/abla_pipeline.hpp
+  include/kth/blockchain/chain_progress.hpp
+  include/kth/blockchain/tick_schedule.hpp
   include/kth/blockchain/populate/populate_transaction.hpp
   include/kth/blockchain/populate/populate_chain_state.hpp
   include/kth/blockchain/populate/populate_base.hpp
@@ -231,10 +241,12 @@ set(kth_headers
   include/kth/blockchain/validate/validate_transaction.hpp
   include/kth/blockchain/pools/block_entry.hpp
   include/kth/blockchain/pools/block_template.hpp
+  include/kth/blockchain/pools/template_prevouts.hpp
   include/kth/blockchain/pools/capture_gate.hpp
   include/kth/blockchain/pools/mempool.hpp
   include/kth/blockchain/pools/mempool_config.hpp
   include/kth/blockchain/pools/mempool_hashers.hpp
+  include/kth/blockchain/pools/mempool_limit.hpp
   include/kth/blockchain/pools/mempool_map.hpp
   include/kth/blockchain/pools/mempool_stats.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp
@@ -302,6 +314,7 @@ if (ENABLE_TEST)
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
+        test/header_organizer_failed.cpp
         test/block_entry.cpp
         test/block_pool.cpp
         test/branch.cpp
@@ -324,6 +337,11 @@ if (ENABLE_TEST)
         test/batch_sigchecks_activation.cpp
         test/batch_activation_boundary.cpp
         test/batch_structure.cpp
+        test/batch_rejection_attribution.cpp
+        test/local_block_submission.cpp
+        test/faster_blocks_batch.cpp
+        test/faster_blocks_abla.cpp
+        test/abla_candidate_restore.cpp
         test/finalization.cpp
         test/parking.cpp
         test/block_undo.cpp
@@ -413,6 +431,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(nanobench REQUIRED)
   find_package(fmt REQUIRED)
   find_package(Boost REQUIRED)
+
+  add_executable(kth_blockchain_bench_chain_tips bench/chain_tips/benchmarks.cpp)
+  target_link_libraries(kth_blockchain_bench_chain_tips PRIVATE ${PROJECT_NAME})
 
   # ==========================================================================
   # 0. block_pool store: bimap + mutex vs concurrent_flat_map

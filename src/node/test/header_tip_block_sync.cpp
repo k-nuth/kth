@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "sync_harness.hpp"
 
@@ -37,6 +38,7 @@
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/orchestrator.hpp>
 
@@ -201,6 +203,7 @@ struct wire_peer {
     struct sent_message {
         std::string command;
         std::optional<hash_digest> locator;
+        data_chunk payload;
     };
 
     // Every message the node writes from now until nothing more arrives for
@@ -217,7 +220,7 @@ struct wire_peer {
             data_chunk payload(length);
             if (length > 0 && ! read_exact(payload, std::chrono::steady_clock::now() + quiet)) return out;
 
-            sent_message message{command, std::nullopt};
+            sent_message message{command, std::nullopt, payload};
             if (message.command == domain::message::get_headers::command) {
                 byte_reader reader(payload);
                 auto parsed = domain::message::get_headers::from_data(reader, session->negotiated_version());
@@ -413,7 +416,7 @@ struct node_run {
     void connect(peer_ptr const& peer) {
         connected.push_back(peer);
         REQUIRE(wait_until([&] {
-            return network.peer_events().try_send(std::error_code{},
+            return network.peer_events().try_send(
                 peer_notification{peer, peer_event_type::connected});
         }, std::chrono::seconds(10)));
     }
@@ -1751,4 +1754,180 @@ TEST_CASE("integrated: a failed admission read retries without another publicati
         return sent.command == "getdata";
     }) == recover);
     CHECK(log.count("block_range_request") == size_t(recover));
+}
+
+TEST_CASE("integrated: a refused stored block releases the pipeline for a valid replacement",
+          "[header_tip][integration][body_recovery]") {
+    captured_log log;
+    chain_fixture fixture{"body_recovery"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const prefix = GENERATE(0u, 2u);
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    if (prefix != 0) {
+        auto const staged = stage(fixture, prefix, prefix);
+        previous = staged.trunk.back().hash();
+    }
+    auto const height = prefix + 1;
+    auto const timestamp = uint32_t(zulu_time()) - 1200;
+    // No paying transactions: claiming an extra satoshi fails in context,
+    // while the header, serialization and merkle root remain valid.
+    auto const refused = mine_block(previous, height, timestamp, 0, {}, 1);
+    REQUIRE(fixture.organizer().add_headers(headers_of({refused})).headers_added == 1);
+    persist_headers(fixture, {refused}, height);
+    {
+        ::asio::io_context io;
+        block_storage_input_channel input(io.get_executor(), 2);
+        chunk_validated_channel output(io.get_executor(), 2);
+        std::atomic<uint32_t> contiguous{height};
+        REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+            .start_height = height, .chunk_id = 0, .blocks = {to_light(refused)},
+            .source_peer = nullptr, .generation = fixture.chain().chain_generation()}));
+        REQUIRE(input.try_send(std::error_code{}, stop_request{}));
+        auto storage = ::asio::co_spawn(io, block_storage_task(fixture.chain(), input,
+            output, height, fixture.organizer(), &contiguous), ::asio::use_future);
+        io.run();
+        storage.get();
+        REQUIRE(contiguous.load() == height + 1);
+    }
+
+    auto const replacement = mine_block(previous, height, timestamp, 8, {}, 0);
+    auto const peer_config = node_settings("body_recovery_peer");
+    wire_peer peer(peer_config, 9901, height);
+    bool rewound = false;
+    bool resumed = false;
+    bool alive = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "body_recovery");
+        rewound = wait_until([&] {
+            return fixture.organizer().header_height() == prefix &&
+                log.count("Stepped the active chain off the rejected block") != 0;
+        }, quick);
+        alive = ! run.network.stopped() &&
+            run.orchestrator.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        if (rewound && alive) {
+            run.connect(peer.session);
+            run.deliver(peer.session, peer.headers({replacement}));
+            data_chunk bytes(replacement.serialized_size());
+            byte_writer writer(bytes);
+            REQUIRE(replacement.to_data(writer));
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, std::move(bytes))));
+            resumed = wait_until([&] {
+                auto const view = fixture.chain().chain_view();
+                return view && view->connected_tip_height == height &&
+                    view->tip_hash == replacement.hash();
+            }, quick);
+        }
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(rewound);
+    CHECK(alive);
+    CHECK(resumed);
+    CHECK(stopped_cleanly);
+    auto const retained = fixture.chain().get_header(prefix);
+    REQUIRE(retained);
+    CHECK(domain::chain::hash(*retained) == previous);
+    auto const current = fixture.chain().get_header(height);
+    REQUIRE(current);
+    CHECK(domain::chain::hash(*current) == replacement.hash());
+    auto const refused_idx = fixture.chain().headers().find(refused.hash());
+    REQUIRE(refused_idx != blockchain::header_index::null_index);
+    CHECK(fixture.chain().headers().has_status(refused_idx, blockchain::header_status::failed_valid));
+}
+
+TEST_CASE("integrated: a newly connected block is announced to every peer",
+          "[header_tip][integration][tip_announcement]") {
+    captured_log log;
+    chain_fixture fixture{"announce_tip"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 3, 3);
+    auto const& next = staged.next;
+
+    // The block arrives from one peer; another asked for headers (BIP130),
+    // and a third did not.
+    wire_peer source(node_settings("announce_tip_source"), 9101, 3);
+    wire_peer by_headers(node_settings("announce_tip_headers"), 9102, 3);
+    wire_peer by_inventory(node_settings("announce_tip_inventory"), 9103, 3);
+    by_headers.session->set_prefers_headers(true);
+
+    bool connected = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> to_headers;
+    std::vector<wire_peer::sent_message> to_inventory;
+    std::vector<std::future<void>> services;
+    {
+        node_run run(fixture, "announce_tip");
+        // What full_node registers, and each peer's service, as p2p_node runs
+        // it for its own sessions; these are the test's.
+        run.network.set_tip_announcement_handler(
+            [&fixture](network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last) {
+                return node::sync::announce_tip(fixture.chain().headers(), peer, tip, last);
+            });
+        for (auto* peer : {&source, &by_headers, &by_inventory}) {
+            services.push_back(::asio::co_spawn(peer->ioc,
+                run.network.dispatcher().serve(*peer->session), ::asio::use_future));
+        }
+        run.connect(source.session);
+        run.connect(by_headers.session);
+        run.connect(by_inventory.session);
+        // Whatever the start sends, so what follows is the announcement.
+        (void)by_headers.sent_until_quiet(quiet);
+        (void)by_inventory.sent_until_quiet(quiet);
+
+        run.deliver(source.session, source.headers({next}));
+        data_chunk bytes(next.serialized_size());
+        byte_writer writer(bytes);
+        REQUIRE(next.to_data(writer));
+        REQUIRE(source.session->block_responses().try_send(
+            source.message(domain::message::block::command, std::move(bytes))));
+        connected = wait_until([&] {
+            auto const view = fixture.chain().chain_view();
+            return view && view->tip_hash == next.hash();
+        }, quick);
+
+        to_headers = by_headers.sent_until_quiet(quiet);
+        to_inventory = by_inventory.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({source.session, by_headers.session, by_inventory.session},
+            std::chrono::seconds(120));
+    }
+    log.dump("announce_tip");
+    REQUIRE(connected);
+    CHECK(stopped_cleanly);
+    // Every service ended with its session.
+    for (auto& service : services) {
+        REQUIRE(service.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        service.get();
+    }
+
+    auto const version = by_headers.session->negotiated_version();
+    size_t headers_seen = 0;
+    for (auto const& sent : to_headers) {
+        CHECK(sent.command != domain::message::inventory::command);
+        if (sent.command != domain::message::headers::command) continue;
+        byte_reader reader(sent.payload);
+        auto const headers = domain::message::headers::from_data(reader, version);
+        REQUIRE(headers);
+        REQUIRE(headers->elements().size() == 1);
+        CHECK(domain::chain::hash(headers->elements().front()) == next.hash());
+        ++headers_seen;
+    }
+    CHECK(headers_seen == 1);
+
+    size_t inventories_seen = 0;
+    for (auto const& sent : to_inventory) {
+        CHECK(sent.command != domain::message::headers::command);
+        if (sent.command != domain::message::inventory::command) continue;
+        byte_reader reader(sent.payload);
+        auto const inventory = domain::message::inventory::from_data(reader, version);
+        REQUIRE(inventory);
+        REQUIRE(inventory->inventories().size() == 1);
+        CHECK(inventory->inventories().front().hash() == next.hash());
+        CHECK(inventory->inventories().front().type() ==
+            domain::message::inventory_vector::type_id::block);
+        ++inventories_seen;
+    }
+    CHECK(inventories_seen == 1);
 }
