@@ -156,6 +156,9 @@ struct pool_proof {
     uint32_t nonce = 0;
     uint32_t bits = 0;
     bool block = false;
+    // The block of a share refused for missing a share target harder than the
+    // network's. It goes upstream as a block only, never as a share.
+    bool block_only = false;
     // declared_work::generation of the coinbase this share was mined on.
     // A pooled job keeps that generation; it is not the downstream job id.
     // Flushing a cache under a later declaration would submit the old coinbase.
@@ -227,7 +230,7 @@ struct share_outcome {
     uint32_t accepted_count = 0;
     uint64_t shares_sum = 0;
     // A block to submit. A share refused only for missing a share target
-    // harder than the network's carries one too.
+    // harder than the network's carries one too, and on a pool job its proof.
     block_const_ptr block;
     // Issue fresh work before the bounded duplicate history fills up.
     bool renew = false;
