@@ -615,7 +615,6 @@ void work_engine::stale_all() {
         for (auto& item : slot.jobs) {
             invalidate(item);
         }
-        slot.shares.clear();
     }
     current_txs_.reset();
 }
@@ -681,10 +680,11 @@ void work_engine::clear_pool_binding() {
 
 std::optional<work_job> work_engine::build(channel& slot,
     blockchain::mining_template const& tmpl, domain::chain::output::list const& outputs) {
+    // Work on another parent cannot become a block on this one. Jobs on the
+    // same parent can, so a replacement leaves them, built or not.
     for (auto& item : slot.jobs) {
-        invalidate(item);
+        if (item.active && item.prev_hash != tmpl.previous_block_hash) invalidate(item);
     }
-    slot.shares.clear();
     bool const pooled = pool_.active && assign_pool(slot);
     if (pool_.active && ! pooled && pool_allocations_) return std::nullopt;
     if (pool_.active && ! pooled) {
@@ -729,6 +729,19 @@ std::optional<work_job> work_engine::build(channel& slot,
         return std::nullopt;
     }
 
+    // Past the bound, the tip's oldest valid job becomes stale. Valid jobs are
+    // the newest entries and stay fewer than the history holds, so the entry
+    // dropped below to make room is always a stale one.
+    static_assert(tip_jobs_per_channel < max_jobs_per_channel);
+    auto live = static_cast<size_t>(std::count_if(slot.jobs.begin(), slot.jobs.end(),
+        [](job const& item) { return item.active; }));
+    for (auto& item : slot.jobs) {
+        if (live < tip_jobs_per_channel) break;
+        if (item.active) {
+            invalidate(item);
+            --live;
+        }
+    }
     if (slot.jobs.size() >= max_jobs_per_channel) slot.jobs.erase(slot.jobs.begin());
 
     job created;
@@ -892,29 +905,44 @@ share_outcome work_engine::submit(share_request const& share) {
     domain::chain::header const solved(share.version, job->prev_hash, root,
         share.ntime, job->bits, share.nonce);
     auto const digest = domain::chain::hash(solved);
+    auto const network = domain::chain::compact::from_compact(job->bits);
+    bool const block = network && to_uint256(digest) <= network->big();
+    share_key key{share.job_id, share.nonce, share.ntime, share.version, share.extranonce};
+    bool const repeated = std::find(job->shares.begin(), job->shares.end(), key) != job->shares.end();
+    auto& uncredited = job->uncredited_blocks;
+    bool const submitted = std::find(uncredited.begin(), uncredited.end(), key) != uncredited.end();
     // The channel's latest target, not the one when the job was built: a
     // SetTarget applies to future jobs already received (sv2-spec 5.3.21).
     if (to_uint256(digest) > to_uint256(slot->share_target)) {
-        return rejected_share(share, error_difficulty_too_low);
+        auto refused = rejected_share(share, error_difficulty_too_low);
+        // A share target harder than the network's, as a device maximum can
+        // set, still leaves a valid block. It is submitted once. The share
+        // stays uncredited, so a later easier target can still credit it.
+        if (block && ! repeated && ! submitted) {
+            uncredited.push_back(std::move(key));
+            refused.block = std::make_shared<domain::message::block>(
+                assemble_block(solved, *coinbase, *job->txs));
+        }
+        return refused;
     }
 
-    share_key key{share.job_id, share.nonce, share.ntime, share.version, share.extranonce};
-    if (std::find(slot->shares.begin(), slot->shares.end(), key) != slot->shares.end()) {
-        return rejected_share(share, error_duplicate_share);
-    }
+    if (repeated) return rejected_share(share, error_duplicate_share);
     // Forgetting accepted keys would allow replay on this still-valid job.
-    // Keep the history until replacement work makes all those keys stale.
-    if (slot->shares.size() >= max_remembered_shares) {
+    // Keep the history until a new tip makes all those keys stale. A block is
+    // taken past the limit, as on a job that renewal replaced: it has to meet
+    // the network target, so it cannot grow the history much.
+    if ( ! block && job->shares.size() >= max_remembered_shares) {
         return rejected_share(share, error_share_limit);
     }
-    slot->shares.push_back(std::move(key));
+    job->shares.push_back(std::move(key));
 
     share_outcome outcome;
     outcome.channel_id = share.channel_id;
     outcome.sequence_number = share.sequence_number;
     outcome.accepted_count = 1;
     outcome.shares_sum = share_difficulty(slot->share_target);
-    outcome.renew = slot->shares.size() == max_remembered_shares;
+    // Only for the newest job: an earlier one was replaced already.
+    outcome.renew = &*job == &slot->jobs.back() && job->shares.size() == max_remembered_shares;
     if (job->pool) {
         data_chunk full = job->extranonce_prefix;
         full.insert(full.end(), share.extranonce.begin(), share.extranonce.end());
@@ -938,8 +966,7 @@ share_outcome work_engine::submit(share_request const& share) {
                 slot->id);
         }
     }
-    auto const network = domain::chain::compact::from_compact(job->bits);
-    if (network && to_uint256(digest) <= network->big()) {
+    if (block && ! submitted) {
         outcome.status = share_status::block;
         if (outcome.pool) outcome.pool->block = true;
         outcome.block = std::make_shared<domain::message::block>(
