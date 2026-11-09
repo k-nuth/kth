@@ -26,7 +26,10 @@ namespace kth::node {
 // independent peers agree or that block bodies/transactions were validated.
 class KND_API header_sync {
 public:
-    header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity);
+    // operation_failed when the bridge URL is empty or the capacity is
+    // outside 1..2000000 headers.
+    static std::expected<std::unique_ptr<header_sync>, std::error_code> create(std::string const& bridge_url,
+        domain::config::network network, size_t capacity);
     ~header_sync();
     header_sync(header_sync const&) = delete;
     header_sync& operator=(header_sync const&) = delete;
@@ -124,6 +127,8 @@ public:
     bool peer_connected(size_t at) const;
 
 private:
+    header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity);
+
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> run_session(bool follow_tip);
     void spawn_peer(size_t at, bool follow_tip);
     ::asio::awaitable<void> run_peer(size_t at, bool follow_tip);

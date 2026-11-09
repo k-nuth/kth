@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
+#include <memory>
 #include <string>
 
 // The application owns the Worker's runtime; header_sync uses it.
@@ -31,6 +32,13 @@ constexpr char regtest_genesis[] = "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012
 
 void require(bool condition, char const* what) {
     if (!condition) throw std::runtime_error(what);
+}
+
+// A client, or the control fails.
+std::unique_ptr<header_sync> make_client(std::string const& url, kth::domain::config::network network, size_t capacity) {
+    auto created = header_sync::create(url, network, capacity);
+    require(bool(created), "the client was refused");
+    return std::move(*created);
 }
 
 // Until `done` holds, rechecked every 20 ms, for at most 20 s.
@@ -92,9 +100,22 @@ struct stop_result {
 };
 
 ::asio::awaitable<void> control() {
+    // Invalid arguments are refused, as values: an empty bridge URL, and a
+    // capacity outside 1..2000000.
+    require(!header_sync::create("", regtest, 100), "an empty URL was accepted");
+    require(!header_sync::create("ws://127.0.0.1:18780", regtest, 0), "a capacity of 0 was accepted");
+    require(!header_sync::create("ws://127.0.0.1:18780", regtest, 2'000'001), "a capacity past the maximum was accepted");
+    {
+        kth_header_sync_mut_t refused = nullptr;
+        require(kth_node_header_sync_construct("ws://127.0.0.1:18780", kth_network_regtest, 0, &refused) ==
+            kth_ec_operation_failed && refused == nullptr, "the C-API accepted a capacity of 0");
+    }
+    std::puts("invalid arguments refused");
+
     // 2500 headers, more than one batch of 2000.
     {
-        header_sync client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& client = *client_owned;
         auto const height = co_await client.run();
         if (!height || *height != 2500) {
             throw std::runtime_error("synchronization did not reach the peer's tip: height=" +
@@ -111,7 +132,8 @@ struct stop_result {
     // A header with invalid proof of work at height 10 ends the session, and
     // nothing from it on is admitted.
     {
-        header_sync client("ws://127.0.0.1:18781", regtest, 100);
+        auto client_owned = make_client("ws://127.0.0.1:18781", regtest, 100);
+        auto& client = *client_owned;
         auto const height = co_await client.run();
         require(!height, "a header with invalid proof of work was accepted");
         require(client.last_height() < 10, "an invalid header was admitted");
@@ -122,7 +144,8 @@ struct stop_result {
     // A message larger than any a header client accepts ends the session at
     // its heading: neither waited for (a response deadline) nor allocated.
     {
-        header_sync client("ws://127.0.0.1:18783", regtest, 100);
+        auto client_owned = make_client("ws://127.0.0.1:18783", regtest, 100);
+        auto& client = *client_owned;
         auto const started = std::chrono::steady_clock::now();
         auto const height = co_await client.run();
         auto const waited = std::chrono::steady_clock::now() - started;
@@ -145,7 +168,8 @@ struct stop_result {
     // A heavier branch announced while following: the client reorganizes to
     // it on the same connection, and keeps following.
     {
-        header_sync client("ws://127.0.0.1:18787", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18787", regtest, 10'000);
+        auto& client = *client_owned;
         auto watch = [&]() -> ::asio::awaitable<void> {
             co_await wait_for([&] { return client.last_height() == 2510 || (client.status() != "idle" && !client.running()); },
                 "the heavier branch was not followed");
@@ -164,7 +188,8 @@ struct stop_result {
     // A branch whose stored headers are announced again, after a batch that
     // failed past them: the retry adopts it, as progress.
     {
-        header_sync client("ws://127.0.0.1:18788", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18788", regtest, 10'000);
+        auto& client = *client_owned;
         auto watch = [&]() -> ::asio::awaitable<void> {
             co_await wait_for([&] { return client.status() != "idle" && !client.running(); },
                 "the invalid branch did not end the first session");

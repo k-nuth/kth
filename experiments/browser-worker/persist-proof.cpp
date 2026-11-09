@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <memory>
 #include <string>
 
 kth::browser::runtime owner;
@@ -31,6 +32,13 @@ void require(bool condition, std::string const& what) {
     if (!condition) throw std::runtime_error(what);
 }
 
+// A client, or the control fails.
+std::unique_ptr<header_sync> make_client(std::string const& url, kth::domain::config::network network, size_t capacity) {
+    auto created = header_sync::create(url, network, capacity);
+    require(bool(created), "the client was refused: " + url);
+    return std::move(*created);
+}
+
 uintmax_t cached_headers() {
     std::error_code ec;
     auto const size = std::filesystem::file_size(file, ec);
@@ -38,7 +46,8 @@ uintmax_t cached_headers() {
 }
 
 ::asio::awaitable<uint64_t> synchronize(char const* url) {
-    header_sync client(url, regtest, 10'000);
+    auto client_owned = make_client(url, regtest, 10'000);
+    auto& client = *client_owned;
     auto const height = co_await client.run();
     require(bool(height), std::string("synchronization failed: ") + client.status());
     co_return *height;
@@ -57,7 +66,8 @@ uintmax_t cached_headers() {
     std::string tip;
     std::string extended;
     {
-        header_sync restored("ws://127.0.0.1:18780", regtest, 10'000);
+        auto restored_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& restored = *restored_owned;
         require(restored.last_height() == 2500, "the cache was not restored");
         tip = restored.header_hash(2500);
     }
@@ -67,7 +77,8 @@ uintmax_t cached_headers() {
     require(co_await synchronize("ws://127.0.0.1:18785") == 2600, "extension");
     require(cached_headers() == 2601, "the cache was not extended");
     {
-        header_sync restored("ws://127.0.0.1:18780", regtest, 10'000);
+        auto restored_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& restored = *restored_owned;
         require(restored.last_height() == 2600 && restored.header_hash(2500) == tip, "the extension was not restored");
         extended = restored.header_hash(2600);
     }
@@ -76,12 +87,15 @@ uintmax_t cached_headers() {
     {
         std::filesystem::remove(file);
         require(co_await synchronize("ws://127.0.0.1:18780") == 2500, "synchronization before two clients");
-        header_sync first("ws://127.0.0.1:18785", regtest, 10'000);
-        header_sync second("ws://127.0.0.1:18785", regtest, 10'000);
+        auto first_owned = make_client("ws://127.0.0.1:18785", regtest, 10'000);
+        auto& first = *first_owned;
+        auto second_owned = make_client("ws://127.0.0.1:18785", regtest, 10'000);
+        auto& second = *second_owned;
         require(first.last_height() == 2500 && second.last_height() == 2500, "two clients were not restored");
         require(co_await first.run() == 2600 && co_await second.run() == 2600, "two clients did not synchronize");
         require(cached_headers() == 2601, "two clients corrupted the cache: " + std::to_string(cached_headers()));
-        header_sync restored("ws://127.0.0.1:18780", regtest, 10'000);
+        auto restored_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& restored = *restored_owned;
         require(restored.last_height() == 2600, "the cache written by two clients was not restored");
     }
     std::puts("two clients kept one chain height=2600");
@@ -89,7 +103,8 @@ uintmax_t cached_headers() {
     require(co_await synchronize("ws://127.0.0.1:18786") == 2610, "reorganization");
     require(cached_headers() == 2611, "the cache was not rewritten");
     {
-        header_sync restored("ws://127.0.0.1:18780", regtest, 10'000);
+        auto restored_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& restored = *restored_owned;
         require(restored.last_height() == 2610 && restored.header_hash(2500) == tip &&
             restored.header_hash(2600) != extended, "the reorganized chain was not restored");
     }
@@ -103,7 +118,8 @@ uintmax_t cached_headers() {
         corrupt.put('\xff');
     }
     {
-        header_sync discarded("ws://127.0.0.1:18780", regtest, 10'000);
+        auto discarded_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& discarded = *discarded_owned;
         require(discarded.last_height() == 0, "a corrupt cache was restored");
         require(cached_headers() == 0, "a corrupt cache was kept");
     }
