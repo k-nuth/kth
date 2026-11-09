@@ -21,9 +21,13 @@
 #include <asio/use_future.hpp>
 
 #include <kth/domain/message/block.hpp>
+#include <kth/domain/message/block_transactions.hpp>
+#include <kth/domain/message/compact_block.hpp>
+#include <kth/domain/message/get_block_transactions.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/not_found.hpp>
 #include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/handlers/ping.hpp>
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/pong.hpp>
@@ -288,7 +292,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
         {type_id::block, c.trunk[1].hash()},
         {type_id::transaction, c.trunk[0].transactions().front().hash()},   // confirmed, not pooled
         {type_id::block, c.side.hash()},                                    // off the connected chain
-        {type_id::compact_block, c.trunk[3].hash()},                        // answered in full
+        {type_id::compact_block, c.trunk[3].hash()},                        // the tip: a cmpctblock
         {type_id::block, c.trunk[4].hash()},                                // header only
         {type_id::block, unknown_hash()}});
     REQUIRE(request);
@@ -297,15 +301,17 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
 
     auto const sent = peer.received();
     REQUIRE(sent.size() == 3);
-    hash_list blocks;
-    for (size_t i = 0; i < 2; ++i) {
-        REQUIRE(sent[i].command == domain::message::block::command);
-        byte_reader reader(sent[i].payload);
-        auto const block = domain::message::block::from_data(reader, peer.session->negotiated_version());
-        REQUIRE(block);
-        blocks.push_back(block->hash());
-    }
-    CHECK(blocks == hash_list{c.trunk[1].hash(), c.trunk[3].hash()});
+    REQUIRE(sent[0].command == domain::message::block::command);
+    byte_reader block_reader(sent[0].payload);
+    auto const block = domain::message::block::from_data(block_reader, peer.session->negotiated_version());
+    REQUIRE(block);
+    CHECK(block->hash() == c.trunk[1].hash());
+
+    REQUIRE(sent[1].command == domain::message::compact_block::command);
+    byte_reader compact_reader(sent[1].payload);
+    auto const compact = domain::message::compact_block::from_data(compact_reader, peer.session->negotiated_version());
+    REQUIRE(compact);
+    CHECK(domain::chain::hash(compact->header()) == c.trunk[3].hash());
 
     REQUIRE(sent[2].command == domain::message::not_found::command);
     byte_reader reader(sent[2].payload);
@@ -335,6 +341,143 @@ TEST_CASE("getheaders with a locator longer than BCHN accepts disconnects the pe
     auto const sent = peer.received();
     REQUIRE(sent.size() == 1);
     CHECK(sent[0].command == domain::message::headers::command);
+}
+
+// -----------------------------------------------------------------------------
+// Compact blocks (BIP152)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("a compact block request is answered with a cmpctblock near the tip and in full below",
+          "[chain_data][compact_blocks]") {
+    // Eight connected blocks: height 3 is five below the tip, height 2 six.
+    test::chain_fixture fixture{"chain_data_compact_depth"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 8; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 8u);
+
+    loopback_peer peer;
+    using type_id = domain::message::inventory_vector::type_id;
+    auto const request = domain::message::get_data::create({
+        {type_id::compact_block, trunk[2].hash()},
+        {type_id::compact_block, trunk[1].hash()}});
+    REQUIRE(request);
+    CHECK(serve(peer, node::handlers::chain_data::handle_get_data(fixture.chain(), *peer.session, *request)) ==
+        node::message_result::handled);
+
+    auto const sent = peer.received();
+    REQUIRE(sent.size() == 2);
+    auto const version = peer.session->negotiated_version();
+    REQUIRE(sent[0].command == domain::message::compact_block::command);
+    byte_reader compact_reader(sent[0].payload);
+    auto const compact = domain::message::compact_block::from_data(compact_reader, version);
+    REQUIRE(compact);
+    CHECK(compact_reader.remaining_size() == 0);
+    CHECK(domain::chain::hash(compact->header()) == trunk[2].hash());
+    // The coinbase is prefilled; the block holds nothing else.
+    REQUIRE(compact->transactions().size() == 1);
+    CHECK(compact->transactions().front().index() == 0);
+    CHECK(compact->transactions().front().transaction() == trunk[2].transactions().front());
+    CHECK(compact->short_ids().empty());
+
+    REQUIRE(sent[1].command == domain::message::block::command);
+    byte_reader block_reader(sent[1].payload);
+    auto const block = domain::message::block::from_data(block_reader, version);
+    REQUIRE(block);
+    CHECK(block->hash() == trunk[1].hash());
+}
+
+TEST_CASE("block_transactions_for answers the requested positions in order", "[chain_data][compact_blocks]") {
+    domain::chain::transaction::list transactions{
+        {1, 0, {}, {}}, {2, 0, {}, {}}, {3, 0, {}, {}}, {4, 0, {}, {}}};
+    domain::message::block const block{{1, null_hash, null_hash, 1, 1, 1}, transactions};
+    using node::handlers::chain_data::block_transactions_for;
+
+    auto const request = domain::message::get_block_transactions::create(block.hash(), {1, 3});
+    REQUIRE(request);
+    auto const reply = block_transactions_for(block, *request);
+    REQUIRE(reply);
+    CHECK(reply->block_hash() == block.hash());
+    CHECK((reply->transactions() == domain::chain::transaction::list{transactions[1], transactions[3]}));
+
+    // A position past the block, and a request for another block.
+    auto const past = domain::message::get_block_transactions::create(block.hash(), {0, 4});
+    REQUIRE(past);
+    CHECK_FALSE(block_transactions_for(block, *past));
+    auto const other = domain::message::get_block_transactions::create(unknown_hash(), {0});
+    REQUIRE(other);
+    CHECK_FALSE(block_transactions_for(block, *other));
+}
+
+TEST_CASE("getblocktxn is answered from a connected block, and a block not served is not answered",
+          "[chain_data][compact_blocks]") {
+    served_chain c;
+    loopback_peer peer;
+    auto const ask = [&](hash_digest const& hash) {
+        auto const request = domain::message::get_block_transactions::create(hash, {0});
+        REQUIRE(request);
+        return serve(peer, node::handlers::chain_data::handle_get_block_transactions(
+            c.fixture.chain(), *peer.session, *request));
+    };
+    // Off the connected chain, header only, and unknown: nothing is sent.
+    CHECK(ask(c.side.hash()) == node::message_result::handled);
+    CHECK(ask(c.trunk[4].hash()) == node::message_result::handled);
+    CHECK(ask(unknown_hash()) == node::message_result::handled);
+    CHECK(ask(c.trunk[1].hash()) == node::message_result::handled);
+
+    auto const sent = peer.received();
+    REQUIRE(sent.size() == 1);
+    REQUIRE(sent[0].command == domain::message::block_transactions::command);
+    byte_reader reader(sent[0].payload);
+    auto const reply = domain::message::block_transactions::from_data(reader, peer.session->negotiated_version());
+    REQUIRE(reply);
+    CHECK(reader.remaining_size() == 0);
+    CHECK(reply->block_hash() == c.trunk[1].hash());
+    CHECK(reply->transactions() == domain::chain::transaction::list{c.trunk[1].transactions().front()});
+}
+
+TEST_CASE("getblocktxn for no transaction, or past the block, disconnects the peer",
+          "[chain_data][compact_blocks]") {
+    served_chain c;
+    loopback_peer peer;
+    for (auto const& indexes : {std::vector<uint64_t>{}, std::vector<uint64_t>{0, 1}}) {
+        CAPTURE(indexes.size());
+        auto const request = domain::message::get_block_transactions::create(c.trunk[1].hash(), indexes);
+        REQUIRE(request);
+        CHECK(serve(peer, node::handlers::chain_data::handle_get_block_transactions(
+            c.fixture.chain(), *peer.session, *request)) == node::message_result::disconnect);
+    }
+    CHECK(peer.received().empty());
+}
+
+TEST_CASE("the cmpctblock of a tip is built once and shared", "[chain_data][tip_announcement][compact_blocks]") {
+    served_chain c;
+    node::sync::compact_tip_cache cache;
+    auto& chain = c.fixture.chain();
+
+    auto const tip = run_on_own_context(cache.get(chain, c.trunk[3].hash()));
+    REQUIRE(tip);
+    CHECK(domain::chain::hash(tip->header()) == c.trunk[3].hash());
+    REQUIRE(tip->transactions().size() == 1);
+    CHECK(tip->transactions().front().transaction() == c.trunk[3].transactions().front());
+    // The same one, not built again: same nonce, same short IDs.
+    CHECK(run_on_own_context(cache.get(chain, c.trunk[3].hash())) == tip);
+
+    // The next tip replaces it; a block the node does not hold gives nothing.
+    auto const next = run_on_own_context(cache.get(chain, c.trunk[2].hash()));
+    REQUIRE(next);
+    CHECK(next != tip);
+    CHECK(domain::chain::hash(next->header()) == c.trunk[2].hash());
+    CHECK_FALSE(run_on_own_context(cache.get(chain, unknown_hash())));
 }
 
 namespace {

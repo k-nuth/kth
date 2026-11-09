@@ -350,6 +350,30 @@ public:
         dispatcher_.set_tx_announcement_handler(std::move(sources));
     }
 
+    /// Takes a cmpctblock (BIP152) for the node to rebuild the block from.
+    /// Called from the read loop, so it must not wait. True means it was
+    /// taken, and its header does not go to the header ingest.
+    using compact_block_fn = std::function<bool(
+        peer_session::ptr const&, domain::message::compact_block)>;
+
+    /// Hands a blocktxn to the reconstruction waiting for it from that peer.
+    /// Called from the read loop, so it must not wait. True means it was taken.
+    using block_transactions_fn = std::function<bool(
+        peer_session::ptr const&, domain::message::block_transactions)>;
+
+    /// Set the node's compact block handlers, before run(). Without them a
+    /// cmpctblock contributes its header alone, and a blocktxn is not taken.
+    void set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions);
+
+    /// Peers asked at once to send new blocks as a cmpctblock before they
+    /// announce them (BIP152 high bandwidth, sendcmpct(1, 1)), as BIP152
+    /// recommends and BCHN does. The others are asked for low bandwidth.
+    static constexpr size_t max_high_bandwidth_compact_peers = 3;
+
+    /// node.compact_blocks_high_bandwidth. Off, every peer is asked for low
+    /// bandwidth (sendcmpct(0, 1)). Set before run().
+    void set_compact_high_bandwidth(bool enabled);
+
     // Manual connections
     // -------------------------------------------------------------------------
 
@@ -401,11 +425,14 @@ public:
     // treated as an answer. An `inv` carries no header, only hashes, and those
     // are registered as announcements instead, under a mutex, because they
     // arrive on several peer strands at once. Its channel is only a doorbell.
+    // The exception is a `cmpctblock` the node takes to rebuild its block
+    // (set_compact_block_handlers): its header comes in with the block.
 
-    /// What the read loop does with `headers`, `cmpctblock` and `inv` before
-    /// anything else sees them. Answers whether the message was consumed: only
-    /// `headers` is; the other two carry on to the dispatcher. Any other
-    /// command is left alone.
+    /// What the read loop does with `headers`, `cmpctblock`, `blocktxn` and
+    /// `inv` before anything else sees them. Answers whether the message was
+    /// consumed: `headers` is, and a `blocktxn` the reconstruction waiting for
+    /// it took; the others carry on to the dispatcher. Any other command is
+    /// left alone.
     [[nodiscard]]
     bool observe_block_message(peer_session::ptr const& peer, raw_message const& raw);
 
@@ -745,6 +772,24 @@ private:
     void announce_from_inventory(peer_session::ptr const& peer, raw_message const& raw,
                                  detail::tx_relay_backlog& backlog);
 
+
+    /// A cmpctblock or a blocktxn, parsed whole, to the node's compact block
+    /// handlers. False when it does not parse, has bytes past its end, or is
+    /// not taken.
+    bool offer_compact_block(peer_session::ptr const& peer, raw_message const& raw);
+    bool deliver_block_transactions(peer_session::ptr const& peer, raw_message const& raw);
+
+    compact_block_fn compact_block_handler_;
+    block_transactions_fn block_transactions_handler_;
+
+    /// One of the high-bandwidth slots for a peer that just finished its
+    /// handshake, when the setting allows and one is free. The peer's task
+    /// gives it back when its protocols end.
+    [[nodiscard]]
+    bool take_high_bandwidth_compact_slot();
+
+    bool compact_high_bandwidth_{true};
+    std::atomic<size_t> high_bandwidth_compact_peers_{0};
 
     // Peers choose what goes in here, so it is bounded and its membership test
     // is constant time. Beyond the bound new hashes are refused and the refusal

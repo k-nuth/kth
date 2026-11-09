@@ -39,16 +39,31 @@ expect<block_transactions> block_transactions::from_data(byte_reader& reader, ui
         return std::unexpected(block_hash.error());
     }
 
-    auto txs = read_collection<chain::transaction>(reader, true);
-    if ( ! txs) {
-        return std::unexpected(txs.error());
+    // Check counts against both the block limit and the bytes before reserving.
+    auto const count = reader.read_size_little_endian();
+    if ( ! count) {
+        return std::unexpected(count.error());
+    }
+    constexpr size_t min_wire_transaction_size = 10;
+    if (*count > max_compact_transactions()
+        || (*count > 0 && reader.remaining_size() / min_wire_transaction_size < *count)) {
+        return std::unexpected(error::invalid_size);
+    }
+    chain::transaction::list txs;
+    txs.reserve(*count);
+    for (size_t i = 0; i < *count; ++i) {
+        auto tx = chain::transaction::from_data(reader, true);
+        if ( ! tx) {
+            return std::unexpected(tx.error());
+        }
+        txs.push_back(std::move(*tx));
     }
 
     if (version < block_transactions::version_minimum) {
         return std::unexpected(error::version_too_low);
     }
 
-    return block_transactions(*block_hash, std::move(*txs));
+    return block_transactions(*block_hash, std::move(txs));
 }
 
 // Serialization.

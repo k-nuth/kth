@@ -155,6 +155,19 @@ public:
             domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
+    /// Queue a control message without waiting: false when the control queue
+    /// is full or the session is stopped, and then nothing is queued. For a
+    /// sender that must not be held by a peer that is not reading.
+    template <typename Message>
+    [[nodiscard]]
+    bool try_send(Message const& message) {
+        if (stopped()) {
+            return false;
+        }
+        return outbound_.try_send(
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
     /// Send data served to the peer (blocks, headers answering its requests).
     /// Waits while the data queue is full, without holding control traffic.
     template <typename Message>
@@ -488,6 +501,17 @@ public:
 
     void set_prefers_headers(bool value);
 
+    // -------------------------------------------------------------------------
+    // BIP152 (sendcmpct)
+    // -------------------------------------------------------------------------
+
+    /// True while the peer's last sendcmpct of version 1 asked for high
+    /// bandwidth: a new block is announced to it with a cmpctblock.
+    [[nodiscard]]
+    bool prefers_compact_blocks() const;
+
+    void set_prefers_compact_blocks(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -604,6 +628,9 @@ private:
 
     // BIP130: set when the peer sends sendheaders
     std::atomic<bool> prefers_headers_{false};
+
+    // BIP152: the high-bandwidth flag of the peer's last sendcmpct, version 1
+    std::atomic<bool> prefers_compact_blocks_{false};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

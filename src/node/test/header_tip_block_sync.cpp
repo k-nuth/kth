@@ -18,6 +18,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -27,17 +28,26 @@
 #include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
 #include <asio/use_future.hpp>
+#include <asio/write.hpp>
 
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
+#include <kth/blockchain/local_block_admission.hpp>
+#include <kth/blockchain/pools/mempool.hpp>
+#include <kth/domain/chain/chain_state.hpp>
+#include <kth/domain/constants/functions.hpp>
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/messages.hpp>
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/p2p_node_test_seam.hpp>
+#include <kth/node/sync/compact_blocks.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/orchestrator.hpp>
@@ -385,8 +395,10 @@ struct node_run {
         : node_run(fixture, tag, node_header_walk_timing) {}
 
     // With the header walk's waits given, so a control about them takes
-    // milliseconds instead of the node's ten seconds.
-    node_run(chain_fixture& fixture, std::string const& tag, header_walk_timing timing)
+    // milliseconds instead of the node's ten seconds, and the local block
+    // submission endpoint the chain was started with, if any.
+    node_run(chain_fixture& fixture, std::string const& tag, header_walk_timing timing,
+             blockchain::block_submission_channel* submissions = nullptr)
         : config(node_settings(tag))
         , network(config) {
         auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
@@ -403,7 +415,7 @@ struct node_run {
                 [](std::string const& reason) {
                     spdlog::error("[test] fatal reported: {}", reason);
                 },
-                timing),
+                timing, submissions),
             ::asio::use_future);
     }
 
@@ -1930,4 +1942,602 @@ TEST_CASE("integrated: a newly connected block is announced to every peer",
         ++inventories_seen;
     }
     CHECK(inventories_seen == 1);
+}
+
+// =============================================================================
+// Compact blocks (BIP152)
+// =============================================================================
+//
+// The node's compact block receiver, wired into the p2p_node as full_node
+// wires it, takes what the read loop hands observe_block_message. With the
+// orchestrator running and the chain's submission endpoint bound, a block it
+// rebuilds is connected through block_chain::submit_block; one it cannot
+// rebuild is downloaded through the ordinary range.
+
+namespace {
+
+// The payload of `message` as `peer` would put it on the wire.
+template <typename Message>
+data_chunk payload_of(wire_peer const& peer, Message const& message) {
+    auto const version = peer.session->negotiated_version();
+    data_chunk out(message.serialized_size(version));
+    byte_writer writer(out);
+    REQUIRE(message.to_data(writer, version).has_value());
+    REQUIRE(writer.remaining_size() == 0u);
+    return out;
+}
+
+template <typename Message>
+network::raw_message from_peer(wire_peer const& peer, Message const& message) {
+    return peer.message(Message::command, payload_of(peer, message));
+}
+
+// What the node writes to `peer` from now up to the first message with
+// `command`, that one included, within `limit`. Ends early, without it, when
+// nothing more arrives in time.
+std::vector<network::raw_message> sent_through(wire_peer& peer, std::string const& command,
+    std::chrono::milliseconds limit = quick) {
+
+    std::vector<network::raw_message> out;
+    auto const deadline = std::chrono::steady_clock::now() + limit;
+    while (true) {
+        data_chunk heading(24);
+        if ( ! peer.read_exact(heading, deadline)) return out;
+        char name[13] = {};
+        std::memcpy(name, heading.data() + 4, 12);
+        uint32_t length = 0;
+        std::memcpy(&length, heading.data() + 16, 4);
+        data_chunk payload(length);
+        if (length > 0 && ! peer.read_exact(payload, deadline)) return out;
+        out.push_back(network::raw_message{
+            domain::message::heading(0xdab5bffa, std::string(name), length, 0), std::move(payload)});
+        if (std::string(name) == command) return out;
+    }
+}
+
+// The first message with `command` the node writes to `peer` within `limit`.
+// The commands of those before it are kept in `skipped`.
+std::optional<network::raw_message> next_sent(wire_peer& peer, std::string const& command,
+    std::chrono::milliseconds limit = quick, std::vector<std::string>* skipped = nullptr) {
+
+    auto sent = sent_through(peer, command, limit);
+    if (sent.empty() || sent.back().heading.command() != command) {
+        return std::nullopt;
+    }
+    if (skipped != nullptr) {
+        for (size_t at = 0; at + 1 < sent.size(); ++at) {
+            skipped->push_back(sent[at].heading.command());
+        }
+    }
+    return std::move(sent.back());
+}
+
+// A block on `parent` that spends the coinbase of the staged chain's first
+// block, mature at height 101, with that spend in the mempool when `pooled`.
+domain::chain::block spending_block(chain_fixture& fixture, staged_chain const& staged,
+    domain::chain::block const& parent, uint32_t height, bool pooled, uint32_t salt = 1) {
+
+    auto const& coinbase = staged.trunk.front().transactions().front();
+    constexpr uint64_t fee = 1000;
+    auto const spend = spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - fee,
+        fixture.chain().chain_settings().enabled_flags());
+    if (pooled) {
+        auto const transaction = std::make_shared<domain::message::transaction const>(spend);
+        REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
+            .tx = transaction,
+            .fee = fee,
+            .size = uint32_t(transaction->serialized_size(true)),
+            .sigchecks = 1,
+            .time_seen = uint64_t(zulu_time())}));
+    }
+    return mine_block(parent.hash(), height, parent.header().timestamp() + block_spacing, salt, {spend}, fee);
+}
+
+// The node's receiver, wired into `network` as full_node wires it and run on
+// the network's pool. Ends with the network: the stop ends every wait a
+// reconstruction has.
+struct compact_receiver {
+    p2p_node& network;
+    compact_block_receiver receiver;
+    std::future<void> running;
+
+    compact_receiver(chain_fixture& fixture, p2p_node& p2p,
+        std::chrono::milliseconds blocktxn_timeout = compact_block_receiver::default_blocktxn_timeout)
+        : network(p2p)
+        , receiver(fixture.chain(), p2p, blocktxn_timeout) {
+        network.set_compact_block_handlers(
+            [this](peer_ptr const& peer, domain::message::compact_block message) {
+                return receiver.offer(peer, std::move(message));
+            },
+            [this](peer_ptr const& peer, domain::message::block_transactions message) {
+                return receiver.deliver(peer, std::move(message));
+            });
+        running = ::asio::co_spawn(network.thread_pool().get_executor(), receiver.run(), ::asio::use_future);
+    }
+
+    ~compact_receiver() {
+        network.stop();
+        bool const ended = running.wait_for(std::chrono::seconds(120)) == std::future_status::ready;
+        CHECK(ended);
+        if (ended) running.get();
+        network.set_compact_block_handlers({}, {});
+    }
+
+    compact_receiver(compact_receiver const&) = delete;
+    compact_receiver& operator=(compact_receiver const&) = delete;
+};
+
+// A started network with no orchestrator: what goes to the header ingest
+// stays in its command channel, for the case to read.
+struct started_network {
+    network::settings const config;
+    p2p_node network;
+
+    explicit started_network(std::string const& tag)
+        : config(node_settings(tag))
+        , network(config) {
+        auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
+            [this]() -> ::asio::awaitable<int> {
+                auto const ec = co_await network.start();
+                co_return ec.value();
+            }, ::asio::use_future);
+        REQUIRE(started.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+        REQUIRE(started.get() == 0);
+    }
+
+    ~started_network() { network.stop(); }
+
+    started_network(started_network const&) = delete;
+    started_network& operator=(started_network const&) = delete;
+};
+
+// The header of `hash` went to the ingest from `peer`, as a cmpctblock's does
+// when its block is to be downloaded. Taken off the channel: it holds the
+// session, which must not outlive the peer's context.
+void require_ingested(p2p_node& network, peer_ptr const& peer, hash_digest const& hash,
+    std::chrono::milliseconds limit = quick) {
+
+    std::optional<kth::node::detail::ingest_submit> submitted;
+    REQUIRE(wait_until([&] {
+        return network.header_ingest().commands.try_receive(
+            [&](std::error_code ec, kth::node::detail::ingest_command command) {
+                if (ec) return;
+                if (auto const* batch = std::get_if<kth::node::detail::ingest_submit>(&command)) {
+                    submitted = *batch;
+                }
+            });
+    }, limit));
+    REQUIRE(submitted.has_value());
+    CHECK(submitted->peer == peer);
+    REQUIRE(submitted->headers.size() == 1u);
+    CHECK(domain::chain::hash(submitted->headers.front()) == hash);
+}
+
+bool nothing_ingested(p2p_node& network) {
+    return ! network.header_ingest().commands.try_receive(
+        [](std::error_code, kth::node::detail::ingest_command) {});
+}
+
+data_chunk serialized(domain::chain::block const& blk) {
+    data_chunk bytes(blk.serialized_size());
+    byte_writer writer(bytes);
+    REQUIRE(blk.to_data(writer));
+    return bytes;
+}
+
+// Answer the getheaders the connection starts with: nothing past the tip.
+void confirm_tip(node_run& run, wire_peer& peer, captured_log const& log, uint32_t height) {
+    run.connect(peer.session);
+    REQUIRE(peer.next_getheaders(quick).has_value());
+    run.deliver(peer.session, peer.headers({}));
+    auto const synced = "Fully synced at height " + std::to_string(height);
+    REQUIRE(wait_until([&] { return log.count(synced) > 0; }, quick));
+}
+
+bool connected_at(chain_fixture& fixture, domain::chain::block const& blk, size_t height) {
+    auto const view = fixture.chain().chain_view();
+    return view && view->connected_tip_height == height && view->tip_hash == blk.hash();
+}
+
+} // namespace
+
+TEST_CASE("integrated: a compact block whose transactions are in the mempool connects without a download",
+          "[header_tip][integration][compact_blocks]") {
+    bool known_header = false;
+    SECTION("the compact block brings its header") {}
+    SECTION("its header is already the next one on the active chain") { known_header = true; }
+
+    captured_log log;
+    chain_fixture fixture{"compact_mempool"};
+    REQUIRE(fixture.created());
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(4, 1);
+    REQUIRE(fixture.start(submissions));
+    auto const staged = stage(fixture, 100, 100);
+    auto const block = spending_block(fixture, staged, staged.trunk.back(), 101, true);
+    if (known_header) {
+        REQUIRE(fixture.organizer().add_headers(headers_of({block})).headers_added == 1u);
+        persist_headers(fixture, {block}, 101);
+    }
+    auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
+    REQUIRE(compact.short_ids().size() == 1u);
+    wire_peer peer(node_settings("compact_mempool_peer"), 9801, 100);
+
+    bool connected = false;
+    bool stopped_cleanly = false;
+    std::vector<wire_peer::sent_message> sent;
+    {
+        node_run run(fixture, "compact_mempool", node_header_walk_timing, submissions.get());
+        compact_receiver receiver(fixture, run.network);
+        if (known_header) {
+            // The walk from that header is under way and no body range is
+            // open: the cmpctblock supplies the body.
+            run.connect(peer.session);
+            auto const asked = peer.next_getheaders(quick);
+            REQUIRE(asked);
+            CHECK(*asked == block.hash());
+        } else {
+            confirm_tip(run, peer, log, 100);
+        }
+        CHECK_FALSE(run.network.observe_block_message(peer.session, from_peer(peer, compact)));
+        connected = wait_until([&] { return connected_at(fixture, block, 101); }, quick);
+        sent = peer.sent_until_quiet(quiet);
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("compact_mempool");
+    REQUIRE(connected);
+    CHECK(stopped_cleanly);
+    CHECK_FALSE(fixture.chain().mempool_ref().contains(block.transactions()[1].hash()));
+    // Neither the block nor any of its transactions was asked for.
+    CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
+        return message.command == domain::message::get_data::command ||
+            message.command == domain::message::get_block_transactions::command;
+    }));
+    CHECK(log.count("block_range_request") == 0u);
+}
+
+TEST_CASE("integrated: missing transactions come with blocktxn, and a block that cannot be rebuilt is downloaded",
+          "[header_tip][integration][compact_blocks]") {
+    enum class answer { complete, wrong_transaction, other_block, none, truncated, trailing, collision, merkle };
+    auto reply = answer::complete;
+    SECTION("the requested transaction completes the block") {}
+    SECTION("a wrong transaction") { reply = answer::wrong_transaction; }
+    SECTION("an answer for another block") { reply = answer::other_block; }
+    SECTION("no answer in time") { reply = answer::none; }
+    SECTION("an answer cut short") { reply = answer::truncated; }
+    SECTION("an answer with a byte past its end") { reply = answer::trailing; }
+    SECTION("a repeated short ID: nothing is asked for") { reply = answer::collision; }
+    SECTION("every short ID matched, and the merkle root not") { reply = answer::merkle; }
+
+    captured_log log;
+    chain_fixture fixture{"compact_missing"};
+    REQUIRE(fixture.created());
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(4, 1);
+    REQUIRE(fixture.start(submissions));
+    auto const staged = stage(fixture, 100, 100);
+    auto const block = spending_block(fixture, staged, staged.trunk.back(), 101, false);
+    auto compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
+    if (reply == answer::collision) {
+        auto ids = compact.short_ids();
+        ids.push_back(ids.front());
+        compact = domain::message::compact_block(compact.header(), compact.nonce(),
+            std::move(ids), compact.transactions());
+    }
+    if (reply == answer::merkle) {
+        auto coinbase = domain::message::prefilled_transaction::create(0,
+            coinbase_tx(101, 999, block.transactions()[0].outputs()[0].value()));
+        REQUIRE(coinbase);
+        compact = domain::message::compact_block(compact.header(), compact.nonce(),
+            compact.short_ids(), {std::move(*coinbase)});
+    }
+    wire_peer peer(node_settings("compact_missing_peer"), 9802, 100);
+    bool const waits = reply == answer::none || reply == answer::truncated || reply == answer::trailing;
+
+    bool rebuilt = false;
+    bool downloaded = false;
+    bool stopped_cleanly = false;
+    std::vector<std::string> skipped;
+    std::vector<wire_peer::sent_message> sent;
+    {
+        node_run run(fixture, "compact_missing", node_header_walk_timing, submissions.get());
+        compact_receiver receiver(fixture, run.network,
+            waits ? std::chrono::milliseconds(1000) : compact_block_receiver::default_blocktxn_timeout);
+        confirm_tip(run, peer, log, 100);
+        CHECK_FALSE(run.network.observe_block_message(peer.session, from_peer(peer, compact)));
+
+        if (reply != answer::collision) {
+            auto const asked = next_sent(peer, domain::message::get_block_transactions::command);
+            REQUIRE(asked);
+            byte_reader reader(asked->payload);
+            auto const request = domain::message::get_block_transactions::from_data(reader,
+                peer.session->negotiated_version());
+            REQUIRE(request);
+            CHECK(request->block_hash() == block.hash());
+            CHECK(request->indexes() == std::vector<uint64_t>{1});
+            CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
+
+            if (reply != answer::none) {
+                domain::message::block_transactions const answered(
+                    reply == answer::other_block ? staged.trunk.back().hash() : block.hash(),
+                    domain::chain::transaction::list{reply == answer::wrong_transaction
+                        ? block.transactions()[0] : block.transactions()[1]});
+                auto payload = payload_of(peer, answered);
+                if (reply == answer::truncated) payload.pop_back();
+                if (reply == answer::trailing) payload.push_back(0);
+                auto const taken = run.network.observe_block_message(peer.session,
+                    peer.message(domain::message::block_transactions::command, std::move(payload)));
+                // Taken whole by the reconstruction waiting for it; cut short or
+                // with more, not taken at all, and the reconstruction waits it out.
+                CHECK(taken == (reply != answer::truncated && reply != answer::trailing));
+            }
+        }
+
+        if (reply == answer::complete) {
+            rebuilt = wait_until([&] { return connected_at(fixture, block, 101); }, quick);
+            sent = peer.sent_until_quiet(quiet);
+        } else {
+            // Downloaded the ordinary way: the header goes to the ingest, a
+            // range asks the peer for the block, and the block connects.
+            auto const full = next_sent(peer, domain::message::get_data::command, quick, &skipped);
+            REQUIRE(full);
+            byte_reader reader(full->payload);
+            auto const request = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
+            REQUIRE(request);
+            REQUIRE(request->inventories().size() == 1u);
+            CHECK(request->inventories().front().hash() == block.hash());
+            CHECK_FALSE(peer.session->stopped());
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, serialized(block))));
+            downloaded = wait_until([&] { return connected_at(fixture, block, 101); }, quick);
+        }
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("compact_missing");
+    CHECK(stopped_cleanly);
+    if (reply == answer::complete) {
+        REQUIRE(rebuilt);
+        CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
+            return message.command == domain::message::get_data::command;
+        }));
+        CHECK(log.count("block_range_request") == 0u);
+    } else {
+        REQUIRE(downloaded);
+        if (reply == answer::collision) {
+            CHECK(std::find(skipped.begin(), skipped.end(),
+                domain::message::get_block_transactions::command) == skipped.end());
+        }
+    }
+}
+
+TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and when its block cannot be rebuilt",
+          "[header_tip][compact_blocks]") {
+    enum class setup { initial_sync, queue_full, no_submission, trailing_byte, too_many, no_work, wrong_bits };
+    auto when = setup::initial_sync;
+    SECTION("headers ahead of the connected tip: initial sync") {}
+    SECTION("a peer whose queue is full is not waited on for getblocktxn") { when = setup::queue_full; }
+    SECTION("a chain that takes no submission") { when = setup::no_submission; }
+    SECTION("a byte past the cmpctblock") { when = setup::trailing_byte; }
+    SECTION("a header whose hash misses its target") { when = setup::no_work; }
+    SECTION("a header that asks other work than the next block's") { when = setup::wrong_bits; }
+#if defined(KTH_CURRENCY_BCH)
+    SECTION("more transactions than the next block can hold") { when = setup::too_many; }
+#endif
+
+    chain_fixture fixture{"compact_refused"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());   // no submission endpoint
+    auto const staged = stage(fixture, when == setup::initial_sync ? 102u : 100u, 100);
+    if (when == setup::initial_sync) {
+        REQUIRE_FALSE(fixture.chain().synchronization().caught_up);
+    }
+    // On the connected tip, as the next block would be.
+    auto const& tip = staged.trunk[99];
+    REQUIRE(tip.hash() == fixture.chain().chain_view()->tip_hash);
+    auto const block = spending_block(fixture, staged, tip, 101, when == setup::no_submission, 7);
+    auto compact = domain::message::compact_block::factory_from_block(domain::message::block{block});
+#if defined(KTH_CURRENCY_BCH)
+    if (when == setup::too_many) {
+        auto const limit = size_t(fixture.chain().chain_view()->state->dynamic_max_block_size() /
+            min_transaction_size_descartes);
+        domain::message::compact_block::short_id_list ids(limit);
+        for (size_t at = 0; at < limit; ++at) ids[at] = uint64_t(at);
+        compact = domain::message::compact_block(compact.header(), compact.nonce(),
+            std::move(ids), compact.transactions());
+    }
+#endif
+    if (when == setup::no_work || when == setup::wrong_bits) {
+        // The block's own transactions, under a header the chain refuses
+        // before anything is rebuilt.
+        auto const mined = compact.header();
+        auto bits = mined.bits();
+        if (when == setup::wrong_bits) {
+            --bits;
+        }
+        auto nonce = mined.nonce();
+        auto header = mined;
+        do {
+            header = domain::chain::header(mined.version(), mined.previous_block_hash(),
+                mined.merkle(), mined.timestamp(), bits, ++nonce);
+        } while (when == setup::no_work &&
+                 header.is_valid_proof_of_work(domain::chain::hash(header), /*retarget*/ false));
+        auto const refused = header.bits() != fixture.chain().chain_view()->state->work_required() ||
+            ! header.is_valid_proof_of_work(domain::chain::hash(header), /*retarget*/ false);
+        REQUIRE(refused);
+        compact = domain::message::compact_block(header, compact.nonce(),
+            compact.short_ids(), compact.transactions());
+    }
+    wire_peer peer(node_settings("compact_refused_peer"), 9803, 100, true);
+    if (when == setup::queue_full) {
+        REQUIRE(peer.fill_outbound() == network::peer_session::outbound_capacity);
+    }
+
+    started_network run("compact_refused");
+    compact_receiver receiver(fixture, run.network);
+    auto raw = from_peer(peer, compact);
+    if (when == setup::trailing_byte) {
+        raw.payload.push_back(0);
+    }
+    CHECK_FALSE(run.network.observe_block_message(peer.session, raw));
+    require_ingested(run.network, peer.session, domain::chain::hash(compact.header()));
+    CHECK(wait_until([&] { return receiver.receiver.pending() == 0u; }, quick));
+    CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
+    CHECK_FALSE(peer.session->stopped());
+}
+
+TEST_CASE("at most three blocks are rebuilt at once, one per peer", "[header_tip][compact_blocks]") {
+    chain_fixture fixture{"compact_bounds"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 100, 100);
+    // Blocks at 101 whose spend the mempool lacks: each reconstruction asks
+    // its peer and waits.
+    std::vector<domain::chain::block> blocks;
+    for (uint32_t salt = 1; salt <= 4; ++salt) {
+        blocks.push_back(spending_block(fixture, staged, staged.trunk.back(), 101, false, salt));
+    }
+    wire_peer p(node_settings("compact_bounds_p"), 9811, 100);
+    wire_peer q(node_settings("compact_bounds_q"), 9812, 100);
+    wire_peer r(node_settings("compact_bounds_r"), 9813, 100);
+    wire_peer s(node_settings("compact_bounds_s"), 9814, 100);
+    started_network run("compact_bounds");
+    compact_receiver receiver(fixture, run.network);
+
+    auto const offer = [&](wire_peer& peer, domain::chain::block const& blk) {
+        auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{blk});
+        CHECK_FALSE(run.network.observe_block_message(peer.session, from_peer(peer, compact)));
+    };
+    auto const asked = [](wire_peer& peer, std::chrono::milliseconds limit) {
+        return next_sent(peer, domain::message::get_block_transactions::command, limit).has_value();
+    };
+
+    offer(p, blocks[0]);
+    REQUIRE(asked(p, quick));
+    // The same block again, from that peer or another: left alone, neither
+    // asked for again nor downloaded beside the reconstruction.
+    for (auto* peer : {&p, &q}) {
+        offer(*peer, blocks[0]);
+        CHECK_FALSE(asked(*peer, std::chrono::milliseconds(300)));
+        CHECK(nothing_ingested(run.network));
+    }
+    // Another block from a peer already rebuilding one is downloaded instead.
+    offer(p, blocks[1]);
+    require_ingested(run.network, p.session, blocks[1].hash());
+    // Two more peers take the other two reconstructions...
+    offer(q, blocks[2]);
+    REQUIRE(asked(q, quick));
+    offer(r, blocks[3]);
+    REQUIRE(asked(r, quick));
+    CHECK(receiver.receiver.pending() == compact_block_receiver::max_reconstructions);
+    // ...and a fourth peer's block is downloaded instead.
+    offer(s, blocks[1]);
+    require_ingested(run.network, s.session, blocks[1].hash());
+    CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
+}
+
+namespace {
+
+// Finish the version handshake with the node's session from the test's end,
+// as a peer of `protocol_version`, and read what the node sends after it up
+// to the fee filter: the peer's service sends its first one as it starts,
+// after the handshake's sendheaders and sendcmpct. The sendcmpct among it, if
+// any.
+std::optional<domain::message::send_compact> handshake(wire_peer& peer, uint64_t nonce,
+    uint32_t protocol_version) {
+
+    domain::message::version version;
+    version.set_value(protocol_version);
+    version.set_services(domain::message::version::service::node_network);
+    version.set_timestamp(uint64_t(zulu_time()));
+    version.set_nonce(nonce);
+    version.set_user_agent("/kth-compact-test/");
+    version.set_start_height(0);
+    version.set_relay(false);
+    auto const hello = domain::message::serialize(protocol_version, version, 0xdab5bffa);
+    auto const ready = domain::message::serialize(protocol_version, domain::message::verack{}, 0xdab5bffa);
+    ::asio::write(peer.client, ::asio::buffer(hello));
+    ::asio::write(peer.client, ::asio::buffer(ready));
+
+    auto const sent = sent_through(peer, domain::message::fee_filter::command);
+    REQUIRE_FALSE(sent.empty());
+    REQUIRE(sent.back().heading.command() == domain::message::fee_filter::command);
+    for (auto const& message : sent) {
+        if (message.heading.command() != domain::message::send_compact::command) continue;
+        byte_reader reader(message.payload);
+        auto const parsed = domain::message::send_compact::from_data(reader, protocol_version);
+        REQUIRE(parsed);
+        CHECK(reader.remaining_size() == 0u);
+        return *parsed;
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+TEST_CASE("integrated: up to three peers are asked for high-bandwidth compact blocks",
+          "[header_tip][integration][compact_blocks]") {
+    bool high_bandwidth = true;
+    SECTION("with node.compact_blocks_high_bandwidth on") {}
+    SECTION("with it off, every peer is asked for low bandwidth") { high_bandwidth = false; }
+
+    auto config = node_settings("compact_asking");
+    config.channel_handshake_seconds = 5;
+    // Declared first, so they outlive the network: their contexts run the
+    // tasks the supervisor gives the peers.
+    std::vector<std::unique_ptr<wire_peer>> peers;
+    p2p_node network(config);
+    network.set_compact_high_bandwidth(high_bandwidth);
+    // A fee filter for every peer, so each peer's service sends one as it
+    // starts, after what the handshake sends.
+    network.set_fee_filter_handler(
+        [](kth::network::peer_session&) -> ::asio::awaitable<std::optional<uint64_t>> {
+            co_return uint64_t{1000};
+        });
+    auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
+        [&network]() -> ::asio::awaitable<int> {
+            auto const ec = co_await network.start();
+            co_return ec.value();
+        }, ::asio::use_future);
+    REQUIRE(started.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+    REQUIRE(started.get() == 0);
+    auto running = ::asio::co_spawn(network.thread_pool().get_executor(),
+        [&network]() -> ::asio::awaitable<int> {
+            auto const ec = co_await network.run();
+            co_return ec.value();
+        }, ::asio::use_future);
+
+    using seam = kth::node::detail::p2p_node_test_seam;
+    auto const connect = [&](uint64_t nonce, uint32_t protocol_version) {
+        peers.push_back(std::make_unique<wire_peer>(node_settings("compact_asking_peer"), 0, 0, true));
+        REQUIRE(seam::queue_peer(network, peers.back()->session));
+        return handshake(*peers.back(), nonce, protocol_version);
+    };
+
+    // A peer whose version predates BIP152 is not offered compact blocks,
+    // and takes no slot.
+    CHECK_FALSE(connect(0x151fff, domain::message::version::level::bip133));
+    CHECK(seam::high_bandwidth_compact_peers(network) == 0u);
+    for (uint64_t i = 0; i < 4; ++i) {
+        CAPTURE(i);
+        auto const asked = connect(0x152000 + i, domain::message::version::level::invalid_cb_no_ban);
+        REQUIRE(asked);
+        CHECK(asked->version() == 1u);
+        CHECK(asked->high_bandwidth_mode() == (high_bandwidth && i < p2p_node::max_high_bandwidth_compact_peers));
+    }
+    CHECK(seam::high_bandwidth_compact_peers(network) ==
+        (high_bandwidth ? p2p_node::max_high_bandwidth_compact_peers : 0u));
+
+    if (high_bandwidth) {
+        // A slot is given back when its peer goes, and the next peer takes it.
+        peers[1]->session->stop();
+        REQUIRE(wait_until([&] {
+            return seam::high_bandwidth_compact_peers(network) == p2p_node::max_high_bandwidth_compact_peers - 1;
+        }, quick));
+        auto const replacement = connect(0x152004, domain::message::version::level::invalid_cb_no_ban);
+        REQUIRE(replacement);
+        CHECK(replacement->high_bandwidth_mode());
+        CHECK(seam::high_bandwidth_compact_peers(network) == p2p_node::max_high_bandwidth_compact_peers);
+    }
+
+    network.stop();
+    REQUIRE(running.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
+    CHECK(running.get() == 0);
 }

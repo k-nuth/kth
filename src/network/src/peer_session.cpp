@@ -638,6 +638,14 @@ void peer_session::set_prefers_headers(bool value) {
     prefers_headers_.store(value, std::memory_order_relaxed);
 }
 
+bool peer_session::prefers_compact_blocks() const {
+    return prefers_compact_blocks_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_prefers_compact_blocks(bool value) {
+    prefers_compact_blocks_.store(value, std::memory_order_relaxed);
+}
+
 // =============================================================================
 // Internal Coroutines
 // =============================================================================
