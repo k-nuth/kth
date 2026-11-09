@@ -688,6 +688,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include(Catch)
     kth_register_tests(kth_capi_test)
 
+    # This test resolves its own Asio dependency, independently of the node's
+    # transport selection and targets imported in sibling directories.
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-mining-info"
+                     "${CMAKE_CURRENT_BINARY_DIR}/mining-info-callback")
+
     if(CURRENCY STREQUAL "BCH")
         add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
         set_target_properties(kth_payment_address_errors_test PROPERTIES LINKER_LANGUAGE CXX)
