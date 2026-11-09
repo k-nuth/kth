@@ -8,6 +8,9 @@
 #include <filesystem>
 #include <stdexcept>
 #include <vector>
+#include <asio/steady_timer.hpp>
+#include <memory>
+#include <fstream>
 #include <asio/experimental/channel_select.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_future.hpp>
@@ -131,4 +134,90 @@ TEST_CASE("p2p child: short established sessions do not accumulate bans", "[.p2p
 }
 TEST_CASE("short established sessions do not accumulate protocol bans", "[node][p2p][connection_close]") {
     require_clean_child(run_child("p2p child: short established sessions do not accumulate bans"));
+}
+
+TEST_CASE("p2p child: inbound peers leave the outbound target unmet", "[.p2p-child]") {
+    watchdog guard(60s, "inbound peers and the outbound target");
+    auto const directory = claimed_dir("kth_outbound_target");
+    {
+    network::settings config(domain::config::network::regtest);
+    config.inbound_port = 0;
+    config.outbound_connections = 2;
+    config.host_pool_capacity = 64;
+    config.seeds.clear();
+    config.peers.clear();
+    config.threads = 1;
+    config.peers_file = (directory / "peers.dat").string();
+    config.hosts_file = (directory / "hosts.dat").string();
+    config.banlist_file = (directory / "bans.dat").string();
+    config.channel_handshake_seconds = 5;
+    config.user_agent = "/KTH-outbound-target-test:1/";
+    config.user_agent_blacklist.clear();
+    ::asio::io_context context;
+    node::p2p_node target(config);
+    std::exception_ptr failure;
+    bool dialed = false;
+    auto outcome = ::asio::co_spawn(context, [&]() -> ::asio::awaitable<void> {
+        checked(co_await target.start() == error::success, "node start failed");
+        co_await (
+            [&]() -> ::asio::awaitable<void> { co_await target.run(); }() &&
+            [&]() -> ::asio::awaitable<void> {
+                try {
+                    // Three inbound peers, more than the outbound target. They
+                    // come from the IPv6 loopback: the node does not dial an IP
+                    // it is already connected to.
+                    auto executor = co_await ::asio::this_coro::executor;
+                    ::asio::ip::tcp::acceptor listener(executor, {::asio::ip::address_v6::loopback(), 0});
+                    std::vector<std::unique_ptr<network::peer_session>> clients;
+                    for (unsigned i = 0; i != 3; ++i) {
+                        ::asio::ip::tcp::socket client_socket(executor);
+                        co_await client_socket.async_connect(listener.local_endpoint(), ::asio::use_awaitable);
+                        auto accepted = co_await listener.async_accept(::asio::use_awaitable);
+                        auto peer = std::make_shared<network::peer_session>(std::move(accepted), config, true);
+                        clients.push_back(std::make_unique<network::peer_session>(std::move(client_socket), config, false));
+                        co_await node::detail::p2p_node_test_seam::admit_peer(target, peer, node::peer_direction::inbound);
+                        auto handshake = co_await network::perform_handshake_direct(*clients.back(),
+                            network::make_handshake_config(config, 0, 0x2000 + i));
+                        if (!handshake) throw std::runtime_error("fixture BCH handshake: " + handshake.error().message());
+                        checked((co_await next_event(target)).event == node::peer_event_type::connected,
+                            "missing connected notification");
+                    }
+
+                    // Only now an address to dial: one the node can reach.
+                    ::asio::ip::tcp::acceptor destination(executor, {::asio::ip::address_v4::loopback(), 0});
+                    auto const hosts = directory / "offered.cache";
+                    {
+                        std::ofstream file(hosts);
+                        file << "127.0.0.1:" << destination.local_endpoint().port() << "\n";
+                    }
+                    checked(target.peer_db().import_hosts_cache(hosts) == 1, "the address was not taken");
+
+                    // The node opens an outbound connection to it, or the
+                    // deadline passes.
+                    ::asio::steady_timer deadline(executor, 15s);
+                    auto first = co_await (
+                        destination.async_accept(::asio::as_tuple(::asio::use_awaitable)) ||
+                        deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+                    dialed = first.index() == 0 && !std::get<0>(std::get<0>(first));
+                    for (auto& client : clients) client->stop();
+                } catch (...) { failure = std::current_exception(); }
+                target.stop();
+            }());
+    }, ::asio::use_future);
+    context.run();
+    target.stop();
+    target.join();
+    outcome.get();
+    if (failure) { std::rethrow_exception(failure); }
+    // Three connected peers, none of them outbound: the target is unmet, and
+    // the node dials.
+    CHECK(dialed);
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(directory, ignored);
+    announce_completion();
+}
+
+TEST_CASE("inbound peers do not meet the outbound target", "[node][p2p][connection_close]") {
+    require_clean_child(run_child("p2p child: inbound peers leave the outbound target unmet"));
 }
