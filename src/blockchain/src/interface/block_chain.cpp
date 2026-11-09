@@ -542,7 +542,10 @@ bool block_chain::start(uint32_t disk_magic) {
                 return false;
             }
         } else {
-            auto const first = static_cast<int32_t>(settings_.max_checkpoint_height) + 1;
+            // Undo is captured from the first height that is validated, which is
+            // the trusted height + 1, not the anchor + 1: in full-validation mode
+            // it starts at height 1.
+            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||

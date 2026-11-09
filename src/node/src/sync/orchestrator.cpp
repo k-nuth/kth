@@ -1128,10 +1128,20 @@ static
             initial_stored_height, initial_block_height);
     }
 
-    // Get checkpoint height for fast IBD
-    // max_checkpoint_height comes from the checkpoint list in parser.hpp
-    uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
-    spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
+    // Two different heights come out of the checkpoint list. The ANCHOR is the
+    // highest checkpoint: headers must match it, in either mode. The TRUSTED
+    // height is the highest block that may be connected merkle-only, with no
+    // script, signature or UTXO validation; everything that decides what the
+    // fast and the full ranges own (below) is keyed to it. In full-validation
+    // mode it is 0 whatever the anchor is.
+    auto const& chain_cfg = chain.chain_settings();
+    uint32_t const anchor_height = uint32_t(chain_cfg.max_checkpoint_height);
+    uint32_t const checkpoint_height = uint32_t(chain_cfg.trusted_checkpoint_height());
+    spdlog::info("[sync_orchestrator] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL (every block from the first)"
+                                  : "optimized (merkle-only up to the checkpoint)",
+        anchor_height, checkpoint_height + 1);
 
     // UTXO build now happens incrementally inside block_storage_task as
     // each block lands; no startup-time bulk build is needed.
