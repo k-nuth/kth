@@ -42,6 +42,7 @@ async def abrupt(socket):
 
 import hashlib
 import struct
+import time
 
 REGTEST_MAGIC = bytes.fromhex("dab5bffa")  # BCH regtest, 0xfabfb5da on the wire little-endian
 GENESIS_TIME = 1296688602
@@ -110,9 +111,8 @@ def message(command, payload):
             struct.pack("<I", len(payload)) + dsha(payload)[:4] + payload)
 
 
-def version_payload(height):
+def version_payload(height, agent=b"/kth-ci-peer/"):
     address = struct.pack("<Q", 1) + bytes(10) + b"\xff\xff" + bytes([127, 0, 0, 1]) + struct.pack(">H", 18444)
-    agent = b"/kth-ci-peer/"
     return (struct.pack("<iQq", 70016, 1, GENESIS_TIME) + address + address +
             struct.pack("<Q", 0x5EED) + varint(len(agent)) + agent + struct.pack("<i?", height, False))
 
@@ -143,10 +143,10 @@ class bch_session:
                     return command, payload
             self.buffer += await self.socket.recv()
 
-    async def handshake(self):
+    async def handshake(self, agent=b"/kth-ci-peer/"):
         command, _ = await self.receive()
         assert command == "version", command
-        await self.send("version", version_payload(len(self.headers) - 1))
+        await self.send("version", version_payload(len(self.headers) - 1, agent))
         await self.send("verack")
 
     def headers_after(self, payload):
@@ -285,7 +285,125 @@ async def bch_fork(socket):
     await socket.wait_closed()
 
 
+def wsaddr_payload(request_id, urls):
+    """A discovery response: each endpoint as transport, expiry, port (all
+    little-endian), host and path."""
+    out = bytes([1]) + struct.pack("<Q", request_id) + bytes([len(urls)])
+    for scheme, host, port, path in urls:
+        out += bytes([2 if scheme == "wss" else 1]) + struct.pack("<IH", int(time.time()) + 600, port)
+        out += bytes([len(host)]) + host.encode() + struct.pack("<H", len(path)) + path.encode()
+    return out
+
+
+@quiet
+async def bch_discovery(socket):
+    # Negotiates discovery and serves the 2500 headers; asked for endpoints,
+    # it advertises the longer chain's peer (a loopback endpoint: the client
+    # must allow private ones).
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            await session.send("headers", session.headers_after(payload))
+        elif command == "getwsaddr":
+            request_id = struct.unpack_from("<Q", payload, 2)[0]
+            await session.send("wsaddr", wsaddr_payload(request_id, [("ws", "127.0.0.1", 18785, "/")]))
+
+
+@quiet
+async def bch_flood(socket):
+    # Headers past the client's capacity: the ones that fit are valid, the
+    # first past it has invalid proof of work.
+    session = bch_session(socket, BCH_FLOOD)
+    await session.handshake()
+    await session.serve_headers(until_empty=False)
+
+
+@quiet
+async def bch_short(socket):
+    # 50 valid headers: within a small client's capacity.
+    session = bch_session(socket, BCH_CHAIN[:51])
+    await session.handshake()
+    await session.serve_headers(until_empty=False)
+
+
+@quiet
+async def bch_discovery_close(socket):
+    # Asked for discovery; closes after its last headers, without answering.
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            answer = session.headers_after(payload)
+            await session.send("headers", answer)
+            if answer == varint(0):
+                await asyncio.sleep(0.3)
+                return
+        elif command == "ping":
+            await session.send("pong", payload)
+
+
+@quiet
+async def bch_slow(socket):
+    # 200 valid headers, 25 per answer, the first answer late: by then another
+    # peer has delivered them all, and every answer brings known headers.
+    session = bch_session(socket, BCH_CHAIN[:201])
+    await session.handshake()
+    first = True
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            if first:
+                await asyncio.sleep(2)
+                first = False
+            answer = session.headers_after(payload)
+            count, start = read_varint(answer, 0)
+            count = min(count, 25)
+            # Each record is the 80-byte header and an empty transaction count.
+            await session.send("headers", varint(count) + answer[start:start + 81 * count])
+        elif command == "ping":
+            await session.send("pong", payload)
+
+
+@quiet
+async def bch_alternate(socket):
+    # Answers every request with one of two early headers, by turns: they are
+    # valid, and soon known, and never advance anything.
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake()
+    turn = 0
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            await session.send("headers", varint(1) + BCH_CHAIN[1 + turn % 2] + b"\0")
+            turn += 1
+        elif command == "ping":
+            await session.send("pong", payload)
+
+
+@quiet
+async def bch_discovery_late(socket):
+    # As bch_discovery, but its discovery answer comes after its last headers.
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    pending = None
+    while True:
+        command, payload = await session.receive()
+        if command == "getwsaddr":
+            pending = struct.unpack_from("<Q", payload, 2)[0]
+        elif command == "getheaders":
+            answer = session.headers_after(payload)
+            await session.send("headers", answer)
+            if answer == varint(0) and pending is not None:
+                await asyncio.sleep(0.3)
+                await session.send("wsaddr", wsaddr_payload(pending, [("ws", "127.0.0.1", 18785, "/")]))
+                pending = None
+
+
 BCH_CHAIN = chain(2500)
+BCH_FLOOD = chain(2100, invalid_at=100)
 BCH_REORG = extend(BCH_CHAIN[:2496], 2510, branch=1)
 BCH_RETRY_INVALID = extend(BCH_CHAIN[:2496], 2510, branch=2, invalid_at=2505)
 BCH_LONGER = extend(BCH_CHAIN, 2600)
@@ -299,6 +417,10 @@ async def main(scenario):
                 'bch_sync': (18780, bch_sync), 'bch_invalid': (18781, bch_invalid),
                 'bch_follow': (18782, bch_follow), 'bch_oversize': (18783, bch_oversize),
                 'bch_reorg': (18787, bch_reorg), 'bch_retry': (18788, bch_retry),
+                'bch_discovery': (18789, bch_discovery), 'bch_flood': (18803, bch_flood),
+                'bch_short': (18804, bch_short), 'bch_alternate': (18805, bch_alternate),
+                'bch_discovery_late': (18806, bch_discovery_late), 'bch_slow': (18810, bch_slow),
+                'bch_discovery_close': (18813, bch_discovery_close),
                 'bch_longer': (18785, bch_longer), 'bch_fork': (18786, bch_fork)}
     selected = controls if scenario == 'all' else {scenario: controls[scenario]}
     async with AsyncExitStack() as stack:
@@ -310,6 +432,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('scenario', choices=['all', 'echo', 'stall', 'cap', 'eof', 'abrupt',
                                              'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize',
-                                             'bch_reorg', 'bch_retry', 'bch_longer', 'bch_fork'],
+                                             'bch_reorg', 'bch_retry', 'bch_longer', 'bch_fork',
+                                             'bch_discovery', 'bch_flood', 'bch_short', 'bch_alternate',
+                                             'bch_discovery_late', 'bch_slow',
+                                             'bch_discovery_close'],
                         default='all', nargs='?')
     asyncio.run(main(parser.parse_args().scenario))

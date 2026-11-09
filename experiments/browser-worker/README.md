@@ -19,16 +19,23 @@ part of this repository) relays the BCH byte stream to a peer.
 
 ## Header synchronization
 
-`kth::node::header_sync` (`header_sync.hpp`) is a headers-only client for one
-peer behind a bridge: it validates headers with the header index and the
-contextual header organizer, opens no block or UTXO database, and runs on the
-Worker's runtime (the application's, when it runs one). `run()` ends at the
-peer's tip; `follow()` stays on the same connection, answers pings, fetches
-announced blocks' headers and refreshes every 120 s; `request_stop()` and
-`request_refresh()` only ask. It accepts messages of at most 256 KiB (a full
-`headers` and room to spare). The C API (`kth/capi/node/header_sync.h`) never
-lets an exception cross it: destruct and reset are refused while a run is
-pending.
+`kth::node::header_sync` (`header_sync.hpp`) is a headers-only client: it
+validates headers with the header index and the contextual header organizer,
+opens no block or UTXO database, and runs on the Worker's runtime (the
+application's, when it runs one). It synchronizes from up to eight WebSocket
+peers at once into one index: the one given at construction, those added with
+`add_peer()`, and those learned through endpoint discovery (`/wsdisc:1/`,
+negotiated; `configure_discovery()`). Each peer has its own session; a peer
+that sends invalid data is rejected until `reset()`, one that cannot be reached
+is retried while following, and neither stops the others.
+
+`run()` ends when every peer has finished, successfully if one reached its tip;
+`follow()` stays on each session, answers pings, fetches announced blocks'
+headers and refreshes every 120 s; `request_stop()` and `request_refresh()`
+only ask. Each peer's endpoint, source, state, agent, error and height can be
+read. It accepts messages of at most 256 KiB. The C API
+(`kth/capi/node/header_sync.h`) never lets an exception cross it: destruct and
+reset are refused while an operation is pending.
 
 ## Header cache
 
@@ -61,6 +68,7 @@ loopback fixtures in `fixtures.py`:
 | `terminal` | a terminal error is kept for every later operation |
 | `headers` | against a scripted BCH regtest peer (`fixtures.py`): 2500 headers in two batches; a header with invalid proof of work ends the session; a message declaring more than 256 KiB ends it at its heading; `follow()` answers a ping, fetches an announced block on the same connection and stops; the C API refuses destruct and reset while it runs |
 | `persist` | the header cache, against scripted regtest peers: nothing is written without the directory; a synchronized chain is restored, validated, by the next client before it connects; it is extended in place, rewritten after a reorganization, and discarded when a header does not validate |
+| `peers` | several peers against scripted regtest peers: configuration bounded to eight distinct ws/wss URLs; two peers synchronizing one index; a peer with invalid proof of work rejected and an absent one disconnected, neither stopping the good one; a peer learned through discovery joining, a private endpoint refused unless allowed, discovery off when disabled |
 
 Build (Emscripten 6, `ci_utils/conan/profiles/ems6`):
 
@@ -74,6 +82,6 @@ cmake -S . -B build/browser -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
   -DKTH_BROWSER_NODE=ON -DKTH_BROWSER_CONTROLS=ON
 cmake --build build/browser --target browser_stream_control browser_cap_control \
-  browser_eof_control browser_select_control browser_terminal_control browser_headers_control browser_persist_control
+  browser_eof_control browser_select_control browser_terminal_control browser_headers_control browser_persist_control browser_peers_control
 python experiments/browser-worker/ci.py build/browser/experiments/browser-worker
 ```

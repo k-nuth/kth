@@ -25,4 +25,12 @@ if(TARGET c-api)
       -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
       -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
   set_target_properties(browser_persist_control PROPERTIES SUFFIX ".js")
+
+  # Several peers and endpoint discovery.
+  add_executable(browser_peers_control peers-proof.cpp)
+  target_link_libraries(browser_peers_control PRIVATE node::node)
+  target_link_options(browser_peers_control PRIVATE
+      -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+      -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+  set_target_properties(browser_peers_control PROPERTIES SUFFIX ".js")
 endif()
