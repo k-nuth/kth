@@ -74,6 +74,13 @@ public:
     std::string status() const;
     size_t index_memory_bytes() const;
 
+    // JSON snapshots, owned by the caller; integers past JavaScript's safe
+    // range are strings. The consensus state of the active tip, built by the
+    // header validator ("null" at genesis); and this client's effective
+    // settings (node, network, chain and header_sync sections).
+    std::string chain_state_snapshot() const;
+    std::string runtime_settings() const;
+
     // Peers, configured while settled. A distinct ws:// or wss:// URL, up to
     // eight in all; false otherwise.
     bool add_peer(std::string const& url);

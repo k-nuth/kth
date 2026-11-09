@@ -15,6 +15,8 @@
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <asio/bind_cancellation_slot.hpp>
 #include <spdlog/spdlog.h>
+#include <fmt/format.h>
+#include <kth/blockchain/validate/validate_header.hpp>
 #include <asio/cancellation_signal.hpp>
 #include <array>
 #include <filesystem>
@@ -25,6 +27,7 @@
 #include <optional>
 #include <algorithm>
 #include <functional>
+#include <type_traits>
 
 namespace kth::node {
 namespace {
@@ -206,6 +209,64 @@ data_chunk discovery_packet(uint32_t magic, std::string_view command, data_chunk
     }
 }
 
+// A small JSON object writer for the snapshots. Strings are escaped; 64-bit
+// integers past JavaScript's safe range are written as strings.
+std::string json_string(std::string_view text) {
+    std::string out = "\"";
+    for (unsigned char ch : text) {
+        if (ch == '"' || ch == '\\') {
+            out += '\\';
+            out += char(ch);
+        } else if (ch < 0x20) {
+            out += fmt::format("\\u{:04x}", ch);
+        } else {
+            out += char(ch);
+        }
+    }
+    return out + '"';
+}
+
+class json_object {
+public:
+    void raw(std::string_view key, std::string_view value) {
+        out_ += first_ ? "" : ",";
+        first_ = false;
+        out_ += json_string(key);
+        out_ += ':';
+        out_ += value;
+    }
+    void put(std::string_view key, std::string_view value) { raw(key, json_string(value)); }
+    void put(std::string_view key, char const* value) { put(key, std::string_view(value)); }
+    void put(std::string_view key, bool value) { raw(key, value ? "true" : "false"); }
+    template <typename Integer>
+        requires std::is_integral_v<Integer>
+    void put(std::string_view key, Integer value) {
+        constexpr int64_t safe = 9007199254740991;
+        auto const unsafe = std::is_signed_v<Integer> ? (int64_t(value) > safe || int64_t(value) < -safe)
+                                                      : uint64_t(value) > uint64_t(safe);
+        raw(key, unsafe ? json_string(fmt::format("{}", value)) : fmt::format("{}", value));
+    }
+    void put(std::string_view key, double value) { raw(key, fmt::format("{}", value)); }
+    std::string finish() const { return "{" + out_ + "}"; }
+private:
+    std::string out_;
+    bool first_ = true;
+};
+
+template <typename Range, typename Encode>
+std::string json_array(Range const& values, Encode encode) {
+    std::string out = "[";
+    bool first = true;
+    for (auto const& value : values) {
+        out += first ? "" : ",";
+        first = false;
+        out += encode(value);
+    }
+    return out + "]";
+}
+
+std::string compact_hex(uint32_t value) { return fmt::format("0x{:08x}", value); }
+
 constexpr size_t header_size = 80;
 constexpr std::string_view cache_root = "/kth-header-cache/";
 constexpr std::string_view cache_file = "chain-v1.bin";
@@ -264,6 +325,9 @@ struct header_sync::impl {
 
     network::settings transport() const {
         network::settings result(network);
+        // It stores headers: it serves no blocks and relays no transactions.
+        result.services = 0;
+        result.relay_transactions = false;
         result.validate_checksum = true;
         result.user_agent = "/KTH-browser-headers/";
         if (discovery_enabled) result.user_agent = network::ws_discovery::advertise(result.user_agent).value();
@@ -773,6 +837,141 @@ bool header_sync::configure_discovery(bool enabled, bool allow_private, bool wss
 }
 
 size_t header_sync::peer_count() const { return state_->peers.size(); }
+
+std::string header_sync::chain_state_snapshot() const {
+    auto const& index = state_->index;
+    auto const height = state_->organizer.header_height();
+    auto const at = index.active_at(height);
+    if (at == blockchain::header_index::null_index || height == 0) return "null";
+    auto const header = index.get_header(at);
+    auto const hash = index.get_hash(at);
+    blockchain::validate_header validator(state_->consensus, state_->network);
+    auto const result = validator.chain_state_at(header, hash, height, index.get_parent_index(at), index);
+    if (!result) {
+        json_object failure;
+        failure.put("error", result.error().message());
+        return failure.finish();
+    }
+    auto const& chain = **result;
+    json_object snapshot;
+    snapshot.put("height", chain.height());
+    snapshot.put("hash", encode_hash(hash));
+    snapshot.put("parent_hash", encode_hash(header.previous_block_hash()));
+    snapshot.put("timestamp", header.timestamp());
+    snapshot.put("version", header.version());
+    snapshot.put("bits", compact_hex(header.bits()));
+    snapshot.put("minimum_version", chain.minimum_version());
+    snapshot.put("median_time_past", chain.median_time_past());
+    snapshot.put("work_required", compact_hex(chain.work_required()));
+    snapshot.put("enabled_flags", uint64_t(chain.enabled_flags()));
+    snapshot.put("is_under_checkpoint", chain.is_under_checkpoint());
+    snapshot.put("checkpoint_conflict", chain.is_checkpoint_conflict(hash));
+    snapshot.put("is_retarget_height", domain::chain::chain_state::is_retarget_height(size_t(height)));
+    snapshot.put("is_null", chain.is_null());
+#if defined(KTH_CURRENCY_BCH)
+    snapshot.put("block_interval_seconds", chain.block_interval());
+    snapshot.put("tick", chain.tick());
+    snapshot.put("parent_tick", chain.parent_tick());
+    snapshot.put("faster_blocks_active", chain.is_faster_blocks_active());
+    json_object asert;
+    auto const anchor = chain.assert_anchor_block_info();
+    asert.put("anchor_height", anchor.height);
+    asert.put("ancestor_timestamp", anchor.ancestor_timestamp);
+    asert.put("anchor_bits", compact_hex(anchor.bits));
+    asert.put("half_life_seconds", chain.asert_half_life());
+    snapshot.raw("asert", asert.finish());
+    json_object upgrades;
+    upgrades.put("pythagoras", chain.is_pythagoras_enabled());
+    upgrades.put("euclid", chain.is_euclid_enabled());
+    upgrades.put("pisano", chain.is_pisano_enabled());
+    upgrades.put("mersenne", chain.is_mersenne_enabled());
+    upgrades.put("fermat", chain.is_fermat_enabled());
+    upgrades.put("euler", chain.is_euler_enabled());
+    upgrades.put("gauss", chain.is_gauss_enabled());
+    upgrades.put("descartes", chain.is_descartes_enabled());
+    upgrades.put("lobachevski", chain.is_lobachevski_enabled());
+    upgrades.put("galois", chain.is_galois_enabled());
+    upgrades.put("leibniz", chain.is_leibniz_enabled());
+    upgrades.put("cantor", chain.is_cantor_enabled());
+    snapshot.raw("upgrades", upgrades.finish());
+    // A header-only state seeds ABLA from defaults, not from the active
+    // chain's block sizes: it is not reported as if it were.
+    json_object abla;
+    abla.put("available", false);
+    abla.put("reason", "Requires the block-size history of the active chain");
+    snapshot.raw("abla", abla.finish());
+#endif
+    return snapshot.finish();
+}
+
+std::string header_sync::runtime_settings() const {
+    auto const& state = *state_;
+    auto const name = std::string(domain::config::chain_name(state.network, domain::config::chain_name_format::display));
+    json_object root;
+
+    json_object node;
+    node.put("sync_peers", maximum_peers);
+    node.put("sync_timeout_seconds", uint32_t(response_timeout.count()));
+    root.raw("node", node.finish());
+
+    auto const t = state.transport();
+    json_object network;
+    network.put("identifier", t.identifier);
+    network.put("protocol_maximum", t.protocol_maximum);
+    network.put("protocol_minimum", t.protocol_minimum);
+    network.put("services", t.services);
+    network.put("invalid_services", t.invalid_services);
+    network.put("relay_transactions", t.relay_transactions);
+    network.put("validate_checksum", t.validate_checksum);
+    network.put("user_agent", t.user_agent);
+    network.put("browser_maximum_payload", t.browser_maximum_payload);
+    network.put("channel_handshake_seconds", t.channel_handshake_seconds);
+    network.put("channel_expiration_minutes", t.channel_expiration_minutes);
+    root.raw("network", network.finish());
+
+    auto const& c = state.consensus;
+    json_object chain;
+    chain.put("easy_blocks", c.easy_blocks);
+    chain.put("retarget", c.retarget);
+    chain.put("reorganization_limit", c.reorganization_limit);
+    chain.put("max_reorg_depth", c.max_reorg_depth);
+    chain.put("max_checkpoint_height", c.max_checkpoint_height);
+    chain.raw("checkpoints", json_array(c.checkpoints, [](auto const& value) { return json_string(value.to_string()); }));
+#if defined(KTH_CURRENCY_BCH)
+    chain.put("bch_uahf", c.bch_uahf);
+    chain.put("bch_daa_cw144", c.bch_daa_cw144);
+    chain.put("bch_pythagoras", c.bch_pythagoras);
+    chain.put("bch_euclid", c.bch_euclid);
+    chain.put("bch_pisano", c.bch_pisano);
+    chain.put("bch_mersenne", c.bch_mersenne);
+    chain.put("bch_fermat", c.bch_fermat);
+    chain.put("bch_euler", c.bch_euler);
+    chain.put("bch_gauss", c.bch_gauss);
+    chain.put("bch_descartes", c.bch_descartes);
+    chain.put("bch_lobachevski", c.bch_lobachevski);
+    chain.put("bch_galois", c.bch_galois);
+    chain.put("bch_leibniz", c.bch_leibniz);
+    chain.put("leibniz_activation_time", c.leibniz_activation_time);
+    chain.put("cantor_activation_time", c.cantor_activation_time);
+    chain.put("asert_half_life", c.asert_half_life);
+#endif
+    root.raw("chain", chain.finish());
+
+    json_object sync;
+    sync.put("network", name);
+    sync.put("index_capacity", state.index.capacity());
+    sync.put("discovery_enabled", state.discovery_enabled);
+    sync.put("discovery_allow_private", state.discovery_allow_private);
+    sync.put("discovery_wss_only", state.discovery_wss_only);
+    sync.put("connect_timeout_seconds", uint32_t(connect_timeout.count()));
+    sync.put("tip_refresh_seconds", uint32_t(tip_refresh_interval.count()));
+    sync.put("retry_initial_seconds", retry_initial_seconds);
+    sync.put("retry_maximum_seconds", retry_maximum_seconds);
+    sync.put("cache_directory", std::string(cache_root) + name);
+    sync.raw("peer_endpoints", json_array(state.peers, [](auto const& peer) { return json_string(peer->url); }));
+    root.raw("header_sync", sync.finish());
+    return root.finish();
+}
 
 std::string header_sync::peer_endpoint(size_t at) const { return at < peer_count() ? state_->peers[at]->url : std::string{}; }
 std::string header_sync::peer_source(size_t at) const { return at < peer_count() ? state_->peers[at]->source : std::string{}; }

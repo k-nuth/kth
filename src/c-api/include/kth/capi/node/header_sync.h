@@ -126,6 +126,14 @@ char* kth_node_header_sync_header_hex(kth_header_sync_const_t self, uint64_t hei
 KTH_EXPORT KTH_OWNED
 char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t height);
 
+/** The consensus state of the active tip as JSON ("null" at genesis). @return Owned C string, or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_chain_state_snapshot(kth_header_sync_const_t self);
+
+/** The client's effective settings as JSON. @return Owned C string, or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self);
+
 // Peers and discovery
 // ---------------------------------------------------------------------------
 

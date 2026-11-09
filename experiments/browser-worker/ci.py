@@ -37,6 +37,11 @@ WORKER_TEST = r"""async name => {
             const text = String(event.data);
             lines.push(text);
             if (/FAILED|UNEXPECTED|ERROR:/.test(text)) return finish(false);
+            // A control prints "JSON <document>" for what must parse as JSON.
+            if (text.startsWith('JSON ')) {
+                try { JSON.parse(text.slice(5)); }
+                catch (error) { lines.push('FAILED: invalid JSON: ' + error.message); return finish(false); }
+            }
             joined ||= text.includes(`${name} control joined`);
             idle ||= text.includes('OWNER QUIESCENT timers=0 streams=0');
             if (joined && idle) finish(true);
