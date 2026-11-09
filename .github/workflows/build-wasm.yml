@@ -251,7 +251,9 @@ jobs:
           python -m pip install conan==2.31.2 kthbuild playwright==1.55.0 websockets==15.0.1
           python -m playwright install --with-deps chromium
           conan profile detect --force
-          git clone --depth 1 https://github.com/conan-io/conan-toolchains.git "$RUNNER_TEMP/conan-toolchains"
+          git clone https://github.com/conan-io/conan-toolchains.git "$RUNNER_TEMP/conan-toolchains"
+          # The emsdk recipe revision fixed in conan-wasm.lock, as in the build job.
+          git -C "$RUNNER_TEMP/conan-toolchains" checkout --detach 11b83330cdeb20622fe4b097dccb254969639a54
           conan remote add conan-toolchains "$RUNNER_TEMP/conan-toolchains"
           conan remote add "$CONAN_REMOTE" "$CONAN_REMOTE_URL" --force
       - name: ⏱️ No raw Asio timers in code the browser compiles
