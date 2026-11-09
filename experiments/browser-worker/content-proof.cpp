@@ -12,12 +12,14 @@
 #include <kth/capi/node/header_sync.h>
 #include <kth/infrastructure/utility/browser_runtime.hpp>
 #include <kth/node/header_sync.hpp>
+#include <kth/node/detail/header_sync_test_seam.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/use_awaitable.hpp>
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
+#include <memory>
 #include <string>
 
 kth::browser::runtime owner;
@@ -29,6 +31,13 @@ constexpr auto regtest = kth::domain::config::network::regtest;
 
 void require(bool condition, std::string const& what) {
     if (!condition) throw std::runtime_error(what);
+}
+
+// A client, or the control fails.
+std::unique_ptr<header_sync> make_client(std::string const& url, kth::domain::config::network network, size_t capacity) {
+    auto created = header_sync::create(url, network, capacity);
+    require(bool(created), "the client was refused: " + url);
+    return std::move(*created);
 }
 
 bool contains(std::string const& text, std::string const& part) { return text.find(part) != std::string::npos; }
@@ -48,7 +57,8 @@ template <typename Predicate>
 ::asio::awaitable<void> control() {
     // Off by default: nothing is sampled.
     {
-        header_sync client("ws://127.0.0.1:18800", regtest, 1'000);
+        auto client_owned = make_client("ws://127.0.0.1:18800", regtest, 1'000);
+        auto& client = *client_owned;
         auto const height = co_await client.run();
         require(height && *height == 150, "synchronization: " + client.status());
         require(client.block_metadata(150, false) == "null", "a block was sampled while sampling was off");
@@ -58,7 +68,8 @@ template <typename Predicate>
     // Blocks and transactions: the window's 100 most recent bodies, each
     // checked; the announced transaction observed.
     {
-        header_sync client("ws://127.0.0.1:18800", regtest, 1'000);
+        auto client_owned = make_client("ws://127.0.0.1:18800", regtest, 1'000);
+        auto& client = *client_owned;
         require(client.configure_content(true, true), "content could not be configured");
         require(contains(client.runtime_settings(), "\"relay_transactions\":true"), "relay was not asked for");
         auto const height = co_await client.run();
@@ -100,7 +111,8 @@ template <typename Predicate>
     }
     // A block a peer has not got: the others are still sampled.
     {
-        header_sync client("ws://127.0.0.1:18809", regtest, 1'000);
+        auto client_owned = make_client("ws://127.0.0.1:18809", regtest, 1'000);
+        auto& client = *client_owned;
         require(client.configure_content(true, false), "content could not be configured");
         auto const height = co_await client.run();
         require(height && *height == 150, "synchronization: " + client.status());
@@ -112,7 +124,8 @@ template <typename Predicate>
     // Transactions only: one of 300 KiB is accepted; a peer that leaves 16
     // requests unanswered gets them expired and the 17th asked for.
     for (auto const* url : {"ws://127.0.0.1:18808", "ws://127.0.0.1:18807"}) {
-        header_sync client(url, regtest, 1'000);
+        auto client_owned = make_client(url, regtest, 1'000);
+        auto& client = *client_owned;
         require(client.configure_content(false, true), "content could not be configured");
         auto watch = [&]() -> ::asio::awaitable<void> {
             co_await wait_for([&] { return contains(client.content_state(), "\"observed_transactions\":1"); },
@@ -126,12 +139,30 @@ template <typename Predicate>
     // A peer's notfound leaves another peer's request alone: the transaction
     // asked of the slow peer is still taken when it comes.
     {
-        header_sync client("ws://127.0.0.1:18811", regtest, 1'000);
+        auto client_owned = make_client("ws://127.0.0.1:18811", regtest, 1'000);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18812"), "the second peer was refused");
         require(client.configure_content(false, true), "content could not be configured");
         auto watch = [&]() -> ::asio::awaitable<void> {
             co_await wait_for([&] { return contains(client.content_state(), "\"observed_transactions\":1"); },
                 "another peer's notfound dropped the request: " + client.content_state() + " " + client.status());
+            (void)co_await client.request_stop();
+        };
+        using namespace ::asio::experimental::awaitable_operators;
+        (void)co_await (client.follow() && watch());
+    }
+
+    // A session task that fails ends its session, which is retried: the
+    // transaction is still observed. The task throws while the peer keeps
+    // answering; nothing else ends that session.
+    {
+        auto client_owned = make_client("ws://127.0.0.1:18811", regtest, 1'000);
+        auto& client = *client_owned;
+        require(client.configure_content(false, true), "content could not be configured");
+        kth::node::detail::fail_next_transaction_requests();
+        auto watch = [&]() -> ::asio::awaitable<void> {
+            co_await wait_for([&] { return contains(client.content_state(), "\"observed_transactions\":1"); },
+                "a failed transaction task left its session running: " + client.content_state() + " " + client.status());
             (void)co_await client.request_stop();
         };
         using namespace ::asio::experimental::awaitable_operators;

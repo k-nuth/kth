@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/node/header_sync.hpp>
+#include <kth/node/detail/header_sync_test_seam.hpp>
 #if defined(KTH_BROWSER_NODE)
 #include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/infrastructure/utility/browser_runtime.hpp>
@@ -37,10 +38,10 @@ namespace {
 using namespace kth::domain;
 using namespace kth::network;
 
-size_t checked_capacity(size_t capacity) {
-    if (capacity == 0 || capacity > 2'000'000) throw std::invalid_argument("header capacity outside 1..2000000");
-    return capacity;
-}
+constexpr size_t maximum_capacity = 2'000'000;
+
+// Armed only by the test seam.
+bool transaction_requests_fault = false;
 
 blockchain::settings validation_settings(domain::config::network network) {
     blockchain::settings result(network);
@@ -102,15 +103,27 @@ hash_list locator(blockchain::header_index const& index) {
 
 using refresh_channel = kth::select_channel<unsigned>;
 
-// A peer that sent invalid data: it is not retried.
-struct peer_fault : std::runtime_error {
-    using std::runtime_error::runtime_error;
+// Why a peer's session ended. A peer at fault (it sent invalid data) is not
+// retried until reset(); a lost session is.
+struct session_failure {
+    std::string reason;
+    bool peer_fault = false;
 };
 
-// The index is full: no peer can go on.
-// Handles a message that is not part of the header exchange (discovery);
-// true when it was one.
-using message_handler = std::function<::asio::awaitable<bool>(raw_message const&)>;
+template <typename T = void>
+using session_result = std::expected<T, session_failure>;
+
+std::unexpected<session_failure> peer_fault(std::string reason) {
+    return std::unexpected(session_failure{std::move(reason), true});
+}
+
+std::unexpected<session_failure> session_lost(std::string reason) {
+    return std::unexpected(session_failure{std::move(reason), false});
+}
+
+// Handles a message that is not part of the header exchange (discovery,
+// transactions); true when it was one.
+using message_handler = std::function<::asio::awaitable<session_result<bool>>(raw_message const&)>;
 
 constexpr size_t maximum_peers = 8;
 constexpr auto connect_timeout = std::chrono::seconds(10);
@@ -136,8 +149,8 @@ data_chunk discovery_packet(uint32_t magic, std::string_view command, data_chunk
 // The next message from the peer, until the deadline or a refresh request. The
 // peer session's inbound queue is itself a selectable channel: a losing receive
 // leaves its message queued. nullopt for the deadline or a refresh; a closed
-// session is an error.
-::asio::awaitable<std::optional<raw_message>> receive_until(peer_session& peer,
+// session is a failure.
+::asio::awaitable<session_result<std::optional<raw_message>>> receive_until(peer_session& peer,
         std::chrono::steady_clock::time_point deadline, refresh_channel* refresh = nullptr) {
     using namespace ::asio::experimental;
     auto executor = co_await ::asio::this_coro::executor;
@@ -145,14 +158,14 @@ data_chunk discovery_packet(uint32_t magic, std::string_view command, data_chunk
         auto completion = co_await make_select(receive(peer.messages()), receive(*refresh), after(deadline))
             .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
-        if (ec) throw std::runtime_error("peer session closed");
+        if (ec) co_return session_lost("peer session closed");
         if (selected.index != 0) co_return std::nullopt;
         co_return std::move(*selected.value<0>());
     }
     auto completion = co_await make_select(receive(peer.messages()), after(deadline))
         .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
     auto& [ec, selected] = completion;
-    if (ec) throw std::runtime_error("peer session closed");
+    if (ec) co_return session_lost("peer session closed");
     if (selected.index != 0) co_return std::nullopt;
     co_return std::move(*selected.value<0>());
 }
@@ -170,42 +183,48 @@ data_chunk discovery_packet(uint32_t magic, std::string_view command, data_chunk
     co_return std::move(*selected.value<0>());
 }
 
-::asio::awaitable<void> answer_ping(peer_session& peer, byte_reader& reader) {
+::asio::awaitable<session_result<>> answer_ping(peer_session& peer, byte_reader& reader) {
     auto ping = message::ping::from_data(reader, peer.negotiated_version());
-    if (!ping) throw peer_fault("invalid ping");
+    if (!ping) co_return peer_fault("invalid ping");
     auto ec = co_await peer.send(message::pong(ping->nonce()));
-    if (ec) throw std::runtime_error(ec.message());
+    if (ec) co_return session_lost(ec.message());
+    co_return session_result<>{};
 }
 
 // At the tip: until the peer announces a block, a refresh is requested, or a
 // periodic refresh is due. It never opens another connection. Pings and
 // discovery are answered meanwhile.
-::asio::awaitable<void> wait_for_tip(peer_session& peer, refresh_channel& refresh_request,
+::asio::awaitable<session_result<>> wait_for_tip(peer_session& peer, refresh_channel& refresh_request,
         message_handler const& other, uint64_t& announcements) {
     auto executor = co_await ::asio::this_coro::executor;
     auto const refresh = std::chrono::steady_clock::now() + tip_refresh_interval;
     for (;;) {
-        auto raw = co_await receive_until(peer, refresh, &refresh_request);
-        if (!raw) co_return;
-        if (co_await other(*raw)) continue;
-        byte_reader reader(raw->payload);
-        auto const command = raw->heading.command();
+        auto received = co_await receive_until(peer, refresh, &refresh_request);
+        if (!received) co_return std::unexpected(received.error());
+        if (!*received) co_return session_result<>{};
+        auto const& raw = **received;
+        auto handled = co_await other(raw);
+        if (!handled) co_return std::unexpected(handled.error());
+        if (*handled) continue;
+        byte_reader reader(raw.payload);
+        auto const command = raw.heading.command();
         if (command == message::ping::command) {
-            co_await answer_ping(peer, reader);
+            auto answered = co_await answer_ping(peer, reader);
+            if (!answered) co_return answered;
         } else if (command == message::inventory::command) {
             auto inventory = message::inventory::from_data(reader, peer.negotiated_version());
-            if (!inventory) throw peer_fault("invalid inventory");
+            if (!inventory) co_return peer_fault("invalid inventory");
             if (inventory->count(message::inventory::type_id::block) != 0) {
                 ++announcements;
-                co_return;
+                co_return session_result<>{};
             }
         } else if (command == message::headers::command) {
             auto headers = message::headers::from_data(reader, peer.negotiated_version());
-            if (!headers || !headers->is_sequential()) throw peer_fault("invalid headers announcement");
+            if (!headers || !headers->is_sequential()) co_return peer_fault("invalid headers announcement");
             // Fetched from our locator, so an announcement cannot bypass validation.
             if (!headers->elements().empty()) {
                 ++announcements;
-                co_return;
+                co_return session_result<>{};
             }
         }
         co_await ::asio::post(executor, ::asio::use_awaitable);
@@ -481,49 +500,59 @@ struct header_sync::impl {
     int32_t cache_height = -1;
     hash_digest cache_tip{};
 
-    // Replays the cached chain through the header organizer. Throws if the
-    // file is not this network's valid active chain.
-    void restore(std::string const& path, size_t capacity) {
+    // Replays the cached chain through the header organizer. Fails, with
+    // the reason, if the file is not this network's valid active chain.
+    std::expected<void, std::string> restore(std::string const& path, size_t capacity) {
         cache_path = path;
         std::ifstream input(path, std::ios::binary | std::ios::ate);
-        if (!input) return;
+        if (!input) return {};
         auto const length = uint64_t(std::streamoff(input.tellg()));
-        if (length == 0) return;
+        if (length == 0) return {};
         if (length % header_size != 0 || length / header_size > capacity) {
-            throw std::runtime_error("its size is not a whole chain within capacity");
+            return std::unexpected("its size is not a whole chain within capacity");
         }
         auto const count = length / header_size;
         input.seekg(0);
         std::array<uint8_t, header_size> bytes{};
-        auto read_header = [&] {
+        auto read_header = [&]() -> std::expected<domain::chain::header, std::string> {
             if (!input.read(reinterpret_cast<char*>(bytes.data()), bytes.size())) {
-                throw std::runtime_error("it is truncated");
+                return std::unexpected("it is truncated");
             }
             byte_reader reader(bytes);
             auto header = domain::chain::header::from_data(reader);
-            if (!header) throw std::runtime_error("a header does not decode");
+            if (!header) return std::unexpected("a header does not decode");
             return *header;
         };
-        if (domain::chain::hash(read_header()) != index.get_hash(index.active_at(0))) {
-            throw std::runtime_error("it starts at another genesis");
+        auto const first = read_header();
+        if (!first) return std::unexpected(first.error());
+        if (domain::chain::hash(*first) != index.get_hash(index.active_at(0))) {
+            return std::unexpected("it starts at another genesis");
         }
         organizer.start();
+        struct stop_organizer {
+            blockchain::header_organizer& organizer;
+            ~stop_organizer() { organizer.stop(); }
+        } guard{organizer};
         for (uint64_t height = 1; height < count;) {
             domain::message::header::list batch;
             auto const end = std::min(count, height + max_get_headers);
-            for (; height < end; ++height) batch.emplace_back(read_header());
+            for (; height < end; ++height) {
+                auto header = read_header();
+                if (!header) return std::unexpected(header.error());
+                batch.emplace_back(std::move(*header));
+            }
             auto const result = organizer.add_headers(batch);
             if (result.error || result.headers_added != batch.size()) {
-                throw std::runtime_error("a header fails validation");
+                return std::unexpected("a header fails validation");
             }
             if (result.reorg_candidate) organizer.adopt_tip(result.reorg_branch_head);
         }
-        organizer.stop();
         if (uint64_t(organizer.header_height()) + 1 != count) {
-            throw std::runtime_error("it is not one active chain");
+            return std::unexpected("it is not one active chain");
         }
         cache_height = organizer.header_height();
         cache_tip = index.get_hash(index.active_at(cache_height));
+        return {};
     }
 
     // The file ends with this client's last written tip, at its height.
@@ -542,48 +571,60 @@ struct header_sync::impl {
     // Brings the file up to the active chain: appends while the chain it holds
     // is still active, rewrites it after a reorganization. A failure disables
     // the cache (synchronization goes on in memory).
-    void persist() noexcept {
+    void persist() {
         if (cache_path.empty()) return;
-        try {
-            auto const height = organizer.header_height();
-            // Appended only to the file this client last wrote: another client
-            // of the same network may have written it since. Otherwise the
-            // whole active chain is written again.
-            auto const append = cache_height >= 0 && cache_height <= height &&
-                index.get_hash(index.active_at(cache_height)) == cache_tip && holds_own_tip();
-            if (append && cache_height == height) return;
-            std::ofstream output(cache_path, std::ios::binary | (append ? std::ios::app : std::ios::trunc));
-            if (!output) throw std::runtime_error("it cannot be opened");
-            for (int32_t at = append ? cache_height + 1 : 0; at <= height; ++at) {
-                std::array<uint8_t, header_size> bytes{};
-                byte_writer writer(bytes);
-                if (!index.get_header(index.active_at(at)).to_data(writer, true)) {
-                    throw std::runtime_error("a header does not encode");
-                }
-                output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+        auto const written = write_cache();
+        if (written) return;
+        spdlog::warn("[header_sync] Header cache disabled: {}", written.error());
+        std::error_code ignored;
+        std::filesystem::remove(cache_path, ignored);
+        cache_path.clear();
+    }
+
+    std::expected<void, std::string> write_cache() {
+        auto const height = organizer.header_height();
+        // Appended only to the file this client last wrote: another client
+        // of the same network may have written it since. Otherwise the
+        // whole active chain is written again.
+        auto const append = cache_height >= 0 && cache_height <= height &&
+            index.get_hash(index.active_at(cache_height)) == cache_tip && holds_own_tip();
+        if (append && cache_height == height) return {};
+        std::ofstream output(cache_path, std::ios::binary | (append ? std::ios::app : std::ios::trunc));
+        if (!output) return std::unexpected("it cannot be opened");
+        for (int32_t at = append ? cache_height + 1 : 0; at <= height; ++at) {
+            std::array<uint8_t, header_size> bytes{};
+            byte_writer writer(bytes);
+            if (!index.get_header(index.active_at(at)).to_data(writer, true)) {
+                return std::unexpected("a header does not encode");
             }
-            output.flush();
-            if (!output) throw std::runtime_error("the write failed");
-            cache_height = height;
-            cache_tip = index.get_hash(index.active_at(height));
-        } catch (std::exception const& e) {
-            spdlog::warn("[header_sync] Header cache disabled: {}", e.what());
-            std::error_code ignored;
-            std::filesystem::remove(cache_path, ignored);
-            cache_path.clear();
+            output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
         }
+        output.flush();
+        if (!output) return std::unexpected("the write failed");
+        cache_height = height;
+        cache_tip = index.get_hash(index.active_at(height));
+        return {};
     }
 
     impl(std::string const& url, domain::config::network net, size_t capacity)
-        : network(net), index(checked_capacity(capacity)), consensus(validation_settings(net)),
+        : network(net), index(capacity), consensus(validation_settings(net)),
           organizer(index, consensus, net) {
-        if (url.empty()) throw std::invalid_argument("WebSocket bridge URL is required");
         peers.push_back(std::make_unique<remote>(url, "configured"));
+        // The index is empty and has room: the genesis header always fits.
         auto genesis = genesis_block(network);
-        if (!index.add(genesis.hash(), genesis.header()).inserted) throw std::runtime_error("genesis initialization failed");
+        [[maybe_unused]] auto const added = index.add(genesis.hash(), genesis.header());
+        assert(added.inserted);
         organizer.sync_tip();
     }
 };
+
+std::expected<std::unique_ptr<header_sync>, std::error_code> header_sync::create(std::string const& bridge_url,
+        domain::config::network network, size_t capacity) {
+    if (bridge_url.empty() || capacity == 0 || capacity > maximum_capacity) {
+        return std::unexpected(error::operation_failed);
+    }
+    return std::unique_ptr<header_sync>(new header_sync(bridge_url, network, capacity));
+}
 
 header_sync::header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity)
     : state_(std::make_unique<impl>(bridge_url, network, capacity)) {
@@ -593,11 +634,10 @@ header_sync::header_sync(std::string const& bridge_url, domain::config::network 
     std::error_code ec;
     if (!std::filesystem::is_directory(directory, ec)) return;
     auto const path = directory + "/" + std::string(cache_file);
-    try {
-        state_->restore(path, capacity);
-    } catch (std::exception const& e) {
+    auto const restored = state_->restore(path, capacity);
+    if (!restored) {
         // An invalid cache is discarded and the client starts at genesis.
-        spdlog::warn("[header_sync] Header cache discarded: {}", e.what());
+        spdlog::warn("[header_sync] Header cache discarded: {}", restored.error());
         std::filesystem::remove(path, ec);
         state_ = std::make_unique<impl>(bridge_url, network, capacity);
         state_->cache_path = path;
@@ -691,28 +731,43 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
         state.update_status();
         auto transport = state.transport();
         transport.browser_bridge_url = remote.url;
-        try {
-            auto connected = co_await ::asio::co_spawn(executor,
+        auto session = [&]() -> ::asio::awaitable<session_result<>> {
+            auto [thrown, connected] = co_await ::asio::co_spawn(executor,
                 async_connect(executor, "ws-peer", 8333, transport, connect_timeout),
-                ::asio::bind_cancellation_slot(remote.cancel.slot(), ::asio::use_awaitable));
-            if (!connected) throw std::runtime_error(connected.error().message());
+                ::asio::bind_cancellation_slot(remote.cancel.slot(), ::asio::as_tuple(::asio::use_awaitable)));
+            // Asio reports a cancelled connection attempt as an exception.
+            if (thrown) co_return session_lost(state.stop_requested ? "header sync stopped" : "connection failed");
+            if (!connected) co_return session_lost(connected.error().message());
             remote.session = *connected;
             auto peer = remote.session;
-            if (state.stop_requested) throw std::runtime_error("header sync stopped");
+            if (state.stop_requested) co_return session_lost("header sync stopped");
             // This session's transactions to ask for, and the doorbell of the
             // task that asks for them. Outlive the task group that joins it.
             std::deque<hash_digest> wanted_transactions;
             kth::select_channel<unsigned> wanted_doorbell{1};
+            // A session task that fails ends its session: it records why and
+            // stops the peer, which the exchange sees as a closed session.
+            std::string task_failure;
             kth::task_group tasks("header session", executor);
-            std::exception_ptr failure;
-            try {
+            auto spawn_task = [&](char const* name, std::function<::asio::awaitable<void>()> body) {
+                tasks.spawn(name, [&task_failure, peer, body = std::move(body)]() -> ::asio::awaitable<void> {
+                    try {
+                        co_await body();
+                    } catch (std::exception const& e) {
+                        // From a library (allocation, Asio).
+                        if (task_failure.empty()) task_failure = e.what();
+                        peer->stop();
+                    }
+                });
+            };
+            auto exchange = [&]() -> ::asio::awaitable<session_result<>> {
                 auto handshake = co_await perform_handshake_direct(*peer,
                     make_handshake_config(transport, 0, 0x48454144455253ULL + at));
-                if (!handshake) throw std::runtime_error(handshake.error().message());
+                if (!handshake) co_return session_lost(handshake.error().message());
                 remote.agent = handshake->peer_version->user_agent();
                 remote.connected = true;
                 remote.error.clear();
-                tasks.spawn("peer I/O", [peer]() -> ::asio::awaitable<void> { co_await peer->run(); });
+                spawn_task("peer I/O", [peer]() -> ::asio::awaitable<void> { co_await peer->run(); });
 
                 // Discovery, when both sides negotiated it. A browser has no
                 // listener: it answers requests with no endpoints, and adds the
@@ -721,21 +776,21 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                 // When the request this session sent is due an answer.
                 std::optional<std::chrono::steady_clock::time_point> discovery_due;
                 message_handler discovery = [this, &state, &remote, &policy, &transport, &discovery_due, peer, follow_tip](raw_message const& raw)
-                        -> ::asio::awaitable<bool> {
+                        -> ::asio::awaitable<session_result<bool>> {
                     auto const command = raw.heading.command();
                     if (command != ws::request_command && command != ws::response_command) co_return false;
                     auto const now = uint32_t(zulu_time());
                     if (command == ws::request_command) {
                         auto const request = ws::decode_request(raw.payload);
-                        if (!request || !policy.accept_request(*request, now)) throw peer_fault("invalid discovery request");
+                        if (!request || !policy.accept_request(*request, now)) co_return peer_fault("invalid discovery request");
                         auto payload = ws::encode(ws::response{request->id, {}}, now, state.discovery_allow_private);
                         auto ec = co_await peer->send_raw(discovery_packet(transport.identifier, ws::response_command,
                             std::move(*payload)));
-                        if (ec) throw std::runtime_error(ec.message());
+                        if (ec) co_return session_lost(ec.message());
                         co_return true;
                     }
                     auto response = ws::decode_response(raw.payload, now, state.discovery_allow_private);
-                    if (!response || !policy.accept_response(*response, now)) throw peer_fault("invalid discovery response");
+                    if (!response || !policy.accept_response(*response, now)) co_return peer_fault("invalid discovery response");
                     discovery_due.reset();
                     for (auto const& endpoint : response->endpoints) {
                         if (state.stop_requested || state.peers.size() >= maximum_peers) break;
@@ -754,52 +809,53 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                 // this peer; an unanswered request expires after 10 s, and the
                 // task wakes for it as for new work.
                 if (state.observe_transactions) {
-                    tasks.spawn("transaction requests", [&state, peer, at, &wanted_transactions, &wanted_doorbell]()
+                    spawn_task("transaction requests", [&state, peer, at, &wanted_transactions, &wanted_doorbell]()
                             -> ::asio::awaitable<void> {
                         using namespace ::asio::experimental;
                         auto executor = co_await ::asio::this_coro::executor;
-                        try {
-                            for (;;) {
-                                state.prune_pool();
-                                auto const mine = [&](auto const& entry) { return entry.second.owner == at; };
-                                auto outstanding = size_t(std::count_if(state.requested_transactions.begin(),
-                                    state.requested_transactions.end(), mine));
-                                hash_list wanted;
-                                while (!wanted_transactions.empty() && outstanding < transaction_requests) {
-                                    auto const hash = wanted_transactions.front();
-                                    wanted_transactions.pop_front();
-                                    if (state.pool.contains(hash) || state.requested_transactions.contains(hash)) continue;
-                                    state.requested_transactions[hash] = {std::chrono::steady_clock::now(), at};
-                                    ++outstanding;
-                                    wanted.push_back(hash);
-                                }
-                                if (!wanted.empty()) {
-                                    auto request = message::get_data::create(wanted, message::inventory::type_id::transaction);
-                                    if (!request || co_await peer->send(*request)) co_return;
-                                }
-                                auto due = std::chrono::steady_clock::time_point::max();
-                                for (auto const& entry : state.requested_transactions) {
-                                    if (mine(entry)) due = std::min(due, entry.second.at + request_lifetime);
-                                }
-                                auto completion = co_await make_select(receive(wanted_doorbell), after(due))
-                                    .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-                                if (std::get<0>(completion)) co_return;
+                        if (std::exchange(transaction_requests_fault, false)) {
+                            throw std::runtime_error("transaction requests failed (test seam)");
+                        }
+                        // Until the session ends: its doorbell closes, or a send fails.
+                        for (;;) {
+                            state.prune_pool();
+                            auto const mine = [&](auto const& entry) { return entry.second.owner == at; };
+                            auto outstanding = size_t(std::count_if(state.requested_transactions.begin(),
+                                state.requested_transactions.end(), mine));
+                            hash_list wanted;
+                            while (!wanted_transactions.empty() && outstanding < transaction_requests) {
+                                auto const hash = wanted_transactions.front();
+                                wanted_transactions.pop_front();
+                                if (state.pool.contains(hash) || state.requested_transactions.contains(hash)) continue;
+                                state.requested_transactions[hash] = {std::chrono::steady_clock::now(), at};
+                                ++outstanding;
+                                wanted.push_back(hash);
                             }
-                        } catch (std::exception const&) {
-                            // The session ends; so does this.
+                            if (!wanted.empty()) {
+                                auto request = message::get_data::create(wanted, message::inventory::type_id::transaction);
+                                if (!request || co_await peer->send(*request)) co_return;
+                            }
+                            auto due = std::chrono::steady_clock::time_point::max();
+                            for (auto const& entry : state.requested_transactions) {
+                                if (mine(entry)) due = std::min(due, entry.second.at + request_lifetime);
+                            }
+                            auto completion = co_await make_select(receive(wanted_doorbell), after(due))
+                                .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+                            if (std::get<0>(completion)) co_return;
                         }
                     });
                 }
                 auto const ring = [&wanted_doorbell] { (void)wanted_doorbell.try_send(0u); };
                 message_handler other = [&state, peer, at, discovery, ring, &wanted_transactions](raw_message const& raw)
-                        -> ::asio::awaitable<bool> {
-                    if (co_await discovery(raw)) co_return true;
+                        -> ::asio::awaitable<session_result<bool>> {
+                    auto discovered = co_await discovery(raw);
+                    if (!discovered || *discovered) co_return discovered;
                     if (!state.observe_transactions) co_return false;
                     auto const command = raw.heading.command();
                     byte_reader reader(raw.payload);
                     if (command == message::inventory::command) {
                         auto inventory = message::inventory::from_data(reader, peer->negotiated_version());
-                        if (!inventory) throw peer_fault("invalid inventory");
+                        if (!inventory) co_return peer_fault("invalid inventory");
                         for (auto const& item : inventory->inventories()) {
                             if (item.type() != message::inventory::type_id::transaction) continue;
                             ++state.transaction_announcements;
@@ -815,7 +871,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     if (command == message::transaction::command) {
                         auto transaction = message::transaction::from_data(reader, peer->negotiated_version());
                         if (!transaction || reader.remaining_size() != 0 || transaction->check(body_limit, true, true)) {
-                            throw peer_fault("invalid transaction structure");
+                            co_return peer_fault("invalid transaction structure");
                         }
                         ++state.transactions_received;
                         // Kept only when it was asked for.
@@ -829,7 +885,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     }
                     if (command == message::not_found::command) {
                         auto missing = message::not_found::from_data(reader, peer->negotiated_version());
-                        if (!missing) throw peer_fault("invalid notfound");
+                        if (!missing) co_return peer_fault("invalid notfound");
                         // Only this peer's requests: another peer's stay
                         // pending, whatever this one has or had.
                         for (auto const& item : missing->inventories()) {
@@ -850,7 +906,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                 // (sampled, or overtaken by a reorganization) or the peer has
                 // not got it (the next call tries the next block). False when
                 // there is nothing to fetch, or the peer did not answer.
-                auto download_one = [&]() -> ::asio::awaitable<bool> {
+                auto download_one = [&]() -> ::asio::awaitable<session_result<bool>> {
                     if (!state.sample_blocks || state.requested_blocks.size() >= 2) co_return false;
                     state.prune_content();
                     auto const tip = uint64_t(state.organizer.header_height());
@@ -876,32 +932,38 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         ~release() { state.requested_blocks.erase(height); }
                     } guard{state, height};
                     auto request = message::get_data::create(hash_list{expected}, message::inventory::type_id::block);
-                    if (!request) throw std::runtime_error("block request");
+                    if (!request) co_return session_lost("block request");
                     auto ec = co_await peer->send(*request);
-                    if (ec) throw std::runtime_error(ec.message());
+                    if (ec) co_return session_lost(ec.message());
                     auto const deadline = std::chrono::steady_clock::now() + body_timeout;
                     bool not_found = false;
                     while (!state.stop_requested) {
-                        auto raw = co_await receive_until(*peer, deadline);
+                        auto received = co_await receive_until(*peer, deadline);
+                        if (!received) co_return std::unexpected(received.error());
+                        auto& raw = *received;
                         if (!raw) break;
                         auto const command = raw->heading.command();
                         if (command == message::not_found::command) {
                             byte_reader reader(raw->payload);
                             auto missing = message::not_found::from_data(reader, peer->negotiated_version());
-                            if (!missing) throw peer_fault("invalid notfound");
+                            if (!missing) co_return peer_fault("invalid notfound");
                             if (std::any_of(missing->inventories().begin(), missing->inventories().end(), [&](auto const& item) {
                                     return item.type() == message::inventory::type_id::block && item.hash() == expected;
                                 })) {
                                 not_found = true;
                                 break;
                             }
-                            co_await other(*raw);
+                            auto handled = co_await other(*raw);
+                            if (!handled) co_return std::unexpected(handled.error());
                             continue;
                         }
-                        if (co_await other(*raw)) continue;
+                        auto handled = co_await other(*raw);
+                        if (!handled) co_return std::unexpected(handled.error());
+                        if (*handled) continue;
                         byte_reader reader(raw->payload);
                         if (command == message::ping::command) {
-                            co_await answer_ping(*peer, reader);
+                            auto answered = co_await answer_ping(*peer, reader);
+                            if (!answered) co_return std::unexpected(answered.error());
                             continue;
                         }
                         if (command == message::headers::command) {
@@ -910,7 +972,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         }
                         if (command != message::block::command) continue;
                         auto body = message::block::from_data(reader, peer->negotiated_version());
-                        if (!body || reader.remaining_size() != 0) throw peer_fault("invalid block encoding");
+                        if (!body || reader.remaining_size() != 0) co_return peer_fault("invalid block encoding");
                         // A late reply to an earlier request.
                         if (domain::chain::hash(body->header()) != expected) continue;
                         auto const at = state.index.active_at(int32_t(height));
@@ -920,7 +982,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         if (error || !body->is_distinct_transaction_set()) {
                             ++state.rejected_bodies;
                             state.content_error = error ? error.message() : "duplicate block transactions";
-                            throw peer_fault("invalid block body: " + state.content_error);
+                            co_return peer_fault("invalid block body: " + state.content_error);
                         }
                         sampled_block record;
                         record.hash = expected;
@@ -929,7 +991,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         auto const& coinbase = body->transactions().front();
                         record.coinbase.resize(coinbase.serialized_size(true));
                         byte_writer writer(record.coinbase);
-                        if (!coinbase.to_data(writer, true)) throw peer_fault("coinbase serialization");
+                        if (!coinbase.to_data(writer, true)) co_return peer_fault("coinbase serialization");
                         for (auto const& transaction : body->transactions()) {
                             auto const hash = domain::chain::hash(transaction);
                             record.txids.push_back(hash);
@@ -957,7 +1019,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     if (policy.begin_request(query, uint32_t(zulu_time()))) {
                         auto ec = co_await peer->send_raw(discovery_packet(transport.identifier, ws::request_command,
                             std::move(*ws::encode(query))));
-                        if (ec) throw std::runtime_error(ec.message());
+                        if (ec) co_return session_lost(ec.message());
                         discovery_due = std::chrono::steady_clock::now() + std::chrono::seconds(ws::response_timeout);
                     }
                     // What the tip was when this request went out.
@@ -967,7 +1029,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     remote.status = "synchronizing";
                     state.update_status();
                     auto sent = co_await peer->send(message::get_headers(hashes, null_hash));
-                    if (sent) throw std::runtime_error(sent.message());
+                    if (sent) co_return session_lost(sent.message());
 
                     // One deadline for the whole request, whatever else the
                     // peer sends meanwhile.
@@ -977,17 +1039,22 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         // Yield even when messages are queued: the other peers,
                         // cancellation and the deadline run under traffic.
                         co_await ::asio::post(executor, ::asio::use_awaitable);
-                        auto raw = co_await receive_until(*peer, deadline);
-                        if (!raw) throw std::runtime_error("header response timeout");
-                        if (co_await other(*raw)) continue;
+                        auto received = co_await receive_until(*peer, deadline);
+                        if (!received) co_return std::unexpected(received.error());
+                        auto& raw = *received;
+                        if (!raw) co_return session_lost("header response timeout");
+                        auto handled = co_await other(*raw);
+                        if (!handled) co_return std::unexpected(handled.error());
+                        if (*handled) continue;
                         byte_reader reader(raw->payload);
                         if (raw->heading.command() == message::ping::command) {
-                            co_await answer_ping(*peer, reader);
+                            auto answered = co_await answer_ping(*peer, reader);
+                            if (!answered) co_return std::unexpected(answered.error());
                             continue;
                         }
                         if (raw->heading.command() != message::headers::command) continue;
                         auto headers = message::headers::from_data(reader, peer->negotiated_version());
-                        if (!headers || !headers->is_sequential()) throw peer_fault("invalid headers response");
+                        if (!headers || !headers->is_sequential()) co_return peer_fault("invalid headers response");
                         // A tip announced while the answer is pending shares
                         // the command; with an unknown parent it is not the answer.
                         if (!headers->elements().empty() &&
@@ -1004,7 +1071,9 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         retries = 0;
                         state.update_status();
                         // At the tip: sample a body, then ask again for headers.
-                        if (co_await download_one()) continue;
+                        auto sampled = co_await download_one();
+                        if (!sampled) co_return std::unexpected(sampled.error());
+                        if (*sampled) continue;
                         if (!follow_tip) {
                             // The session ends here: an outstanding discovery
                             // request is still given its time to be answered.
@@ -1013,17 +1082,20 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                             while (discovery_due && std::chrono::steady_clock::now() < *discovery_due) {
                                 auto raw = co_await receive_or_close(*peer, *discovery_due);
                                 if (!raw) break;
-                                if (co_await other(*raw)) continue;
+                                auto handled = co_await other(*raw);
+                                if (!handled) co_return std::unexpected(handled.error());
+                                if (*handled) continue;
                                 if (raw->heading.command() == message::ping::command) {
                                     byte_reader reader(raw->payload);
                                     auto ping = message::ping::from_data(reader, peer->negotiated_version());
-                                    if (!ping) throw peer_fault("invalid ping");
+                                    if (!ping) co_return peer_fault("invalid ping");
                                     if (co_await peer->send(message::pong(ping->nonce()))) break;
                                 }
                             }
                             break;
                         }
-                        co_await wait_for_tip(*peer, remote.refresh, other, remote.announcements);
+                        auto waited = co_await wait_for_tip(*peer, remote.refresh, other, remote.announcements);
+                        if (!waited) co_return waited;
                         continue;
                     }
 
@@ -1046,7 +1118,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                             if (is_unknown(batch[kept]) && fits++ == remaining) break;
                         }
                         batch.resize(kept);
-                        if (batch.empty()) throw peer_fault("header capacity exceeded");
+                        if (batch.empty()) co_return peer_fault("header capacity exceeded");
                     }
                     // Does not suspend: peers validate one batch at a time.
                     auto const accepted = state.organizer.add_headers(batch);
@@ -1061,9 +1133,9 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         state.requested_transactions.clear();
                         ++state.pool_revision;
                     } else if (accepted.error && accepted.error != error::stale_chain) {
-                        throw peer_fault(accepted.error.message());
+                        co_return peer_fault(accepted.error.message());
                     }
-                    if (overflow) throw peer_fault("header capacity exceeded");
+                    if (overflow) co_return peer_fault("header capacity exceeded");
                     cursor = domain::chain::hash(answer->elements().back());
                     auto const known = state.index.find(cursor);
                     auto const reached = known != blockchain::header_index::null_index ? uint64_t(state.index.get_height(known)) : 0;
@@ -1076,7 +1148,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     if (unknown > 0 || accepted.reorg_candidate || tip_after != tip_before || reached > reach) {
                         idle = 0;
                     } else if (++idle >= 3) {
-                        throw peer_fault("peer made no header progress");
+                        co_return peer_fault("peer made no header progress");
                     }
                     reach = std::max(reach, reached);
                     if (known != blockchain::header_index::null_index) remote.height = reached;
@@ -1084,23 +1156,32 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     state.prune_content();
                     state.persist();
                 }
-            } catch (...) {
-                failure = std::current_exception();
+                co_return session_result<>{};
+            };
+            session_result<> result;
+            try {
+                result = co_await exchange();
+            } catch (std::exception const& e) {
+                // An exception from a library (allocation, Asio) ends the
+                // session as a lost one, after its tasks are joined.
+                result = session_lost(e.what());
             }
             wanted_doorbell.close();
             peer->stop();
             co_await tasks.join();
+            // The closed session a failed task caused is reported by its cause.
+            if (!task_failure.empty() && (result || !result.error().peer_fault)) result = session_lost(task_failure);
             std::erase_if(state.requested_transactions, [at](auto const& entry) { return entry.second.owner == at; });
             remote.connected = false;
             remote.agent.clear();
             remote.session.reset();
-            if (failure) std::rethrow_exception(failure);
-            if (!follow_tip || state.stop_requested || !state.fatal_error.empty()) break;
-        } catch (peer_fault const& e) {
-            remote.error = e.what();
-            remote.quarantined = true;
-        } catch (std::exception const& e) {
-            remote.error = e.what();
+            co_return result;
+        };
+        auto const ended = co_await session();
+        if (ended && (!follow_tip || state.stop_requested || !state.fatal_error.empty())) break;
+        if (!ended) {
+            remote.error = ended.error().reason;
+            if (ended.error().peer_fault) remote.quarantined = true;
         }
         remote.complete = false;
         remote.connected = false;
@@ -1433,5 +1514,7 @@ bool header_sync::running() const { return state_->active; }
 bool header_sync::idle() const { return !state_->active && state_->runtime->idle(); }
 std::string header_sync::status() const { return state_->message; }
 size_t header_sync::index_memory_bytes() const { return state_->index.memory_usage(); }
+
+void detail::fail_next_transaction_requests() { transaction_requests_fault = true; }
 } // namespace kth::node
 #endif

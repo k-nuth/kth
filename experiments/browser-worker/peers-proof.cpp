@@ -12,6 +12,7 @@
 #include <asio/co_spawn.hpp>
 #include <cstdio>
 #include <stdexcept>
+#include <memory>
 #include <string>
 
 kth::browser::runtime owner;
@@ -23,6 +24,13 @@ constexpr auto regtest = kth::domain::config::network::regtest;
 
 void require(bool condition, std::string const& what) {
     if (!condition) throw std::runtime_error(what);
+}
+
+// A client, or the control fails.
+std::unique_ptr<header_sync> make_client(std::string const& url, kth::domain::config::network network, size_t capacity) {
+    auto created = header_sync::create(url, network, capacity);
+    require(bool(created), "the client was refused: " + url);
+    return std::move(*created);
 }
 
 std::string describe(header_sync const& client) {
@@ -37,7 +45,8 @@ std::string describe(header_sync const& client) {
 ::asio::awaitable<void> control() {
     // Configuration: distinct ws/wss URLs, at most eight, while settled.
     {
-        header_sync client("ws://127.0.0.1:18780", regtest, 100);
+        auto client_owned = make_client("ws://127.0.0.1:18780", regtest, 100);
+        auto& client = *client_owned;
         require(!client.add_peer("ws://127.0.0.1:18780"), "a duplicate peer was added");
         require(!client.add_peer("http://127.0.0.1:18785"), "a peer that is not ws/wss was added");
         require(!client.add_peer("ws://"), "a peer without a host was added");
@@ -52,7 +61,8 @@ std::string describe(header_sync const& client) {
 
     // Two peers, one index: the longer chain wins, each peer reports its own.
     {
-        header_sync client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18785"), "the second peer was refused");
         auto const height = co_await client.run();
         require(height && *height == 2600, "two peers did not synchronize: " + describe(client));
@@ -78,7 +88,8 @@ std::string describe(header_sync const& client) {
         }
     }
     {
-        header_sync fresh("ws://127.0.0.1:18780", regtest, 100);
+        auto fresh_owned = make_client("ws://127.0.0.1:18780", regtest, 100);
+        auto& fresh = *fresh_owned;
         require(fresh.chain_state_snapshot() == "null", "a genesis-only client has a chain state");
         // An endpoint with a quote and a backslash is escaped in the JSON.
         require(fresh.add_peer("ws://127.0.0.1:18798/\"q\\"), "the quoted endpoint was refused");
@@ -92,7 +103,8 @@ std::string describe(header_sync const& client) {
     // A peer with invalid proof of work, and one that is not there: neither
     // stops the good one. The invalid one is rejected, the absent one is not.
     {
-        header_sync client("ws://127.0.0.1:18781", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18781", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18799") && client.add_peer("ws://127.0.0.1:18780"), "peers refused");
         auto const height = co_await client.run();
         require(height && *height == 2500, "a bad peer stopped the good one: " + describe(client));
@@ -108,7 +120,8 @@ std::string describe(header_sync const& client) {
     // invalid proof of work, is rejected; it does not stop the peer whose
     // chain fits.
     {
-        header_sync client("ws://127.0.0.1:18803", regtest, 100);
+        auto client_owned = make_client("ws://127.0.0.1:18803", regtest, 100);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18804"), "the short peer was refused");
         auto const height = co_await client.run();
         // The flood's headers that fit are valid: they make the chain.
@@ -120,7 +133,8 @@ std::string describe(header_sync const& client) {
     // A peer answering with known headers by turns makes no progress: it is
     // rejected once the others are done, and the run ends.
     {
-        header_sync client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18805"), "the alternating peer was refused");
         auto const height = co_await client.run();
         require(height && *height == 2500, "alternation: " + describe(client));
@@ -132,7 +146,8 @@ std::string describe(header_sync const& client) {
     // A slow peer whose answers bring headers another peer delivered first
     // advances through them: it is not taken for one repeating them.
     {
-        header_sync client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18780", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.add_peer("ws://127.0.0.1:18810"), "the slow peer was refused");
         auto const height = co_await client.run();
         require(height && *height == 2500, "slow peer: " + describe(client));
@@ -143,7 +158,8 @@ std::string describe(header_sync const& client) {
 
     // A discovery answer that comes after the last headers still counts.
     {
-        header_sync client("ws://127.0.0.1:18806", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18806", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.configure_discovery(true, true, false), "discovery could not be configured");
         auto const height = co_await client.run();
         require(height && *height == 2600 && client.peer_count() == 2, "the late discovery answer was lost: " + describe(client));
@@ -153,7 +169,8 @@ std::string describe(header_sync const& client) {
     // A peer that closes while its discovery answer is awaited has still
     // completed its headers: the run succeeds.
     {
-        header_sync client("ws://127.0.0.1:18813", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18813", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.configure_discovery(true, true, false), "discovery could not be configured");
         auto const height = co_await client.run();
         require(height && *height == 2500, "a close during the discovery wait failed the run: " + describe(client));
@@ -163,7 +180,8 @@ std::string describe(header_sync const& client) {
     // Discovery: the only configured peer advertises another, which joins and
     // brings the longer chain. Loopback endpoints need private ones allowed.
     {
-        header_sync client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.configure_discovery(true, true, false), "discovery could not be configured");
         auto const height = co_await client.run();
         require(height && *height == 2600, "the discovered peer did not join: " + describe(client));
@@ -173,14 +191,16 @@ std::string describe(header_sync const& client) {
     {
         // Without private endpoints allowed, advertising one is invalid data:
         // the peer is rejected and nothing joins.
-        header_sync client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto& client = *client_owned;
         auto const height = co_await client.run();
         require(!height && client.peer_count() == 1 && client.peer_state(0) == "rejected",
             "a private endpoint was accepted: " + describe(client));
     }
     {
         // With discovery off, it is not negotiated.
-        header_sync client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto client_owned = make_client("ws://127.0.0.1:18789", regtest, 10'000);
+        auto& client = *client_owned;
         require(client.configure_discovery(false, true, false), "discovery could not be disabled");
         auto const height = co_await client.run();
         require(height && *height == 2500 && client.peer_count() == 1, "discovery ran while disabled: " + describe(client));

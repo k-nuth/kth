@@ -33,7 +33,9 @@ kth_error_code_t kth_node_header_sync_construct(char const* bridge_url, kth_netw
         auto const bridge_url_cpp = std::string(bridge_url);
         auto const network_cpp = kth::network_to_cpp(network);
         auto const capacity_cpp = kth::sz(capacity);
-        *out = kth::make_owned<cpp_t>(bridge_url_cpp, network_cpp, capacity_cpp);
+        auto created = cpp_t::create(bridge_url_cpp, network_cpp, capacity_cpp);
+        if (!created) return kth::to_c_err(created.error());
+        *out = created->release();
         return kth_ec_success;
     } catch (std::bad_alloc const&) {
         return kth_ec_out_of_memory;
