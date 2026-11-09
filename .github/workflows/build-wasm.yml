@@ -276,7 +276,7 @@ jobs:
             2>&1 | tee build/browser-results/configure.log
           cmake --build build/browser --parallel 4 --target \
             browser_stream_control browser_cap_control browser_eof_control \
-            browser_select_control browser_terminal_control browser_headers_control browser_persist_control browser_peers_control \
+            browser_select_control browser_terminal_control browser_headers_control browser_persist_control browser_peers_control browser_content_control \
             2>&1 | tee build/browser-results/build.log
       - name: 🌐 Run real WASM in Chromium Workers
         run: |

@@ -258,6 +258,38 @@ char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self) {
     }
 }
 
+kth_bool_t kth_node_header_sync_configure_content(kth_header_sync_mut_t self, kth_bool_t blocks, kth_bool_t transactions) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).configure_content(kth::int_to_bool(blocks), kth::int_to_bool(transactions)));
+}
+
+char* kth_node_header_sync_block_metadata(kth_header_sync_const_t self, uint64_t height, kth_bool_t include_transactions) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).block_metadata(height, kth::int_to_bool(include_transactions)));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_content_state(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).content_state());
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_observed_transactions(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).observed_transactions());
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(url != nullptr);

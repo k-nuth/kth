@@ -27,6 +27,9 @@
 #include <optional>
 #include <algorithm>
 #include <functional>
+#include <deque>
+#include <set>
+#include <map>
 #include <type_traits>
 
 namespace kth::node {
@@ -267,6 +270,58 @@ std::string json_array(Range const& values, Encode encode) {
 
 std::string compact_hex(uint32_t value) { return fmt::format("0x{:08x}", value); }
 
+// Content sampling bounds.
+constexpr uint64_t content_window = 100;
+constexpr size_t content_budget = 16 * 1024 * 1024;
+constexpr size_t body_limit = 32 * 1024 * 1024;
+constexpr size_t transaction_limit = 1'000'000;
+constexpr size_t pool_limit = 1000;
+constexpr size_t pool_budget = 8 * 1024 * 1024;
+constexpr uint64_t pool_lifetime_seconds = 20 * 60;
+constexpr size_t transaction_requests = 16;
+constexpr auto request_lifetime = std::chrono::seconds(10);
+constexpr auto body_timeout = std::chrono::seconds(5);
+
+struct sampled_block {
+    hash_digest hash{};
+    uint64_t bytes = 0;
+    uint64_t transactions = 0;
+    data_chunk coinbase;
+    hash_list txids;
+    hash_list proof;
+    // What it holds, allocations included.
+    size_t memory() const { return coinbase.capacity() + (txids.capacity() + proof.capacity()) * hash_size + 128; }
+};
+
+// A transaction asked of a peer, and when.
+struct pending_request {
+    std::chrono::steady_clock::time_point at;
+    size_t owner = 0;
+};
+
+struct observed_transaction {
+    uint64_t bytes = 0;
+    uint64_t received = 0;
+};
+
+hash_digest merkle_pair(hash_digest const& left, hash_digest const& right) {
+    data_chunk pair(left.begin(), left.end());
+    pair.insert(pair.end(), right.begin(), right.end());
+    return bitcoin_hash(pair);
+}
+
+// The coinbase's Merkle branch: its sibling at each level up to the root.
+hash_list coinbase_proof(hash_list level) {
+    hash_list proof;
+    while (level.size() > 1) {
+        if (level.size() % 2 != 0) level.push_back(level.back());
+        proof.push_back(level[1]);
+        for (size_t i = 0; i < level.size() / 2; ++i) level[i] = merkle_pair(level[2 * i], level[2 * i + 1]);
+        level.resize(level.size() / 2);
+    }
+    return proof;
+}
+
 constexpr size_t header_size = 80;
 constexpr std::string_view cache_root = "/kth-header-cache/";
 constexpr std::string_view cache_file = "chain-v1.bin";
@@ -298,6 +353,8 @@ struct header_sync::impl {
         ::asio::cancellation_signal cancel;
         refresh_channel refresh{1};
         std::unique_ptr<kth::steady_timer> retry;
+        // Bodies this peer did not provide, and when: not asked again for 30 s.
+        std::map<hash_digest, uint64_t> unavailable_bodies;
     };
     std::vector<std::unique_ptr<remote>> peers;
     kth::task_group* sessions = nullptr;
@@ -323,16 +380,91 @@ struct header_sync::impl {
         }
     }
 
+    bool sample_blocks = false;
+    bool observe_transactions = false;
+    std::map<uint64_t, sampled_block> blocks;
+    std::set<uint64_t> requested_blocks;
+    std::map<hash_digest, observed_transaction> pool;
+    std::map<hash_digest, pending_request> requested_transactions;
+    uint64_t transaction_announcements = 0;
+    uint64_t transactions_received = 0;
+    uint64_t content_revision = 0;
+    uint64_t pool_revision = 0;
+    uint64_t body_floor = 0;
+    uint64_t rejected_bodies = 0;
+    std::string content_error;
+
+    // Sampled blocks stay within the window, on the active chain and within
+    // the budget: transaction ids are dropped first, then the oldest blocks.
+    void prune_content() {
+        auto const tip = uint64_t(organizer.header_height());
+        auto const floor = tip >= content_window ? tip - content_window + 1 : 0;
+        for (auto it = blocks.begin(); it != blocks.end();) {
+            auto const at = it->first <= tip ? index.active_at(int32_t(it->first)) : blockchain::header_index::null_index;
+            if (it->first < floor || at == blockchain::header_index::null_index || index.get_hash(at) != it->second.hash) {
+                it = blocks.erase(it);
+                ++content_revision;
+            } else {
+                ++it;
+            }
+        }
+        auto memory = [&] {
+            size_t total = 0;
+            for (auto const& entry : blocks) total += entry.second.memory();
+            return total;
+        };
+        for (auto& entry : blocks) {
+            if (memory() <= content_budget) break;
+            if (!entry.second.txids.empty()) {
+                // Released, not only emptied.
+                hash_list{}.swap(entry.second.txids);
+                ++content_revision;
+            }
+        }
+        while (!blocks.empty() && memory() > content_budget) {
+            body_floor = std::max(body_floor, blocks.begin()->first + 1);
+            blocks.erase(blocks.begin());
+            ++content_revision;
+        }
+    }
+
+    // Observations expire, and stay within count and size.
+    void prune_pool() {
+        auto const now = uint64_t(zulu_time());
+        for (auto it = pool.begin(); it != pool.end();) {
+            if (now >= it->second.received + pool_lifetime_seconds) {
+                it = pool.erase(it);
+                ++pool_revision;
+            } else {
+                ++it;
+            }
+        }
+        auto const steady = std::chrono::steady_clock::now();
+        std::erase_if(requested_transactions, [&](auto const& entry) { return steady >= entry.second.at + request_lifetime; });
+        auto bytes = [&] {
+            size_t total = 0;
+            for (auto const& entry : pool) total += entry.second.bytes;
+            return total;
+        };
+        while (pool.size() > pool_limit || bytes() > pool_budget) {
+            pool.erase(std::min_element(pool.begin(), pool.end(),
+                [](auto const& a, auto const& b) { return a.second.received < b.second.received; }));
+            ++pool_revision;
+        }
+    }
+
     network::settings transport() const {
         network::settings result(network);
         // It stores headers: it serves no blocks and relays no transactions.
         result.services = 0;
-        result.relay_transactions = false;
+        result.relay_transactions = observe_transactions;
         result.validate_checksum = true;
         result.user_agent = "/KTH-browser-headers/";
         if (discovery_enabled) result.user_agent = network::ws_discovery::advertise(result.user_agent).value();
         result.channel_handshake_seconds = 10;
-        result.browser_maximum_payload = maximum_payload;
+        // Blocks up to 32 MiB when sampling them, transactions up to 1 MB
+        // when observing them; otherwise headers.
+        result.browser_maximum_payload = sample_blocks ? body_limit : observe_transactions ? transaction_limit : maximum_payload;
         result.channel_expiration_minutes = session_expiration_minutes;
         return result;
     }
@@ -567,6 +699,10 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
             remote.session = *connected;
             auto peer = remote.session;
             if (state.stop_requested) throw std::runtime_error("header sync stopped");
+            // This session's transactions to ask for, and the doorbell of the
+            // task that asks for them. Outlive the task group that joins it.
+            std::deque<hash_digest> wanted_transactions;
+            kth::select_channel<unsigned> wanted_doorbell{1};
             kth::task_group tasks("header session", executor);
             std::exception_ptr failure;
             try {
@@ -613,6 +749,205 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     co_return true;
                 };
 
+                // Transaction observation: announced transactions are queued
+                // here, and one task asks for them, at most 16 outstanding for
+                // this peer; an unanswered request expires after 10 s, and the
+                // task wakes for it as for new work.
+                if (state.observe_transactions) {
+                    tasks.spawn("transaction requests", [&state, peer, at, &wanted_transactions, &wanted_doorbell]()
+                            -> ::asio::awaitable<void> {
+                        using namespace ::asio::experimental;
+                        auto executor = co_await ::asio::this_coro::executor;
+                        try {
+                            for (;;) {
+                                state.prune_pool();
+                                auto const mine = [&](auto const& entry) { return entry.second.owner == at; };
+                                auto outstanding = size_t(std::count_if(state.requested_transactions.begin(),
+                                    state.requested_transactions.end(), mine));
+                                hash_list wanted;
+                                while (!wanted_transactions.empty() && outstanding < transaction_requests) {
+                                    auto const hash = wanted_transactions.front();
+                                    wanted_transactions.pop_front();
+                                    if (state.pool.contains(hash) || state.requested_transactions.contains(hash)) continue;
+                                    state.requested_transactions[hash] = {std::chrono::steady_clock::now(), at};
+                                    ++outstanding;
+                                    wanted.push_back(hash);
+                                }
+                                if (!wanted.empty()) {
+                                    auto request = message::get_data::create(wanted, message::inventory::type_id::transaction);
+                                    if (!request || co_await peer->send(*request)) co_return;
+                                }
+                                auto due = std::chrono::steady_clock::time_point::max();
+                                for (auto const& entry : state.requested_transactions) {
+                                    if (mine(entry)) due = std::min(due, entry.second.at + request_lifetime);
+                                }
+                                auto completion = co_await make_select(receive(wanted_doorbell), after(due))
+                                    .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+                                if (std::get<0>(completion)) co_return;
+                            }
+                        } catch (std::exception const&) {
+                            // The session ends; so does this.
+                        }
+                    });
+                }
+                auto const ring = [&wanted_doorbell] { (void)wanted_doorbell.try_send(0u); };
+                message_handler other = [&state, peer, at, discovery, ring, &wanted_transactions](raw_message const& raw)
+                        -> ::asio::awaitable<bool> {
+                    if (co_await discovery(raw)) co_return true;
+                    if (!state.observe_transactions) co_return false;
+                    auto const command = raw.heading.command();
+                    byte_reader reader(raw.payload);
+                    if (command == message::inventory::command) {
+                        auto inventory = message::inventory::from_data(reader, peer->negotiated_version());
+                        if (!inventory) throw peer_fault("invalid inventory");
+                        for (auto const& item : inventory->inventories()) {
+                            if (item.type() != message::inventory::type_id::transaction) continue;
+                            ++state.transaction_announcements;
+                            if (wanted_transactions.size() >= pool_limit) break;
+                            if (state.pool.contains(item.hash()) || state.requested_transactions.contains(item.hash())) continue;
+                            if (std::find(wanted_transactions.begin(), wanted_transactions.end(), item.hash()) != wanted_transactions.end()) continue;
+                            wanted_transactions.push_back(item.hash());
+                        }
+                        ring();
+                        // Block announcements in it are the header exchange's.
+                        co_return false;
+                    }
+                    if (command == message::transaction::command) {
+                        auto transaction = message::transaction::from_data(reader, peer->negotiated_version());
+                        if (!transaction || reader.remaining_size() != 0 || transaction->check(body_limit, true, true)) {
+                            throw peer_fault("invalid transaction structure");
+                        }
+                        ++state.transactions_received;
+                        // Kept only when it was asked for.
+                        if (state.requested_transactions.erase(domain::chain::hash(*transaction)) != 0) {
+                            state.pool[domain::chain::hash(*transaction)] = {raw.payload.size(), uint64_t(zulu_time())};
+                            ++state.pool_revision;
+                            state.prune_pool();
+                        }
+                        ring();
+                        co_return true;
+                    }
+                    if (command == message::not_found::command) {
+                        auto missing = message::not_found::from_data(reader, peer->negotiated_version());
+                        if (!missing) throw peer_fault("invalid notfound");
+                        // Only this peer's requests: another peer's stay
+                        // pending, whatever this one has or had.
+                        for (auto const& item : missing->inventories()) {
+                            if (item.type() != message::inventory::type_id::transaction) continue;
+                            auto const request = state.requested_transactions.find(item.hash());
+                            if (request != state.requested_transactions.end() && request->second.owner == at) {
+                                state.requested_transactions.erase(request);
+                            }
+                        }
+                        ring();
+                    }
+                    co_return false;
+                };
+
+                // Block sampling: the most recent active block not yet sampled,
+                // within the window, fetched and checked against its header.
+                // True when there may be more to fetch: a body was handled
+                // (sampled, or overtaken by a reorganization) or the peer has
+                // not got it (the next call tries the next block). False when
+                // there is nothing to fetch, or the peer did not answer.
+                auto download_one = [&]() -> ::asio::awaitable<bool> {
+                    if (!state.sample_blocks || state.requested_blocks.size() >= 2) co_return false;
+                    state.prune_content();
+                    auto const tip = uint64_t(state.organizer.header_height());
+                    auto const floor = std::max(state.body_floor, tip >= content_window ? tip - content_window + 1 : 0);
+                    auto const now = uint64_t(zulu_time());
+                    std::optional<uint64_t> selected;
+                    hash_digest expected{};
+                    for (auto height = tip; height >= floor && height > 0; --height) {
+                        auto const hash = state.index.get_hash(state.index.active_at(int32_t(height)));
+                        auto const refused = remote.unavailable_bodies.find(hash);
+                        if (state.blocks.contains(height) || state.requested_blocks.contains(height)) continue;
+                        if (refused != remote.unavailable_bodies.end() && now < refused->second + 30) continue;
+                        selected = height;
+                        expected = hash;
+                        break;
+                    }
+                    if (!selected) co_return false;
+                    auto const height = *selected;
+                    state.requested_blocks.insert(height);
+                    struct release {
+                        impl& state;
+                        uint64_t height;
+                        ~release() { state.requested_blocks.erase(height); }
+                    } guard{state, height};
+                    auto request = message::get_data::create(hash_list{expected}, message::inventory::type_id::block);
+                    if (!request) throw std::runtime_error("block request");
+                    auto ec = co_await peer->send(*request);
+                    if (ec) throw std::runtime_error(ec.message());
+                    auto const deadline = std::chrono::steady_clock::now() + body_timeout;
+                    bool not_found = false;
+                    while (!state.stop_requested) {
+                        auto raw = co_await receive_until(*peer, deadline);
+                        if (!raw) break;
+                        auto const command = raw->heading.command();
+                        if (command == message::not_found::command) {
+                            byte_reader reader(raw->payload);
+                            auto missing = message::not_found::from_data(reader, peer->negotiated_version());
+                            if (!missing) throw peer_fault("invalid notfound");
+                            if (std::any_of(missing->inventories().begin(), missing->inventories().end(), [&](auto const& item) {
+                                    return item.type() == message::inventory::type_id::block && item.hash() == expected;
+                                })) {
+                                not_found = true;
+                                break;
+                            }
+                            co_await other(*raw);
+                            continue;
+                        }
+                        if (co_await other(*raw)) continue;
+                        byte_reader reader(raw->payload);
+                        if (command == message::ping::command) {
+                            co_await answer_ping(*peer, reader);
+                            continue;
+                        }
+                        if (command == message::headers::command) {
+                            ++remote.announcements;
+                            continue;
+                        }
+                        if (command != message::block::command) continue;
+                        auto body = message::block::from_data(reader, peer->negotiated_version());
+                        if (!body || reader.remaining_size() != 0) throw peer_fault("invalid block encoding");
+                        // A late reply to an earlier request.
+                        if (domain::chain::hash(body->header()) != expected) continue;
+                        auto const at = state.index.active_at(int32_t(height));
+                        // Reorganized while it was fetched.
+                        if (at == blockchain::header_index::null_index || state.index.get_hash(at) != expected) co_return true;
+                        auto const error = body->check_body();
+                        if (error || !body->is_distinct_transaction_set()) {
+                            ++state.rejected_bodies;
+                            state.content_error = error ? error.message() : "duplicate block transactions";
+                            throw peer_fault("invalid block body: " + state.content_error);
+                        }
+                        sampled_block record;
+                        record.hash = expected;
+                        record.bytes = raw->payload.size();
+                        record.transactions = body->transactions().size();
+                        auto const& coinbase = body->transactions().front();
+                        record.coinbase.resize(coinbase.serialized_size(true));
+                        byte_writer writer(record.coinbase);
+                        if (!coinbase.to_data(writer, true)) throw peer_fault("coinbase serialization");
+                        for (auto const& transaction : body->transactions()) {
+                            auto const hash = domain::chain::hash(transaction);
+                            record.txids.push_back(hash);
+                            // Confirmed: no longer an observation.
+                            if (state.pool.erase(hash) != 0) ++state.pool_revision;
+                            state.requested_transactions.erase(hash);
+                        }
+                        record.proof = coinbase_proof(record.txids);
+                        state.blocks[height] = std::move(record);
+                        ++state.content_revision;
+                        state.prune_content();
+                        co_return true;
+                    }
+                    if (remote.unavailable_bodies.size() >= content_window) remote.unavailable_bodies.clear();
+                    remote.unavailable_bodies[expected] = uint64_t(zulu_time());
+                    co_return not_found;
+                };
+
                 hash_digest cursor{};
                 unsigned idle = 0;
                 uint64_t reach = 0;
@@ -644,7 +979,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         co_await ::asio::post(executor, ::asio::use_awaitable);
                         auto raw = co_await receive_until(*peer, deadline);
                         if (!raw) throw std::runtime_error("header response timeout");
-                        if (co_await discovery(*raw)) continue;
+                        if (co_await other(*raw)) continue;
                         byte_reader reader(raw->payload);
                         if (raw->heading.command() == message::ping::command) {
                             co_await answer_ping(*peer, reader);
@@ -668,6 +1003,8 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                         remote.complete = true;
                         retries = 0;
                         state.update_status();
+                        // At the tip: sample a body, then ask again for headers.
+                        if (co_await download_one()) continue;
                         if (!follow_tip) {
                             // The session ends here: an outstanding discovery
                             // request is still given its time to be answered.
@@ -676,7 +1013,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                             while (discovery_due && std::chrono::steady_clock::now() < *discovery_due) {
                                 auto raw = co_await receive_or_close(*peer, *discovery_due);
                                 if (!raw) break;
-                                if (co_await discovery(*raw)) continue;
+                                if (co_await other(*raw)) continue;
                                 if (raw->heading.command() == message::ping::command) {
                                     byte_reader reader(raw->payload);
                                     auto ping = message::ping::from_data(reader, peer->negotiated_version());
@@ -686,7 +1023,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                             }
                             break;
                         }
-                        co_await wait_for_tip(*peer, remote.refresh, discovery, remote.announcements);
+                        co_await wait_for_tip(*peer, remote.refresh, other, remote.announcements);
                         continue;
                     }
 
@@ -719,6 +1056,10 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     // headers another peer delivered first).
                     if (accepted.reorg_candidate) {
                         state.organizer.adopt_tip(accepted.reorg_branch_head);
+                        // Observations were relative to the abandoned chain.
+                        state.pool.clear();
+                        state.requested_transactions.clear();
+                        ++state.pool_revision;
                     } else if (accepted.error && accepted.error != error::stale_chain) {
                         throw peer_fault(accepted.error.message());
                     }
@@ -740,13 +1081,16 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                     reach = std::max(reach, reached);
                     if (known != blockchain::header_index::null_index) remote.height = reached;
                     remote.complete = false;
+                    state.prune_content();
                     state.persist();
                 }
             } catch (...) {
                 failure = std::current_exception();
             }
+            wanted_doorbell.close();
             peer->stop();
             co_await tasks.join();
+            std::erase_if(state.requested_transactions, [at](auto const& entry) { return entry.second.owner == at; });
             remote.connected = false;
             remote.agent.clear();
             remote.session.reset();
@@ -837,6 +1181,86 @@ bool header_sync::configure_discovery(bool enabled, bool allow_private, bool wss
 }
 
 size_t header_sync::peer_count() const { return state_->peers.size(); }
+
+bool header_sync::configure_content(bool blocks, bool transactions) {
+    if (!settled()) return false;
+    state_->sample_blocks = blocks;
+    state_->observe_transactions = transactions;
+    return true;
+}
+
+std::string header_sync::block_metadata(uint64_t height, bool include_transactions) const {
+    auto const& state = *state_;
+    auto const found = state.blocks.find(height);
+    if (found == state.blocks.end() || height > last_height()) return "null";
+    auto const& block = found->second;
+    // Still the active block at that height.
+    if (state.index.get_hash(state.index.active_at(int32_t(height))) != block.hash) return "null";
+    json_object result;
+    result.put("height", height);
+    result.put("hash", encode_hash(block.hash));
+    result.put("bytes", block.bytes);
+    result.put("transactions", block.transactions);
+    result.put("verification", "header-merkle-structure");
+    result.put("txids_retained", !block.txids.empty());
+    if (include_transactions) {
+        result.put("coinbase_hex", encode_base16(block.coinbase));
+        result.raw("txids", json_array(block.txids, [](auto const& hash) { return json_string(encode_hash(hash)); }));
+        result.raw("coinbase_merkle_proof", json_array(block.proof, [](auto const& hash) { return json_string(encode_hash(hash)); }));
+    }
+    byte_reader reader(block.coinbase);
+    auto const coinbase = domain::chain::transaction::from_data(reader, true);
+    if (coinbase && !coinbase->inputs().empty()) {
+        // The printable bytes of its input script, after the BIP34 height push.
+        auto const& script = coinbase->inputs().front().script().bytes();
+        size_t const start = !script.empty() && script[0] >= 1 && script[0] <= 5 && script.size() > script[0] ? script[0] + 1 : 0;
+        std::string tag;
+        for (size_t i = start; i < script.size(); ++i) tag += script[i] >= 32 && script[i] <= 126 ? char(script[i]) : ' ';
+        result.put("coinbase_tag", tag);
+    }
+    return result.finish();
+}
+
+std::string header_sync::content_state() const {
+    auto const& state = *state_;
+    size_t block_bytes = 0;
+    for (auto const& entry : state.blocks) block_bytes += entry.second.memory();
+    size_t pool_bytes = 0;
+    for (auto const& entry : state.pool) pool_bytes += entry.second.bytes;
+    json_object result;
+    result.put("blocks_enabled", state.sample_blocks);
+    result.put("transactions_enabled", state.observe_transactions);
+    result.put("revision", state.content_revision);
+    result.put("pool_revision", state.pool_revision);
+    result.put("cached_blocks", state.blocks.size());
+    result.put("cache_bytes", block_bytes);
+    result.put("inflight_blocks", state.requested_blocks.size());
+    result.put("rejected_bodies", state.rejected_bodies);
+    result.put("error", state.content_error);
+    result.put("transaction_announcements", state.transaction_announcements);
+    result.put("transactions_received", state.transactions_received);
+    result.put("pending_transactions", state.requested_transactions.size());
+    result.put("observed_transactions", state.pool.size());
+    result.put("observed_bytes", pool_bytes);
+    return result.finish();
+}
+
+std::string header_sync::observed_transactions() const {
+    auto const now = uint64_t(zulu_time());
+    std::string out = "[";
+    bool first = true;
+    for (auto const& [hash, observed] : state_->pool) {
+        if (now >= observed.received + pool_lifetime_seconds) continue;
+        json_object item;
+        item.put("txid", encode_hash(hash));
+        item.put("bytes", observed.bytes);
+        item.put("received_at", observed.received);
+        out += first ? "" : ",";
+        first = false;
+        out += item.finish();
+    }
+    return out + "]";
+}
 
 std::string header_sync::chain_state_snapshot() const {
     auto const& index = state_->index;
@@ -968,6 +1392,14 @@ std::string header_sync::runtime_settings() const {
     sync.put("retry_initial_seconds", retry_initial_seconds);
     sync.put("retry_maximum_seconds", retry_maximum_seconds);
     sync.put("cache_directory", std::string(cache_root) + name);
+    sync.put("download_blocks", state.sample_blocks);
+    sync.put("observe_transactions", state.observe_transactions);
+    sync.put("recent_block_window", content_window);
+    sync.put("content_cache_bytes", content_budget);
+    sync.put("maximum_block_payload_bytes", body_limit);
+    sync.put("observed_transaction_limit", pool_limit);
+    sync.put("observed_transaction_bytes", pool_budget);
+    sync.put("observed_transaction_expiry_seconds", pool_lifetime_seconds);
     sync.raw("peer_endpoints", json_array(state.peers, [](auto const& peer) { return json_string(peer->url); }));
     root.raw("header_sync", sync.finish());
     return root.finish();

@@ -134,6 +134,25 @@ char* kth_node_header_sync_chain_state_snapshot(kth_header_sync_const_t self);
 KTH_EXPORT KTH_OWNED
 char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self);
 
+// Content sampling
+// ---------------------------------------------------------------------------
+
+/** Block sampling and transaction observation, while no run is pending. False otherwise. Off by default. */
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_configure_content(kth_header_sync_mut_t self, kth_bool_t blocks, kth_bool_t transactions);
+
+/** A sampled block as JSON ("null" if not sampled or no longer active), with its coinbase, proof and txids when asked. @return Owned C string, or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_block_metadata(kth_header_sync_const_t self, uint64_t height, kth_bool_t include_transactions);
+
+/** The sampling state as JSON. @return Owned C string, or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_content_state(kth_header_sync_const_t self);
+
+/** The observed transactions as a JSON array. @return Owned C string, or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_observed_transactions(kth_header_sync_const_t self);
+
 // Peers and discovery
 // ---------------------------------------------------------------------------
 

@@ -402,7 +402,156 @@ async def bch_discovery_late(socket):
                 pending = None
 
 
+def coinbase(height):
+    """A coinbase that pays the subsidy to OP_TRUE, with the height in its input
+    script (BIP34) and padding to the 100-byte minimum transaction size."""
+    script = bytes([4]) + struct.pack("<I", height) + bytes([40]) + b"kth browser node control".ljust(40, b".")
+    return (struct.pack("<i", 2) + varint(1) + bytes(32) + struct.pack("<I", 0xFFFFFFFF) +
+            varint(len(script)) + script + struct.pack("<I", 0xFFFFFFFF) +
+            varint(1) + struct.pack("<q", 50 * 100_000_000) + varint(1) + b"\x51" + struct.pack("<I", 0))
+
+
+def blocks(length):
+    """A regtest chain of full blocks, each with only its coinbase."""
+    result = [(regtest_genesis(), None)]
+    for height in range(1, length + 1):
+        transaction = coinbase(height)
+        merkle = dsha(transaction)
+        prev = dsha(result[-1][0])
+        nonce = 0
+        while True:
+            header = header_bytes(0x20000000, prev, merkle, GENESIS_TIME + 600 * height, REGTEST_BITS, nonce)
+            if int.from_bytes(dsha(header), "little") <= REGTEST_TARGET:
+                break
+            nonce += 1
+        result.append((header, header + varint(1) + transaction))
+    return result
+
+
+# A structurally valid transaction to announce (its input spends nothing real).
+LOOSE_TX = (struct.pack("<i", 2) + varint(1) + dsha(b"kth") + struct.pack("<I", 0) + varint(60) + bytes(60) +
+            struct.pack("<I", 0xFFFFFFFF) + varint(1) + struct.pack("<q", 1000) + varint(1) + b"\x51" +
+            struct.pack("<I", 0))
+
+
+def loose_tx(index, outputs=1):
+    """A structurally valid transaction (its input spends nothing real)."""
+    return (struct.pack("<i", 2) + varint(1) + dsha(b"kth") + struct.pack("<I", index) + varint(60) + bytes(60) +
+            struct.pack("<I", 0xFFFFFFFF) + varint(outputs) + (struct.pack("<q", 1000) + varint(1) + b"\x51") * outputs +
+            struct.pack("<I", 0))
+
+
+async def serve_content(session, chain_blocks, corrupt_at=None, announce=None, missing_at=None,
+                        transactions=(), answered=None, answer_delay=0, disown=()):
+    """Headers and the blocks asked for (one with a body that does not match
+    its header, at `corrupt_at`; none at `missing_at`); once caught up, the
+    announced transactions, of which only those in `answered` (all, when
+    None) are served, `answer_delay` seconds after asked for. A second after
+    caught up, a notfound nobody asked for, for the transactions in `disown`."""
+    if announce:
+        transactions = (announce,)
+    served = {dsha(tx): tx for tx in transactions if answered is None or tx in answered}
+    by_hash = {}
+    for height, (header, block) in enumerate(chain_blocks[1:], 1):
+        if height == corrupt_at:
+            block = block[:-5] + bytes([block[-5] ^ 1]) + block[-4:]
+        if height != missing_at:
+            by_hash[dsha(header)] = block
+    announced = False
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            answer = session.headers_after(payload)
+            await session.send("headers", answer)
+            if disown and answer == varint(0):
+                await asyncio.sleep(1)
+                await session.send("notfound", varint(len(disown)) +
+                                   b"".join(struct.pack("<I", 1) + dsha(tx) for tx in disown))
+                disown = ()
+            if transactions and not announced and answer == varint(0):
+                announced = True
+                await session.send("inv", varint(len(transactions)) +
+                                   b"".join(struct.pack("<I", 1) + dsha(tx) for tx in transactions))
+        elif command == "getdata":
+            count, at = read_varint(payload, 0)
+            missing = []
+            for index in range(count):
+                kind = struct.unpack_from("<I", payload, at + 36 * index)[0]
+                hash_ = payload[at + 36 * index + 4:at + 36 * index + 36]
+                if kind == 2 and hash_ in by_hash:
+                    await session.send("block", by_hash[hash_])
+                elif kind == 1 and hash_ in served:
+                    await asyncio.sleep(answer_delay)
+                    await session.send("tx", served[hash_])
+                elif kind == 1 and any(dsha(tx) == hash_ for tx in transactions):
+                    pass  # asked for, never answered
+                else:
+                    missing.append(payload[at + 36 * index:at + 36 * index + 36])
+            if missing:
+                await session.send("notfound", varint(len(missing)) + b"".join(missing))
+        elif command == "ping":
+            await session.send("pong", payload)
+
+
+@quiet
+async def bch_content(socket):
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS, announce=LOOSE_TX)
+
+
+@quiet
+async def bch_bad_body(socket):
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS[:21]])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS[:21], corrupt_at=20)
+
+
+@quiet
+async def bch_tx_silent(socket):
+    # 17 transactions announced; the first 16 asked for are never answered.
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS[:21]])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS[:21], transactions=SILENT_TXS, answered=SILENT_TXS[16:])
+
+
+@quiet
+async def bch_big_tx(socket):
+    # One announced transaction of about 300 KiB.
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS[:21]])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS[:21], transactions=(BIG_TX,))
+
+
+@quiet
+async def bch_missing_block(socket):
+    # The tip's body is not available; the others are.
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS, missing_at=150)
+
+
+@quiet
+async def bch_tx_late(socket):
+    # One announced transaction, served late.
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS[:21]])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS[:21], transactions=(LATE_TX,), answer_delay=2.5)
+
+
+@quiet
+async def bch_tx_disown(socket):
+    # The same chain; once caught up, a notfound for that transaction.
+    session = bch_session(socket, [header for header, _ in CONTENT_BLOCKS[:21]])
+    await session.handshake()
+    await serve_content(session, CONTENT_BLOCKS[:21], disown=(LATE_TX,))
+
+
+LATE_TX = loose_tx(77)
+SILENT_TXS = tuple(loose_tx(index) for index in range(17))
+BIG_TX = loose_tx(99, outputs=30000)
 BCH_CHAIN = chain(2500)
+CONTENT_BLOCKS = blocks(150)
 BCH_FLOOD = chain(2100, invalid_at=100)
 BCH_REORG = extend(BCH_CHAIN[:2496], 2510, branch=1)
 BCH_RETRY_INVALID = extend(BCH_CHAIN[:2496], 2510, branch=2, invalid_at=2505)
@@ -421,6 +570,10 @@ async def main(scenario):
                 'bch_short': (18804, bch_short), 'bch_alternate': (18805, bch_alternate),
                 'bch_discovery_late': (18806, bch_discovery_late), 'bch_slow': (18810, bch_slow),
                 'bch_discovery_close': (18813, bch_discovery_close),
+                'bch_content': (18800, bch_content), 'bch_bad_body': (18801, bch_bad_body),
+                'bch_tx_silent': (18807, bch_tx_silent), 'bch_big_tx': (18808, bch_big_tx),
+                'bch_missing_block': (18809, bch_missing_block),
+                'bch_tx_late': (18811, bch_tx_late), 'bch_tx_disown': (18812, bch_tx_disown),
                 'bch_longer': (18785, bch_longer), 'bch_fork': (18786, bch_fork)}
     selected = controls if scenario == 'all' else {scenario: controls[scenario]}
     async with AsyncExitStack() as stack:
@@ -434,7 +587,8 @@ if __name__ == '__main__':
                                              'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize',
                                              'bch_reorg', 'bch_retry', 'bch_longer', 'bch_fork',
                                              'bch_discovery', 'bch_flood', 'bch_short', 'bch_alternate',
-                                             'bch_discovery_late', 'bch_slow',
-                                             'bch_discovery_close'],
+                                             'bch_discovery_late', 'bch_slow', 'bch_discovery_close', 'bch_content', 'bch_bad_body',
+                                             'bch_tx_silent', 'bch_big_tx', 'bch_missing_block',
+                                             'bch_tx_late', 'bch_tx_disown'],
                         default='all', nargs='?')
     asyncio.run(main(parser.parse_args().scenario))

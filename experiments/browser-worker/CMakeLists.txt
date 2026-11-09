@@ -33,4 +33,12 @@ if(TARGET c-api)
       -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
       -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
   set_target_properties(browser_peers_control PROPERTIES SUFFIX ".js")
+
+  # Block and transaction content sampling.
+  add_executable(browser_content_control content-proof.cpp)
+  target_link_libraries(browser_content_control PRIVATE c-api::c-api)
+  target_link_options(browser_content_control PRIVATE
+      -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+      -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+  set_target_properties(browser_content_control PROPERTIES SUFFIX ".js")
 endif()

@@ -70,6 +70,7 @@ loopback fixtures in `fixtures.py`:
 | `headers` | against a scripted BCH regtest peer (`fixtures.py`): 2500 headers in two batches; a header with invalid proof of work ends the session; a message declaring more than 256 KiB ends it at its heading; `follow()` answers a ping, fetches an announced block on the same connection and stops; the C API refuses destruct and reset while it runs |
 | `persist` | the header cache, against scripted regtest peers: nothing is written without the directory; a synchronized chain is restored, validated, by the next client before it connects; it is extended in place, rewritten after a reorganization, and discarded when a header does not validate |
 | `peers` | several peers against scripted regtest peers: configuration bounded to eight distinct ws/wss URLs; two peers synchronizing one index; a peer with invalid proof of work rejected and an absent one disconnected, neither stopping the good one; a peer learned through discovery joining, a private endpoint refused unless allowed, discovery off when disabled; the chain state and settings snapshots, parsed as JSON, including an escaped endpoint |
+| `content` | content sampling against scripted regtest peers serving full blocks: nothing sampled while off; with blocks and transactions on, relay asked for, the 100 most recent bodies sampled and checked, none below the window, the tip's metadata with its coinbase and proof, and an announced transaction observed; a body that does not match its header rejects its peer and is counted (through the C API) |
 
 Build (Emscripten 6, `ci_utils/conan/profiles/ems6`):
 
@@ -83,6 +84,6 @@ cmake -S . -B build/browser -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_NODE_EXE=OFF -DBUILD_C_API=ON \
   -DKTH_BROWSER_NODE=ON -DKTH_BROWSER_CONTROLS=ON
 cmake --build build/browser --target browser_stream_control browser_cap_control \
-  browser_eof_control browser_select_control browser_terminal_control browser_headers_control browser_persist_control browser_peers_control
+  browser_eof_control browser_select_control browser_terminal_control browser_headers_control browser_persist_control browser_peers_control browser_content_control
 python experiments/browser-worker/ci.py build/browser/experiments/browser-worker
 ```
