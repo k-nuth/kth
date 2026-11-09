@@ -11,6 +11,8 @@
 #include <kth/infrastructure/utility/task_group.hpp>
 #include <kth/network/peer_session.hpp>
 #include <kth/network/protocols_coro.hpp>
+#include <kth/network/ws_discovery.hpp>
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <asio/bind_cancellation_slot.hpp>
 #include <spdlog/spdlog.h>
 #include <asio/cancellation_signal.hpp>
@@ -21,6 +23,8 @@
 #include <cassert>
 #include <stdexcept>
 #include <optional>
+#include <algorithm>
+#include <functional>
 
 namespace kth::node {
 namespace {
@@ -92,24 +96,54 @@ hash_list locator(blockchain::header_index const& index) {
 
 using refresh_channel = kth::select_channel<unsigned>;
 
+// A peer that sent invalid data: it is not retried.
+struct peer_fault : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+// The index is full: no peer can go on.
+// Handles a message that is not part of the header exchange (discovery);
+// true when it was one.
+using message_handler = std::function<::asio::awaitable<bool>(raw_message const&)>;
+
+constexpr size_t maximum_peers = 8;
+constexpr auto connect_timeout = std::chrono::seconds(10);
+constexpr auto response_timeout = std::chrono::seconds(30);
+constexpr auto tip_refresh_interval = std::chrono::seconds(120);
+constexpr unsigned retry_initial_seconds = 5;
+constexpr unsigned retry_maximum_seconds = 60;
+
+bool valid_peer_url(std::string const& url) {
+    if (url.size() > 2048) return false;
+    if (!url.starts_with("ws://") && !url.starts_with("wss://")) return false;
+    auto const host = url.substr(url.find("//") + 2);
+    return !host.empty() && std::none_of(url.begin(), url.end(), [](unsigned char c) { return c <= ' ' || c == 0x7f; });
+}
+
+data_chunk discovery_packet(uint32_t magic, std::string_view command, data_chunk payload) {
+    domain::message::heading heading(magic, std::string(command), uint32_t(payload.size()), bitcoin_checksum(payload));
+    auto bytes = heading.to_data();
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 // The next message from the peer, until the deadline or a refresh request. The
 // peer session's inbound queue is itself a selectable channel: a losing receive
 // leaves its message queued. nullopt for the deadline or a refresh; a closed
 // session is an error.
-::asio::awaitable<std::optional<raw_message>> receive_timed(peer_session& peer,
-        std::chrono::seconds deadline, refresh_channel* refresh = nullptr) {
+::asio::awaitable<std::optional<raw_message>> receive_until(peer_session& peer,
+        std::chrono::steady_clock::time_point deadline, refresh_channel* refresh = nullptr) {
     using namespace ::asio::experimental;
     auto executor = co_await ::asio::this_coro::executor;
-    auto expires = std::chrono::steady_clock::now() + deadline;
     if (refresh) {
-        auto completion = co_await make_select(receive(peer.messages()), receive(*refresh), after(expires))
+        auto completion = co_await make_select(receive(peer.messages()), receive(*refresh), after(deadline))
             .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
         if (ec) throw std::runtime_error("peer session closed");
         if (selected.index != 0) co_return std::nullopt;
         co_return std::move(*selected.value<0>());
     }
-    auto completion = co_await make_select(receive(peer.messages()), after(expires))
+    auto completion = co_await make_select(receive(peer.messages()), after(deadline))
         .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
     auto& [ec, selected] = completion;
     if (ec) throw std::runtime_error("peer session closed");
@@ -117,38 +151,56 @@ using refresh_channel = kth::select_channel<unsigned>;
     co_return std::move(*selected.value<0>());
 }
 
-::asio::awaitable<raw_message> receive(peer_session& peer) {
-    auto raw = co_await receive_timed(peer, std::chrono::seconds(30));
-    if (!raw) throw std::runtime_error("header response timeout");
-    co_return std::move(*raw);
+// As receive_until without a refresh, but a closed session ends the wait
+// like the deadline does.
+::asio::awaitable<std::optional<raw_message>> receive_or_close(peer_session& peer,
+        std::chrono::steady_clock::time_point deadline) {
+    using namespace ::asio::experimental;
+    auto executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await make_select(receive(peer.messages()), after(deadline))
+        .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec || selected.index != 0) co_return std::nullopt;
+    co_return std::move(*selected.value<0>());
 }
 
-// A deadline refreshes headers on the existing session when the peer does not announce its tip.
-// It never opens another connection. Reads and ping responses remain owned by this coroutine.
-::asio::awaitable<void> wait_for_tip(peer_session& peer, refresh_channel& refresh_request) {
+::asio::awaitable<void> answer_ping(peer_session& peer, byte_reader& reader) {
+    auto ping = message::ping::from_data(reader, peer.negotiated_version());
+    if (!ping) throw peer_fault("invalid ping");
+    auto ec = co_await peer.send(message::pong(ping->nonce()));
+    if (ec) throw std::runtime_error(ec.message());
+}
+
+// At the tip: until the peer announces a block, a refresh is requested, or a
+// periodic refresh is due. It never opens another connection. Pings and
+// discovery are answered meanwhile.
+::asio::awaitable<void> wait_for_tip(peer_session& peer, refresh_channel& refresh_request,
+        message_handler const& other, uint64_t& announcements) {
     auto executor = co_await ::asio::this_coro::executor;
-    auto const refresh = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+    auto const refresh = std::chrono::steady_clock::now() + tip_refresh_interval;
     for (;;) {
-        auto const now = std::chrono::steady_clock::now();
-        if (now >= refresh) co_return;
-        auto raw = co_await receive_timed(peer, std::chrono::ceil<std::chrono::seconds>(refresh - now), &refresh_request);
+        auto raw = co_await receive_until(peer, refresh, &refresh_request);
         if (!raw) co_return;
+        if (co_await other(*raw)) continue;
         byte_reader reader(raw->payload);
         auto const command = raw->heading.command();
         if (command == message::ping::command) {
-            auto ping = message::ping::from_data(reader, peer.negotiated_version());
-            if (!ping) throw std::runtime_error("invalid ping");
-            auto ec = co_await peer.send(message::pong(ping->nonce()));
-            if (ec) throw std::runtime_error(ec.message());
+            co_await answer_ping(peer, reader);
         } else if (command == message::inventory::command) {
             auto inventory = message::inventory::from_data(reader, peer.negotiated_version());
-            if (!inventory) throw std::runtime_error("invalid inventory");
-            if (inventory->count(message::inventory::type_id::block) != 0) co_return;
+            if (!inventory) throw peer_fault("invalid inventory");
+            if (inventory->count(message::inventory::type_id::block) != 0) {
+                ++announcements;
+                co_return;
+            }
         } else if (command == message::headers::command) {
             auto headers = message::headers::from_data(reader, peer.negotiated_version());
-            if (!headers || !headers->is_sequential()) throw std::runtime_error("invalid headers announcement");
-            // Fetch from our locator so unsolicited announcements cannot bypass validation.
-            if (!headers->elements().empty()) co_return;
+            if (!headers || !headers->is_sequential()) throw peer_fault("invalid headers announcement");
+            // Fetched from our locator, so an announcement cannot bypass validation.
+            if (!headers->elements().empty()) {
+                ++announcements;
+                co_return;
+            }
         }
         co_await ::asio::post(executor, ::asio::use_awaitable);
     }
@@ -162,14 +214,65 @@ constexpr std::string_view cache_file = "chain-v1.bin";
 
 struct header_sync::impl {
     std::shared_ptr<browser::runtime> runtime = worker_runtime();
-    std::string bridge;
     domain::config::network network;
     blockchain::header_index index;
     blockchain::settings consensus;
     blockchain::header_organizer organizer;
-    std::shared_ptr<network::peer_session> peer;
-    ::asio::cancellation_signal cancel;
-    refresh_channel refresh_request{1};
+
+    // One per peer; each runs on its own session, all on this Worker's
+    // executor, sharing the index (validation does not suspend).
+    struct remote {
+        remote(std::string endpoint, std::string from) : url(std::move(endpoint)), source(std::move(from)) {}
+        std::string url;
+        std::string source;
+        std::string status = "idle";
+        std::string agent;
+        std::string error;
+        uint64_t height = 0;
+        uint64_t announcements = 0;
+        bool connected = false;
+        bool complete = false;
+        bool quarantined = false;
+        std::shared_ptr<network::peer_session> session;
+        ::asio::cancellation_signal cancel;
+        refresh_channel refresh{1};
+        std::unique_ptr<kth::steady_timer> retry;
+    };
+    std::vector<std::unique_ptr<remote>> peers;
+    kth::task_group* sessions = nullptr;
+    bool discovery_enabled = true;
+    bool discovery_allow_private = false;
+    bool discovery_wss_only = false;
+    uint64_t discovery_sequence = 1;
+    std::string fatal_error;
+
+    void update_status() {
+        if (stop_requested) { message = "stopped"; return; }
+        if (!fatal_error.empty()) { message = fatal_error; return; }
+        for (auto const& peer : peers) if (peer->status == "synchronizing") { message = "synchronizing"; return; }
+        for (auto const& peer : peers) if (peer->connected && peer->status == "caught_up") { message = "caught_up"; return; }
+        message = "connecting";
+    }
+
+    void stop_peers() {
+        for (auto& peer : peers) {
+            peer->cancel.emit(::asio::cancellation_type::all);
+            if (peer->session) peer->session->stop();
+            if (peer->retry) peer->retry->cancel();
+        }
+    }
+
+    network::settings transport() const {
+        network::settings result(network);
+        result.validate_checksum = true;
+        result.user_agent = "/KTH-browser-headers/";
+        if (discovery_enabled) result.user_agent = network::ws_discovery::advertise(result.user_agent).value();
+        result.channel_handshake_seconds = 10;
+        result.browser_maximum_payload = maximum_payload;
+        result.channel_expiration_minutes = session_expiration_minutes;
+        return result;
+    }
+
     bool active = false;
     size_t admitted = 0;
     bool stop_requested = false;
@@ -276,9 +379,10 @@ struct header_sync::impl {
     }
 
     impl(std::string const& url, domain::config::network net, size_t capacity)
-        : bridge(url), network(net), index(checked_capacity(capacity)), consensus(validation_settings(net)),
+        : network(net), index(checked_capacity(capacity)), consensus(validation_settings(net)),
           organizer(index, consensus, net) {
-        if (bridge.empty()) throw std::invalid_argument("WebSocket bridge URL is required");
+        if (url.empty()) throw std::invalid_argument("WebSocket bridge URL is required");
+        peers.push_back(std::make_unique<remote>(url, "configured"));
         auto genesis = genesis_block(network);
         if (!index.add(genesis.hash(), genesis.header()).inserted) throw std::runtime_error("genesis initialization failed");
         organizer.sync_tip();
@@ -322,135 +426,316 @@ header_sync::~header_sync() { assert(settled()); }
 ::asio::awaitable<std::expected<uint64_t, std::error_code>> header_sync::run_session(bool follow_tip) {
     auto& state = *state_;
     if (state.active || state.stop_requested) co_return std::unexpected(error::service_stopped);
-    std::error_code drained;
-    while (state.refresh_request.try_receive(drained)) {}
     state.active = true;
     struct active_guard {
         bool& flag;
         ~active_guard() { flag = false; }
     } guard{state.active};
+    state.fatal_error.clear();
     state.message = "connecting";
-    auto& index = state.index;
-    auto& organizer = state.organizer;
-    auto const capacity = index.capacity();
-    network::settings transport(state.network);
-    transport.browser_bridge_url = state.bridge;
-    transport.validate_checksum = true;
-    transport.user_agent = "/KTH-browser-headers/";
-    transport.channel_handshake_seconds = 10;
-    transport.browser_maximum_payload = maximum_payload;
-    transport.channel_expiration_minutes = session_expiration_minutes;
-    organizer.start();
-    try {
-        auto operation = [&]() -> ::asio::awaitable<void> {
-        auto executor = co_await ::asio::this_coro::executor;
-        auto connected = co_await ::asio::co_spawn(executor,
-            async_connect(executor, "bridge-peer", 8333, transport, std::chrono::seconds(10)),
-            ::asio::bind_cancellation_slot(state.cancel.slot(), ::asio::use_awaitable));
-        if (!connected) throw std::runtime_error(connected.error().message());
-        state.peer = *connected;
-        auto peer = state.peer;
-        if (state.stop_requested) throw std::runtime_error("header sync stopped");
-        kth::task_group tasks("header session", executor);
-        std::exception_ptr failure;
-        try {
-            auto handshake = co_await perform_handshake_direct(*peer, make_handshake_config(transport, 0, 0x48454144455253ULL));
-            if (!handshake) throw std::runtime_error(handshake.error().message());
-            tasks.spawn("peer I/O", [peer]() -> ::asio::awaitable<void> { co_await peer->run(); });
-            state.message = "connected";
-            state.message = "synchronizing";
-            bool complete = false;
-            while (!complete) {
-                if (state.stop_requested) throw std::runtime_error("header sync stopped");
-                auto sent = co_await peer->send(message::get_headers(locator(index), null_hash));
-                if (sent) throw std::runtime_error(sent.message());
-                bool received = false;
-                for (unsigned ignored = 0; ignored < 64; ++ignored) {
-                    auto raw = co_await receive(*peer);
-                    byte_reader reader(raw.payload);
-                    if (raw.heading.command() == message::ping::command) {
-                        auto ping = message::ping::from_data(reader, peer->negotiated_version());
-                        if (!ping) throw std::runtime_error("invalid ping");
-                        auto ec = co_await peer->send(message::pong(ping->nonce()));
-                        if (ec) throw std::runtime_error(ec.message());
-                        continue;
-                    }
-                    if (raw.heading.command() != message::headers::command) continue;
-                    auto headers = message::headers::from_data(reader, peer->negotiated_version());
-                    if (!headers || !headers->is_sequential()) throw std::runtime_error("invalid headers response");
-                    if (headers->elements().empty()) {
-                        state.message = "caught_up";
-                        if (!follow_tip) {
-                            complete = true;
-                            received = true;
-                            break;
-                        }
-                        co_await wait_for_tip(*peer, state.refresh_request);
-                        state.message = "synchronizing";
-                        received = true;
-                        break;
-                    }
-                    if (headers->elements().size() > capacity - index.size()) throw std::runtime_error("header capacity exceeded");
-                    auto before = index.size();
-                    auto accepted = organizer.add_headers(headers->elements());
-                    // A heavier branch is reported as stale_chain with a reorg
-                    // candidate: the client follows it. Otherwise stale_chain is
-                    // a batch that did not advance the tip (a lighter branch,
-                    // headers already known), judged below by its progress.
-                    // Adopting a branch is progress even when its headers were
-                    // already stored (a retry after a batch that failed past them).
-                    if (accepted.reorg_candidate) {
-                        organizer.adopt_tip(accepted.reorg_branch_head);
-                    } else if (accepted.error && accepted.error != error::stale_chain) {
-                        throw std::runtime_error(accepted.error.message());
-                    } else if (index.size() == before) {
-                        throw std::runtime_error("peer made no header progress");
-                    }
-                    state.persist();
-
-                    received = true;
-                    break;
-                }
-                if (!received) throw std::runtime_error("unsolicited message limit exceeded");
-                // Yield to the Worker between batches, including immediately available replies.
-                co_await ::asio::post(executor, ::asio::use_awaitable);
-            }
-        } catch (...) {
-            failure = std::current_exception();
+    state.organizer.start();
+    auto executor = co_await ::asio::this_coro::executor;
+    {
+        kth::task_group tasks("header peers", executor);
+        state.sessions = &tasks;
+        for (size_t at = 0; at < state.peers.size(); ++at) {
+            auto& peer = *state.peers[at];
+            peer.complete = false;
+            // A rejected peer stays rejected until reset().
+            if (!peer.quarantined) spawn_peer(at, follow_tip);
         }
-        peer->stop();
-        organizer.stop();
         co_await tasks.join();
-        if (failure) std::rethrow_exception(failure);
-        };
-        co_await operation();
-    } catch (std::exception const& exception) {
-        if (state.peer) state.peer->stop();
-        state.peer.reset();
-        organizer.stop();
-        state.active = false;
-        if (state.stop_requested) {
-            state.message = "stopped";
-            co_return last_height();
-        }
-        state.message = exception.what();
+        state.sessions = nullptr;
+    }
+    state.organizer.stop();
+    state.persist();
+    if (state.stop_requested) {
+        state.message = "stopped";
+        co_return last_height();
+    }
+    if (!state.fatal_error.empty()) {
+        state.message = state.fatal_error;
         co_return std::unexpected(error::operation_failed);
     }
-    state.peer.reset();
-    state.active = false;
-    co_return last_height();
+    for (auto const& peer : state.peers) {
+        if (peer->complete) {
+            state.message = "caught_up";
+            co_return last_height();
+        }
+    }
+    auto const first_error = std::find_if(state.peers.begin(), state.peers.end(),
+        [](auto const& peer) { return !peer->error.empty(); });
+    state.message = first_error == state.peers.end() ? "no usable header peers" : (*first_error)->error;
+    co_return std::unexpected(error::operation_failed);
+}
+
+void header_sync::spawn_peer(size_t at, bool follow_tip) {
+    auto& state = *state_;
+    state.sessions->spawn("header peer", [this, at, follow_tip, &state]() -> ::asio::awaitable<void> {
+        try {
+            co_await run_peer(at, follow_tip);
+        } catch (std::exception const& e) {
+            state.fatal_error = std::string("header peer task failed: ") + e.what();
+            state.stop_peers();
+        }
+    });
+}
+
+::asio::awaitable<void> header_sync::run_peer(size_t at, bool follow_tip) {
+    namespace ws = network::ws_discovery;
+    auto& state = *state_;
+    auto& remote = *state.peers[at];
+    auto executor = co_await ::asio::this_coro::executor;
+    unsigned retries = 0;
+    while (!state.stop_requested && state.fatal_error.empty() && !remote.quarantined) {
+        std::error_code drained;
+        while (remote.refresh.try_receive(drained)) {}
+        remote.agent.clear();
+        remote.status = "connecting";
+        state.update_status();
+        auto transport = state.transport();
+        transport.browser_bridge_url = remote.url;
+        try {
+            auto connected = co_await ::asio::co_spawn(executor,
+                async_connect(executor, "ws-peer", 8333, transport, connect_timeout),
+                ::asio::bind_cancellation_slot(remote.cancel.slot(), ::asio::use_awaitable));
+            if (!connected) throw std::runtime_error(connected.error().message());
+            remote.session = *connected;
+            auto peer = remote.session;
+            if (state.stop_requested) throw std::runtime_error("header sync stopped");
+            kth::task_group tasks("header session", executor);
+            std::exception_ptr failure;
+            try {
+                auto handshake = co_await perform_handshake_direct(*peer,
+                    make_handshake_config(transport, 0, 0x48454144455253ULL + at));
+                if (!handshake) throw std::runtime_error(handshake.error().message());
+                remote.agent = handshake->peer_version->user_agent();
+                remote.connected = true;
+                remote.error.clear();
+                tasks.spawn("peer I/O", [peer]() -> ::asio::awaitable<void> { co_await peer->run(); });
+
+                // Discovery, when both sides negotiated it. A browser has no
+                // listener: it answers requests with no endpoints, and adds the
+                // endpoints it learns as peers, within the peer limit.
+                ws::session_policy policy(state.discovery_enabled && ws::negotiated(transport.user_agent, remote.agent));
+                // When the request this session sent is due an answer.
+                std::optional<std::chrono::steady_clock::time_point> discovery_due;
+                message_handler discovery = [this, &state, &remote, &policy, &transport, &discovery_due, peer, follow_tip](raw_message const& raw)
+                        -> ::asio::awaitable<bool> {
+                    auto const command = raw.heading.command();
+                    if (command != ws::request_command && command != ws::response_command) co_return false;
+                    auto const now = uint32_t(zulu_time());
+                    if (command == ws::request_command) {
+                        auto const request = ws::decode_request(raw.payload);
+                        if (!request || !policy.accept_request(*request, now)) throw peer_fault("invalid discovery request");
+                        auto payload = ws::encode(ws::response{request->id, {}}, now, state.discovery_allow_private);
+                        auto ec = co_await peer->send_raw(discovery_packet(transport.identifier, ws::response_command,
+                            std::move(*payload)));
+                        if (ec) throw std::runtime_error(ec.message());
+                        co_return true;
+                    }
+                    auto response = ws::decode_response(raw.payload, now, state.discovery_allow_private);
+                    if (!response || !policy.accept_response(*response, now)) throw peer_fault("invalid discovery response");
+                    discovery_due.reset();
+                    for (auto const& endpoint : response->endpoints) {
+                        if (state.stop_requested || state.peers.size() >= maximum_peers) break;
+                        if (state.discovery_wss_only && endpoint.transport != ws::wss) continue;
+                        auto const url = ws::url(endpoint);
+                        if (std::any_of(state.peers.begin(), state.peers.end(),
+                                [&](auto const& known) { return known->url == url; })) continue;
+                        state.peers.push_back(std::make_unique<impl::remote>(url, remote.url));
+                        spawn_peer(state.peers.size() - 1, follow_tip);
+                    }
+                    co_return true;
+                };
+
+                hash_digest cursor{};
+                unsigned idle = 0;
+                uint64_t reach = 0;
+                for (;;) {
+                    if (state.stop_requested || !state.fatal_error.empty()) break;
+                    ws::request query{state.discovery_wss_only ? ws::wss : ws::all_transports, state.discovery_sequence++};
+                    if (policy.begin_request(query, uint32_t(zulu_time()))) {
+                        auto ec = co_await peer->send_raw(discovery_packet(transport.identifier, ws::request_command,
+                            std::move(*ws::encode(query))));
+                        if (ec) throw std::runtime_error(ec.message());
+                        discovery_due = std::chrono::steady_clock::now() + std::chrono::seconds(ws::response_timeout);
+                    }
+                    // What the tip was when this request went out.
+                    auto const tip_before = state.index.get_hash(state.index.active_at(state.organizer.header_height()));
+                    auto hashes = locator(state.index);
+                    if (cursor != null_hash && cursor != hashes.front()) hashes.insert(hashes.begin(), cursor);
+                    remote.status = "synchronizing";
+                    state.update_status();
+                    auto sent = co_await peer->send(message::get_headers(hashes, null_hash));
+                    if (sent) throw std::runtime_error(sent.message());
+
+                    // One deadline for the whole request, whatever else the
+                    // peer sends meanwhile.
+                    auto const deadline = std::chrono::steady_clock::now() + response_timeout;
+                    std::optional<message::headers> answer;
+                    while (!answer) {
+                        // Yield even when messages are queued: the other peers,
+                        // cancellation and the deadline run under traffic.
+                        co_await ::asio::post(executor, ::asio::use_awaitable);
+                        auto raw = co_await receive_until(*peer, deadline);
+                        if (!raw) throw std::runtime_error("header response timeout");
+                        if (co_await discovery(*raw)) continue;
+                        byte_reader reader(raw->payload);
+                        if (raw->heading.command() == message::ping::command) {
+                            co_await answer_ping(*peer, reader);
+                            continue;
+                        }
+                        if (raw->heading.command() != message::headers::command) continue;
+                        auto headers = message::headers::from_data(reader, peer->negotiated_version());
+                        if (!headers || !headers->is_sequential()) throw peer_fault("invalid headers response");
+                        // A tip announced while the answer is pending shares
+                        // the command; with an unknown parent it is not the answer.
+                        if (!headers->elements().empty() &&
+                            state.index.find(headers->elements().front().previous_block_hash()) == blockchain::header_index::null_index) {
+                            ++remote.announcements;
+                            continue;
+                        }
+                        answer = std::move(*headers);
+                    }
+
+                    if (answer->elements().empty()) {
+                        remote.status = "caught_up";
+                        remote.complete = true;
+                        retries = 0;
+                        state.update_status();
+                        if (!follow_tip) {
+                            // The session ends here: an outstanding discovery
+                            // request is still given its time to be answered.
+                            // A peer that closes meanwhile does not undo its
+                            // completed headers; one that misbehaves still fails.
+                            while (discovery_due && std::chrono::steady_clock::now() < *discovery_due) {
+                                auto raw = co_await receive_or_close(*peer, *discovery_due);
+                                if (!raw) break;
+                                if (co_await discovery(*raw)) continue;
+                                if (raw->heading.command() == message::ping::command) {
+                                    byte_reader reader(raw->payload);
+                                    auto ping = message::ping::from_data(reader, peer->negotiated_version());
+                                    if (!ping) throw peer_fault("invalid ping");
+                                    if (co_await peer->send(message::pong(ping->nonce()))) break;
+                                }
+                            }
+                            break;
+                        }
+                        co_await wait_for_tip(*peer, remote.refresh, discovery, remote.announcements);
+                        continue;
+                    }
+
+                    // Headers another peer already delivered take no capacity.
+                    // A batch that does not fit is kept as far as it fits and
+                    // its peer stops: what lies past the capacity cannot be
+                    // validated, so it stops no other peer. The run fails
+                    // only when no peer completes.
+                    auto const is_unknown = [&](auto const& header) {
+                        return state.index.find(domain::chain::hash(header)) == blockchain::header_index::null_index;
+                    };
+                    auto batch = answer->elements();
+                    size_t const unknown = std::count_if(batch.begin(), batch.end(), is_unknown);
+                    auto const remaining = state.index.capacity() - state.index.size();
+                    bool const overflow = unknown > remaining;
+                    if (overflow) {
+                        size_t fits = 0;
+                        size_t kept = 0;
+                        for (; kept < batch.size(); ++kept) {
+                            if (is_unknown(batch[kept]) && fits++ == remaining) break;
+                        }
+                        batch.resize(kept);
+                        if (batch.empty()) throw peer_fault("header capacity exceeded");
+                    }
+                    // Does not suspend: peers validate one batch at a time.
+                    auto const accepted = state.organizer.add_headers(batch);
+                    // A heavier branch is reported as stale_chain with a reorg
+                    // candidate, which is followed. Otherwise stale_chain is a
+                    // batch that did not advance the tip (a lighter branch, or
+                    // headers another peer delivered first).
+                    if (accepted.reorg_candidate) {
+                        state.organizer.adopt_tip(accepted.reorg_branch_head);
+                    } else if (accepted.error && accepted.error != error::stale_chain) {
+                        throw peer_fault(accepted.error.message());
+                    }
+                    if (overflow) throw peer_fault("header capacity exceeded");
+                    cursor = domain::chain::hash(answer->elements().back());
+                    auto const known = state.index.find(cursor);
+                    auto const reached = known != blockchain::header_index::null_index ? uint64_t(state.index.get_height(known)) : 0;
+                    // Progress: new headers, an adopted branch, a tip that
+                    // moved meanwhile, or an answer reaching higher than any
+                    // before (known headers another peer delivered first).
+                    // Three answers in a row without any is a peer that
+                    // makes none, whatever headers it repeats.
+                    auto const tip_after = state.index.get_hash(state.index.active_at(state.organizer.header_height()));
+                    if (unknown > 0 || accepted.reorg_candidate || tip_after != tip_before || reached > reach) {
+                        idle = 0;
+                    } else if (++idle >= 3) {
+                        throw peer_fault("peer made no header progress");
+                    }
+                    reach = std::max(reach, reached);
+                    if (known != blockchain::header_index::null_index) remote.height = reached;
+                    remote.complete = false;
+                    state.persist();
+                }
+            } catch (...) {
+                failure = std::current_exception();
+            }
+            peer->stop();
+            co_await tasks.join();
+            remote.connected = false;
+            remote.agent.clear();
+            remote.session.reset();
+            if (failure) std::rethrow_exception(failure);
+            if (!follow_tip || state.stop_requested || !state.fatal_error.empty()) break;
+        } catch (peer_fault const& e) {
+            remote.error = e.what();
+            remote.quarantined = true;
+        } catch (std::exception const& e) {
+            remote.error = e.what();
+        }
+        remote.complete = false;
+        remote.connected = false;
+        remote.agent.clear();
+        if (remote.session) remote.session->stop();
+        remote.session.reset();
+        if (state.stop_requested || !state.fatal_error.empty()) break;
+        remote.status = remote.quarantined ? "rejected" : "disconnected";
+        state.update_status();
+        if (remote.quarantined || !follow_tip) break;
+
+        // Following: reconnect after a pause that grows to a minute, offset
+        // per peer so they do not retry together. A refresh or a stop ends it.
+        remote.status = "retry";
+        auto const attempt = retries++;
+        auto const delay = std::chrono::seconds(std::min(retry_maximum_seconds, retry_initial_seconds << std::min(attempt, 4u))) +
+            std::chrono::milliseconds((at * 137 + attempt * 53) % 1000);
+        remote.retry = std::make_unique<kth::steady_timer>(executor, delay);
+        co_await remote.retry->async_wait(::asio::as_tuple(::asio::use_awaitable));
+        remote.retry.reset();
+    }
+    if (state.stop_requested) {
+        remote.connected = false;
+        remote.agent.clear();
+        remote.status = "stopped";
+    }
+    state.update_status();
 }
 
 ::asio::awaitable<std::expected<uint64_t, std::error_code>> header_sync::request_stop() const {
     state_->stop_requested = true;
-    state_->cancel.emit(::asio::cancellation_type::all);
-    if (state_->peer) state_->peer->stop();
+    state_->stop_peers();
     co_return last_height();
 }
 
 ::asio::awaitable<std::expected<uint64_t, std::error_code>> header_sync::request_refresh() const {
     // A full doorbell already represents this work; one locator refresh satisfies all requests.
-    if (state_->active && !state_->stop_requested) state_->refresh_request.try_send(0u);
+    if (state_->active && !state_->stop_requested) {
+        for (auto& peer : state_->peers) {
+            if (peer->connected) peer->refresh.try_send(0u);
+            if (peer->retry) peer->retry->cancel();
+        }
+    }
     co_return last_height();
 }
 
@@ -460,9 +745,43 @@ bool header_sync::settled() const { return !state_->active && state_->admitted =
 std::error_code header_sync::reset() {
     if (!settled()) return error::operation_failed;
     state_->stop_requested = false;
+    state_->fatal_error.clear();
+    // An explicit restart gives rejected peers another chance.
+    for (auto& peer : state_->peers) {
+        peer->quarantined = false;
+        peer->error.clear();
+        peer->status = "idle";
+    }
     state_->message = "idle";
     return {};
 }
+
+bool header_sync::add_peer(std::string const& url) {
+    auto& peers = state_->peers;
+    if (!settled() || peers.size() >= maximum_peers || !valid_peer_url(url)) return false;
+    if (std::any_of(peers.begin(), peers.end(), [&](auto const& peer) { return peer->url == url; })) return false;
+    peers.push_back(std::make_unique<impl::remote>(url, "configured"));
+    return true;
+}
+
+bool header_sync::configure_discovery(bool enabled, bool allow_private, bool wss_only) {
+    if (!settled()) return false;
+    state_->discovery_enabled = enabled;
+    state_->discovery_allow_private = allow_private;
+    state_->discovery_wss_only = wss_only;
+    return true;
+}
+
+size_t header_sync::peer_count() const { return state_->peers.size(); }
+
+std::string header_sync::peer_endpoint(size_t at) const { return at < peer_count() ? state_->peers[at]->url : std::string{}; }
+std::string header_sync::peer_source(size_t at) const { return at < peer_count() ? state_->peers[at]->source : std::string{}; }
+std::string header_sync::peer_state(size_t at) const { return at < peer_count() ? state_->peers[at]->status : std::string{}; }
+std::string header_sync::peer_agent(size_t at) const { return at < peer_count() ? state_->peers[at]->agent : std::string{}; }
+std::string header_sync::peer_error(size_t at) const { return at < peer_count() ? state_->peers[at]->error : std::string{}; }
+uint64_t header_sync::peer_height(size_t at) const { return at < peer_count() ? state_->peers[at]->height : 0; }
+uint64_t header_sync::peer_announcements(size_t at) const { return at < peer_count() ? state_->peers[at]->announcements : 0; }
+bool header_sync::peer_connected(size_t at) const { return at < peer_count() && state_->peers[at]->connected; }
 
 uint64_t header_sync::last_height() const { return uint64_t(state_->organizer.header_height()); }
 std::string header_sync::header_hex(uint64_t height) const {

@@ -20,8 +20,10 @@
 namespace kth::node {
 
 // Headers-only actor. All access belongs to its executor, including cancellation and destruction.
-// No block or UTXO database is opened. A successful run means the selected peer has no more headers,
-// not that independent peers agree or that block bodies/transactions were validated.
+// No block or UTXO database is opened. It synchronizes from up to eight WebSocket peers at once into
+// one validated header index: the one given at construction, those added with add_peer(), and those
+// learned through endpoint discovery. A successful run means some peer has no more headers, not that
+// independent peers agree or that block bodies/transactions were validated.
 class KND_API header_sync {
 public:
     header_sync(std::string const& bridge_url, domain::config::network network, size_t capacity);
@@ -39,7 +41,8 @@ public:
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> request_stop() const;
     // Coalesced refresh request for an active session; does not replace or close its peer.
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> request_refresh() const;
-    // Allows a new run after a stop. operation_failed until settled().
+    // Allows a new run after a stop, and retries peers rejected for invalid
+    // data. operation_failed until settled().
     std::error_code reset();
 
     // An operation accepted for this client before it runs, as when it is
@@ -71,8 +74,34 @@ public:
     std::string status() const;
     size_t index_memory_bytes() const;
 
+    // Peers, configured while settled. A distinct ws:// or wss:// URL, up to
+    // eight in all; false otherwise.
+    bool add_peer(std::string const& url);
+    // Endpoint discovery (/wsdisc:1/, getwsaddr/wsaddr): whether to negotiate
+    // it, accept private endpoints (a LAN experiment), and only WSS ones.
+    // Configured while settled; false otherwise. Enabled by default.
+    bool configure_discovery(bool enabled, bool allow_private, bool wss_only);
+
+    // Per peer, by position (0 is the constructor's): empty or zero past the end.
+    size_t peer_count() const;
+    std::string peer_endpoint(size_t at) const;
+    // "configured", or the endpoint of the peer that advertised it.
+    std::string peer_source(size_t at) const;
+    // idle, connecting, synchronizing, caught_up, retry, disconnected,
+    // rejected (it sent invalid data: not retried until reset()) or stopped.
+    std::string peer_state(size_t at) const;
+    // The user agent of its current session; empty when not connected.
+    std::string peer_agent(size_t at) const;
+    std::string peer_error(size_t at) const;
+    // The height of the last header it served on the validated chain.
+    uint64_t peer_height(size_t at) const;
+    uint64_t peer_announcements(size_t at) const;
+    bool peer_connected(size_t at) const;
+
 private:
     ::asio::awaitable<std::expected<uint64_t, std::error_code>> run_session(bool follow_tip);
+    void spawn_peer(size_t at, bool follow_tip);
+    ::asio::awaitable<void> run_peer(size_t at, bool follow_tip);
     struct impl;
     std::unique_ptr<impl> state_;
 };

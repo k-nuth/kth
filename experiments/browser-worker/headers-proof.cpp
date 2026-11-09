@@ -207,6 +207,19 @@ struct stop_result {
             "a running client was reset");
         require(owned(kth_node_header_sync_header_hash(handle, 0)) == regtest_genesis,
             "genesis is not readable through the C API");
+        // Its one peer, through the C API: connected while following, and no
+        // peer can be added meanwhile.
+        require(kth_node_header_sync_peer_count(handle) == 1, "the C API does not report one peer");
+        require(owned(kth_node_header_sync_peer_endpoint(handle, 0)) == "ws://127.0.0.1:18782", "the peer endpoint");
+        co_await wait_for([&] { return owned(kth_node_header_sync_peer_state(handle, 0)) == "caught_up"; },
+            "the peer did not report caught_up");
+        require(owned(kth_node_header_sync_peer_agent(handle, 0)) == "/kth-ci-peer/", "the peer agent");
+        require(kth_node_header_sync_peer_connected(handle, 0) && kth_node_header_sync_peer_height(handle, 0) == 2005,
+            "the peer session");
+        require(kth_node_header_sync_peer_announcements(handle, 0) >= 1, "the announcement was not counted");
+        require(owned(kth_node_header_sync_peer_endpoint(handle, 1)).empty(), "a peer past the last one");
+        require(!kth_node_header_sync_add_peer(handle, "ws://127.0.0.1:18785"), "a peer was added while following");
+        require(!kth_node_header_sync_configure_discovery(handle, 0, 0, 0), "discovery was configured while following");
 
         stop_result stopped;
         kth_node_header_sync_async_request_stop(handle, &stopped,

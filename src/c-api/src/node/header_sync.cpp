@@ -239,5 +239,87 @@ char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t he
     }
 }
 
+
+kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(url != nullptr);
+    try {
+        return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).add_peer(url));
+    } catch (...) {
+        return kth::bool_to_int(false);
+    }
+}
+
+kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, kth_bool_t enabled, kth_bool_t allow_private, kth_bool_t wss_only) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).configure_discovery(
+        kth::int_to_bool(enabled), kth::int_to_bool(allow_private), kth::int_to_bool(wss_only)));
+}
+
+kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).peer_count();
+}
+
+char* kth_node_header_sync_peer_endpoint(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).peer_endpoint(at));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_peer_source(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).peer_source(at));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_peer_state(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).peer_state(at));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_peer_agent(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).peer_agent(at));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_peer_error(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).peer_error(at));
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+uint64_t kth_node_header_sync_peer_height(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).peer_height(at);
+}
+
+uint64_t kth_node_header_sync_peer_announcements(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::cpp_ref<cpp_t>(self).peer_announcements(at);
+}
+
+kth_bool_t kth_node_header_sync_peer_connected(kth_header_sync_const_t self, kth_size_t at) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).peer_connected(at));
+}
+
 } // extern "C"
 #endif // KTH_BROWSER_NODE

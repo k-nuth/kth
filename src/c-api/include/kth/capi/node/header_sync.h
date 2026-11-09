@@ -126,6 +126,53 @@ char* kth_node_header_sync_header_hex(kth_header_sync_const_t self, uint64_t hei
 KTH_EXPORT KTH_OWNED
 char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t height);
 
+// Peers and discovery
+// ---------------------------------------------------------------------------
+
+/** Adds a peer while no run is pending: a distinct ws:// or wss:// URL, up to eight in all. False otherwise. */
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url);
+
+/**
+ * Endpoint discovery, while no run is pending: whether to negotiate it, accept private endpoints
+ * (a LAN experiment) and only WSS ones. False otherwise. Enabled by default.
+ */
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, kth_bool_t enabled, kth_bool_t allow_private, kth_bool_t wss_only);
+
+KTH_EXPORT
+kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self);
+
+/** The peer's URL. @return Owned C string (empty past the last peer), or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_endpoint(kth_header_sync_const_t self, kth_size_t at);
+
+/** "configured", or the endpoint of the peer that advertised it. @return Owned C string (empty past the last peer), or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_source(kth_header_sync_const_t self, kth_size_t at);
+
+/** idle, connecting, synchronizing, caught_up, retry, disconnected, rejected or stopped. @return Owned C string (empty past the last peer), or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_state(kth_header_sync_const_t self, kth_size_t at);
+
+/** The user agent of its current session; empty when not connected. @return Owned C string (empty past the last peer), or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_agent(kth_header_sync_const_t self, kth_size_t at);
+
+/** Its last error. @return Owned C string (empty past the last peer), or null if it cannot be allocated. Caller must release with `kth_core_destruct_string`. */
+KTH_EXPORT KTH_OWNED
+char* kth_node_header_sync_peer_error(kth_header_sync_const_t self, kth_size_t at);
+
+/** The height of the last header it served on the validated chain; zero past the last peer. */
+KTH_EXPORT
+uint64_t kth_node_header_sync_peer_height(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+uint64_t kth_node_header_sync_peer_announcements(kth_header_sync_const_t self, kth_size_t at);
+
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_peer_connected(kth_header_sync_const_t self, kth_size_t at);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
