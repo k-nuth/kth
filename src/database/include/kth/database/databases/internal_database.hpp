@@ -163,7 +163,7 @@ struct KD_API internal_database_basis {
     [[nodiscard]] result_code record_rejected_block(hash_digest const& hash);
 #endif
 
-    internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode);
+    internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode, bool nocow = false);
     ~internal_database_basis();
 
     // Non-copyable, non-movable
@@ -400,6 +400,7 @@ private:
     db_mode_type db_mode_;
     uint64_t db_max_size_;
     bool safe_mode_;
+    bool nocow_;
     //bool fast_mode = false;
 
     KTH_DB_env* env_;

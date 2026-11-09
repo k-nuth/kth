@@ -231,6 +231,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--db.reorg_pool_limit", cfg.database.reorg_pool_limit);
     app.add_option("--db.db_max_size",      cfg.database.db_max_size);
     app.add_option("--db.safe_mode",        cfg.database.safe_mode);
+    app.add_option("--db.nocow",            cfg.database.nocow,
+        "On btrfs, create the UTXO and LMDB stores without copy-on-write (default true).");
     app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
 
     // [chain]
