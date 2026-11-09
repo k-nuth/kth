@@ -34,7 +34,10 @@ Alternatives considered:
 
 An enabled node adds the exact component `/wsdisc:1/` to its normal user-agent
 without exceeding the existing 256-byte limit. Repeated advertisement is
-idempotent. The delimiters and version are significant: `wsdisc:1` without
+idempotent. Adjacent components share one slash, for example
+`/Knuth:1.6.0/wsdisc:1/`. Legacy advertisements such as
+`/Knuth:1.6.0//wsdisc:1/` remain recognized and are not rewritten.
+The delimiters and version are significant: `wsdisc:1` without
 slashes and `/wsdisc:10/` do not match. The implementation refuses overlong
 user-agents instead of dropping a capability silently.
 
