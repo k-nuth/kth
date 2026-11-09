@@ -30,6 +30,7 @@
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/database.hpp>
+#include <kth/database/in_place_directory.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
@@ -118,6 +119,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
+    , in_place_nocow_(database_settings.nocow)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -215,6 +217,18 @@ bool block_chain::start(uint32_t disk_magic) {
     // Open UTXO-Z database (in a subdirectory of the main database)
     utxoz::set_log_prefix("UTXO-Z");
     auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
+    // UTXO-Z rewrites its memory-mapped containers in place. On btrfs a new
+    // store is created NOCOW: there, every write to a page already on disk
+    // reserves space for a copy, and a sustained stream of them stalls the
+    // writers. An existing store is left as it is (not_empty).
+    if (in_place_nocow_) {
+        auto const prepared = database::prepare_in_place_directory(utxoz_path);
+        if (prepared) {
+            spdlog::info("[blockchain] {}: {}", utxoz_path.string(), database::in_place_directory_name(*prepared));
+        } else {
+            spdlog::warn("[blockchain] {}: could not set NOCOW ({})", utxoz_path.string(), prepared.error().message());
+        }
+    }
     // Scoped to the open itself. Held for the rest of start() it would deadlock
     // against the reference-mode wiring below, which takes a window of its own —
     // and only in reference mode, so a full-mode build would never show it and

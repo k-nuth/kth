@@ -1224,6 +1224,8 @@ private:
 
     populate_chain_state const chain_state_populator_;
     database::data_base database_;
+    // db.nocow: the UTXO-Z directory is created NOCOW on btrfs.
+    bool const in_place_nocow_;
 
     /// The published state on its own. Private: a caller that wants the state
     /// wants the tip and the generation that go with it, and reading them apart
