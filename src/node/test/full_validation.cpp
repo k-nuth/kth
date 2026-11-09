@@ -227,7 +227,12 @@ TEST_CASE("full mode rejects an invalid signature below a nonzero anchor",
     auto const sc = build_scenario(/*tampered*/ true, 0);
     node::parser parser(domain::config::network::regtest);
     std::ostringstream error;
-    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+    // Batches of 100: blocks 1..100 are one batch and the spend at 101 opens the
+    // next, so the valid blocks connect before the invalid one is judged. With
+    // one batch for all of them, none would connect: a rejected batch applies
+    // nothing.
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc),
+        "--chain.validation_batch_blocks=100"}, error));
     REQUIRE(parser.configured.chain.max_checkpoint_height == anchor_height);
 
     auto const out = connect_under("fv_full_bad", parser.configured.chain, sc);

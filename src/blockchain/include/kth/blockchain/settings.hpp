@@ -110,6 +110,14 @@ struct KB_API settings {
     // in full. Whether blocks may be skipped is `trusted_checkpoint_height()`,
     // never `max_checkpoint_height`.
     bool full_validation = false;
+    // How many fully validated blocks are connected per batch. Each batch ends
+    // with the UTXO store's durability barrier, and every page the batch touched
+    // is written then; larger batches touch each page once for more blocks and
+    // keep more outputs created and spent inside the batch off the store. The
+    // batch's parsed blocks and undo data are held in memory until it is
+    // applied, which is what bounds it (about 1 GB of peak memory per 100
+    // blocks around height 450,000). 1..1000.
+    uint32_t validation_batch_blocks = 500;
     bool allow_collisions = true;
     bool easy_blocks = false;
     bool retarget = true;
