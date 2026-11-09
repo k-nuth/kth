@@ -1,5 +1,5 @@
 # CI runs a few complete Catch2 shards rather than starting one process for
-# every test case. Local/coverage builds retain ordinary Catch discovery.
+# every test case. Local builds retain ordinary Catch discovery by default.
 set(KTH_CI_TEST_SHARDS 0 CACHE STRING "CI node/domain shard count (0 uses Catch discovery)")
 if(NOT KTH_CI_TEST_SHARDS MATCHES "^[0-9]+$" OR KTH_CI_TEST_SHARDS GREATER 16)
     message(FATAL_ERROR "KTH_CI_TEST_SHARDS must be between 0 and 16")

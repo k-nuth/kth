@@ -56,27 +56,19 @@ jobs:
         uses: ./ci_utils/.github/actions/setup-kthbuild
 
       - name: 🗄️ Setup ccache
-        # Declared rather than inherited: inside a container the default shell
-        # is whatever the image provides, and `&&`/`||` chains parsed by a
-        # non-bash `sh` behave differently enough to matter.
         shell: bash
         run: |
-          apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
-          ccache --version || true
-          # Match the sister `build-with-container.yml` workflow's
-          # ccache config, which on the same hosted runner hits 86 %
-          # against the same 1074 TUs. PR #309 added
-          # `CCACHE_BASEDIR=$GITHUB_WORKSPACE` + `CCACHE_NOHASHDIR=1`
-          # here on the theory that coverage's `.gcno` files embed
-          # the cwd and the relativisation would help. In practice
-          # the inverse held: hit rate dropped to 0 / 1074 (every
-          # TU a miss, even for files that hadn't changed in
-          # months). Probable interaction with `--coverage`'s
-          # path bookkeeping in ccache 4.9.1; rather than chase
-          # that, drop the two envs and rely on absolute paths
-          # the way the other CI jobs do — Actions containers
-          # always check out at `/__w/kth/kth`, so absolute paths
-          # are stable across runs anyway.
+          # Ubuntu 24.04's ccache 4.9.1 rejects -fprofile-update=atomic,
+          # making every coverage compilation uncacheable. 4.10 supports it.
+          archive="${RUNNER_TEMP}/ccache-4.10.2-linux-x86_64.tar.xz"
+          curl --fail --location --retry 3 \
+            https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz \
+            --output "$archive"
+          echo "80cab87bd510eca796467aee8e663c398239e0df1c4800a0b5dff11dca0b4f18  $archive" | sha256sum --check
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/ccache-4.10.2-linux-x86_64/ccache" /usr/local/bin/ccache
+          ccache --version
+          .github/scripts/check-coverage-cache.sh
 
       # Split restore/save so a flaky GH Cache Service can't fail
       # the whole job during the post-action. Recent runs have been
@@ -111,7 +103,6 @@ jobs:
         shell: bash
         run: |
           METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
-          export PATH="/usr/lib/ccache:$PATH"
 
           # Before zeroing: this is what the restore actually produced.
           "$METRICS" ccache-snapshot before
@@ -141,6 +132,7 @@ jobs:
             -DGLOBAL_BUILD=ON \
             -DENABLE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
+            -DKTH_CI_TEST_SHARDS=2 \
             -DCMAKE_C_FLAGS="-O0 --coverage -fprofile-update=atomic" \
             -DCMAKE_CXX_FLAGS="-O0 --coverage -fprofile-update=atomic" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
@@ -219,6 +211,9 @@ jobs:
         run: |
           METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
           "$METRICS" phase-start tests
+          # Catch shards execute every ordinary case, but flush the shared
+          # coverage objects once per shard rather than once per test case.
+          python3 .github/scripts/check-ci-test-plan.py build/build/Release --shards 2
           set +e
           ctest --preset conan-release --output-on-failure -j"$(nproc)"
           rc=$?
