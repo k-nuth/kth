@@ -15,7 +15,17 @@
 
 namespace kth::network::ws_discovery {
 
-// Experimental protocol v1. Capability means understand/relay, not listen.
+// Versioned handshake advertisement: understand/relay, not a listener promise.
+struct announcement {
+    inline static std::string const command = "sendwsaddr";
+
+    constexpr size_t serialized_size(uint32_t) const noexcept { return 1; }
+    expect<void> to_data(byte_writer& writer, uint32_t) const noexcept {
+        return writer.write_byte(1);
+    }
+};
+
+// Legacy user-agent negotiation, retained only for explicit migration mode.
 inline constexpr std::string_view capability = "/wsdisc:1/";
 inline constexpr std::string_view request_command = "getwsaddr";
 inline constexpr std::string_view response_command = "wsaddr";
@@ -52,6 +62,9 @@ struct response {
     std::vector<endpoint> endpoints;
     friend bool operator==(response const&, response const&) = default;
 };
+
+// An unknown version is well-formed but does not negotiate version 1.
+[[nodiscard]] KN_API std::expected<bool, failure> decode_announcement(std::span<std::uint8_t const> payload);
 
 [[nodiscard]] KN_API bool understands(std::string_view user_agent) noexcept;
 // Refuses an overlong result instead of silently truncating the capability.

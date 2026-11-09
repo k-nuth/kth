@@ -70,6 +70,8 @@ struct KN_API settings {
     uint32_t ws_max_connections{32};
     uint32_t ws_handshake_seconds{10};
     bool ws_discovery{false};
+    // Temporary opt-in for peers that negotiate discovery through user agents.
+    bool ws_discovery_legacy_agent{false};
     bool ws_allow_private{false};
     std::vector<std::string> ws_public_endpoints;
 

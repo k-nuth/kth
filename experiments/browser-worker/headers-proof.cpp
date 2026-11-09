@@ -212,6 +212,8 @@ struct stop_result {
         kth_header_sync_mut_t handle = nullptr;
         require(kth_node_header_sync_construct("ws://127.0.0.1:18782", kth_network_regtest, 10'000, &handle) == kth_ec_success,
             "construction failed");
+        require(kth_node_header_sync_configure_legacy_discovery(handle, 1), "legacy configuration refused while settled");
+        require(kth_node_header_sync_configure_legacy_discovery(handle, 0), "legacy configuration could not be disabled");
         follow_result followed;
         kth_node_header_sync_async_follow(handle, &followed,
             [](kth_header_sync_mut_t, void* context, kth_error_code_t status, uint64_t) {
@@ -245,6 +247,7 @@ struct stop_result {
         require(owned(kth_node_header_sync_peer_endpoint(handle, 1)).empty(), "a peer past the last one");
         require(!kth_node_header_sync_add_peer(handle, "ws://127.0.0.1:18785"), "a peer was added while following");
         require(!kth_node_header_sync_configure_discovery(handle, 0, 0, 0), "discovery was configured while following");
+        require(!kth_node_header_sync_configure_legacy_discovery(handle, 1), "legacy mode was configured while following");
 
         stop_result stopped;
         kth_node_header_sync_async_request_stop(handle, &stopped,

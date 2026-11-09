@@ -86,7 +86,7 @@ async def run(args):
                                   (18783, fixtures.bch_oversize), (18787, fixtures.bch_reorg),
                                   (18788, fixtures.bch_retry), (18785, fixtures.bch_longer),
                                   (18786, fixtures.bch_fork),
-                                  (18789, fixtures.bch_discovery),
+                                  (18789, fixtures.bch_discovery), (18814, fixtures.bch_discovery_legacy),
                                   (18803, fixtures.bch_flood), (18804, fixtures.bch_short),
                                   (18805, fixtures.bch_alternate), (18806, fixtures.bch_discovery_late),
                                   (18810, fixtures.bch_slow), (18813, fixtures.bch_discovery_close),

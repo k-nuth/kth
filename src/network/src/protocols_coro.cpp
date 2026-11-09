@@ -145,6 +145,8 @@ awaitable_expected<handshake_result> perform_handshake(
     // The order may vary, so we track what we've received
     bool got_version = false;
     bool got_verack = false;
+    bool discovery_seen = false;
+    bool remote_discovery = false;
     domain::message::version::const_ptr peer_version;
 
     auto deadline = std::chrono::steady_clock::now() + config.timeout;
@@ -190,6 +192,11 @@ awaitable_expected<handshake_result> perform_handshake(
             peer_version = version;
             got_version = true;
 
+            if (config.ws_discovery) {
+                auto const ec = co_await peer.send(ws_discovery::announcement{});
+                if (ec != error::success) co_return std::unexpected(ec);
+            }
+
             // Send verack in response
             auto verack_ec = co_await peer.send(domain::message::verack{});
             if (verack_ec != error::success) {
@@ -200,6 +207,13 @@ awaitable_expected<handshake_result> perform_handshake(
         else if (command == domain::message::verack::command && !got_verack) {
             spdlog::debug("[protocol] Received verack from [{}]", authority);
             got_verack = true;
+        }
+        else if (command == ws_discovery::announcement::command) {
+            if (!got_version || got_verack || discovery_seen) co_return std::unexpected(error::bad_stream);
+            discovery_seen = true;
+            auto const supported = ws_discovery::decode_announcement(raw.payload);
+            if (!supported) co_return std::unexpected(error::bad_stream);
+            remote_discovery = *supported;
         }
         else if (command == domain::message::send_addrv2::command) {
             // BIP155: Peer signals addrv2 support
@@ -223,7 +237,9 @@ awaitable_expected<handshake_result> perform_handshake(
     spdlog::debug("[protocol] Handshake complete with [{}], negotiated version {}, addrv2={}",
         authority, negotiated, peer.wants_addrv2());
 
-    co_return handshake_result{peer_version, negotiated};
+    auto const discovery = config.ws_discovery && (remote_discovery ||
+        (!discovery_seen && config.ws_discovery_legacy_agent && ws_discovery::negotiated(config.user_agent, peer_version->user_agent())));
+    co_return handshake_result{peer_version, negotiated, discovery};
 }
 
 // =============================================================================
@@ -271,6 +287,8 @@ awaitable_expected<handshake_result> perform_handshake_direct(
     // The order may vary, so we track what we've received
     bool got_version = false;
     bool got_verack = false;
+    bool discovery_seen = false;
+    bool remote_discovery = false;
     domain::message::version::const_ptr peer_version;
 
     auto deadline = std::chrono::steady_clock::now() + config.timeout;
@@ -317,6 +335,11 @@ awaitable_expected<handshake_result> perform_handshake_direct(
             peer_version = version;
             got_version = true;
 
+            if (config.ws_discovery) {
+                auto const ec = co_await peer.send_direct(ws_discovery::announcement{});
+                if (ec != error::success) co_return std::unexpected(ec);
+            }
+
             // Send verack in response (directly to socket)
             auto verack_ec = co_await peer.send_direct(domain::message::verack{});
             if (verack_ec != error::success) {
@@ -327,6 +350,13 @@ awaitable_expected<handshake_result> perform_handshake_direct(
         else if (command == domain::message::verack::command && !got_verack) {
             spdlog::debug("[protocol] Received verack from [{}]", authority);
             got_verack = true;
+        }
+        else if (command == ws_discovery::announcement::command) {
+            if (!got_version || got_verack || discovery_seen) co_return std::unexpected(error::bad_stream);
+            discovery_seen = true;
+            auto const supported = ws_discovery::decode_announcement(raw.payload);
+            if (!supported) co_return std::unexpected(error::bad_stream);
+            remote_discovery = *supported;
         }
         else if (command == domain::message::send_addrv2::command) {
             // BIP155: Peer signals addrv2 support
@@ -350,7 +380,9 @@ awaitable_expected<handshake_result> perform_handshake_direct(
     spdlog::debug("[protocol] Direct handshake complete with [{}], negotiated version {}, addrv2={}",
         authority, negotiated, peer.wants_addrv2());
 
-    co_return handshake_result{peer_version, negotiated};
+    auto const discovery = config.ws_discovery && (remote_discovery ||
+        (!discovery_seen && config.ws_discovery_legacy_agent && ws_discovery::negotiated(config.user_agent, peer_version->user_agent())));
+    co_return handshake_result{peer_version, negotiated, discovery};
 }
 
 handshake_config make_handshake_config(
@@ -364,12 +396,15 @@ handshake_config make_handshake_config(
         .invalid_services = network_settings.invalid_services,
         .minimum_version = network_settings.protocol_minimum,
         .minimum_services = domain::message::version::service::none,
-        .user_agent = network_settings.ws_discovery ? ws_discovery::advertise(network_settings.user_agent).value() : network_settings.user_agent,
+        .user_agent = network_settings.ws_discovery && network_settings.ws_discovery_legacy_agent
+            ? ws_discovery::advertise(network_settings.user_agent).value() : network_settings.user_agent,
         .start_height = current_height,
         .nonce = nonce,
         .relay = network_settings.relay_transactions,
         .timeout = std::chrono::seconds(network_settings.channel_handshake_seconds),
-        .user_agent_blacklist = network_settings.user_agent_blacklist
+        .user_agent_blacklist = network_settings.user_agent_blacklist,
+        .ws_discovery = network_settings.ws_discovery,
+        .ws_discovery_legacy_agent = network_settings.ws_discovery_legacy_agent
     };
 }
 
