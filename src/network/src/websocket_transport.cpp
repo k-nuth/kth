@@ -13,7 +13,7 @@
 #include <asio/read.hpp>
 #include <asio/write.hpp>
 #include <asio/read_until.hpp>
-#include <asio/steady_timer.hpp>
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <boost/beast/http/parser.hpp>
 #include <boost/beast/http/empty_body.hpp>
@@ -165,7 +165,7 @@ struct websocket_transport::impl {
                 // admitted, rather than dropping the reply on queue failure.
                 if (wslay_event_queue_msg(codec, &message)) queue_ec = ::asio::error::operation_aborted;
             }
-            ::asio::steady_timer deadline(socket.get_executor());
+            kth::steady_timer deadline(socket.get_executor());
             deadline.expires_after(std::chrono::seconds(10));
             auto result = co_await (flush() || deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
             auto send_ec = result.index() == 0 ? std::get<0>(result) : std::error_code(::asio::error::timed_out);
@@ -267,7 +267,7 @@ websocket_transport::~websocket_transport() = default;
         wslay_event_config_set_max_recv_msg_length(self.codec, chunk_limit);
         co_return std::error_code{};
     };
-    ::asio::steady_timer deadline(impl_->socket.get_executor());
+    kth::steady_timer deadline(impl_->socket.get_executor());
     deadline.expires_after(options.handshake_timeout);
     auto result = co_await (accept_http() || deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
     co_return result.index() == 0 ? std::get<0>(result) : std::error_code(::asio::error::timed_out);
