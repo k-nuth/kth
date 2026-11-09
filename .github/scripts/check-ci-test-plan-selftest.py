@@ -43,16 +43,16 @@ def main():
         env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"])
         negative = subprocess.run([sys.executable, str(CHECKER), str(args.build)],
                                   env=env, capture_output=True, text=True)
-        callback_plan = json.loads(actual.stdout)
-        callback_plan["tests"] = [test for test in callback_plan["tests"]
-                                  if test["name"] != "kth_capi_mining_info_callback"]
-        fixture.write_text(json.dumps(callback_plan))
-        missing_callback = subprocess.run([sys.executable, str(CHECKER), str(args.build)],
-                                          env=env, capture_output=True, text=True)
+        for callback in ("kth_capi_mining_info_callback", "kth_capi_async_callbacks"):
+            callback_plan = json.loads(actual.stdout)
+            callback_plan["tests"] = [test for test in callback_plan["tests"] if test["name"] != callback]
+            fixture.write_text(json.dumps(callback_plan))
+            missing_callback = subprocess.run([sys.executable, str(CHECKER), str(args.build)],
+                                              env=env, capture_output=True, text=True)
+            if not missing_callback.returncode or "missing registered test: " + callback not in missing_callback.stdout + missing_callback.stderr:
+                raise AssertionError("missing C-API callback control was not rejected:\n" + missing_callback.stdout + missing_callback.stderr)
     if not negative.returncode or "BCH Schnorr" not in negative.stdout + negative.stderr:
         raise AssertionError("missing BCH Schnorr module was not rejected:\n" + negative.stdout + negative.stderr)
-    if not missing_callback.returncode or "missing registered test: kth_capi_mining_info_callback" not in missing_callback.stdout + missing_callback.stderr:
-        raise AssertionError("missing C-API callback control was not rejected:\n" + missing_callback.stdout + missing_callback.stderr)
     print("CTest registry controls: complete plan accepted; missing BCH Schnorr and C-API callback rejected")
 
 

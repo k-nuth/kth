@@ -484,6 +484,7 @@ set(kth_headers
     include/kth/capi/detail/buffers.hpp
     include/kth/capi/detail/enum_cast.hpp
     include/kth/capi/detail/errors.hpp
+    include/kth/capi/detail/async_exception.hpp
     include/kth/capi/detail/exception_barrier.hpp
     include/kth/capi/detail/handle_access.hpp
     include/kth/capi/detail/ownership.hpp
@@ -692,6 +693,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # transport selection and targets imported in sibling directories.
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-mining-info"
                      "${CMAKE_CURRENT_BINARY_DIR}/mining-info-callback")
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-async"
+                     "${CMAKE_CURRENT_BINARY_DIR}/async-callbacks")
 
     if(CURRENCY STREQUAL "BCH")
         add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
