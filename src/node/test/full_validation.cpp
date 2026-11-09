@@ -249,7 +249,12 @@ TEST_CASE("full mode rejects an invalid signature below a nonzero anchor",
     }
     auto const reason = blockchain::validate_block_batch(fixture.chain(),
         parser.configured.chain, domain::config::network::regtest, messages, 1);
+#if defined(WITH_CONSENSUS)
+    // The consensus library reports every script failure as invalid_script.
+    CHECK(reason == error::invalid_script);
+#else
     CHECK(reason == error::sig_nullfail);
+#endif
 }
 
 TEST_CASE("full mode accepts the valid control and captures undo from the first block",
