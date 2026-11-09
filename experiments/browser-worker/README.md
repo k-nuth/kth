@@ -33,7 +33,8 @@ is retried while following, and neither stops the others.
 `follow()` stays on each session, answers pings, fetches announced blocks'
 headers and refreshes every 120 s; `request_stop()` and `request_refresh()`
 only ask. Each peer's endpoint, source, state, agent, error and height can be
-read. It accepts messages of at most 256 KiB. The C API
+read, and two JSON snapshots: the active tip's consensus state, built by the
+header validator, and the client's effective settings. It accepts messages of at most 256 KiB. The C API
 (`kth/capi/node/header_sync.h`) never lets an exception cross it: destruct and
 reset are refused while an operation is pending.
 
@@ -68,7 +69,7 @@ loopback fixtures in `fixtures.py`:
 | `terminal` | a terminal error is kept for every later operation |
 | `headers` | against a scripted BCH regtest peer (`fixtures.py`): 2500 headers in two batches; a header with invalid proof of work ends the session; a message declaring more than 256 KiB ends it at its heading; `follow()` answers a ping, fetches an announced block on the same connection and stops; the C API refuses destruct and reset while it runs |
 | `persist` | the header cache, against scripted regtest peers: nothing is written without the directory; a synchronized chain is restored, validated, by the next client before it connects; it is extended in place, rewritten after a reorganization, and discarded when a header does not validate |
-| `peers` | several peers against scripted regtest peers: configuration bounded to eight distinct ws/wss URLs; two peers synchronizing one index; a peer with invalid proof of work rejected and an absent one disconnected, neither stopping the good one; a peer learned through discovery joining, a private endpoint refused unless allowed, discovery off when disabled |
+| `peers` | several peers against scripted regtest peers: configuration bounded to eight distinct ws/wss URLs; two peers synchronizing one index; a peer with invalid proof of work rejected and an absent one disconnected, neither stopping the good one; a peer learned through discovery joining, a private endpoint refused unless allowed, discovery off when disabled; the chain state and settings snapshots, parsed as JSON, including an escaped endpoint |
 
 Build (Emscripten 6, `ci_utils/conan/profiles/ems6`):
 

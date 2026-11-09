@@ -240,6 +240,24 @@ char* kth_node_header_sync_header_hash(kth_header_sync_const_t self, uint64_t he
 }
 
 
+char* kth_node_header_sync_chain_state_snapshot(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).chain_state_snapshot());
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+char* kth_node_header_sync_runtime_settings(kth_header_sync_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    try {
+        return kth::create_c_str(kth::cpp_ref<cpp_t>(self).runtime_settings());
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const* url) {
     KTH_PRECONDITION(self != nullptr);
     KTH_PRECONDITION(url != nullptr);

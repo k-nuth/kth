@@ -59,6 +59,33 @@ std::string describe(header_sync const& client) {
         require(client.peer_height(0) == 2500 && client.peer_height(1) == 2600, "peer heights: " + describe(client));
         require(client.peer_state(0) == "caught_up" && client.peer_state(1) == "caught_up", "peer states: " + describe(client));
         require(!client.peer_connected(0) && client.peer_agent(0).empty(), "a finished peer still reports a session");
+
+        // Snapshots: the tip's consensus state and the effective settings, as
+        // JSON (ci.py parses every "JSON " line).
+        auto const state = client.chain_state_snapshot();
+        auto const settings = client.runtime_settings();
+        std::printf("JSON %s\n", state.c_str());
+        std::printf("JSON %s\n", settings.c_str());
+        require(state.find("\"height\":2600") != std::string::npos &&
+            state.find("\"hash\":\"" + client.header_hash(2600) + "\"") != std::string::npos, "chain state: " + state);
+        require(state.find("\"upgrades\":{") != std::string::npos && state.find("\"abla\":{\"available\":false") != std::string::npos,
+            "chain state sections: " + state);
+        for (auto const* expected : {"\"sync_peers\":8", "\"services\":0", "\"relay_transactions\":false",
+                "\"user_agent\":\"/KTH-browser-headers//wsdisc:1/\"", "\"network\":\"Regtest\"",
+                "\"peer_endpoints\":[\"ws://127.0.0.1:18780\",\"ws://127.0.0.1:18785\"]",
+                "\"cache_directory\":\"/kth-header-cache/Regtest\""}) {
+            require(settings.find(expected) != std::string::npos, std::string("settings lack ") + expected + ": " + settings);
+        }
+    }
+    {
+        header_sync fresh("ws://127.0.0.1:18780", regtest, 100);
+        require(fresh.chain_state_snapshot() == "null", "a genesis-only client has a chain state");
+        // An endpoint with a quote and a backslash is escaped in the JSON.
+        require(fresh.add_peer("ws://127.0.0.1:18798/\"q\\"), "the quoted endpoint was refused");
+        std::printf("JSON %s\n", fresh.runtime_settings().c_str());
+        require(fresh.configure_discovery(false, false, false) &&
+            fresh.runtime_settings().find("\"user_agent\":\"/KTH-browser-headers/\"") != std::string::npos,
+            "discovery off still advertised");
     }
     std::puts("two peers synchronized one index height=2600");
 
