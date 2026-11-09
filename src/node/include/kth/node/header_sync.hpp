@@ -89,6 +89,24 @@ public:
     // Configured while settled; false otherwise. Enabled by default.
     bool configure_discovery(bool enabled, bool allow_private, bool wss_only);
 
+    // Content sampling, configured while settled; off by default. No UTXO or
+    // script validation: bodies are checked against their headers and kept as
+    // metadata, never whole.
+    // - blocks: the bodies of the most recent 100 active blocks are fetched
+    //   once caught up, checked (Merkle root, transaction structure) and kept
+    //   as metadata, coinbase with its Merkle proof and, within a 16 MiB
+    //   budget, transaction ids. Messages up to 32 MiB are then accepted.
+    // - transactions: the version message asks for relay, announced
+    //   transactions are fetched, checked for structure and kept, at most 1000
+    //   and 8 MiB, for 20 minutes or until a sampled block confirms them.
+    bool configure_content(bool blocks, bool transactions);
+    // JSON. A sampled block ("null" if not sampled or no longer active), with
+    // its coinbase, proof and transaction ids when asked; the sampling state;
+    // and the observed transactions (txid, size, time received).
+    std::string block_metadata(uint64_t height, bool include_transactions) const;
+    std::string content_state() const;
+    std::string observed_transactions() const;
+
     // Per peer, by position (0 is the constructor's): empty or zero past the end.
     size_t peer_count() const;
     std::string peer_endpoint(size_t at) const;
