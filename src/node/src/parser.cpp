@@ -241,6 +241,7 @@ void add_settings(CLI::App& app, configuration& cfg) {
     add_parse_from_list(app, "--chain.checkpoint", cfg.chain.checkpoints,
         "A hash:height checkpoint.");
     app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);
+    app.add_option("--chain.full_validation", cfg.chain.full_validation);
 
     // [fork]
     app.add_option("--fork.easy_blocks", cfg.chain.easy_blocks);
@@ -327,6 +328,15 @@ void apply_environment(configuration& cfg) {
         if (cfg.file.empty()) {
             cfg.file = env_config;
         }
+    }
+}
+
+// Rebuild derived checkpoint fields after parsing, so full validation keeps
+// both built-in and configured header anchors. Legacy optimized-mode derivation
+// is left unchanged by this option.
+void finalize_checkpoints(blockchain::settings& chain) {
+    if (chain.full_validation) {
+        chain.derive_checkpoints();
     }
 }
 
@@ -482,6 +492,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
         }
 #endif
+        finalize_checkpoints(configured.chain);
     }
 
     return true;
@@ -557,6 +568,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
     }
 #endif
+    finalize_checkpoints(configured.chain);
 
     return true;
 }

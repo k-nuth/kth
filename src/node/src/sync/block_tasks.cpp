@@ -2141,10 +2141,17 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
 
-    // Highest checkpoint height: at/below it IBD is merkle-only (fast), strictly
-    // above it every block runs FULL validation. Constant for the whole run.
+    // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
+    // every block runs FULL validation. It is the highest checkpoint in the
+    // optimized mode and 0 in full-validation mode, where the checkpoints stay as
+    // header anchors but grant no skipping. Constant for the whole run.
+    auto const& chain_cfg = chain.chain_settings();
     uint32_t const checkpoint_height =
-        static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+        static_cast<uint32_t>(chain_cfg.trusted_checkpoint_height());
+    spdlog::info("[utxo_build] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL" : "optimized",
+        chain_cfg.max_checkpoint_height, checkpoint_height + 1);
 
     // Load bloom filter. The embedded bloom is the FINAL UTXO set as of the height
     // it was built for: it prunes outputs spent before then. Use it only when that
@@ -2155,7 +2162,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // full validation, so the bloom is disabled per batch below.
     auto const bloom = blockchain::load_utxo_bloom();
     auto const* bloom_ptr = bloom.get();
-    if (bloom_ptr != nullptr &&
+    if (bloom_ptr != nullptr && chain_cfg.full_validation) {
+        // Every output must stay: a later block's full validation may spend any of them.
+        spdlog::info("[utxo_build] Full validation: bloom pruning disabled");
+        bloom_ptr = nullptr;
+    } else if (bloom_ptr != nullptr &&
         blockchain::embedded_bloom_checkpoint_height() != checkpoint_height) {
         spdlog::info(
             "[utxo_build] Embedded bloom checkpoint {} != active checkpoint {}; disabling bloom",

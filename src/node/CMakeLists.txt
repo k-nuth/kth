@@ -480,6 +480,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_storage_wakeup.cpp
           test/select_sync.cpp
           test/configuration.cpp
+          test/full_validation.cpp
         test/full_node_network.cpp
           test/template_prevout_refresh.cpp
           test/p2p_websocket_config.cpp
