@@ -1939,6 +1939,12 @@ static
                 // range.
                 co_await send_block_range(
                     deps, blocks_synced_to + 1, checkpoint_height);
+                // The supervisor replaces the range it was working on with
+                // this one. A range a switch opened before the headers were
+                // complete is therefore no longer in flight, and its end, left
+                // recorded, would read as one past the checkpoint: the bodies
+                // above the checkpoint would never be asked for.
+                slow_sync_end.reset();
             } else {
                 // Slow sync stage, through the same guarded admission as the
                 // other doors onto the post-checkpoint range (#663).
