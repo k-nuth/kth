@@ -49,8 +49,14 @@ exchange_result exchange(bool direct, bool discovery, std::vector<std::pair<std:
     exchange_result output;
     std::exception_ptr failure;
     auto negotiate = [&]() -> ::asio::awaitable<void> {
-        output.result = direct ? co_await perform_handshake_direct(*peer, handshake)
-                               : co_await perform_handshake(*peer, handshake);
+        // GCC 16.2 evaluates both awaited arms of a conditional returning
+        // std::expected. These paths have mutually exclusive socket readers:
+        // the direct handshake must not execute alongside peer->run().
+        if (direct) {
+            output.result = co_await perform_handshake_direct(*peer, handshake);
+        } else {
+            output.result = co_await perform_handshake(*peer, handshake);
+        }
         if (!output.result) peer->stop();
     };
     auto capture = [&]() -> ::asio::awaitable<void> {
@@ -108,6 +114,7 @@ TEST_CASE("discovery handshake keeps the user agent informational", "[ws_negotia
 
 TEST_CASE("discovery announces its version before verack on both handshake paths", "[ws_negotiation]") {
     auto const direct = GENERATE(false, true);
+    CAPTURE(direct);
     auto output = exchange(direct, true, transcript());
     REQUIRE(output.result);
     CHECK(output.result->ws_discovery);
@@ -121,6 +128,7 @@ TEST_CASE("discovery announces its version before verack on both handshake paths
 
 TEST_CASE("discovery refuses malformed or repeated handshake announcements", "[ws_negotiation]") {
     auto const direct = GENERATE(false, true);
+    CAPTURE(direct);
     auto messages = transcript();
     SECTION("empty") { messages[1].second.clear(); }
     SECTION("trailing data") { messages[1].second = {1, 0}; }
@@ -131,6 +139,7 @@ TEST_CASE("discovery refuses malformed or repeated handshake announcements", "[w
 
 TEST_CASE("discovery negotiation is explicit and versioned", "[ws_negotiation]") {
     auto const direct = GENERATE(false, true);
+    CAPTURE(direct);
     SECTION("disabled locally") {
         auto output = exchange(direct, false, transcript());
         REQUIRE(output.result);
@@ -178,6 +187,7 @@ TEST_CASE("discovery negotiation is explicit and versioned", "[ws_negotiation]")
 
 TEST_CASE("discovery handshake bounds the payload before reading its body", "[ws_negotiation]") {
     auto const direct = GENERATE(false, true);
+    CAPTURE(direct);
     auto messages = transcript({1, 2});
     messages.pop_back();
     auto output = exchange(direct, true, messages, false, true);
