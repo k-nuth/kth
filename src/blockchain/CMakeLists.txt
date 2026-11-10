@@ -346,6 +346,7 @@ if (ENABLE_TEST)
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp
         test/finalization.cpp
+        test/mainnet_checkpoints.cpp
         test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp

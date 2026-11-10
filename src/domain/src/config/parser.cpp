@@ -192,7 +192,7 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000292db830fbd551b9b6ccf2a0e562acb6daf5b45d56588ec742d0ef1d"_hash, 279793);
 
     } else if (network == domain::config::network::mainnet) {
-        checkpoints.reserve(92);
+        checkpoints.reserve(88);
         checkpoints.emplace_back("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"_hash,       0);
         checkpoints.emplace_back("0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d"_hash,  11'111);
         checkpoints.emplace_back("000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6"_hash,  33'333);
@@ -223,21 +223,20 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("0000000000000000017c42fd88e78ab02c5f5c684f8344e1f5c9e4cebecde71c"_hash, 475'000);
 
         //2017-Aug Upgrade - Bitcoin Cash UAHF (1501590000)
-        checkpoints.emplace_back("000000000000000000eb9bc1f9557dc9e2cfe576f57a52f6be94720b338029e4"_hash, 478'557);  //mediantime: 1501589769
-        checkpoints.emplace_back("0000000000000000011865af4122fe3b144e2cbeea86142e8ff2fb4107352d43"_hash, 478'558);  //mediantime: 1501591048. New rules activated in the next block.
+        checkpoints.emplace_back("0000000000000000011865af4122fe3b144e2cbeea86142e8ff2fb4107352d43"_hash, 478'558);  //mediantime: 1501591048. New rules activated in the next block. Last block shared with BTC.
         checkpoints.emplace_back("000000000000000000651ef99cb9fcbe0dadde1d424bd9f15ff20136191a5eec"_hash, 478'559);  //mediantime: 1501592847. New rules activated in this block.
 
         checkpoints.emplace_back("000000000000000005e14d3f9fdfb70745308706615cfa9edca4f4558332b201"_hash, 500'000);
 
         //2017-Nov Upgrade - DAA - (1510600000)
-        checkpoints.emplace_back("0000000000000000008088d63f48da98b7352ad7c4c85f3d90b657cf50ff1ede"_hash, 504'030);  //mediantime: 1510594229
         checkpoints.emplace_back("0000000000000000011ebf65b60d0a3de80b8175be709d653b4c1a1beeb6ab9c"_hash, 504'031);  //mediantime: 1510601033. New rules activated in the next block.
         checkpoints.emplace_back("00000000000000000343e9875012f2062554c8752929892c82a0c0743ac7dcfd"_hash, 504'032);  //mediantime: 1510601742. New rules activated in this block.
 
         checkpoints.emplace_back("0000000000000000001b09302aa6a8dc65b7542dd195866907dd4e4ccba30d58"_hash, 515'000);
 
+        checkpoints.emplace_back("0000000000000000009c96e89e01fb809582a7210d3b7b7a2fa41d93a4fc9680"_hash, 530'000);
+
         //2018-May Upgrade - pythagoras - (1526400000)
-        checkpoints.emplace_back("0000000000000000018d22e0ca9c5f591fefd896abc905550745ed3190f749c3"_hash, 530'354);  //mediantime: 1526399926
         checkpoints.emplace_back("000000000000000000434c281fb3ed692efea5af769aedb090b2b9f395b5386e"_hash, 530'355);  //mediantime: 1526400858. New rules activated in the next block.
         checkpoints.emplace_back("0000000000000000013d91e08ec61cc99761751ef09c561209593eea6bb543da"_hash, 530'356);  //mediantime: 1526402161. New rules activated in this block.
         checkpoints.emplace_back("000000000000000000f59580044b235c4f46381cacd319d29e8bb21c517a771d"_hash, 530'357);  //mediantime: 1526402650. I put the following checkpoints for a historical inaccuracy in the Bitcoin ABC code: https://github.com/bitcoin-cash-node/bitcoin-cash-node/commit/97c32f461a1a6d6ca71c5958d67047a1c06d83fd#diff-ff53e63501a5e89fd650b378c9708274df8ad5d38fcffa6c64be417c4d438b6d
@@ -248,7 +247,6 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("000000000000000000fc66aae55a178fec2ba2f2bc86eb6c6f632b5bc2b40af1"_hash, 545'000);
 
         //2018-Nov Upgrade - euclid - (1542300000)
-        checkpoints.emplace_back("0000000000000000018b0da51421703b239218d0d99a6bf86a1fcdf266e3a5b1"_hash, 556'765);  //mediantime: 1542299730
         checkpoints.emplace_back("00000000000000000102d94fde9bd0807a2cc7582fe85dd6349b73ce4e8d9322"_hash, 556'766);  //mediantime: 1542300873. New rules activated in the next block.
         checkpoints.emplace_back("0000000000000000004626ff6e3b936941d341c5932ece4357eeccac44e6d56c"_hash, 556'767);  //mediantime: 1542301036. New rules activated in this block.
 
@@ -256,7 +254,6 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("000000000000000003428b04e49a9a303afbedefe2ac9094d44dd127d7366a97"_hash, 575'000);
 
         //2019-May Upgrade - pisano - (1557921600)
-        checkpoints.emplace_back("000000000000000002d39295b2433668b97720822a77d278bc2c66eb13891d62"_hash, 582'678);  //mediantime: 1557921209
         checkpoints.emplace_back("0000000000000000018596bdfd350a9fbc7297a62a3f510b74565d992d63d2ef"_hash, 582'679);  //mediantime: 1557921789. New rules activated in the next block.
         checkpoints.emplace_back("000000000000000001b4b8e36aec7d4f9671a47872cb9a74dc16ca398c7dcc18"_hash, 582'680);  //mediantime: 1557921810. New rules activated in this block.
 
@@ -264,7 +261,6 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000000000000041048ecef77d6b9ccb4012c0c1012e72b6737220d3f910"_hash, 605'000);
 
         //2019-Nov Upgrade - mersenne - (1573819200)
-        checkpoints.emplace_back("000000000000000000d03bd9b9a7d3b734b3910d8ae59d8ed237174517e8aaf9"_hash, 609'134);  //mediantime: 1573818748
         checkpoints.emplace_back("0000000000000000026f7ec9e79be2f5bb839f29ebcf734066d4bb9a13f6ea83"_hash, 609'135);  //mediantime: 1573819391. New rules activated in the next block.
         checkpoints.emplace_back("000000000000000000b48bb207faac5ac655c313e41ac909322eaa694f5bc5b1"_hash, 609'136);  //mediantime: 1573820367. New rules activated in this block.
 
@@ -272,14 +268,12 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("000000000000000001c885feaa06e225ee51c37c98a293ab779e01912a99a620"_hash, 635'000);
 
         //2020-May Upgrade - fermat - (1589544000)
-        checkpoints.emplace_back("000000000000000002075bc3ceffc9277e74e03f71733eba006cc7a5adc27622"_hash, 635'257);  //mediantime: 1589543995
         checkpoints.emplace_back("000000000000000003302c47d01e78f1c86aa3b0e96b066761a5059bc8f5781a"_hash, 635'258);  //mediantime: 1589544126. New rules activated in the next block.
         checkpoints.emplace_back("00000000000000000033dfef1fc2d6a5d5520b078c55193a9bf498c5b27530f7"_hash, 635'259);  //mediantime: 1589544127. New rules activated in this block.
 
         checkpoints.emplace_back("000000000000000001e5a8e11a9a523e15ad985b8123df0f7b364ad8f83d82b0"_hash, 650'000);
 
         //2020-Nov Upgrade - euler - (1605441600)
-        checkpoints.emplace_back("000000000000000003e4c72c4c4888a81b4f9c66a65cc98dbdbb2e56e0a2f72d"_hash, 661'646);  //mediantime: 1605439958
         checkpoints.emplace_back("00000000000000000083ed4b7a780d59e3983513215518ad75654bb02deee62f"_hash, 661'647);  //mediantime: 1605443067. New rules activated in the next block.
         checkpoints.emplace_back("0000000000000000029e471c41818d24b8b74c911071c4ef0b4a0509f9b5a8ce"_hash, 661'648);  //mediantime: 1605443708. New rules activated in this block.
 
@@ -294,19 +288,25 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("0000000000000000021c8878d6905b85ef4d4cf8ea0e036874ffeea13654561f"_hash, 740'000);
 
         //2022-May Upgrade - gauss - (1652616000)
-        checkpoints.emplace_back("000000000000000000b92c50d56fc2c60b0502fffec6dc5410065a9b1e29109f"_hash, 740'236);
         checkpoints.emplace_back("0000000000000000018e572c8e2615b86c1c45c61be8a5f380a339abdff15caa"_hash, 740'237);
         checkpoints.emplace_back("000000000000000002afc6fbd302f01f8cf4533f4b45207abc61d9f4297bf969"_hash, 740'238);
+
+        checkpoints.emplace_back("0000000000000000009b461df2c12e05daa29926f6c2e19ad2a8f0fc091dcbdb"_hash, 755'000);
+        checkpoints.emplace_back("0000000000000000017a8eef61f74c36439cddeb7cfaaef55063ed73b0899db8"_hash, 770'000);
+        checkpoints.emplace_back("0000000000000000045c74bdebfd7330b95248b019704f1a3f065ddcb42042cf"_hash, 785'000);
 
         //2023-May Upgrade - descartes - (1684152000)
         checkpoints.emplace_back("000000000000000002b678c471841c3e404ec7ae9ca9c32026fe27eb6e3a1ed1"_hash, 792'772);
         checkpoints.emplace_back("000000000000000002fc0cdadaef1857bbd2936d37ea94f80ba3db4a5e8353e8"_hash, 792'773);
-        checkpoints.emplace_back("00000000000000000340a607ca5e9a8b56b620297216edb818eb09e3c6e95609"_hash, 792'774);
+
+        checkpoints.emplace_back("000000000000000001012aaf4b6aa033ddda9d9bbf832b7be597705be5635311"_hash, 800'000);
+        checkpoints.emplace_back("00000000000000000193f8cff0789f0334868e676fe1b0d77e11db5f5ee2a495"_hash, 815'000);
+        checkpoints.emplace_back("0000000000000000008e514599ac0a35ac65ec0a2bad8fc774dfa85b35cc0b16"_hash, 830'000);
+        checkpoints.emplace_back("0000000000000000001444f968f64263cabbdd98967c7de6a6b5303520be4f6d"_hash, 845'000);
 
         //2024-May Upgrade - lobachevski - (1715774400)
         checkpoints.emplace_back("000000000000000001806bcdde19c47f088a8026e24905ac6f75afe3ef83594c"_hash, 845'890);
         checkpoints.emplace_back("0000000000000000017012058e7b67032926f1f20f96d1a2cd66abff9aaf8244"_hash, 845'891);
-        checkpoints.emplace_back("0000000000000000016e3353d5da435ef5d374abe90d9bb430c0408e423632d5"_hash, 845'892);
 
         checkpoints.emplace_back("00000000000000000071fe9c24aa2fe98d64120407b757a093bbb4a597781753"_hash, 860'000);
         checkpoints.emplace_back("00000000000000000100ada0fb390ef3fa8fe721fa12617313b8b32494ad7a2c"_hash, 875'000);
@@ -315,7 +315,6 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         // 2025-May Upgrade - galois - (1747310400)
         checkpoints.emplace_back("0000000000000000013cd2abfe36fa63976d293235e42ec08804143787b0a9db"_hash, 898'373);
         checkpoints.emplace_back("00000000000000000157a0a3dcdc80f1acd809648d238c1e893b26247091b3b4"_hash, 898'374);
-        checkpoints.emplace_back("0000000000000000007e2e7dd49323c90d16fd76a521804d709f0d5a442fd42a"_hash, 898'375);
 
         checkpoints.emplace_back("000000000000000001fb491cce2c6d44f628e812519a2bc420bbc774cdc2d647"_hash, 905'000);
         checkpoints.emplace_back("0000000000000000016a9d52a9c0a7d7fd3cf1a7cea538565674613a65341186"_hash, 920'000);
@@ -323,9 +322,11 @@ kth::infrastructure::config::checkpoint::list default_checkpoints(config::networ
         checkpoints.emplace_back("00000000000000000046655be4cd21fd8ee3c59cf9218f3b349c5ea78538fabf"_hash, 950'000);
 
         // 2026-May Upgrade - leibniz - (1778846400)
-        checkpoints.emplace_back("0000000000000000009647b105551f1776362ef92f08aa0312311ff0e9fdad3f"_hash, 951'144);
-        checkpoints.emplace_back("000000000000000000f64dbed68370486f945097ba90b17e30d7bf5c43df7a60"_hash, 951'145);
-        checkpoints.emplace_back("0000000000000000005cc515e90a5f37ea3029d1e2741d8a00e863edb55f3d1d"_hash, 951'146);
+        // The chain that kept the previous rules split off two blocks after the activation (951145).
+        checkpoints.emplace_back("0000000000000000005cc515e90a5f37ea3029d1e2741d8a00e863edb55f3d1d"_hash, 951'146);  //Last block shared with the chain that kept the previous rules.
+        checkpoints.emplace_back("0000000000000000010a4cc1adf810b10350e2fd279e274532fca0ea8e9be574"_hash, 951'147);  //The first block that chain rejected.
+
+        checkpoints.emplace_back("00000000000000000178cf0ba8d6a48e7942410b7580fc6362344165c35f1896"_hash, 965'000);
 
         // //2027-May Upgrade - cantor - (1810382400)
         // checkpoints.emplace_back("", 0);
