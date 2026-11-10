@@ -1,3 +1,23 @@
+# version 1.6.1
+
+You can install Knuth node version v1.6.1 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* ci: run coverage nightly and investigate regressions on demand by @fpelliccioni in https://github.com/k-nuth/kth/pull/919
+* fix: normalize Conan package references before release by @fpelliccioni in https://github.com/k-nuth/kth/pull/920
+* node: connect fully validated blocks in batches of 500 by @fpelliccioni in https://github.com/k-nuth/kth/pull/917
+* database: create the in-place stores NOCOW on btrfs by @fpelliccioni in https://github.com/k-nuth/kth/pull/916
+* node: follow a peer that answers below a deep fork with headers already held by @fpelliccioni in https://github.com/k-nuth/kth/pull/928
+* domain: checkpoint where the 2026 minority chain split off; two per upgrade by @fpelliccioni in https://github.com/k-nuth/kth/pull/929
+* node: forget a switch's body range once the FAST range replaces it by @fpelliccioni in https://github.com/k-nuth/kth/pull/930
+* Remove EB from user agents and normalize discovery delimiters by @fpelliccioni in https://github.com/k-nuth/kth/pull/921
+* Negotiate WebSocket discovery during the P2P handshake by @fpelliccioni in https://github.com/k-nuth/kth/pull/922
+* release: 1.6.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/931
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.6.0...v1.6.1
+
+
 # version 1.6.0
 
 You can install Knuth node version v1.6.0 [using these instructions](https://kth.cash/#download).
