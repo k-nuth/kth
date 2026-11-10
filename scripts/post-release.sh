@@ -87,9 +87,10 @@ NOTES_FILE="docs/release-notes/release-notes.md"
 cp "$NOTES_FILE" "${NOTES_FILE}.backup"
 
 # Prepare the new release notes entry
+RELEASE_DATE=$(date -u +%F)
 NEW_ENTRY="# version ${VERSION}
 
-You can install Knuth node version v${VERSION} [using these instructions](https://kth.cash/#download).
+**Published:** [${RELEASE_DATE}](https://github.com/k-nuth/kth/releases/tag/v${VERSION})
 
 ${RELEASE_NOTES}
 
@@ -100,6 +101,9 @@ ${RELEASE_NOTES}
     echo "$NEW_ENTRY"
     cat "$NOTES_FILE"
 } > "${NOTES_FILE}.tmp" && mv "${NOTES_FILE}.tmp" "$NOTES_FILE"
+
+# Refresh navigation after prepending the new release.
+python3 scripts/update_release_notes_index.py "$NOTES_FILE"
 
 echo -e "${GREEN}✅ Updated release notes file${NC}"
 
