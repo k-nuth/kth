@@ -732,6 +732,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_executable(kth_readme_c_compile_check test/readme_c_compile_check.c)
     target_link_libraries(kth_readme_c_compile_check PRIVATE ${PROJECT_NAME})
 
+    # Compile and link the component README itself, rather than a separate copy.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/README.md" kth_capi_readme)
+    string(REGEX MATCH "```c\n([^`]*)```" kth_capi_example "${kth_capi_readme}")
+    if(NOT kth_capi_example)
+        message(FATAL_ERROR "C API README has no C example")
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/component_readme.c" "${CMAKE_MATCH_1}")
+    add_executable(kth_component_readme_compile_check
+        "${CMAKE_CURRENT_BINARY_DIR}/component_readme.c")
+    set_target_properties(kth_component_readme_compile_check PROPERTIES
+        C_STANDARD 23 C_STANDARD_REQUIRED YES)
+    target_link_libraries(kth_component_readme_compile_check PRIVATE ${PROJECT_NAME})
+
     # Chain-interface mempool readers — compile + link signature check.
     add_executable(kth_chain_mempool_compile_check test/chain/chain_mempool_compile_check.c)
     target_link_libraries(kth_chain_mempool_compile_check PRIVATE ${PROJECT_NAME})
