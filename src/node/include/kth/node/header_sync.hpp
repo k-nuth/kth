@@ -87,10 +87,13 @@ public:
     // Peers, configured while settled. A distinct ws:// or wss:// URL, up to
     // eight in all; false otherwise.
     bool add_peer(std::string const& url);
-    // Endpoint discovery (/wsdisc:1/, getwsaddr/wsaddr): whether to negotiate
+    // Endpoint discovery (sendwsaddr, getwsaddr/wsaddr): whether to negotiate
     // it, accept private endpoints (a LAN experiment), and only WSS ones.
     // Configured while settled; false otherwise. Enabled by default.
     bool configure_discovery(bool enabled, bool allow_private, bool wss_only);
+    // Temporary opt-in for old peers: advertise/recognize /wsdisc:1/.
+    // Same settled-only admission as configure_discovery; false by default.
+    bool configure_legacy_discovery(bool enabled);
 
     // Content sampling, configured while settled; off by default. No UTXO or
     // script validation: bodies are checked against their headers and kept as

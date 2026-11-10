@@ -4,6 +4,7 @@
 
 #include <kth/node/header_sync.hpp>
 #include <kth/node/detail/header_sync_test_seam.hpp>
+#include <kth/node/user_agent.hpp>
 #if defined(KTH_BROWSER_NODE)
 #include <kth/blockchain/pools/header_organizer.hpp>
 #include <kth/infrastructure/utility/browser_runtime.hpp>
@@ -378,6 +379,7 @@ struct header_sync::impl {
     std::vector<std::unique_ptr<remote>> peers;
     kth::task_group* sessions = nullptr;
     bool discovery_enabled = true;
+    bool discovery_legacy_agent = false;
     bool discovery_allow_private = false;
     bool discovery_wss_only = false;
     uint64_t discovery_sequence = 1;
@@ -478,8 +480,9 @@ struct header_sync::impl {
         result.services = 0;
         result.relay_transactions = observe_transactions;
         result.validate_checksum = true;
-        result.user_agent = "/KTH-browser-headers/";
-        if (discovery_enabled) result.user_agent = network::ws_discovery::advertise(result.user_agent).value();
+        result.user_agent = get_user_agent({"browser"});
+        result.ws_discovery = discovery_enabled;
+        result.ws_discovery_legacy_agent = discovery_legacy_agent;
         result.channel_handshake_seconds = 10;
         // Blocks up to 32 MiB when sampling them, transactions up to 1 MB
         // when observing them; otherwise headers.
@@ -772,7 +775,7 @@ void header_sync::spawn_peer(size_t at, bool follow_tip) {
                 // Discovery, when both sides negotiated it. A browser has no
                 // listener: it answers requests with no endpoints, and adds the
                 // endpoints it learns as peers, within the peer limit.
-                ws::session_policy policy(state.discovery_enabled && ws::negotiated(transport.user_agent, remote.agent));
+                ws::session_policy policy(handshake->ws_discovery);
                 // When the request this session sent is due an answer.
                 std::optional<std::chrono::steady_clock::time_point> discovery_due;
                 message_handler discovery = [this, &state, &remote, &policy, &transport, &discovery_due, peer, follow_tip](raw_message const& raw)
@@ -1263,6 +1266,12 @@ bool header_sync::configure_discovery(bool enabled, bool allow_private, bool wss
 
 size_t header_sync::peer_count() const { return state_->peers.size(); }
 
+bool header_sync::configure_legacy_discovery(bool enabled) {
+    if (!settled()) return false;
+    state_->discovery_legacy_agent = enabled;
+    return true;
+}
+
 bool header_sync::configure_content(bool blocks, bool transactions) {
     if (!settled()) return false;
     state_->sample_blocks = blocks;
@@ -1429,6 +1438,8 @@ std::string header_sync::runtime_settings() const {
     network.put("relay_transactions", t.relay_transactions);
     network.put("validate_checksum", t.validate_checksum);
     network.put("user_agent", t.user_agent);
+    network.put("ws_discovery", t.ws_discovery);
+    network.put("ws_discovery_legacy_agent", t.ws_discovery_legacy_agent);
     network.put("browser_maximum_payload", t.browser_maximum_payload);
     network.put("channel_handshake_seconds", t.channel_handshake_seconds);
     network.put("channel_expiration_minutes", t.channel_expiration_minutes);
@@ -1466,6 +1477,7 @@ std::string header_sync::runtime_settings() const {
     sync.put("network", name);
     sync.put("index_capacity", state.index.capacity());
     sync.put("discovery_enabled", state.discovery_enabled);
+    sync.put("discovery_legacy_agent", state.discovery_legacy_agent);
     sync.put("discovery_allow_private", state.discovery_allow_private);
     sync.put("discovery_wss_only", state.discovery_wss_only);
     sync.put("connect_timeout_seconds", uint32_t(connect_timeout.count()));

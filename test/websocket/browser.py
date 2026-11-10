@@ -247,6 +247,8 @@ async def main(args):
             await peer.serveHeaders();
             const endpoints = await peer.endpoints();
             if (!endpoints.includes(first) || !endpoints.includes(second)) throw new Error('Did not discover both WS and TCP-relayed WSS destinations: ' + endpoints);
+            if (peer.remoteAgent.includes('wsdisc:')) throw new Error('Capability leaked into user agent');
+            if (!peer.remoteDiscovery) throw new Error('No discovery announcement');
             window.activePeer = peer;
             return {remoteAgent:peer.remoteAgent, headers, browserServedHeaders:true, endpoints, commands:peer.commands};
         }''', {'first': first, 'second': second}), 5)

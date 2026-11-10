@@ -7,6 +7,9 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/full_node.hpp>
 #include <kth/node/user_agent.hpp>
+#include <kth/node/parser.hpp>
+#include <kth/network/protocols_coro.hpp>
+#include <sstream>
 
 #include <chrono>
 #include <filesystem>
@@ -45,4 +48,20 @@ TEST_CASE("node user agent does not advertise the configured block size", "[node
 TEST_CASE("user agent comments retain their separators", "[node][user_agent]") {
     CHECK(kth::node::get_user_agent({"example", "other"}) ==
           std::format("/{}:{}(example; other)/", kth::client_name, kth::version));
+}
+
+TEST_CASE("legacy discovery is an explicit configuration option", "[node][ws_negotiation]") {
+    kth::node::parser parser(kth::domain::config::network::regtest);
+    CHECK_FALSE(parser.configured.network.ws_discovery_legacy_agent);
+    char const* argv[]{"kth", "--network", "regtest", "--net.ws_discovery", "true",
+                       "--net.ws_discovery_legacy_agent", "true"};
+    std::ostringstream errors;
+    REQUIRE(parser.parse(7, argv, errors));
+    CHECK(parser.configured.network.ws_discovery);
+    CHECK(parser.configured.network.ws_discovery_legacy_agent);
+    auto settings = parser.configured.network;
+    settings.user_agent = "/KnuthTest:1/";
+    CHECK(kth::network::make_handshake_config(settings, 0, 1).user_agent == "/KnuthTest:1/wsdisc:1/");
+    settings.ws_discovery = false;
+    CHECK(kth::network::make_handshake_config(settings, 0, 1).user_agent == "/KnuthTest:1/");
 }

@@ -135,6 +135,11 @@ bool elapsed(std::optional<std::uint32_t> previous, std::uint32_t now, std::uint
 }
 } // namespace
 
+std::expected<bool, failure> decode_announcement(std::span<std::uint8_t const> payload) {
+    if (payload.size() != 1) return std::unexpected(failure::malformed);
+    return payload.front() == 1;
+}
+
 bool understands(std::string_view user_agent) noexcept {
     return user_agent.size() <= 256 && user_agent.find(capability) != std::string_view::npos;
 }

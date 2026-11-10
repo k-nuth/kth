@@ -308,6 +308,11 @@ kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, 
         kth::int_to_bool(enabled), kth::int_to_bool(allow_private), kth::int_to_bool(wss_only)));
 }
 
+kth_bool_t kth_node_header_sync_configure_legacy_discovery(kth_header_sync_mut_t self, kth_bool_t enabled) {
+    KTH_PRECONDITION(self != nullptr);
+    return kth::bool_to_int(kth::cpp_ref<cpp_t>(self).configure_legacy_discovery(kth::int_to_bool(enabled)));
+}
+
 kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return kth::cpp_ref<cpp_t>(self).peer_count();
