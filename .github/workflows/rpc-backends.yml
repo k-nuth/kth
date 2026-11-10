@@ -1,0 +1,96 @@
+name: 🔌 RPC backends
+
+# One RPC backend per binary, selected by the Conan option `rpc`. The main
+# workflows build the default (jsonrpc); this one builds each other backend, with
+# the node's tests and the installed-package consumer. It uses no secrets and
+# never uploads anything, so it is the same on fork pull requests. A backend
+# adds its own entry to the matrix.
+
+on:
+  push:
+    branches: [master]
+    paths: &paths
+      - '.github/workflows/rpc-backends.yml'
+      - 'cmake/KthRpcBackend.cmake'
+      - 'conanfile.py'
+      - 'conan.lock'
+      - 'scripts/test_rpc_backend.py'
+      - 'src/node/**'
+      - 'test_package/**'
+  pull_request:
+    paths: *paths
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: 🔌 rpc=${{ matrix.backend }} build + tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # No backend: the node and its tests with every RPC guard off.
+          - backend: none
+            targets: kth_node_test
+            tests: ''
+          # gRPC + Protobuf (docs/grpc.md), with its example client.
+          - backend: grpc
+            targets: kth_node_test kth-grpc-smoke-client
+            tests: '"[grpc transport],[grpc chain],[grpc real],[grpc cookie],[grpc]"'
+          # Cap'n Proto RPC (docs/capnproto-rpc.md), with its example client.
+          - backend: capnproto
+            targets: kth_node_test kth_capnp_chain_client
+            tests: '"[capnp rpc]"'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: 🔧 Setup Conan
+        uses: ./ci_utils/.github/actions/setup-conan
+
+      - name: 🔧 Setup kthbuild
+        uses: ./ci_utils/.github/actions/setup-kthbuild
+
+      - name: 🧪 Backend selection tests
+        shell: bash
+        run: python3 -m unittest scripts/test_rpc_backend.py
+
+      - name: 📦 Install dependencies
+        shell: bash
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b linux-ci-cd -pr:h linux-ci-cd \
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=${{ matrix.backend }}
+
+      - name: 🔨 Build
+        shell: bash
+        run: |
+          cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
+          cmake --build --preset conan-release -j"$(nproc)" --target ${{ matrix.targets }}
+
+      - name: ✅ Node tests
+        shell: bash
+        run: ./build/build/Release/src/node/kth_node_test ${{ matrix.tests }}
+
+      # Installed-package control: what a consumer of this backend builds against
+      # (conan create runs test_package).
+      - name: 📦 Package consumer check
+        shell: bash
+        run: |
+          conan create conanfile.py --version 0.0.0 --build=missing \
+            -pr:b linux-ci-cd -pr:h linux-ci-cd \
+            -o march_id=ZLm9Pjh -o tests=False -o consensus=False -o rpc=${{ matrix.backend }}

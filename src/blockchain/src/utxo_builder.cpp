@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 
 #include <algorithm>
@@ -477,7 +478,7 @@ utxo_delta process_block_utxos(
 
     // Wait for all workers to complete (yield-friendly polling)
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     while (completed->load(std::memory_order_acquire) < n) {
         timer.expires_after(std::chrono::microseconds(100));
         co_await timer.async_wait(::asio::use_awaitable);

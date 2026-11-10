@@ -9,7 +9,10 @@
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
+#include <kth/node/detail/tx_relay.hpp>
 
 #include <algorithm>
 #include <iterator>
@@ -1125,10 +1128,20 @@ static
             initial_stored_height, initial_block_height);
     }
 
-    // Get checkpoint height for fast IBD
-    // max_checkpoint_height comes from the checkpoint list in parser.hpp
-    uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
-    spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
+    // Two different heights come out of the checkpoint list. The ANCHOR is the
+    // highest checkpoint: headers must match it, in either mode. The TRUSTED
+    // height is the highest block that may be connected merkle-only, with no
+    // script, signature or UTXO validation; everything that decides what the
+    // fast and the full ranges own (below) is keyed to it. In full-validation
+    // mode it is 0 whatever the anchor is.
+    auto const& chain_cfg = chain.chain_settings();
+    uint32_t const anchor_height = uint32_t(chain_cfg.max_checkpoint_height);
+    uint32_t const checkpoint_height = uint32_t(chain_cfg.trusted_checkpoint_height());
+    spdlog::info("[sync_orchestrator] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL (every block from the first)"
+                                  : "optimized (merkle-only up to the checkpoint)",
+        anchor_height, checkpoint_height + 1);
 
     // UTXO build now happens incrementally inside block_storage_task as
     // each block lands; no startup-time bulk build is needed.
@@ -1256,6 +1269,68 @@ static
         }
         spdlog::info("[coordinator:stored_bridge] Task ended");
     });
+
+    // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
+    // `mempool_expiry_hours` after the node first saw it leaves the pool with
+    // its descendants. BCHN also checks at each admission, walking its
+    // first-seen order; kth keeps no such order, so the sweep runs every hour,
+    // and at least twice per expiry period, which bounds how long a transaction
+    // outstays it. Ends with the network.
+    if (auto const hours = chain.chain_settings().mempool_expiry_hours; hours > 0) {
+        std::chrono::seconds const expiry = std::chrono::hours(hours);
+        auto const period = std::min<std::chrono::steady_clock::duration>(
+            std::chrono::hours(1), expiry / 2);
+        all_tasks.spawn("mempool_expiry", [&, expiry, period]() -> ::asio::awaitable<void> {
+            co_await chain.run_mempool_expiry(expiry, period, network.stop_token());
+        });
+    }
+
+    // Transaction relay: what peers announce is asked for and offered to the
+    // mempool (detail/tx_relay.hpp). The relay's state is the owner
+    // coroutine's own; each getdata it sends is a task of this group. Both end with the network: stop()
+    // closes the relay's channel, and the owner closes the admission channel.
+    detail::tx_admission_channel tx_admission(detail::tx_admission_capacity);
+    if (network.network_settings().relay_transactions) {
+        auto relay_view = detail::chain_relay_view(chain);
+        auto spawn_relay_task = [&all_tasks](::asio::awaitable<void> task) {
+            all_tasks.spawn("tx_relay_request", std::move(task));
+        };
+        all_tasks.spawn("tx_relay", detail::tx_relay_task(network.tx_relay(),
+            std::move(relay_view), tx_admission, std::move(spawn_relay_task)));
+        // Admission takes the validation lock to commit: on the chain's own
+        // executor, as sendrawtransaction's callers and the tests run it, not
+        // on a network thread.
+        all_tasks.spawn("tx_admission", detail::tx_admission_task(tx_admission,
+            [&chain](domain::message::transaction::const_ptr tx) {
+                return ::asio::co_spawn(chain.executor(), chain.submit_transaction(std::move(tx)),
+                    ::asio::use_awaitable);
+            },
+            network.tx_relay()));
+    }
+
+    // Fee filter watch: when the mempool's minimum may have moved, each peer's
+    // service hears the new value and decides whether its next fee filter
+    // (BIP133) is due sooner. Only when the node relays transactions, as the
+    // fee filter itself. Ends with the network.
+    if (network.network_settings().relay_transactions) {
+        all_tasks.spawn("fee_filter_watch", detail::fee_filter_watch(chain.mempool_fee_events(),
+            detail::fee_filter_sources{
+                .minimum = [&chain] { return chain.mempool_minimum_fee(); },
+                .peers = [&network] { return network.peers().all(); },
+            },
+            network.stop_token()));
+
+        // Transaction announcement watch: when transactions are admitted,
+        // each peer's service hears how far the mempool's order reaches and
+        // when the inbound peers are next due. Ends with the network.
+        all_tasks.spawn("tx_announcement_watch", detail::tx_announcement_watch(chain.mempool_admission_events(),
+            detail::tx_announcement_watch_sources{
+                .last = [&chain] { return chain.mempool_last_admission(); },
+                .peers = [&network] { return network.peers().all(); },
+                .draw = detail::unit_draw,
+            },
+            network.stop_token()));
+    }
 
     // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
@@ -2389,6 +2464,8 @@ static
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
                 announce_connected_tip();
+                // The orphans a connected block resolves (detail/tx_relay.hpp).
+                network.tx_relay().tip_moved();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

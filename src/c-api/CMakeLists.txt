@@ -134,7 +134,7 @@ if (_has_pedantic_warning_flag)
   _add_c_compile_flag(-pedantic _has_pedantic_flag)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten" AND NOT KTH_BROWSER_NODE)
     message(STATUS "Knuth: OS is Emscripten")
     message(STATUS "Knuth: CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS}")
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory")
@@ -484,6 +484,7 @@ set(kth_headers
     include/kth/capi/detail/buffers.hpp
     include/kth/capi/detail/enum_cast.hpp
     include/kth/capi/detail/errors.hpp
+    include/kth/capi/detail/async_exception.hpp
     include/kth/capi/detail/exception_barrier.hpp
     include/kth/capi/detail/handle_access.hpp
     include/kth/capi/detail/ownership.hpp
@@ -512,6 +513,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources src/node/header_sync.cpp)
+  list(APPEND kth_headers include/kth/capi/node/header_sync.h)
+endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -681,7 +687,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(kth_capi_test)
+    kth_register_tests(kth_capi_test)
+
+    # This test resolves its own Asio dependency, independently of the node's
+    # transport selection and targets imported in sibling directories.
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-mining-info"
+                     "${CMAKE_CURRENT_BINARY_DIR}/mining-info-callback")
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-async"
+                     "${CMAKE_CURRENT_BINARY_DIR}/async-callbacks")
 
     if(CURRENCY STREQUAL "BCH")
         add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
@@ -707,7 +720,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
             target_compile_definitions(kth_capi_exception_test PRIVATE KTH_CAPI_TEST_MALLOC_WRAP)
             target_link_options(kth_capi_exception_test PRIVATE -Wl,--wrap=malloc)
         endif()
-        catch_discover_tests(kth_capi_exception_test)
+        kth_register_tests(kth_capi_exception_test)
     endif()
 
     # README C snippet — compile-only check. Verbatim copy of the

@@ -26,6 +26,8 @@ struct KD_API settings {
     uint32_t reorg_pool_limit;
     uint64_t db_max_size;
     bool safe_mode;
+    /// On btrfs, create the stores rewritten in place (UTXO-Z, LMDB) NOCOW.
+    bool nocow;
     uint32_t cache_capacity;
 };
 

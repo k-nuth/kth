@@ -98,6 +98,7 @@ set(kth_headers
   include/kth/network/peer_record.hpp
   include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
+  include/kth/network/tx_inventory.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/protocols_coro.hpp
   include/kth/network/settings.hpp
@@ -143,8 +144,10 @@ set(kth_headers
 set(kth_sources
   src/banlist.cpp
   src/net_permissions.cpp
+  src/ws_discovery.cpp
   src/peer_database.cpp
   src/peer_session.cpp
+  src/tx_inventory.cpp
   src/peer_manager.cpp
   src/protocols_coro.cpp
   src/settings.cpp
@@ -208,6 +211,13 @@ target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 find_package(simdjson REQUIRED)
 target_link_libraries(${PROJECT_NAME} PUBLIC simdjson::simdjson)
 
+if(KTH_WITH_WEBSOCKET)
+    find_package(wslay 1.1.1 REQUIRED)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_WEBSOCKET)
+    target_sources(${PROJECT_NAME} PRIVATE src/websocket_transport.cpp)
+    target_link_libraries(${PROJECT_NAME} PRIVATE wslay)
+endif()
+
 if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
@@ -226,6 +236,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/peer_manager.cpp
     test/peer_session.cpp
     test/protocols_coro.cpp
+    test/ws_discovery.cpp
   )
 
   target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
@@ -236,16 +247,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   _group_sources(kth_network_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    # Exclude [integration] tests - they require real TCP connections
-    catch_discover_tests(kth_network_test TEST_SPEC "~[integration]")
-  else()
-    # Fallback to manual test registration (excludes integration tests)
-    add_test(NAME kth_network_test COMMAND kth_network_test "~[integration]")
-  endif()
+  kth_register_tests(kth_network_test TEST_SPEC "~[integration]")
 endif()
 
 
@@ -269,3 +271,9 @@ install(EXPORT ${PROJECT_NAME}-targets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
 
+
+if(ENABLE_TEST AND KTH_WITH_WEBSOCKET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_ws_transport_test test/websocket_transport.cpp)
+    target_link_libraries(kth_ws_transport_test PRIVATE network Catch2::Catch2WithMain)
+    add_test(NAME kth_ws_transport_test COMMAND kth_ws_transport_test)
+endif()

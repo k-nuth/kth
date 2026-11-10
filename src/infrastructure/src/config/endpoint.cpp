@@ -59,7 +59,7 @@ endpoint::endpoint(authority const& authority) {
     *this = std::move(*parsed);
 }
 
-#if ! defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 endpoint::endpoint(asio::endpoint const& host)
     : endpoint(host.address(), host.port())
 {}

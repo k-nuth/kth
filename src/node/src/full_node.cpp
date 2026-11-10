@@ -6,6 +6,7 @@
 
 #include <kth/node/full_node.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <thread>
@@ -15,9 +16,12 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -119,18 +123,6 @@ full_node::~full_node() {
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
 
-    // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
-    // chain-backed handler into the network layer, which stays chain-agnostic.
-    network_.register_message_handler<domain::message::memory_pool>(
-        [this](peer_session& peer, domain::message::memory_pool const&)
-            -> ::asio::awaitable<message_result> {
-            auto const inv = co_await chain_.fetch_mempool(50000, 0);
-            if (inv && *inv) {
-                co_await peer.send(**inv);
-            }
-            co_return message_result::handled;
-        });
-
     // Serve the connected chain: headers for a locator, and the blocks a
     // peer asks for after an announcement or during its own sync. Both run in
     // the peer's service, off its read loop: their answers wait on the peer's
@@ -149,12 +141,80 @@ full_node::~full_node() {
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
             return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
         });
+    // The fee filter (BIP133) each peer's service sends on its schedule: the
+    // mempool's minimum, rounded as BCHN rounds it, never below the relay
+    // floor. Only when the node relays transactions, and only to peers that
+    // understand it.
+    if (network_settings_.relay_transactions) {
+        auto const floor = uint64_t(std::llround(chain_settings_.byte_fee_satoshis * 1000.0));
+        auto rounder = std::make_shared<detail::fee_filter_rounder const>(floor);
+        network_.set_fee_filter_handler(
+            [this, floor, rounder](peer_session& peer) -> ::asio::awaitable<std::optional<uint64_t>> {
+                if (peer.negotiated_version() < domain::message::version::level::bip133) {
+                    co_return std::nullopt;
+                }
+                auto const minimum = co_await chain_.mempool_minimum_fee();
+                // BCHN rounds down two times in three.
+                auto const step_down = pseudo_random::generate<uint32_t>(0, 2) != 0;
+                co_return detail::fee_filter_to_send(*rounder, minimum, floor, step_down);
+            });
+        // The transactions each peer's service announces: the mempool's order
+        // of admission, at most an announcement's worth for the next block's
+        // size limit at a time.
+        network_.set_tx_announcement_handler(detail::tx_announcement_sources{
+            .last = [this] { return chain_.mempool_last_admission(); },
+            .admitted_after = [this](uint64_t after, size_t limit) -> ::asio::awaitable<detail::admitted_batch> {
+                auto admitted = co_await chain_.mempool_admitted_after(after, limit);
+                co_return detail::admitted_batch{std::move(admitted.entries), admitted.last};
+            },
+            .limit = [this] {
+#if defined(KTH_CURRENCY_BCH)
+                // The next block's size limit (BCHN: ceil(7 * MB * 0.5 s)).
+                auto const state = chain_.chain_state();
+                return detail::max_announcements(state ? state->dynamic_max_block_size()
+                                                       : chain_settings_.default_consensus_block_size);
+#else
+                // A fixed one-million-byte limit.
+                return detail::max_announcements(max_block_size);
+#endif
+            },
+            .pool = [this]() -> ::asio::awaitable<detail::admitted_batch> {
+                auto pooled = co_await chain_.mempool_snapshot();
+                co_return detail::admitted_batch{std::move(pooled.entries), pooled.last};
+            },
+        });
+    }
+
+// The gRPC server binds first: if it cannot, nothing else has started yet.
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        grpc_server_ = std::make_unique<grpc_rpc::server>(rpc_settings_, chain_, network_type_);
+        auto const port = grpc_server_->start();
+        if ( ! port) {
+            // Asked for and unavailable is a failed start, not a node quietly
+            // running without the service it was configured to offer. Before the
+            // network starts, so a failed start leaves only the chain, closed here
+            // as for a network that fails to start.
+            spdlog::error("[node] gRPC server failed to start: {}", port.error());
+            grpc_server_.reset();
+            (void)chain_.stop();
+            co_return error::listen_failed;
+        }
+    } else {
+        spdlog::info("[node] gRPC server disabled (rpc.enabled=false).");
+    }
+#endif
 
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
         spdlog::error("[node] Failure starting network: {}", ec.message());
+#if defined(KTH_WITH_GRPC)
+        // Asked to wind down, not joined here: join() of the node ends it, before
+        // the chain is destroyed. Its calls see the stopped chain meanwhile.
+        if (grpc_server_) grpc_server_->stop();
+#endif
         (void)chain_.stop();
         co_return ec;
     }
@@ -167,10 +227,18 @@ full_node::~full_node() {
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
-#elif ! defined(__EMSCRIPTEN__)
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
-        spdlog::warn("[node] rpc.enabled=true but this build has no JSON-RPC support "
-            "(compile with the with_rpc option).");
+        capnp_reader_ = std::make_unique<capnp_rpc::chain_reader>(chain_);
+        capnp_server_ = std::make_unique<capnp_rpc::server>(rpc_settings_, *capnp_reader_,
+            network_.thread_pool().get_executor());
+    } else {
+        spdlog::info("[node] Cap'n Proto RPC server disabled (rpc.enabled=false).");
+    }
+#elif ! defined(__EMSCRIPTEN__) && ! defined(KTH_WITH_GRPC)
+    if (rpc_settings_.enabled) {
+        spdlog::warn("[node] rpc.enabled=true but this build has no RPC server "
+            "(compile with Conan rpc=jsonrpc|grpc|capnproto, or CMake KTH_RPC_BACKEND=jsonrpc|grpc|capnproto).");
     }
 #endif
 
@@ -226,6 +294,12 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC)
         if (rpc_server_) rpc_server_->stop();
 #endif
+#if defined(KTH_WITH_GRPC)
+        if (grpc_server_) grpc_server_->stop();
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC)
+        if (capnp_server_) capnp_server_->stop();
+#endif
         if (template_provider_) template_provider_->stop();
     };
     co_await (core() && run_rpc() && run_sv2());
@@ -241,6 +315,8 @@ full_node::~full_node() {
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) co_await rpc_server_->run();
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) co_await capnp_server_->run();
 #endif
     co_return;
 }
@@ -378,6 +454,13 @@ void full_node::stop() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // Only asks (never blocks): this can run on a node executor thread.
+    if (grpc_server_) grpc_server_->stop();
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) capnp_server_->stop();
+#endif
 #if ! defined(__EMSCRIPTEN__)
     if (template_provider_) template_provider_->stop();
     // IMPORTANT: Only stop the network here, NOT the chain!
@@ -389,6 +472,16 @@ void full_node::stop() {
 }
 
 void full_node::join() {
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // First: in-flight calls still run chain work on the network executor and
+    // read the chain, so both must outlive them. join() is the owner's thread,
+    // not an executor thread, so waiting here blocks no node work. Ask first, in
+    // case the owner went straight to join().
+    if (grpc_server_) {
+        grpc_server_->stop();
+        grpc_server_->join();
+    }
+#endif
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
 #endif

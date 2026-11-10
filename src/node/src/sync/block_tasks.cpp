@@ -2086,6 +2086,29 @@ struct window_fatal {
     std::string reason;   ///< What on_fatal is told, verbatim as before.
 };
 
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
+                        uint32_t validated_blocks) {
+    // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
+    // the below-checkpoint remainder is built (merkle-only) as its own batch
+    // and the UTXO delta of those blocks is applied first. The next batch then
+    // starts strictly above the checkpoint and is validated in full against a
+    // UTXO-Z that already contains every below-checkpoint output. A straddling
+    // batch would instead validate above-checkpoint blocks whose prevouts were
+    // created by below-checkpoint blocks in the SAME batch — outputs whose delta
+    // is applied only after validation — yielding spurious "prevout not found".
+    if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
+        return checkpoint_height;
+    }
+    // Above the checkpoint every block's undo data is captured and can only be
+    // written after the batch's delta is applied, so the whole batch is held in
+    // memory first: a full block can spend tens of thousands of outputs.
+    auto const cap = std::max(validated_blocks, uint32_t{1});
+    if (batch_start > checkpoint_height && batch_end - batch_start + 1 > cap) {
+        return batch_start + cap - 1;
+    }
+    return batch_end;
+}
+
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     if (available >= batch_size) {
         return batch_size;
@@ -2141,10 +2164,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
 
-    // Highest checkpoint height: at/below it IBD is merkle-only (fast), strictly
-    // above it every block runs FULL validation. Constant for the whole run.
+    // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
+    // every block runs FULL validation. It is the highest checkpoint in the
+    // optimized mode and 0 in full-validation mode, where the checkpoints stay as
+    // header anchors but grant no skipping. Constant for the whole run.
+    auto const& chain_cfg = chain.chain_settings();
     uint32_t const checkpoint_height =
-        static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+        static_cast<uint32_t>(chain_cfg.trusted_checkpoint_height());
+    // Validated batches never exceed the window this task reads at once.
+    uint32_t const validated_batch_blocks = std::min(chain_cfg.validation_batch_blocks, batch_size);
+    spdlog::info("[utxo_build] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL" : "optimized",
+        chain_cfg.max_checkpoint_height, checkpoint_height + 1);
 
     // Load bloom filter. The embedded bloom is the FINAL UTXO set as of the height
     // it was built for: it prunes outputs spent before then. Use it only when that
@@ -2155,7 +2187,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // full validation, so the bloom is disabled per batch below.
     auto const bloom = blockchain::load_utxo_bloom();
     auto const* bloom_ptr = bloom.get();
-    if (bloom_ptr != nullptr &&
+    if (bloom_ptr != nullptr && chain_cfg.full_validation) {
+        // Every output must stay: a later block's full validation may spend any of them.
+        spdlog::info("[utxo_build] Full validation: bloom pruning disabled");
+        bloom_ptr = nullptr;
+    } else if (bloom_ptr != nullptr &&
         blockchain::embedded_bloom_checkpoint_height() != checkpoint_height) {
         spdlog::info(
             "[utxo_build] Embedded bloom checkpoint {} != active checkpoint {}; disabling bloom",
@@ -2259,29 +2295,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         }
 
         // Process one batch
-        uint32_t batch_start = utxo_built_height + 1;
-        uint32_t batch_end = batch_start + batch_len - 1;
-
-        // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
-        // the below-checkpoint remainder is built (merkle-only) as its own batch
-        // and the UTXO delta of those blocks is applied first. The next batch then
-        // starts strictly above the checkpoint and is validated in full against a
-        // UTXO-Z that already contains every below-checkpoint output. A straddling
-        // batch would instead validate above-checkpoint blocks whose prevouts were
-        // created by below-checkpoint blocks in the SAME batch — outputs whose delta
-        // is applied only after validation — yielding spurious "prevout not found".
-        if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
-            batch_end = checkpoint_height;
-        }
-
-        // Above the checkpoint every block's undo data is captured and can only be
-        // written after the batch's delta is applied, so the whole batch is held in
-        // memory first. Cap the batch there: a full block can spend tens of
-        // thousands of outputs, so an unbounded batch would hold hundreds of MB.
-        static constexpr uint32_t max_undo_batch_len = 100;
-        if (batch_start > checkpoint_height && batch_end - batch_start + 1 > max_undo_batch_len) {
-            batch_end = batch_start + max_undo_batch_len - 1;
-        }
+        uint32_t const batch_start = utxo_built_height + 1;
+        uint32_t const batch_end = utxo_batch_end(batch_start, batch_start + batch_len - 1,
+            checkpoint_height, validated_batch_blocks);
 
         // Read raw blocks from flat files
         auto raw_result = chain.fetch_blocks_raw(batch_start, batch_end);

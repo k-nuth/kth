@@ -1,3 +1,105 @@
+# version 1.6.0
+
+You can install Knuth node version v1.6.0 [using these instructions](https://kth.cash/#download).
+
+## What's Changed
+* Preserve executed SigChecks in native script validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/763
+* Validate block structure and contextual ordering in batches by @fpelliccioni in https://github.com/k-nuth/kth/pull/764
+* Preserve connected ABLA metadata on repeated header persistence by @fpelliccioni in https://github.com/k-nuth/kth/pull/765
+* Wake block storage before chain reorganizations by @fpelliccioni in https://github.com/k-nuth/kth/pull/767
+* Include active ancestry in header requests by @fpelliccioni in https://github.com/k-nuth/kth/pull/768
+* Advance finalization only from published connected blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/766
+* ci: gate external contributions behind maintainer admission by @fpelliccioni in https://github.com/k-nuth/kth/pull/800
+* ci: classify maintainers using repository permissions by @fpelliccioni in https://github.com/k-nuth/kth/pull/802
+* rpc: answer every request pipelined on one connection by @CyberAshven in https://github.com/k-nuth/kth/pull/769
+* rpc: accept request lines that end in a bare LF by @CyberAshven in https://github.com/k-nuth/kth/pull/770
+* rpc: end reply headers with Content-Length and the body with LF by @CyberAshven in https://github.com/k-nuth/kth/pull/771
+* domain: decode cashaddr addresses only as the P2PKH or P2SH they name by @CyberAshven in https://github.com/k-nuth/kth/pull/774
+* build: require C23 for the C API by @fpelliccioni in https://github.com/k-nuth/kth/pull/819
+* domain: support constexpr CashAddr and precise address errors by @fpelliccioni in https://github.com/k-nuth/kth/pull/818
+* rpc: add validateaddress by @CyberAshven in https://github.com/k-nuth/kth/pull/775
+* rpc: add the coinbase merkle branch to getblocktemplatelight by @CyberAshven in https://github.com/k-nuth/kth/pull/776
+* rpc: add help by @CyberAshven in https://github.com/k-nuth/kth/pull/778
+* rpc: add confirmations to verbose getblockheader by @CyberAshven in https://github.com/k-nuth/kth/pull/779
+* rpc: add estimatefee by @CyberAshven in https://github.com/k-nuth/kth/pull/780
+* infrastructure: modernize base codecs and Bitcoin amounts by @fpelliccioni in https://github.com/k-nuth/kth/pull/824
+* domain: add direct CashAddr encoding and checked address literals by @fpelliccioni in https://github.com/k-nuth/kth/pull/828
+* rpc: add decoderawtransaction by @CyberAshven in https://github.com/k-nuth/kth/pull/782
+* rpc: add getnetworkhashps by @CyberAshven in https://github.com/k-nuth/kth/pull/781
+* rpc: report the short chain name in getblockchaininfo and getmininginfo by @CyberAshven in https://github.com/k-nuth/kth/pull/786
+* rpc: add getchaintips by @CyberAshven in https://github.com/k-nuth/kth/pull/785
+* network: select the next peer message instead of racing a receive and a timer by @fpelliccioni in https://github.com/k-nuth/kth/pull/830
+* rpc: add gettxout by @CyberAshven in https://github.com/k-nuth/kth/pull/784
+* rpc: add getnetworkinfo by @CyberAshven in https://github.com/k-nuth/kth/pull/783
+* Fix standalone literal checks in CI by @fpelliccioni in https://github.com/k-nuth/kth/pull/837
+* rpc: list verbose getrawmempool entries keyed by txid by @CyberAshven in https://github.com/k-nuth/kth/pull/790
+* Preserve selected network defaults across configuration boundaries by @fpelliccioni in https://github.com/k-nuth/kth/pull/756
+* rpc: add getblocktemplate by @CyberAshven in https://github.com/k-nuth/kth/pull/787
+* Implement CHIP-2025-03 Faster Blocks and tempnet support by @fpelliccioni in https://github.com/k-nuth/kth/pull/839
+* rpc: harden blockchain info snapshots and disk accounting by @CyberAshven in https://github.com/k-nuth/kth/pull/777
+* test: repair the batch size and getblocktemplate tests left failing by Faster Blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/843
+* Add branch-local ticks to header-index chain tips by @fpelliccioni in https://github.com/k-nuth/kth/pull/844
+* Recover identical undo records after branch replay by @fpelliccioni in https://github.com/k-nuth/kth/pull/822
+* ci: give the node suite room and stop its clean-start test idling by @fpelliccioni in https://github.com/k-nuth/kth/pull/848
+* Avoid executor deadlock during transaction admission by @fpelliccioni in https://github.com/k-nuth/kth/pull/845
+* Expose Faster Blocks tick metadata through JSON-RPC by @fpelliccioni in https://github.com/k-nuth/kth/pull/840
+* Reject mutated merkle trees in light block validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/849
+* Recover sync after a contextual block rejection by @fpelliccioni in https://github.com/k-nuth/kth/pull/850
+* Expose Faster Blocks tick schedules and progress through the C API by @fpelliccioni in https://github.com/k-nuth/kth/pull/841
+* Admit local blocks through the existing sync pipeline by @fpelliccioni in https://github.com/k-nuth/kth/pull/846
+* blockchain: read blocks from the flat files, and mempool transactions by txid by @fpelliccioni in https://github.com/k-nuth/kth/pull/847
+* rpc: read blocks from the block files, and mempool transactions by txid by @CyberAshven in https://github.com/k-nuth/kth/pull/788
+* domain: add median_time_past_of, the median time past by ancestry by @fpelliccioni in https://github.com/k-nuth/kth/pull/860
+* Select proof-of-work limits independently for each check by @fpelliccioni in https://github.com/k-nuth/kth/pull/858
+* Preserve invalid duplicate classification in block admission replies by @fpelliccioni in https://github.com/k-nuth/kth/pull/854
+* rpc: answer getblock and getrawtransaction verbosely by @CyberAshven in https://github.com/k-nuth/kth/pull/789
+* Keep contextual block rejection identities across restarts by @fpelliccioni in https://github.com/k-nuth/kth/pull/856
+* rpc: add submitblock by @CyberAshven in https://github.com/k-nuth/kth/pull/792
+* p2p: serve the connected chain's headers and blocks to peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/861
+* sync: announce each newly connected tip to peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/862
+* blockchain: keep the block submission reply independent of the submitter by @fpelliccioni in https://github.com/k-nuth/kth/pull/863
+* build: require GCC 16.2 and probe coroutine binding lifetime by @fpelliccioni in https://github.com/k-nuth/kth/pull/865
+* mempool: expire transactions unconfirmed for two weeks by @fpelliccioni in https://github.com/k-nuth/kth/pull/869
+* mempool: price transactions at BCHN's relay floor, by size by @fpelliccioni in https://github.com/k-nuth/kth/pull/868
+* mempool: bound the pool and raise its minimum fee when full by @fpelliccioni in https://github.com/k-nuth/kth/pull/870
+* node: ask peers for the transactions they announce and offer them to the mempool by @fpelliccioni in https://github.com/k-nuth/kth/pull/872
+* ci: reuse tested packages and run isolated test shards by @fpelliccioni in https://github.com/k-nuth/kth/pull/878
+* node: send each peer the mempool's minimum fee as its fee filter by @fpelliccioni in https://github.com/k-nuth/kth/pull/873
+* node: keep transactions whose parents are missing, and ask for the parents by @fpelliccioni in https://github.com/k-nuth/kth/pull/876
+* node: announce admitted transactions to peers and serve their getdata by @fpelliccioni in https://github.com/k-nuth/kth/pull/884
+* node: drop the orphans a connected block resolves by @fpelliccioni in https://github.com/k-nuth/kth/pull/886
+* build: introduce explicit RPC backend selection by @fpelliccioni in https://github.com/k-nuth/kth/pull/794
+* node: answer a peer's mempool request as BCHN does by @fpelliccioni in https://github.com/k-nuth/kth/pull/889
+* node: add gRPC Protobuf query backend by @fpelliccioni in https://github.com/k-nuth/kth/pull/798
+* node: read the gRPC transport's in-flight count after join without waiting by @fpelliccioni in https://github.com/k-nuth/kth/pull/891
+* node: add Cap'n Proto RPC query backend by @fpelliccioni in https://github.com/k-nuth/kth/pull/799
+* node: let the Cap'n Proto test reader's destructor match the reader it overrides by @fpelliccioni in https://github.com/k-nuth/kth/pull/892
+* build: take asio 1.38.3-kth.3, with a configurable selection timer by @fpelliccioni in https://github.com/k-nuth/kth/pull/893
+* network: run on a browser Worker, over a WebSocket byte stream by @fpelliccioni in https://github.com/k-nuth/kth/pull/894
+* node: synchronize BCH headers in a browser Worker by @fpelliccioni in https://github.com/k-nuth/kth/pull/895
+* network: add native WebSocket peers and endpoint discovery by @fpelliccioni in https://github.com/k-nuth/kth/pull/810
+* ci: name the reusable build workflows by @fpelliccioni in https://github.com/k-nuth/kth/pull/898
+* node: follow a heavier branch in header_sync by @fpelliccioni in https://github.com/k-nuth/kth/pull/897
+* node: keep a browser header client's chain across reloads by @fpelliccioni in https://github.com/k-nuth/kth/pull/811
+* node: count only outbound peers toward the outbound target by @fpelliccioni in https://github.com/k-nuth/kth/pull/899
+* network: use the platform timer in the WebSocket transport by @fpelliccioni in https://github.com/k-nuth/kth/pull/903
+* node: synchronize browser headers from several peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/900
+* node: report a browser header client's chain state and settings by @fpelliccioni in https://github.com/k-nuth/kth/pull/901
+* node: sample block and transaction content in the browser header client by @fpelliccioni in https://github.com/k-nuth/kth/pull/902
+* node: report header_sync failures with std::expected by @fpelliccioni in https://github.com/k-nuth/kth/pull/905
+* ci: pin conan-toolchains in the browser controls job by @fpelliccioni in https://github.com/k-nuth/kth/pull/907
+* chain: add chain.full_validation, an IBD that validates every block by @fpelliccioni in https://github.com/k-nuth/kth/pull/908
+* test: preload the ASan runtime before the no-CSPRNG shim by @fpelliccioni in https://github.com/k-nuth/kth/pull/909
+* c-api: refresh generated wrappers and report async mining failures by @fpelliccioni in https://github.com/k-nuth/kth/pull/910
+* ci: restore coverage caching and batch Catch tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/913
+* c-api: preserve async completion and release failed subscriptions by @fpelliccioni in https://github.com/k-nuth/kth/pull/912
+* test: expect the consensus library's script verdict in full validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/915
+* release: 1.6.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/914
+
+
+**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.5.2...v1.6.0
+
+
 # version 1.5.2
 
 You can install Knuth node version v1.5.2 [using these instructions](https://kth.cash/#download).
