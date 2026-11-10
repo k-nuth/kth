@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1930,4 +1931,100 @@ TEST_CASE("integrated: a newly connected block is announced to every peer",
         ++inventories_seen;
     }
     CHECK(inventories_seen == 1);
+}
+
+TEST_CASE("integrated: a peer answering below a deep fork is followed to its heavier branch",
+          "[header_tip][integration][held_batch]") {
+    // The node holds a chain that leaves the peer's after `common_height`, by
+    // more blocks than the locator lists densely. The first entry of its
+    // locator the peer knows is then thousands of blocks below the fork, and
+    // the peer answers with 2000 headers the node already holds (#927).
+    captured_log log;
+    chain_fixture fixture{"held_batch_fork"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t common_height = 6000;
+    constexpr uint32_t local_length = 6000;
+    constexpr uint32_t peer_length = 8000;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base = uint32_t(zulu_time()) - (common_height + peer_length + 30) * block_spacing;
+    std::vector<domain::chain::block> local;
+    std::vector<domain::chain::block> remote;
+    local.reserve(common_height + local_length);
+    remote.reserve(common_height + peer_length);
+    auto previous = genesis.hash();
+    for (uint32_t height = 1; height <= common_height; ++height) {
+        local.push_back(mine_block(previous, height, base + height * block_spacing, 0, {}, 0));
+        previous = local.back().hash();
+    }
+    remote = local;
+    auto local_previous = previous;
+    for (uint32_t height = common_height + 1; height <= common_height + local_length; ++height) {
+        local.push_back(mine_block(local_previous, height, base + height * block_spacing, 1, {}, 0));
+        local_previous = local.back().hash();
+    }
+    auto remote_previous = previous;
+    for (uint32_t height = common_height + 1; height <= common_height + peer_length; ++height) {
+        remote.push_back(mine_block(remote_previous, height, base + height * block_spacing + 30, 2, {}, 0));
+        remote_previous = remote.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(local)).headers_added == local.size());
+    persist_headers(fixture, local, 1);
+    REQUIRE(fixture.restart());
+    REQUIRE(fixture.organizer().header_tip_hash() == local.back().hash());
+
+    // The peer's side of getheaders: the first locator entry on its chain,
+    // then at most 2000 headers after it.
+    std::map<hash_digest, uint32_t> remote_height;
+    remote_height.emplace(genesis.hash(), 0);
+    for (uint32_t i = 0; i < remote.size(); ++i) {
+        remote_height.emplace(remote[i].hash(), i + 1);
+    }
+    auto answer = [&](hash_list const& locator) {
+        uint32_t matched = 0;
+        for (auto const& hash : locator) {
+            if (auto const found = remote_height.find(hash); found != remote_height.end()) {
+                matched = found->second;
+                break;
+            }
+        }
+        std::vector<domain::chain::block> reply;
+        for (uint32_t height = matched + 1;
+             height <= remote.size() && reply.size() < kth::max_get_headers; ++height) {
+            reply.push_back(remote[height - 1]);
+        }
+        return std::pair{matched, std::move(reply)};
+    };
+
+    auto const peer_config = node_settings("held_batch_fork_peer");
+    wire_peer peer(peer_config, 9951, common_height + peer_length);
+    std::optional<uint32_t> first_match;
+    bool adopted = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "held_batch_fork");
+        run.connect(peer.session);
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while ( ! adopted && std::chrono::steady_clock::now() < deadline) {
+            auto const locator = peer.next_locator(quick);
+            if ( ! locator) break;
+            auto [matched, reply] = answer(*locator);
+            if ( ! first_match) first_match = matched;
+            run.deliver(peer.session, peer.headers(reply));
+            adopted = wait_until([&] {
+                return fixture.organizer().header_tip_hash() == remote.back().hash();
+            }, std::chrono::milliseconds(200));
+        }
+        if ( ! adopted) log.dump("held_batch_fork");
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    // The scenario holds: the first answer is a full batch the node already
+    // has, ending below the fork.
+    REQUIRE(first_match);
+    CHECK(*first_match + kth::max_get_headers <= common_height);
+    CHECK(adopted);
+    CHECK(fixture.organizer().header_tip_hash() == remote.back().hash());
 }
