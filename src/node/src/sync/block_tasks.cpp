@@ -2322,6 +2322,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // blocks, and above the checkpoint they are parsed here anyway. Below it
         // this stays empty and the raw bytes are used instead.
         std::vector<kth::block_const_ptr> validated_blocks;
+        // Their transaction identifiers, computed once: validation reads them
+        // for every check that needs them, and building the UTXO delta below
+        // reads them again instead of hashing each transaction a second time.
+        std::vector<hash_list> validated_txids;
 
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
@@ -2348,6 +2352,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                             parse_failed = true;
                             co_return error::operation_failed;
                         }
+                        validated_txids.push_back(blk->to_hashes());
                         full_blocks.push_back(
                             std::make_shared<domain::message::block const>(std::move(*blk)));
                     }
@@ -2355,8 +2360,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, batch_start,
-                        rejection);
+                        chain, chain.chain_settings(), network, full_blocks, validated_txids,
+                        batch_start, rejection);
                 }, ::asio::use_awaitable);
 
             if (vc) {
@@ -2528,8 +2533,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
 
+            // A block validation parsed has its identifiers already.
+            std::span<hash_digest const> known_txids;
+            if (i < validated_txids.size()) {
+                known_txids = validated_txids[i];
+            }
             auto parsed = blockchain::parse_utxo_block(
-                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()});
+                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()}, known_txids);
             if ( ! parsed) {
                 spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
                 on_fatal("a stored block could not be parsed");

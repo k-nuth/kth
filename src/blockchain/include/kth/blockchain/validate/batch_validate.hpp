@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <kth/domain.hpp>
@@ -93,6 +94,21 @@ code validate_block_batch(
     settings const& settings,
     domain::config::network network,
     std::vector<block_const_ptr> const& blocks,
+    size_t start_height,
+    batch_rejection& rejection);
+
+// The same validation, given each block's transaction identifiers
+// (txids[i] == blocks[i]->to_hashes()). Every check that needs them reads them
+// from here, so a caller that also needs them afterwards, to build the UTXO
+// delta, computes them once. A count that does not match the batch is refused
+// as operation_failed, attributed to no block.
+KB_API
+code validate_block_batch(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    std::vector<block_const_ptr> const& blocks,
+    std::span<hash_list const> txids,
     size_t start_height,
     batch_rejection& rejection);
 
