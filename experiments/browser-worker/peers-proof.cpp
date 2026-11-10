@@ -81,7 +81,7 @@ std::string describe(header_sync const& client) {
         require(state.find("\"upgrades\":{") != std::string::npos && state.find("\"abla\":{\"available\":false") != std::string::npos,
             "chain state sections: " + state);
         for (auto const* expected : {"\"sync_peers\":8", "\"services\":0", "\"relay_transactions\":false",
-                "\"user_agent\":\"/KTH-browser-headers//wsdisc:1/\"", "\"network\":\"Regtest\"",
+                "\"user_agent\":\"/KTH-browser-headers/wsdisc:1/\"", "\"network\":\"Regtest\"",
                 "\"peer_endpoints\":[\"ws://127.0.0.1:18780\",\"ws://127.0.0.1:18785\"]",
                 "\"cache_directory\":\"/kth-header-cache/Regtest\""}) {
             require(settings.find(expected) != std::string::npos, std::string("settings lack ") + expected + ": " + settings);
