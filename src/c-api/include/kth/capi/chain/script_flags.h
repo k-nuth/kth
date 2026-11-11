@@ -19,13 +19,13 @@ typedef uint64_t kth_script_flags_t;
 
 #define kth_script_flags_no_rules                          0
 
-/// Allow minimum difficulty blocks (hard fork, testnet).
+/// Allow minimum difficulty blocks (network upgrade, testnet).
 #define kth_script_flags_easy_blocks                       (1ULL << 0)
 
 /// Pay-to-script-hash enabled (soft fork, feature).
 #define kth_script_flags_bip16_rule                        (1ULL << 1)
 
-/// No duplicated unspent transaction ids (hard fork, security).
+/// No duplicated unspent transaction ids (network upgrade, security).
 #define kth_script_flags_bip30_rule                        (1ULL << 2)
 
 /// Coinbase must include height (soft fork, security).
@@ -37,10 +37,10 @@ typedef uint64_t kth_script_flags_t;
 /// Operation nop2 becomes check locktime verify (soft fork, feature).
 #define kth_script_flags_bip65_rule                        (1ULL << 5)
 
-/// Hard code bip34-based activation heights (hard fork, optimization).
+/// Hard code bip34-based activation heights (network upgrade, optimization).
 #define kth_script_flags_bip90_rule                        (1ULL << 6)
 
-/// Assume hash collisions cannot happen (hard fork, optimization).
+/// Assume hash collisions cannot happen (network upgrade, optimization).
 #define kth_script_flags_allow_collisions                  (1ULL << 7)
 
 /// Enforce relative locktime (soft fork, feature).
@@ -94,7 +94,7 @@ typedef uint64_t kth_script_flags_t;
 #define kth_script_flags_bip147_rule                       (1ULL << 13)
 #endif
 
-/// Perform difficulty retargeting (hard fork, regtest).
+/// Perform difficulty retargeting (network upgrade, regtest).
 #define kth_script_flags_retarget                          (1ULL << 62)
 
 /// Sentinel bit to indicate tx has not been validated.

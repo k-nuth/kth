@@ -9,7 +9,8 @@
 #include <kth/capi/detail/sync_wait.hpp>
 #include <system_error>
 #include <asio/co_spawn.hpp>
-#include <asio/detached.hpp>
+#include <exception>
+#include <new>
 #include <kth/blockchain/interface/block_chain.hpp>
 
 // File-local alias so `kth::cpp_ref<T>(...)` and friends don't
@@ -41,15 +42,29 @@ kth_error_code_t kth_chain_sync_mining_info(kth_chain_t self, kth_mining_info_t*
 
 void kth_chain_async_mining_info(kth_chain_t self, void* ctx, kth_mining_info_fetch_handler_t handler) {
     KTH_PRECONDITION(self != nullptr);
-    auto& bc = kth::cpp_ref<cpp_t>(self);
-    ::asio::co_spawn(bc.executor(), [&bc, self, ctx, handler]() -> ::asio::awaitable<void> {
-        auto result = co_await bc.fetch_mining_info();
-        if (result) {
-            handler(self, ctx, kth::to_c_err(std::error_code{}), kth::to_c_struct<kth_mining_info_t>(*result));
-        } else {
-            handler(self, ctx, kth::to_c_err(result.error()), kth_mining_info_t{});
-        }
-    }, ::asio::detached);
+    KTH_PRECONDITION(handler != nullptr);
+    auto report_failure = [self, ctx, handler](std::exception_ptr failure) {
+        kth_error_code_t status = kth_ec_unhandled_exception;
+        try { std::rethrow_exception(failure); }
+        catch (std::bad_alloc const&) { status = kth_ec_out_of_memory; }
+        catch (...) {}
+        handler(self, ctx, status, kth_mining_info_t{});
+    };
+    try {
+        auto& bc = kth::cpp_ref<cpp_t>(self);
+        ::asio::co_spawn(bc.executor(), [&bc]() -> decltype(bc.fetch_mining_info()) {
+            co_return co_await bc.fetch_mining_info();
+        }, [self, ctx, handler, report_failure](std::exception_ptr failure, auto result) {
+            if (failure) { report_failure(failure); return; }
+            if (result) {
+                handler(self, ctx, kth::to_c_err(std::error_code{}), kth::to_c_struct<kth_mining_info_t>(*result));
+            } else {
+                handler(self, ctx, kth::to_c_err(result.error()), kth_mining_info_t{});
+            }
+        });
+    } catch (...) {
+        report_failure(std::current_exception());
+    }
 }
 
 } // extern "C"

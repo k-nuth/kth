@@ -104,13 +104,13 @@ bool mempool::add(mempool_entry entry) {
     return true;
 }
 
-void mempool::remove_entry(hash_digest const& txid) {
+bool mempool::remove_entry(hash_digest const& txid) {
     transaction_const_ptr tx;
     bool const found = pool_.visit(txid, [&](mempool_entry const& e) {
         tx = e.tx;
     });
     if ( ! found) {
-        return;
+        return false;
     }
 
     // The erase from the pool is what decides who removes the transaction: two
@@ -122,7 +122,7 @@ void mempool::remove_entry(hash_digest const& txid) {
     // would then be admitted beside it. Until the winner releases them the keys
     // stay claimed by this transaction, so no one can take them in the meantime.
     if ( ! pool_.erase(txid)) {
-        return;
+        return false;
     }
 
     for (auto const& in : tx->inputs()) {
@@ -130,9 +130,16 @@ void mempool::remove_entry(hash_digest const& txid) {
         spent_by_.erase(outpoint_key{op.hash(), op.index()});
     }
     generation_.fetch_add(1, std::memory_order_relaxed);
+    return true;
 }
 
-void mempool::remove_recursive(hash_digest const& txid) {
+std::vector<hash_digest> mempool::remove_with_descendants(hash_digest const& txid) {
+    std::vector<hash_digest> removed;
+    remove_recursive(txid, removed);
+    return removed;
+}
+
+void mempool::remove_recursive(hash_digest const& txid, std::vector<hash_digest>& removed) {
     transaction_const_ptr tx;
     bool const found = pool_.visit(txid, [&](mempool_entry const& e) {
         tx = e.tx;
@@ -151,17 +158,36 @@ void mempool::remove_recursive(hash_digest const& txid) {
             child = c;
         });
         if (has_child) {
-            remove_recursive(child);
+            remove_recursive(child, removed);
         }
     }
 
-    remove_entry(txid);
+    if (remove_entry(txid)) {
+        removed.push_back(txid);
+    }
 }
 
-void mempool::remove_for_block(domain::chain::block const& block) {
+std::vector<hash_digest> mempool::expire(uint64_t seen_before) {
+    std::vector<hash_digest> expired;
+    pool_.for_each([&](hash_digest const& txid, mempool_entry const& e) {
+        if (e.time_seen < seen_before) {
+            expired.push_back(txid);
+        }
+    });
+
+    std::vector<hash_digest> removed;
+    for (auto const& txid : expired) {
+        // A descendant already removed with an earlier one is not found again.
+        remove_recursive(txid, removed);
+    }
+    return removed;
+}
+
+std::vector<hash_digest> mempool::remove_for_block(domain::chain::block const& block) {
     KTH_STATS_INCREMENT(stats_, remove_for_block_calls);
     KTH_STATS_TIME_START(rmv);
 
+    std::vector<hash_digest> removed;
     for (auto const& tx : block.transactions()) {
         auto const txid = tx.hash();
 
@@ -176,26 +202,31 @@ void mempool::remove_for_block(domain::chain::block const& block) {
                 spender = s;
             });
             if (found && spender != txid) {
-                remove_recursive(spender);
+                remove_recursive(spender, removed);
                 KTH_STATS_INCREMENT(stats_, removed_conflict);
             }
         }
 
         // Normal path: the block confirmed this tx; drop it (non-recursive —
         // its children now spend on-chain outputs and stay valid).
-        remove_entry(txid);
+        if (remove_entry(txid)) {
+            removed.push_back(txid);
+        }
         KTH_STATS_INCREMENT(stats_, removed_confirmed);
     }
 
     KTH_STATS_TIME_ADD(stats_, rmv, remove_time_ns);
+    return removed;
 }
 
-void mempool::update_for_reorg(block_const_ptr_list_const_ptr /*outgoing*/,
-                               block_const_ptr_list_const_ptr incoming) {
+std::vector<hash_digest> mempool::update_for_reorg(block_const_ptr_list_const_ptr /*outgoing*/,
+                                                   block_const_ptr_list_const_ptr incoming) {
     // Evict for the new (connected) chain.
+    std::vector<hash_digest> removed;
     if (incoming) {
         for (auto const& block : *incoming) {
-            remove_for_block(*block);
+            auto const gone = remove_for_block(*block);
+            removed.insert(removed.end(), gone.begin(), gone.end());
         }
     }
 
@@ -204,6 +235,7 @@ void mempool::update_for_reorg(block_const_ptr_list_const_ptr /*outgoing*/,
     // They must be re-validated against the new tip and their fee/size/sigops
     // recomputed before re-entry (parents before children). Deferred; this is
     // the rare path and the common flow does not depend on it. See issue #498.
+    return removed;
 }
 
 std::optional<hash_digest> mempool::spender(point const& outpoint) const {

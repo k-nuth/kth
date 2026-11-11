@@ -245,6 +245,40 @@ TEST_CASE("getheaders is answered with the connected chain after the locator", "
     CHECK(c.hashes(headers->elements()) == c.trunk_hashes(2, 4));
 }
 
+TEST_CASE("headers_after_locator answers one chain, the one ending at the tip it is given", "[chain_data]") {
+    served_chain c;
+    // A reorganization changes the tip between a peer's locator and the
+    // answer. The answer walks back from the tip it was given, so it is one
+    // chain whichever that tip is: from the side branch's tip, a locator on
+    // the trunk past the fork is not on it, and the answer starts after
+    // genesis and ends at the side block.
+    auto const from_side = headers_after_locator(c.index(), c.side.hash(), {c.trunk[3].hash()}, null_hash);
+    CHECK(c.hashes(from_side) == hash_list{c.trunk[0].hash(), c.trunk[1].hash(), c.side.hash()});
+    for (auto const& tip : {c.tip(), c.side.hash()}) {
+        auto const headers = headers_after_locator(c.index(), tip, {c.side.hash(), c.trunk[3].hash()}, null_hash);
+        for (size_t i = 1; i < headers.size(); ++i) {
+            CHECK(headers[i].previous_block_hash() == domain::chain::hash(headers[i - 1]));
+        }
+    }
+}
+
+TEST_CASE("getheaders from a peer on a branch that lost a reorganization is answered, not refused", "[chain_data]") {
+    served_chain c;
+    loopback_peer peer;
+    // The peer's best is the side block, which the connected chain left.
+    domain::message::get_headers const request({c.side.hash(), c.trunk[0].hash()}, null_hash);
+    CHECK(serve(peer, node::handlers::chain_data::handle_get_headers(c.fixture.chain(), *peer.session, request)) ==
+        node::message_result::handled);
+
+    auto const sent = peer.received();
+    REQUIRE(sent.size() == 1);
+    REQUIRE(sent[0].command == domain::message::headers::command);
+    byte_reader reader(sent[0].payload);
+    auto const headers = domain::message::headers::from_data(reader, peer.session->negotiated_version());
+    REQUIRE(headers);
+    CHECK(c.hashes(headers->elements()) == c.trunk_hashes(2, 4));
+}
+
 TEST_CASE("getdata sends the requested connected blocks and a notfound for the rest", "[chain_data]") {
     served_chain c;
     loopback_peer peer;
@@ -252,7 +286,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
     using type_id = inventory_vector::type_id;
     auto const request = domain::message::get_data::create({
         {type_id::block, c.trunk[1].hash()},
-        {type_id::transaction, c.trunk[0].transactions().front().hash()},   // not handled here
+        {type_id::transaction, c.trunk[0].transactions().front().hash()},   // confirmed, not pooled
         {type_id::block, c.side.hash()},                                    // off the connected chain
         {type_id::compact_block, c.trunk[3].hash()},                        // answered in full
         {type_id::block, c.trunk[4].hash()},                                // header only
@@ -278,6 +312,7 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
     auto const missing = domain::message::not_found::from_data(reader, peer.session->negotiated_version());
     REQUIRE(missing);
     CHECK(missing->inventories() == inventory_vector::list{
+        {type_id::transaction, c.trunk[0].transactions().front().hash()},
         {type_id::block, c.side.hash()},
         {type_id::block, c.trunk[4].hash()},
         {type_id::block, unknown_hash()}});
