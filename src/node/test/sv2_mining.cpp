@@ -666,7 +666,7 @@ TEST_CASE("sv2 mining channels use the chain template and close independently", 
     auto const& previous = trunk.front().transactions().front();
     auto const tx = test::spend_p2pkh(previous, 0, previous.outputs().front().value() - 1000,
         view->state->enabled_flags());
-    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+    REQUIRE(fixture.execute(fixture.chain.chain().submit_transaction(
         std::make_shared<domain::message::transaction const>(tx))) == error::success);
     auto client = fixture.connect(fixture.start());
     require_setup(fixture, *client);

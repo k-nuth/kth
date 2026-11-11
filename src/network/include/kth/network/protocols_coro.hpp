@@ -143,14 +143,19 @@ struct handshake_config {
     std::string user_agent;         // Our user agent string
     uint32_t start_height;          // Our current block height
     uint64_t nonce;                 // Connection nonce
+    bool relay;                     // Ask the peer to announce transactions (BIP37)
     std::chrono::seconds timeout;   // Handshake timeout
     std::vector<std::string> user_agent_blacklist;  // Blacklisted user agents
+    bool ws_discovery{false};
+    bool ws_discovery_legacy_agent{false};
 };
 
 /// Result of a successful handshake
 struct handshake_result {
     domain::message::version::const_ptr peer_version;
     uint32_t negotiated_version;
+    // Immutable result passed from the handshake owner to the session owner.
+    bool ws_discovery{false};
 };
 
 /// Perform version handshake with a peer

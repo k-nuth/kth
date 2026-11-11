@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(node VERSION 0 LANGUAGES CXX C)
 
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthRpcBackend.cmake)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -73,7 +75,7 @@ add_definitions(-DKTH_NODE_BUILD_TIMESTAMP=${KTH_NODE_BUILD_TIMESTAMP})
 
 if (NOT GLOBAL_BUILD)
   find_package(blockchain REQUIRED)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
     find_package(network REQUIRED)
   endif()
 endif()
@@ -142,16 +144,21 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     ${kth_sources_just_legacy}
     src/full_node.cpp
     src/detail/block_announcements.cpp
+    src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/local_admission_tasks.cpp
+    src/detail/tx_announcements.cpp
+    src/detail/tx_relay.cpp
     src/executor/executor.cpp
 
     # P2P node orchestration (moved from the network module: it bridges
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
     src/handlers/chain_data.cpp
+    src/p2p_websocket.cpp
+    src/detail/ws_discovery_task.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
 
@@ -193,8 +200,14 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+# A browser node compiles what an ordinary WebAssembly node does, plus the
+# headers-only client and the network layer it runs on.
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
+endif()
+
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
-# set (conan option rpc) and never for WebAssembly.
+# set (conan option rpc=jsonrpc) and never for WebAssembly.
 if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
@@ -204,6 +217,85 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/rpc/query.cpp
     src/rpc/methods.cpp
     src/rpc/server.cpp
+  )
+endif()
+
+# Optional gRPC + Protobuf server (conan option rpc=grpc), never for WebAssembly.
+# The schema in proto/ is compiled at build time with protoc and grpc_cpp_plugin,
+# which must be runnable on the BUILD machine (conan puts the build-context
+# tool_requires on PATH; override with -DKTH_PROTOC= / -DKTH_GRPC_CPP_PLUGIN=).
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(gRPC CONFIG REQUIRED)
+  find_package(protobuf CONFIG REQUIRED)
+  find_package(asio-grpc CONFIG REQUIRED)
+  find_program(KTH_PROTOC NAMES protoc NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+  find_program(KTH_GRPC_CPP_PLUGIN NAMES grpc_cpp_plugin NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+
+  set(kth_proto_root ${CMAKE_CURRENT_LIST_DIR}/proto)
+  set(kth_proto_file ${kth_proto_root}/kth/rpc/v1/node.proto)
+  set(kth_proto_gen ${CMAKE_CURRENT_BINARY_DIR}/generated)
+  set(kth_proto_outputs
+    ${kth_proto_gen}/kth/rpc/v1/node.pb.cc
+    ${kth_proto_gen}/kth/rpc/v1/node.pb.h
+    ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.cc
+    ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.h)
+  add_custom_command(
+    OUTPUT ${kth_proto_outputs}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${kth_proto_gen}
+    COMMAND ${KTH_PROTOC}
+            --proto_path=${kth_proto_root}
+            --cpp_out=${kth_proto_gen}
+            --grpc_out=${kth_proto_gen}
+            --plugin=protoc-gen-grpc=${KTH_GRPC_CPP_PLUGIN}
+            ${kth_proto_file}
+    DEPENDS ${kth_proto_file}
+    COMMENT "Generating kth.rpc.v1 protobuf and gRPC sources"
+    VERBATIM)
+
+  # One generation step shared by every target that compiles the output, so
+  # parallel builds never run protoc twice into the same files.
+  add_custom_target(kth_node_proto DEPENDS ${kth_proto_outputs})
+
+  # Generated code is not ours to lint: keep its warnings out of the build.
+  if(MSVC)
+    set_source_files_properties(${kth_proto_outputs} PROPERTIES COMPILE_OPTIONS "/W0")
+  else()
+    set_source_files_properties(${kth_proto_outputs} PROPERTIES COMPILE_OPTIONS "-w")
+  endif()
+
+  set(kth_sources_just_legacy
+    ${kth_sources_just_legacy}
+    src/grpc_rpc/transport.cpp
+    src/grpc_rpc/chain_handlers.cpp
+    src/grpc_rpc/server.cpp
+    ${kth_proto_outputs}
+  )
+endif()
+
+# Optional Cap'n Proto RPC server (KJ transport thread + asio owner). Compiled
+# only for rpc=capnproto and never for WebAssembly. The generated schema code is
+# appended below, once CapnProto has been found.
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  find_package(CapnProto REQUIRED)
+
+  # Generate into the build tree. Schemas are compiled by the *build machine's*
+  # capnp/capnpc-c++: CapnProtoMacros.cmake takes them from PATH when
+  # cross-compiling (Conan's tool_requires supplies them), otherwise from the
+  # package next to the library.
+  set(KTH_CAPNP_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/schema)
+  set(KTH_CAPNP_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/capnp_gen)
+  file(MAKE_DIRECTORY ${KTH_CAPNP_GEN_DIR})
+  set(CAPNPC_SRC_PREFIX ${KTH_CAPNP_SCHEMA_DIR})
+  set(CAPNPC_OUTPUT_DIR ${KTH_CAPNP_GEN_DIR})
+  capnp_generate_cpp(kth_capnp_sources kth_capnp_headers
+    ${KTH_CAPNP_SCHEMA_DIR}/kth/rpc/v1/chain.capnp)
+
+  set(kth_sources_just_legacy
+    ${kth_sources_just_legacy}
+    src/capnp_rpc/chain_reader.cpp
+    src/capnp_rpc/kj_service.cpp
+    src/capnp_rpc/server.cpp
+    ${kth_capnp_sources}
   )
 endif()
 
@@ -272,6 +364,15 @@ set(kth_headers
   include/kth/node/rpc/chain_progress.hpp
   include/kth/node/rpc/server.hpp
 
+  # Optional gRPC server (compiled only when KTH_WITH_GRPC is set).
+  include/kth/node/grpc_rpc/transport.hpp
+  include/kth/node/grpc_rpc/chain_handlers.hpp
+  include/kth/node/grpc_rpc/server.hpp
+
+  # Optional Cap'n Proto RPC server (compiled only for rpc=capnproto).
+  include/kth/node/capnp_rpc/reader.hpp
+  include/kth/node/capnp_rpc/server.hpp
+
   # CSP-based sync system
   include/kth/node/sync.hpp
   include/kth/node/sync/messages.hpp
@@ -282,8 +383,15 @@ set(kth_headers
   include/kth/node/sync/tip_announcement.hpp
 )
 
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+endif()
+
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+if(TARGET kth_node_proto)
+  add_dependencies(${PROJECT_NAME} kth_node_proto)
+endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
 
 
@@ -307,7 +415,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC blockchain::blockchain)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC network::network)
 endif()
 
@@ -322,7 +430,42 @@ if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_compile_definitions(${PROJECT_NAME} PUBLIC -DKTH_WITH_RPC)
 endif()
 
+# gRPC server: link the foreign runtime, enable the feature macro, and expose the
+# generated protobuf headers (kth/rpc/v1/node.pb.h) to this target and its users.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_link_libraries(${PROJECT_NAME} PUBLIC
+    gRPC::grpc++_unsecure protobuf::libprotobuf asio-grpc::asio-grpc)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    $<BUILD_INTERFACE:${kth_proto_gen}>)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC
+    KTH_WITH_GRPC KTH_ASIO_STANDALONE ASIO_STANDALONE)
+endif()
+
+# Cap'n Proto RPC: link the KJ/capnp runtime and enable the feature macro. The
+# generated schema headers (kth/rpc/v1/chain.capnp.h) are public: they are what
+# a client compiles against, so they are installed with the other headers.
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_link_libraries(${PROJECT_NAME} PUBLIC CapnProto::capnp-rpc)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC
+    KTH_WITH_CAPNPROTO_RPC KTH_ASIO_STANDALONE ASIO_STANDALONE)
+  target_include_directories(${PROJECT_NAME} PUBLIC
+    $<BUILD_INTERFACE:${KTH_CAPNP_GEN_DIR}>
+    $<INSTALL_INTERFACE:include>)
+  target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+endif()
+
 _group_sources(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}")
+
+# Smoke client for the gRPC API: talks to a running node through the generated
+# stubs only, so it links no node code.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(kth-grpc-smoke-client examples/grpc_smoke_client.cpp ${kth_proto_outputs})
+  set_target_properties(kth-grpc-smoke-client PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
+  add_dependencies(kth-grpc-smoke-client kth_node_proto)
+  target_include_directories(kth-grpc-smoke-client PRIVATE ${kth_proto_gen})
+  find_package(fmt REQUIRED)
+  target_link_libraries(kth-grpc-smoke-client PRIVATE gRPC::grpc++_unsecure protobuf::libprotobuf fmt::fmt-header-only)
+endif()
 
 # Tests
 # ------------------------------------------------------------------------------
@@ -332,6 +475,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_node_test
+          test/user_agent.cpp
           test/chain_view.cpp
           test/check_list.cpp
           test/chunk_coordinator.cpp
@@ -365,12 +509,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_storage_wakeup.cpp
           test/select_sync.cpp
           test/configuration.cpp
+          test/full_validation.cpp
+          test/in_place_directory.cpp
         test/full_node_network.cpp
           test/template_prevout_refresh.cpp
+          test/p2p_websocket_config.cpp
           test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
+          test/tx_relay.cpp
+          test/fee_filter.cpp
+          test/tx_announcements.cpp
           test/header_tip_block_sync.cpp
           test/header_announcement_attribution.cpp
           test/local_block_admission.cpp
@@ -379,6 +529,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/main.cpp
           test/node.cpp
           test/p2p_node.cpp
+          test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
           test/performance.cpp
           test/reservation.cpp
@@ -416,6 +567,37 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
       test/rpc_server.cpp)
   endif()
 
+  # gRPC transport tests run a real generated client against the real transport.
+  if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_sources(kth_node_test PRIVATE
+      test/grpc_transport.cpp test/grpc_chain_handlers.cpp test/grpc_full_node.cpp test/grpc_cookie.cpp test/grpc_real_chain.cpp)
+  endif()
+
+  # Cap'n Proto RPC tests drive the real transport with generated clients.
+  if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_sources(kth_node_test PRIVATE test/capnp_rpc.cpp)
+
+    # Client example; built here so API drift in the generated headers fails CI.
+    add_executable(kth_capnp_chain_client examples/capnp_chain_client.cpp)
+    target_link_libraries(kth_capnp_chain_client PRIVATE ${PROJECT_NAME})
+  endif()
+
+  add_executable(kth_p2p_close_test test/p2p_connection_close.cpp)
+  target_link_libraries(kth_p2p_close_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_p2p_close_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  target_compile_definitions(kth_p2p_close_test PRIVATE KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_p2p_close_test>")
+  add_test(NAME kth_p2p_close_test COMMAND kth_p2p_close_test)
+
+  add_executable(kth_ws_config_test test/p2p_websocket_config.cpp)
+  target_link_libraries(kth_ws_config_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_ws_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  add_test(NAME kth_ws_config_test COMMAND kth_ws_config_test)
+
+  if(KTH_WITH_WEBSOCKET)
+    add_executable(kth_ws_fixture test/websocket_fixture.cpp)
+    target_link_libraries(kth_ws_fixture PRIVATE ${PROJECT_NAME})
+  endif()
+
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
   target_link_libraries(kth_node_test PUBLIC ${PROJECT_NAME})
@@ -443,17 +625,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
   include(CTest)
-  # Try to use Catch2 automatic test discovery
-  find_package(Catch2 QUIET)
-  if(Catch2_FOUND)
-    include(Catch)
-    # Bound stalled coroutine tests on platforms that run plain CTest.
-    catch_discover_tests(kth_node_test PROPERTIES TIMEOUT 600)
-  else()
-    # Fallback to manual test registration
-    add_test(NAME kth_node_test COMMAND kth_node_test)
-    set_tests_properties(kth_node_test PROPERTIES TIMEOUT 600)
-  endif()
+  kth_register_tests(kth_node_test TIMEOUT 600)
 
   # README C++ snippet checks disabled: v1.0 switched the public API
   # to coroutines (start/run/stop/join), so the legacy start_chain /
@@ -506,6 +678,23 @@ install(TARGETS ${PROJECT_NAME}
 # decision worth testing on its own does not have to become a public symbol.
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         PATTERN "detail" EXCLUDE)
+
+# gRPC backend: the public headers include the generated protobuf messages, so
+# those are installed with it, and the schema is exported for other languages.
+if(KTH_WITH_GRPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  install(FILES ${kth_proto_gen}/kth/rpc/v1/node.pb.h ${kth_proto_gen}/kth/rpc/v1/node.grpc.pb.h
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kth/rpc/v1)
+  install(FILES ${kth_proto_file}
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/kth/proto/kth/rpc/v1)
+endif()
+
+if(KTH_WITH_CAPNPROTO_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  # Generated C++ for clients, and the schema itself for other languages.
+  install(DIRECTORY ${KTH_CAPNP_GEN_DIR}/kth DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+          FILES_MATCHING PATTERN "*.capnp.h")
+  install(FILES ${KTH_CAPNP_SCHEMA_DIR}/kth/rpc/v1/chain.capnp
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/kth/schema/kth/rpc/v1)
+endif()
 
 # Generate and install a CMake package configuration file
 install(EXPORT ${PROJECT_NAME}-targets

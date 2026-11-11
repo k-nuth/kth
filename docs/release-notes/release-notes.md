@@ -1,21 +1,153 @@
-# version 1.5.2
+<!-- release-notes-index:start -->
+# Release notes
 
-You can install Knuth node version v1.5.2 [using these instructions](https://kth.cash/#download).
+Dates are UTC publication dates of the linked GitHub releases. Before unified
+versioning, component release dates could differ.
 
-## What's Changed
+## Contents
+
+- **1.x:** [1.6.1](#version-161) · [1.6.0](#version-160) · [1.5.2](#version-152) · [1.5.1](#version-151) · [1.5.0](#version-150) · [1.4.0](#version-140) · [1.3.0](#version-130) · [1.2.0](#version-120) · [1.1.0](#version-110) · [1.0.0](#version-100)
+- **0.80–0.89:** [0.85.0](#version-0850) · [0.84.0](#version-0840) · [0.83.0](#version-0830) · [0.82.0](#version-0820) · [0.81.1](#version-0811) · [0.81.0](#version-0810) · [0.80.1](#version-0801) · [0.80.0](#version-0800)
+- **0.70–0.79:** [0.79.0](#version-0790) · [0.78.0](#version-0780) · [0.77.0](#version-0770) · [0.76.0](#version-0760) · [0.75.0](#version-0750) · [0.74.0](#version-0740) · [0.73.0](#version-0730) · [0.72.0](#version-0720) · [0.71.0](#version-0710) · [0.70.0](#version-0700)
+- **0.60–0.69:** [0.68.1](#version-0681) · [0.68.0](#version-0680)
+- **0.50–0.59:** [0.57.0](#version-0570) · [0.56.0](#version-0560) · [0.55.0](#version-0550) · [0.54.0](#version-0540) · [0.53.0](#version-0530) · [0.52.0](#version-0520) · [0.51.0](#version-0510) · [0.50.0](#version-0500)
+- **0.40–0.49:** [0.49.0](#version-0490) · [0.48.0](#version-0480) · [0.47.0](#version-0470) · [0.46.0](#version-0460) · [0.45.0](#version-0450) · [0.44.0](#version-0440) · [0.43.0](#version-0430) · [0.42.0](#version-0420) · [0.41.0](#version-0410) · [0.40.0](#version-0400)
+- **0.30–0.39:** [0.39.0](#version-0390) · [0.38.0](#version-0380) · [0.37.0](#version-0370) · [0.36.0](#version-0360) · [0.35.0](#version-0350) · [0.34.0](#version-0340) · [0.33.0](#version-0330) · [0.32.0](#version-0320) · [0.31.0](#version-0310) · [0.30.0](#version-0300)
+- **0.20–0.29:** [0.29.0](#version-0290) · [0.28.0](#version-0280) · [0.27.0](#version-0270) · [0.26.0](#version-0260) · [0.25.0](#version-0250) · [0.24.0](#version-0240) · [0.23.0](#version-0230) · [0.22.0](#version-0220) · [0.21.0](#version-0210) · [0.20.0](#version-0200)
+- **0.0–0.9:** [0.9.1](#version-091) · [0.9.0](#version-090) · [0.8.0](#version-080) · [0.7.0](#version-070) · [0.6.0](#version-060) · [0.5.3](#version-053) · [0.5.2](#version-052) · [0.5.1](#version-051) · [0.5.0](#version-050) · [0.4.5](#version-045) · [0.4.4](#version-044) · [0.4.3](#version-043) · [0.4.2](#version-042) · [0.4.1](#version-041) · [0.4.0](#version-040) · [0.3.2](#version-032) · [0.3.1](#version-031) · [0.3.0](#version-030) · [0.2.0](#version-020) · [0.1.0](#version-010)
+- [Before Knuth 0.1.0: Bitprim and libbitcoin](#before-knuth-010)
+- [Versioning history: 0.59.0–0.67.0](#versioning-history-note-v0590---v0670)
+
+<!-- release-notes-index:end -->
+
+## version 1.6.1
+
+**Published:** [2026-11-10](https://github.com/k-nuth/kth/releases/tag/v1.6.1)
+
+### What's Changed
+* ci: run coverage nightly and investigate regressions on demand by @fpelliccioni in https://github.com/k-nuth/kth/pull/919
+* fix: normalize Conan package references before release by @fpelliccioni in https://github.com/k-nuth/kth/pull/920
+* node: connect fully validated blocks in batches of 500 by @fpelliccioni in https://github.com/k-nuth/kth/pull/917
+* database: create the in-place stores NOCOW on btrfs by @fpelliccioni in https://github.com/k-nuth/kth/pull/916
+* node: follow a peer that answers below a deep fork with headers already held by @fpelliccioni in https://github.com/k-nuth/kth/pull/928
+* domain: checkpoint where the 2026 minority chain split off; two per upgrade by @fpelliccioni in https://github.com/k-nuth/kth/pull/929
+* node: forget a switch's body range once the FAST range replaces it by @fpelliccioni in https://github.com/k-nuth/kth/pull/930
+* Remove EB from user agents and normalize discovery delimiters by @fpelliccioni in https://github.com/k-nuth/kth/pull/921
+* Negotiate WebSocket discovery during the P2P handshake by @fpelliccioni in https://github.com/k-nuth/kth/pull/922
+* release: 1.6.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/931
+
+## version 1.6.0
+
+**Published:** [2026-11-09](https://github.com/k-nuth/kth/releases/tag/v1.6.0)
+
+### What's Changed
+* Preserve executed SigChecks in native script validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/763
+* Validate block structure and contextual ordering in batches by @fpelliccioni in https://github.com/k-nuth/kth/pull/764
+* Preserve connected ABLA metadata on repeated header persistence by @fpelliccioni in https://github.com/k-nuth/kth/pull/765
+* Wake block storage before chain reorganizations by @fpelliccioni in https://github.com/k-nuth/kth/pull/767
+* Include active ancestry in header requests by @fpelliccioni in https://github.com/k-nuth/kth/pull/768
+* Advance finalization only from published connected blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/766
+* ci: gate external contributions behind maintainer admission by @fpelliccioni in https://github.com/k-nuth/kth/pull/800
+* ci: classify maintainers using repository permissions by @fpelliccioni in https://github.com/k-nuth/kth/pull/802
+* rpc: answer every request pipelined on one connection by @CyberAshven in https://github.com/k-nuth/kth/pull/769
+* rpc: accept request lines that end in a bare LF by @CyberAshven in https://github.com/k-nuth/kth/pull/770
+* rpc: end reply headers with Content-Length and the body with LF by @CyberAshven in https://github.com/k-nuth/kth/pull/771
+* domain: decode cashaddr addresses only as the P2PKH or P2SH they name by @CyberAshven in https://github.com/k-nuth/kth/pull/774
+* build: require C23 for the C API by @fpelliccioni in https://github.com/k-nuth/kth/pull/819
+* domain: support constexpr CashAddr and precise address errors by @fpelliccioni in https://github.com/k-nuth/kth/pull/818
+* rpc: add validateaddress by @CyberAshven in https://github.com/k-nuth/kth/pull/775
+* rpc: add the coinbase merkle branch to getblocktemplatelight by @CyberAshven in https://github.com/k-nuth/kth/pull/776
+* rpc: add help by @CyberAshven in https://github.com/k-nuth/kth/pull/778
+* rpc: add confirmations to verbose getblockheader by @CyberAshven in https://github.com/k-nuth/kth/pull/779
+* rpc: add estimatefee by @CyberAshven in https://github.com/k-nuth/kth/pull/780
+* infrastructure: modernize base codecs and Bitcoin amounts by @fpelliccioni in https://github.com/k-nuth/kth/pull/824
+* domain: add direct CashAddr encoding and checked address literals by @fpelliccioni in https://github.com/k-nuth/kth/pull/828
+* rpc: add decoderawtransaction by @CyberAshven in https://github.com/k-nuth/kth/pull/782
+* rpc: add getnetworkhashps by @CyberAshven in https://github.com/k-nuth/kth/pull/781
+* rpc: report the short chain name in getblockchaininfo and getmininginfo by @CyberAshven in https://github.com/k-nuth/kth/pull/786
+* rpc: add getchaintips by @CyberAshven in https://github.com/k-nuth/kth/pull/785
+* network: select the next peer message instead of racing a receive and a timer by @fpelliccioni in https://github.com/k-nuth/kth/pull/830
+* rpc: add gettxout by @CyberAshven in https://github.com/k-nuth/kth/pull/784
+* rpc: add getnetworkinfo by @CyberAshven in https://github.com/k-nuth/kth/pull/783
+* Fix standalone literal checks in CI by @fpelliccioni in https://github.com/k-nuth/kth/pull/837
+* rpc: list verbose getrawmempool entries keyed by txid by @CyberAshven in https://github.com/k-nuth/kth/pull/790
+* Preserve selected network defaults across configuration boundaries by @fpelliccioni in https://github.com/k-nuth/kth/pull/756
+* rpc: add getblocktemplate by @CyberAshven in https://github.com/k-nuth/kth/pull/787
+* Implement CHIP-2025-03 Faster Blocks and tempnet support by @fpelliccioni in https://github.com/k-nuth/kth/pull/839
+* rpc: harden blockchain info snapshots and disk accounting by @CyberAshven in https://github.com/k-nuth/kth/pull/777
+* test: repair the batch size and getblocktemplate tests left failing by Faster Blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/843
+* Add branch-local ticks to header-index chain tips by @fpelliccioni in https://github.com/k-nuth/kth/pull/844
+* Recover identical undo records after branch replay by @fpelliccioni in https://github.com/k-nuth/kth/pull/822
+* ci: give the node suite room and stop its clean-start test idling by @fpelliccioni in https://github.com/k-nuth/kth/pull/848
+* Avoid executor deadlock during transaction admission by @fpelliccioni in https://github.com/k-nuth/kth/pull/845
+* Expose Faster Blocks tick metadata through JSON-RPC by @fpelliccioni in https://github.com/k-nuth/kth/pull/840
+* Reject mutated merkle trees in light block validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/849
+* Recover sync after a contextual block rejection by @fpelliccioni in https://github.com/k-nuth/kth/pull/850
+* Expose Faster Blocks tick schedules and progress through the C API by @fpelliccioni in https://github.com/k-nuth/kth/pull/841
+* Admit local blocks through the existing sync pipeline by @fpelliccioni in https://github.com/k-nuth/kth/pull/846
+* blockchain: read blocks from the flat files, and mempool transactions by txid by @fpelliccioni in https://github.com/k-nuth/kth/pull/847
+* rpc: read blocks from the block files, and mempool transactions by txid by @CyberAshven in https://github.com/k-nuth/kth/pull/788
+* domain: add median_time_past_of, the median time past by ancestry by @fpelliccioni in https://github.com/k-nuth/kth/pull/860
+* Select proof-of-work limits independently for each check by @fpelliccioni in https://github.com/k-nuth/kth/pull/858
+* Preserve invalid duplicate classification in block admission replies by @fpelliccioni in https://github.com/k-nuth/kth/pull/854
+* rpc: answer getblock and getrawtransaction verbosely by @CyberAshven in https://github.com/k-nuth/kth/pull/789
+* Keep contextual block rejection identities across restarts by @fpelliccioni in https://github.com/k-nuth/kth/pull/856
+* rpc: add submitblock by @CyberAshven in https://github.com/k-nuth/kth/pull/792
+* p2p: serve the connected chain's headers and blocks to peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/861
+* sync: announce each newly connected tip to peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/862
+* blockchain: keep the block submission reply independent of the submitter by @fpelliccioni in https://github.com/k-nuth/kth/pull/863
+* build: require GCC 16.2 and probe coroutine binding lifetime by @fpelliccioni in https://github.com/k-nuth/kth/pull/865
+* mempool: expire transactions unconfirmed for two weeks by @fpelliccioni in https://github.com/k-nuth/kth/pull/869
+* mempool: price transactions at BCHN's relay floor, by size by @fpelliccioni in https://github.com/k-nuth/kth/pull/868
+* mempool: bound the pool and raise its minimum fee when full by @fpelliccioni in https://github.com/k-nuth/kth/pull/870
+* node: ask peers for the transactions they announce and offer them to the mempool by @fpelliccioni in https://github.com/k-nuth/kth/pull/872
+* ci: reuse tested packages and run isolated test shards by @fpelliccioni in https://github.com/k-nuth/kth/pull/878
+* node: send each peer the mempool's minimum fee as its fee filter by @fpelliccioni in https://github.com/k-nuth/kth/pull/873
+* node: keep transactions whose parents are missing, and ask for the parents by @fpelliccioni in https://github.com/k-nuth/kth/pull/876
+* node: announce admitted transactions to peers and serve their getdata by @fpelliccioni in https://github.com/k-nuth/kth/pull/884
+* node: drop the orphans a connected block resolves by @fpelliccioni in https://github.com/k-nuth/kth/pull/886
+* build: introduce explicit RPC backend selection by @fpelliccioni in https://github.com/k-nuth/kth/pull/794
+* node: answer a peer's mempool request as BCHN does by @fpelliccioni in https://github.com/k-nuth/kth/pull/889
+* node: add gRPC Protobuf query backend by @fpelliccioni in https://github.com/k-nuth/kth/pull/798
+* node: read the gRPC transport's in-flight count after join without waiting by @fpelliccioni in https://github.com/k-nuth/kth/pull/891
+* node: add Cap'n Proto RPC query backend by @fpelliccioni in https://github.com/k-nuth/kth/pull/799
+* node: let the Cap'n Proto test reader's destructor match the reader it overrides by @fpelliccioni in https://github.com/k-nuth/kth/pull/892
+* build: take asio 1.38.3-kth.3, with a configurable selection timer by @fpelliccioni in https://github.com/k-nuth/kth/pull/893
+* network: run on a browser Worker, over a WebSocket byte stream by @fpelliccioni in https://github.com/k-nuth/kth/pull/894
+* node: synchronize BCH headers in a browser Worker by @fpelliccioni in https://github.com/k-nuth/kth/pull/895
+* network: add native WebSocket peers and endpoint discovery by @fpelliccioni in https://github.com/k-nuth/kth/pull/810
+* ci: name the reusable build workflows by @fpelliccioni in https://github.com/k-nuth/kth/pull/898
+* node: follow a heavier branch in header_sync by @fpelliccioni in https://github.com/k-nuth/kth/pull/897
+* node: keep a browser header client's chain across reloads by @fpelliccioni in https://github.com/k-nuth/kth/pull/811
+* node: count only outbound peers toward the outbound target by @fpelliccioni in https://github.com/k-nuth/kth/pull/899
+* network: use the platform timer in the WebSocket transport by @fpelliccioni in https://github.com/k-nuth/kth/pull/903
+* node: synchronize browser headers from several peers by @fpelliccioni in https://github.com/k-nuth/kth/pull/900
+* node: report a browser header client's chain state and settings by @fpelliccioni in https://github.com/k-nuth/kth/pull/901
+* node: sample block and transaction content in the browser header client by @fpelliccioni in https://github.com/k-nuth/kth/pull/902
+* node: report header_sync failures with std::expected by @fpelliccioni in https://github.com/k-nuth/kth/pull/905
+* ci: pin conan-toolchains in the browser controls job by @fpelliccioni in https://github.com/k-nuth/kth/pull/907
+* chain: add chain.full_validation, an IBD that validates every block by @fpelliccioni in https://github.com/k-nuth/kth/pull/908
+* test: preload the ASan runtime before the no-CSPRNG shim by @fpelliccioni in https://github.com/k-nuth/kth/pull/909
+* c-api: refresh generated wrappers and report async mining failures by @fpelliccioni in https://github.com/k-nuth/kth/pull/910
+* ci: restore coverage caching and batch Catch tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/913
+* c-api: preserve async completion and release failed subscriptions by @fpelliccioni in https://github.com/k-nuth/kth/pull/912
+* test: expect the consensus library's script verdict in full validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/915
+* release: 1.6.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/914
+
+## version 1.5.2
+
+**Published:** [2026-10-31](https://github.com/k-nuth/kth/releases/tag/v1.5.2)
+
+### What's Changed
 * rpc: return the raw header from getblockheader with verbose=false by @CyberAshven in https://github.com/k-nuth/kth/pull/758
 * Expose C API operations required by WASM bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/761
 * release: 1.5.2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/762
 
+## version 1.5.1
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.5.1...v1.5.2
+**Published:** [2026-10-31](https://github.com/k-nuth/kth/releases/tag/v1.5.1)
 
-
-# version 1.5.1
-
-You can install Knuth node version v1.5.1 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * Fix GMP component requirements and validate installed Conan consumers by @fpelliccioni in https://github.com/k-nuth/kth/pull/757
 * Fix compiler diagnostics and preserve failed operation results by @fpelliccioni in https://github.com/k-nuth/kth/pull/754
 * Verify generated C-API enum conversion mappings by @fpelliccioni in https://github.com/k-nuth/kth/pull/751
@@ -23,15 +155,11 @@ You can install Knuth node version v1.5.1 [using these instructions](https://kth
 * ci: build external pull requests without Conan credentials by @fpelliccioni in https://github.com/k-nuth/kth/pull/759
 * release: 1.5.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/760
 
+## version 1.5.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.5.0...v1.5.1
+**Published:** [2026-10-30](https://github.com/k-nuth/kth/releases/tag/v1.5.0)
 
-
-# version 1.5.0
-
-You can install Knuth node version v1.5.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * Update CLI11 to 2.7.2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/718
 * Strengthen reorg state checks and stabilize timer coverage by @fpelliccioni in https://github.com/k-nuth/kth/pull/717
 * deps: update Conan dependencies to the latest Conan Center releases by @fpelliccioni in https://github.com/k-nuth/kth/pull/719
@@ -64,15 +192,11 @@ You can install Knuth node version v1.5.0 [using these instructions](https://kth
 * Reduce compilation cost of imported script vectors by @fpelliccioni in https://github.com/k-nuth/kth/pull/753
 * release: 1.5.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/750
 
+## version 1.4.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.4.0...v1.5.0
+**Published:** [2026-10-26](https://github.com/k-nuth/kth/releases/tag/v1.4.0)
 
-
-# version 1.4.0
-
-You can install Knuth node version v1.4.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * blockchain: make the block-template coinbase reserve configurable by @fpelliccioni in https://github.com/k-nuth/kth/pull/530
 * blockchain: accept a coinbase reserve in fetch_mining_template by @fpelliccioni in https://github.com/k-nuth/kth/pull/531
 * node: move the mining job store out of the rpc layer by @fpelliccioni in https://github.com/k-nuth/kth/pull/532
@@ -175,15 +299,11 @@ You can install Knuth node version v1.4.0 [using these instructions](https://kth
 * Integrate UTXO-Z 1.0.0 geometry 4 by @fpelliccioni in https://github.com/k-nuth/kth/pull/715
 * release: 1.4.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/716
 
+## version 1.3.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.3.0...v1.4.0
+**Published:** [2026-07-28](https://github.com/k-nuth/kth/releases/tag/v1.3.0)
 
-
-# version 1.3.0
-
-You can install Knuth node version v1.3.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor(blockchain): move block validation metadata out of the domain type by @fpelliccioni in https://github.com/k-nuth/kth/pull/487
 * refactor(blockchain): move transaction validation metadata out of the domain type by @fpelliccioni in https://github.com/k-nuth/kth/pull/489
 * refactor: remove abandoned mempool (dead v1/v2 + LMDB unconfirmed path) by @fpelliccioni in https://github.com/k-nuth/kth/pull/492
@@ -220,15 +340,11 @@ You can install Knuth node version v1.3.0 [using these instructions](https://kth
 * infrastructure: fix integer-overflow bounds checks in byte_reader (remote DoS) by @fpelliccioni in https://github.com/k-nuth/kth/pull/528
 * release: 1.3.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/529
 
+## version 1.2.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.2.0...v1.3.0
+**Published:** [2026-07-16](https://github.com/k-nuth/kth/releases/tag/v1.2.0)
 
-
-# version 1.2.0
-
-You can install Knuth node version v1.2.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor(domain): immutable value types for chain primitives by @fpelliccioni in https://github.com/k-nuth/kth/pull/387
 * refactor(domain): rewrite to_data with byte_writer, retire data_sink/ostream stack by @fpelliccioni in https://github.com/k-nuth/kth/pull/394
 * perf(ci): stop version.hpp from invalidating ccache on every commit by @fpelliccioni in https://github.com/k-nuth/kth/pull/405
@@ -296,15 +412,11 @@ You can install Knuth node version v1.2.0 [using these instructions](https://kth
 * fix(blockchain/bench): use boost::atomic_shared_ptr for the COW block pool by @fpelliccioni in https://github.com/k-nuth/kth/pull/485
 * release: 1.2.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/486
 
+## version 1.1.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.1.0...v1.2.0
+**Published:** [2026-07-01](https://github.com/k-nuth/kth/releases/tag/v1.1.0)
 
-
-# version 1.1.0
-
-You can install Knuth node version v1.1.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * chore(conan): default embed_utxo_bloom to False by @fpelliccioni in https://github.com/k-nuth/kth/pull/365
 * ci: bump pinned action versions (pass 1 of #367) by @fpelliccioni in https://github.com/k-nuth/kth/pull/376
 * ci: bump Linux toolchain to GCC 16 by @fpelliccioni in https://github.com/k-nuth/kth/pull/379
@@ -317,42 +429,32 @@ You can install Knuth node version v1.1.0 [using these instructions](https://kth
 * ci: apply ccache path-agnostic env to Linux Build step by @fpelliccioni in https://github.com/k-nuth/kth/pull/398
 * release: 1.1.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/399
 
-## New Contributors
+### New Contributors
+
 * @CyberAshven made their first contribution in https://github.com/k-nuth/kth/pull/378
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v1.0.0...v1.1.0
+## version 1.0.0
 
+**Published:** [2026-06-18](https://github.com/k-nuth/kth/releases/tag/v1.0.0)
 
-# version 1.0.0
-
-You can install Knuth node version v1.0.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * feat: v1.0 — coroutine networking, UTXO-Z storage, fast full IBD by @fpelliccioni in https://github.com/k-nuth/kth/pull/151
 * docs: announce v1.x on master and v0.x maintenance branch by @fpelliccioni in https://github.com/k-nuth/kth/pull/361
 * release: 1.0.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/362
 
+## version 0.85.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.85.0...v1.0.0
+**Published:** [2026-06-16](https://github.com/k-nuth/kth/releases/tag/v0.85.0)
 
-
-# version 0.85.0
-
-You can install Knuth node version v0.85.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * chore(deps): bump third-party libs to latest CCI by @fpelliccioni in https://github.com/k-nuth/kth/pull/354
 * release: 0.85.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/355
 
+## version 0.84.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.84.0...v0.85.0
+**Published:** [2026-06-16](https://github.com/k-nuth/kth/releases/tag/v0.84.0)
 
-
-# version 0.84.0
-
-You can install Knuth node version v0.84.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * ci: temporarily disable kth_readme_*_runtime tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/343
 * ci: split Linux into Build & Test + Sanitizers; fix ccache hit rate on macOS by @fpelliccioni in https://github.com/k-nuth/kth/pull/344
 * consensus(bch): switch Leibniz (2026-May) to height-based activation by @fpelliccioni in https://github.com/k-nuth/kth/pull/346
@@ -365,15 +467,11 @@ You can install Knuth node version v0.84.0 [using these instructions](https://kt
 * ci: make Setup Conan idempotent against a pre-populated ~/.conan2 by @fpelliccioni in https://github.com/k-nuth/kth/pull/352
 * release: 0.84.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/353
 
+## version 0.83.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.83.0...v0.84.0
+**Published:** [2026-05-16](https://github.com/k-nuth/kth/releases/tag/v0.83.0)
 
-
-# version 0.83.0
-
-You can install Knuth node version v0.83.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * feat(c-api): add cashtoken_minting bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/300
 * feat(c-api): expose script_execution_context + program::context() by @fpelliccioni in https://github.com/k-nuth/kth/pull/301
 * feat(c-api): expose number, big_number, data_stack handles + tests by @fpelliccioni in https://github.com/k-nuth/kth/pull/302
@@ -413,15 +511,11 @@ You can install Knuth node version v0.83.0 [using these instructions](https://kt
 * fix(domain): activate new feature bits for MTP-gated upgrades in chain_state by @fpelliccioni in https://github.com/k-nuth/kth/pull/340
 * release: 0.83.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/341
 
+## version 0.82.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.82.0...v0.83.0
+**Published:** [2026-04-23](https://github.com/k-nuth/kth/releases/tag/v0.82.0)
 
-
-# version 0.82.0
-
-You can install Knuth node version v0.82.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * test(c-api): add debug_snapshot C-API test coverage by @fpelliccioni in https://github.com/k-nuth/kth/pull/294
 * feat(wallet): add cashtoken_minting API by @fpelliccioni in https://github.com/k-nuth/kth/pull/288
 * fix(wallet): harden cashtoken_minting input validation by @fpelliccioni in https://github.com/k-nuth/kth/pull/296
@@ -429,52 +523,36 @@ You can install Knuth node version v0.82.0 [using these instructions](https://kt
 * feat(c-api): expose vm::metrics binding + tests + vm_limits_standard flag by @fpelliccioni in https://github.com/k-nuth/kth/pull/298
 * release: 0.82.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/299
 
+## version 0.81.1
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.81.1...v0.82.0
+**Published:** [2026-04-22](https://github.com/k-nuth/kth/releases/tag/v0.81.1)
 
-
-# version 0.81.1
-
-You can install Knuth node version v0.81.1 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * fix(c-api): fill in missing vm + bool_list headers in kth/capi.h aggregator by @fpelliccioni in https://github.com/k-nuth/kth/pull/290
 * release: 0.81.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/291
 
+## version 0.81.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.81.0...v0.81.1
+**Published:** [2026-04-22](https://github.com/k-nuth/kth/releases/tag/v0.81.0)
 
-
-# version 0.81.0
-
-You can install Knuth node version v0.81.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor(c-api): value_struct params by const* in the safe variant by @fpelliccioni in https://github.com/k-nuth/kth/pull/285
 * fix(c-api): declare explicit_bzero prototype to bypass feature-test gating by @fpelliccioni in https://github.com/k-nuth/kth/pull/287
 * release: 0.81.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/289
 
+## version 0.80.1
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.80.1...v0.81.0
+**Published:** [2026-04-21](https://github.com/k-nuth/kth/releases/tag/v0.80.1)
 
-
-# version 0.80.1
-
-You can install Knuth node version v0.80.1 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * fix(domain): align double_spend_proof version parameter with sibling message classes by @fpelliccioni in https://github.com/k-nuth/kth/pull/283
 * release: 0.80.1 by @fpelliccioni in https://github.com/k-nuth/kth/pull/284
 
+## version 0.80.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.80.0...v0.80.1
+**Published:** [2026-04-21](https://github.com/k-nuth/kth/releases/tag/v0.80.0)
 
-
-# version 0.80.0
-
-You can install Knuth node version v0.80.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor(c-api): unify and harden binary bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/232
 * refactor(c-api): unify and harden chain/get_blocks bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/234
 * refactor(c-api): unify and harden chain/get_headers bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/236
@@ -513,15 +591,11 @@ You can install Knuth node version v0.80.0 [using these instructions](https://kt
 * fix(c-api): migrate test to output_pattern_simple after rename by @fpelliccioni in https://github.com/k-nuth/kth/pull/281
 * release: 0.80.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/282
 
+## version 0.79.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.79.0...v0.80.0
+**Published:** [2026-04-10](https://github.com/k-nuth/kth/releases/tag/v0.79.0)
 
-
-# version 0.79.0
-
-You can install Knuth node version v0.79.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor(c-api): unify and harden chain/header bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/216
 * refactor(c-api): unify and harden chain/point bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/217
 * refactor(c-api): unify and harden chain/output_point bindings by @fpelliccioni in https://github.com/k-nuth/kth/pull/218
@@ -535,15 +609,11 @@ You can install Knuth node version v0.79.0 [using these instructions](https://kt
 * chore: cleanup for 0.79.0 release by @fpelliccioni in https://github.com/k-nuth/kth/pull/226
 * release: 0.79.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/227
 
+## version 0.78.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.78.0...v0.79.0
+**Published:** [2026-04-05](https://github.com/k-nuth/kth/releases/tag/v0.78.0)
 
-
-# version 0.78.0
-
-You can install Knuth node version v0.78.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * chore: remove deprecated/backup files and add build scripts by @fpelliccioni in https://github.com/k-nuth/kth/pull/197
 * fix: always assign gmp to secp256k1 component requires by @fpelliccioni in https://github.com/k-nuth/kth/pull/199
 * fix: skip march_strategy on non-x86_64 architectures by @fpelliccioni in https://github.com/k-nuth/kth/pull/202
@@ -554,15 +624,11 @@ You can install Knuth node version v0.78.0 [using these instructions](https://kt
 * feat: upgrade Emscripten toolchain from emsdk 3.1.73 to 5.0.3 by @fpelliccioni in https://github.com/k-nuth/kth/pull/213
 * release: 0.78.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/214
 
+## version 0.77.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.77.0...v0.78.0
+**Published:** [2026-03-19](https://github.com/k-nuth/kth/releases/tag/v0.77.0)
 
-
-# version 0.77.0
-
-You can install Knuth node version v0.77.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * fix: generate version.hpp during release by @fpelliccioni in https://github.com/k-nuth/kth/pull/189
 * ci: add code coverage with Codecov by @fpelliccioni in https://github.com/k-nuth/kth/pull/191
 * fix: pass height instead of forks bitmask to populate_pooled by @fpelliccioni in https://github.com/k-nuth/kth/pull/192
@@ -570,15 +636,11 @@ You can install Knuth node version v0.77.0 [using these instructions](https://kt
 * fix: increase default db_max_size for block-indexed mode to 400 GiB by @fpelliccioni in https://github.com/k-nuth/kth/pull/195
 * release: 0.77.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/196
 
+## version 0.76.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.76.0...v0.77.0
+**Published:** [2026-03-05](https://github.com/k-nuth/kth/releases/tag/v0.76.0)
 
-
-# version 0.76.0
-
-You can install Knuth node version v0.76.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * style: prefer function-style casts over static_cast for simple types by @fpelliccioni in https://github.com/k-nuth/kth/pull/166
 * fix: resolve vexing parse warning in benchmarks by @fpelliccioni in https://github.com/k-nuth/kth/pull/170
 * fix: use portable shebangs in shell scripts by @fpelliccioni in https://github.com/k-nuth/kth/pull/171
@@ -586,15 +648,11 @@ You can install Knuth node version v0.76.0 [using these instructions](https://kt
 * feat: implement May 2026 network upgrade by @fpelliccioni in https://github.com/k-nuth/kth/pull/186
 * release: 0.76.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/187
 
+## version 0.75.0
 
-**Full Changelog**: https://github.com/k-nuth/kth/compare/v0.75.0...v0.76.0
+**Published:** [2026-01-04](https://github.com/k-nuth/kth/releases/tag/v0.75.0)
 
-
-# version 0.75.0
-
-You can install Knuth node version v0.75.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * bench: experimental block_index_store implementations by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/150
 * feature: add new byte_reader functions for optimized deserialization by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/149
 * refactor: centralize version management in domain module by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/153
@@ -602,15 +660,11 @@ You can install Knuth node version v0.75.0 [using these instructions](https://kt
 * chore(deps): update boost to 1.90.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/160
 * release: 0.75.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/161
 
+## version 0.74.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.74.0...v0.75.0
+**Published:** [2025-12-02](https://github.com/k-nuth/kth/releases/tag/v0.74.0)
 
-
-# version 0.74.0
-
-You can install Knuth node version v0.74.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * fix: update BCH network seeds by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/122
 * refactor: modernize base encoding API with std::expected by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/123
 * refactor: adapt domain module to new base encoding API by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/124
@@ -630,15 +684,11 @@ You can install Knuth node version v0.74.0 [using these instructions](https://kt
 * refactor: apply east const style by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/138
 * release: 0.74.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/139
 
+## version 0.73.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.73.0...v0.74.0
+**Published:** [2025-11-24](https://github.com/k-nuth/kth/releases/tag/v0.73.0)
 
-
-# version 0.73.0
-
-You can install Knuth node version v0.73.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * chore: remove temporary release notes backup file by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/109
 * refactor: convert public-first classes to structs by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/110
 * refactor: replace std::cout/cerr with std::print/println (C++23) by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/111
@@ -659,29 +709,21 @@ You can install Knuth node version v0.73.0 [using these instructions](https://kt
 * refactor: migrate from nonstd::expected to std::expected (C++23) by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/90
 * release: 0.73.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/121
 
+## version 0.72.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.72.0...v0.73.0
+**Published:** [2025-11-21](https://github.com/k-nuth/kth/releases/tag/v0.72.0)
 
-
-# version 0.72.0
-
-You can install Knuth node version v0.72.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * fix: eliminate circular dependency in executor.hpp by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/105
 * fix: use fmt library directly instead of spdlog bundled version by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/106
 * refactor: standardize and fix API macros system by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/107
 * release: 0.72.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/108
 
+## version 0.71.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.71.0...v0.72.0
+**Published:** [2025-11-12](https://github.com/k-nuth/kth/releases/tag/v0.71.0)
 
-
-# version 0.71.0
-
-You can install Knuth node version v0.71.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * feat: add automated Conan dependency update checker by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/79
 * chore: update Catch2 from 3.9.0 to 3.11.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/80
 * chore: update CTRE from 3.8.1 to 3.10.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/81
@@ -697,15 +739,11 @@ You can install Knuth node version v0.71.0 [using these instructions](https://kt
 * fix: add required os field to empty matrix configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/98
 * release: 0.71.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/99
 
+## version 0.70.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.70.0...v0.71.0
+**Published:** [2025-07-31](https://github.com/k-nuth/kth/releases/tag/v0.70.0)
 
-
-# version 0.70.0
-
-You can install Knuth node version v0.70.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * refactor: replace deprecated create_old function with byte_reader pat… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/35
 * feat: add GLOBAL_BUILD option to CMake configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/38
 * feat: update secp256k1 configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/39
@@ -739,29 +777,21 @@ You can install Knuth node version v0.70.0 [using these instructions](https://kt
 * release: 0.69.0 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/71
 * fix: restore script_basis constructor behavior to use valid state ins… by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/72
 
+## version 0.68.1
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.68.1...v0.70.0
+**Published:** [2025-06-30](https://github.com/k-nuth/kth/releases/tag/v0.68.1)
 
-
-# version 0.68.1
-
-You can install Knuth node version v0.68.1 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * chore: remove redundant update-readme-versions workflow by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/31
 * cleanup: remove deprecated use_libmdbx options from all modules by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/33
 * fix: improve Emscripten support and spdlog configuration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/32
 * release: 0.68.1 by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/34
 
+## version 0.68.0
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/compare/v0.68.0...v0.68.1
+**Published:** [2025-06-29](https://github.com/k-nuth/kth/releases/tag/v0.68.0)
 
-
-# version 0.68.0
-
-You can install Knuth node version v0.68.0 [using these instructions](https://kth.cash/#download).
-
-## What's Changed
+### What's Changed
 * feat: adding github actions scripts by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/1
 * feat: GhA dev publishes by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/4
 * feat: files and dir reorganization by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/2
@@ -792,142 +822,85 @@ You can install Knuth node version v0.68.0 [using these instructions](https://kt
 * docs: revert incorrect v0.68.0 release notes for regeneration by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/30
 * feat: fix release notes references to use final tags by @fpelliccioni in https://github.com/k-nuth/kth-mono/pull/29
 
-## New Contributors
-* @fpelliccioni made their first contribution in https://github.com/k-nuth/kth-mono/pull/1
+## Versioning History Note (v0.59.0 - v0.67.0)
 
-**Full Changelog**: https://github.com/k-nuth/kth-mono/commits/v0.68.0
+Before `0.68.0`, components had independent release cycles. The `node` and
+`node-exe` series reached `0.58.0`, while the C API used versions `0.59.0` through
+`0.67.0`. Those are C API versions, not missing monorepo releases.
 
+Unified releases began with `0.68.0` after the move to the monorepo in June 2025.
+The earlier C API publications are listed here once, with links to their own notes.
 
-# Versioning Gap Explanation (v0.59.0 - v0.67.0)
+| C API version | Published (UTC) |
+|---------------|-----------------|
+| [v0.67.0](https://github.com/k-nuth/c-api/releases/tag/v0.67.0) | 2025-06-10 |
+| [v0.66.0](https://github.com/k-nuth/c-api/releases/tag/v0.66.0) | 2025-05-16 |
+| [v0.65.0](https://github.com/k-nuth/c-api/releases/tag/v0.65.0) | 2025-05-12 |
+| [v0.64.0](https://github.com/k-nuth/c-api/releases/tag/v0.64.0) | 2025-05-05 |
+| [v0.63.0](https://github.com/k-nuth/c-api/releases/tag/v0.63.0) | 2025-05-01 |
+| [v0.62.0](https://github.com/k-nuth/c-api/releases/tag/v0.62.0) | 2025-04-16 |
+| [v0.61.0](https://github.com/k-nuth/c-api/releases/tag/v0.61.0) | 2025-02-02 |
+| [v0.60.0](https://github.com/k-nuth/c-api/releases/tag/v0.60.0) | 2025-01-10 |
+| [v0.59.0](https://github.com/k-nuth/c-api/releases/tag/v0.59.0) | 2024-12-31 |
 
-## � Missing Versions in Node-exe and Node Repositories
+## version 0.57.0
 
-**Notice:** You may observe that versions 0.59.0 through 0.67.0 are not listed in the release notes below for `node-exe` and `node` repositories. This section explains why.
-
-### What Happened During v0.59.0 - v0.67.0
-
-Until June 2025, the Knuth project operated as **separate repositories** with independent versioning:
-
-- **`c-api` repository**: Actively released versions 0.59.0 → 0.67.0
-- **`node` repository**: Remained stable at v0.58.0 (no new releases needed)
-- **`node-exe` repository**: Remained stable at v0.58.0 (no new releases needed)
-
-### Architecture Transition: Multi-repo → Mono-repo
-
-**Starting with v0.68.0**, the Knuth project **transitioned to a mono-repository architecture**:
-
-- **Before**: Multiple independent repositories with separate release cycles
-- **After**: Single mono-repository (`kth-mono`) with unified versioning
-- **Result**: All components now share the same version number and release cycle
-
-### Why This Change
-
-1. **Simplified Management**: Single repository, single version, single release process
-2. **Improved Coordination**: All components evolve together with consistent versioning
-3. **Better Developer Experience**: One codebase, one build system, one release cycle
-4. **Easier Dependency Management**: No more version compatibility matrices between repos
-
-### C-API Releases During Multi-repo Period
-
-The following versions were released **only for the C-API repository** before the mono-repo transition:
-
-| Version | Release Date | Key Changes |
-|---------|--------------|-------------|
-| v0.67.0 | June 2025    | 2025-may post upgrade changes |
-| v0.66.0 | May 2025     | General improvements |
-| v0.65.0 | May 2025     | Maintenance updates |
-| v0.64.0 | May 2025     | Better logging functionality |
-| v0.63.0 | May 2025     | Domain objects deserialization refactor |
-| v0.62.0 | April 2025   | VM improvements + Ubuntu 24.04 support |
-| v0.61.0 | February 2025| VM restoration and enhancements |
-| v0.60.0 | January 2025 | Build improvements |
-| v0.59.0 | December 2024| Extended build info and VM features |
-
-### Historical Reference
-
-For complete release notes from the multi-repo era, see:
-- [C-API Release History](https://github.com/k-nuth/c-api/releases)
-- [Node Release History](https://github.com/k-nuth/node/releases)
-- [Node-exe Release History](https://github.com/k-nuth/node-exe/releases)
-
-### Moving Forward
-
-**Starting with v0.68.0**: All development happens in the mono-repository with unified versioning. This eliminates version gaps and ensures all components are released together with coordinated changes.
-
----
-
-# version 0.57.0
-
-You can install Knuth node version v0.57.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2025-05-16](https://github.com/k-nuth/node-exe/releases/tag/v0.57.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.57.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.56.0...v0.57.0
+- **Node Executable:** [v0.57.0](https://github.com/k-nuth/node-exe/releases/tag/v0.57.0).
 
-**C++ Library (v0.57.0):**
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.56.0...v0.57.0
+- **C++ Library:** [v0.57.0](https://github.com/k-nuth/node/releases/tag/v0.57.0).
 
-**C API (v0.66.0):**
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.65.0...v0.66.0
-# version 0.56.0
+- **C API:** [v0.66.0](https://github.com/k-nuth/c-api/releases/tag/v0.66.0).
 
-You can install Knuth node version v0.56.0 [using these instructions](https://kth.cash/#download).
+## version 0.56.0
+
+**Published:** [2025-05-12](https://github.com/k-nuth/node-exe/releases/tag/v0.56.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.56.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.55.0...v0.56.0
+- **Node Executable:** [v0.56.0](https://github.com/k-nuth/node-exe/releases/tag/v0.56.0).
 
-**C++ Library (v0.56.0):**
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.55.0...v0.56.0
+- **C++ Library:** [v0.56.0](https://github.com/k-nuth/node/releases/tag/v0.56.0).
 
-**C API (v0.65.0):**
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.64.0...v0.65.0
-# version 0.55.0
+- **C API:** [v0.65.0](https://github.com/k-nuth/c-api/releases/tag/v0.65.0).
 
-You can install Knuth node version v0.55.0 [using these instructions](https://kth.cash/#download).
+## version 0.55.0
+
+**Published:** [2025-05-05](https://github.com/k-nuth/node-exe/releases/tag/v0.55.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.55.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.54.0...v0.55.0
+- **Node Executable:** [v0.55.0](https://github.com/k-nuth/node-exe/releases/tag/v0.55.0).
 
 **C++ Library (v0.55.0):**
 Changes:
 * feat: better logs by @fpelliccioni in https://github.com/k-nuth/node/pull/38
 * fix: logging by @fpelliccioni in https://github.com/k-nuth/node/pull/39
 
+- **C API:** [v0.64.0](https://github.com/k-nuth/c-api/releases/tag/v0.64.0).
 
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.54.0...v0.55.0
+## version 0.54.0
 
-**C API (v0.64.0):**
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.63.0...v0.64.0
-# version 0.54.0
-
-You can install Knuth node version v0.54.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2025-05-01](https://github.com/k-nuth/node-exe/releases/tag/v0.54.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.54.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.53.0...v0.54.0
+- **Node Executable:** [v0.54.0](https://github.com/k-nuth/node-exe/releases/tag/v0.54.0).
 
 **C++ Library (v0.54.0):**
 Changes:
 * feat: refactor domain objects deserialization by @fpelliccioni in https://github.com/k-nuth/node/pull/37
 
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.53.0...v0.54.0
-
 **C API (v0.63.0):**
 Changes:
 * feat: refactor domain objects deserialization by @fpelliccioni in https://github.com/k-nuth/c-api/pull/29
 
+## version 0.53.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.62.0...v0.63.0
-# version 0.53.0
-
-You can install Knuth node version v0.53.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2025-04-16](https://github.com/k-nuth/node-exe/releases/tag/v0.53.0)
 
 This release includes the following features and fixes:
 
@@ -935,49 +908,35 @@ This release includes the following features and fixes:
 Changes:
 * feat: use ubuntu 24.04 in node-exe by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/20
 
-
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.52.0...v0.53.0
-
 **C++ Library (v0.53.0):**
 Changes:
 * feat: use ubuntu 24.04 in node by @fpelliccioni in https://github.com/k-nuth/node/pull/36
-
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.52.0...v0.53.0
 
 **C API (v0.62.0):**
 Changes:
 * feat: VM improvements by @fpelliccioni in https://github.com/k-nuth/c-api/pull/49
 * feat: use ubuntu 24.04 in c-api by @fpelliccioni in https://github.com/k-nuth/c-api/pull/50
 
+## version 0.52.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.61.0...v0.62.0
-# version 0.52.0
-
-You can install Knuth node version v0.52.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2025-02-02](https://github.com/k-nuth/node-exe/releases/tag/v0.52.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.52.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.51.0...v0.52.0
+- **Node Executable:** [v0.52.0](https://github.com/k-nuth/node-exe/releases/tag/v0.52.0).
 
 **C++ Library (v0.52.0):**
 Changes:
 * feat: vm improvements by @fpelliccioni in https://github.com/k-nuth/node/pull/35
-
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.51.0...v0.52.0
 
 **C API (v0.61.0):**
 Changes:
 * feat: partial restore of knuth vm by @fpelliccioni in https://github.com/k-nuth/c-api/pull/47
 * feat: vm improvements by @fpelliccioni in https://github.com/k-nuth/c-api/pull/48
 
+## version 0.51.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.60.0...v0.61.0
-# version 0.51.0
-
-You can install Knuth node version v0.51.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2025-01-10](https://github.com/k-nuth/node-exe/releases/tag/v0.51.0)
 
 This release includes the following features and fixes:
 
@@ -985,65 +944,48 @@ This release includes the following features and fixes:
 Changes:
 * feat: use executor info by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/19
 
-
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.50.0...v0.51.0
-
 **C++ Library (v0.51.0):**
 Changes:
 * feat: report all blocks by @fpelliccioni in https://github.com/k-nuth/node/pull/34
 
+- **C API:** [v0.60.0](https://github.com/k-nuth/c-api/releases/tag/v0.60.0).
 
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.50.0...v0.51.0
+## version 0.50.0
 
-**C API (v0.60.0):**
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.59.0...v0.60.0
-# version 0.50.0
-
-You can install Knuth node version v0.50.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-12-16](https://github.com/k-nuth/node-exe/releases/tag/v0.50.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.50.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.49.0...v0.50.0
+- **Node Executable:** [v0.50.0](https://github.com/k-nuth/node-exe/releases/tag/v0.50.0).
 
 **C++ Library (v0.50.0):**
 Changes:
 * feat: build information extended by @fpelliccioni in https://github.com/k-nuth/node/pull/33
 
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.49.0...v0.50.0
-
 **C API (v0.56.0):**
 Changes:
 * feat: build info improved by @fpelliccioni in https://github.com/k-nuth/c-api/pull/41
-
-
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.55.0...v0.56.0
 
 **C API (v0.55.0):**
 Changes:
 * feat: build info extended by @fpelliccioni in https://github.com/k-nuth/c-api/pull/39
 * fix: compiler warning about sprintf by @fpelliccioni in https://github.com/k-nuth/c-api/pull/40
 
+## version 0.49.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.54.0...v0.55.0
-# version 0.49.0
-
-You can install Knuth node version v0.49.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-11-24](https://github.com/k-nuth/node-exe/releases/tag/v0.49.0)
 
 This release includes the following features and fixes:
 
-**Node Executable (v0.49.0):**
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.48.0...v0.49.0
+- **Node Executable:** [v0.49.0](https://github.com/k-nuth/node-exe/releases/tag/v0.49.0).
 
-**C++ Library (v0.49.0):**
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.48.0...v0.49.0
+- **C++ Library:** [v0.49.0](https://github.com/k-nuth/node/releases/tag/v0.49.0).
 
-**C API (v0.52.0):**
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.51.0...v0.52.0
-# version 0.48.0
+- **C API:** [v0.52.0](https://github.com/k-nuth/c-api/releases/tag/v0.52.0).
 
-You can install Knuth node version v0.48.0 [using these instructions](https://kth.cash/#download).
+## version 0.48.0
+
+**Published:** [2024-11-23](https://github.com/k-nuth/node-exe/releases/tag/v0.48.0)
 
 This release includes the following features and fixes:
 
@@ -1051,25 +993,17 @@ This release includes the following features and fixes:
 Changes:
 * feat: replace conan center url in node-exe by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/18
 
-
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.47.0...v0.48.0
-
 **C++ Library (v0.48.0):**
 Changes:
 * feat: replace conan center url in node by @fpelliccioni in https://github.com/k-nuth/node/pull/32
-
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.47.0...v0.48.0
 
 **C API (v0.51.0):**
 Changes:
 * feat: replace conan center url in c-api by @fpelliccioni in https://github.com/k-nuth/c-api/pull/34
 
+## version 0.47.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.50.0...v0.51.0
-# version 0.47.0
-
-You can install Knuth node version v0.47.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-11-22](https://github.com/k-nuth/node-exe/releases/tag/v0.47.0)
 
 This release includes the following features and fixes:
 
@@ -1081,9 +1015,6 @@ Changes:
 * feat: copyright 2024 in node-exe by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/16
 * feat: support c++23 features in node-exe by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/17
 
-
-**Full Changelog**: https://github.com/k-nuth/node-exe/compare/v0.46.0...v0.47.0
-
 **C++ Library (v0.47.0):**
 Changes:
 * feat: c++23 support by @fpelliccioni in https://github.com/k-nuth/node/pull/26
@@ -1092,48 +1023,42 @@ Changes:
 * feat: copyright 2024 in node by @fpelliccioni in https://github.com/k-nuth/node/pull/30
 * feat: support c++23 features in node by @fpelliccioni in https://github.com/k-nuth/node/pull/31
 
-
-**Full Changelog**: https://github.com/k-nuth/node/compare/v0.46.0...v0.47.0
-
 **C API (v0.50.0):**
 Changes:
 * feat: c++23 support by @fpelliccioni in https://github.com/k-nuth/c-api/pull/28
 * feat: build system improvements by @fpelliccioni in https://github.com/k-nuth/c-api/pull/30
 * feat: support c++23 features in c-api by @fpelliccioni in https://github.com/k-nuth/c-api/pull/33
 
+## version 0.46.0
 
-**Full Changelog**: https://github.com/k-nuth/c-api/compare/v0.49.0...v0.50.0
-
-# version 0.46.0
-
-You can install Knuth node version v0.46.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-10-10](https://github.com/k-nuth/node-exe/releases/tag/v0.46.0)
 
 This release includes the following features and fixes:
 
 * performance: Improved transaction validation and block synchronization performance, leading to a more efficient node operation and faster sync times.
 * Uses [C++ API v0.46.0](https://github.com/k-nuth/node/releases/tag/v0.46.0).
 
-# version 0.45.0
+## version 0.45.0
 
-You can install Knuth node version v0.45.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-09-06](https://github.com/k-nuth/node-exe/releases/tag/v0.45.0)
 
 This release includes the following features and fixes:
 
 * feat: upgrade dependencies by @fpelliccioni in #12
 * Uses [C++ API v0.45.0](https://github.com/k-nuth/node/releases/tag/v0.45.0).
 
-# version 0.44.0
+## version 0.44.0
 
-You can install Knuth node version v0.44.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-05-27](https://github.com/k-nuth/node-exe/releases/tag/v0.44.0)
 
 This release includes the following features and fixes:
 
 * fix DB initialization by @fpelliccioni in https://github.com/k-nuth/database/pull/21
 * Uses [C++ API v0.44.0](https://github.com/k-nuth/node/releases/tag/v0.44.0).
 
-# version 0.43.0
+## version 0.43.0
 
-You can install Knuth node version v0.43.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-05-21](https://github.com/k-nuth/node-exe/releases/tag/v0.43.0)
 
 This release includes the following features and fixes:
 
@@ -1141,9 +1066,9 @@ This release includes the following features and fixes:
 * Bump dependencies by @fpelliccioni in https://github.com/k-nuth/node/pull/23
 * Uses [C++ API v0.43.0](https://github.com/k-nuth/node/releases/tag/v0.43.0).
 
-# version 0.42.0
+## version 0.42.0
 
-You can install Knuth node version v0.42.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2024-02-03](https://github.com/k-nuth/node-exe/releases/tag/v0.42.0)
 
 This release includes the following features and fixes:
 
@@ -1151,27 +1076,27 @@ This release includes the following features and fixes:
 * bump dependencies by @fpelliccioni in https://github.com/k-nuth/node/pull/22
 * Uses [C++ API v0.42.0](https://github.com/k-nuth/node/releases/tag/v0.42.0).
 
-# version 0.41.0
+## version 0.41.0
 
-You can install Knuth node version v0.41.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-11-13](https://github.com/k-nuth/node-exe/releases/tag/v0.41.0)
 
 This release includes the following features and fixes:
 
 * WASM Pthread support by @fpelliccioni in https://github.com/k-nuth/infrastructure/pull/29
 * Uses [C++ API v0.41.0](https://github.com/k-nuth/node/releases/tag/v0.41.0).
 
-# version 0.40.0
+## version 0.40.0
 
-You can install Knuth node version v0.40.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-11-06](https://github.com/k-nuth/node-exe/releases/tag/v0.40.0)
 
 This release includes the following features and fixes:
 
 * Fixes linking issues in WASM compilation by @fpelliccioni in https://github.com/k-nuth/infrastructure/pull/28
 * Uses [C++ API v0.40.0](https://github.com/k-nuth/node/releases/tag/v0.40.0).
 
-# version 0.39.0
+## version 0.39.0
 
-You can install Knuth node version v0.39.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-11-03](https://github.com/k-nuth/node-exe/releases/tag/v0.39.0)
 
 This release includes the following features and fixes:
 
@@ -1179,27 +1104,27 @@ This release includes the following features and fixes:
 * Minor fixes.
 * Uses [C++ API v0.39.0](https://github.com/k-nuth/node/releases/tag/v0.39.0).
 
-# version 0.38.0
+## version 0.38.0
 
-You can install Knuth node version v0.38.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-07-10](https://github.com/k-nuth/node-exe/releases/tag/v0.38.0)
 
 This release includes the following features and fixes:
 
 * Upgraded internal dependencies.
 * Uses [C++ API v0.38.0](https://github.com/k-nuth/node/releases/tag/v0.38.0).
 
-# version 0.37.0
+## version 0.37.0
 
-You can install Knuth node version v0.37.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-07-09](https://github.com/k-nuth/node-exe/releases/tag/v0.37.0)
 
 This release includes the following features and fixes:
 
 * Dynamic DB mode by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/11
 * Uses [C++ API v0.37.0](https://github.com/k-nuth/node/releases/tag/v0.37.0).
 
-# version 0.36.0
+## version 0.36.0
 
-You can install Knuth node version v0.36.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-06-14](https://github.com/k-nuth/node-exe/releases/tag/v0.36.0)
 
 This release includes the following features and fixes:
 
@@ -1207,9 +1132,9 @@ This release includes the following features and fixes:
 * Fix CI/CD workflow by @fpelliccioni in https://github.com/k-nuth/node/pull/18
 * Uses [C++ API v0.36.0](https://github.com/k-nuth/node/releases/tag/v0.36.0).
 
-# version 0.35.0
+## version 0.35.0
 
-You can install Knuth node version v0.35.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-05-31](https://github.com/k-nuth/node-exe/releases/tag/v0.35.0)
 
 This release includes the following features and fixes:
 
@@ -1217,9 +1142,9 @@ This release includes the following features and fixes:
 * adapt cmake for global build by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/9
 * Uses [C++ API v0.35.0](https://github.com/k-nuth/node/releases/tag/v0.35.0).
 
-# version 0.34.0
+## version 0.34.0
 
-You can install Knuth node version v0.34.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-05-16](https://github.com/k-nuth/node-exe/releases/tag/v0.34.0)
 
 This release includes the following features and fixes:
 
@@ -1227,9 +1152,9 @@ This release includes the following features and fixes:
 * Update CI/CD workflow by @fpelliccioni in https://github.com/k-nuth/node-exe/pull/7 https://github.com/k-nuth/node/pull/11
 * Uses [C++ API v0.34.0](https://github.com/k-nuth/node/releases/tag/v0.34.0).
 
-# version 0.33.0
+## version 0.33.0
 
-You can install Knuth node version v0.33.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-04-11](https://github.com/k-nuth/node-exe/releases/tag/v0.33.0)
 
 This release includes the following features and fixes:
 
@@ -1238,9 +1163,9 @@ This release includes the following features and fixes:
 - Improve CI/CD infrastructure.
 - Uses [C++ API v0.33.0](https://github.com/k-nuth/node/releases/tag/v0.33.0).
 
-# version 0.32.0
+## version 0.32.0
 
-You can install Knuth node version v0.32.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2023-03-29](https://github.com/k-nuth/node-exe/releases/tag/v0.32.0)
 
 This release includes the following features and fixes:
 
@@ -1258,18 +1183,18 @@ This release includes the following features and fixes:
 - Uses [C++ API v0.32.0](https://github.com/k-nuth/node/releases/tag/v0.32.0).
 - Several external dependencies were updated.
 
-# version 0.31.0
+## version 0.31.0
 
-You can install Knuth node version v0.31.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-11-04](https://github.com/k-nuth/node-exe/releases/tag/v0.31.0)
 
 This release includes the following features and fixes:
 
 - Infrastructure code bug fixed.
 - Uses [C++ API v0.31.0](https://github.com/k-nuth/node/releases/tag/v0.31.0).
 
-# version 0.30.0
+## version 0.30.0
 
-You can install Knuth node version v0.30.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-11-04](https://github.com/k-nuth/node-exe/releases/tag/v0.30.0)
 
 This release includes the following features and fixes:
 
@@ -1277,27 +1202,27 @@ This release includes the following features and fixes:
 - Several minor fixes.
 - Uses [C++ API v0.30.0](https://github.com/k-nuth/node/releases/tag/v0.30.0).
 
-# version 0.29.0
+## version 0.29.0
 
-You can install Knuth node version v0.29.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-09-23](https://github.com/k-nuth/node-exe/releases/tag/v0.29.0)
 
 This release includes the following features and fixes:
 
 - Fixes on `armv7` architecture.
 - Uses [C++ API v0.29.0](https://github.com/k-nuth/node/releases/tag/v0.29.0).
 
-# version 0.28.0
+## version 0.28.0
 
-You can install Knuth node version v0.28.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-09-23](https://github.com/k-nuth/node-exe/releases/tag/v0.28.0)
 
 This release includes the following features and fixes:
 
 - Fixes on Windows for Visual Studio 2019 and 2022.
 - Uses [C++ API v0.28.0](https://github.com/k-nuth/node/releases/tag/v0.28.0).
 
-# version 0.27.0
+## version 0.27.0
 
-You can install Knuth node version v0.27.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-09-23](https://github.com/k-nuth/node-exe/releases/tag/v0.27.0)
 
 This release includes the following features and fixes:
 
@@ -1305,9 +1230,9 @@ This release includes the following features and fixes:
 - Some fixes to support for Visual Studio 2022 on Windows.
 - Uses C++ API v0.27.0.
 
-# version 0.26.0
+## version 0.26.0
 
-You can install Knuth node version v0.26.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-08-13](https://github.com/k-nuth/node-exe/releases/tag/v0.26.0)
 
 This release includes the following features and fixes:
 
@@ -1315,9 +1240,9 @@ This release includes the following features and fixes:
 - Support for Visual Studio (MSVC) was restored.
 - Uses C++ API v0.26.0.
 
-# version 0.25.0
+## version 0.25.0
 
-You can install Knuth node version v0.25.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-08-09](https://github.com/k-nuth/node-exe/releases/tag/v0.25.0)
 
 This release includes the following features and fixes:
 
@@ -1331,9 +1256,9 @@ And if your platform is better than x86-64-v3, you can take advantage of your ha
 - Support for Visual Studio (MSVC) has been temporarily discontinued.
 - Some external dependencies were updated.
 
-# version 0.24.0
+## version 0.24.0
 
-You can install Knuth node version v0.24.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-03-25](https://github.com/k-nuth/node-exe/releases/tag/v0.24.0)
 
 This release includes the following features and fixes:
 
@@ -1341,9 +1266,9 @@ This release includes the following features and fixes:
 - Uses C++ API v0.24.0
 - Several external dependencies were updated.
 
-# version 0.23.0
+## version 0.23.0
 
-You can install Knuth node version v0.23.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2022-01-05](https://github.com/k-nuth/node-exe/releases/tag/v0.23.0)
 
 This release includes the following features and fixes:
 
@@ -1353,9 +1278,9 @@ This release includes the following features and fixes:
 - Uses C++ API v0.23.0
 - Several external dependencies were updated.
 
-# version 0.22.0
+## version 0.22.0
 
-You can install Knuth node version v0.22.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2021-08-25](https://github.com/k-nuth/node-exe/releases/tag/v0.22.0)
 
 This release includes the following features and fixes:
 
@@ -1363,9 +1288,9 @@ This release includes the following features and fixes:
 - Uses C++ API v0.22.0
 - Several external dependencies were updated.
 
-# version 0.21.0
+## version 0.21.0
 
-You can install Knuth node version v0.21.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2021-06-04](https://github.com/k-nuth/node-exe/releases/tag/v0.21.0)
 
 This release includes the following features and fixes:
 
@@ -1373,9 +1298,9 @@ This release includes the following features and fixes:
 - Several external dependencies were updated.
 - Several bug fixes.
 
-# version 0.20.0
+## version 0.20.0
 
-You can install Knuth node version v0.20.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2021-05-13](https://github.com/k-nuth/node-exe/releases/tag/v0.20.0)
 
 This release includes the following features and fixes:
 
@@ -1383,26 +1308,26 @@ This release includes the following features and fixes:
 The user-agent presented by the node comes from the core C++ library, so all other components that depend on it (executable, C-API, C#-API, Javascript-API and TypeScript-API) will show the same user-agent.
 - Some bug fixes.
 
-# version 0.9.1
+## version 0.9.1
 
-You can install Knuth node version 0.9.1 [using these instructions](https://kth.cash/#download).
+**Published:** [2021-04-20](https://github.com/k-nuth/node-exe/releases/tag/v0.9.1)
 
 This release includes the following features and fixes:
 
 - Minor bug fix.
 
-# version 0.9.0
+## version 0.9.0
 
-You can install Knuth node version 0.9.0 [using these instructions](https://kth.cash/#download`.
+**Published:** [2021-04-19](https://github.com/k-nuth/node-exe/releases/tag/v0.9.0)
 
 This release includes the following features and fixes:
 
 - Performance improvements.
 - Several CI/CD improvements.
 
-# version 0.8.0
+## version 0.8.0
 
-You can install Knuth node version 0.8.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-12-21](https://github.com/k-nuth/node-exe/releases/tag/v0.8.0)
 
 This release includes the following features and fixes:
 
@@ -1410,9 +1335,9 @@ This release includes the following features and fixes:
 - Scalenet performance improvements.
 - Several CI/CD improvements.
 
-# version 0.7.0
+## version 0.7.0
 
-You can install Knuth node version 0.7.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-11-23](https://github.com/k-nuth/node-exe/releases/tag/v0.7.0)
 
 This release includes the following features and fixes:
 
@@ -1421,9 +1346,9 @@ This release includes the following features and fixes:
 - Scalenet fixes.
 - Other bugfixes.
 
-# version 0.6.0
+## version 0.6.0
 
-You can install Knuth node version 0.6.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-27](https://github.com/k-nuth/node-exe/releases/tag/v0.6.0)
 
 This release includes the following features and fixes:
 
@@ -1431,53 +1356,53 @@ This release includes the following features and fixes:
 - Performance improvements.
 - Code style improvements.
 
-# version 0.5.3
+## version 0.5.3
 
-You can install Knuth node version 0.5.3 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-19](https://github.com/k-nuth/node-exe/releases/tag/v0.5.3)
 
 This release includes the following features and fixes:
 
 - Workaround to fix a cashnodes.bitcoinunlimited.info crawler error.
 Now Knuth nodes are counted by this tool.
 
-# version 0.5.2
+## version 0.5.2
 
-You can install Knuth node version 0.5.2 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-19](https://github.com/k-nuth/node-exe/releases/tag/v0.5.2)
 
 This release includes the following features and fixes:
 
 - Logging improved.
 - Code style improvements.
 
-# version 0.5.1
+## version 0.5.1
 
-You can install Knuth node version 0.5.1 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-17](https://github.com/k-nuth/node-exe/releases/tag/v0.5.1)
 
 This release includes the following features and fixes:
 
 - Fix for Visual Studio 2019 in Windows.
 - Code style improvements.
 
-# version 0.5.0
+## version 0.5.0
 
-You can install Knuth node version 0.5.0 [using these instructions](https://kth.cash/#download`.
+**Published:** [2020-10-14](https://github.com/k-nuth/node-exe/releases/tag/v0.5.0)
 
 This release includes the following features and fixes:
 
 - Use of spdlog as the default logging library.
 - Code style improvements.
 
-# version 0.4.5
+## version 0.4.5
 
-You can install Knuth node version 0.4.5 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-12](https://github.com/k-nuth/node-exe/releases/tag/v0.4.5)
 
 This release includes the following features and fixes:
 
 - Workaround to fix an issue in GCC 9.x (Linux) causing IBD to stop.
 
-# version 0.4.4
+## version 0.4.4
 
-You can install Knuth node version 0.4.4 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-09](https://github.com/k-nuth/node-exe/releases/tag/v0.4.4)
 
 This release includes the following features and fixes:
 
@@ -1486,9 +1411,9 @@ This release includes the following features and fixes:
 - Code modernization.
 - Improvements in CI/CD processes.
 
-# version 0.4.3
+## version 0.4.3
 
-You can install Knuth node version 0.4.3 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-10-08](https://github.com/k-nuth/node-exe/releases/tag/v0.4.3)
 
 This release includes the following features and fixes:
 
@@ -1499,9 +1424,9 @@ In this way both the node executable and the node as a library (C++, C, C#, Java
 - Code modernization.
 - Improvements in CI/CD processes.
 
-# version 0.4.2
+## version 0.4.2
 
-You can install Knuth node version 0.4.2 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-09-13](https://github.com/k-nuth/node-exe/releases/tag/v0.4.2)
 
 This release includes the following features and fixes:
 
@@ -1512,18 +1437,18 @@ This release includes the following features and fixes:
 - Other improvements in settings management.
 - Some bug fixes and code style improvements.
 
-# version 0.4.1
+## version 0.4.1
 
-You can install Knuth node version 0.4.1 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-08-28](https://github.com/k-nuth/node-exe/releases/tag/v0.4.1)
 
 This release includes the following features and fixes:
 
 - Updated several external dependencies: Boost libs. 1.74.0, {fmt} lib. 7.0.3, spdlog lib. 1.7.0, catch2 testing framework 2.13.0.
 - Some bug fixes and code style improvements.
 
-# version 0.4.0
+## version 0.4.0
 
-You can install Knuth node version 0.4.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-08-14](https://github.com/k-nuth/node-exe/releases/tag/v0.4.0)
 
 This release includes the following features and fixes:
 
@@ -1531,9 +1456,9 @@ This release includes the following features and fixes:
 - Fixed a linking error on Debian10 using GCC8, trying to link std::filesystem.
 - Some minor fixes and code style improvements.
 
-# version 0.3.2
+## version 0.3.2
 
-You can install Knuth node version 0.3.2 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-07-27](https://github.com/k-nuth/node-exe/releases/tag/v0.3.2)
 
 This release includes the following features and fixes:
 
@@ -1541,9 +1466,9 @@ This release includes the following features and fixes:
 - All unit tests were improved as a previous step to meet our mining compliance test objective.
 - The use of the Boost.Test framework has been replaced by the more modern Catch2.
 
-# version 0.3.1
+## version 0.3.1
 
-You can install Knuth node version 0.3.1 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-05-22](https://github.com/k-nuth/node-exe/releases/tag/v0.3.1)
 
 This release includes the following features and fixes:
 
@@ -1551,9 +1476,9 @@ This release includes the following features and fixes:
 - Fix BCH seeders.
 - Fix algorithm package version.
 
-# version 0.3.0
+## version 0.3.0
 
-You can install Knuth node version 0.3.0 [using these instructions](https://kth.cash/#download).
+**Published:** [2020-05-20](https://github.com/k-nuth/node-exe/releases/tag/v0.3.0)
 
 This release includes the following features and fixes:
 
@@ -1565,9 +1490,11 @@ This release includes the following features and fixes:
 - Optional and experimental usage of a new logging library.
 - Several improvements in the build system and continuous integration.
 
-# version 0.2.0
+## version 0.2.0
 
-### Network upgrade
+**Published:** [2020-04-26](https://github.com/k-nuth/node-exe/releases/tag/v0.2.0)
+
+#### Network upgrade
 
 At the MTP time of 1589544000 (May 15, 2020 12:00:00 UTC) the following behaviors will change:
 
@@ -1577,7 +1504,7 @@ At the MTP time of 1589544000 (May 15, 2020 12:00:00 UTC) the following behavior
 
 - Regarding IFP: For exchanges and users, this client will follow the longest chain whether it includes IFP soft forks or not. For miners, running this client ensures the `getblocktemplate` RPC call will not automatically insert IFP white-list addresses into the coinbase transaction.
 
-### Other changes
+#### Other changes
 
 - New DB mode: Read-only.
 - DB performance improvements.
@@ -1590,56 +1517,57 @@ At the MTP time of 1589544000 (May 15, 2020 12:00:00 UTC) the following behavior
 - Various bug fixes and stability improvements.
 - Code style improvements.
 
-# version 0.1.0
+## version 0.1.0
 
-- First release
+**Published:** [2020-02-11](https://github.com/k-nuth/node-exe/releases/tag/v0.1.0)
+
+- First release under the Knuth name; version numbering restarted at `0.1.0`.
 - [Bitcoin Cash (BCH)](https://www.bitcoincash.org/) 2019-Nov-15 hard fork support (Multisig Schnorr Signatures).
 
-# Versioning History Note (v0.59.0 - v0.67.0)
+## Before Knuth 0.1.0
 
-## 📝 Missing Versions Explanation
+Knuth's history predates the version numbers listed above. The project began as
+Bitprim in 2016, based on libbitcoin, and later adopted the Knuth name and restarted
+its version numbering at `0.1.0`.
 
-**Important:** You may notice that versions 0.59.0 through 0.67.0 are not listed above for `node-exe` and `node` repositories. This is intentional and explained below.
+| Period | Milestone | Historical sources |
+|--------|-----------|--------------------|
+| **2011** | The upstream libbitcoin project began. This is the origin of the software lineage, rather than the launch date of Bitprim or Knuth. | [Libbitcoin history](https://libbitcoin.info/about.html) |
+| **2016** | Development of Bitprim began, building on libbitcoin. The surviving Bitprim repositories retain both upstream history and subsequent Bitprim work. | [Developer's account](https://componentsprogramming.com/algorithms-specifications/), [Bitprim node](https://github.com/bitprim/bitprim-node), [2016 development commit](https://github.com/bitprim/bitprim-node/commit/2fe41cba862b2f0be74e405129ff9397f28d1248) |
+| **2017-08-01** | Bitprim supported the Bitcoin Cash protocol from its launch on August 1, 2017. | — |
+| **2017–2019** | Bitprim used its own version sequence. Surviving node-library tags include `v0.3.0` through `v0.19.0`; these belong to the Bitprim sequence, not the later Knuth sequence. | [Bitprim node tags](https://github.com/bitprim/bitprim-node/tags) |
+| **2020** | The preserved node-executable history records the Bitprim-to-Knuth rebranding on February 4. The Knuth node-executable release `v0.1.0` was published on February 11, restarting the version sequence. | [Rebranding commit](https://github.com/k-nuth/node-exe/commit/4ef2c07baab939b84502181247747c8e794afdea), [Knuth v0.1.0](https://github.com/k-nuth/node-exe/releases/tag/v0.1.0) |
+| **2025** | The components were brought together in this monorepo. Its initial snapshot is dated June 24; earlier development remains in the component repositories. | [Initial monorepo snapshot](https://github.com/k-nuth/kth/commit/8841dfbf5b80bd7dce7a08a540b5cd41ad074431), [node](https://github.com/k-nuth/node), [blockchain](https://github.com/k-nuth/blockchain), [domain](https://github.com/k-nuth/domain), [database](https://github.com/k-nuth/database), [infrastructure](https://github.com/k-nuth/infrastructure), [network](https://github.com/k-nuth/network), [C API](https://github.com/k-nuth/c-api) |
 
-### What Happened During v0.59.0 - v0.67.0
+The `0.1.0` entry above marks the first node-executable release under the Knuth
+name, not the beginning of the node's development.
 
-During this period (December 2024 - May 2025), the Knuth project used **different versioning schemes** across repositories:
+### Surviving Bitprim node tags
 
-- **`c-api` repository**: Continued releasing versions 0.59.0 → 0.67.0 with active development
-- **`node` and `node-exe` repositories**: Remained at v0.58.0 with no new releases
+These are tags from the **Bitprim node library**. Dates are the annotated Git tag
+dates, not independently verified dates of public release announcements. This is
+a recovered part of the history, not a complete catalog of every Bitprim component
+or release. Identically numbered Knuth versions are a separate sequence.
 
-### Why This Happened
-
-1. **Development Focus**: Most active development occurred in the C-API layer
-2. **Stable Core**: The C++ node library and executable were stable and didn't require updates
-3. **API Evolution**: The C-API needed frequent updates for new features and improvements
-4. **Independent Releases**: Each repository was released independently based on actual changes
-
-### C-API Versions During This Period
-
-The following versions were released **only for the C-API repository**:
-
-| Version | Release Date | Key Changes |
-|---------|--------------|-------------|
-| v0.67.0 | June 2025    | 2025-may post upgrade changes |
-| v0.66.0 | May 2025     | (Release notes available in c-api repo) |
-| v0.65.0 | May 2025     | (Release notes available in c-api repo) |
-| v0.64.0 | May 2025     | Better logs and logging fixes |
-| v0.63.0 | May 2025     | Domain objects deserialization refactor |
-| v0.62.0 | April 2025   | VM improvements and Ubuntu 24.04 support |
-| v0.61.0 | February 2025| Partial restore of Knuth VM and improvements |
-| v0.60.0 | January 2025 | (Release notes available in c-api repo) |
-| v0.59.0 | December 2024| Build info extensions and VM features |
-| v0.58.0 | December 2024| VM API extensions |
-
-### For Detailed Information
-
-To see the complete release notes for these C-API versions, please visit:
-- [C-API Release History](https://github.com/k-nuth/c-api/releases)
-
-### Moving Forward
-
-Starting with **v0.68.0**, all repositories use unified versioning to avoid this confusion and ensure clear version correspondence across all components.
-
----
-
+| Bitprim tag | Tag date (UTC) |
+|-------------|----------------|
+| [v0.3.0](https://github.com/bitprim/bitprim-node/tree/v0.3.0) | 2017-11-02 |
+| [v0.4.0](https://github.com/bitprim/bitprim-node/tree/v0.4.0) | 2017-12-23 |
+| [v0.5.0](https://github.com/bitprim/bitprim-node/tree/v0.5.0) | 2018-01-09 |
+| [v0.6.0](https://github.com/bitprim/bitprim-node/tree/v0.6.0) | 2018-01-22 |
+| [v0.7.0](https://github.com/bitprim/bitprim-node/tree/v0.7.0) | 2018-03-01 |
+| [v0.8.0](https://github.com/bitprim/bitprim-node/tree/v0.8.0) | 2018-03-22 |
+| [v0.9.0](https://github.com/bitprim/bitprim-node/tree/v0.9.0) | 2018-04-06 |
+| [v0.9.1](https://github.com/bitprim/bitprim-node/tree/v0.9.1) | 2018-04-27 |
+| [v0.10.0](https://github.com/bitprim/bitprim-node/tree/v0.10.0) | 2018-06-01 |
+| [v0.10.1](https://github.com/bitprim/bitprim-node/tree/v0.10.1) | 2018-06-13 |
+| [v0.10.2](https://github.com/bitprim/bitprim-node/tree/v0.10.2) | 2018-06-22 |
+| [v0.11.0](https://github.com/bitprim/bitprim-node/tree/v0.11.0) | 2018-07-17 |
+| [v0.12.0](https://github.com/bitprim/bitprim-node/tree/v0.12.0) | 2018-07-19 |
+| [v0.13.0](https://github.com/bitprim/bitprim-node/tree/v0.13.0) | 2018-08-19 |
+| [v0.14.0](https://github.com/bitprim/bitprim-node/tree/v0.14.0) | 2018-10-10 |
+| [v0.15.0](https://github.com/bitprim/bitprim-node/tree/v0.15.0) | 2018-11-06 |
+| [v0.16.0](https://github.com/bitprim/bitprim-node/tree/v0.16.0) | 2018-11-14 |
+| [v0.17.0](https://github.com/bitprim/bitprim-node/tree/v0.17.0) | 2018-12-17 |
+| [v0.18.0](https://github.com/bitprim/bitprim-node/tree/v0.18.0) | 2018-12-27 |
+| [v0.19.0](https://github.com/bitprim/bitprim-node/tree/v0.19.0) | 2019-04-24 |

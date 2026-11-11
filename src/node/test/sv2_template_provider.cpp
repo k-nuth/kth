@@ -1163,9 +1163,9 @@ TEST_CASE("sv2 constraints send the chain template and its transactions in block
         first_coinbase.outputs().front().value() - 1000, view->state->enabled_flags());
     auto const child = test::spend_p2pkh(parent, 0,
         parent.outputs().front().value() - 1000, view->state->enabled_flags());
-    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+    REQUIRE(fixture.execute(fixture.chain.chain().submit_transaction(
         std::make_shared<domain::message::transaction const>(parent))) == error::success);
-    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+    REQUIRE(fixture.execute(fixture.chain.chain().submit_transaction(
         std::make_shared<domain::message::transaction const>(child))) == error::success);
 
     auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));

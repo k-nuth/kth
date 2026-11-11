@@ -186,6 +186,25 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.validate_checksum",    cfg.network.validate_checksum);
     app.add_option("--net.identifier",           cfg.network.identifier);
     app.add_option("--net.inbound_port",         cfg.network.inbound_port);
+    app.add_option("--net.ws_enabled",          cfg.network.ws_enabled,
+        "Enable the compiled native WebSocket P2P listener.");
+    app.add_option("--net.ws_bind",             cfg.network.ws_bind);
+    app.add_option("--net.ws_port",             cfg.network.ws_port);
+    app.add_option("--net.ws_path",             cfg.network.ws_path);
+    app.add_option("--net.ws_origins",          cfg.network.ws_origins,
+        "Exact allowed browser Origins (missing Origin is rejected).");
+    app.add_option("--net.ws_trusted_proxies",  cfg.network.ws_trusted_proxies,
+        "Proxy addresses (a TLS terminator) whose connections name the client in X-Forwarded-For.");
+    app.add_option("--net.ws_max_connections",  cfg.network.ws_max_connections);
+    app.add_option("--net.ws_handshake_seconds", cfg.network.ws_handshake_seconds);
+    app.add_option("--net.ws_discovery",        cfg.network.ws_discovery,
+        "Negotiate endpoint discovery over TCP and WebSocket connections.");
+    app.add_option("--net.ws_discovery_legacy_agent", cfg.network.ws_discovery_legacy_agent,
+        "Temporary compatibility: advertise and accept legacy user-agent discovery (default false).");
+    app.add_option("--net.ws_allow_private",    cfg.network.ws_allow_private,
+        "Explicitly permit private endpoints for isolated LAN experiments.");
+    app.add_option("--net.ws_public_endpoints", cfg.network.ws_public_endpoints,
+        "Explicit public WS/WSS URLs, independent of listener bind and TLS termination.");
     app.add_option("--net.inbound_connections",  cfg.network.inbound_connections);
     app.add_option("--net.outbound_connections", cfg.network.outbound_connections);
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
@@ -219,6 +238,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--db.reorg_pool_limit", cfg.database.reorg_pool_limit);
     app.add_option("--db.db_max_size",      cfg.database.db_max_size);
     app.add_option("--db.safe_mode",        cfg.database.safe_mode);
+    app.add_option("--db.nocow",            cfg.database.nocow,
+        "On btrfs, create the UTXO and LMDB stores without copy-on-write (default true).");
     app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
 
     // [chain]
@@ -229,6 +250,10 @@ void add_settings(CLI::App& app, configuration& cfg) {
     add_parse_from_list(app, "--chain.checkpoint", cfg.chain.checkpoints,
         "A hash:height checkpoint.");
     app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);
+    app.add_option("--chain.full_validation", cfg.chain.full_validation);
+    app.add_option("--chain.validation_batch_blocks", cfg.chain.validation_batch_blocks,
+        "Fully validated blocks connected per batch, 1..1000 (default 500; about 1 GB of memory per 100).")
+        ->check(CLI::Range(1u, 1000u));
 
     // [fork]
     app.add_option("--fork.easy_blocks", cfg.chain.easy_blocks);
@@ -254,6 +279,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
     app.add_option("--node.sigop_fee_satoshis",    cfg.chain.sigop_fee_satoshis);
+    app.add_option("--node.mempool_expiry_hours",  cfg.chain.mempool_expiry_hours);
+    app.add_option("--node.mempool_max_mb",        cfg.chain.mempool_max_mb);
     app.add_option("--node.minimum_output_satoshis", cfg.chain.minimum_output_satoshis);
     // General Knuth standardness control. BCHN diagnostics never gate admission.
     app.add_option("--node.acceptnonstdtxn,--acceptnonstdtxn", cfg.chain.accept_non_standard_transactions,
@@ -288,15 +315,15 @@ void add_settings(CLI::App& app, configuration& cfg) {
 
     // [rpc]
     app.add_option("--rpc.enabled",  cfg.rpc.enabled,
-        "Enable the JSON-RPC server (requires a build with RPC support).");
+        "Enable the RPC server of the compiled-in backend: JSON-RPC, gRPC or Cap'n Proto (requires a build with RPC support).");
     app.add_option("--rpc.bind",     cfg.rpc.bind,
-        "Address the JSON-RPC listener binds to (default 127.0.0.1).");
+        "Address the RPC listener binds to (default 127.0.0.1; gRPC and Cap'n Proto accept loopback only).");
     app.add_option("--rpc.port",     cfg.rpc.port,
-        "TCP port for the JSON-RPC listener (default 8332).");
+        "TCP port for the RPC listener (default 8332).");
     app.add_option("--rpc.user",     cfg.rpc.user,
-        "JSON-RPC HTTP Basic-Auth user (empty uses the .cookie file).");
+        "RPC user: Basic-Auth (JSON-RPC, gRPC) or login (Cap'n Proto); empty uses the .cookie file.");
     app.add_option("--rpc.password", cfg.rpc.password,
-        "JSON-RPC HTTP Basic-Auth password.");
+        "RPC password.");
     app.add_option("--rpc.gbt_cache_size", cfg.rpc.gbt_cache_size,
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
@@ -405,6 +432,15 @@ struct flat_config : CLI::ConfigBase {
         return result;
     }
 };
+
+// Rebuild derived checkpoint fields after parsing, so full validation keeps
+// both built-in and configured header anchors. Legacy optimized-mode derivation
+// is left unchanged by this option.
+void finalize_checkpoints(blockchain::settings& chain) {
+    if (chain.full_validation) {
+        chain.derive_checkpoints();
+    }
+}
 
 // Load a config file into `app`. KTH config files use flat, dotted keys
 // (`network.inbound_port = 8433`) that map one-to-one to the options registered
@@ -559,6 +595,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
         }
 #endif
+        finalize_checkpoints(configured.chain);
     }
 
     return true;
@@ -634,6 +671,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         domain::config::fix_checkpoints(configured.net, configured.chain.checkpoints);
     }
 #endif
+    finalize_checkpoints(configured.chain);
 
     return true;
 }

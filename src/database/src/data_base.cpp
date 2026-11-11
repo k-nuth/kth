@@ -110,7 +110,7 @@ void data_base::start() {
         internal_db_dir,
         settings_.db_mode,
         settings_.reorg_pool_limit,
-        settings_.db_max_size, settings_.safe_mode);
+        settings_.db_max_size, settings_.safe_mode, settings_.nocow);
 }
 
 // Readers.

@@ -95,6 +95,30 @@ TEST_CASE("utxo_batch_len: at the tip a short window is drained down to one bloc
     CHECK(utxo_batch_len(999, batch_size, /*stale*/ false) == 999u);
 }
 
+// =============================================================================
+// utxo_batch_end — where a batch stops
+// =============================================================================
+
+TEST_CASE("utxo_batch_end: a validated batch holds at most the configured blocks", "[sync]") {
+    // Above the trusted height (checkpoint 0: full validation).
+    CHECK(utxo_batch_end(1, 1000, 0, 500) == 500u);
+    CHECK(utxo_batch_end(438041, 439040, 0, 500) == 438540u);
+    CHECK(utxo_batch_end(438041, 439040, 0, 100) == 438140u);
+    CHECK(utxo_batch_end(438041, 439040, 0, 1000) == 439040u);
+    // A shorter window is not lengthened.
+    CHECK(utxo_batch_end(438041, 438060, 0, 500) == 438060u);
+    // Zero is treated as one block, never as an empty batch.
+    CHECK(utxo_batch_end(438041, 439040, 0, 0) == 438041u);
+}
+
+TEST_CASE("utxo_batch_end: a batch never crosses the trusted height", "[sync]") {
+    // Below the checkpoint the cap does not apply: those blocks hold no undo.
+    CHECK(utxo_batch_end(1, 1000, 951146, 100) == 1000u);
+    CHECK(utxo_batch_end(950501, 951500, 951146, 100) == 951146u);
+    // The first batch above it is capped again.
+    CHECK(utxo_batch_end(951147, 952146, 951146, 100) == 951246u);
+}
+
 TEST_CASE("utxo_batch_len: nothing available -> wait, regardless of regime", "[sync]") {
     CHECK(utxo_batch_len(0, batch_size, /*stale*/ false) == 0u);
     CHECK(utxo_batch_len(0, batch_size, /*stale*/ true)  == 0u);
