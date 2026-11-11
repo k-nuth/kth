@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <chrono>
 #include <future>
+#include <optional>
 #include <asio/co_spawn.hpp>
 #include <asio/bind_cancellation_slot.hpp>
 #include <asio/cancellation_signal.hpp>
@@ -96,7 +97,7 @@ TEST_CASE("cancelling a block submitter does not withdraw work already admitted"
     auto pending = submissions->try_receive(ec);
     REQUIRE(pending.has_value());
     CHECK(pending->block == block);
-    CHECK(pending->reply->try_send(std::error_code{}, code(error::success)));
+    CHECK(pending->reply->try_send(blockchain::block_submission_result(error::success)));
 }
 
 TEST_CASE("cancellation before a block submission starts admits no block",
@@ -145,6 +146,30 @@ TEST_CASE("a lazy block submission owns its endpoint after chain destruction",
     CHECK(submissions->buffered() == 0);
 }
 
+TEST_CASE("the admission owner may drop a reply after the submitter's context is gone",
+          "[block_submission][lifetime]") {
+    // The reply outlives the submitter's io_context: the owner answers and
+    // releases it later. Bound to that context, the channel's destructor
+    // reached into it once it was destroyed (a use after free under ASan).
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
+    chain_fixture fixture("submission_reply_lifetime");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start(submissions));
+    auto block = std::make_shared<domain::message::block const>(
+        domain::message::block(domain::chain::block::genesis_regtest()));
+    std::optional<blockchain::block_submission> pending;
+    {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, fixture.chain().submit_block(block), ::asio::use_future);
+        io.poll();
+        std::error_code ec;
+        pending = submissions->try_receive(ec);
+        REQUIRE(pending.has_value());
+    }
+    CHECK(pending->reply->try_send(blockchain::block_submission_result(error::success)));
+    pending.reset();
+}
+
 TEST_CASE("one block submission preserves validity and duplication independently",
           "[block_submission][result]") {
     auto submissions = std::make_shared<blockchain::block_submission_channel>(1, 1);
@@ -168,7 +193,7 @@ TEST_CASE("one block submission preserves validity and duplication independently
         auto pending = submissions->try_receive(ec);
         REQUIRE_FALSE(ec);
         REQUIRE(pending.has_value());
-        REQUIRE(pending->reply->try_send(std::error_code{}, expected));
+        REQUIRE(pending->reply->try_send(blockchain::block_submission_result(expected)));
         io.restart();
         io.run();
         auto const actual = result.get();

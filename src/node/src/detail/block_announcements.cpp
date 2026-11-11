@@ -27,16 +27,32 @@ std::optional<domain::message::header> header_of_compact_block(data_chunk const&
 }
 
 hash_list announced_by_inventory(data_chunk const& payload, uint32_t version) {
+    return announced_in_inventory(payload, version).blocks;
+}
+
+inventory_announcements announced_in_inventory(data_chunk const& payload, uint32_t version) {
     byte_reader reader(payload);
     auto parsed = domain::message::inventory::from_data(reader, version);
     if ( ! parsed) {
         return {};
     }
 
-    hash_list hashes;
-    parsed->to_hashes(hashes, domain::message::inventory::type_id::block);
-    parsed->to_hashes(hashes, domain::message::inventory::type_id::compact_block);
-    return hashes;
+    inventory_announcements out;
+    parsed->to_hashes(out.blocks, domain::message::inventory::type_id::block);
+    parsed->to_hashes(out.blocks, domain::message::inventory::type_id::compact_block);
+    parsed->to_hashes(out.transactions, domain::message::inventory::type_id::transaction);
+    return out;
+}
+
+hash_list transactions_not_found(data_chunk const& payload, uint32_t version) {
+    byte_reader reader(payload);
+    auto parsed = domain::message::not_found::from_data(reader, version);
+    if ( ! parsed) {
+        return {};
+    }
+    hash_list out;
+    parsed->to_hashes(out, domain::message::inventory::type_id::transaction);
+    return out;
 }
 
 } // namespace kth::node::detail

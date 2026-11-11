@@ -8,141 +8,147 @@ Knuth is a high performance implementation of the Bitcoin protocol focused on us
 
 ## Getting started
 
-Install and run Knuth is very easy:
+Use Conan 2, CMake 3.23 or newer, and a C23-capable compiler.
+Building Knuth from source also requires a supported C++23 compiler (GCC 16.2
+or newer when using GCC).
+Install the build helper and configure Conan:
 
-1. Install and configure the Knuth build helper:
-```
-$ pip install kthbuild --user --upgrade
-
-$ conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config2023.zip
-```
-
-2. Install the appropriate library:
-
-```
-$ conan install --requires=c-api/1.5.2 --update
+```sh
+pip install kthbuild --user --upgrade
+conan config install https://github.com/k-nuth/ci-utils/raw/master/conan/config2023.zip
+conan profile detect --exist-ok
 ```
 
-### "Hello, Knuth!":
+The C API is included in the unified `kth` package:
+
+```sh
+conan install --requires=kth/1.6.1 -o 'kth/*:shared=True' --build=missing
+```
+
+### "Hello, Knuth!"
+
+Save the following as `hello_knuth.c`:
+
 ```c
-// hello_knuth.c
-
 #include <inttypes.h>
-#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <kth/capi.h>
 
-int main() {
-    kth_node_t node = kth_node_construct("my_config_file", stdout, stderr);
+int main(int argc, char** argv) {
+    if (argc != 2 && (argc != 3 || strcmp(argv[2], "--init") != 0)) {
+        fprintf(stderr, "Usage: %s CONFIG [--init]\n", argv[0]);
+        return 1;
+    }
 
-    kth_node_initchain(node);
-    kth_node_run_wait(node);
+    kth_settings* settings = NULL;
+    char* error = NULL;
+    if (!kth_config_settings_get_from_file(argv[1], &settings, &error)) {
+        fprintf(stderr, "Configuration: %s\n", error ? error : "unknown error");
+        kth_core_destruct_string(error);
+        return 1;
+    }
+
+    kth_node_t node = kth_node_construct(settings, 1);
+    kth_config_settings_destruct(settings);
+    if (node == NULL) {
+        fprintf(stderr, "Could not construct the node\n");
+        return 1;
+    }
+
+    int result = 1;
+    if (argc == 3 && !kth_node_initchain(node)) {
+        fprintf(stderr, "Could not initialize the database\n");
+        goto cleanup;
+    }
+
+    kth_error_code_t ec = kth_node_init_run_sync(node, kth_start_modules_all);
+    if (ec != kth_ec_success) {
+        fprintf(stderr, "Could not start the node: %d\n", (int)ec);
+        goto cleanup;
+    }
+
+    // The chain handle is borrowed and is valid only while the node is running.
     kth_chain_t chain = kth_node_get_chain(node);
+    kth_size_t height = 0;
+    if (chain != NULL && kth_chain_sync_last_height(chain, &height) == kth_ec_success) {
+        printf("%" PRIu64 "\n", (uint64_t)height);
+        result = 0;
+    } else {
+        fprintf(stderr, "Could not read the chain height\n");
+    }
 
-    uint64_t height;
-    kth_chain_sync_last_height(chain, &height);
-
-    printf("%" PRIu64 "\n", height);
-
+cleanup:
+    kth_node_close(node);
     kth_node_destruct(node);
+    return result;
 }
 ```
 
-### Explanation:
+### How it works
 
-```c
-#include <inttypes.h>
-#include <stdint.h>
-#include <stdio.h>
-```
+`kth_config_settings_get_from_file` loads the configuration into an owned
+`kth_settings` object. Pass an existing Knuth configuration file as the first
+argument. The constructor copies these settings, so the example releases them
+with `kth_config_settings_destruct` immediately afterward. The constructor's
+second argument enables stdout logging; it is a boolean, not a `FILE*`.
 
-Includes C standard library stuff, like format conversion specifiers, fixed width integer types (`uint64_t`) and input/output features. (`stdout`, `stderr` and `printf())`.
+Use `--init` only on the first run, to create the blockchain database at the
+configured location. Initialization failures and startup errors are reported
+before attempting a query.
 
-```c
-#include <kth/capi.h>
-```
-Gives access to Knuth C-API features.
+`kth_node_init_run_sync` waits for startup to finish, then returns while the node
+is running. Only then does the example obtain the borrowed chain handle, read
+the current height, and print it. This is a short query example: it closes and
+destroys the node immediately afterward; it does not wait for the initial block
+download to finish. For a long-running node, use
+`kth_node_init_run_and_wait_for_signal` and perform queries after successful
+startup, before shutdown.
 
-```c
-kth_node_t node = kth_node_construct("my_config_file", stdout, stderr);
-```
-Construct a Knuth _node_ object, which is necessary to run the node, interact with the blockchain, with the P2P peers and other components of the API.
+### Build and run
 
-`"my_config_file"` is the path to the configuration file; in the [config](https://github.com/k-nuth/config) repository you can find some example files.
-If you pass an empty string (`""`), default configuration will be used.
-
-`stdout` and `stderr` are pointers to the standard output and standard error streams. These are used to tell the Knuth node where to print the logs.
-You can use any object of type `FILE*`. For example, you can make the Knuth node redirect the logs to a file.
-If you pass null pointers (`NULL` or `0`), there will be no logging information.
-
-```c
-kth_node_initchain(node);
-```
-
-Initialize the filesystem database where the _blockchain_ will be stored.
-You need to have enough disk space to store the blockchain.
-
-This is equivalent to executing: `kth -i -c my_config_file`.
-
-```c
-kth_node_run_wait(node);
-```
-
-Run the node.
-In this step, the connections and handshake with the peers will be established, and the initial process of downloading blocks will start. Once this stage has finished, the node will begin to receive transactions and blocks through the P2P network.
-
-This is equivalent to executing: `kth -c my_config_file`.
-```c
-kth_chain_t chain = kth_node_get_chain(node);
-```
-
-Get access to the blockchain query interface (commands and queries).
-
-```c
-uint64_t height;
-kth_chain_sync_last_height(chain, &height);
-
-printf("%" PRIu64 "\n", height);
-```
-
-Ask the blockchain what is the height of the last downloaded block and print it in the standard output.
-
-```c
-kth_node_destruct(node);
-```
-
-Destroy the node object created earlier.
-(We are in land of _The C Programming Language_, there is no automatic handling of resources here, you have to do it manually.)
-
-### Build and run:
-
-_Note: Here we are building the code using the GNU Compiler Collection (GCC) on Linux. You can use other compilers and operating systems as well. If you have any questions, you can [contact us here](info@kth.cash)._
-
-To build and run the code example, first you have to create a tool file called `conanfile.txt` in orded to manage the dependencies of the code:
+Create `conanfile.txt` with the shared-library requirement and Conan 2 generators:
 
 ```sh
-$ printf "[requires]\nc-api/1.5.2\n[options]\nc-api:shared=True\n[imports]\ninclude/kth, *.h -> ./include/kth\ninclude/kth, *.hpp -> ./include/kth\nlib, *.so -> ./lib\n" > conanfile.txt
+printf "[requires]\nkth/1.6.1\n[options]\nkth/*:shared=True\n[generators]\nCMakeDeps\nCMakeToolchain\n" > conanfile.txt
 ```
 
-Then, run the following command to bring the dependencies to the local directory:
+Save this as `CMakeLists.txt` alongside `hello_knuth.c`:
+
+```cmake
+cmake_minimum_required(VERSION 3.23)
+project(hello_knuth LANGUAGES C CXX)
+find_package(kth CONFIG REQUIRED)
+add_executable(hello_knuth hello_knuth.c)
+set_target_properties(hello_knuth PROPERTIES C_STANDARD 23 C_STANDARD_REQUIRED YES)
+target_link_libraries(hello_knuth PRIVATE kth::c-api)
+```
+
+The imported `kth::c-api` target supplies the actual `c-api` library, include
+paths, compile definitions, and transitive dependencies. There is no
+`kth-c-api` library to pass to the linker.
+
+Install dependencies and build a Release executable:
 
 ```sh
-$ conan install .
+conan install . --output-folder=build -s build_type=Release --build=missing
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
-Now, you can build our code example:
+On Linux and macOS, activate Conan's generated runtime environment so the shared
+libraries can be found, then run the example with your configuration:
 
 ```sh
-$ gcc -Iinclude -c hello_knuth.c
-$ gcc -Llib -o hello_knuth hello_knuth.o -lkth-c-api
+. build/conanrun.sh
+./build/hello_knuth /path/to/kth.cfg --init
+# Subsequent runs use the existing database:
+./build/hello_knuth /path/to/kth.cfg
 ```
 
-...run it and enjoy the Knuth programmable APIs:
-
-```sh
-$ ./hello_knuth
-```
+On Windows, use `build\conanrun.bat` and `build\Release\hello_knuth.exe` with a
+multi-configuration generator.
 
 For more more detailed instructions, please refer to our [documentation](https://kth.cash/docs/).
 

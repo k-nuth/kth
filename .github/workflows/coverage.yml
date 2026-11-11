@@ -1,36 +1,62 @@
 name: 📊 Coverage
 
 on:
-  push:
-    branches: [master]
+  schedule:
+    - cron: '0 3 * * *'
+      timezone: Europe/Madrid
   pull_request:
     branches: [master]
-  workflow_dispatch: {}
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      investigate_run:
+        description: 'Optional master Coverage run ID: measure every first-parent change in its comparison interval (max 20)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: coverage-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  coverage:
-    name: 📊 Coverage
+  controls:
     runs-on: ubuntu-24.04
-    # Advisory job: a failure here doesn't block the PR's required
-    # checks. The hosted runner (7 GB) consistently OOMs on
-    # instrumented builds for this project's current TU count —
-    # gcovr 8.6, gcovr 8.5, lcov serial, and lcov --parallel with a
-    # narrowed scope all hit the same "runner lost communication"
-    # signature, regardless of the report tool's memory profile.
-    # Until coverage moves to a runner with more headroom (or the
-    # codebase shrinks), keep the job present so it can capture
-    # data on the runs that do squeeze through, without making
-    # every PR red on the runs that don't.
-    #
-    # Side-effect to keep in mind: `continue-on-error` also softens
-    # the Codecov upload step's `fail_ci_if_error` — a misconfigured
-    # token or a corrupt `coverage.info` will now mark the upload
-    # step red without failing the job. Monitor uploads on the
-    # Codecov dashboard rather than relying on PR gates for it.
-    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - run: python3 -m unittest discover -s .github/scripts -p 'test_coverage_history.py' -v
+
+  plan:
+    needs: controls
+    if: github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'coverage') && (github.event.action != 'labeled' || github.event.label.name == 'coverage'))
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      baseline: ${{ steps.plan.outputs.baseline }}
+      investigate: ${{ steps.plan.outputs.investigate }}
+      run: ${{ steps.plan.outputs.run }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/coverage-history.py plan
+
+  coverage:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: 📊 Coverage ${{ matrix.sha }}
+    runs-on: ubuntu-24.04
     # Ceiling for the whole job. With a hot ccache, the run finishes
     # in ~25–30 min (build ~10–15 min on 86 %+ hits, tests ~7 min,
     # report + upload ~5 min). A genuinely cold run — fresh cache
@@ -48,6 +74,22 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Keep reporting code from the workflow revision when measuring old source.
+      - name: Preserve coverage reporting tool
+        shell: bash
+        run: cp .github/scripts/coverage-history.py "$RUNNER_TEMP/coverage-history.py"
+
+      - name: Select measured commit
+        if: needs.plan.outputs.investigate == 'true'
+        shell: bash
+        env:
+          MEASURE_SHA: ${{ matrix.sha }}
+        run: |
+          git checkout --detach "$MEASURE_SHA"
+          git submodule update --init --recursive
 
       - name: 🔧 Setup Conan
         uses: ./ci_utils/.github/actions/setup-conan
@@ -56,27 +98,19 @@ jobs:
         uses: ./ci_utils/.github/actions/setup-kthbuild
 
       - name: 🗄️ Setup ccache
-        # Declared rather than inherited: inside a container the default shell
-        # is whatever the image provides, and `&&`/`||` chains parsed by a
-        # non-bash `sh` behave differently enough to matter.
         shell: bash
         run: |
-          apt-get update -qq && apt-get install -y -qq ccache > /dev/null 2>&1 || true
-          ccache --version || true
-          # Match the sister `build-with-container.yml` workflow's
-          # ccache config, which on the same hosted runner hits 86 %
-          # against the same 1074 TUs. PR #309 added
-          # `CCACHE_BASEDIR=$GITHUB_WORKSPACE` + `CCACHE_NOHASHDIR=1`
-          # here on the theory that coverage's `.gcno` files embed
-          # the cwd and the relativisation would help. In practice
-          # the inverse held: hit rate dropped to 0 / 1074 (every
-          # TU a miss, even for files that hadn't changed in
-          # months). Probable interaction with `--coverage`'s
-          # path bookkeeping in ccache 4.9.1; rather than chase
-          # that, drop the two envs and rely on absolute paths
-          # the way the other CI jobs do — Actions containers
-          # always check out at `/__w/kth/kth`, so absolute paths
-          # are stable across runs anyway.
+          # Ubuntu 24.04's ccache 4.9.1 rejects -fprofile-update=atomic,
+          # making every coverage compilation uncacheable. 4.10 supports it.
+          archive="${RUNNER_TEMP}/ccache-4.10.2-linux-x86_64.tar.xz"
+          curl --fail --location --retry 3 \
+            https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz \
+            --output "$archive"
+          echo "80cab87bd510eca796467aee8e663c398239e0df1c4800a0b5dff11dca0b4f18  $archive" | sha256sum --check
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/ccache-4.10.2-linux-x86_64/ccache" /usr/local/bin/ccache
+          ccache --version
+          .github/scripts/check-coverage-cache.sh
 
       # Split restore/save so a flaky GH Cache Service can't fail
       # the whole job during the post-action. Recent runs have been
@@ -90,7 +124,7 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-coverage-${{ github.sha }}
+          key: ccache-coverage-${{ matrix.sha }}
           restore-keys: ccache-coverage-
 
       - name: 📦 Install dependencies
@@ -111,7 +145,6 @@ jobs:
         shell: bash
         run: |
           METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
-          export PATH="/usr/lib/ccache:$PATH"
 
           # Before zeroing: this is what the restore actually produced.
           "$METRICS" ccache-snapshot before
@@ -141,6 +174,7 @@ jobs:
             -DGLOBAL_BUILD=ON \
             -DENABLE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
+            -DKTH_CI_TEST_SHARDS=2 \
             -DCMAKE_C_FLAGS="-O0 --coverage -fprofile-update=atomic" \
             -DCMAKE_CXX_FLAGS="-O0 --coverage -fprofile-update=atomic" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
@@ -199,26 +233,18 @@ jobs:
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /github/home/.cache/ccache
-          key: ccache-coverage-${{ github.sha }}
+          key: ccache-coverage-${{ matrix.sha }}
 
-
-      # The two coverage entries are the largest single consumers of the
-      # repository's cache budget (1.92 GB + 1.81 GB measured in #624), and only
-      # the newest is ever restored.
-      - name: 🧹 Prune superseded ccache entries
-        if: ${{ always() && github.ref == 'refs/heads/master' }}
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune.sh" "ccache-coverage-"
 
       - name: 🧪 Run tests
+        id: tests
         shell: bash
         run: |
           METRICS="${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh"
           "$METRICS" phase-start tests
+          # Catch shards execute every ordinary case, but flush the shared
+          # coverage objects once per shard rather than once per test case.
+          python3 .github/scripts/check-ci-test-plan.py build/build/Release --shards 2
           set +e
           ctest --preset conan-release --output-on-failure -j"$(nproc)"
           rc=$?
@@ -227,7 +253,8 @@ jobs:
           exit "$rc"
 
       - name: 📊 Generate coverage report
-        if: always()
+        id: report
+        if: success()
         timeout-minutes: 20
         # The job runs in a container without bash, so GitHub falls back to
         # `sh -e {0}` — dash, which has no `set -o pipefail`. The step died on
@@ -414,6 +441,34 @@ jobs:
             echo '</details>'
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Compare against previous successful measurement
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE: ${{ needs.plan.outputs.baseline }}
+        run: python3 "$RUNNER_TEMP/coverage-history.py" measure --baseline "$BASELINE"
+
+      - name: Retain successful measurement
+        if: success() && steps.tests.outcome == 'success' && steps.report.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-result-${{ matrix.sha }}
+          path: |
+            result.json
+            coverage.info
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain master baseline
+        if: success() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && needs.plan.outputs.investigate != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-baseline
+          path: result.json
+          if-no-files-found: error
+          retention-days: 90
+
       # Opened here so the phase has a beginning. Ending a phase that never
       # started reports "measurement unavailable" — truthfully, which is why the
       # gap was invisible: the summary was right about not knowing, and nobody
@@ -433,6 +488,7 @@ jobs:
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           disable_search: true
+          override_commit: ${{ matrix.sha }}
 
       # Always, and last: a run that failed in the build, in generation or in
       # the upload is exactly the run someone opens this for. It reports what
@@ -467,3 +523,38 @@ jobs:
           "$METRICS" note ccache_save "${{ steps.save-ccache.outcome }} (explicit step, ran before this summary)"
 
           "$METRICS" summary
+
+  investigation:
+    needs: [plan, coverage]
+    if: always() && needs.plan.outputs.investigate == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: coverage-result-*
+          path: results
+      - name: Attribute every measured transition
+        if: always()
+        env:
+          EXPECTED_COMMITS: ${{ toJSON(fromJSON(needs.plan.outputs.matrix).sha) }}
+        run: python3 .github/scripts/coverage-history.py investigate
+
+  cache-maintenance:
+    needs: [plan, coverage]
+    if: success() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && needs.plan.outputs.investigate != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Prune superseded coverage cache entries
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/ccache-prune.sh ccache-coverage-

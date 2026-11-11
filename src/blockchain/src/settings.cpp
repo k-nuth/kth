@@ -92,12 +92,16 @@ settings::settings(domain::config::network net) {
     }
 #endif
 
+    derive_checkpoints();
+}
+
+void settings::derive_checkpoints() {
     // Pre-compute sorted list and max height
     checkpoints_sorted = checkpoints;
     std::ranges::sort(checkpoints_sorted);
-    if (!checkpoints_sorted.empty()) {
-        max_checkpoint_height = checkpoints_sorted.back().height();
-    }
+    max_checkpoint_height = checkpoints_sorted.empty()
+        ? 0
+        : checkpoints_sorted.back().height();
 }
 
 domain::script_flags_t settings::enabled_flags() const {

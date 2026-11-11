@@ -4,16 +4,21 @@
 
 #include <kth/node/detail/body_range.hpp>
 #include <kth/node/sync/orchestrator.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/header_walk.hpp>
 #include <kth/node/detail/header_walk_tasks.hpp>
+#include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
+#include <kth/node/detail/tx_relay.hpp>
 
 #include <algorithm>
 #include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <kth/node/sync/reorg.hpp>
@@ -780,7 +785,7 @@ static
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (send_ec) {
                     if (reply) {
-                        (void)reply->try_send(std::error_code{}, code(error::service_stopped));
+                        (void)reply->try_send(blockchain::block_submission_result(error::service_stopped));
                     }
                     break;
                 }
@@ -792,7 +797,7 @@ static
             std::error_code drain_ec;
             while (auto queued = submissions->try_receive(drain_ec)) {
                 if (queued->reply) {
-                    (void)queued->reply->try_send(std::error_code{}, code(error::service_stopped));
+                    (void)queued->reply->try_send(blockchain::block_submission_result(error::service_stopped));
                 }
             }
             spdlog::info("[local_admission] Bridge ended");
@@ -1124,10 +1129,20 @@ static
             initial_stored_height, initial_block_height);
     }
 
-    // Get checkpoint height for fast IBD
-    // max_checkpoint_height comes from the checkpoint list in parser.hpp
-    uint32_t const checkpoint_height = uint32_t(chain.chain_settings().max_checkpoint_height);
-    spdlog::info("[sync_orchestrator] Fast IBD mode up to checkpoint height {}", checkpoint_height);
+    // Two different heights come out of the checkpoint list. The ANCHOR is the
+    // highest checkpoint: headers must match it, in either mode. The TRUSTED
+    // height is the highest block that may be connected merkle-only, with no
+    // script, signature or UTXO validation; everything that decides what the
+    // fast and the full ranges own (below) is keyed to it. In full-validation
+    // mode it is 0 whatever the anchor is.
+    auto const& chain_cfg = chain.chain_settings();
+    uint32_t const anchor_height = uint32_t(chain_cfg.max_checkpoint_height);
+    uint32_t const checkpoint_height = uint32_t(chain_cfg.trusted_checkpoint_height());
+    spdlog::info("[sync_orchestrator] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL (every block from the first)"
+                                  : "optimized (merkle-only up to the checkpoint)",
+        anchor_height, checkpoint_height + 1);
 
     // UTXO build now happens incrementally inside block_storage_task as
     // each block lands; no startup-time bulk build is needed.
@@ -1255,6 +1270,68 @@ static
         }
         spdlog::info("[coordinator:stored_bridge] Task ended");
     });
+
+    // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
+    // `mempool_expiry_hours` after the node first saw it leaves the pool with
+    // its descendants. BCHN also checks at each admission, walking its
+    // first-seen order; kth keeps no such order, so the sweep runs every hour,
+    // and at least twice per expiry period, which bounds how long a transaction
+    // outstays it. Ends with the network.
+    if (auto const hours = chain.chain_settings().mempool_expiry_hours; hours > 0) {
+        std::chrono::seconds const expiry = std::chrono::hours(hours);
+        auto const period = std::min<std::chrono::steady_clock::duration>(
+            std::chrono::hours(1), expiry / 2);
+        all_tasks.spawn("mempool_expiry", [&, expiry, period]() -> ::asio::awaitable<void> {
+            co_await chain.run_mempool_expiry(expiry, period, network.stop_token());
+        });
+    }
+
+    // Transaction relay: what peers announce is asked for and offered to the
+    // mempool (detail/tx_relay.hpp). The relay's state is the owner
+    // coroutine's own; each getdata it sends is a task of this group. Both end with the network: stop()
+    // closes the relay's channel, and the owner closes the admission channel.
+    detail::tx_admission_channel tx_admission(detail::tx_admission_capacity);
+    if (network.network_settings().relay_transactions) {
+        auto relay_view = detail::chain_relay_view(chain);
+        auto spawn_relay_task = [&all_tasks](::asio::awaitable<void> task) {
+            all_tasks.spawn("tx_relay_request", std::move(task));
+        };
+        all_tasks.spawn("tx_relay", detail::tx_relay_task(network.tx_relay(),
+            std::move(relay_view), tx_admission, std::move(spawn_relay_task)));
+        // Admission takes the validation lock to commit: on the chain's own
+        // executor, as sendrawtransaction's callers and the tests run it, not
+        // on a network thread.
+        all_tasks.spawn("tx_admission", detail::tx_admission_task(tx_admission,
+            [&chain](domain::message::transaction::const_ptr tx) {
+                return ::asio::co_spawn(chain.executor(), chain.submit_transaction(std::move(tx)),
+                    ::asio::use_awaitable);
+            },
+            network.tx_relay()));
+    }
+
+    // Fee filter watch: when the mempool's minimum may have moved, each peer's
+    // service hears the new value and decides whether its next fee filter
+    // (BIP133) is due sooner. Only when the node relays transactions, as the
+    // fee filter itself. Ends with the network.
+    if (network.network_settings().relay_transactions) {
+        all_tasks.spawn("fee_filter_watch", detail::fee_filter_watch(chain.mempool_fee_events(),
+            detail::fee_filter_sources{
+                .minimum = [&chain] { return chain.mempool_minimum_fee(); },
+                .peers = [&network] { return network.peers().all(); },
+            },
+            network.stop_token()));
+
+        // Transaction announcement watch: when transactions are admitted,
+        // each peer's service hears how far the mempool's order reaches and
+        // when the inbound peers are next due. Ends with the network.
+        all_tasks.spawn("tx_announcement_watch", detail::tx_announcement_watch(chain.mempool_admission_events(),
+            detail::tx_announcement_watch_sources{
+                .last = [&chain] { return chain.mempool_last_admission(); },
+                .peers = [&network] { return network.peers().all(); },
+                .draw = detail::unit_draw,
+            },
+            network.stop_token()));
+    }
 
     // -------------------------------------------------------------------------
     // 8. Sync coordinator - orchestrates the sync flow
@@ -1465,7 +1542,7 @@ static
         // channel nobody reads, and the capacity-one try_send still succeeds.
         auto const answer = [](local_admission const& pending, blockchain::block_submission_result outcome) {
             if (pending.reply) {
-                (void)pending.reply->try_send(std::error_code{}, outcome);
+                (void)pending.reply->try_send(std::move(outcome));
             }
         };
         auto resolve_local = [&](size_t at, code outcome,
@@ -1749,6 +1826,40 @@ static
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
 
+        // The last header of the latest held batch, and the peer that sent it:
+        // where a `from_last_batch` stimulus to that peer starts its locator.
+        std::optional<std::pair<uint64_t, hash_digest>> held_batch_end;
+
+        // Each newly connected tip is announced to the peers once, whoever
+        // supplied the block: a peer, or a miner through submitblock. Not
+        // during initial block download, and not the tip the node started at.
+        std::optional<hash_digest> last_announced;
+        if (auto const view = chain.chain_view()) {
+            last_announced = view->tip_hash;
+        }
+        auto announce_connected_tip = [&] {
+            auto const view = chain.chain_view();
+            if ( ! view || view->tip_hash == last_announced) {
+                return;
+            }
+            auto const& index = organizer.index();
+            auto const tip_idx = index.find(view->tip_hash);
+            auto const timestamp = tip_idx == blockchain::header_index::null_index
+                ? std::nullopt : std::optional<uint32_t>(index.get_timestamp(tip_idx));
+            last_announced = view->tip_hash;
+            if (blockchain::recency_is_stale(timestamp, announcement_max_tip_age_seconds)) {
+                return;
+            }
+            // Owed to each peer, never sent from here: each peer's service
+            // takes the latest owed tip and decides between headers and an
+            // inv from what it last announced to that peer.
+            spdlog::debug("[sync_coordinator] Announcing block {} to {} peer(s)",
+                encode_hash(view->tip_hash), header_peers.size());
+            for (auto const& peer : header_peers) {
+                peer->announce_tip(view->tip_hash);
+            }
+        };
+
 
         auto find_header_peer = [&](uint64_t nonce) -> network::peer_session::ptr {
             for (auto const& peer : header_peers) {
@@ -1828,6 +1939,12 @@ static
                 // range.
                 co_await send_block_range(
                     deps, blocks_synced_to + 1, checkpoint_height);
+                // The supervisor replaces the range it was working on with
+                // this one. A range a switch opened before the headers were
+                // complete is therefore no longer in flight, and its end, left
+                // recorded, would read as one past the checkpoint: the bodies
+                // above the checkpoint would never be asked for.
+                slow_sync_end.reset();
             } else {
                 // Slow sync stage, through the same guarded admission as the
                 // other doors onto the post-checkpoint range (#663).
@@ -1887,8 +2004,22 @@ static
                 auto const heights = domain::chain::block::locator_heights(headers_synced_to);
                 hash_list locator;
                 locator.reserve(heights.size());
+                // After a full batch of headers it already held, the peer is
+                // asked from the end of that batch first: it answered from a
+                // point the two chains share, below where they part, and the
+                // tip's own entries would only bring the same batch again.
+                bool const from_batch = stimulus.from_last_batch && held_batch_end &&
+                    held_batch_end->first == stimulus.peer;
+                locator.reserve(heights.size() + (from_batch ? 1 : 0));
+                if (from_batch) {
+                    locator.push_back(held_batch_end->second);
+                }
                 for (auto const height : heights) {
                     locator.push_back(active_hash_at(organizer.index(), static_cast<uint32_t>(height)));
+                }
+                if (locator.size() > kth::max_locator) {
+                    // Genesis stays last; one entry above it gives way.
+                    locator.erase(locator.end() - 2);
                 }
                 header_stimulus.send(peer, std::move(locator), stimulus.seq);
                 header_deadline.arm(timing.stimulus_timeout, header_walk_timeout{.seq = stimulus.seq});
@@ -2260,6 +2391,29 @@ static
                     // at our tip sends when it answers our locator with headers
                     // we already hold. The wire cannot tell that apart from
                     // progress; only this verdict can (#705).
+                    //
+                    // Unless the batch was full and ends on a header we hold
+                    // that is not the tip. Then the peer matched our locator
+                    // below where its chain and ours part — after a fork deeper
+                    // than the locator's dense entries, that is all the
+                    // locator offers it — and has more past that point (#927).
+                    auto const& index = organizer.index();
+                    auto const last_idx = result->received == kth::max_get_headers
+                        ? index.find(result->last_header) : blockchain::header_index::null_index;
+                    if (last_idx != blockchain::header_index::null_index &&
+                        result->last_header != organizer.header_tip_hash()) {
+                        auto const last_height = uint32_t(index.get_height(last_idx));
+                        spdlog::debug("[sync_coordinator] A full batch of held headers from {}, "
+                            "ending at height {}; asking it again from there", source_name, last_height);
+                        // Only the asked peer's answer moves the walk, so only
+                        // its batch end is kept.
+                        if (walk.active() && walk.active()->peer == source) {
+                            held_batch_end = std::pair{source, result->last_header};
+                        }
+                        co_await apply(walk.held_batch(source, last_height, headers_synced_to),
+                            "held batch");
+                        continue;
+                    }
                     spdlog::debug("[sync_coordinator] No new headers at height {} from {}",
                         headers_synced_to, source_name);
                     co_await apply(walk.no_progress(source, headers_synced_to), "no progress");
@@ -2357,6 +2511,9 @@ static
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
+                announce_connected_tip();
+                // The orphans a connected block resolves (detail/tx_relay.hpp).
+                network.tx_relay().tip_moved();
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }

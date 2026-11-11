@@ -5,6 +5,10 @@
 #ifndef KTH_NETWORK_PEER_SESSION_HPP
 #define KTH_NETWORK_PEER_SESSION_HPP
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
+#if defined(KTH_BROWSER_NODE)
+#include <kth/network/browser_stream.hpp>
+#endif
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -12,12 +16,17 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <variant>
+#if defined(KTH_WITH_WEBSOCKET)
+#include <kth/network/websocket_transport.hpp>
+#endif
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/net_permissions.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/tx_inventory.hpp>
 
 // Asio includes for coroutines
 #include <asio/awaitable.hpp>
@@ -63,13 +72,29 @@ public:
     using ptr = std::shared_ptr<peer_session>;
     using executor_type = ::asio::any_io_executor;
     using strand_type = ::asio::strand<executor_type>;
+#if defined(KTH_BROWSER_NODE)
+    using socket_type = browser_stream;
+#else
     using socket_type = ::asio::ip::tcp::socket;
+#endif
 
-    // Channel for outbound messages (serialized bytes ready to send)
-    using outbound_channel = concurrent_channel<data_chunk>;
+    // Outbound messages, serialized and ready to write. Two queues with one
+    // writer: control traffic (pings, pongs, requests, announcements) and
+    // data served to the peer (blocks, headers). The writer always drains
+    // control first, so a pong goes ahead of every queued block; it still
+    // waits for a block already being written to the socket.
+    // select_channels: executor-free, closed by stop().
+    using outbound_channel = select_channel<data_chunk>;
 
-    /// Messages the outbound queue holds before a send has to wait.
+    /// Messages the control queue holds before a send has to wait.
     static constexpr size_t outbound_capacity = 100;
+
+    /// Messages the data queue holds before a send_data has to wait. Small:
+    /// a served block can be large, and the queue is per peer.
+    static constexpr size_t data_outbound_capacity = 2;
+
+    /// Requests waiting for the node's per-peer service (see served_requests).
+    static constexpr size_t served_requests_capacity = 16;
 
     // Inbound messages (heading + payload). A select_channel (see
     // async_channel.hpp): the read loop hands messages in with a suspended
@@ -119,27 +144,118 @@ public:
     // Messaging
     // -------------------------------------------------------------------------
 
-    /// Send a message to the peer (coroutine version)
+    /// Send a control message to the peer. Waits while the control queue is
+    /// full; error::channel_stopped once the session is stopped.
     template <typename Message>
     ::asio::awaitable<code> send(Message const& message) {
         if (stopped()) {
             co_return error::channel_stopped;
         }
-
-        auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec] = co_await outbound_.async_send(
-            std::error_code{},
-            std::move(data),
-            ::asio::as_tuple(::asio::use_awaitable));
-
-        if (ec) {
-            co_return error::channel_stopped;
-        }
-        co_return error::success;
+        co_return co_await enqueue(outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
-    /// Send raw bytes to the peer (coroutine version)
+    /// Send data served to the peer (blocks, headers answering its requests).
+    /// Waits while the data queue is full, without holding control traffic.
+    template <typename Message>
+    ::asio::awaitable<code> send_data(Message const& message) {
+        if (stopped()) {
+            co_return error::channel_stopped;
+        }
+        co_return co_await enqueue(data_outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
+    /// Send raw bytes to the peer as control traffic.
     ::asio::awaitable<code> send_raw(data_chunk data);
+
+    /// Bounded admission for task-owned responders. False requires explicit
+    /// session closure or protocol debt handling; never silently drop a reply.
+    bool try_send_raw(data_chunk data) {
+        return !stopped() && outbound_.try_send(std::move(data));
+    }
+
+    bool is_websocket() const;
+
+
+    // -------------------------------------------------------------------------
+    // Served requests
+    // -------------------------------------------------------------------------
+
+    /// Requests the read loop hands to the node's per-peer service instead of
+    /// answering them itself (getheaders, getdata): serving them waits on the
+    /// data queue, and the read loop must keep reading. Bounded; the read loop
+    /// only try_sends, and a peer that fills it has too many requests pending.
+    /// Closed by stop(): a waiting service then sees eof.
+    using served_channel = select_channel<raw_message>;
+
+    [[nodiscard]]
+    served_channel& served_requests();
+
+    /// The data queue, for inspecting what is queued and not yet written.
+    [[nodiscard]]
+    outbound_channel& data_outbound();
+
+    // -------------------------------------------------------------------------
+    // Tip announcements
+    // -------------------------------------------------------------------------
+
+    /// The node's announcement debt to this peer: the latest connected tip
+    /// not yet taken by the peer's service. Holds one hash; a newer tip
+    /// replaces one not taken yet, so a peer that falls behind owes one
+    /// announcement, never one per block. Closed by stop().
+    using tip_channel = select_channel<hash_digest>;
+
+    /// Record that `tip` is owed to this peer. One producer: the sync
+    /// coordinator. Never waits.
+    void announce_tip(hash_digest const& tip);
+
+    [[nodiscard]]
+    tip_channel& tip_announcements();
+
+    /// The mempool's minimum fee per 1000 bytes, as it moved, not yet taken by
+    /// the peer's service, which decides from it whether the fee filter it
+    /// sends this peer is due sooner. Holds one value; a newer one replaces
+    /// one not taken yet. Closed by stop().
+    using fee_filter_channel = select_channel<uint64_t>;
+
+    /// Record that the minimum moved to `fee_per_kb`. One producer: the
+    /// node's fee filter watch. Never waits.
+    void announce_fee_filter(uint64_t fee_per_kb);
+
+    [[nodiscard]]
+    fee_filter_channel& fee_filter_changes();
+
+    // -------------------------------------------------------------------------
+    // Transaction announcements
+    // -------------------------------------------------------------------------
+
+    /// The transactions admitted since the peer's service last looked: the
+    /// last admission, which the service walks the mempool's order up to.
+    /// Holds one; a newer one replaces one not taken yet. Closed by stop().
+    using admission_channel = select_channel<tx_admissions>;
+
+    /// Record that transactions were admitted up to `admissions.last`. One
+    /// producer: the node's announcement watch. Never waits.
+    void announce_admissions(tx_admissions const& admissions);
+
+    [[nodiscard]]
+    admission_channel& admissions();
+
+    /// The peer asked for the mempool (BIP35) and may be answered. Holds
+    /// one: requests coalesce until the service answers. Closed by stop().
+    using mempool_request_channel = select_channel<std::monostate>;
+
+    /// From the read loop, never waiting.
+    void request_mempool();
+
+    [[nodiscard]]
+    mempool_request_channel& mempool_requests();
+
+    /// What the peer knows and filters (tx_inventory). Only on this session's
+    /// strand: its read loop and its service.
+    [[nodiscard]]
+    network::tx_inventory& tx_inventory() { return tx_inventory_; }
 
     /// The inbound message channel (for try_receive and selections of
     /// several cases; plain consumers use receive()).
@@ -159,6 +275,8 @@ public:
     // -------------------------------------------------------------------------
     // These methods read/write directly to the socket without using channels.
     // Use ONLY before calling run() - after run() starts, use send() and messages().
+    // TCP only: WebSocket has an owned codec pump under run(); use the normal
+    // channel-based handshake concurrently with run() for that transport.
 
     /// Read a message directly from the socket (bypasses inbound channel)
     /// Use this for handshake before run() is started. The reads are
@@ -171,15 +289,13 @@ public:
     /// Use this for handshake before run() is started
     template <typename Message>
     ::asio::awaitable<code> send_direct(Message const& message) {
+        if (is_websocket()) co_return error::not_implemented;
         if (stopped()) {
             co_return error::channel_stopped;
         }
 
         auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto [ec, bytes_written] = co_await write_exact(::asio::buffer(data));
 
         if (ec) {
             co_return error::boost_to_error_code(ec);
@@ -361,6 +477,17 @@ public:
     /// Mark that peer supports addrv2 (called when sendaddrv2 received)
     void set_wants_addrv2(bool value);
 
+    // -------------------------------------------------------------------------
+    // BIP130 (sendheaders)
+    // -------------------------------------------------------------------------
+
+    /// True once the peer sent sendheaders: new blocks are announced to it
+    /// with headers instead of an inv.
+    [[nodiscard]]
+    bool prefers_headers() const;
+
+    void set_prefers_headers(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -389,13 +516,31 @@ private:
     // Data members
     // -------------------------------------------------------------------------
 
+    ::asio::awaitable<std::pair<std::error_code, size_t>> write_exact(::asio::const_buffer buffer);
+#if defined(KTH_WITH_WEBSOCKET)
+    friend awaitable_expected<peer_session::ptr> async_accept_websocket(socket_type, settings const&, websocket_server_options);
+#endif
+
     // Socket and strand (all I/O serialized through strand)
     socket_type socket_;
     strand_type strand_;
+#if defined(KTH_WITH_WEBSOCKET)
+    std::unique_ptr<websocket_transport> websocket_;
+#endif
+
+    /// Queue `data` on `channel`, waiting while it is full.
+    ::asio::awaitable<code> enqueue(outbound_channel& channel, data_chunk data);
 
     // Channels for message passing
     outbound_channel outbound_;
+    outbound_channel data_outbound_;
     inbound_channel inbound_;
+    served_channel served_requests_;
+    tip_channel tip_announcements_;
+    fee_filter_channel fee_filter_changes_;
+    admission_channel admissions_;
+    mempool_request_channel mempool_requests_;
+    network::tx_inventory tx_inventory_;
 
     // Response channels for request/response patterns
     // These are filled by the dispatcher when specific responses arrive
@@ -403,8 +548,8 @@ private:
     response_channel addr_responses_;
 
     // Timers
-    ::asio::steady_timer inactivity_timer_;
-    ::asio::steady_timer expiration_timer_;
+    ::kth::steady_timer inactivity_timer_;
+    ::kth::steady_timer expiration_timer_;
     std::atomic<bool> activity_signaled_{false};
 
     // State
@@ -457,6 +602,9 @@ private:
     // Set to true when peer sends sendaddrv2 during handshake
     std::atomic<bool> wants_addrv2_{false};
 
+    // BIP130: set when the peer sends sendheaders
+    std::atomic<bool> prefers_headers_{false};
+
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;
 };
@@ -464,6 +612,11 @@ private:
 // =============================================================================
 // Connection helpers - replace connector/acceptor classes
 // =============================================================================
+
+#if defined(KTH_WITH_WEBSOCKET)
+[[nodiscard]] awaitable_expected<peer_session::ptr> async_accept_websocket(
+    peer_session::socket_type socket, settings const& settings, websocket_server_options options);
+#endif
 
 /// Connect to a peer by hostname and port
 /// Resolves DNS and connects with timeout

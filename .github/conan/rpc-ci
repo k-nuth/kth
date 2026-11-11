@@ -1,0 +1,13 @@
+# This matrix is native: host and build use the same compiler and architecture.
+# Match the recipe's host gRPC options in the build context too, so its C++
+# plugin can share the same binary instead of compiling every language plugin.
+include(linux-ci-cd)
+
+[options]
+grpc/*:csharp_ext=False
+grpc/*:csharp_plugin=False
+grpc/*:node_plugin=False
+grpc/*:objective_c_plugin=False
+grpc/*:php_plugin=False
+grpc/*:python_plugin=False
+grpc/*:ruby_plugin=False

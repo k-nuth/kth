@@ -1940,7 +1940,7 @@ TEST_CASE("submitblock RPC preserves the admission owner's duplicate validity", 
             auto pending = submissions->try_receive(ec);
             REQUIRE_FALSE(ec);
             REQUIRE(pending);
-            REQUIRE(pending->reply->try_send(std::error_code{},
+            REQUIRE(pending->reply->try_send(
                 blockchain::block_submission_result{error::duplicate_block, validity, true}));
             io.restart();
             io.run();
@@ -2005,7 +2005,7 @@ TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispat
             auto pending = submissions->try_receive(ec);
             REQUIRE_FALSE(ec);
             REQUIRE(pending);
-            REQUIRE(pending->reply->try_send(std::error_code{},
+            REQUIRE(pending->reply->try_send(
                 blockchain::block_submission_result{test.error, test.validity}));
             io.restart();
             io.run();
