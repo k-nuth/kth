@@ -83,11 +83,7 @@ full_node::full_node(configuration const& configuration)
     spdlog::debug("[full_node] network_settings_.threads = {}", network_settings_.threads);
 
     // Set user agent after initialization (network_ holds reference to network_settings_)
-    std::vector<std::string> features;
-#if defined(KTH_CURRENCY_BCH)
-    features.push_back(format_eb(configuration.chain.default_consensus_block_size));
-#endif
-    network_settings_.user_agent = get_user_agent(features);
+    network_settings_.user_agent = get_user_agent({});
 #endif
 }
 

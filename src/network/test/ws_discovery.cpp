@@ -21,6 +21,7 @@ TEST_CASE("WebSocket discovery negotiation announces relay separately from liste
     CHECK_FALSE(wd::understands(std::string(256, 'a') + std::string(wd::capability)));
     auto agent = wd::advertise("/Knuth:1.0/");
     REQUIRE(agent);
+    CHECK(*agent == "/Knuth:1.0/wsdisc:1/");
     CHECK(wd::understands(*agent));
     CHECK(wd::advertise(*agent) == agent);
     CHECK_FALSE(wd::negotiated(*agent, "/Old:1/"));
@@ -30,6 +31,25 @@ TEST_CASE("WebSocket discovery negotiation announces relay separately from liste
     // Negotiation says nothing about listening. An empty store is legitimate.
     wd::endpoint_store store;
     CHECK(store.select(wd::all_transports, now).empty());
+}
+
+TEST_CASE("WebSocket discovery shares delimiters and preserves legacy negotiation", "[ws_discovery]") {
+    auto current = wd::advertise("/Knuth:1.6.0/");
+    REQUIRE(current);
+    CHECK(*current == "/Knuth:1.6.0/wsdisc:1/");
+    auto const legacy = std::string("/Knuth:1.6.0//wsdisc:1/");
+    CHECK(wd::advertise(legacy) == legacy);
+    CHECK(wd::negotiated(*current, legacy));
+    CHECK(wd::negotiated(legacy, *current));
+    CHECK_FALSE(wd::negotiated(*current, "/Other:1/wsdisc:2/"));
+    CHECK(wd::advertise("/Other:1") == "/Other:1/wsdisc:1/");
+
+    auto const boundary = std::string(256 - wd::capability.size(), 'a') + "/";
+    auto full = wd::advertise(boundary);
+    REQUIRE(full);
+    CHECK(full->size() == 256);
+    CHECK(wd::understands(*full));
+    CHECK_FALSE(wd::advertise("a" + boundary));
 }
 
 TEST_CASE("WebSocket endpoint syntax preserves all connection parameters", "[ws_discovery]") {

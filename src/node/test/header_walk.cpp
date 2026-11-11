@@ -901,3 +901,85 @@ TEST_CASE("header walk: with no peers connected there is nothing to retry",
     // And the peer arriving is the event that moves it.
     CHECK(walk.peers_changed(peers_at(100, {p}), 100).stimulate.has_value());
 }
+
+// -----------------------------------------------------------------------------
+// A full batch of held headers (#927)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("header walk: a held batch from the asked peer asks it again from the batch end",
+          "[header_walk]") {
+    auto walk = walking(100, 200);
+    auto const first = *walk.active();
+
+    auto const step = walk.held_batch(p, 60, 100);
+    REQUIRE(step.stimulate);
+    CHECK(step.stimulate->peer == p);
+    CHECK(step.stimulate->from_last_batch);
+    CHECK(step.stimulate->seq > first.seq);
+    CHECK_FALSE(step.confirm_tip);
+    CHECK_FALSE(walk.spent(p));
+
+    // And again while each batch ends higher than the one before.
+    auto const next = walk.held_batch(p, 80, 100);
+    REQUIRE(next.stimulate);
+    CHECK(next.stimulate->peer == p);
+    CHECK(next.stimulate->from_last_batch);
+}
+
+TEST_CASE("header walk: a held batch that does not end higher is no progress",
+          "[header_walk]") {
+    auto walk = walking(100, 100);
+    REQUIRE(walk.held_batch(p, 60, 100).stimulate);
+
+    // The same end again: nothing more from P past it. Q is next.
+    auto const same = walk.held_batch(p, 60, 100);
+    REQUIRE(same.stimulate);
+    CHECK(same.stimulate->peer == q);
+    CHECK_FALSE(same.stimulate->from_last_batch);
+    CHECK(walk.spent(p));
+
+    // And the walk settles as it always did.
+    CHECK(walk.no_progress(q, 100).confirm_tip);
+}
+
+TEST_CASE("header walk: a held batch from a peer not being asked changes nothing",
+          "[header_walk]") {
+    auto walk = walking(100, 100);
+    auto const active = *walk.active();
+    auto const step = walk.held_batch(q, 60, 100);
+    CHECK_FALSE(step.stimulate);
+    CHECK_FALSE(step.confirm_tip);
+    REQUIRE(walk.active());
+    CHECK(*walk.active() == active);
+}
+
+TEST_CASE("header walk: a held batch is not evidence for the tip", "[header_walk]") {
+    // P's held batches, then its stimulus times out: P answered, but nothing
+    // it said was about the tip. Q times out too. Parked, not confirmed.
+    auto walk = walking(100, 100);
+    REQUIRE(walk.held_batch(p, 60, 100).stimulate);
+    auto const seq_p = walk.active()->seq;
+    auto const after_p = walk.timed_out(seq_p, 100);
+    REQUIRE(after_p.stimulate);
+    CHECK(after_p.stimulate->peer == q);
+    auto const after_q = walk.timed_out(after_p.stimulate->seq, 100);
+    CHECK_FALSE(after_q.confirm_tip);
+    CHECK(walk.parked());
+}
+
+TEST_CASE("header walk: a new walk forgets where held batches ended", "[header_walk]") {
+    auto walk = walking(100, 200);
+    REQUIRE(walk.held_batch(p, 90, 100).stimulate);
+
+    // Progress from P: a new walk from the new tip, asked from that tip.
+    auto const moved = walk.progress(p, 120);
+    REQUIRE(moved.stimulate);
+    CHECK(moved.stimulate->peer == p);
+    CHECK_FALSE(moved.stimulate->from_last_batch);
+
+    // A held batch ending lower than the one before the progress counts.
+    auto const again = walk.held_batch(p, 70, 120);
+    REQUIRE(again.stimulate);
+    CHECK(again.stimulate->peer == p);
+    CHECK(again.stimulate->from_last_batch);
+}

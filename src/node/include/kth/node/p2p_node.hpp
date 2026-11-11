@@ -542,8 +542,8 @@ private:
     ::asio::awaitable<void> run_seeding();
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
-    ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
-    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
+    ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer, bool discovery);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> maintain_outbound_connections();
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)

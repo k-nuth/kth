@@ -167,6 +167,10 @@ kth_bool_t kth_node_header_sync_add_peer(kth_header_sync_mut_t self, char const*
 KTH_EXPORT
 kth_bool_t kth_node_header_sync_configure_discovery(kth_header_sync_mut_t self, kth_bool_t enabled, kth_bool_t allow_private, kth_bool_t wss_only);
 
+/** Temporary compatibility with peers using /wsdisc:1/ in user agents. Disabled by default; settled-only. */
+KTH_EXPORT
+kth_bool_t kth_node_header_sync_configure_legacy_discovery(kth_header_sync_mut_t self, kth_bool_t enabled);
+
 KTH_EXPORT
 kth_size_t kth_node_header_sync_peer_count(kth_header_sync_const_t self);
 

@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1931,4 +1932,242 @@ TEST_CASE("integrated: a newly connected block is announced to every peer",
         ++inventories_seen;
     }
     CHECK(inventories_seen == 1);
+}
+
+TEST_CASE("integrated: a peer answering below a deep fork is followed to its heavier branch",
+          "[header_tip][integration][held_batch]") {
+    // The node holds a chain that leaves the peer's after `common_height`, by
+    // more blocks than the locator lists densely. The first entry of its
+    // locator the peer knows is then thousands of blocks below the fork, and
+    // the peer answers with 2000 headers the node already holds (#927).
+    captured_log log;
+    chain_fixture fixture{"held_batch_fork"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t common_height = 6000;
+    constexpr uint32_t local_length = 6000;
+    constexpr uint32_t peer_length = 8000;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base = uint32_t(zulu_time()) - (common_height + peer_length + 30) * block_spacing;
+    std::vector<domain::chain::block> local;
+    std::vector<domain::chain::block> remote;
+    local.reserve(common_height + local_length);
+    remote.reserve(common_height + peer_length);
+    auto previous = genesis.hash();
+    for (uint32_t height = 1; height <= common_height; ++height) {
+        local.push_back(mine_block(previous, height, base + height * block_spacing, 0, {}, 0));
+        previous = local.back().hash();
+    }
+    remote = local;
+    auto local_previous = previous;
+    for (uint32_t height = common_height + 1; height <= common_height + local_length; ++height) {
+        local.push_back(mine_block(local_previous, height, base + height * block_spacing, 1, {}, 0));
+        local_previous = local.back().hash();
+    }
+    auto remote_previous = previous;
+    for (uint32_t height = common_height + 1; height <= common_height + peer_length; ++height) {
+        remote.push_back(mine_block(remote_previous, height, base + height * block_spacing + 30, 2, {}, 0));
+        remote_previous = remote.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(local)).headers_added == local.size());
+    persist_headers(fixture, local, 1);
+    REQUIRE(fixture.restart());
+    REQUIRE(fixture.organizer().header_tip_hash() == local.back().hash());
+
+    // The peer's side of getheaders: the first locator entry on its chain,
+    // then at most 2000 headers after it.
+    std::map<hash_digest, uint32_t> remote_height;
+    remote_height.emplace(genesis.hash(), 0);
+    for (uint32_t i = 0; i < remote.size(); ++i) {
+        remote_height.emplace(remote[i].hash(), i + 1);
+    }
+    auto answer = [&](hash_list const& locator) {
+        uint32_t matched = 0;
+        for (auto const& hash : locator) {
+            if (auto const found = remote_height.find(hash); found != remote_height.end()) {
+                matched = found->second;
+                break;
+            }
+        }
+        std::vector<domain::chain::block> reply;
+        for (uint32_t height = matched + 1;
+             height <= remote.size() && reply.size() < kth::max_get_headers; ++height) {
+            reply.push_back(remote[height - 1]);
+        }
+        return std::pair{matched, std::move(reply)};
+    };
+
+    auto const peer_config = node_settings("held_batch_fork_peer");
+    wire_peer peer(peer_config, 9951, common_height + peer_length);
+    std::optional<uint32_t> first_match;
+    bool adopted = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "held_batch_fork");
+        run.connect(peer.session);
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while ( ! adopted && std::chrono::steady_clock::now() < deadline) {
+            auto const locator = peer.next_locator(quick);
+            if ( ! locator) break;
+            auto [matched, reply] = answer(*locator);
+            if ( ! first_match) first_match = matched;
+            run.deliver(peer.session, peer.headers(reply));
+            adopted = wait_until([&] {
+                return fixture.organizer().header_tip_hash() == remote.back().hash();
+            }, std::chrono::milliseconds(200));
+        }
+        if ( ! adopted) log.dump("held_batch_fork");
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    // The scenario holds: the first answer is a full batch the node already
+    // has, ending below the fork.
+    REQUIRE(first_match);
+    CHECK(*first_match + kth::max_get_headers <= common_height);
+    CHECK(adopted);
+    CHECK(fixture.organizer().header_tip_hash() == remote.back().hash());
+}
+
+TEST_CASE("integrated: the bodies past the checkpoint are asked for after a switch during header sync",
+          "[header_tip][integration][fast_range]") {
+    // The first peer serves a lighter branch past the checkpoint; before the
+    // header walk is over, a second peer brings a heavier one and the chain
+    // switches to it. The switch opens a range up to its branch head. Then the
+    // walk completes and the FAST range to the checkpoint replaces it. Once the
+    // FAST range is done, the bodies past the checkpoint are still owed.
+    captured_log log;
+    chain_fixture fixture{"fast_range_after_switch"};
+    REQUIRE(fixture.created());
+    constexpr uint32_t checkpoint = 20;
+    constexpr uint32_t light_length = 5;
+    constexpr uint32_t heavy_length = 10;
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base = uint32_t(zulu_time()) - (checkpoint + heavy_length + 30) * block_spacing;
+    std::vector<domain::chain::block> light;
+    auto previous = genesis.hash();
+    for (uint32_t height = 1; height <= checkpoint; ++height) {
+        light.push_back(mine_block(previous, height, base + height * block_spacing, 0, {}, 0));
+        previous = light.back().hash();
+    }
+    auto heavy = light;
+    auto light_previous = previous;
+    for (uint32_t height = checkpoint + 1; height <= checkpoint + light_length; ++height) {
+        light.push_back(mine_block(light_previous, height, base + height * block_spacing, 1, {}, 0));
+        light_previous = light.back().hash();
+    }
+    auto heavy_previous = previous;
+    for (uint32_t height = checkpoint + 1; height <= checkpoint + heavy_length; ++height) {
+        heavy.push_back(mine_block(heavy_previous, height, base + height * block_spacing + 30, 2, {}, 0));
+        heavy_previous = heavy.back().hash();
+    }
+    fixture.settings().checkpoints.emplace_back(genesis.hash(), 0);
+    fixture.settings().checkpoints.emplace_back(heavy[checkpoint - 1].hash(), checkpoint);
+    fixture.settings().derive_checkpoints();
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.settings().trusted_checkpoint_height() == checkpoint);
+    REQUIRE(fixture.start());
+
+    std::map<hash_digest, domain::chain::block const*> bodies;
+    for (auto const& block : light) bodies.emplace(block.hash(), &block);
+    for (auto const& block : heavy) bodies.emplace(block.hash(), &block);
+
+    auto const light_config = node_settings("fast_range_light_peer");
+    auto const heavy_config = node_settings("fast_range_heavy_peer");
+    wire_peer light_peer(light_config, 9971, checkpoint + light_length);
+    wire_peer heavy_peer(heavy_config, 9972, checkpoint + heavy_length);
+
+    // A peer's side of getheaders and getdata, over its own chain.
+    auto answer_headers = [&](wire_peer& peer, std::vector<domain::chain::block> const& chain,
+                              data_chunk const& payload) {
+        byte_reader reader(payload);
+        auto request = domain::message::get_headers::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(request);
+        size_t matched = 0;
+        for (auto const& hash : request->start_hashes()) {
+            auto const found = std::find_if(chain.begin(), chain.end(),
+                [&](auto const& block) { return block.hash() == hash; });
+            if (found != chain.end()) {
+                matched = size_t(std::distance(chain.begin(), found)) + 1;
+                break;
+            }
+        }
+        return peer.headers({chain.begin() + matched, chain.end()});
+    };
+    // getdata is held until the FAST range has replaced the range the switch
+    // opened: on mainnet the switch's range had barely started when it was
+    // replaced, so the bodies past the checkpoint were never stored by it.
+    std::vector<std::pair<wire_peer*, data_chunk>> held_getdata;
+    auto send_bodies = [&](wire_peer& peer, data_chunk const& payload) {
+        byte_reader reader(payload);
+        auto request = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(request);
+        for (auto const& item : request->inventories()) {
+            auto const found = bodies.find(item.hash());
+            if (found == bodies.end()) continue;
+            // Where the session's read loop puts a block for the download
+            // task waiting on it.
+            data_chunk bytes(found->second->serialized_size());
+            byte_writer writer(bytes);
+            REQUIRE(found->second->to_data(writer));
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, std::move(bytes))));
+        }
+    };
+    auto serve = [&](wire_peer& peer, std::vector<domain::chain::block> const& chain,
+                     node_run& run) {
+        bool const fast_started = log.count("Starting FAST block sync") > 0;
+        for (auto const& sent : peer.sent_until_quiet(std::chrono::milliseconds(20))) {
+            if (sent.command == domain::message::get_headers::command) {
+                run.deliver(peer.session, answer_headers(peer, chain, sent.payload));
+            } else if (sent.command == domain::message::get_data::command) {
+                if (fast_started) {
+                    send_bodies(peer, sent.payload);
+                } else {
+                    held_getdata.emplace_back(&peer, sent.payload);
+                }
+            }
+        }
+        if (fast_started) {
+            for (auto const& [held_peer, payload] : held_getdata) {
+                send_bodies(*held_peer, payload);
+            }
+            held_getdata.clear();
+        }
+    };
+
+    bool switched = false;
+    bool reached = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "fast_range_after_switch");
+        run.connect(light_peer.session);
+        // The light branch first, then the heavy peer arrives before the walk
+        // has asked the light peer again.
+        auto const first = light_peer.next_locator(quick);
+        REQUIRE(first);
+        run.deliver(light_peer.session, light_peer.headers(light));
+        REQUIRE(wait_until([&] {
+            return fixture.organizer().header_tip_hash() == light.back().hash();
+        }, quick));
+        run.connect(heavy_peer.session);
+
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while ( ! reached && std::chrono::steady_clock::now() < deadline) {
+            serve(light_peer, light, run);
+            serve(heavy_peer, heavy, run);
+            auto const view = fixture.chain().chain_view();
+            reached = view && view->connected_tip_height == checkpoint + heavy_length;
+        }
+        switched = log.count("Reorg complete") > 0;
+        if ( ! reached) log.dump("fast_range_after_switch");
+        stopped_cleanly = run.stop_with({light_peer.session, heavy_peer.session}, std::chrono::seconds(120));
+    }
+    CHECK(stopped_cleanly);
+    // The scenario holds: the switch happened before the FAST range was opened.
+    REQUIRE(switched);
+    CHECK(log.first_index("Reorg complete") < log.first_index("Starting FAST block sync"));
+    CHECK(reached);
+    CHECK(fixture.organizer().header_tip_hash() == heavy.back().hash());
 }

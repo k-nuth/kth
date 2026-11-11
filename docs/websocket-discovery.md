@@ -22,28 +22,57 @@ Alternatives considered:
   implementation does not appropriate them or reinterpret TCP ports as WS.
 * `xversion` keys could carry capabilities, but KTH does not implement its
   key/value semantics or a coordinated key assignment for this purpose.
-* An unconditional `sendwsaddr` message would be simple but would send a new
-  command to peers that never indicated support.
-* A literal, delimited component in `version.user_agent` can explicitly opt in
-  using an existing backward-compatible field. After both sides opt in, separate
-  bounded messages preserve legacy address discovery unchanged. This is the
-  choice for this experimental version; a standardized capability mechanism
-  can replace it in a later explicitly versioned protocol.
+* A versioned `sendwsaddr` handshake message explicitly opts in, like feature
+  negotiation with `sendaddrv2`. It needs no service-bit or network-ID allocation.
+  Existing KTH 1.6.0 and BCHN 29.2.0 peers ignore this unknown command and
+  finish the normal BCH handshake. User agents remain identification, as recommended by BIP14.
 
 ## Negotiation
 
-An enabled node adds the exact component `/wsdisc:1/` to its normal user-agent
-without exceeding the existing 256-byte limit. Repeated advertisement is
-idempotent. The delimiters and version are significant: `wsdisc:1` without
-slashes and `/wsdisc:10/` do not match. The implementation refuses overlong
-user-agents instead of dropping a capability silently.
+When enabled, a node sends one `sendwsaddr` after receiving and validating its
+peer's `version`, and before sending its own `verack`. Its payload is exactly one
+byte: `0x01`, meaning endpoint discovery version 1. It announces understand/relay,
+not an incoming WebSocket listener. Endpoint transport preferences remain in
+`getwsaddr`, not in this announcement.
 
-Only after successful BCH `version`/`verack`, and only if **both** user-agents
-contain that component, may either peer send `getwsaddr` or `wsaddr`. An
-unnegotiated discovery command is not admitted to discovery processing. A
-legacy peer receives ordinary version/handshake and TCP address messages,
-with no new discovery commands. Standard `getaddr`, `addr`, `sendaddrv2`,
-`addrv2` and service-bit behavior remains unchanged.
+A peer must send its announcement after its `version` and before its `verack`.
+Malformed lengths, duplicates during the handshake and announcements before
+`version` fail the handshake. The frame length is checked before allocating or
+reading the body. Unknown version bytes are well-formed but do not negotiate
+version 1. An announcement after `verack` cannot enable discovery for that session.
+
+Only if both sides opt in, and after successful BCH `version`/`verack`, may either
+send `getwsaddr` or `wsaddr`. Handshake completion passes the immutable negotiation
+result to the session owner. Discovery does not inspect software names or versions.
+
+A normal native user agent is `/Knuth:VERSION/`; the browser client uses
+`/Knuth:VERSION(browser)/`. No discovery component is added by default. A disabled
+peer sends no announcement and does not activate discovery. Ordinary peers retain
+normal block/header synchronization and TCP address exchange.
+
+### Explicit legacy migration mode
+
+Existing experimental nodes use `/wsdisc:1/` in **both** user agents instead of a
+handshake announcement. Enable `net.ws_discovery_legacy_agent=true` on a native
+node, or call `header_sync::configure_legacy_discovery(true)` before starting a
+browser session, only when discovery interoperability with those nodes is needed.
+The C counterpart is `kth_node_header_sync_configure_legacy_discovery`. It has the
+same settled-only admission as other HeaderSync configuration and returns false
+while operations are outstanding. The mode is disabled by default and included in
+the runtime settings snapshot.
+
+In this mode a node still sends `sendwsaddr`. It additionally advertises the
+legacy component and, **only when no announcement was received**, accepts the
+old user-agent negotiation. Both single- and double-slash legacy components remain
+recognized. An explicit unknown version never downgrades through a user-agent
+marker; malformed announcements still fail. A marker received without the local
+legacy opt-in does not enable discovery. No software-brand sniffing is used.
+
+The new and old `getwsaddr`/`wsaddr` payloads are identical. A mixed deployment can
+use legacy mode during rollout, then disable it once both peers support the
+announcement. A new session without legacy mode can still synchronize with an old
+peer, but cannot discover endpoints through it. Other discovery implementations
+should coordinate the experimental command before deploying it more broadly.
 
 The capability means “understands and can relay this discovery protocol.” It
 **does not** mean “has an incoming WebSocket listener.” A TCP-only node can

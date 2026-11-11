@@ -135,6 +135,11 @@ bool elapsed(std::optional<std::uint32_t> previous, std::uint32_t now, std::uint
 }
 } // namespace
 
+std::expected<bool, failure> decode_announcement(std::span<std::uint8_t const> payload) {
+    if (payload.size() != 1) return std::unexpected(failure::malformed);
+    return payload.front() == 1;
+}
+
 bool understands(std::string_view user_agent) noexcept {
     return user_agent.size() <= 256 && user_agent.find(capability) != std::string_view::npos;
 }
@@ -142,10 +147,12 @@ bool understands(std::string_view user_agent) noexcept {
 std::expected<std::string, failure> advertise(std::string_view user_agent) {
     if (user_agent.size() > 256) return std::unexpected(failure::too_large);
     if (understands(user_agent)) return std::string(user_agent);
-    if (user_agent.size() + capability.size() > 256) return std::unexpected(failure::too_large);
+    auto const suffix = user_agent.ends_with('/') ? capability.substr(1) : capability;
+    if (user_agent.size() + suffix.size() > 256) return std::unexpected(failure::too_large);
     std::string out(user_agent);
-    // Each advertised component has its own delimiters, including a leading '/'.
-    out += capability;
+    // Adjacent components share their delimiter; legacy double-slash agents
+    // remain recognized by understands().
+    out += suffix;
     return out;
 }
 

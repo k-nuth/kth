@@ -18,6 +18,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <kth/node/sync/reorg.hpp>
@@ -1825,6 +1826,10 @@ static
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
 
+        // The last header of the latest held batch, and the peer that sent it:
+        // where a `from_last_batch` stimulus to that peer starts its locator.
+        std::optional<std::pair<uint64_t, hash_digest>> held_batch_end;
+
         // Each newly connected tip is announced to the peers once, whoever
         // supplied the block: a peer, or a miner through submitblock. Not
         // during initial block download, and not the tip the node started at.
@@ -1934,6 +1939,12 @@ static
                 // range.
                 co_await send_block_range(
                     deps, blocks_synced_to + 1, checkpoint_height);
+                // The supervisor replaces the range it was working on with
+                // this one. A range a switch opened before the headers were
+                // complete is therefore no longer in flight, and its end, left
+                // recorded, would read as one past the checkpoint: the bodies
+                // above the checkpoint would never be asked for.
+                slow_sync_end.reset();
             } else {
                 // Slow sync stage, through the same guarded admission as the
                 // other doors onto the post-checkpoint range (#663).
@@ -1993,8 +2004,22 @@ static
                 auto const heights = domain::chain::block::locator_heights(headers_synced_to);
                 hash_list locator;
                 locator.reserve(heights.size());
+                // After a full batch of headers it already held, the peer is
+                // asked from the end of that batch first: it answered from a
+                // point the two chains share, below where they part, and the
+                // tip's own entries would only bring the same batch again.
+                bool const from_batch = stimulus.from_last_batch && held_batch_end &&
+                    held_batch_end->first == stimulus.peer;
+                locator.reserve(heights.size() + (from_batch ? 1 : 0));
+                if (from_batch) {
+                    locator.push_back(held_batch_end->second);
+                }
                 for (auto const height : heights) {
                     locator.push_back(active_hash_at(organizer.index(), static_cast<uint32_t>(height)));
+                }
+                if (locator.size() > kth::max_locator) {
+                    // Genesis stays last; one entry above it gives way.
+                    locator.erase(locator.end() - 2);
                 }
                 header_stimulus.send(peer, std::move(locator), stimulus.seq);
                 header_deadline.arm(timing.stimulus_timeout, header_walk_timeout{.seq = stimulus.seq});
@@ -2366,6 +2391,29 @@ static
                     // at our tip sends when it answers our locator with headers
                     // we already hold. The wire cannot tell that apart from
                     // progress; only this verdict can (#705).
+                    //
+                    // Unless the batch was full and ends on a header we hold
+                    // that is not the tip. Then the peer matched our locator
+                    // below where its chain and ours part — after a fork deeper
+                    // than the locator's dense entries, that is all the
+                    // locator offers it — and has more past that point (#927).
+                    auto const& index = organizer.index();
+                    auto const last_idx = result->received == kth::max_get_headers
+                        ? index.find(result->last_header) : blockchain::header_index::null_index;
+                    if (last_idx != blockchain::header_index::null_index &&
+                        result->last_header != organizer.header_tip_hash()) {
+                        auto const last_height = uint32_t(index.get_height(last_idx));
+                        spdlog::debug("[sync_coordinator] A full batch of held headers from {}, "
+                            "ending at height {}; asking it again from there", source_name, last_height);
+                        // Only the asked peer's answer moves the walk, so only
+                        // its batch end is kept.
+                        if (walk.active() && walk.active()->peer == source) {
+                            held_batch_end = std::pair{source, result->last_header};
+                        }
+                        co_await apply(walk.held_batch(source, last_height, headers_synced_to),
+                            "held batch");
+                        continue;
+                    }
                     spdlog::debug("[sync_coordinator] No new headers at height {} from {}",
                         headers_synced_to, source_name);
                     co_await apply(walk.no_progress(source, headers_synced_to), "no progress");

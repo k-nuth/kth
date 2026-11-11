@@ -2451,6 +2451,12 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
 
     validation_high_priority_lock const lock(validation_mutex_);
     note_mempool_block_connected();
+
+    // As for the raw form: through initial sync the pool is empty, and every
+    // transaction of every block would otherwise be looked up for nothing.
+    if (mempool_.size() == 0) {
+        return;
+    }
     mempool_limit_.removed(mempool_.remove_for_block(block));
 }
 

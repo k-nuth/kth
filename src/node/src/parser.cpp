@@ -194,6 +194,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.ws_handshake_seconds", cfg.network.ws_handshake_seconds);
     app.add_option("--net.ws_discovery",        cfg.network.ws_discovery,
         "Negotiate endpoint discovery over TCP and WebSocket connections.");
+    app.add_option("--net.ws_discovery_legacy_agent", cfg.network.ws_discovery_legacy_agent,
+        "Temporary compatibility: advertise and accept legacy user-agent discovery (default false).");
     app.add_option("--net.ws_allow_private",    cfg.network.ws_allow_private,
         "Explicitly permit private endpoints for isolated LAN experiments.");
     app.add_option("--net.ws_public_endpoints", cfg.network.ws_public_endpoints,

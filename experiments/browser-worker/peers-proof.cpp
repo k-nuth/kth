@@ -9,6 +9,7 @@
 
 #include <kth/infrastructure/utility/browser_runtime.hpp>
 #include <kth/node/header_sync.hpp>
+#include <kth/domain/version.hpp>
 #include <asio/co_spawn.hpp>
 #include <cstdio>
 #include <stdexcept>
@@ -81,7 +82,7 @@ std::string describe(header_sync const& client) {
         require(state.find("\"upgrades\":{") != std::string::npos && state.find("\"abla\":{\"available\":false") != std::string::npos,
             "chain state sections: " + state);
         for (auto const* expected : {"\"sync_peers\":8", "\"services\":0", "\"relay_transactions\":false",
-                "\"user_agent\":\"/KTH-browser-headers//wsdisc:1/\"", "\"network\":\"Regtest\"",
+                "\"ws_discovery_legacy_agent\":false", "\"network\":\"Regtest\"",
                 "\"peer_endpoints\":[\"ws://127.0.0.1:18780\",\"ws://127.0.0.1:18785\"]",
                 "\"cache_directory\":\"/kth-header-cache/Regtest\""}) {
             require(settings.find(expected) != std::string::npos, std::string("settings lack ") + expected + ": " + settings);
@@ -94,9 +95,14 @@ std::string describe(header_sync const& client) {
         // An endpoint with a quote and a backslash is escaped in the JSON.
         require(fresh.add_peer("ws://127.0.0.1:18798/\"q\\"), "the quoted endpoint was refused");
         std::printf("JSON %s\n", fresh.runtime_settings().c_str());
+        auto const agent = "\"user_agent\":\"/Knuth:" + std::string(kth::version) + "(browser)/\"";
+        require(fresh.runtime_settings().find(agent) != std::string::npos, "browser identification");
         require(fresh.configure_discovery(false, false, false) &&
-            fresh.runtime_settings().find("\"user_agent\":\"/KTH-browser-headers/\"") != std::string::npos,
-            "discovery off still advertised");
+            fresh.runtime_settings().find(agent) != std::string::npos,
+            "disabling discovery changed identification");
+        require(fresh.configure_legacy_discovery(true) &&
+            fresh.runtime_settings().find("\"ws_discovery_legacy_agent\":true") != std::string::npos,
+            "legacy migration mode was not configured");
     }
     std::puts("two peers synchronized one index height=2600");
 
@@ -161,6 +167,8 @@ std::string describe(header_sync const& client) {
         auto client_owned = make_client("ws://127.0.0.1:18806", regtest, 10'000);
         auto& client = *client_owned;
         require(client.configure_discovery(true, true, false), "discovery could not be configured");
+        // A migration client still prefers the new announcement with a new peer.
+        require(client.configure_legacy_discovery(true), "legacy configuration");
         auto const height = co_await client.run();
         require(height && *height == 2600 && client.peer_count() == 2, "the late discovery answer was lost: " + describe(client));
     }
@@ -205,6 +213,18 @@ std::string describe(header_sync const& client) {
         auto const height = co_await client.run();
         require(height && *height == 2500 && client.peer_count() == 1, "discovery ran while disabled: " + describe(client));
     }
+    // Old servers require the user-agent marker on both sides. It is never
+    // used implicitly; synchronization itself remains backwards compatible.
+    for (bool legacy : {false, true}) {
+        auto client_owned = make_client("ws://127.0.0.1:18814", regtest, 10'000);
+        auto& client = *client_owned;
+        require(client.configure_discovery(true, true, false), "discovery configuration");
+        require(client.configure_legacy_discovery(legacy), "legacy configuration");
+        auto const height = co_await client.run();
+        require(height && *height == (legacy ? 2600u : 2500u), "legacy interoperability: " + describe(client));
+        require(client.peer_count() == (legacy ? 2u : 1u), "legacy admission: " + describe(client));
+    }
+    std::puts("legacy discovery required explicit opt-in");
     std::puts("discovered peer joined height=2600");
 }
 

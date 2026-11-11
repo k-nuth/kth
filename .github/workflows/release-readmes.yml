@@ -6,6 +6,10 @@ on:
       - scripts/update_readme_versions.sh
       - scripts/test_update_readme_versions.py
       - scripts/release.sh
+      - scripts/post-release.sh
+      - scripts/update_release_notes_index.py
+      - scripts/test_release_notes_index.py
+      - docs/release-notes/release-notes.md
       - src/*/README.md
       - .github/workflows/release-readmes.yml
   push:
@@ -14,6 +18,10 @@ on:
       - scripts/update_readme_versions.sh
       - scripts/test_update_readme_versions.py
       - scripts/release.sh
+      - scripts/post-release.sh
+      - scripts/update_release_notes_index.py
+      - scripts/test_release_notes_index.py
+      - docs/release-notes/release-notes.md
       - src/*/README.md
       - .github/workflows/release-readmes.yml
   workflow_dispatch:
@@ -31,5 +39,6 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - run: bash -n scripts/update_readme_versions.sh
+      - run: bash -n scripts/update_readme_versions.sh scripts/post-release.sh
       - run: python3 -m unittest discover -s scripts -p test_update_readme_versions.py -v
+      - run: python3 -m unittest discover -s scripts -p test_release_notes_index.py -v

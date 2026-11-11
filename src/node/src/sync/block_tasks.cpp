@@ -2241,6 +2241,12 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // pool thread to run the serial phase and orchestrate is enough.
     ::asio::thread_pool validation_pool(1);
 
+    // The batch delta, kept across batches rather than built anew: an emptied
+    // table keeps its capacity, so after the first batches the merges stop
+    // rebuilding it as it grows and stop freeing the old one. Its entries are
+    // released as soon as each batch is applied; only the capacity carries over.
+    blockchain::utxo_raw_delta delta;
+
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
     // coroutines exited). Looping on chain.stopped() alone therefore deadlocks
@@ -2322,6 +2328,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // blocks, and above the checkpoint they are parsed here anyway. Below it
         // this stays empty and the raw bytes are used instead.
         std::vector<kth::block_const_ptr> validated_blocks;
+        // Their transaction identifiers, computed once: validation reads them
+        // for every check that needs them, and building the UTXO delta below
+        // reads them again instead of hashing each transaction a second time.
+        std::vector<hash_list> validated_txids;
 
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
@@ -2336,27 +2346,27 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
-                    auto& full_blocks = validated_blocks;
-                    full_blocks.reserve(raw_result->size());
-                    for (uint32_t i = 0; i < raw_result->size(); ++i) {
-                        uint32_t const h = batch_start + i;
-                        auto const& raw = (*raw_result)[i];
-                        byte_reader reader(byte_span{raw.data(), raw.size()});
-                        auto blk = domain::message::block::from_data(reader, 0u);
-                        if ( ! blk) {
-                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
-                            parse_failed = true;
-                            co_return error::operation_failed;
+                    // The blocks are parsed in parallel, each on its own.
+                    auto parsed = blockchain::parse_block_batch(*raw_result);
+                    if ( ! parsed) {
+                        if (parsed.error().block) {
+                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}",
+                                batch_start + *parsed.error().block);
+                        } else {
+                            spdlog::critical("[utxo_build] Failed to parse blocks {}-{} for validation",
+                                batch_start, batch_end);
                         }
-                        full_blocks.push_back(
-                            std::make_shared<domain::message::block const>(std::move(*blk)));
+                        parse_failed = true;
+                        co_return error::operation_failed;
                     }
-                    if (full_blocks.empty()) {
+                    validated_blocks = std::move(parsed->blocks);
+                    validated_txids = std::move(parsed->txids);
+                    if (validated_blocks.empty()) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, batch_start,
-                        rejection);
+                        chain, chain.chain_settings(), network, validated_blocks, validated_txids,
+                        batch_start, rejection);
                 }, ::asio::use_awaitable);
 
             if (vc) {
@@ -2514,8 +2524,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         }
 #endif
 
-        // Parse and process UTXO delta
-        blockchain::utxo_raw_delta delta;
+        // Parse and process UTXO delta. clear() drops the BIP30 licences with
+        // the entries, so none of a previous batch's carries over.
+        delta.clear();
         // Undo records for this batch, persisted only after the delta is applied.
         struct pending_undo_entry {
             blockchain::header_index::index_t idx;
@@ -2528,8 +2539,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
 
+            // A block validation parsed has its identifiers already.
+            std::span<hash_digest const> known_txids;
+            if (i < validated_txids.size()) {
+                known_txids = validated_txids[i];
+            }
             auto parsed = blockchain::parse_utxo_block(
-                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()});
+                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()}, known_txids);
             if ( ! parsed) {
                 spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
                 on_fatal("a stored block could not be parsed");
@@ -2937,6 +2953,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             window->complete();
             return std::nullopt;
         }();   // the window ends HERE, with the lambda's frame
+
+        // The window was the batch delta's last reader. Its entries own every
+        // output's serialized value, so they are released here rather than at the
+        // next batch's clear(), which comes only after that batch is downloaded,
+        // parsed and validated, or not at all while the node waits at the tip.
+        // clear() keeps the tables' capacity, which is what reusing them is for.
+        delta.clear();
 
         // Outside the window, and only now. Whatever the gate was left holding it
         // is holding no longer: an unfinished mutation latched it as the frame

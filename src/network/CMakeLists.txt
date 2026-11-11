@@ -237,6 +237,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/peer_session.cpp
     test/protocols_coro.cpp
     test/ws_discovery.cpp
+    test/ws_negotiation.cpp
   )
 
   target_include_directories(kth_network_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

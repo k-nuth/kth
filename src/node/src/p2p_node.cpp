@@ -104,7 +104,7 @@ p2p_node::~p2p_node() {
     }
     if (settings_.ws_discovery) {
         auto now = static_cast<uint32_t>(zulu_time());
-        if (!network::ws_discovery::advertise(settings_.user_agent)) {
+        if (settings_.ws_discovery_legacy_agent && !network::ws_discovery::advertise(settings_.user_agent)) {
             spdlog::error("[p2p_node] User agent is too long for WebSocket discovery negotiation");
             co_return error::operation_failed;
         }
@@ -1203,6 +1203,11 @@ select_channel<peer_notification>& p2p_node::peer_events() {
                 // Perform handshake (uses channels - run() is running in parallel!)
                 spdlog::debug("[p2p_node] connect_to_seed: performing handshake for {}:{}", seed_host, seed_port);
                 auto config = make_handshake_config(settings_, top_block_.load().height(), nonce);
+                // This short-lived owner only handles TCP address seeding.
+                // It does not serve endpoint discovery requests.
+                config.ws_discovery = false;
+                config.ws_discovery_legacy_agent = false;
+                config.user_agent = settings_.user_agent;
                 auto handshake_result = co_await perform_handshake(*peer, config);
 
                 if (!handshake_result) {
@@ -1367,24 +1372,22 @@ select_channel<peer_notification>& p2p_node::peer_events() {
     }
 }
 
-::asio::awaitable<void> p2p_node::run_peer_protocols(peer_session::ptr peer) {
+::asio::awaitable<void> p2p_node::run_peer_protocols(peer_session::ptr peer, bool discovery) {
     // The read loop and the peer's service, joined: each ends the session when
     // it ends, which closes what the other waits on.
-    co_await (read_peer_messages(peer) && dispatcher_.serve(*peer));
+    co_await (read_peer_messages(peer, discovery) && dispatcher_.serve(*peer));
 
     spdlog::debug("[p2p_node] Calling manager_.remove() for [{}]", peer->authority());
     co_await manager_.remove(peer);
     spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
 }
 
-::asio::awaitable<void> p2p_node::read_peer_messages(peer_session::ptr peer) {
+::asio::awaitable<void> p2p_node::read_peer_messages(peer_session::ptr peer, bool discovery_enabled) {
     spdlog::debug("[p2p_node] Starting protocols for peer [{}]", peer->authority());
 
     auto executor = co_await ::asio::this_coro::executor;
     namespace ws = network::ws_discovery;
-    auto remote_version = peer->peer_version();
-    ws::session_policy discovery(settings_.ws_discovery && remote_version &&
-        ws::understands(remote_version->user_agent()));
+    ws::session_policy discovery(discovery_enabled);
     auto now = static_cast<uint32_t>(zulu_time());
     ws::request initial{ws::all_transports, generate_nonce() | uint64_t{1}};
     if (discovery.begin_request(initial, now)) {
@@ -1967,7 +1970,7 @@ void p2p_node::wake_status_task() noexcept {
                         }
 
                         // Run protocols until peer disconnects
-                        co_await run_peer_protocols(peer);
+                        co_await run_peer_protocols(peer, handshake_result->ws_discovery);
 
                         // A short connection is not evidence of a protocol offence:
                         // a browser may close a tab, or a transport/proxy may restart.

@@ -143,11 +143,29 @@ class bch_session:
                     return command, payload
             self.buffer += await self.socket.recv()
 
-    async def handshake(self, agent=b"/kth-ci-peer/"):
-        command, _ = await self.receive()
+    async def handshake(self, agent=b"/kth-ci-peer/", discovery=False, legacy=False):
+        command, version = await self.receive()
         assert command == "version", command
+        length, at = read_varint(version, 80)
+        client_agent = version[at:at + length]
+        self.client_agent = client_agent
         await self.send("version", version_payload(len(self.headers) - 1, agent))
+        if discovery:
+            await self.send("sendwsaddr", b"\x01")
         await self.send("verack")
+        announced = False
+        while True:
+            command, payload = await self.receive()
+            if command == "sendwsaddr":
+                assert not announced and payload == b"\x01"
+                announced = True
+            elif command == "verack":
+                break
+            else:
+                assert command == "sendaddrv2", command
+        self.discovery = discovery and announced
+        if legacy:
+            self.discovery = b"/wsdisc:1/" in client_agent
 
     def headers_after(self, payload):
         count, at = read_varint(payload, 4)
@@ -301,12 +319,27 @@ async def bch_discovery(socket):
     # it advertises the longer chain's peer (a loopback endpoint: the client
     # must allow private ones).
     session = bch_session(socket, BCH_CHAIN)
-    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    await session.handshake(discovery=True)
+    assert b"wsdisc:" not in session.client_agent, session.client_agent
     while True:
         command, payload = await session.receive()
         if command == "getheaders":
             await session.send("headers", session.headers_after(payload))
         elif command == "getwsaddr":
+            request_id = struct.unpack_from("<Q", payload, 2)[0]
+            await session.send("wsaddr", wsaddr_payload(request_id, [("ws", "127.0.0.1", 18785, "/")]))
+
+
+@quiet
+async def bch_discovery_legacy(socket):
+    session = bch_session(socket, BCH_CHAIN)
+    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/", legacy=True)
+    while True:
+        command, payload = await session.receive()
+        if command == "getheaders":
+            await session.send("headers", session.headers_after(payload))
+        elif command == "getwsaddr":
+            assert session.discovery, "legacy discovery was not negotiated"
             request_id = struct.unpack_from("<Q", payload, 2)[0]
             await session.send("wsaddr", wsaddr_payload(request_id, [("ws", "127.0.0.1", 18785, "/")]))
 
@@ -332,7 +365,7 @@ async def bch_short(socket):
 async def bch_discovery_close(socket):
     # Asked for discovery; closes after its last headers, without answering.
     session = bch_session(socket, BCH_CHAIN)
-    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    await session.handshake(discovery=True)
     while True:
         command, payload = await session.receive()
         if command == "getheaders":
@@ -387,7 +420,7 @@ async def bch_alternate(socket):
 async def bch_discovery_late(socket):
     # As bch_discovery, but its discovery answer comes after its last headers.
     session = bch_session(socket, BCH_CHAIN)
-    await session.handshake(agent=b"/kth-ci-peer/wsdisc:1/")
+    await session.handshake(discovery=True)
     pending = None
     while True:
         command, payload = await session.receive()
@@ -566,7 +599,7 @@ async def main(scenario):
                 'bch_sync': (18780, bch_sync), 'bch_invalid': (18781, bch_invalid),
                 'bch_follow': (18782, bch_follow), 'bch_oversize': (18783, bch_oversize),
                 'bch_reorg': (18787, bch_reorg), 'bch_retry': (18788, bch_retry),
-                'bch_discovery': (18789, bch_discovery), 'bch_flood': (18803, bch_flood),
+                'bch_discovery': (18789, bch_discovery), 'bch_discovery_legacy': (18814, bch_discovery_legacy), 'bch_flood': (18803, bch_flood),
                 'bch_short': (18804, bch_short), 'bch_alternate': (18805, bch_alternate),
                 'bch_discovery_late': (18806, bch_discovery_late), 'bch_slow': (18810, bch_slow),
                 'bch_discovery_close': (18813, bch_discovery_close),
@@ -586,7 +619,7 @@ if __name__ == '__main__':
     parser.add_argument('scenario', choices=['all', 'echo', 'stall', 'cap', 'eof', 'abrupt',
                                              'bch_sync', 'bch_invalid', 'bch_follow', 'bch_oversize',
                                              'bch_reorg', 'bch_retry', 'bch_longer', 'bch_fork',
-                                             'bch_discovery', 'bch_flood', 'bch_short', 'bch_alternate',
+                                             'bch_discovery', 'bch_discovery_legacy', 'bch_flood', 'bch_short', 'bch_alternate',
                                              'bch_discovery_late', 'bch_slow', 'bch_discovery_close', 'bch_content', 'bch_bad_body',
                                              'bch_tx_silent', 'bch_big_tx', 'bch_missing_block',
                                              'bch_tx_late', 'bch_tx_disown'],

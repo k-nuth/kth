@@ -24,7 +24,7 @@ validates headers with the header index and the contextual header organizer,
 opens no block or UTXO database, and runs on the Worker's runtime (the
 application's, when it runs one). It synchronizes from up to eight WebSocket
 peers at once into one index: the one given at construction, those added with
-`add_peer()`, and those learned through endpoint discovery (`/wsdisc:1/`,
+`add_peer()`, and those learned through endpoint discovery (`sendwsaddr`,
 negotiated; `configure_discovery()`). Each peer has its own session; a peer
 that sends invalid data is rejected until `reset()`, one that cannot be reached
 is retried while following, and neither stops the others.

@@ -842,7 +842,8 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
     }
 
     // Unknown/unnegotiated discovery frames never allocate a generic BCH-size payload.
-    if ((head.command() == "getwsaddr" && head.payload_size() != 10) ||
+    if ((head.command() == "sendwsaddr" && head.payload_size() != 1) ||
+        (head.command() == "getwsaddr" && head.payload_size() != 10) ||
         (head.command() == "wsaddr" && head.payload_size() > 16384)) {
         co_return std::unexpected(error::bad_stream);
     }

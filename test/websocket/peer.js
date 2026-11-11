@@ -31,13 +31,14 @@ class Peer {
     };
     this.ws.onclose = () => this.fail(new Error('WebSocket closed'));
     await new Promise((resolve, reject) => { this.ws.onopen = resolve; this.ws.onerror = () => reject(new Error('WebSocket failed')); });
-    const agent = text('/BrowserTransportTest:1/' + (this.discovery ? 'wsdisc:1/' : ''));
+    const agent = text('/BrowserTransportTest:1/');
     const version = join(u32(70016), u64(0), u64(Math.floor(Date.now() / 1000)), new Uint8Array(52),
       u64(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), new Uint8Array([agent.length]), agent, u32(0), new Uint8Array([0]));
     await this.send('version', version, true);
     const remote = await this.wait('version');
     const agentLength = remote[80];
     this.remoteAgent = new TextDecoder().decode(remote.slice(81, 81 + agentLength));
+    if (this.discovery) await this.send('sendwsaddr', new Uint8Array([1]));
     await this.send('verack');
     await this.wait('verack');
     return this;
@@ -60,10 +61,16 @@ class Peer {
       if (!equal((await checksum(payload)).slice(0, 4), this.bytes.slice(20, 24))) throw new Error('Bad BCH checksum');
       this.bytes = this.bytes.slice(24 + size);
       this.commands.push(command);
+      if (command === 'sendwsaddr') {
+        if (this.remoteVerack || this.remoteDiscoverySeen || payload.length !== 1) throw new Error('Invalid discovery announcement');
+        this.remoteDiscoverySeen = true;
+        this.remoteDiscovery = payload[0] === 1;
+      }
+      if (command === 'verack') this.remoteVerack = true;
       if (command === 'getheaders' && this.knownHeaders) {
         await this.send('headers', this.knownHeaders);
       }
-      if (command === 'getwsaddr' && this.discovery) {
+      if (command === 'getwsaddr' && this.discovery && this.remoteDiscovery) {
         if (payload.length !== 10 || payload[0] !== 1) throw new Error('Malformed discovery request');
         await this.send('wsaddr', join(new Uint8Array([1]), payload.slice(2, 10), new Uint8Array([0])));
         continue;
@@ -102,7 +109,7 @@ class Peer {
     if (!equal(await this.wait('pong'), nonce)) throw new Error('Pong nonce mismatch');
   }
   async endpoints(mask = 3) {
-    if (!this.remoteAgent.includes('/wsdisc:1/')) throw new Error('Discovery not negotiated');
+    if (!this.discovery || !this.remoteDiscovery) throw new Error('Discovery not negotiated');
     const id = u64(0x9988776655443322n);
     await this.send('getwsaddr', join(new Uint8Array([1, mask]), id));
     const payload = await this.wait('wsaddr');
