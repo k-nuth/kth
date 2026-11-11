@@ -340,9 +340,9 @@ TEST_CASE("block factory from data 3 genesis mainnet success", "[block serializa
 
 // Start Test Suite: block generate merkle root tests
 
-TEST_CASE("block generate merkle root block with multiple transactions matches historic data", "[block generate merkle root]") {
-    // encodes the 100,000 block data.
-    data_chunk const raw = to_chunk(
+// The block of the historic-data merkle test: a coinbase and two transactions.
+static data_chunk block_100k_raw() {
+    return to_chunk(
         "010000007f110631052deeee06f0754a3629ad7663e56359fd5f3aa7b3e30a00"
         "000000005f55996827d9712147a8eb6d7bae44175fe0bcfa967e424a25bfe9f4"
         "dc118244d67fb74c9d8e2f1bea5ee82a03010000000100000000000000000000"
@@ -366,6 +366,11 @@ TEST_CASE("block generate merkle root block with multiple transactions matches h
         "4e488f8c534484835f8020b3669e5aebffffffff0200ac23fc060000001976a9"
         "14b9a2c9700ff9519516b21af338d28d53ddf5349388ac00743ba40b00000019"
         "76a914eb675c349c474bec8dea2d79d12cff6f330ab48788ac00000000"_base16);
+}
+
+TEST_CASE("block generate merkle root block with multiple transactions matches historic data", "[block generate merkle root]") {
+    // encodes the 100,000 block data.
+    data_chunk const raw = block_100k_raw();
 
     byte_reader reader(raw);
     auto const result = chain::block::from_data(reader);
@@ -731,4 +736,59 @@ TEST_CASE("block canonical order uses complete stable transaction hashes", "[cha
     CHECK(make_block({coinbase, first, first}).is_canonical_ordered());
     // Coinbase is excluded even when its hash sorts after the following hash.
     CHECK(make_block({high, low}).is_canonical_ordered());
+}
+
+// The checks that need transaction identifiers can be given them, computed
+// once, instead of hashing every transaction in each check. They read the
+// identifiers from what they are given.
+TEST_CASE("block checks read the transaction identifiers they are given", "[chain block]") {
+    data_chunk const raw = block_100k_raw();
+    byte_reader reader(raw);
+    auto const parsed = chain::block::from_data(reader);
+    REQUIRE(parsed);
+    auto const& block = *parsed;
+    auto const txids = block.to_hashes();
+    REQUIRE(txids.size() == 3);
+
+    CHECK(block.generate_merkle_root(txids) == block.header().merkle());
+    CHECK(block.is_valid_merkle_root(txids));
+    CHECK(block.is_distinct_transaction_set(txids));
+    CHECK( ! block.is_forward_reference(txids));
+    CHECK(block.check_body(txids) == error::success);
+
+    // Identifiers that are not the block's are what the checks judge.
+    auto altered = txids;
+    std::swap(altered[1], altered[2]);
+    CHECK(block.generate_merkle_root(altered) != block.header().merkle());
+    CHECK(block.check_body(altered) == error::merkle_mismatch);
+
+    auto duplicated = txids;
+    duplicated[2] = duplicated[1];
+    CHECK( ! block.is_distinct_transaction_set(duplicated));
+
+    // Ordered by identifier read as a number (most significant byte last),
+    // coinbase excluded; the same transactions in the other order are not.
+    auto const numeric_less = [](hash_digest const& a, hash_digest const& b) {
+        return std::lexicographical_compare(a.rbegin(), a.rend(), b.rbegin(), b.rend());
+    };
+    auto sorted = block.transactions();
+    std::sort(sorted.begin() + 1, sorted.end(), [&](chain::transaction const& a, chain::transaction const& b) {
+        return numeric_less(a.hash(), b.hash());
+    });
+    auto const ordered = make_block(sorted);
+    CHECK(ordered.is_canonical_ordered(ordered.to_hashes()));
+    std::reverse(sorted.begin() + 1, sorted.end());
+    auto const unordered = make_block(sorted);
+    CHECK( ! unordered.is_canonical_ordered(unordered.to_hashes()));
+    CHECK(unordered.is_canonical_ordered() == unordered.is_canonical_ordered(unordered.to_hashes()));
+
+    // A transaction spending one that comes after it in the block is a forward
+    // reference, found through the identifiers given.
+    chain::transaction const later(1, 0, {}, {chain::output(1, chain::script{}, std::nullopt)});
+    chain::transaction const spender(1, 0,
+        {chain::input(chain::output_point(later.hash(), 0), chain::script{}, 0)}, {});
+    auto const forward = make_block({block.transactions().front(), spender, later});
+    CHECK(forward.is_forward_reference(forward.to_hashes()));
+    auto const backward = make_block({block.transactions().front(), later, spender});
+    CHECK( ! backward.is_forward_reference(backward.to_hashes()));
 }

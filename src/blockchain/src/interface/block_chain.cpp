@@ -30,6 +30,7 @@
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/database.hpp>
+#include <kth/database/in_place_directory.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
@@ -118,6 +119,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
+    , in_place_nocow_(database_settings.nocow)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -215,6 +217,18 @@ bool block_chain::start(uint32_t disk_magic) {
     // Open UTXO-Z database (in a subdirectory of the main database)
     utxoz::set_log_prefix("UTXO-Z");
     auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
+    // UTXO-Z rewrites its memory-mapped containers in place. On btrfs a new
+    // store is created NOCOW: there, every write to a page already on disk
+    // reserves space for a copy, and a sustained stream of them stalls the
+    // writers. An existing store is left as it is (not_empty).
+    if (in_place_nocow_) {
+        auto const prepared = database::prepare_in_place_directory(utxoz_path);
+        if (prepared) {
+            spdlog::info("[blockchain] {}: {}", utxoz_path.string(), database::in_place_directory_name(*prepared));
+        } else {
+            spdlog::warn("[blockchain] {}: could not set NOCOW ({})", utxoz_path.string(), prepared.error().message());
+        }
+    }
     // Scoped to the open itself. Held for the rest of start() it would deadlock
     // against the reference-mode wiring below, which takes a window of its own —
     // and only in reference mode, so a full-mode build would never show it and
@@ -542,7 +556,10 @@ bool block_chain::start(uint32_t disk_magic) {
                 return false;
             }
         } else {
-            auto const first = static_cast<int32_t>(settings_.max_checkpoint_height) + 1;
+            // Undo is captured from the first height that is validated, which is
+            // the trusted height + 1, not the anchor + 1: in full-validation mode
+            // it starts at height 1.
+            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||
@@ -600,6 +617,8 @@ bool block_chain::start(uint32_t disk_magic) {
 bool block_chain::stop() {
     stopped_ = true;
     reorg_barrier_events_.close();
+    mempool_fee_events_.close();
+    mempool_admission_events_.close();
     if (block_submissions_) {
         block_submissions_->close();
         std::error_code ec;
@@ -1008,7 +1027,7 @@ static constexpr bool chunk_serial_validation = true;
     co_return result;
 }
 
-::asio::awaitable<code> block_chain::organize(transaction_const_ptr tx) {
+::asio::awaitable<code> block_chain::submit_transaction(transaction_const_ptr tx) {
     co_return co_await transaction_organizer_.organize(tx);
 }
 
@@ -2392,7 +2411,7 @@ code block_chain::mempool_remove_for_block(byte_span raw) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
-    mempool_limit_.note_block_connected(unix_now());
+    note_mempool_block_connected();
 
     // Under the lock, so an admission cannot land between finding the pool empty
     // and deciding there is nothing to do. Empty is the whole of initial sync,
@@ -2431,8 +2450,39 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
     }
 
     validation_high_priority_lock const lock(validation_mutex_);
-    mempool_limit_.note_block_connected(unix_now());
+    note_mempool_block_connected();
+
+    // As for the raw form: through initial sync the pool is empty, and every
+    // transaction of every block would otherwise be looked up for nothing.
+    if (mempool_.size() == 0) {
+        return;
+    }
     mempool_limit_.removed(mempool_.remove_for_block(block));
+}
+
+void block_chain::note_mempool_block_connected() {
+    auto const now = unix_now();
+    mempool_limit_.note_block_connected(now);
+    // Only a minimum above zero decays; through initial sync there is none,
+    // and nothing is rung for each block.
+    if (mempool_limit_.minimum_fee_per_kb(settings_.mempool_limit_bytes(), now) > 0) {
+        (void)mempool_fee_events_.try_send(std::monostate{});
+    }
+}
+
+size_t block_chain::trim_mempool(uint64_t limit) {
+    auto const evicted = mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
+    if (evicted > 0) {
+        (void)mempool_fee_events_.try_send(std::monostate{});
+    }
+    return evicted;
+}
+
+::asio::awaitable<uint64_t> block_chain::mempool_minimum_fee() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<uint64_t> {
+            co_return mempool_minimum_fee_per_kb();
+        }, ::asio::use_awaitable);
 }
 
 uint64_t block_chain::mempool_minimum_fee_per_kb() {
@@ -2447,7 +2497,7 @@ uint64_t block_chain::mempool_usage() {
 
 size_t block_chain::mempool_trim(uint64_t limit) {
     validation_low_priority_lock const lock(validation_mutex_);
-    return mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
+    return trim_mempool(limit);
 }
 
 ::asio::awaitable<size_t> block_chain::mempool_expire(uint64_t seen_before) {
@@ -2523,6 +2573,7 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     }
 
     auto const txid = entry.tx->hash();
+    entry.entry_id = mempool_admissions_.next_id();
     auto const tracked = entry;
     if ( ! mempool_.add(std::move(entry))) {
         return error::double_spend_mempool;
@@ -2532,8 +2583,53 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     // Past its limit the pool evicts the lowest fee per virtual byte, with
     // descendants (BCHN LimitMempoolSize). When that is this transaction, it
     // is refused as paying too little ("mempool full").
-    mempool_limit_.trim(mempool_, limit, mempool_full_fee_increment_per_kb);
-    return mempool_.contains(txid) ? error::success : error::insufficient_fee;
+    (void)trim_mempool(limit);
+    if ( ! mempool_.contains(txid)) {
+        return error::insufficient_fee;
+    }
+    // Owed to every peer that relays: its service reads it from the order.
+    mempool_admissions_.record(tracked.entry_id, txid, mempool_);
+    (void)mempool_admission_events_.try_send(std::monostate{});
+    return error::success;
+}
+
+::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_admitted_after(uint64_t after, size_t limit) {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, after, limit]() -> ::asio::awaitable<mempool_admitted> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            co_return mempool_admitted{mempool_admissions_.after(after, limit, mempool_),
+                                       mempool_admissions_.last()};
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_snapshot() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<mempool_admitted> {
+            mempool_admitted out{};
+            {
+                validation_low_priority_lock const lock(validation_mutex_);
+                out.last = mempool_admissions_.last();
+                out.entries.reserve(mempool_.size());
+                mempool_.for_each([&](mempool_entry const& entry) {
+                    out.entries.push_back(entry);
+                });
+            }
+            // A copy now: sorted without holding the lock.
+            std::ranges::sort(out.entries, {}, &mempool_entry::entry_id);
+            co_return out;
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<uint64_t> block_chain::mempool_last_admission() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<uint64_t> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            co_return mempool_admissions_.last();
+        }, ::asio::use_awaitable);
+}
+
+std::optional<mempool_entry> block_chain::get_mempool_transaction(hash_digest const& txid) const {
+    return mempool_.entry(txid);
 }
 
 blockchain::mempool& block_chain::mempool_ref() {

@@ -44,6 +44,7 @@
 #include <kth/blockchain/pools/capture_gate.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
+#include <kth/blockchain/pools/mempool_admissions.hpp>
 #include <kth/blockchain/pools/mempool_limit.hpp>
 #include <kth/blockchain/pools/mempool_transaction_summary.hpp>
 #include <kth/blockchain/pools/transaction_organizer.hpp>
@@ -181,8 +182,11 @@ struct KB_API block_chain {
         std::vector<std::shared_ptr<domain::chain::light_block const>> const& blocks,
         uint32_t start_height);
 
+    /// Validate `tx` against the chain and admit it to the mempool: the entry
+    /// for every transaction from outside the node (sendrawtransaction, the
+    /// peers, the C-API). transaction_validate() validates without admitting.
     [[nodiscard]]
-    ::asio::awaitable<code> organize(transaction_const_ptr tx);
+    ::asio::awaitable<code> submit_transaction(transaction_const_ptr tx);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(double_spend_proof_const_ptr ds_proof);
@@ -805,6 +809,55 @@ struct KB_API block_chain {
     [[nodiscard]]
     uint64_t mempool_minimum_fee_per_kb();
 
+    // mempool_minimum_fee_per_kb(), on the chain's executor: the caller waits
+    // for the validation lock without holding a thread of its own.
+    [[nodiscard]]
+    ::asio::awaitable<uint64_t> mempool_minimum_fee();
+
+    // Rung when the mempool's minimum fee may have moved: an eviction raised
+    // it, or a block changed how it decays. One slot, so rings coalesce: what
+    // it wakes reads the minimum afresh. Closed by stop().
+    [[nodiscard]]
+    ::asio::experimental::select_channel<std::monostate>& mempool_fee_events() noexcept {
+        return mempool_fee_events_;
+    }
+
+    // Transactions admitted to the mempool, for announcing them (BCHN relays
+    // each one it admits, in the order it admitted them). Each carries its
+    // entry_id, increasing with admission; a peer's service walks them from
+    // where it last stopped.
+    struct mempool_admitted {
+        std::vector<mempool_entry> entries;
+        uint64_t last;   // the last admission's id, pooled or not
+    };
+
+    // Up to `limit` transactions still pooled and admitted after `after`, in
+    // order, on the chain's executor under the validation lock.
+    [[nodiscard]]
+    ::asio::awaitable<mempool_admitted> mempool_admitted_after(uint64_t after, size_t limit);
+
+    // The last admission's id, on the chain's executor; zero before any.
+    [[nodiscard]]
+    ::asio::awaitable<uint64_t> mempool_last_admission();
+
+    // Everything pooled, in admission order (what was pooled otherwise, with
+    // id zero, first), with the last admission's id at the time: a peer's
+    // answer to `mempool` (BIP35). On the chain's executor under the
+    // validation lock.
+    [[nodiscard]]
+    ::asio::awaitable<mempool_admitted> mempool_snapshot();
+
+    // Rung when a transaction is admitted. One slot, so rings coalesce: what
+    // it wakes reads the last admission afresh. Closed by stop().
+    [[nodiscard]]
+    ::asio::experimental::select_channel<std::monostate>& mempool_admission_events() noexcept {
+        return mempool_admission_events_;
+    }
+
+    // A pooled transaction with its entry_id, or nullopt (a peer's `getdata`).
+    [[nodiscard]]
+    std::optional<mempool_entry> get_mempool_transaction(hash_digest const& txid) const;
+
     // The mempool's estimated memory, in bytes, as its limit counts it.
     [[nodiscard]]
     uint64_t mempool_usage();
@@ -1174,6 +1227,8 @@ private:
 
     populate_chain_state const chain_state_populator_;
     database::data_base database_;
+    // db.nocow: the UTXO-Z directory is created NOCOW on btrfs.
+    bool const in_place_nocow_;
 
     /// The published state on its own. Private: a caller that wants the state
     /// wants the tip and the generation that go with it, and reading them apart
@@ -1199,6 +1254,16 @@ private:
     // The size limit's state. Read and written only under validation_mutex_,
     // like every write to mempool_ (see mempool_limit).
     mempool_limit mempool_limit_;
+
+    // Under validation_mutex_: the limit's bookkeeping for a connected block,
+    // and a trim, each ringing mempool_fee_events_ when the minimum moved.
+    void note_mempool_block_connected();
+    size_t trim_mempool(uint64_t limit);
+    ::asio::experimental::select_channel<std::monostate> mempool_fee_events_{1};
+
+    // Under validation_mutex_: the order of admission, and its doorbell.
+    mempool_admissions mempool_admissions_;
+    ::asio::experimental::select_channel<std::monostate> mempool_admission_events_{1};
 
     // Immutable template publication. A one-token channel serializes rebuilds
     // across asynchronous input refresh without holding a thread-affine mutex.

@@ -21,6 +21,11 @@ extern "C" {
 KTH_EXPORT
 kth_error_code_t kth_chain_sync_mining_info(kth_chain_t self, kth_mining_info_t* out);
 
+/**
+ * Keep self and ctx alive until the terminal callback returns; handler must be non-null and must not throw.
+ * Inputs are converted and copied before scheduling; terminal completion is delivered exactly once.
+ * Allocation failure reports kth_ec_out_of_memory; other C++ exceptions report kth_ec_unhandled_exception.
+ */
 KTH_EXPORT
 void kth_chain_async_mining_info(kth_chain_t self, void* ctx, kth_mining_info_fetch_handler_t handler);
 

@@ -1072,7 +1072,7 @@ struct held_template_request {
 // Admit `tx` the way a relayed transaction is, which announces it.
 code admit(blockchain::block_chain& chain, transaction_const_ptr const& tx) {
     return ::asio::co_spawn(chain.executor(), [&chain, tx]() -> ::asio::awaitable<code> {
-        co_return co_await chain.organize(tx);
+        co_return co_await chain.submit_transaction(tx);
     }, ::asio::use_future).get();
 }
 
