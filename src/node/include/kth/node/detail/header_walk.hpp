@@ -43,10 +43,13 @@ struct walk_peer {
 };
 
 /// One stimulus: a `getheaders` to `peer`, from the current tip, identified by
-/// `seq` for its deadline and its delivery report.
+/// `seq` for its deadline and its delivery report. With `from_last_batch`, the
+/// locator starts at the last header of the full batch that peer just sent,
+/// ahead of the tip's own entries.
 struct walk_stimulus {
     uint64_t peer;
     uint64_t seq;
+    bool from_last_batch{false};
 
     friend bool operator==(walk_stimulus const&, walk_stimulus const&) = default;
 };
@@ -111,6 +114,19 @@ public:
     /// Headers from `source` moved nothing: empty, or all already held.
     [[nodiscard]]
     walk_step no_progress(uint64_t source, uint32_t tip);
+
+    /// Headers from `source` moved nothing, but they were a full batch whose
+    /// last header, at `last_height`, is held and is not the tip: the peer
+    /// answered from a point our locator shares with it, below where its
+    /// chain and ours part, and has more past that point. Not evidence about
+    /// the tip. The same peer is asked again at once, from that header
+    /// (`walk_stimulus::from_last_batch`).
+    ///
+    /// Each such answer has to end higher than the previous one from that
+    /// peer in this walk; one that does not is taken as `no_progress`. So the
+    /// follow-ups are bounded by the height of what the peer can show.
+    [[nodiscard]]
+    walk_step held_batch(uint64_t source, uint32_t last_height, uint32_t tip);
 
     /// Headers from `source` were rejected. Not evidence about the tip either
     /// way; if `source` was being stimulated, its stimulus is over.
@@ -189,6 +205,14 @@ private:
     boost::unordered_flat_set<uint64_t> spent_;
     std::optional<walk_stimulus> active_;
     std::optional<uint64_t> preferred_;
+
+    // Where the latest held batch ended, and from whom, in this walk. A walk
+    // from a new tip starts without one.
+    struct held_cursor {
+        uint64_t peer;
+        uint32_t height;
+    };
+    std::optional<held_cursor> cursor_;
 
     // The last sequence number handed out. Zero means none yet.
     uint64_t last_seq_{0};

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 
 #include <algorithm>
@@ -35,7 +36,7 @@ namespace kth::blockchain {
 // Minimal raw block parser for UTXO indexing
 // =============================================================================
 
-expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
+expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_digest const> txids) {
     byte_reader r(raw_block);
 
     // Skip block header (80 bytes)
@@ -44,6 +45,9 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
     auto const tx_count_exp = r.read_variable_little_endian();
     if (!tx_count_exp) return std::unexpected(tx_count_exp.error());
     auto const tx_count = *tx_count_exp;
+    if ( ! txids.empty() && txids.size() != tx_count) {
+        return std::unexpected(error::invalid_size);
+    }
 
     utxo_compact_block result;
 
@@ -126,8 +130,10 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block) {
 
         auto const tx_end = r.position();
 
-        // Compute txid = SHA256d of the raw tx bytes
-        auto const txid = bitcoin_hash(raw_block.subspan(tx_start, tx_end - tx_start));
+        // txid = SHA256d of the raw tx bytes, unless the caller already has it.
+        auto const txid = txids.empty()
+            ? bitcoin_hash(raw_block.subspan(tx_start, tx_end - tx_start))
+            : txids[tx_i];
 
         // Build raw_outpoint keys using the original output index and add to result
         for (auto const& out : tx_outputs) {
@@ -283,6 +289,11 @@ expect<utxo_raw_delta> process_compact_block_utxos(
 #endif
 
     utxo_raw_delta delta;
+    // Sized once from the block: grown an entry at a time the tables would be
+    // rebuilt several times per block, each rebuild an allocation and a free.
+    // The bloom can only make the block's share smaller.
+    delta.inserts.reserve(block.outputs.size());
+    delta.deletes.reserve(block.inputs.size());
 
     // Asked once, of the block itself, by the identity the rule uses: the exact
     // {hash, height} pair. This is the only place a replacement can be licensed
@@ -477,7 +488,7 @@ utxo_delta process_block_utxos(
 
     // Wait for all workers to complete (yield-friendly polling)
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     while (completed->load(std::memory_order_acquire) < n) {
         timer.expires_after(std::chrono::microseconds(100));
         co_await timer.async_wait(::asio::use_awaitable);

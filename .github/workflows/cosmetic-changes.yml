@@ -59,6 +59,11 @@ jobs:
           # Función para verificar si un archivo coincide con los patrones permitidos
           is_cosmetic_file() {
             local file="$1"
+            # CMake build definitions are executable configuration, even under
+            # docs/. Check before the generic *.txt and docs/* patterns.
+            if [[ ${file##*/} == CMakeLists.txt ]]; then
+              return 1
+            fi
             for pattern in "${ALLOWED_PATTERNS[@]}"; do
               if [[ $file == $pattern ]]; then
                 return 0

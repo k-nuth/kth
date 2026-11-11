@@ -1,3 +1,5 @@
+name: 🏗️ Build (container)
+
 on:
   workflow_call:
     inputs:
@@ -73,6 +75,26 @@ jobs:
     runs-on: ${{ inputs.os }}
     container:
       image: ${{ inputs.image }}
+    env:
+      # Without these, ccache hashes absolute paths, the compiler
+      # binary's mtime, and the working directory into every
+      # translation-unit key. The container-runner's paths and mtimes
+      # shift between runs, so ~80% of files fell through to a "miss"
+      # even when a warm cache had been restored (measured: 18% hits
+      # in a real Linux Build & Test run, ~80 min build). Same fix
+      # already applied to the macOS caller (build-without-container.yml).
+      #
+      # - `BASEDIR`: rewrite workspace paths to be relative before hashing.
+      # - `NOHASHDIR`: don't hash the CWD at all — it changes per run.
+      # - `COMPILERCHECK=content`: key off the compiler binary's SHA,
+      #   not its mtime + path.
+      # - `SLOPPINESS`: ignore benign per-run drift (system-header
+      #   timestamps, __TIME__/__DATE__, locale sensitivity, PCH,
+      #   include-file ctime/mtime).
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers,include_file_mtime,include_file_ctime
     steps:
       - name: 🐛 Debug inputs
         run: |
@@ -87,7 +109,6 @@ jobs:
           echo "inputs.compiler:           ${{ inputs.compiler }}"
           echo "inputs.compiler-version:   ${{ inputs.compiler-version }}"
 
-          echo "inputs.version-file:       ${{ inputs.version-file }}"
           echo "inputs.upload:             ${{ inputs.upload }}"
           # echo "github.event_name:         ${{ github.event_name }}"
 
@@ -167,6 +188,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.github/scripts/ccache-prune-closed-prs-selftest.sh"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials.py"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials-selftest.py"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package-selftest.py"
 
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
@@ -208,26 +230,6 @@ jobs:
         # the finding on the job.
         continue-on-error: ${{ inputs.advisory }}
         working-directory: .
-        env:
-          # Without these, ccache hashes absolute paths, the compiler
-          # binary's mtime, and the working directory into every
-          # translation-unit key. The container-runner's paths and mtimes
-          # shift between runs, so ~80% of files fell through to a "miss"
-          # even when a warm cache had been restored (measured: 18% hits
-          # in a real Linux Build & Test run, ~80 min build). Same fix
-          # already applied to the macOS caller (build-without-container.yml).
-          #
-          # - `BASEDIR`: rewrite workspace paths to be relative before hashing.
-          # - `NOHASHDIR`: don't hash the CWD at all — it changes per run.
-          # - `COMPILERCHECK=content`: key off the compiler binary's SHA,
-          #   not its mtime + path.
-          # - `SLOPPINESS`: ignore benign per-run drift (system-header
-          #   timestamps, __TIME__/__DATE__, locale sensitivity, PCH,
-          #   include-file ctime/mtime).
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_COMPILERCHECK: content
-          CCACHE_NOHASHDIR: "true"
-          CCACHE_SLOPPINESS: pch_defines,time_macros,locale,system_headers,include_file_mtime,include_file_ctime
         run: |
           # Prepare sanitizer flags
           SANITIZER_FLAGS=""
@@ -295,10 +297,13 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o with_websocket=True --format=json --out-file=build/dependency-graph.json
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"
+            if [ -f build/dependency-graph.json ]; then
+              python3 "${GITHUB_WORKSPACE}/.github/scripts/report-conan-binaries.py" build/dependency-graph.json
+            fi
             if [ "$rc" != 0 ]; then exit "$rc"; fi
 
             # Before the counters are zeroed: this is the restored cache.
@@ -318,6 +323,7 @@ jobs:
                  -DGLOBAL_BUILD=ON \
                  -DENABLE_TEST=ON \
                  -DCMAKE_BUILD_TYPE=Release \
+                 -DKTH_CI_TEST_SHARDS=2 \
                  $CCACHE_OPT
             rc=$?
             set -e
@@ -382,6 +388,111 @@ jobs:
         with:
           path: ~/.conan2
           key: ${{ steps.restore-conan.outputs.cache-primary-key }}
+
+      # Complete Catch shards run with two CTest workers. Each has an isolated
+      # working directory and temporaries; the registry check verifies node and
+      # domain selections cover every case exactly once. Per-test deadlines,
+      # the outer timeout and archived CTest logs retain hang diagnostics.
+      # C-API death-test children still disable core dumps (RLIMIT_CORE=0).
+      - name: 🧪 Pre-test diagnostics
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        run: |
+          echo "=== mem before tests ==="; free -m || true
+          echo "=== dmesg tail before tests ==="; dmesg | tail -20 2>/dev/null || true
+
+          # Sanitizer runtime options (preserve conflict resolution from build).
+          TSAN_ENABLED_FOR_TESTS="${{ inputs.enable-tsan }}"
+          if [ "${{ inputs.enable-asan }}" = "true" ] && [ "${{ inputs.enable-tsan }}" = "true" ]; then
+            TSAN_ENABLED_FOR_TESTS=false
+          fi
+          {
+            if [ "${{ inputs.enable-asan }}" = "true" ]; then
+              echo 'ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:print_stats=1'
+            fi
+            if [ "${{ inputs.enable-ubsan }}" = "true" ]; then
+              echo 'UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1'
+            fi
+            if [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
+              echo 'TSAN_OPTIONS=halt_on_error=1:abort_on_error=1'
+            fi
+          } >> "$GITHUB_ENV"
+
+      # Each test step captures the test binary's exit code via `|| rc=$?`
+      # instead of swallowing it with `|| echo`. The step itself still exits
+      # 0 so the remaining steps run (we want every binary to report, not
+      # short-circuit on the first failure), but a non-zero rc is recorded
+      # in $GITHUB_ENV. The final gate step reads that and fails the job
+      # so the workflow correctly surfaces test failures.
+      - name: ⏱️ Tests start
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        shell: bash
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-start tests
+
+      - name: 🧪 Run unit tests (bounded shards)
+        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
+        run: |
+          build="${GITHUB_WORKSPACE}/build/build/Release"
+          mkdir -p "$build/ci-test-evidence"
+          export TMPDIR="$build/ci-test-evidence"
+          rc=0
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/check-ci-test-plan.py" "$build" || rc=$?
+          if [ "$rc" = 0 ]; then
+            python3 "${GITHUB_WORKSPACE}/.github/scripts/check-ci-test-plan-selftest.py" "$build" || rc=$?
+          fi
+          if [ "$rc" = 0 ]; then
+            timeout --kill-after=30 3600 ctest --test-dir "$build" --output-on-failure --parallel 2 --timeout 1800 --output-junit "$build/ci-test-results.xml" || rc=$?
+          fi
+          if [ "$rc" != 0 ]; then
+            echo "::error::CTest failed, timed out, or had an incomplete test plan (exit=$rc)"
+            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
+          fi
+
+      - name: 🧪 Post-test diagnostics
+        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
+        run: |
+          echo "=== mem after tests ==="; free -m || true
+          echo "=== dmesg tail after tests ==="; dmesg | tail -40 2>/dev/null || true
+          echo "=== processes still alive ==="; ps -eo pid,ppid,rss,comm --sort=-rss | head -20 || true
+
+      # Gate that turns the recorded test failures into a job failure.
+      # Runs unconditionally (`always()`) so it fires even if an earlier
+      # step ended in failure for an unrelated reason.
+      - name: 🧪 Test results gate
+        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
+        run: |
+          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-end tests "${TESTS_FAILED:-0}"
+          if [ "${TESTS_FAILED:-0}" = "1" ]; then
+            echo "::error::One or more test binaries failed or timed out (see annotations above)"
+            exit 1
+          fi
+          echo "All test binaries passed"
+
+      # Its own step, and always: a run that failed in configure, in the build
+      # or in the tests is exactly the run this is for. It reports; the steps
+      # that failed have already failed and nothing here changes that.
+      #
+      # Unlike the container-less workflow, the ccache save here is an explicit
+      # step that runs before this one, so its real outcome is knowable and is
+      # reported rather than described as scheduled.
+
+      - name: ⏭️ Skip tests info
+        if: ${{ inputs.skip-tests == true }}
+        run: |
+          echo "⏭️ Unit tests skipped (skip-tests=true)"
+
+      - name: 🚀 Release build info
+        if: ${{ inputs.upload == true }}
+        run: |
+          echo "🚀 Release build completed - package validation included in conan create"
+          echo "📦 Package ready for upload"
+
+      # - uses: github/codeql-action/analyze@v2
+
+      - name: 📦 Validate installed package consumers
+        if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package.py" --version "${{ inputs.build-version }}" --profile linux-ci-cd --march-id ZLm9Pjh
 
       - name: 🗄️ Save ccache
         id: save-ccache
@@ -476,194 +587,6 @@ jobs:
             echo "- None enabled" >> $GITHUB_STEP_SUMMARY
           fi
 
-      # Test phase — split per binary instead of one ctest invocation.
-      #
-      # The single-step `ctest` setup ended with the GHA runner annotation
-      # "The hosted runner lost communication with the server... starves
-      # it for CPU/Memory" on a non-trivial fraction of runs, and when it
-      # happened the test step archived ZERO output. Splitting per binary
-      # made it observable: the last step that *started* identifies the
-      # culprit. Root cause turned out to be `kth_capi_test` — its death
-      # tests fork() + abort() the binary ~50 times, and the kernel core-
-      # dump pass (RLIMIT_CORE=unlimited, core_pattern piped to a handler
-      # absent inside the container) hangs waiting for the handler. With
-      # ~50 death tests per run that's enough to wedge the runner.
-      # Fixed properly in `src/c-api/test/test_helpers.hpp` (`RLIMIT_CORE=0`
-      # in the child); the split + `--kill-after` here is defence in depth
-      # so a single hung binary can't take the whole job down again.
-      #
-      # Order is cheap → heavy (kth_domain_test last) so when the runner
-      # does die mid-run we lose the least diagnostic data.
-      - name: 🧪 Pre-test diagnostics
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        run: |
-          echo "=== mem before tests ==="; free -m || true
-          echo "=== dmesg tail before tests ==="; dmesg | tail -20 2>/dev/null || true
-
-          # Sanitizer runtime options (preserve conflict resolution from build).
-          TSAN_ENABLED_FOR_TESTS="${{ inputs.enable-tsan }}"
-          if [ "${{ inputs.enable-asan }}" = "true" ] && [ "${{ inputs.enable-tsan }}" = "true" ]; then
-            TSAN_ENABLED_FOR_TESTS=false
-          fi
-          {
-            if [ "${{ inputs.enable-asan }}" = "true" ]; then
-              echo 'ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:print_stats=1'
-            fi
-            if [ "${{ inputs.enable-ubsan }}" = "true" ]; then
-              echo 'UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1'
-            fi
-            if [ "$TSAN_ENABLED_FOR_TESTS" = "true" ]; then
-              echo 'TSAN_OPTIONS=halt_on_error=1:abort_on_error=1'
-            fi
-          } >> "$GITHUB_ENV"
-
-      # Each test step captures the test binary's exit code via `|| rc=$?`
-      # instead of swallowing it with `|| echo`. The step itself still exits
-      # 0 so the remaining steps run (we want every binary to report, not
-      # short-circuit on the first failure), but a non-zero rc is recorded
-      # in $GITHUB_ENV. The final gate step reads that and fails the job
-      # so the workflow correctly surfaces test failures.
-      - name: ⏱️ Tests start
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        shell: bash
-        run: |
-          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-start tests
-
-      - name: 🧪 secp256k1 (tests + exhaustive)
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          rc=0
-          ./src/secp256k1/bin/tests --list_tests > secp256k1-tests.list || rc=$?
-          if [ "$rc" != 0 ] || ! grep -q '^Module: schnorr_bch ' secp256k1-tests.list; then
-            echo "::error::BCH Schnorr tests are missing from the secp256k1 test registry"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-          rc=0
-          timeout --kill-after=30 300 ./src/secp256k1/bin/tests || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::secp256k1 tests failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-          rc=0
-          timeout --kill-after=30 300 ./src/secp256k1/bin/noverify_tests || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::secp256k1 noverify_tests failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-          rc=0
-          timeout --kill-after=30 600 ./src/secp256k1/bin/exhaustive_tests || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::secp256k1 exhaustive_tests failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 kth_infrastructure_test (+ compile-fail)
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          rc=0
-          timeout --kill-after=30 300 ./src/infrastructure/kth_infrastructure_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_infrastructure_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-          # The Python compile-fail test is registered via add_test(); run it
-          # through ctest so we keep its environment exactly as defined in
-          # src/infrastructure/CMakeLists.txt.
-          rc=0
-          timeout --kill-after=30 120 ctest --output-on-failure -R '^(kth_infrastructure_compile_fail_tests|kth_compile_check_driver_tests)$' || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_infrastructure_compile_fail_tests failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 kth_blockchain_test (vmlimits)
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          rc=0
-          timeout --kill-after=30 300 ./src/blockchain/kth_blockchain_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_blockchain_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 kth_node_test
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          rc=0
-          # The node suite takes about five minutes on a hosted runner and
-          # keeps growing; the limit is there to end a hang, not to time the
-          # suite, so it leaves room for both.
-          node_test_timeout=900
-          if [ "${{ inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan }}" = "true" ]; then
-            node_test_timeout=1800
-          fi
-          timeout --kill-after=30 "$node_test_timeout" ./src/node/kth_node_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_node_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 kth_capi_test
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          # The c-api subdir is conditionally built (e.g. disabled on the
-          # version1/v1.0 coroutine branch until c-api is migrated). Skip
-          # silently if the binary wasn't produced — keep the gate strict
-          # when it IS produced.
-          if [ ! -x ./src/c-api/kth_capi_test ]; then
-            echo "kth_capi_test not built — skipping."
-            exit 0
-          fi
-          rc=0
-          timeout --kill-after=30 300 ./src/c-api/kth_capi_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_capi_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 kth_domain_test (heaviest — VMB auto suite)
-        if: ${{ inputs.skip-tests != true && inputs.upload != true }}
-        working-directory: build/build/Release
-        run: |
-          rc=0
-          timeout --kill-after=30 1500 ./src/domain/kth_domain_test --reporter compact || rc=$?
-          if [ "$rc" != 0 ]; then
-            echo "::error::kth_domain_test failed or timed out (exit=$rc)"
-            echo 'TESTS_FAILED=1' >> "$GITHUB_ENV"
-          fi
-
-      - name: 🧪 Post-test diagnostics
-        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
-        run: |
-          echo "=== mem after tests ==="; free -m || true
-          echo "=== dmesg tail after tests ==="; dmesg | tail -40 2>/dev/null || true
-          echo "=== processes still alive ==="; ps -eo pid,ppid,rss,comm --sort=-rss | head -20 || true
-
-      # Gate that turns the recorded test failures into a job failure.
-      # Runs unconditionally (`always()`) so it fires even if an earlier
-      # step ended in failure for an unrelated reason.
-      - name: 🧪 Test results gate
-        if: ${{ always() && inputs.skip-tests != true && inputs.upload != true }}
-        run: |
-          "${GITHUB_WORKSPACE}/.github/scripts/ci-metrics.sh" phase-end tests "${TESTS_FAILED:-0}"
-          if [ "${TESTS_FAILED:-0}" = "1" ]; then
-            echo "::error::One or more test binaries failed or timed out (see annotations above)"
-            exit 1
-          fi
-          echo "All test binaries passed"
-
-      # Its own step, and always: a run that failed in configure, in the build
-      # or in the tests is exactly the run this is for. It reports; the steps
-      # that failed have already failed and nothing here changes that.
-      #
-      # Unlike the container-less workflow, the ccache save here is an explicit
-      # step that runs before this one, so its real outcome is knowable and is
-      # reported rather than described as scheduled.
       - name: 📊 Where the time went
         if: ${{ always() && inputs.upload != true }}
         shell: bash
@@ -684,27 +607,22 @@ jobs:
 
           "$METRICS" summary
 
-      - name: ⏭️ Skip tests info
-        if: ${{ inputs.skip-tests == true }}
-        run: |
-          echo "⏭️ Unit tests skipped (skip-tests=true)"
-          
-      - name: 🚀 Release build info
-        if: ${{ inputs.upload == true }}
-        run: |
-          echo "🚀 Release build completed - package validation included in conan create"
-          echo "📦 Package ready for upload"
 
-      # - uses: github/codeql-action/analyze@v2
-
-      - name: 📦 Validate installed package consumers
-        if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
-        run: |
-          # Exercise the package/test_package boundary on PRs without publishing.
-          # Configure, link and native execution failures must fail this job.
-          for consensus in False True; do
-            conan create conanfile.py --version ${{ inputs.build-version }} --lockfile=build/conan.lock -pr:b linux-ci-cd -pr:h linux-ci-cd --build=missing -o tests=False -o march_id=ZLm9Pjh -o consensus="$consensus"
-          done
+      - name: 📤 Upload test and package results
+        if: ${{ always() && !inputs.upload }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-tests-${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.compiler-version }}-${{ (inputs.enable-asan || inputs.enable-ubsan || inputs.enable-tsan) && 'sanitizers' || 'clean' }}
+          path: |
+            build/build/Release/Testing/Temporary/
+            build/build/Release/ci-test-results.xml
+            build/build/Release/ci-test-evidence/**/*.log
+            build/build/Release/ci-test-evidence/**/*.json
+            build/build/Release/ci-test-evidence/**/*.cpp
+            build/build/Release/ci-test-evidence/**/*.rsp
+            build/package-validation.json
+            build/dependency-binaries.json
+          if-no-files-found: warn
 
       - name: 📦 Upload
         # if: github.event_name == 'push' && needs.check.outputs.permitted == 'true'
