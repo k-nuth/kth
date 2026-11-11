@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <filesystem>
 
 #include <algorithm>
 #include <chrono>
@@ -60,8 +61,8 @@ domain::message::header::list batch(uint32_t tag, size_t count) {
 
 network::settings peer_config() {
     network::settings settings;
-    settings.hosts_file = "/tmp/kth_ingest_hosts_nonexistent.dat";
-    settings.banlist_file = "/tmp/kth_ingest_banlist_nonexistent.dat";
+    settings.hosts_file = std::filesystem::temp_directory_path() / ("kth_ingest_hosts_nonexistent.dat");
+    settings.banlist_file = std::filesystem::temp_directory_path() / ("kth_ingest_banlist_nonexistent.dat");
     return settings;
 }
 

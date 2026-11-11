@@ -6,7 +6,9 @@
 #define KTH_BLOCKCHAIN_VALIDATE_BATCH_VALIDATE_HPP
 
 #include <cstddef>
+#include <expected>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <kth/domain.hpp>
@@ -95,6 +97,42 @@ code validate_block_batch(
     std::vector<block_const_ptr> const& blocks,
     size_t start_height,
     batch_rejection& rejection);
+
+// The same validation, given each block's transaction identifiers
+// (txids[i] == blocks[i]->to_hashes()). Every check that needs them reads them
+// from here, so a caller that also needs them afterwards, to build the UTXO
+// delta, computes them once. A count that does not match the batch is refused
+// as operation_failed, attributed to no block.
+KB_API
+code validate_block_batch(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    std::vector<block_const_ptr> const& blocks,
+    std::span<hash_list const> txids,
+    size_t start_height,
+    batch_rejection& rejection);
+
+// Stored blocks parsed for validation, in the order given, with each block's
+// transaction identifiers (txids[i] == blocks[i]->to_hashes()).
+struct parsed_block_batch {
+    std::vector<block_const_ptr> blocks;
+    std::vector<hash_list> txids;
+};
+
+// Why a batch could not be parsed. `block` is the lowest index whose bytes do
+// not parse, the same one a parse in order stops at; empty when the parse did
+// not finish for a reason that is no block's (an allocation that failed).
+struct batch_parse_failure {
+    std::optional<size_t> block;
+};
+
+// Parse raw blocks and compute their transaction identifiers, the blocks in
+// parallel: each is independent of the others. Every thread started is joined
+// before returning.
+KB_API
+std::expected<parsed_block_batch, batch_parse_failure>
+parse_block_batch(std::span<data_chunk const> raw_blocks);
 
 // One input's SigChecks contribution to a validated batch, in emission order
 // (block by block, then transaction by transaction, then input by input — so a

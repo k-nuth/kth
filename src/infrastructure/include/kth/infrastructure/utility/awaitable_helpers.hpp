@@ -5,10 +5,11 @@
 #ifndef KTH_INFRASTRUCTURE_AWAITABLE_HELPERS_HPP
 #define KTH_INFRASTRUCTURE_AWAITABLE_HELPERS_HPP
 
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && !defined(KTH_BROWSER_NODE)
 #error "awaitable_helpers.hpp requires coroutine support, which is not available under Emscripten."
 #endif
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <chrono>
 #include <expected>
 #include <system_error>
@@ -36,7 +37,7 @@ awaitable<std::expected<T, std::error_code>> with_timeout(
     using namespace ::asio::experimental::awaitable_operators;
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     timer.expires_after(timeout);
 
     auto result = co_await (
@@ -61,7 +62,7 @@ awaitable<std::expected<T, E>> with_timeout(
     using namespace ::asio::experimental::awaitable_operators;
 
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     timer.expires_after(timeout);
 
     auto result = co_await (
@@ -83,7 +84,7 @@ awaitable<std::expected<T, E>> with_timeout(
 template <typename Rep, typename Period>
 awaitable<void> delay(std::chrono::duration<Rep, Period> duration) {
     auto executor = co_await ::asio::this_coro::executor;
-    ::asio::steady_timer timer(executor);
+    ::kth::steady_timer timer(executor);
     timer.expires_after(duration);
     co_await timer.async_wait(use_awaitable);
 }

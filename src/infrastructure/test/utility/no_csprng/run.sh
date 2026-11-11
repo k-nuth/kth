@@ -37,10 +37,17 @@ trap 'rm -rf "$(dirname "${shim}")"' EXIT
 
 cc -shared -fPIC -O2 "${here}/fake_getrandom.c" -o "${shim}"
 
+# An AddressSanitizer build refuses to start unless its runtime is the first
+# library loaded: preloading the shim alone would abort every run, which step 0
+# would take for interception. The runtime the binary links goes first. ldd
+# fails on a static binary; that case is left to step 0, which skips it.
+asan_runtime="$({ ldd "${test_binary}" 2>/dev/null || true; } | awk '/libasan/ { print $3; exit }')"
+readonly preload="${asan_runtime:+${asan_runtime} }${shim}"
+
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # 0. The shim has to actually intercept, or every result below is a false pass.
-if LD_PRELOAD="${shim}" "${test_binary}" \
+if LD_PRELOAD="${preload}" "${test_binary}" \
         "pseudo random check_available succeeds on a working system" \
         >/dev/null 2>&1; then
     echo "SKIP: LD_PRELOAD did not take effect (statically linked libc?)." >&2
@@ -55,7 +62,7 @@ echo "ok: shim intercepts (probe fails when the CSPRNG is gone)"
 echo "ok: probe passes on a working CSPRNG"
 
 # 2. A draw with no CSPRNG must abort, never return non-random bytes.
-output="$(LD_PRELOAD="${shim}" "${test_binary}" \
+output="$(LD_PRELOAD="${preload}" "${test_binary}" \
     "pseudo random generate returns distinct values" 2>&1 || true)"
 
 grep -q "FATAL: system CSPRNG failed" <<<"${output}" \
