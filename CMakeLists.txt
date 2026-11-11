@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(kth VERSION 0.0.0 LANGUAGES CXX C)
 
+include(cmake/KthRpcBackend.cmake)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -39,6 +41,9 @@ message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KthCompilerChecks.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KthTests.cmake)
+
 option(BUILD_NODE_EXE "Build the node executable." ON)
 option(BUILD_C_API "Build the C-API." ON)
 option(GLOBAL_BUILD "Global build flag." ON)
@@ -54,6 +59,22 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
 option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
+option(KTH_BROWSER_NODE "Build the experimental Worker-owned WebSocket node" OFF)
+if(KTH_BROWSER_NODE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR NOT KTH_ASIO_STANDALONE)
+        message(FATAL_ERROR "KTH_BROWSER_NODE requires Emscripten and standalone Asio")
+    endif()
+    add_compile_definitions(KTH_BROWSER_NODE ASIO_DISABLE_THREADS)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fwasm-exceptions>)
+    add_link_options(-fwasm-exceptions -lwebsocket.js)
+    find_package(asio REQUIRED)
+    # Selections wait on the Worker runtime's timer, the one timer it wakes for
+    # (asio 1.38.3-kth.3, docs/asio-select-sync.md).
+    add_compile_definitions(
+        ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"
+        ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
+endif()
+option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
@@ -111,6 +132,10 @@ if(ENABLE_TEST)
 endif()
 
 add_subdirectory(src)
+option(KTH_BROWSER_CONTROLS "Build browser runtime and transport controls" OFF)
+if(KTH_BROWSER_NODE AND KTH_BROWSER_CONTROLS)
+    add_subdirectory(experiments/browser-worker)
+endif()
 
 # Exercise the real parser translation unit's currency selection with the
 # generated target flags. flags.make is provided by the Makefiles generator.

@@ -24,6 +24,7 @@ settings::settings()
     , reorg_pool_limit(100)      //TODO(fernando): look for a good default
     , db_max_size(db_size_mainnet)
     , safe_mode(true)
+    , nocow(true)
     , cache_capacity(0)
 {}
 

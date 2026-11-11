@@ -419,21 +419,28 @@ bool block::is_final(block_ticks const& ticks, size_t height, uint32_t block_tim
 
 // Distinctness is defined by transaction hash.
 bool block::is_distinct_transaction_set() const {
-    auto const hasher = [](transaction const& tx) { return tx.hash(); };
-    auto const& txs = transactions_;
-    hash_list hashes(txs.size());
-    std::transform(txs.begin(), txs.end(), hashes.begin(), hasher);
+    return is_distinct_transaction_set(to_hashes());
+}
+
+bool block::is_distinct_transaction_set(std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
+    hash_list hashes(txids.begin(), txids.end());
     std::sort(hashes.begin(), hashes.end());
     auto const distinct_end = std::unique(hashes.begin(), hashes.end());
     return distinct_end == hashes.end();
 }
 
 hash_digest block::generate_merkle_root() const {
-    if (transactions_.empty()) {
+    return generate_merkle_root(to_hashes());
+}
+
+hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
+    if (txids.empty()) {
         return null_hash;
     }
 
-    auto hashes = to_hashes();
+    hash_list hashes(txids.begin(), txids.end());
 
     // Temporary buffers for batched SHA256D64 processing
     // SHA256D64 uses SIMD: 2-way on ARM, 4-way on SSE4.1, 8-way on AVX2
@@ -495,15 +502,22 @@ size_t block::non_coinbase_input_count() const {
 // validates, imposing an otherwise unnecessary partial transaction ordering.
 //*****************************************************************************
 bool block::is_forward_reference() const {
+    return is_forward_reference(to_hashes());
+}
+
+bool block::is_forward_reference(std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
     std::unordered_map<hash_digest, bool> hashes(transactions_.size());
     auto const is_forward = [&hashes](input const& input) {
         return hashes.count(input.previous_output().hash()) != 0;
     };
 
-    for (auto const& tx : reverse(transactions_)) {
-        hashes.emplace(tx.hash(), true);
+    // From the last transaction back to the first.
+    for (size_t i = transactions_.size(); i-- > 0;) {
+        hashes.emplace(txids[i], true);
 
-        if (std::any_of(tx.inputs().begin(), tx.inputs().end(), is_forward)) {
+        auto const& inputs = transactions_[i].inputs();
+        if (std::any_of(inputs.begin(), inputs.end(), is_forward)) {
             return true;
         }
     }
@@ -512,16 +526,22 @@ bool block::is_forward_reference() const {
 }
 
 bool block::is_canonical_ordered() const {
-    //precondition: transactions_.size() > 1
+    return is_canonical_ordered(to_hashes());
+}
 
-    auto const hash_cmp = [](transaction const& a, transaction const& b){
-        auto const a_hash = a.hash();
-        auto const b_hash = b.hash();
-        return std::lexicographical_compare(a_hash.rbegin(), a_hash.rend(), b_hash.rbegin(), b_hash.rend());
+bool block::is_canonical_ordered(std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
+    if (txids.size() < 2) {
+        return true;
+    }
+
+    // Identifiers compare as numbers, most significant byte last.
+    auto const hash_cmp = [](hash_digest const& a, hash_digest const& b) {
+        return std::lexicographical_compare(a.rbegin(), a.rend(), b.rbegin(), b.rend());
     };
 
     // Skip the coinbase
-    return std::is_sorted(transactions_.begin() + 1, transactions_.end(), hash_cmp);
+    return std::is_sorted(txids.begin() + 1, txids.end(), hash_cmp);
 }
 
 // This is an early check that is redundant with block pool accept checks.
@@ -548,6 +568,10 @@ bool block::is_internal_double_spend() const {
 
 bool block::is_valid_merkle_root() const {
     return generate_merkle_root() == header_.merkle();
+}
+
+bool block::is_valid_merkle_root(std::span<hash_digest const> txids) const {
+    return generate_merkle_root(txids) == header_.merkle();
 }
 
 // Overflow returns max_uint64.
@@ -628,6 +652,11 @@ code block::check() const {
 // Check block body only (skip header validation for headers-first sync).
 // Use this when headers have already been validated during header sync.
 code block::check_body() const {
+    return check_body(to_hashes());
+}
+
+code block::check_body(std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
     if (serialized_size() > static_absolute_max_block_size()) {
         return error::block_size_limit;
     }
@@ -647,7 +676,7 @@ code block::check_body() const {
 #if ! defined(KTH_CURRENCY_BCH) // BTC and LTC
     // Note(kth): LTOR (Legacy Transaction ORdering) is a check just for Bitcoin (BTC)
     //            and for BitcoinCash (BCH) before 2018-Nov-15.
-    if (is_forward_reference()) {
+    if (is_forward_reference(txids)) {
         return error::forward_reference;
     }
 #endif
@@ -656,7 +685,7 @@ code block::check_body() const {
         return error::block_internal_double_spend;
     }
 
-    if ( ! is_valid_merkle_root()) {
+    if ( ! is_valid_merkle_root(txids)) {
         return error::merkle_mismatch;
     }
 

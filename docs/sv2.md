@@ -470,8 +470,11 @@ the Success does not retarget the accepted job (specification section 5.3.21).
 A share that meets the network target is submitted locally
 through the same block-connection path as solo mining. In `full-template`,
 after `DeclareMiningJob.Success`, that solution is also `PushSolution` to the
-JDS (specification section 6.4.9). `coinbase-only` has no declared job for
-`PushSolution` to name, so the block is connected locally and not pushed.
+JDS (specification section 6.4.9), but only when the block was mined on the
+declaration the JDS holds now. A block on a replaced declaration's coinbase,
+still valid on the same tip, is connected locally, logged and not pushed.
+`coinbase-only` has no declared job for `PushSolution` to name, so the block
+is connected locally and not pushed.
 
 Fallback follows specification section 6.2. The node returns downstream work
 to the solo payout, and logs why, when the JDS does not answer
