@@ -189,6 +189,8 @@ set(kth_sources_just_legacy
   src/pools/header_organizer.cpp
   src/pools/transaction_organizer.cpp
   src/pools/mempool.cpp
+  src/pools/mempool_admissions.cpp
+  src/pools/mempool_limit.cpp
   src/pools/block_template.cpp
   src/pools/template_prevouts.cpp
   src/pools/capture_gate.cpp
@@ -245,6 +247,8 @@ set(kth_headers
   include/kth/blockchain/pools/mempool.hpp
   include/kth/blockchain/pools/mempool_config.hpp
   include/kth/blockchain/pools/mempool_hashers.hpp
+  include/kth/blockchain/pools/mempool_admissions.hpp
+  include/kth/blockchain/pools/mempool_limit.hpp
   include/kth/blockchain/pools/mempool_map.hpp
   include/kth/blockchain/pools/mempool_stats.hpp
   include/kth/blockchain/pools/mempool_transaction_summary.hpp
@@ -309,6 +313,8 @@ if (ENABLE_TEST)
     find_package(Catch2 3 REQUIRED)
 
     set(kth_blockchain_test_sources
+        test/utxo_block_parse.cpp
+        test/parse_block_batch.cpp
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
@@ -321,6 +327,7 @@ if (ENABLE_TEST)
         test/capture_gate.cpp
         test/mempool_lease_bench.cpp
         test/mempool_test.cpp
+        test/mempool_admissions.cpp
         test/mempool_persistence_test.cpp
         test/block_template_test.cpp
         test/utxoz_roundtrip.cpp
@@ -341,6 +348,7 @@ if (ENABLE_TEST)
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp
         test/finalization.cpp
+        test/mainnet_checkpoints.cpp
         test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
@@ -371,15 +379,7 @@ if (ENABLE_TEST)
     _group_sources(kth_blockchain_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
     include(CTest)
-    # Try to use Catch2 automatic test discovery
-    find_package(Catch2 QUIET)
-    if(Catch2_FOUND)
-      include(Catch)
-      catch_discover_tests(kth_blockchain_test)
-    else()
-      # Fallback to manual test registration
-      add_test(NAME kth_blockchain_test COMMAND kth_blockchain_test)
-    endif()
+    kth_register_tests(kth_blockchain_test)
 endif()
 
 # VM-Limits tests
@@ -411,7 +411,7 @@ if (ENABLE_TEST)
 
     include(CTest)
     include(Catch)
-    catch_discover_tests(kth_blockchain_vmlimits_test)
+    kth_register_tests(kth_blockchain_vmlimits_test)
 endif()
 
 # Tools

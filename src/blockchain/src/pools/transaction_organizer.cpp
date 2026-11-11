@@ -183,7 +183,8 @@ bool transaction_organizer::stop() {
 //-----------------------------------------------------------------------------
 
 // This is called from blockchain::organize.
-::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx) {
+::asio::awaitable<code> transaction_organizer::organize(transaction_const_ptr tx,
+    std::optional<uint64_t> first_seen) {
     if (stopped()) co_return error::service_stopped;
     auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
     if (wait_error) {
@@ -201,14 +202,15 @@ bool transaction_organizer::stop() {
 
     // Keep the admission token across both attempts. A new publication requires
     // fresh prevouts, consensus checks and scripts, not just another insertion.
-    auto result = co_await organize_attempt(tx);
+    auto result = co_await organize_attempt(tx, first_seen);
     if (result == error::stale_chain && !stopped()) {
-        result = co_await organize_attempt(tx);
+        result = co_await organize_attempt(tx, first_seen);
     }
     co_return result;
 }
 
-::asio::awaitable<code> transaction_organizer::organize_attempt(transaction_const_ptr tx) {
+::asio::awaitable<code> transaction_organizer::organize_attempt(transaction_const_ptr tx,
+    std::optional<uint64_t> first_seen) {
     auto const published = chain_.chain_view();
 
     if (stopped()) {
@@ -290,9 +292,9 @@ bool transaction_organizer::stop() {
     // Admit to the mempool. The tx is already validated (accept / fee / dust /
     // connect above); this only records it. add() enforces first-seen: it
     // returns false on a double-spend conflict with a pooled tx (or a duplicate).
-    auto const seen = static_cast<uint64_t>(
+    auto const seen = first_seen.value_or(uint64_t(
         std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::system_clock::now().time_since_epoch()).count()));
     auto const committed = chain_.commit_validated_transaction(mempool_entry{
         tx,
         tx->fees(),

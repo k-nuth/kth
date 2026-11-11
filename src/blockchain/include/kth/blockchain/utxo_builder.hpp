@@ -85,8 +85,14 @@ struct utxo_compact_block {
 
 // Parse a raw block (starting at the 80-byte header) into a utxo_compact_block.
 // The returned spans point into raw_block, which must outlive the result.
+//
+// txids, when not empty, are the identifiers of the block's transactions in
+// order, already known from parsing the same bytes (validation has them), and
+// are used instead of hashing each transaction again. A count that differs
+// from the block's is refused.
 [[nodiscard]]
-KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block);
+KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block,
+    std::span<hash_digest const> txids = {});
 
 // =============================================================================
 // Pre-serialized UTXO value for zero-copy insertion into UTXO-Z.

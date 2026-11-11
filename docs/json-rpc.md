@@ -10,16 +10,36 @@ of truth for that mapping.
 
 ## Building
 
-The server is **off by default** and gated at compile time:
+The build selects exactly one RPC backend. JSON-RPC is compiled by default;
+the listener remains **off at runtime by default**.
 
-```
-conanfile option  rpc=True   →   CMake KTH_WITH_RPC   →   #if defined(KTH_WITH_RPC)
-```
+| Backend | Conan option | CMake option | Status |
+| --- | --- | --- | --- |
+| JSON-RPC | `-o '&:rpc=jsonrpc'` | `-DKTH_RPC_BACKEND=jsonrpc` | Implemented; default |
+| None | `-o '&:rpc=none'` | `-DKTH_RPC_BACKEND=none` | No RPC listener or llhttp dependency |
+| gRPC + Protobuf | `-o '&:rpc=grpc'` | `-DKTH_RPC_BACKEND=grpc` | Implemented; typed read-only API, see [grpc.md](grpc.md) |
+| Cap'n Proto RPC | `-o '&:rpc=capnproto'` | `-DKTH_RPC_BACKEND=capnproto` | Implemented; typed read-only API, see [capnproto-rpc.md](capnproto-rpc.md) |
+
+One backend per binary: selecting another one leaves JSON-RPC out, with every
+method only it offers (mining, `sendrawtransaction`, `help`, ...).
+
+The former Conan values `rpc=True` and `rpc=False` must be migrated to
+`rpc=jsonrpc` and `rpc=none`. A CMake configuration without the Conan toolchain
+and without `KTH_RPC_BACKEND` follows the legacy `KTH_WITH_RPC`: `ON` selects
+`jsonrpc`; `OFF` or unset selects `none`, as before. A later `-DKTH_WITH_RPC=...`
+that contradicts the selected backend fails the configuration instead of being
+ignored. Emscripten forces `none`, whatever was asked.
+
+`KTH_WITH_RPC` remains the derived C++ feature macro for the JSON-RPC backend;
+the gRPC backend has its own `KTH_WITH_GRPC` and the Cap'n Proto one its own
+`KTH_WITH_CAPNPROTO_RPC`, so no two share a guard. Neither falls back to
+JSON-RPC: each reuses `rpc.enabled/bind/port/user/password` with its own
+transport and serves no JSON.
 
 The transport uses [llhttp](https://github.com/nodejs/llhttp) (the Node.js HTTP
 parser, sans-io) fed by the node's existing standalone-asio coroutine loop, plus
 [simdjson](https://github.com/simdjson/simdjson) for both request parsing and
-response serialization. `llhttp` is only pulled in when the `rpc` option is enabled.
+response serialization. `llhttp` is only pulled in when `rpc=jsonrpc` is selected.
 
 ## Running
 
@@ -34,7 +54,8 @@ rpc.password = mypass
 ```
 
 Starting a build without RPC support but with `rpc.enabled = true` logs a warning
-and continues without the server.
+and continues without the server. The warning identifies `rpc=jsonrpc` as the
+required build selection.
 
 ### Authentication
 
@@ -77,7 +98,7 @@ counterpart.
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
-| `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `organize(tx)` |
+| `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
@@ -117,9 +138,9 @@ at most one string; other types or extra arguments return invalid params.
 
 `estimatefee` returns the fee per kB, in BCH, that the size part of the node's
 transaction price asks for: `node.byte_fee_satoshis` per byte, rounded to whole
-satoshis per kB (`0.000001` with the default `0.1`). The price also charges
-`node.sigop_fee_satoshis` per signature operation, which a per-kB rate cannot
-carry, so a transaction pays that on top. The node has no fee estimator: the
+satoshis per kB (`0.00001` with the default `1`, BCHN's relay floor). An operator
+who sets `node.sigop_fee_satoshis` (0 by default) adds a price per signature
+operation, which a per-kB rate cannot carry, so a transaction pays that on top. The node has no fee estimator: the
 target-blocks argument older clients send is accepted and does not change the
 answer.
 
@@ -212,8 +233,8 @@ and `warnings`. `version` is `kth::version` as one number:
 `major * 1000000 + minor * 10000 + patch * 100`, so 1.5.2 is 1050200.
 `networkactive` is false while the P2P node is not running. `relayfee` is the
 size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
-BCH per kB; the price also charges `node.sigop_fee_satoshis` per signature
-operation. The method takes no arguments: anything other than omitted params or
+BCH per kB; a `node.sigop_fee_satoshis` set by the operator is charged on top
+per signature operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
 
 ## Blocks and transactions

@@ -102,7 +102,7 @@ bool validate_header::is_checkpoint_conflict(hash_digest const& hash, size_t hei
 }
 
 bool validate_header::is_under_checkpoint(size_t height) const {
-    return height <= last_checkpoint_height();
+    return !settings_.full_validation && height <= last_checkpoint_height();
 }
 
 bool validate_header::is_checkpoint_height(size_t height) const {
@@ -440,8 +440,8 @@ code validate_header::accept_full(domain::chain::header const& header,
         return error::checkpoints_failed;
     }
 
-    // 3. Under checkpoint - skip remaining checks
-    if (state.is_under_checkpoint()) {
+    // 3. Checkpoint anchors grant skipping only in optimized mode.
+    if (!settings_.full_validation && state.is_under_checkpoint()) {
         return error::success;
     }
 

@@ -18,6 +18,7 @@
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/not_found.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::node::detail {
@@ -39,6 +40,20 @@ std::optional<domain::message::header> header_of_compact_block(data_chunk const&
 /// when an `inv` announces no blocks.
 [[nodiscard]]
 hash_list announced_by_inventory(data_chunk const& payload, uint32_t version);
+
+/// What an `inv` announces, read once: its blocks (plain and compact-block
+/// entries) for the header path, its transactions for the relay.
+struct inventory_announcements {
+    hash_list blocks;
+    hash_list transactions;
+};
+
+[[nodiscard]]
+inventory_announcements announced_in_inventory(data_chunk const& payload, uint32_t version);
+
+/// The transactions a `notfound` names. Empty for an unparseable message.
+[[nodiscard]]
+hash_list transactions_not_found(data_chunk const& payload, uint32_t version);
 
 } // namespace kth::node::detail
 

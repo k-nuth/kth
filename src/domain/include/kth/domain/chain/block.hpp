@@ -11,6 +11,7 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <span>
 #include <vector>
 
 #include <kth/domain/chain/chain_state.hpp>
@@ -84,6 +85,12 @@ struct KD_API block {
     [[nodiscard]]
     hash_list to_hashes() const;
 
+    // The overloads below taking `txids` read the transaction identifiers from
+    // it instead of hashing each transaction again: computing an identifier
+    // serializes the transaction, so a caller that needs them in several checks
+    // computes them once with to_hashes() and passes them along. `txids` must be
+    // this block's to_hashes(); the overloads without it compute them once.
+
     // Utilities.
     //-------------------------------------------------------------------------
 
@@ -148,6 +155,9 @@ struct KD_API block {
     hash_digest generate_merkle_root() const;
 
     [[nodiscard]]
+    hash_digest generate_merkle_root(std::span<hash_digest const> txids) const;
+
+    [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;
 
     [[nodiscard]]
@@ -164,6 +174,9 @@ struct KD_API block {
 
     [[nodiscard]]
     bool is_distinct_transaction_set() const;
+
+    [[nodiscard]]
+    bool is_distinct_transaction_set(std::span<hash_digest const> txids) const;
 
     [[nodiscard]]
     bool is_valid_coinbase_claim(size_t height) const;
@@ -184,7 +197,13 @@ struct KD_API block {
     bool is_forward_reference() const;
 
     [[nodiscard]]
+    bool is_forward_reference(std::span<hash_digest const> txids) const;
+
+    [[nodiscard]]
     bool is_canonical_ordered() const;
+
+    [[nodiscard]]
+    bool is_canonical_ordered(std::span<hash_digest const> txids) const;
 
     [[nodiscard]]
     bool is_internal_double_spend() const;
@@ -192,11 +211,16 @@ struct KD_API block {
     [[nodiscard]]
     bool is_valid_merkle_root() const;
 
+    [[nodiscard]]
+    bool is_valid_merkle_root(std::span<hash_digest const> txids) const;
+
     code check() const;
 
     /// Check block body only (skip header validation for headers-first sync).
     /// Use this when headers have already been validated during header sync.
     code check_body() const;
+
+    code check_body(std::span<hash_digest const> txids) const;
 
     [[nodiscard]]
     code check_transactions() const;
