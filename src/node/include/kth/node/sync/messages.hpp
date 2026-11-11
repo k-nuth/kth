@@ -88,6 +88,12 @@ struct headers_validated {
 
     // The submission this batch was made for, or 0 for a peer's batch.
     uint64_t submission{0};
+
+    // How many headers the batch carried, and the hash of the last one. With
+    // `count` zero, a full batch ending below the tip says the peer answered
+    // from a point the two chains share and has more past it.
+    size_t received{0};
+    hash_digest last_header{null_hash};
 };
 
 // -----------------------------------------------------------------------------

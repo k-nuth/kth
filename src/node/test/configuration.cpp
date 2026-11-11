@@ -497,3 +497,20 @@ TEST_CASE("parser config network rebuilds defaults and preserves command line pr
     }
 }
 #endif
+
+TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 500u);
+    {
+        std::ostringstream error;
+        config_file file("batch_blocks", "chain.validation_batch_blocks=250");
+        node::parser parser(domain::config::network::mainnet);
+        REQUIRE(parser.parse_from_file(file.path(), error));
+        CHECK(parser.configured.chain.validation_batch_blocks == 250u);
+    }
+    for (char const* refused : {"0", "1001"}) {
+        std::ostringstream error;
+        node::parser parser(domain::config::network::mainnet);
+        char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_blocks", refused};
+        CHECK_FALSE(parser.parse(5, argv, error));
+    }
+}

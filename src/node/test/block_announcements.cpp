@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <filesystem>
 
 #include <algorithm>
 #include <cstdint>
@@ -82,8 +83,8 @@ network::settings node_settings() {
     settings.inbound_connections = 0;
     settings.outbound_connections = 0;
     settings.threads = 1;
-    settings.hosts_file = "/tmp/kth_announce_hosts_nonexistent.dat";
-    settings.banlist_file = "/tmp/kth_announce_banlist_nonexistent.dat";
+    settings.hosts_file = std::filesystem::temp_directory_path() / ("kth_announce_hosts_nonexistent.dat");
+    settings.banlist_file = std::filesystem::temp_directory_path() / ("kth_announce_banlist_nonexistent.dat");
     return settings;
 }
 
