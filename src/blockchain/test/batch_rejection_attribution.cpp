@@ -414,4 +414,41 @@ TEST_CASE("batch rejection: identifiers that do not match the batch are refused 
     CHECK_FALSE(extra_tx.rejection.block.has_value());
 }
 
+TEST_CASE("batch rejection: body defects in several blocks name the lowest, whatever the thread order",
+          "[batch_rejection]") {
+    // The bodies are checked in parallel. Two blocks with a body defect: the
+    // refusal names the lower, as a check in height order does.
+    chain_spec valid;
+    valid.len = 12;
+    auto const both = run_with_txids("attr_body_two", valid, [](std::vector<hash_list>& t) {
+        t[9][0][0] ^= 0x01;
+        t[4][0][0] ^= 0x01;
+    });
+    REQUIRE(both.result == error::merkle_mismatch);
+    REQUIRE(both.rejection.block.has_value());
+    CHECK(*both.rejection.block == 4u);
+}
+
+TEST_CASE("batch rejection: a body defect is refused before a lower block's structural one",
+          "[batch_rejection]") {
+    // Every body is checked before any block's height-dependent rules, so a
+    // body defect above a wrong coinbase height is the one reported: computing
+    // the bodies in parallel keeps that order.
+    chain_spec spec;
+    spec.len = 8;
+    spec.wrong_height_at = 2;
+    auto const v = run_with_txids("attr_body_before_structure", spec, [](std::vector<hash_list>& t) {
+        t[6][0][0] ^= 0x01;
+    });
+    REQUIRE(v.result == error::merkle_mismatch);
+    REQUIRE(v.rejection.block.has_value());
+    CHECK(*v.rejection.block == 6u);
+
+    auto const keep = [](std::vector<hash_list>&) {};
+    auto const alone = run_with_txids("attr_structure_alone", spec, keep);
+    REQUIRE(alone.result == error::coinbase_height_mismatch);
+    REQUIRE(alone.rejection.block.has_value());
+    CHECK(*alone.rejection.block == 1u);
+}
+
 #endif // KTH_CURRENCY_BCH

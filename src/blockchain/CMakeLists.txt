@@ -314,6 +314,7 @@ if (ENABLE_TEST)
 
     set(kth_blockchain_test_sources
         test/utxo_block_parse.cpp
+        test/parse_block_batch.cpp
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
