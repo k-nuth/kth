@@ -2340,27 +2340,26 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
-                    auto& full_blocks = validated_blocks;
-                    full_blocks.reserve(raw_result->size());
-                    for (uint32_t i = 0; i < raw_result->size(); ++i) {
-                        uint32_t const h = batch_start + i;
-                        auto const& raw = (*raw_result)[i];
-                        byte_reader reader(byte_span{raw.data(), raw.size()});
-                        auto blk = domain::message::block::from_data(reader, 0u);
-                        if ( ! blk) {
-                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
-                            parse_failed = true;
-                            co_return error::operation_failed;
+                    // The blocks are parsed in parallel, each on its own.
+                    auto parsed = blockchain::parse_block_batch(*raw_result);
+                    if ( ! parsed) {
+                        if (parsed.error().block) {
+                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}",
+                                batch_start + *parsed.error().block);
+                        } else {
+                            spdlog::critical("[utxo_build] Failed to parse blocks {}-{} for validation",
+                                batch_start, batch_end);
                         }
-                        validated_txids.push_back(blk->to_hashes());
-                        full_blocks.push_back(
-                            std::make_shared<domain::message::block const>(std::move(*blk)));
+                        parse_failed = true;
+                        co_return error::operation_failed;
                     }
-                    if (full_blocks.empty()) {
+                    validated_blocks = std::move(parsed->blocks);
+                    validated_txids = std::move(parsed->txids);
+                    if (validated_blocks.empty()) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, validated_txids,
+                        chain, chain.chain_settings(), network, validated_blocks, validated_txids,
                         batch_start, rejection);
                 }, ::asio::use_awaitable);
 

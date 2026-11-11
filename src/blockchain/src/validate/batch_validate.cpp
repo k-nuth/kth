@@ -18,6 +18,7 @@
 #include <kth/blockchain/abla_pipeline.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/validate/fork_join.hpp>
 #include <kth/blockchain/validate/validate_header.hpp>
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain/constants.hpp>
@@ -193,8 +194,35 @@ code validate_block_batch(
         }
     }
 
+    // What each block can be judged on alone: its body, its size and whether a
+    // transaction exceeds the size cap. No block's answer depends on another's,
+    // so they are computed in parallel, one slot per block; they are read where
+    // the walk in height order below used to compute them, so the block refused
+    // and the error it is refused with stay the same.
+    struct block_alone {
+        code body;
+        size_t size = 0;
+        bool oversized_tx = false;
+    };
+    std::vector<block_alone> alone(blocks.size());
+    bool const judged_alone = fork_join_for(blocks.size(), [&](size_t i) {
+        auto const& block = *blocks[i];
+        auto& slot = alone[i];
+        slot.body = block.check_body(txids[i]);
+        slot.size = block.serialized_size(0);
+#if defined(KTH_CURRENCY_BCH)
+        // Consensus per-transaction size cap, coinbase included and independent
+        // of the block size limit.
+        slot.oversized_tx = std::ranges::any_of(block.transactions(), [](transaction const& tx) {
+            return tx.serialized_size(true) > max_tx_size;
+        });
+#endif
+    });
+    if ( ! judged_alone) {
+        return fault(error::operation_failed);
+    }
     for (size_t i = 0; i < blocks.size(); ++i) {
-        if (auto const ec = blocks[i]->check_body(txids[i])) {
+        if (auto const ec = alone[i].body) {
             return refuse(i, ec);
         }
     }
@@ -238,7 +266,7 @@ code validate_block_batch(
     {
         std::vector<uint64_t> sizes(blocks.size());
         for (size_t i = 0; i < blocks.size(); ++i) {
-            sizes[i] = blocks[i]->serialized_size(1);
+            sizes[i] = alone[i].size;
         }
         auto const last_idx = header_index.find(blocks.back()->hash());
         if (last_idx == header_index::null_index) {
@@ -339,7 +367,7 @@ code validate_block_batch(
         block_schedule[i] = state->ticks();
 #endif
         block_mtp[i] = state->median_time_past();
-        if (block.serialized_size(0) > state->dynamic_max_block_size()) {
+        if (alone[i].size > state->dynamic_max_block_size()) {
             return refuse(i, error::block_size_limit);
         }
 #if defined(KTH_CURRENCY_BCH)
@@ -356,12 +384,8 @@ code validate_block_batch(
                 : max_tx_sigchecks_before_activation;
 
 #if defined(KTH_CURRENCY_BCH)
-        // Consensus per-transaction size cap, coinbase included and independent
-        // of the block size limit.
-        for (auto const& tx : block.transactions()) {
-            if (tx.serialized_size(true) > max_tx_size) {
-                return refuse(i, error::transaction_size_limit);
-            }
+        if (alone[i].oversized_tx) {
+            return refuse(i, error::transaction_size_limit);
         }
 #endif
 
@@ -754,6 +778,33 @@ code validate_block_batch(
         return refuse(over_limit, ec);
     }
     return error::success;
+}
+
+std::expected<parsed_block_batch, batch_parse_failure>
+parse_block_batch(std::span<data_chunk const> raw_blocks) {
+    // One slot per block, written only by the call that parses it. A block
+    // whose bytes do not parse leaves its slot empty.
+    std::vector<block_const_ptr> blocks(raw_blocks.size());
+    std::vector<hash_list> txids(raw_blocks.size());
+    bool const finished = fork_join_for(raw_blocks.size(), [&](size_t i) {
+        auto const& raw = raw_blocks[i];
+        byte_reader reader(byte_span{raw.data(), raw.size()});
+        auto block = domain::message::block::from_data(reader, 0u);
+        if ( ! block) {
+            return;
+        }
+        txids[i] = block->to_hashes();
+        blocks[i] = std::make_shared<domain::message::block const>(std::move(*block));
+    });
+    if ( ! finished) {
+        return std::unexpected(batch_parse_failure{});
+    }
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        if ( ! blocks[i]) {
+            return std::unexpected(batch_parse_failure{i});
+        }
+    }
+    return parsed_block_batch{std::move(blocks), std::move(txids)};
 }
 
 } // namespace kth::blockchain
