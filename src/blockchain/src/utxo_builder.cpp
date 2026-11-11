@@ -289,6 +289,11 @@ expect<utxo_raw_delta> process_compact_block_utxos(
 #endif
 
     utxo_raw_delta delta;
+    // Sized once from the block: grown an entry at a time the tables would be
+    // rebuilt several times per block, each rebuild an allocation and a free.
+    // The bloom can only make the block's share smaller.
+    delta.inserts.reserve(block.outputs.size());
+    delta.deletes.reserve(block.inputs.size());
 
     // Asked once, of the block itself, by the identity the rule uses: the exact
     // {hash, height} pair. This is the only place a replacement can be licensed

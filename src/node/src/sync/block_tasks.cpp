@@ -2241,6 +2241,12 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // pool thread to run the serial phase and orchestrate is enough.
     ::asio::thread_pool validation_pool(1);
 
+    // The batch delta, kept across batches rather than built anew: an emptied
+    // table keeps its capacity, so after the first batches the merges stop
+    // rebuilding it as it grows and stop freeing the old one. Its entries are
+    // released as soon as each batch is applied; only the capacity carries over.
+    blockchain::utxo_raw_delta delta;
+
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
     // coroutines exited). Looping on chain.stopped() alone therefore deadlocks
@@ -2518,8 +2524,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         }
 #endif
 
-        // Parse and process UTXO delta
-        blockchain::utxo_raw_delta delta;
+        // Parse and process UTXO delta. clear() drops the BIP30 licences with
+        // the entries, so none of a previous batch's carries over.
+        delta.clear();
         // Undo records for this batch, persisted only after the delta is applied.
         struct pending_undo_entry {
             blockchain::header_index::index_t idx;
@@ -2946,6 +2953,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             window->complete();
             return std::nullopt;
         }();   // the window ends HERE, with the lambda's frame
+
+        // The window was the batch delta's last reader. Its entries own every
+        // output's serialized value, so they are released here rather than at the
+        // next batch's clear(), which comes only after that batch is downloaded,
+        // parsed and validated, or not at all while the node waits at the tip.
+        // clear() keeps the tables' capacity, which is what reusing them is for.
+        delta.clear();
 
         // Outside the window, and only now. Whatever the gate was left holding it
         // is holding no longer: an unfinished mutation latched it as the frame
