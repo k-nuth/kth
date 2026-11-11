@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/settings.hpp>
@@ -48,8 +49,11 @@ struct KB_API transaction_organizer {
     bool start();
     bool stop();
 
+    /// Validate and admit `tx`. `first_seen` (unix seconds) is when the node
+    /// first saw it, for one reloaded from mempool.dat; by default, now.
     [[nodiscard]]
-    ::asio::awaitable<code> organize(transaction_const_ptr tx);
+    ::asio::awaitable<code> organize(transaction_const_ptr tx,
+        std::optional<uint64_t> first_seen = std::nullopt);
 
     [[nodiscard]]
     ::asio::awaitable<code> organize(double_spend_proof_const_ptr ds_proof);
@@ -75,7 +79,7 @@ protected:
     uint64_t price(transaction_const_ptr tx) const;
 
 private:
-    ::asio::awaitable<code> organize_attempt(transaction_const_ptr tx);
+    ::asio::awaitable<code> organize_attempt(transaction_const_ptr tx, std::optional<uint64_t> first_seen);
 
     // Subscription.
     void notify(transaction_const_ptr tx);

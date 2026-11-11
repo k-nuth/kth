@@ -48,36 +48,31 @@ fi
 
 # squash merge the PR, do not delete the branch
 echo -e "${GREEN}🔀 Merging release PR...${NC}"
-gh pr merge --squash --auto "release/${VERSION}"
+gh pr merge --squash "release/${VERSION}"
 
 # switch to master and pull latest changes
 echo -e "${GREEN}🔄 Switching to master and pulling latest changes...${NC}"
 git checkout master
 git pull origin master
 
-# Step 1: Create temporary release to generate notes
-echo -e "${GREEN}📝 Creating temporary release to generate notes...${NC}"
-TEMP_TAG="temp-v${VERSION}"
-git tag -a "${TEMP_TAG}" -m "Temporary tag for release notes generation"
-git push origin "${TEMP_TAG}"
-
-gh release create "${TEMP_TAG}" \
-    --title "temp-v${VERSION}" \
+# Publish the tested merge first. The tag stays on that source commit; the
+# release-note update is a subsequent documentation commit on master.
+echo -e "${GREEN}🎉 Creating final release v${VERSION}...${NC}"
+git tag -a "v${VERSION}" -m "Release version ${VERSION}"
+git push origin "v${VERSION}"
+gh release create "v${VERSION}" \
+    --title "v${VERSION}" \
     --generate-notes \
-    --prerelease
+    --latest
 
-# Step 2: Extract the generated notes
-echo -e "${GREEN}📤 Extracting generated release notes...${NC}"
-RELEASE_NOTES=$(gh release view "${TEMP_TAG}" --json body -q '.body')
-
-if [ -z "$RELEASE_NOTES" ]; then
-    echo "❌ Failed to extract release notes"
+# Read the actual final release, never the execution date or a temporary release.
+echo -e "${GREEN}📤 Extracting published release metadata...${NC}"
+RELEASE_NOTES=$(gh release view "v${VERSION}" --json body -q '.body')
+RELEASE_DATE=$(gh release view "v${VERSION}" --json publishedAt --jq '.publishedAt[:10]')
+if [ -z "$RELEASE_NOTES" ] || ! [[ "$RELEASE_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "❌ Failed to extract the final release body or publication date"
     exit 1
 fi
-
-# Replace temporary tag references with final tag in the release notes
-echo -e "${GREEN}🔧 Fixing references in release notes...${NC}"
-RELEASE_NOTES=$(echo "$RELEASE_NOTES" | sed "s/temp-v${VERSION}/v${VERSION}/g")
 
 # Step 3: Update local release notes file
 echo -e "${GREEN}📄 Updating local release notes file...${NC}"
@@ -89,7 +84,7 @@ cp "$NOTES_FILE" "${NOTES_FILE}.backup"
 # Prepare the new release notes entry
 NEW_ENTRY="# version ${VERSION}
 
-You can install Knuth node version v${VERSION} [using these instructions](https://kth.cash/#download).
+**Published:** [${RELEASE_DATE}](https://github.com/k-nuth/kth/releases/tag/v${VERSION})
 
 ${RELEASE_NOTES}
 
@@ -101,30 +96,15 @@ ${RELEASE_NOTES}
     cat "$NOTES_FILE"
 } > "${NOTES_FILE}.tmp" && mv "${NOTES_FILE}.tmp" "$NOTES_FILE"
 
+# Refresh navigation after prepending the new release.
+python3 scripts/update_release_notes_index.py "$NOTES_FILE"
+
 echo -e "${GREEN}✅ Updated release notes file${NC}"
 
 # Step 4: Commit the updated release notes
 git add "$NOTES_FILE"
 git commit -m "docs: update release notes for v${VERSION}"
 git push origin master
-
-# Step 5: Clean up temporary release and tag
-echo -e "${GREEN}🧹 Cleaning up temporary release...${NC}"
-gh release delete "${TEMP_TAG}" --yes
-git tag -d "${TEMP_TAG}"
-git push origin --delete "${TEMP_TAG}"
-
-# Step 6: Create the real release with auto-generated notes
-echo -e "${GREEN}🎉 Creating final release v${VERSION}...${NC}"
-git tag -a "v${VERSION}" -m "Release version ${VERSION}"
-git push origin "v${VERSION}"
-
-# Create the final release with auto-generated notes (not copied text)
-# This ensures GitHub generates the correct "Full Changelog" link
-gh release create "v${VERSION}" \
-    --title "v${VERSION}" \
-    --generate-notes \
-    --latest
 
 echo -e "${GREEN}✅ Release v${VERSION} created successfully!${NC}"
 echo -e "${GREEN}✅ Release notes have been updated in $NOTES_FILE${NC}"

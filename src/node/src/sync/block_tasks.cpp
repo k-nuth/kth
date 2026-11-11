@@ -2086,6 +2086,29 @@ struct window_fatal {
     std::string reason;   ///< What on_fatal is told, verbatim as before.
 };
 
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
+                        uint32_t validated_blocks) {
+    // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
+    // the below-checkpoint remainder is built (merkle-only) as its own batch
+    // and the UTXO delta of those blocks is applied first. The next batch then
+    // starts strictly above the checkpoint and is validated in full against a
+    // UTXO-Z that already contains every below-checkpoint output. A straddling
+    // batch would instead validate above-checkpoint blocks whose prevouts were
+    // created by below-checkpoint blocks in the SAME batch — outputs whose delta
+    // is applied only after validation — yielding spurious "prevout not found".
+    if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
+        return checkpoint_height;
+    }
+    // Above the checkpoint every block's undo data is captured and can only be
+    // written after the batch's delta is applied, so the whole batch is held in
+    // memory first: a full block can spend tens of thousands of outputs.
+    auto const cap = std::max(validated_blocks, uint32_t{1});
+    if (batch_start > checkpoint_height && batch_end - batch_start + 1 > cap) {
+        return batch_start + cap - 1;
+    }
+    return batch_end;
+}
+
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     if (available >= batch_size) {
         return batch_size;
@@ -2141,10 +2164,19 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
 
-    // Highest checkpoint height: at/below it IBD is merkle-only (fast), strictly
-    // above it every block runs FULL validation. Constant for the whole run.
+    // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
+    // every block runs FULL validation. It is the highest checkpoint in the
+    // optimized mode and 0 in full-validation mode, where the checkpoints stay as
+    // header anchors but grant no skipping. Constant for the whole run.
+    auto const& chain_cfg = chain.chain_settings();
     uint32_t const checkpoint_height =
-        static_cast<uint32_t>(chain.chain_settings().max_checkpoint_height);
+        static_cast<uint32_t>(chain_cfg.trusted_checkpoint_height());
+    // Validated batches never exceed the window this task reads at once.
+    uint32_t const validated_batch_blocks = std::min(chain_cfg.validation_batch_blocks, batch_size);
+    spdlog::info("[utxo_build] Validation mode: {}; checkpoint anchor height {}; "
+        "script/signature/UTXO validation starts at height {}",
+        chain_cfg.full_validation ? "FULL" : "optimized",
+        chain_cfg.max_checkpoint_height, checkpoint_height + 1);
 
     // Load bloom filter. The embedded bloom is the FINAL UTXO set as of the height
     // it was built for: it prunes outputs spent before then. Use it only when that
@@ -2155,7 +2187,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // full validation, so the bloom is disabled per batch below.
     auto const bloom = blockchain::load_utxo_bloom();
     auto const* bloom_ptr = bloom.get();
-    if (bloom_ptr != nullptr &&
+    if (bloom_ptr != nullptr && chain_cfg.full_validation) {
+        // Every output must stay: a later block's full validation may spend any of them.
+        spdlog::info("[utxo_build] Full validation: bloom pruning disabled");
+        bloom_ptr = nullptr;
+    } else if (bloom_ptr != nullptr &&
         blockchain::embedded_bloom_checkpoint_height() != checkpoint_height) {
         spdlog::info(
             "[utxo_build] Embedded bloom checkpoint {} != active checkpoint {}; disabling bloom",
@@ -2204,6 +2240,12 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // validate_block_batch fans script verification out to its own threads, so one
     // pool thread to run the serial phase and orchestrate is enough.
     ::asio::thread_pool validation_pool(1);
+
+    // The batch delta, kept across batches rather than built anew: an emptied
+    // table keeps its capacity, so after the first batches the merges stop
+    // rebuilding it as it grows and stop freeing the old one. Its entries are
+    // released as soon as each batch is applied; only the capacity carries over.
+    blockchain::utxo_raw_delta delta;
 
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
@@ -2259,29 +2301,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         }
 
         // Process one batch
-        uint32_t batch_start = utxo_built_height + 1;
-        uint32_t batch_end = batch_start + batch_len - 1;
-
-        // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
-        // the below-checkpoint remainder is built (merkle-only) as its own batch
-        // and the UTXO delta of those blocks is applied first. The next batch then
-        // starts strictly above the checkpoint and is validated in full against a
-        // UTXO-Z that already contains every below-checkpoint output. A straddling
-        // batch would instead validate above-checkpoint blocks whose prevouts were
-        // created by below-checkpoint blocks in the SAME batch — outputs whose delta
-        // is applied only after validation — yielding spurious "prevout not found".
-        if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
-            batch_end = checkpoint_height;
-        }
-
-        // Above the checkpoint every block's undo data is captured and can only be
-        // written after the batch's delta is applied, so the whole batch is held in
-        // memory first. Cap the batch there: a full block can spend tens of
-        // thousands of outputs, so an unbounded batch would hold hundreds of MB.
-        static constexpr uint32_t max_undo_batch_len = 100;
-        if (batch_start > checkpoint_height && batch_end - batch_start + 1 > max_undo_batch_len) {
-            batch_end = batch_start + max_undo_batch_len - 1;
-        }
+        uint32_t const batch_start = utxo_built_height + 1;
+        uint32_t const batch_end = utxo_batch_end(batch_start, batch_start + batch_len - 1,
+            checkpoint_height, validated_batch_blocks);
 
         // Read raw blocks from flat files
         auto raw_result = chain.fetch_blocks_raw(batch_start, batch_end);
@@ -2306,6 +2328,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // blocks, and above the checkpoint they are parsed here anyway. Below it
         // this stays empty and the raw bytes are used instead.
         std::vector<kth::block_const_ptr> validated_blocks;
+        // Their transaction identifiers, computed once: validation reads them
+        // for every check that needs them, and building the UTXO delta below
+        // reads them again instead of hashing each transaction a second time.
+        std::vector<hash_list> validated_txids;
 
         if (batch_start > checkpoint_height) {
             // Parse the blocks and validate them on the worker pool, off this
@@ -2320,27 +2346,27 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
             auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
                 [&]() -> ::asio::awaitable<code> {
-                    auto& full_blocks = validated_blocks;
-                    full_blocks.reserve(raw_result->size());
-                    for (uint32_t i = 0; i < raw_result->size(); ++i) {
-                        uint32_t const h = batch_start + i;
-                        auto const& raw = (*raw_result)[i];
-                        byte_reader reader(byte_span{raw.data(), raw.size()});
-                        auto blk = domain::message::block::from_data(reader, 0u);
-                        if ( ! blk) {
-                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}", h);
-                            parse_failed = true;
-                            co_return error::operation_failed;
+                    // The blocks are parsed in parallel, each on its own.
+                    auto parsed = blockchain::parse_block_batch(*raw_result);
+                    if ( ! parsed) {
+                        if (parsed.error().block) {
+                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}",
+                                batch_start + *parsed.error().block);
+                        } else {
+                            spdlog::critical("[utxo_build] Failed to parse blocks {}-{} for validation",
+                                batch_start, batch_end);
                         }
-                        full_blocks.push_back(
-                            std::make_shared<domain::message::block const>(std::move(*blk)));
+                        parse_failed = true;
+                        co_return error::operation_failed;
                     }
-                    if (full_blocks.empty()) {
+                    validated_blocks = std::move(parsed->blocks);
+                    validated_txids = std::move(parsed->txids);
+                    if (validated_blocks.empty()) {
                         co_return error::success;
                     }
                     co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, full_blocks, batch_start,
-                        rejection);
+                        chain, chain.chain_settings(), network, validated_blocks, validated_txids,
+                        batch_start, rejection);
                 }, ::asio::use_awaitable);
 
             if (vc) {
@@ -2498,8 +2524,9 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         }
 #endif
 
-        // Parse and process UTXO delta
-        blockchain::utxo_raw_delta delta;
+        // Parse and process UTXO delta. clear() drops the BIP30 licences with
+        // the entries, so none of a previous batch's carries over.
+        delta.clear();
         // Undo records for this batch, persisted only after the delta is applied.
         struct pending_undo_entry {
             blockchain::header_index::index_t idx;
@@ -2512,8 +2539,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
 
+            // A block validation parsed has its identifiers already.
+            std::span<hash_digest const> known_txids;
+            if (i < validated_txids.size()) {
+                known_txids = validated_txids[i];
+            }
             auto parsed = blockchain::parse_utxo_block(
-                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()});
+                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()}, known_txids);
             if ( ! parsed) {
                 spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
                 on_fatal("a stored block could not be parsed");
@@ -2921,6 +2953,13 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             window->complete();
             return std::nullopt;
         }();   // the window ends HERE, with the lambda's frame
+
+        // The window was the batch delta's last reader. Its entries own every
+        // output's serialized value, so they are released here rather than at the
+        // next batch's clear(), which comes only after that batch is downloaded,
+        // parsed and validated, or not at all while the node waits at the tip.
+        // clear() keeps the tables' capacity, which is what reusing them is for.
+        delta.clear();
 
         // Outside the window, and only now. Whatever the gate was left holding it
         // is holding no longer: an unfinished mutation latched it as the frame

@@ -14,6 +14,18 @@
 extern "C" {
 #endif
 
+// Async boundary contract: keep chain alive for the operation. Keep ctx alive
+// until completion, except when a subscription handler returns zero (below).
+// Subscription handlers must be non-null; validation retains its null-handler
+// no-op behavior. Handlers must not throw. Startup failure may complete
+// inline. Allocation and other C++ failures report out_of_memory and
+// unhandled_exception with zero/null outputs, respectively.
+// Subscriptions may deliver multiple successful events. Returning zero stops
+// delivery and releases the registration without another callback; ctx may be
+// released in that callback. Keep chain alive through subscription cleanup.
+// An internal error or shutdown removes the registration and joins the receiver
+// before delivering its one terminal error callback.
+
 KTH_EXPORT
 void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ctx, kth_subscribe_blockchain_handler_t handler);
 

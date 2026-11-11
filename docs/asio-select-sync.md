@@ -1,8 +1,14 @@
 # Channel selection in the block sync
 
-Knuth's standalone Asio is the Knuth fork `asio/1.38.3-kth.1`
-(recipe revision `350bc1a8f6021cd9973a02957d9972c4`, source commit
-`4b04892f2d02d5c9e04b79b428d8fe905a927a48`, PR <https://github.com/k-nuth/asio/pull/2>).
+Knuth's standalone Asio is the Knuth fork `asio/1.38.3-kth.3`
+(recipe revision `2d7621a6648b50ebe07f9b0d46ac0918`, source commit
+`6f89e7acfd0414a011bd5a83b9310c39b75013f2`, branch `release/1.38.3-kth.3`).
+It is `kth.1` (source `4b04892f`, PR <https://github.com/k-nuth/asio/pull/2>)
+plus a configurable timer backend for selection deadlines, and nothing else:
+`ASIO_CHANNEL_SELECT_TIMER_TYPE` (and optionally `ASIO_CHANNEL_SELECT_TIMER_HEADER`)
+replace the `asio::steady_timer` a selection waits on. Without them, which is
+every native build, selection is unchanged; a platform with another event loop
+(a browser Worker) defines them in every translation unit.
 It is upstream `asio-1-38-2` plus one header, `asio/experimental/channel_select.hpp`,
 and one opt-in trait in `asio/impl/awaitable.hpp`. `ASIO_VERSION` is still 103802,
 the CMake target is still `asio::asio`, and every existing `experimental::channel`
@@ -148,11 +154,13 @@ and was not converted.
 * A selector outlives its waits and is used by one task at a time; every
   selector here is a local of the coroutine that uses it, destroyed with the
   frame after the last wait and after everything it started has been joined.
-* On GCC 16 a structured binding taken directly from a `co_await` of a tuple
-  that owns a payload and lives across a later suspension can retain
-  ownership (`csp/README.md`, "named tuple storage"). Every one-shot selection
-  with an owning result here is stored in a named `completion` and bound by
-  reference.
+* GCC 15 and 16.1 never destroy a structured binding taken directly from a
+  `co_await` of a tuple that owns a payload and lives across a later
+  suspension (`csp/README.md`, "named tuple storage"). GCC 16.2 fixes it and
+  is the minimum kth builds with; the configure step also runs the pattern and
+  refuses a compiler that still retains it (`cmake/KthCompilerChecks.cmake`).
+  The one-shot selections here store their result in a named `completion` and
+  bind it by reference, which is correct with any compiler.
 
 ### The inbound message channel of a peer
 

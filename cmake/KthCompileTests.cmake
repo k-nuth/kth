@@ -38,6 +38,10 @@ function(kth_compile_test_options target output)
   endif()
 
   set(target_options "$<TARGET_PROPERTY:${target},COMPILE_OPTIONS>")
+  # Conan's imported targets contain nested language/config expressions that
+  # can all evaluate to empty. Test the evaluated list, not the nonempty
+  # expression text, or a response file gets a quoted empty input filename.
+  set(target_options "$<FILTER:$<TARGET_GENEX_EVAL:${target},${target_options}>,EXCLUDE,^$>")
   string(APPEND options "$<$<BOOL:${target_options}>:\"$<JOIN:${target_options},\"\n\">\">\n")
   string(APPEND options "-I\"$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,\"\n-I\">\"\n")
   string(APPEND options "-D\"$<JOIN:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>,\"\n-D\">\"\n")
