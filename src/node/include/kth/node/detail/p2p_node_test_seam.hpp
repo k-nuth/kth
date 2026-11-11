@@ -27,6 +27,13 @@ namespace kth::node::detail {
 struct p2p_node_test_seam {
     using probe_point = p2p_node::status_probe_point;
 
+    static ::asio::awaitable<void> admit_peer(p2p_node& target,
+        network::peer_session::ptr peer, peer_direction direction) {
+        co_await target.new_peer_channel_->async_send(std::error_code{},
+            peer_event{std::move(peer), direction, nullptr}, ::asio::use_awaitable);
+    }
+
+
     template <typename Probe>
     static void set_status_probe(p2p_node& target, Probe probe) {
         target.status_probe_ = std::move(probe);

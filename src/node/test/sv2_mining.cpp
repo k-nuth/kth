@@ -669,7 +669,7 @@ TEST_CASE("sv2 mining channels use the chain template and close independently", 
     auto const& previous = trunk.front().transactions().front();
     auto const tx = test::spend_p2pkh(previous, 0, previous.outputs().front().value() - 1000,
         view->state->enabled_flags());
-    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+    REQUIRE(fixture.execute(fixture.chain.chain().submit_transaction(
         std::make_shared<domain::message::transaction const>(tx))) == error::success);
     auto client = fixture.connect(fixture.start());
     require_setup(fixture, *client);
@@ -984,7 +984,7 @@ TEST_CASE("sv2 mining channels get replacement jobs on the same tip once fees ri
     auto const& funding = trunk.front().transactions().front();
     auto const tx = test::spend_p2pkh(funding, 0, funding.outputs().front().value() - 4000,
         view->state->enabled_flags());
-    REQUIRE(fixture.execute(fixture.chain.chain().organize(
+    REQUIRE(fixture.execute(fixture.chain.chain().submit_transaction(
         std::make_shared<domain::message::transaction const>(tx))) == error::success);
 
     // Unrequested, one interval on, for every channel in the order it opened.

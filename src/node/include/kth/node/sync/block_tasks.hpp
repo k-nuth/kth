@@ -41,6 +41,15 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
 [[nodiscard]]
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale);
 
+/// Last height of the batch that starts at `batch_start` and could reach
+/// `batch_end`. It never crosses `checkpoint_height` (the trusted height): the
+/// blocks at or below it are their own batch. Above it, the batch holds at most
+/// `validated_blocks` blocks, whose parsed bodies and undo data stay in memory
+/// until the batch is applied.
+[[nodiscard]]
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
+                        uint32_t validated_blocks);
+
 /// How far the store holds bodies above the connected tip: the highest height H
 /// such that every block in (connected, H] on the active chain has its data on
 /// disk; `connected` itself when the block right above it is missing.
