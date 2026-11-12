@@ -281,4 +281,19 @@ std::size_t verify_schnorr_bch(std::span<signature_input const> inputs, std::spa
     return verify(inputs, results, b, check_mode::schnorr_bch);
 }
 
+bool verify_schnorr_bch_all(std::span<signature_input const> inputs, std::uint8_t const* seed32) {
+    secp256k1_context const* ctx = secp256k1_context_static;
+    std::vector<secp256k1_pubkey> keys(inputs.size());
+    std::vector<secp256k1_pubkey const*> key_ptrs(inputs.size());
+    std::vector<std::uint8_t const*> sigs(inputs.size());
+    std::vector<std::uint8_t const*> msgs(inputs.size());
+    for (std::size_t i = 0; i < inputs.size(); ++i) {
+        if (secp256k1_ec_pubkey_parse(ctx, &keys[i], inputs[i].pubkey, inputs[i].pubkey_size) != 1) return false;
+        key_ptrs[i] = &keys[i];
+        sigs[i] = inputs[i].sig64;
+        msgs[i] = inputs[i].msg32;
+    }
+    return secp256k1_schnorr_verify_batch(ctx, sigs.data(), msgs.data(), key_ptrs.data(), inputs.size(), seed32) == 1;
+}
+
 } // namespace secp256k1_turbo

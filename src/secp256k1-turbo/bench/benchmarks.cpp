@@ -31,6 +31,7 @@ struct item {
 };
 
 secp256k1_context* ctx = nullptr;
+std::uint8_t seed[32] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
 
 std::vector<item> make_items(std::size_t n, bool schnorr, std::uint64_t seed) {
     std::mt19937_64 g(seed);
@@ -40,7 +41,7 @@ std::vector<item> make_items(std::size_t n, bool schnorr, std::uint64_t seed) {
         do { for (auto& b : seckey) b = static_cast<std::uint8_t>(g()); } while (secp256k1_ec_seckey_verify(ctx, seckey.data()) != 1);
         for (auto& b : it.msg) b = static_cast<std::uint8_t>(g());
         secp256k1_pubkey pk;
-        secp256k1_ec_pubkey_create(ctx, &pk, seckey.data());
+        if (secp256k1_ec_pubkey_create(ctx, &pk, seckey.data()) != 1) continue;
         std::size_t len = 33;
         secp256k1_ec_pubkey_serialize(ctx, it.pubkey.data(), &len, &pk, SECP256K1_EC_COMPRESSED);
         if (schnorr) {
@@ -100,6 +101,32 @@ void bench_scheme(bool schnorr, std::size_t n) {
             ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::avx512_ifma));
         });
     }
+    if (schnorr) {
+        b.run("libsecp256k1, algebraic batch", [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_schnorr_bch_all(in, seed));
+        });
+    }
+}
+
+// Algebraic batch (random linear combination, one multi-scalar
+// multiplication) versus the lane-parallel kernel, by batch size.
+void bench_schnorr_algebraic_sizes() {
+    auto const items = make_items(2048, true, 31);
+    Bench b;
+    b.title("Schnorr (BCH): algebraic batch vs AVX-512 IFMA lanes, by batch size").unit("signature").relative(true).minEpochIterations(4);
+    for (std::size_t n : {std::size_t(2), std::size_t(8), std::size_t(32), std::size_t(128), std::size_t(512), std::size_t(2048)}) {
+        std::vector<signature_input> in;
+        for (std::size_t i = 0; i < n; ++i) in.push_back(items[i].view());
+        std::vector<std::uint8_t> out(n);
+        b.batch(n).run("algebraic batch of " + std::to_string(n), [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_schnorr_bch_all(in, seed));
+        });
+        if (backend_available(backend::avx512_ifma)) {
+            b.batch(n).run("AVX-512 IFMA batch of " + std::to_string(n), [&] {
+                ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, true, backend::avx512_ifma));
+            });
+        }
+    }
 }
 
 void bench_batch_sizes(bool schnorr) {
@@ -127,6 +154,7 @@ int main() {
     bench_scheme(true, 2048);
     bench_batch_sizes(false);
     bench_batch_sizes(true);
+    bench_schnorr_algebraic_sizes();
     secp256k1_context_destroy(ctx);
     return 0;
 }

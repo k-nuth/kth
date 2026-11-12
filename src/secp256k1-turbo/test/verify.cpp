@@ -197,3 +197,39 @@ TEST_CASE("a short last group keeps per-item verdicts wherever the invalid signa
         }
     }
 }
+
+TEST_CASE("algebraic Schnorr batch agrees with per-signature verdicts", "[verify][algebraic]") {
+    rng r(0x5eed0033);
+    bytes32 const seed = r.b32();
+    for (std::size_t n : {std::size_t(0), std::size_t(1), std::size_t(2), std::size_t(7), std::size_t(8), std::size_t(9), std::size_t(64), std::size_t(200)}) {
+        std::vector<item> items;
+        for (std::size_t i = 0; i < n; ++i) items.push_back(make_valid(r, scheme::schnorr, static_cast<int>(i % 3)));
+        std::vector<signature_input> in;
+        for (auto const& it : items) in.push_back(it.view());
+        INFO("n=" << n);
+        CHECK(verify_schnorr_bch_all(in, seed.data()));
+        CHECK(verify_schnorr_bch_all(in, nullptr));
+        if (n == 0) continue;
+        // Corrupt one item at a random position: the batch must fail, and
+        // the oracle must agree.
+        std::size_t const victim = r.u64() % n;
+        item corrupted = items[victim];
+        switch (r.u64() % 4) {
+            case 0: corrupted.sig[r.u64() % 64] ^= 0x08; break;
+            case 1: corrupted.msg[r.u64() % 32] ^= 0x01; break;
+            case 2: corrupted.pubkey = make_valid(r, scheme::schnorr, 0).pubkey; break;
+            default: { bytes32 const ns = n_minus(corrupted.sig.data() + 32); std::copy(ns.begin(), ns.end(), corrupted.sig.begin() + 32); break; }
+        }
+        in[victim] = corrupted.view();
+        std::vector<std::uint8_t> oracle(n);
+        std::vector<item> mixed = items; mixed[victim] = corrupted;
+        std::size_t const valid = run(scheme::schnorr, mixed, oracle, backend::secp256k1_fallback);
+        CHECK(valid == n - 1);
+        CHECK_FALSE(verify_schnorr_bch_all(in, seed.data()));
+        // Malformed public key: parse fails, batch fails.
+        in[victim] = items[victim].view();
+        item bad = items[victim]; bad.pubkey[0] = 0x05;
+        in[victim] = bad.view();
+        CHECK_FALSE(verify_schnorr_bch_all(in, seed.data()));
+    }
+}

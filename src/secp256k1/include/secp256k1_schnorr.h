@@ -24,6 +24,31 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorr_verify(
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
 /**
+ * Batch-verify n signatures created by secp256k1_schnorr_sign with a random
+ * linear combination (one multi-scalar multiplication instead of n double
+ * multiplications). The verdict is the conjunction of the n individual
+ * secp256k1_schnorr_verify verdicts: a forged batch passes with probability
+ * about 2^-128 per attempt, for any inputs chosen before the call.
+ * Returns: 1: every signature is valid
+ *          0: at least one signature is invalid (or n > 0 with NULL arrays)
+ * Args:    ctx:     a secp256k1 context object (cannot be NULL)
+ * In:      sig64s:  n pointers to 64-byte signatures
+ *          msg32s:  n pointers to 32-byte message hashes
+ *          pubkeys: n pointers to public keys
+ *          n:       number of signatures (0 is allowed and returns 1)
+ *          seed32:  32 bytes of fresh randomness mixed into the randomizers,
+ *                   or NULL to derive them from the inputs alone (can be NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorr_verify_batch(
+  const secp256k1_context* ctx,
+  const unsigned char* const* sig64s,
+  const unsigned char* const* msg32s,
+  const secp256k1_pubkey* const* pubkeys,
+  size_t n,
+  const unsigned char* seed32
+) SECP256K1_ARG_NONNULL(1);
+
+/**
  * Create a signature using a custom EC-Schnorr-SHA256 construction. It
  * produces non-malleable 64-byte signatures which support batch validation,
  * and multiparty signing.
