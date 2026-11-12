@@ -548,9 +548,9 @@ TEST_CASE("make_byte_code_pattern replaces each run of pushes by its count", "[r
     };
     for (auto const& v : vectors) {
         CAPTURE(v.name);
-        data_chunk script;
-        REQUIRE(decode_base16(script, v.script));
-        auto const parsed = make_byte_code_pattern(script);
+        auto const script = decode_base16(std::string_view{v.script});
+        REQUIRE(script);
+        auto const parsed = make_byte_code_pattern(*script);
         CHECK(encode_base16(parsed.pattern) == v.pattern);
         CHECK(encode_base16(sha256_hash(parsed.pattern)) == v.fingerprint);
         REQUIRE(parsed.data.size() == v.data.size());
@@ -561,9 +561,9 @@ TEST_CASE("make_byte_code_pattern replaces each run of pushes by its count", "[r
     }
 
     // A signature and a public key: one run of two pushes.
-    data_chunk script;
-    REQUIRE(decode_base16(script, "47" + sig + "21" + key));
-    auto const parsed = make_byte_code_pattern(script);
+    auto const script = decode_base16("47" + sig + "21" + key);
+    REQUIRE(script);
+    auto const parsed = make_byte_code_pattern(*script);
     CHECK(encode_base16(parsed.pattern) == "52");
     CHECK(encode_base16(sha256_hash(parsed.pattern)) ==
         "8c2574892063f995fdf756bce07f46c1a5193e54cd52837ed91e32008ccf41ac");
