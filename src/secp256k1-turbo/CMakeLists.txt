@@ -17,8 +17,8 @@ option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE proper
 # the choice is static. "none" compiles no vector kernel: every call goes to
 # libsecp256k1. On AArch64 "auto" compiles the NEON kernel, which is never
 # selected by default (it is slower than libsecp256k1 there).
-set(KTH_SECP256K1_TURBO_BACKENDS "auto" CACHE STRING "Vector backends: auto | avx512ifma | neon | none")
-set_property(CACHE KTH_SECP256K1_TURBO_BACKENDS PROPERTY STRINGS auto avx512ifma neon none)
+set(KTH_SECP256K1_TURBO_BACKENDS "auto" CACHE STRING "Vector backends: auto | avx512ifma | neon | wasm_simd128 | none")
+set_property(CACHE KTH_SECP256K1_TURBO_BACKENDS PROPERTY STRINGS auto avx512ifma neon wasm_simd128 none)
 
 add_library(${PROJECT_NAME} STATIC
     src/batch_verify.cpp
@@ -70,6 +70,23 @@ if (KTH_SECP256K1_TURBO_BACKENDS MATCHES "^(auto|neon)$" AND CMAKE_SYSTEM_PROCES
     message(STATUS "Knuth: secp256k1-turbo NEON backend built (2 lanes; not selected by default)")
 elseif (KTH_SECP256K1_TURBO_BACKENDS STREQUAL "neon")
     message(FATAL_ERROR "Knuth: KTH_SECP256K1_TURBO_BACKENDS=neon needs an AArch64 target")
+endif()
+
+# The WebAssembly SIMD128 kernel: two lanes, in its own translation unit
+# compiled with -msimd128. A module that uses SIMD128 does not load on an
+# engine without it, so this follows the project's KTH_WASM_SIMD switch (on
+# unless it says otherwise) instead of deciding on its own. Like NEON, it is
+# built for testing and measurement; best_backend() never selects it.
+set(KTH_SECP256K1_TURBO_WASM_SIMD128 OFF)
+if (KTH_SECP256K1_TURBO_BACKENDS MATCHES "^(auto|wasm_simd128)$" AND CMAKE_SYSTEM_NAME STREQUAL "Emscripten"
+        AND (NOT DEFINED KTH_WASM_SIMD OR KTH_WASM_SIMD))
+    set(KTH_SECP256K1_TURBO_WASM_SIMD128 ON)
+    target_sources(${PROJECT_NAME} PRIVATE src/kernel_wasm_simd128.cpp)
+    set_source_files_properties(src/kernel_wasm_simd128.cpp PROPERTIES COMPILE_OPTIONS "-msimd128")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_SECP256K1_TURBO_HAVE_WASM_SIMD128=1)
+    message(STATUS "Knuth: secp256k1-turbo WebAssembly SIMD128 backend built (2 lanes; not selected by default)")
+elseif (KTH_SECP256K1_TURBO_BACKENDS STREQUAL "wasm_simd128")
+    message(FATAL_ERROR "Knuth: KTH_SECP256K1_TURBO_BACKENDS=wasm_simd128 needs an Emscripten target with KTH_WASM_SIMD on")
 endif()
 
 # GPU backends. The device code (gpu/kernel_core.h) is shared: CUDA compiles
@@ -185,6 +202,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_executable(kth_secp256k1_turbo_bench bench/benchmarks.cpp)
     target_include_directories(kth_secp256k1_turbo_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(kth_secp256k1_turbo_bench PRIVATE ${PROJECT_NAME} nanobench::nanobench)
+endif()
+
+# The Catch2 suite above needs GMP and is not built for WebAssembly. The
+# SIMD128 lanes still have to be checked where they run, so this is a plain
+# program with no dependency beyond libsecp256k1: it exits non-zero on the
+# first disagreement and is meant to be run under node.
+if (ENABLE_TEST AND KTH_SECP256K1_TURBO_WASM_SIMD128)
+    add_executable(kth_secp256k1_turbo_vec2_check test/vec2_check.cpp)
+    set_source_files_properties(test/vec2_check.cpp PROPERTIES COMPILE_OPTIONS "-msimd128")
+    target_include_directories(kth_secp256k1_turbo_vec2_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(kth_secp256k1_turbo_vec2_check PRIVATE KTH_SECP256K1_TURBO_HAVE_WASM_SIMD128=1)
+    target_link_libraries(kth_secp256k1_turbo_vec2_check PRIVATE ${PROJECT_NAME})
+    target_link_options(kth_secp256k1_turbo_vec2_check PRIVATE -msimd128 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1048576)
 endif()
 
 include(GNUInstallDirs)

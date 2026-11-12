@@ -15,6 +15,7 @@ multi-scalar multiplication, and ECDSA is supported.
 |---|---|---|
 | `avx512_ifma` | 8 | x86-64 with AVX512F/DQ/BW/VL + IFMA (Ice Lake+, Sapphire Rapids, Zen 4, Zen 5) |
 | `neon` | 2 | AArch64; built for testing and measurement, never selected by `best_backend()` |
+| `wasm_simd128` | 2 | WebAssembly with SIMD128; built for testing and measurement, never selected by `best_backend()` |
 | `cuda` | whole batch | NVIDIA GPUs (one thread per signature), see "GPU backends" |
 | `metal` | whole batch | Apple GPUs (one thread per signature) |
 | `scalar_portable` | 1 | any; same algorithm, used as the reference in tests |
@@ -26,10 +27,12 @@ on the project's baseline `-march` and picks the kernel at run time. When the
 whole build already targets an IFMA microarchitecture (`-march` defines
 `__AVX512IFMA__`, as a Knuth `march_id` for such a CPU does) the choice is
 made at compile time and no CPUID runs. `KTH_SECP256K1_TURBO_BACKENDS`
-(`auto` | `avx512ifma` | `neon` | `none`) selects what gets compiled in. On
+(`auto` | `avx512ifma` | `neon` | `wasm_simd128` | `none`) selects what gets
+compiled in. On
 AArch64 `auto` compiles the 2-lane NEON kernel, which is slower than
 libsecp256k1 there (see below) and is only used when a caller asks for it by
-name.
+name. The same holds for the 2-lane SIMD128 kernel in an Emscripten build,
+which follows the project's `KTH_WASM_SIMD` switch.
 `best_backend()` returns `avx512_ifma` when available, otherwise the
 libsecp256k1 fallback (the portable 1-lane backend is slower than
 libsecp256k1 and exists for testing). Batches of fewer than two signatures go
@@ -212,6 +215,13 @@ operand invariant in the portable backend and aborts when it does not hold,
 in Release builds too. `kth_secp256k1_turbo_bench`
 (nanobench) produces the table above.
 
+That suite needs GMP and is not built for WebAssembly. An Emscripten build
+with tests on builds `kth_secp256k1_turbo_vec2_check` instead, a program with
+no dependency beyond libsecp256k1 that checks the SIMD128 lanes against the
+portable backend limb for limb and the public API against libsecp256k1, and
+exits non-zero on the first disagreement. Run it under node; `time` as its
+argument adds the timings quoted further down.
+
 ## Algebraic batch verification (BCH Schnorr only)
 
 `verify_schnorr_bch_all` wraps `secp256k1_schnorr_verify_batch`, a local
@@ -256,15 +266,44 @@ algebraic batch is the speed-up available for Schnorr inputs. The two are not
 combined here: doing so would mean lifting the `R_i` with the vector field and
 vectorising the bucket accumulation, which is a separate piece of work.
 
-## Why NEON is not selected, and why there is no WebAssembly backend
+## Why the NEON and WebAssembly backends are not selected
 
 The lane kernel only pays off when a lane can multiply 52-bit limbs in one
 instruction. NEON and WASM SIMD128 have no 64x64 lane multiply, only
-32x32 -> 64 (`umull` / `i64x2.extmul_i32x4`), which forces radix 2^26 with
-ten limbs and 100 products per field multiplication. A probe of exactly that
-(`fe10x26`, two elements per `v128`, built with Emscripten 6.0.13 `-O3
--msimd128`, run under node 24 / V8) against the same algorithm in scalar
-WASM gives, per field multiplication per element:
+32x32 -> 64 (`umull` / `i64x2.extmul_i32x4`). Both backends keep the
+kernel's 52-bit limbs and assemble each 52x52 product from four 26x26 ones
+(`vec_neon.hpp`, `vec_wasm_simd128.hpp`), which makes them the same
+algorithm as the others, bit for bit, at four multiplies per product.
+
+Natively on arm64 that is a clear loss: the table above has the NEON kernel
+4.5x behind libsecp256k1 on the M6, whose scalar 64x64 -> 128 multiply is a
+single fast instruction.
+
+In WebAssembly the distance is much smaller, because scalar WebAssembly has
+no 64x64 -> 128 multiply either and libsecp256k1 runs several times slower
+there than natively. Emscripten 6.0.13, `-O3 -msimd128` on the kernel, node
+24 (V8) on an Apple M6, batch of 2048, ns per signature (best of five,
+`kth_secp256k1_turbo_vec2_check time`):
+
+| | ECDSA | Schnorr |
+|---|---:|---:|
+| libsecp256k1, 128-bit arithmetic | 83,676 | 89,933 |
+| libsecp256k1, 32-bit arithmetic | 27,430 | 27,916 |
+| secp256k1-turbo, portable 1-lane | 154,333 | 170,066 |
+| secp256k1-turbo, SIMD128 2-lane | 100,368 | 110,816 |
+
+The SIMD128 lanes are 1.5x faster than the same kernel on one scalar lane.
+Against libsecp256k1 it depends on how the library was built. Left to its
+autodetection it uses 128-bit arithmetic, which WebAssembly has to emulate,
+and the lanes are 1.2x behind; built with its 32-bit arithmetic
+(`SECP256K1_TEST_OVERRIDE_WIDE_MULTIPLY=int64`) it is three times faster and
+the lanes are 3.7x behind. Either way `best_backend()` does not select them.
+This is one engine on one core; an x86-64 engine was not measured.
+
+An earlier probe took the other route — radix 2^26 with ten limbs and 100
+products per field multiplication (`fe10x26`, two elements per `v128`) —
+and measured, per field multiplication per element, against the same
+algorithm in scalar WASM:
 
 | | scalar WASM | SIMD128, 2 lanes | ratio |
 |---|---:|---:|---:|
@@ -274,9 +313,9 @@ WASM gives, per field multiplication per element:
 The kernel also does about 1.5x the field work of libsecp256k1's wNAF
 ladder per signature (fixed windows, complete additions, blended digit-0
 adds), which the IFMA backend repays with its 8 lanes and 52-bit
-multiplier; a 2-lane 32-bit backend cannot. On arm64 and in WASM the right
-tools are libsecp256k1's scalar code (13 us per ECDSA verification on the
-M6) and, for Schnorr, the algebraic batch below.
+multiplier; a 2-lane 32-bit backend does not. On arm64 and in WASM the
+tools to use today are libsecp256k1's scalar code and, for Schnorr, the
+algebraic batch below.
 
 ## Using it in the node: deferred signature checks
 

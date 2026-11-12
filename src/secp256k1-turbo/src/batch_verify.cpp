@@ -105,6 +105,9 @@ kernel_fn kernel_for(backend b) {
 #if defined(KTH_SECP256K1_TURBO_HAVE_NEON)
         case backend::neon: return &kernel_neon;
 #endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_WASM_SIMD128)
+        case backend::wasm_simd128: return &kernel_wasm_simd128;
+#endif
         default: return nullptr;
     }
 }
@@ -266,6 +269,15 @@ bool backend_available(backend b) {
 #else
             return false;
 #endif
+        case backend::wasm_simd128:
+#if defined(KTH_SECP256K1_TURBO_HAVE_WASM_SIMD128)
+            // Decided when the module was compiled: a module built with
+            // SIMD128 does not load on an engine without it, so there is
+            // nothing left to ask at run time.
+            return true;
+#else
+            return false;
+#endif
         case backend::cuda:
 #if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
             return gpu::cuda_available();
@@ -318,6 +330,7 @@ std::string_view backend_name(backend b) {
         case backend::scalar_portable: return "portable 1-lane";
         case backend::avx512_ifma: return "avx512-ifma 8-lane";
         case backend::neon: return "neon 2-lane";
+        case backend::wasm_simd128: return "wasm-simd128 2-lane";
         case backend::cuda: return "cuda (one thread per signature)";
         case backend::metal: return "metal (one thread per signature)";
     }
@@ -327,7 +340,7 @@ std::string_view backend_name(backend b) {
 std::size_t lanes(backend b) {
     if (is_gpu(b)) return 0;
     if (b == backend::avx512_ifma) return 8;
-    return b == backend::neon ? 2 : 1;
+    return (b == backend::neon || b == backend::wasm_simd128) ? 2 : 1;
 }
 
 std::size_t verify_ecdsa(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b) {

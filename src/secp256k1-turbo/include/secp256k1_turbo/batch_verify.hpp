@@ -29,6 +29,7 @@ enum class backend {
     scalar_portable,     // this library's algorithm, one lane (reference/testing)
     avx512_ifma,         // 8 lanes
     neon,                // 2 lanes (AArch64); never chosen by best_backend()
+    wasm_simd128,        // 2 lanes (WebAssembly SIMD128); never chosen by best_backend()
     cuda,                // NVIDIA GPU, one thread per signature
     metal                // Apple GPU, one thread per signature
 };
