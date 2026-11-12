@@ -14,6 +14,8 @@ multi-scalar multiplication, and ECDSA is supported.
 | backend | lanes | where |
 |---|---|---|
 | `avx512_ifma` | 8 | x86-64 with AVX512F/DQ/BW/VL + IFMA (Ice Lake+, Sapphire Rapids, Zen 4, Zen 5) |
+| `cuda` | whole batch | NVIDIA GPUs (one thread per signature), see "GPU backends" |
+| `metal` | whole batch | Apple GPUs (one thread per signature) |
 | `scalar_portable` | 1 | any; same algorithm, used as the reference in tests |
 | `secp256k1_fallback` | 1 | libsecp256k1, one signature at a time |
 
@@ -89,6 +91,106 @@ On arm64 `best_backend()` is the libsecp256k1 fallback: NEON has no 64x64
 lane multiply, and the M6 already verifies a signature in 13 us with the
 scalar int128 code, so there is nothing to gain from a 2-lane kernel there.
 The portable backend exists for testing, not for speed.
+
+## GPU backends
+
+`gpu/kernel_core.h` is one source for the device code of both GPU runtimes
+and for a host build of the same code that the tests use. It is written in
+the subset common to CUDA, the Metal Shading Language and C++: no standard
+headers, no templates, no recursion, address spaces behind macros. A thread
+verifies one signature from the bytes the node has (key, hash, signature)
+to the verdict:
+
+* Field: radix 2^32, 8 limbs, lazy reduction (values below 2^256, not
+  necessarily below p; comparisons account for the one non-canonical
+  representative v + p). On CUDA the products are accumulated column by
+  column (Comba) in a three-word accumulator with the carry-chain PTX
+  instructions `mad.lo.cc` / `madc.hi.cc` / `addc`, which ptxas lowers to
+  one `IMAD.WIDE` plus one carry add per partial product; the reduction and
+  the cheap operations (add, sub, small multiples, the 2^256 fold) are
+  carry chains too. Written row by row in C++ with 64-bit accumulators, the
+  same arithmetic is 1.6-1.8x slower: the compiler serialises every row
+  behind one carry. The C++ form remains for Metal and the host (a radix
+  2^26 variant with carry-free column sums was measured as well: no faster
+  on NVIDIA, 2.5x slower on Apple GPUs, where 64-bit integers are
+  emulated). Square root and the Euler test use the libsecp256k1 addition
+  chain; the inverse is the variable-time safegcd (30-bit divsteps, as
+  libsecp256k1's `modinv32_var`), six times cheaper than the chain and fine
+  here because everything a verifier handles is public.
+* Scalars mod n on the device: s^-1 (safegcd again), u1 = z s^-1, u2 =
+  r s^-1 (Montgomery multiplication, plain C++, a few per signature) and the
+  GLV split of u2, so the host only converts byte order, checks the key
+  encoding and, for Schnorr, hashes the challenge; a signature travels as
+  164 bytes written straight into the runtime's pinned or shared buffer.
+* Group law, 4-bit ladder, two-tooth comb for G, ECDSA x-check with the
+  (r + n) case and the BCH Schnorr quadratic-residue test: the same algorithm
+  as the lane kernel, including the complete addition formula, so a thread
+  never diverges on the group law and no input has an exceptional path. The
+  per-thread table of d * Q (d = 1..15, affine, with beta * x) is built in
+  place with one inversion (Montgomery's trick); the G table (256 entries,
+  16 KB) is staged in shared memory per block on CUDA and read from a
+  constant buffer on Metal.
+* Code size is a first-order effect on a GPU: with the ladder step written
+  out (4 doublings, 3 additions) the loop body is 17,000 instructions, more
+  than the instruction cache, and every field operation in it ran at twice
+  its stand-alone latency. The ladder is written as rolled inner loops with
+  one copy of the doubling and one of the addition; that alone took the
+  per-batch latency from 1.08 ms to 0.72 ms.
+* A pool of four contexts (stream + pinned buffers on CUDA, shared-memory
+  buffers on Metal) lets batches from several threads overlap on the device.
+
+Build: `KTH_SECP256K1_TURBO_GPU` (`auto` | `cuda` | `metal` | `none`; the
+conan option `secp256k1_gpu`, default `none` for the node). CUDA needs nvcc
+(`CUDACXX` or `CMAKE_CUDA_COMPILER`), compiles for the build machine's GPU by
+default (`KTH_SECP256K1_TURBO_CUDA_ARCHITECTURES=native`; set a list for a
+distributed build) and links the static runtime; Metal needs no toolchain:
+the kernel source is embedded and compiled by the system Metal compiler on
+first use. At run time `backend_available(cuda|metal)` reports whether a
+device is present and the kernel is ready; `best_backend(n)` returns the GPU
+backend for batches of at least `gpu_min_batch()` signatures (default 512,
+initial value from `KTH_SECP256K1_TURBO_GPU_MIN_BATCH`, `off` to keep every
+batch on the CPU) and `best_backend()` otherwise, and the deferred collector
+uses it. A batch the device cannot run (no device, driver error) is verified
+on the CPU. `KTH_SECP256K1_TURBO_TRACE=1` prints the host/device split of
+every GPU batch to stderr.
+
+Results, end to end (byte-order conversion on the host, upload, kernel,
+download), valid ECDSA signatures with compressed keys,
+`kth_secp256k1_turbo_bench gpu`:
+
+| batch | RTX 5070 Ti (CUDA 13.2, sm_120) | Apple M6 (Metal) |
+|---:|---:|---:|
+| 256 | 2.80 us/sig | 18.6 us/sig |
+| 1,024 | 0.71 us/sig | 4.70 us/sig |
+| 4,096 | 0.195 us/sig | 1.43 us/sig |
+| 16,384 | 0.075 us/sig | 1.10 us/sig |
+| 65,536 | 0.071 us/sig | 1.04 us/sig |
+| kernel alone, 16,384 | 0.062 us/sig | |
+| kernel alone, 65,536 | 0.058 us/sig | |
+
+For scale: one Zen 5 core with the AVX-512 IFMA lanes needs 5.4 us per
+signature (the 16 cores together about 2.9 M/s; the 5070 Ti reaches 14 M/s),
+and one M6 core with libsecp256k1 13.2 us. A batch has a latency floor of
+0.72 ms on the 5070 Ti (the time one thread takes for one signature:
+0.09 ms of checks and scalar work, 0.10 ms for the table, 0.5 ms for the
+ladder), so the crossover with one CPU core sits near 150 signatures there
+and near 400 on the M6 (default `gpu_min_batch` 512, which also keeps the
+CPU lanes for the batches where they are just as fast). Schnorr (BCH) costs
+about 50% more than ECDSA on the GPU at large batches (the quadratic-residue
+test is a second exponentiation chain). Block size and register caps were
+measured within 3%; the three-threads-per-signature variant (one scalar
+multiplication each, partial sums combined through shared memory) was not
+faster once the code size was fixed, and was dropped. Reading GPU
+performance counters needs administrator rights on the driver, so the
+kernel was tuned with `clock64` probes and ablations rather than a
+profiler.
+
+The tests run the kernel on the host against GMP and against the 5x52 lane
+implementation (field, group law, G table, whole verifications), and when a
+device is present also run a field self-test on it against the host results
+and verify batches of 4,096 twice (the device must be deterministic). On
+Metal the functions are forced inline: left as calls, the compiler produced
+non-deterministic results for the long squaring chains.
 
 ## Tests and benchmark
 

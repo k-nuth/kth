@@ -65,9 +65,15 @@ item make_valid(rng& r, scheme s, int pubkey_form) {
 std::vector<backend> backends() {
     std::vector<backend> b = {backend::scalar_portable};
     if (backend_available(backend::avx512_ifma)) b.push_back(backend::avx512_ifma);
+    for (backend g : {backend::cuda, backend::metal}) {
+        if (!backend_available(g)) continue;
+        set_gpu_min_batch(1);  // exercise the device for every batch size
+        b.push_back(g);
+    }
     return b;
 }
 
+std::size_t run_scheme(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b);
 std::size_t run(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b) {
     std::vector<signature_input> in;
     for (auto const& it : items) in.push_back(it.view());
@@ -91,6 +97,8 @@ void check_against_oracle(scheme s, std::vector<item> const& items) {
     }
 }
 
+std::size_t run_scheme(scheme s, std::vector<item> const& items, std::vector<std::uint8_t>& results, backend b) { return run(s, items, results, b); }
+
 bytes32 n_minus(std::uint8_t const* s32) {
     mpz t = from_be32(s32);
     mpz_sub(t.v, N().v, t.v);
@@ -112,6 +120,31 @@ TEST_CASE("valid signatures verify on every backend", "[verify]") {
                 for (auto v : got) CHECK(v == 1);
             }
             check_against_oracle(s, items);
+        }
+    }
+}
+
+TEST_CASE("large batches verify on every backend", "[verify][large]") {
+    rng r(0x5eed0034);
+    for (scheme s : {scheme::ecdsa, scheme::schnorr}) {
+        std::size_t const n = 4096;
+        std::vector<item> items;
+        for (std::size_t i = 0; i < n; ++i) items.push_back(make_valid(r, s, static_cast<int>(i % 3)));
+        std::vector<std::size_t> corrupt;
+        for (std::size_t i = 0; i < n; i += 97) { items[i].sig[(i * 7) % 64] ^= 0x20; corrupt.push_back(i); }
+        for (backend b : backends()) {
+            for (int run = 0; run < 2; ++run) {  // twice: the device must be deterministic
+                std::vector<std::uint8_t> got;
+                std::size_t const count = run_scheme(s, items, got, b);
+                INFO("scheme " << (s == scheme::ecdsa ? "ecdsa" : "schnorr") << " backend " << backend_name(b) << " run " << run);
+                CHECK(count == n - corrupt.size());
+                std::size_t bad = 0;
+                for (std::size_t i = 0; i < n; ++i) {
+                    bool const expect = (i % 97) != 0;
+                    if ((got[i] == 1) != expect) ++bad;
+                }
+                CHECK(bad == 0);
+            }
         }
     }
 }
@@ -231,5 +264,85 @@ TEST_CASE("algebraic Schnorr batch agrees with per-signature verdicts", "[verify
         item bad = items[victim]; bad.pubkey[0] = 0x05;
         in[victim] = bad.view();
         CHECK_FALSE(verify_schnorr_bch_all(in, seed.data()));
+    }
+}
+
+TEST_CASE("Schnorr challenge: every hashed field decides the verdict", "[verify][schnorr]") {
+    // The challenge hashes r, the compressed key and the message; on a GPU
+    // backend it is computed on the device. A valid signature only verifies
+    // with the exact hash, and a change to any hashed byte must reject it.
+    rng r(0x5eed0035);
+    std::vector<item> items;
+    for (int form = 0; form < 3; ++form) {
+        for (int k = 0; k < 8; ++k) {
+            item const base = make_valid(r, scheme::schnorr, form);
+            items.push_back(base);
+            std::size_t const at = static_cast<std::size_t>(k * 4 + (form + k) % 4);   // byte 0 .. 31
+            { item it = base; it.sig[at] ^= 0x01; items.push_back(it); }               // R
+            { item it = base; it.sig[32 + at] ^= 0x80; items.push_back(it); }          // s
+            { item it = base; it.msg[at] ^= 0x01; items.push_back(it); }               // message
+            { item it = base; it.msg[31 - at] ^= 0x80; items.push_back(it); }          // message, other end
+            { item it = base; it.pubkey = make_valid(r, scheme::schnorr, form).pubkey; items.push_back(it); }  // another key
+            { item it = base; it.pubkey[1 + at] ^= 0x01; items.push_back(it); }        // key x
+        }
+    }
+    check_against_oracle(scheme::schnorr, items);
+    std::size_t valid = 0;
+    std::vector<std::uint8_t> got;
+    for (backend b : backends()) {
+        valid = run(scheme::schnorr, items, got, b);
+        INFO("backend " << backend_name(b));
+        CHECK(valid == 24);
+    }
+}
+
+TEST_CASE("batches spanning many device chunks keep every verdict", "[verify][large]") {
+    // Larger than any chunk a GPU runtime hands to the device at once, with
+    // invalid signatures on and around the chunk boundaries; a pool of
+    // signatures is reused to keep signing time down.
+    rng r(0x5eed0036);
+    std::size_t const n = 3 * 32768 + 4096 + 77;
+    std::vector<std::size_t> marks = {0, 1, n - 2, n - 1};
+    for (std::size_t edge = 4096; edge < n; edge *= 2) {
+        for (std::size_t d : {std::size_t(1), std::size_t(0)}) marks.push_back(edge - d);
+    }
+    for (std::size_t edge = 32768; edge < n; edge += 32768) marks.push_back(edge + 4096);
+    for (std::size_t i = 0; i < n; i += 997) marks.push_back(i);
+    for (scheme s : {scheme::ecdsa, scheme::schnorr}) {
+        std::vector<item> pool;
+        for (int i = 0; i < 512; ++i) pool.push_back(make_valid(r, s, i % 3));
+        std::vector<item> items;
+        items.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) items.push_back(pool[(i * 7) % pool.size()]);
+        std::vector<bool> expect(n, true);
+        for (std::size_t m : marks) {
+            if (!expect[m]) continue;
+            items[m].msg[m % 32] ^= 0x04;
+            expect[m] = false;
+        }
+        std::size_t want = 0;
+        for (bool e : expect) want += e;
+        for (backend b : {backend::cuda, backend::metal}) {
+            if (!backend_available(b)) continue;
+            set_gpu_min_batch(1);
+            for (int round = 0; round < 2; ++round) {
+                std::vector<std::uint8_t> got;
+                std::size_t const count = run(s, items, got, b);
+                INFO("scheme " << (s == scheme::ecdsa ? "ecdsa" : "schnorr") << " backend " << backend_name(b) << " round " << round);
+                CHECK(count == want);
+                std::size_t bad = 0;
+                for (std::size_t i = 0; i < n; ++i) bad += (got[i] == 1) != expect[i];
+                CHECK(bad == 0);
+            }
+            // A smaller batch after the large one reuses the grown buffers.
+            std::vector<item> head(items.begin(), items.begin() + 5000);
+            std::vector<std::uint8_t> got;
+            std::size_t head_want = 0;
+            for (std::size_t i = 0; i < head.size(); ++i) head_want += expect[i];
+            CHECK(run(s, head, got, b) == head_want);
+        }
+        // The CPU agrees on a slice across the first boundaries.
+        std::vector<item> slice(items.begin() + 4000, items.begin() + 4200);
+        check_against_oracle(s, slice);
     }
 }
