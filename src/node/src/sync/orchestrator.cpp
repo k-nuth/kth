@@ -1828,7 +1828,7 @@ static
 
         // The height a peer is told in the version message is the connected
         // tip's. The node sets it once at startup; from then on it follows
-        // each tip connected, during initial block download too.
+        // each published connected tip, including rewinds and initial download.
         auto record_connected_tip = [&] {
             if (auto const view = chain.chain_view()) {
                 network.set_top_block({view->tip_hash, view->connected_tip_height});
@@ -2183,6 +2183,10 @@ static
 
                     auto const outcome = reorg.result;
                     auto const switched = outcome.ok;
+                    // A successful switch, or one that only disconnected part
+                    // way, publishes its actual connected tip before returning.
+                    // Replacement bodies may not arrive for some time.
+                    record_connected_tip();
 
                     // Resync from the tip the switch actually reports, so a partially
                     // disconnected range is re-downloaded instead of stranded. When it

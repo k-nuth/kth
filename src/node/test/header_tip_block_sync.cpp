@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,6 +41,8 @@
 #include <kth/domain/message/ping.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/protocols_coro.hpp>
+#include <kth/node/detail/p2p_node_test_seam.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/orchestrator.hpp>
@@ -120,6 +123,7 @@ network::settings node_settings(std::string const& tag) {
     network::settings settings;
     settings.identifier = 0xdab5bffa;           // regtest
     settings.protocol_maximum = 70015;
+    settings.user_agent = "/KTH-header-tip-test:1/";
     settings.inbound_port = 0;
     settings.inbound_connections = 0;
     settings.outbound_connections = 0;          // nothing dials out
@@ -376,6 +380,7 @@ struct node_run {
     network::settings const config;     // p2p_node keeps a reference
     p2p_node network;
     std::future<void> orchestrator;
+    std::future<code> connections;
     bool stopped{false};
     // What was connected, so a teardown that skips the explicit stop — a
     // REQUIRE failing mid-case — still ends them, as the connection manager
@@ -391,6 +396,9 @@ struct node_run {
     node_run(chain_fixture& fixture, std::string const& tag, header_walk_timing timing)
         : config(node_settings(tag))
         , network(config) {
+        auto const view = fixture.chain().chain_view();
+        REQUIRE(view);
+        network.set_top_block({view->tip_hash, view->connected_tip_height});
         auto started = ::asio::co_spawn(network.thread_pool().get_executor(),
             [this]() -> ::asio::awaitable<int> {
                 auto const ec = co_await network.start();
@@ -427,6 +435,38 @@ struct node_run {
         (void)network.observe_block_message(peer, raw);
     }
 
+    // Exercise the production supervisor and handshake, as well as the sync
+    // coordinator. Most controls only need the latter.
+    void start_connections() {
+        connections = ::asio::co_spawn(network.thread_pool().get_executor(),
+            network.run(), ::asio::use_future);
+    }
+
+    uint32_t received_version_height() {
+        ::asio::io_context io;
+        ::asio::ip::tcp::acceptor listener(io,
+            {::asio::ip::address_v4::loopback(), 0});
+        ::asio::ip::tcp::socket socket(io);
+        socket.connect(listener.local_endpoint());
+        // The coordinator can retain this session after the client closes.
+        // Its socket must use the node's executor, whose lifetime covers it.
+        ::asio::ip::tcp::socket accepted(network.thread_pool().get_executor());
+        listener.accept(accepted);
+        auto peer = std::make_shared<network::peer_session>(std::move(accepted), config, true);
+        network::peer_session client(std::move(socket), config, false);
+        auto result = ::asio::co_spawn(io, [&]() -> ::asio::awaitable<uint32_t> {
+            co_await kth::node::detail::p2p_node_test_seam::admit_peer(network, peer, peer_direction::inbound);
+            auto handshake_config = network::make_handshake_config(config, 0, 0x814);
+            handshake_config.timeout = std::chrono::seconds(5);
+            auto handshake = co_await network::perform_handshake_direct(client, handshake_config);
+            client.stop();
+            if ( ! handshake) throw std::runtime_error(handshake.error().message());
+            co_return handshake->peer_version->start_height();
+        }, ::asio::use_future);
+        io.run();
+        return result.get();
+    }
+
     // The peers first, so the block download waiting on them completes, then
     // the node: these sessions are not the connection manager's, so stopping
     // the node does not end them. Answers whether the orchestrator finished
@@ -446,6 +486,10 @@ struct node_run {
             return false;
         }
         orchestrator.get();
+        if (connections.valid()) {
+            if (connections.wait_for(limit) != std::future_status::ready) return false;
+            if (connections.get() != error::success) return false;
+        }
         return true;
     }
 };
@@ -1802,12 +1846,16 @@ TEST_CASE("integrated: a refused stored block releases the pipeline for a valid 
     bool stopped_cleanly = false;
     {
         node_run run(fixture, "body_recovery");
+        run.start_connections();
         rewound = wait_until([&] {
             return fixture.organizer().header_height() == prefix &&
                 log.count("Stepped the active chain off the rejected block") != 0;
         }, quick);
         alive = ! run.network.stopped() &&
             run.orchestrator.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+        REQUIRE(rewound);
+        CHECK(run.received_version_height() == prefix);
+        CHECK(run.network.top_block().hash() == previous);
         if (rewound && alive) {
             run.connect(peer.session);
             run.deliver(peer.session, peer.headers({replacement}));
@@ -1951,6 +1999,8 @@ TEST_CASE("integrated: the version message's height follows the connected tip",
     bool stopped_cleanly = false;
     {
         node_run run(fixture, "version_height");
+        run.start_connections();
+        CHECK(run.received_version_height() == 3);
         run.connect(source.session);
         run.deliver(source.session, source.headers({next}));
         data_chunk bytes(next.serialized_size());
@@ -1962,11 +2012,56 @@ TEST_CASE("integrated: the version message's height follows the connected tip",
             auto const top = run.network.top_block();
             return top.height() == 4 && top.hash() == next.hash();
         }, quick);
+        REQUIRE(followed);
+        CHECK(run.received_version_height() == 4);
         stopped_cleanly = run.stop_with({source.session}, std::chrono::seconds(120));
     }
     log.dump("version_height");
     REQUIRE(followed);
     CHECK(stopped_cleanly);
+}
+
+TEST_CASE("integrated: a new peer receives the rewound connected height before replacement bodies arrive",
+          "[header_tip][integration][version_height]") {
+    captured_log log;
+    chain_fixture fixture{"version_height_rewind"};
+    REQUIRE(fixture.created());
+    fixture.settings().max_checkpoint_height = 0;
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 5, 5);
+    constexpr uint32_t fork_height = 3;
+    auto previous = staged.trunk[fork_height - 1].hash();
+    std::vector<domain::chain::block> branch;
+    for (uint32_t height = fork_height + 1; height <= 6; ++height) {
+        branch.push_back(mine_block(previous, height,
+            staged.trunk.back().header().timestamp() + height * block_spacing, 1, {}, 0));
+        previous = branch.back().hash();
+    }
+    wire_peer source(node_settings("version_height_rewind_source"), 9112, 6);
+    {
+        node_run run(fixture, "version_height_rewind");
+        run.start_connections();
+        CHECK(run.received_version_height() == 5);
+        run.connect(source.session);
+        run.deliver(source.session, source.headers(branch));
+        REQUIRE(wait_until([&] {
+            auto const view = fixture.chain().chain_view();
+            return view && view->connected_tip_height == fork_height &&
+                view->tip_hash == staged.trunk[fork_height - 1].hash() &&
+                fixture.organizer().header_tip_hash() == branch.back().hash();
+        }, quick));
+        // No replacement body is sent. A later connection must already see
+        // the connected fork, rather than either the old tip or the header tip.
+        REQUIRE(wait_until([&] {
+            auto const top = run.network.top_block();
+            return top.height() == fork_height &&
+                top.hash() == staged.trunk[fork_height - 1].hash();
+        }, quick));
+        CHECK(run.received_version_height() == fork_height);
+        CHECK(run.stop_with({source.session}, std::chrono::seconds(120)));
+    }
+    log.dump("version_height_rewind");
 }
 
 TEST_CASE("integrated: a peer answering below a deep fork is followed to its heavier branch",
