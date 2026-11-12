@@ -22,10 +22,12 @@ set_property(CACHE KTH_SECP256K1_TURBO_BACKENDS PROPERTY STRINGS auto avx512ifma
 add_library(${PROJECT_NAME} STATIC
     src/batch_verify.cpp
     src/cpu.cpp
+    src/deferred.cpp
     src/g_table.cpp
     src/kernel_scalar.cpp
     src/sha256.cpp
 )
+add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ${ENABLE_POSITION_INDEPENDENT_CODE})
 target_include_directories(${PROJECT_NAME}
     PUBLIC
@@ -67,6 +69,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/scalar.cpp
         test/kernel.cpp
         test/verify.cpp
+        test/deferred.cpp
     )
     if (KTH_SECP256K1_TURBO_AVX512_FLAGS)
         target_sources(kth_secp256k1_turbo_test PRIVATE test/field_avx512ifma.cpp)

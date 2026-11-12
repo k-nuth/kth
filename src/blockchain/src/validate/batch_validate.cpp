@@ -25,6 +25,12 @@
 #include <kth/domain/chain/faster_blocks.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <mutex>
+#include <secp256k1_turbo/batch_verify.hpp>
+#include <secp256k1_turbo/deferred.hpp>
+#endif
+
 namespace kth::blockchain {
 
 using namespace kth::domain::chain;
@@ -706,30 +712,99 @@ code validate_block_batch(
     // block and the same code on every run, whatever the interleaving.
     std::atomic<size_t> failed_height{std::numeric_limits<size_t>::max()};
     std::atomic<bool> threw{false};
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // A deferred batch that reports an invalid signature none of the inline
+    // re-runs reproduces: the backend and the interpreter disagree. Not a
+    // verdict on any block, like a worker that threw.
+    std::atomic<bool> deferred_mismatch{false};
+#endif
+
+    // Records a refused task and lowers the failed height to it.
+    auto record_failure = [&](size_t t, code const& ec) {
+        task_errors[t] = ec;
+        auto seen = failed_height.load(std::memory_order_acquire);
+        while (tasks[t].height < seen &&
+               ! failed_height.compare_exchange_weak(seen, tasks[t].height,
+                     std::memory_order_acq_rel, std::memory_order_acquire)) {
+        }
+    };
 
     auto run_bucket = [&](size_t bucket) {
       try {
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+        // Deferred signature checks: the interpreter records every check whose
+        // failure would be final instead of verifying it, and this worker
+        // verifies all of them in lane-parallel batches once its transactions
+        // are done. A failing batch rejects the block like a failing script.
+        {
+            static std::once_flag once;
+            std::call_once(once, [] {
+                spdlog::info("[batch_validate] deferred signature checks: {}",
+                    secp256k1_turbo::backend_name(secp256k1_turbo::best_backend()));
+            });
+        }
+        secp256k1_turbo::deferred::begin();
+#endif
         // A stride visits tasks in increasing index, and tasks are emitted in
         // height order, so once a task is above the failed height every later
         // one in this stride is too.
+        //
+        // `judged_end` is the first task of the stride this pass did not run.
+        // Everything below it fed whatever the deferred batch holds.
+        size_t judged_end = bucket;
         for (size_t t = bucket; t < tasks.size(); t += workers) {
             auto const& task = tasks[t];
             if (threw.load(std::memory_order_relaxed) ||
                 task.height > failed_height.load(std::memory_order_acquire)) {
                 break;
             }
+            judged_end = t + workers;
             auto const res = validate_input::verify_transaction(*task.tx, task.flags);
             if (res.first != error::success) {
-                task_errors[t] = res.first;
-                auto seen = failed_height.load(std::memory_order_acquire);
-                while (task.height < seen &&
-                       ! failed_height.compare_exchange_weak(seen, task.height,
-                             std::memory_order_acq_rel, std::memory_order_acquire)) {
-                }
+                record_failure(t, res.first);
                 continue;
             }
             task_sigchecks[t] = res.second;
         }
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+        auto const deferred = secp256k1_turbo::deferred::end();
+        if (deferred.invalid != 0 && ! threw.load(std::memory_order_relaxed)) {
+            // Judge this worker's transactions again inline (no collection is
+            // active now, so the interpreter verifies every signature itself),
+            // up to the failed height, so the verdicts and the attribution are
+            // the ones the inline path gives.
+            //
+            // The failed height may have dropped since the first pass, set by
+            // another worker. A transaction above it that this worker did run
+            // put its signatures in the batch and is not judged again here: it
+            // cannot be the attributed block. If one was left out, an invalid
+            // signature the batch reported may be its own, so not reproducing
+            // it says nothing about the backend — and the batch is refused
+            // anyway, at the height that made this pass stop.
+            bool reproduced = false;
+            bool omitted = false;
+            for (size_t t = bucket; t < judged_end; t += workers) {
+                auto const& task = tasks[t];
+                if (task.height > failed_height.load(std::memory_order_acquire)) {
+                    omitted = true;
+                    break;
+                }
+                if (task_errors[t] != error::success) {
+                    reproduced = true;
+                    continue;
+                }
+                auto const res = validate_input::verify_transaction(*task.tx, task.flags);
+                if (res.first != error::success) {
+                    record_failure(t, res.first);
+                    reproduced = true;
+                }
+            }
+            if ( ! reproduced && ! omitted && ! deferred_mismatch.exchange(true)) {
+                spdlog::error("[batch_validate] deferred signature batch reported {} invalid of {} but inline verification passed",
+                    deferred.invalid, deferred.total);
+            }
+        }
+#endif
       } catch (std::exception const& e) {
         // A worker thread must not let an exception escape (std::terminate).
         if ( ! threw.exchange(true)) {
@@ -752,6 +827,11 @@ code validate_block_batch(
         // Not a verdict on any block: a worker did not finish judging.
         return fault(error::operation_failed);
     }
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    if (deferred_mismatch.load(std::memory_order_acquire)) {
+        return fault(error::operation_failed);
+    }
+#endif
 
     // The first refused transaction in emission order. Every task at or below
     // the lowest failing height was judged (see run_bucket), so the first
