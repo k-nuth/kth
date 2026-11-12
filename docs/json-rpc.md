@@ -241,15 +241,19 @@ an empty array is a `-32602` error.
 
 Both methods take their arguments as BCHN does.
 
-`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+`getblock "<hash>" [verbosity=1] [patterns=false]` reads the block from the flat-file block
 store, through the header index; a side-branch block the node holds is returned
 too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
 `confirmations` (-1 off the connected chain), `confirmations_ticks`, `size`,
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. `fee` per
-transaction and `ablastate` are not reported.
+transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
+object: the script with each run of data pushes replaced by its count
+(`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
+pushed data in order (`data`), and `error` for a script that ends in the middle
+of a push. `fee` per transaction and `ablastate` are not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
 mempool transaction. Confirmed transactions are not indexed by txid (#491), so

@@ -207,9 +207,31 @@ std::string_view capability_name(domain::chain::capability_t capability) {
     }
 }
 
-// A "scriptPubKey" object: asm, hex, and the kind with its addresses.
+// The "byteCodePattern" object: the SHA-256 of the pattern (in byte order),
+// the pattern as hex and as script text, the pushed data, and "error" only
+// for a script that ends in the middle of a push.
+void write_byte_code_pattern(writer& w, data_chunk const& script, domain::script_flags_t flags) {
+    auto const parsed = make_byte_code_pattern(script);
+    w.key("byteCodePattern").begin_object();
+    w.field("fingerprint", encode_base16(sha256_hash(parsed.pattern)));
+    w.field("pattern", encode_base16(parsed.pattern));
+    w.field("patternAsm", domain::chain::script{parsed.pattern, false}.to_string(flags));
+    w.key("data").begin_array();
+    for (auto const& datum : parsed.data) {
+        w.value(encode_base16(datum));
+    }
+    w.end_array();
+    if (parsed.error) {
+        w.field("error", true);
+    }
+    w.end_object();
+}
+
+// A "scriptPubKey" object: asm, hex, and the kind with its addresses, then
+// the byteCodePattern object when asked for.
 void write_script_pubkey(writer& w, domain::chain::script const& script,
-                         domain::config::network net, domain::script_flags_t flags) {
+                         domain::config::network net, domain::script_flags_t flags,
+                         bool patterns = false) {
     auto const destination = describe_output_script(script, net);
     w.key("scriptPubKey").begin_object();
     w.field("asm", script.to_string(flags));
@@ -224,6 +246,9 @@ void write_script_pubkey(writer& w, domain::chain::script const& script,
             w.value(address);
         }
         w.end_array();
+    }
+    if (patterns) {
+        write_byte_code_pattern(w, script.bytes(), flags);
     }
     w.end_object();
 }
@@ -248,7 +273,8 @@ namespace {
 
 // The decoderawtransaction fields, into an object the caller has opened.
 void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
-                              domain::config::network net, domain::script_flags_t flags) {
+                              domain::config::network net, domain::script_flags_t flags,
+                              bool patterns = false) {
     w.field("txid", encode_hash(tx.hash()));
     w.field("hash", encode_hash(tx.hash()));
     w.field("version", int64_t(tx.version()));
@@ -266,6 +292,9 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
             w.key("scriptSig").begin_object();
             w.field("asm", input.script().to_string(flags));
             w.field("hex", encode_base16(input.script().bytes()));
+            if (patterns) {
+                write_byte_code_pattern(w, input.script().bytes(), flags);
+            }
             w.end_object();
         }
         w.field("sequence", int64_t(input.sequence()));
@@ -279,7 +308,7 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
         w.begin_object();
         w.field_raw("value", satoshi_to_bitcoin(output.value()));
         w.field("n", n++);
-        write_script_pubkey(w, output.script(), net, flags);
+        write_script_pubkey(w, output.script(), net, flags, patterns);
         if (auto const& token = output.token_data()) {
             write_token_data(w, *token);
         }
@@ -330,7 +359,8 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
 
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
-                                 domain::config::network net, domain::script_flags_t flags) {
+                                 domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns) {
     auto const& header = block.header();
     writer w;
     w.begin_object();
@@ -353,7 +383,7 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
     for (auto const& tx : block.transactions()) {
         if (with_transactions) {
             w.begin_object();
-            write_transaction_fields(w, tx, net, flags);
+            write_transaction_fields(w, tx, net, flags, patterns);
             w.field("hex", transaction_to_hex(tx));
             w.end_object();
         } else {
@@ -616,6 +646,84 @@ std::string render_validate_address(std::string_view address, domain::config::ne
     w.field("istokenaware", (payload.front() & 0x02) != 0);
     w.end_object();
     return w.str();
+}
+
+
+byte_code_pattern make_byte_code_pattern(data_chunk const& script) {
+    byte_code_pattern result;
+    size_t pushes = 0;
+    // A run of pushes is one number: OP_1 to OP_16, or a minimal push of the
+    // count as a script number.
+    auto const flush = [&] {
+        if (pushes == 0) {
+            return;
+        }
+        if (pushes <= 16) {
+            result.pattern.push_back(uint8_t(0x50 + pushes));
+        } else {
+            data_chunk number;
+            for (auto n = pushes; n != 0; n >>= 8) {
+                number.push_back(uint8_t(n & 0xff));
+            }
+            if ((number.back() & 0x80) != 0) {
+                number.push_back(0x00);
+            }
+            result.pattern.push_back(uint8_t(number.size()));
+            result.pattern.insert(result.pattern.end(), number.begin(), number.end());
+        }
+        pushes = 0;
+    };
+
+    size_t at = 0;
+    auto const end = script.size();
+    while (at < end) {
+        auto const opcode = script[at++];
+        if (opcode <= 0x4e) {                       // OP_0 to OP_PUSHDATA4
+            size_t size = opcode;
+            auto complete = true;
+            if (opcode == 0x4c) {
+                complete = end - at >= 1;
+                if (complete) {
+                    size = script[at];
+                    at += 1;
+                }
+            } else if (opcode == 0x4d) {
+                complete = end - at >= 2;
+                if (complete) {
+                    size = size_t(script[at]) | size_t(script[at + 1]) << 8;
+                    at += 2;
+                }
+            } else if (opcode == 0x4e) {
+                complete = end - at >= 4;
+                if (complete) {
+                    size = size_t(script[at]) | size_t(script[at + 1]) << 8 |
+                        size_t(script[at + 2]) << 16 | size_t(script[at + 3]) << 24;
+                    at += 4;
+                }
+            }
+            if ( ! complete || end - at < size) {
+                result.error = true;
+                break;
+            }
+            result.data.emplace_back(script.begin() + at, script.begin() + at + size);
+            at += size;
+            ++pushes;
+        } else if (opcode >= 0x4f && opcode <= 0x60 && opcode != 0x50) {
+            // OP_1NEGATE and OP_1 to OP_16 push their value; OP_RESERVED is
+            // an opcode like any other.
+            result.data.push_back(opcode == 0x4f ? data_chunk{0x81} : data_chunk{uint8_t(opcode - 0x50)});
+            ++pushes;
+        } else {
+            flush();
+            result.pattern.push_back(opcode);
+        }
+    }
+    flush();
+    if (result.error) {
+        auto const from = at > 0 ? at - 1 : 0;
+        result.data.emplace_back(script.begin() + from, script.end());
+    }
+    return result;
 }
 
 } // namespace kth::node::rpc
