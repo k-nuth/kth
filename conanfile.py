@@ -77,6 +77,11 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": ["download_if_possible", "optimized", "download_or_fail"],
         "currency": ['BCH', 'BTC', 'LTC'],
         "mempool_backend": ['cfm', 'parlay'],
+        # Signature verification in block validation: libsecp256k1 inline, one
+        # signature at a time (default), or deferred checks verified in
+        # lane-parallel batches by src/secp256k1-turbo (AVX-512 IFMA where the
+        # CPU has it, libsecp256k1 elsewhere).
+        "signature_verification": ['secp256k1', 'secp256k1_turbo'],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -114,6 +119,7 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": "download_if_possible",
         "currency": "BCH",
         "mempool_backend": "cfm",
+        "signature_verification": "secp256k1",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -383,6 +389,7 @@ class KthRecipe(KnuthConanFileV2):
 
         tc.variables["CURRENCY"] = self.options.currency
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
+        tc.variables["KTH_SIGNATURE_VERIFICATION"] = self.options.signature_verification
 
         # Header index capacity based on compilation year
         header_capacity = _calculate_header_capacity(datetime.now().year, str(self.options.currency))
@@ -420,6 +427,8 @@ class KthRecipe(KnuthConanFileV2):
 
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
+        sigverify_turbo = str(self.options.signature_verification) == "secp256k1_turbo"
+        sigverify_defines = ["KTH_SIGVERIFY_TURBO_BATCH"] if sigverify_turbo else []
 
         # KTH_WITH_RPC describes the JSON-RPC implementation only; each backend has its
         # own macro, so two never share a guard. Neither for
@@ -501,10 +510,11 @@ class KthRecipe(KnuthConanFileV2):
             infrastructure_defines.append("KTH_WITH_QRENCODE")
         if self.options.with_jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
-        self.cpp_info.components["infrastructure"].defines = infrastructure_defines
+        self.cpp_info.components["infrastructure"].defines = infrastructure_defines + sigverify_defines
         # Infrastructure directly uses GMP for big_number, independently of consensus.
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
+            *(["secp256k1_turbo"] if sigverify_turbo else []),
             "gmp::gmp",
             "boost::boost",
             "cli11::cli11",
@@ -532,7 +542,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].libs = ["domain"]
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
-        self.cpp_info.components["domain"].defines = [currency_define] + static_defines
+        self.cpp_info.components["domain"].defines = [currency_define] + static_defines + sigverify_defines
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
             "infrastructure",
@@ -544,10 +554,11 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["consensus"].libs = ["consensus"]
             self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
             self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
-            self.cpp_info.components["consensus"].defines = [currency_define] + static_defines
+            self.cpp_info.components["consensus"].defines = [currency_define] + static_defines + sigverify_defines
             # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
             self.cpp_info.components["consensus"].requires = [
                 "secp256k1",
+                *(["secp256k1_turbo"] if sigverify_turbo else []),
                 "boost::boost",
                 "openssl::openssl",
                 "gmp::gmp"
@@ -565,7 +576,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].libs = ["blockchain"]
         self.cpp_info.components["blockchain"].names["cmake_find_package"] = "blockchain"
         self.cpp_info.components["blockchain"].names["cmake_find_package_multi"] = "blockchain"
-        self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines
+        self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines + sigverify_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
         if self.options.consensus:
@@ -592,7 +603,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].libs = ["node"]
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
-        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines
+        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines + sigverify_defines
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict
