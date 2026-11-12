@@ -564,7 +564,256 @@ static void run_schnorr_bch_hash_context(void) {
     secp256k1_context_destroy(ctx);
 }
 
+#define BATCH_COUNT 120
+
+/* A signature whose R = s*G - e*P has the right x but a non-square y: the
+ * single verifier rejects it, and so must the batch. */
+static void schnorr_batch_sign_nonquad(unsigned char *sig64, const unsigned char *msg32, const unsigned char *seckey) {
+    secp256k1_scalar x, k, e, s;
+    secp256k1_ge r, p;
+    secp256k1_pubkey pubkey;
+    CHECK(secp256k1_ec_pubkey_create(CTX, &pubkey, seckey) == 1);
+    CHECK(secp256k1_pubkey_load(CTX, &p, &pubkey) == 1);
+    secp256k1_scalar_set_b32(&x, seckey, NULL);
+    testutil_random_scalar_order_test(&k);
+    secp256k1_ecmult_gen_ge(&CTX->ecmult_gen_ctx, &r, &k);
+    secp256k1_fe_normalize_var(&r.x);
+    secp256k1_fe_normalize_var(&r.y);
+    if (secp256k1_fe_is_square_var(&r.y)) {
+        secp256k1_scalar_negate(&k, &k);
+    }
+    secp256k1_fe_get_b32(sig64, &r.x);
+    secp256k1_schnorr_compute_e(secp256k1_get_hash_context(CTX), &e, sig64, &p, msg32);
+    secp256k1_scalar_mul(&s, &e, &x);
+    secp256k1_scalar_add(&s, &s, &k);
+    secp256k1_scalar_get_b32(sig64 + 32, &s);
+}
+
+/* The batch verdict on the first n entries through every route: the public
+ * function, Strauss, Pippenger in one chunk and Pippenger in chunks of 7 and
+ * 32. All must agree; returns that verdict. */
+static int schnorr_batch_all_routes(const unsigned char *const *sigs, const unsigned char *const *msgs, const secp256k1_pubkey *const *pubs, size_t n, const unsigned char *seed) {
+    secp256k1_ge *ges = (secp256k1_ge *)malloc((n ? n : 1) * sizeof(secp256k1_ge));
+    const secp256k1_hash_ctx *hash_ctx = secp256k1_get_hash_context(CTX);
+    int ret, r;
+    size_t i;
+    CHECK(ges != NULL);
+    for (i = 0; i < n; i++) {
+        CHECK(secp256k1_pubkey_load(CTX, &ges[i], pubs[i]) == 1);
+    }
+    ret = secp256k1_schnorr_verify_batch(CTX, sigs, msgs, pubs, n, seed);
+    r = secp256k1_schnorr_sig_verify_batch(hash_ctx, &CTX->error_callback, sigs, msgs, ges, n, seed, SIZE_MAX, SECP256K1_SCHNORR_BATCH_CHUNK);
+    CHECK(r == ret);
+    r = secp256k1_schnorr_sig_verify_batch(hash_ctx, &CTX->error_callback, sigs, msgs, ges, n, seed, 0, SECP256K1_SCHNORR_BATCH_CHUNK);
+    CHECK(r == ret);
+    r = secp256k1_schnorr_sig_verify_batch(hash_ctx, &CTX->error_callback, sigs, msgs, ges, n, seed, 0, 7);
+    CHECK(r == ret);
+    r = secp256k1_schnorr_sig_verify_batch(hash_ctx, &CTX->error_callback, sigs, msgs, ges, n, seed, 0, 32);
+    CHECK(r == ret);
+    free(ges);
+    return ret;
+}
+
+static void test_schnorr_batch_verify(void) {
+    unsigned char (*privkey)[32] = malloc(BATCH_COUNT * sizeof(*privkey));
+    unsigned char (*msg)[32] = malloc(BATCH_COUNT * sizeof(*msg));
+    unsigned char (*sig)[64] = malloc(BATCH_COUNT * sizeof(*sig));
+    secp256k1_pubkey *pubkey = malloc(BATCH_COUNT * sizeof(*pubkey));
+    const unsigned char **sigs = malloc(BATCH_COUNT * sizeof(*sigs));
+    const unsigned char **msgs = malloc(BATCH_COUNT * sizeof(*msgs));
+    const secp256k1_pubkey **pubs = malloc(BATCH_COUNT * sizeof(*pubs));
+    /* Positions to tamper with: both ends, around the Strauss/Pippenger and
+     * chunk boundaries, and random ones. */
+    size_t pos[10] = {0, 1, 6, 7, 16, 17, 31, 32, BATCH_COUNT - 1, 0};
+    static const unsigned char p_bytes[32] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFC, 0x2F
+    };
+    static const unsigned char n_bytes[32] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+        0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B, 0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41
+    };
+    unsigned char seed[32];
+    size_t i, j, n;
+
+    CHECK(privkey != NULL && msg != NULL && sig != NULL && pubkey != NULL);
+    CHECK(sigs != NULL && msgs != NULL && pubs != NULL);
+    pos[9] = testrand_int(BATCH_COUNT);
+    testrand256(seed);
+    for (i = 0; i < BATCH_COUNT; i++) {
+        secp256k1_scalar key;
+        testutil_random_scalar_order_test(&key);
+        secp256k1_scalar_get_b32(privkey[i], &key);
+        testrand256_test(msg[i]);
+        CHECK(secp256k1_ec_pubkey_create(CTX, &pubkey[i], privkey[i]) == 1);
+        CHECK(secp256k1_schnorr_sign(CTX, sig[i], msg[i], privkey[i], NULL, NULL) == 1);
+        sigs[i] = sig[i];
+        msgs[i] = msg[i];
+        pubs[i] = &pubkey[i];
+    }
+
+    /* Every prefix verifies on every route, with and without a seed. */
+    for (n = 0; n <= BATCH_COUNT; n++) {
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, n, (n & 1) ? seed : NULL) == 1);
+    }
+    CHECK(secp256k1_schnorr_verify_batch(CTX, NULL, NULL, NULL, 0, NULL) == 1);
+
+    /* One corrupted signature at every position fails the batch. */
+    for (i = 0; i < BATCH_COUNT; i++) {
+        unsigned char backup[64];
+        memcpy(backup, sig[i], 64);
+        sig[i][testrand_bits(6)] ^= (unsigned char)(1 + testrand_int(255));
+        CHECK(secp256k1_schnorr_verify(CTX, sig[i], msg[i], &pubkey[i]) == 0);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, i + 1, NULL) == 0);
+        memcpy(sig[i], backup, 64);
+    }
+    CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+
+    for (j = 0; j < sizeof(pos) / sizeof(pos[0]); j++) {
+        unsigned char backup[64];
+        const unsigned char *m;
+        size_t k = pos[j], other = (k + 1) % BATCH_COUNT;
+        memcpy(backup, sig[k], 64);
+
+        /* R with a non-square y. */
+        schnorr_batch_sign_nonquad(sig[k], msg[k], privkey[k]);
+        CHECK(secp256k1_schnorr_verify(CTX, sig[k], msg[k], &pubkey[k]) == 0);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, k + 1, NULL) == 0);
+        /* s = n, s = 2^256 - 1, s = 0. */
+        memcpy(sig[k], backup, 64);
+        memcpy(sig[k] + 32, n_bytes, 32);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memset(sig[k] + 32, 0xFF, 32);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memset(sig[k] + 32, 0, 32);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        /* r = p, r = 2^256 - 1, r = 5 (5^3 + 7 is not a square, so no point
+         * has x = 5). */
+        memcpy(sig[k], backup, 64);
+        memcpy(sig[k], p_bytes, 32);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memset(sig[k], 0xFF, 32);
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memset(sig[k], 0, 32);
+        sig[k][31] = 5;
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        memcpy(sig[k], backup, 64);
+        /* Wrong message, wrong key. */
+        m = msgs[k];
+        msgs[k] = msg[other];
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        msgs[k] = m;
+        pubs[k] = &pubkey[other];
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+        pubs[k] = &pubkey[k];
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+    }
+
+    /* Duplicated entries: one signature repeated (equal points in the same
+     * buckets), a few repeated in turn, and one invalid entry among them. */
+    for (i = 0; i < BATCH_COUNT; i++) {
+        sigs[i] = sig[0];
+        msgs[i] = msg[0];
+        pubs[i] = &pubkey[0];
+    }
+    CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+    CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, NULL) == 1);
+    for (i = 0; i < BATCH_COUNT; i++) {
+        sigs[i] = sig[i % 3];
+        msgs[i] = msg[i % 3];
+        pubs[i] = &pubkey[i % 3];
+    }
+    CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 1);
+    msgs[BATCH_COUNT / 2] = msg[4];
+    CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, BATCH_COUNT, seed) == 0);
+    for (i = 0; i < BATCH_COUNT; i++) {
+        sigs[i] = sig[i];
+        msgs[i] = msg[i];
+        pubs[i] = &pubkey[i];
+    }
+
+    /* Batch verdict equals the conjunction of the individual verdicts on
+     * random mixes of valid and invalid signatures. */
+    for (n = 0; n < 8; n++) {
+        int all_valid = 1;
+        size_t len = 1 + testrand_int(BATCH_COUNT);
+        for (i = 0; i < len; i++) {
+            if (testrand_int(4 * len) == 0) {
+                sig[i][testrand_bits(6)] ^= 0x20;
+            }
+            all_valid &= secp256k1_schnorr_verify(CTX, sig[i], msg[i], &pubkey[i]);
+        }
+        CHECK(schnorr_batch_all_routes(sigs, msgs, pubs, len, seed) == all_valid);
+        for (i = 0; i < len; i++) {
+            CHECK(secp256k1_schnorr_sign(CTX, sig[i], msg[i], privkey[i], NULL, NULL) == 1);
+        }
+    }
+
+    free(privkey);
+    free(msg);
+    free(sig);
+    free(pubkey);
+    free(sigs);
+    free(msgs);
+    free(pubs);
+}
+
+/* The affine-bucket Pippenger against the known discrete logs of its points,
+ * at every window, with repeated and opposite points (equal-x pairs in a
+ * bucket) and zero scalars. */
+static void test_schnorr_batch_pippenger(void) {
+    enum { NUM = 48 };
+    secp256k1_ge pt[NUM];
+    secp256k1_scalar dl[NUM], sc[NUM];
+    secp256k1_schnorr_pippenger_scratch s;
+    int window;
+    size_t i, group;
+    for (window = 1; window <= 11; window++) {
+        secp256k1_scalar sum;
+        secp256k1_gej expect, got;
+        secp256k1_scalar_set_int(&sum, 0);
+        for (i = 0; i < NUM; i++) {
+            secp256k1_scalar t;
+            unsigned char b[32];
+            int kind = (int)testrand_int(6);
+            if (i < 2 || kind == 0) {
+                testutil_random_scalar_order_test(&dl[i]);
+            } else if (kind == 1) {
+                dl[i] = dl[i - 1];
+            } else if (kind == 2) {
+                secp256k1_scalar_negate(&dl[i], &dl[i - 1]);
+            } else {
+                dl[i] = dl[testrand_int(i)];
+            }
+            secp256k1_ecmult_gen_ge(&CTX->ecmult_gen_ctx, &pt[i], &dl[i]);
+            testrand256(b);
+            memset(b, 0, 16);
+            if (i > 0 && (kind == 1 || kind == 2)) {
+                sc[i] = sc[i - 1];
+            } else if (kind == 3) {
+                secp256k1_scalar_set_int(&sc[i], 0);
+            } else {
+                secp256k1_scalar_set_b32(&sc[i], b, NULL);
+            }
+            secp256k1_scalar_mul(&t, &sc[i], &dl[i]);
+            secp256k1_scalar_add(&sum, &sum, &t);
+        }
+        secp256k1_ecmult_gen_gej(&CTX->ecmult_gen_ctx, &expect, &sum);
+        /* One digit position per round, a few, and all of them. */
+        for (group = 1; group <= 129; group = group * 4 + 1) {
+            secp256k1_schnorr_pippenger_alloc(&CTX->error_callback, &s, NUM, window, group);
+            secp256k1_schnorr_batch_pippenger(&got, pt, sc, NUM, &s);
+            CHECK(secp256k1_gej_eq_var(&got, &expect));
+            secp256k1_schnorr_pippenger_free(&s);
+        }
+    }
+}
+
 static const struct tf_test_entry tests_schnorr_bch[] = {
+    CASE1(test_schnorr_batch_verify),
+    CASE1(test_schnorr_batch_pippenger),
     CASE1(run_schnorr_bch_hash_context),
     CASE1(run_schnorr_end_to_end_tests),
     CASE1(test_schnorr_sign_verify),

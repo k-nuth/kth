@@ -48,6 +48,13 @@ std::size_t lanes(backend b);
 std::size_t verify_ecdsa(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b = best_backend());
 std::size_t verify_schnorr_bch(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b = best_backend());
 
+// Algebraic batch verification of BCH Schnorr signatures
+// (secp256k1_schnorr_verify_batch): one random linear combination checked
+// with a single multi-scalar multiplication. Returns true only when every
+// signature is valid; there is no per-signature verdict. seed32 is optional
+// fresh randomness for the randomizers.
+bool verify_schnorr_bch_all(std::span<signature_input const> inputs, std::uint8_t const* seed32 = nullptr);
+
 } // namespace secp256k1_turbo
 
 #endif

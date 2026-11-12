@@ -101,3 +101,47 @@ are built with `KTH_SECP256K1_TURBO_CHECK_LIMBS`, which checks the 52-bit
 operand invariant in the portable backend and aborts when it does not hold,
 in Release builds too. `kth_secp256k1_turbo_bench`
 (nanobench) produces the table above.
+
+## Algebraic batch verification (BCH Schnorr only)
+
+`verify_schnorr_bch_all` wraps `secp256k1_schnorr_verify_batch`, a local
+addition to the vendored libsecp256k1 Schnorr module: with random 128-bit
+`a_i` it checks `sum a_i*(s_i*G - e_i*P_i - R_i) == infinity` with one
+multi-scalar multiplication, where `R_i` is `r_i` lifted to the point with a
+square `y`. The `R_i` terms keep their 128-bit `a_i` whole (only the
+full-width `e_i` and `G` scalars are split with the endomorphism, so a
+signature costs three 128-bit terms, not four); batches of up to 16 use
+Strauss' algorithm, larger ones Pippenger's bucket method with the buckets
+summed in affine coordinates (one shared inversion per round). It gives one
+verdict for the whole batch, not one per signature, and does not apply to
+ECDSA (the `y` of `R` cannot be recovered from `r` alone). The randomizers
+are derived from a hash of every input plus an optional caller seed.
+
+Zen 5, one core (same conditions as above):
+
+| batch size | libsecp256k1 one at a time | algebraic batch | AVX-512 IFMA lanes |
+|---:|---:|---:|---:|
+| 2 | 20,294 ns/sig | 17,269 | 23,690 |
+| 8 | | 15,060 | 6,220 |
+| 32 | | 11,787 | 6,209 |
+| 128 | | 9,940 | 6,213 |
+| 512 | | 9,096 | 6,216 |
+| 2048 | | 8,421 (2.41x) | 6,221 (3.26x) |
+
+Apple M6, one core (no vector backend):
+
+| batch size | libsecp256k1 one at a time | algebraic batch |
+|---:|---:|---:|
+| 2 | 14,128 ns/sig | 12,409 |
+| 8 | | 11,196 |
+| 32 | | 10,201 |
+| 128 | | 8,630 |
+| 512 | | 7,710 |
+| 2048 | | 7,248 (1.95x) |
+
+The square root that lifts each `R_i` (and the one that decompresses each
+key) stays per signature, so the batch levels off; on an IFMA machine the lane
+kernel is still faster from 8 signatures up. Where there is no AVX-512 IFMA the
+algebraic batch is the speed-up available for Schnorr inputs. The two are not
+combined here: doing so would mean lifting the `R_i` with the vector field and
+vectorising the bucket accumulation, which is a separate piece of work.
