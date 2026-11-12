@@ -36,8 +36,8 @@ using namespace kth::test;
 // timestamps are base + 600 * height (MTP(h) = timestamp(h - 5) for h >= 10).
 //
 //   * subsidy      the coinbase of a 60-tick block may claim only a tenth
-//   * coinbase     version 1 + locktime 0 + outputs >= 25 BCH is invalid from the
-//                  block built on H_a, and only from there
+//   * coinbase     the four-field historical shape is rejected on test networks
+//                  after H_a; mainnet defers it to fixed collision heights
 //   * maturity     100 ten-minute block-equivalents, in ticks, across H_a
 //
 // Each case has a control that differs only in the property under test.
@@ -66,6 +66,7 @@ struct spec {
     uint32_t repeat_coinbase_at = 0;
     bool short_timestamps = false;
     domain::config::network consensus_network = domain::config::network::regtest;
+    uint64_t spend_fee = 1000;
     uint32_t spend_coinbase_of = 0;               // height whose coinbase is spent; 0 = none
     uint32_t spend_at = 0;
     uint32_t padding_transactions = 0;
@@ -123,12 +124,12 @@ std::vector<domain::message::block::const_ptr> build_chain(spec const& sp, uint3
 
         if (sp.spend_coinbase_of != 0 && h == sp.spend_at) {
             auto const& source = blocks[sp.spend_coinbase_of - 1]->transactions().front();
-            constexpr uint64_t fee = 1000;
+            auto const fee = sp.spend_fee;
             if (sp.unlocked_spend) {
                 input::list inputs;
                 inputs.emplace_back(output_point{source.hash(), 0}, script{}, sp.spend_sequence);
                 output::list outputs;
-                outputs.emplace_back(source.outputs()[0].value() - fee, script{}, domain::chain::token_data_opt{});
+                outputs.emplace_back(source.outputs()[0].value() - fee, miner_script(), domain::chain::token_data_opt{});
                 extra.emplace_back(sp.spend_version, sp.spend_locktime, std::move(inputs), std::move(outputs));
             } else {
                 extra.push_back(spend_p2pkh(source, 0, source.outputs()[0].value() - fee, flags));
@@ -498,18 +499,62 @@ TEST_CASE("coinbase exemption retains both duplicate protections and the reward 
     historical.repeat_coinbase_at = h_a + 2;
     CHECK(run("fb_cb_replay_historical", historical) == error::coinbase_height_mismatch);
 
-    // A historically collidable shape is refused before the independent
-    // reward limit, even though every locktime/sequence combination is final.
+    // Only the final-sequence shape is historically collidable. Other
+    // sequences escape it, but the independent reward limit still applies.
     for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
         spec shaped;
         shaped.short_timestamps = true;
         shaped.coinbase_value_override_at = h_a + 1;
         shaped.coinbase_value_override = 25 * coin;
         shaped.coinbase_sequence = sequence;
-        CHECK(run("fb_cb_shape_guard", shaped) == error::coinbase_shape);
+        CHECK(run("fb_cb_shape_guard", shaped) ==
+            (sequence == max_uint32 ? error::coinbase_shape : error::coinbase_value_limit));
         shaped.coinbase_locktime = max_uint32;
         CHECK(run("fb_cb_shape_escape", shaped) == error::coinbase_value_limit);
     }
 }
 
 #endif // KTH_CURRENCY_BCH
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("coinbase shape schedule defers mainnet and retains nonfinal sequence escapes on test networks",
+          "[batch][faster_blocks][coinbase_shape_schedule]") {
+    spec sp;
+    sp.coinbase_value_override_at = h_a + 1;
+    sp.coinbase_value_override = 30 * coin;
+    sp.consensus_network = domain::config::network::mainnet;
+    // The independent value limit proves this coinbase passed the deferred
+    // shape rule; a template need not escape the shape at upgrade activation.
+    CHECK(run("fb_shape_mainnet_deferred", sp) == error::coinbase_value_limit);
+    sp.consensus_network = domain::config::network::regtest;
+    CHECK(run("fb_shape_regtest_active", sp) == error::coinbase_shape);
+    for (auto const sequence : {0u, 1u, 0xfffffffeu}) {
+        sp.coinbase_sequence = sequence;
+        CHECK(run("fb_shape_sequence_escape", sp) == error::coinbase_value_limit);
+    }
+    sp.coinbase_value_override_at = h_a;
+    sp.coinbase_sequence = max_uint32;
+    CHECK(run("fb_shape_activation_block", sp) == error::success);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("a large fee cannot invalidate an otherwise valid mainnet coinbase before the deferred height",
+          "[batch][faster_blocks][coinbase_shape_schedule]") {
+    spec sp;
+    sp.consensus_network = domain::config::network::mainnet;
+    sp.spend_coinbase_of = 1;
+    sp.spend_at = h_a + 1;
+    sp.unlocked_spend = true;
+    sp.spend_fee = 25 * coin;
+    // The mature 50-BCH funding coin pays 25 BCH of fees. The coinbase
+    // legitimately claims 5 BCH of subsidy plus the fee: 30 BCH in total.
+    CHECK(run("fb_shape_high_fee_mainnet", sp) == error::success);
+    sp.consensus_network = domain::config::network::regtest;
+    CHECK(run("fb_shape_high_fee_regtest", sp) == error::coinbase_shape);
+    // The same fee is harmless below activation and does not skip reward checks.
+    sp.consensus_network = domain::config::network::mainnet;
+    sp.spend_at = h_a;
+    CHECK(run("fb_shape_high_fee_before", sp) == error::success);
+}
+#endif

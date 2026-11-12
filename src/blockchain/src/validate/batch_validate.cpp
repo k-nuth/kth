@@ -535,9 +535,10 @@ code validate_block_batch(
         uint64_t coinbase_value = 0;
         auto const& ticks = block_schedule[i];
 
-        // CHIP-2025-03: from the block built on H_a, a coinbase with version 1,
-        // locktime 0 and outputs of at least 25 BCH is invalid.
-        if (block_governed[i] != 0 && blocks[i]->has_forbidden_coinbase_shape()) {
+        // Test networks enforce the shape after H_a; mainnet uses the fixed
+        // collision heights and the exact-TXID exception from the CHIP.
+        if ((network == domain::config::network::mainnet || block_governed[i] != 0)
+            && blocks[i]->has_forbidden_coinbase_shape(network, height)) {
             return refuse(i, error::coinbase_shape);
         }
 

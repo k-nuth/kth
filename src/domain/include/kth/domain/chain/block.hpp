@@ -190,6 +190,11 @@ struct KD_API block {
     [[nodiscard]]
     bool has_forbidden_coinbase_shape() const;
 
+    // Collision protection once Faster Blocks is active. Mainnet has fixed
+    // height gates; other networks immediately use the four-field shape rule.
+    [[nodiscard]]
+    bool has_forbidden_coinbase_shape(config::network network, size_t height) const;
+
     [[nodiscard]]
     bool is_valid_coinbase_script(size_t height) const;
 

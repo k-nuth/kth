@@ -614,7 +614,22 @@ bool block::has_forbidden_coinbase_shape() const {
 
     // The cheap integer fields first.
     auto const& cb = transactions_.front();
-    return cb.version() == 1 && cb.locktime() == 0 && cb.total_output_value() >= 25 * satoshi_per_bitcoin;
+    return cb.version() == 1 && cb.locktime() == 0 && cb.is_coinbase()
+        && cb.inputs().front().sequence() == max_uint32
+        && cb.total_output_value() >= 25 * satoshi_per_bitcoin;
+}
+
+bool block::has_forbidden_coinbase_shape(config::network network, size_t height) const {
+    if (! has_forbidden_coinbase_shape()) {
+        return false;
+    }
+    // Mainnet defers the broad rule until the second reachable collision.
+    // The earlier collision is covered by one exact transaction identifier.
+    if (network != config::network::mainnet || height >= 3'708'179) {
+        return true;
+    }
+    constexpr auto first_collision = "3aa03753fc238b38f4db9e5889362f3a6f0900d602baa8c9a7e789cb13ca1462"_hash;
+    return height == 1'983'702 && transactions_.front().hash() == first_collision;
 }
 
 bool block::is_valid_coinbase_script(size_t height) const {
