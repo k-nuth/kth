@@ -169,7 +169,8 @@ code validate_block_batch(
     std::vector<block_const_ptr> const& blocks,
     std::span<hash_list const> txids,
     size_t start_height,
-    batch_rejection& rejection) {
+    batch_rejection& rejection,
+    [[maybe_unused]] database::header_abla_record const* unpublished_parent) {
 
     if (blocks.empty()) {
         return error::success;
@@ -278,7 +279,8 @@ code validate_block_batch(
         if (last_idx == header_index::null_index) {
             return fault(error::not_found);
         }
-        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, last_idx);
+        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes,
+            last_idx, unpublished_parent);
         if ( ! states) {
             return fault(states.error());
         }
