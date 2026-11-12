@@ -143,6 +143,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/detail/configured_peers.cpp
     src/detail/block_announcements.cpp
     src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
@@ -500,6 +501,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
+          test/configured_peers.cpp
           test/p2p_node.cpp
           test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
