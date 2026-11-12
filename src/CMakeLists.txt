@@ -70,6 +70,9 @@ install(EXPORT secp256k1-targets
     NAMESPACE secp256k1::
     DESTINATION lib/cmake/secp256k1
 )
+# Lane-parallel (SIMD) batch signature verification on top of secp256k1.
+add_subdirectory(secp256k1-turbo)
+
 add_subdirectory(infrastructure)
 add_subdirectory(domain)
 
