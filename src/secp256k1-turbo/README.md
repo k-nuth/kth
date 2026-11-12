@@ -14,6 +14,7 @@ multi-scalar multiplication, and ECDSA is supported.
 | backend | lanes | where |
 |---|---|---|
 | `avx512_ifma` | 8 | x86-64 with AVX512F/DQ/BW/VL + IFMA (Ice Lake+, Sapphire Rapids, Zen 4, Zen 5) |
+| `neon` | 2 | AArch64; built for testing and measurement, never selected by `best_backend()` |
 | `cuda` | whole batch | NVIDIA GPUs (one thread per signature), see "GPU backends" |
 | `metal` | whole batch | Apple GPUs (one thread per signature) |
 | `scalar_portable` | 1 | any; same algorithm, used as the reference in tests |
@@ -25,8 +26,10 @@ on the project's baseline `-march` and picks the kernel at run time. When the
 whole build already targets an IFMA microarchitecture (`-march` defines
 `__AVX512IFMA__`, as a Knuth `march_id` for such a CPU does) the choice is
 made at compile time and no CPUID runs. `KTH_SECP256K1_TURBO_BACKENDS`
-(`auto` | `avx512ifma` | `none`) selects what gets compiled in; non-x86
-targets (NEON) compile no vector kernel and always use libsecp256k1.
+(`auto` | `avx512ifma` | `neon` | `none`) selects what gets compiled in. On
+AArch64 `auto` compiles the 2-lane NEON kernel, which is slower than
+libsecp256k1 there (see below) and is only used when a caller asks for it by
+name.
 `best_backend()` returns `avx512_ifma` when available, otherwise the
 libsecp256k1 fallback (the portable 1-lane backend is slower than
 libsecp256k1 and exists for testing). Batches of fewer than two signatures go
@@ -80,17 +83,22 @@ The per-signature cost is flat from a batch of 8 upwards (one kernel run
 of 8 lanes costs about 45 us); a batch of 1 is slower than libsecp256k1,
 hence the fallback.
 
-Apple M6 (arm64, no vector backend), Apple clang 21:
+Apple M6 (arm64), Apple clang 21, batch of 2048:
 
 | | ECDSA ns/sig | Schnorr ns/sig |
 |---|---:|---:|
-| libsecp256k1, one at a time (parse + verify) | 13,153 | 13,803 |
-| secp256k1-turbo, portable 1-lane | 45,622 | 51,395 |
+| libsecp256k1, one at a time (parse + verify) | 13,368 | 14,699 |
+| secp256k1-turbo, portable 1-lane | 46,307 | 52,675 |
+| secp256k1-turbo, NEON 2-lane | 60,158 | 67,255 |
 
-On arm64 `best_backend()` is the libsecp256k1 fallback: NEON has no 64x64
-lane multiply, and the M6 already verifies a signature in 13 us with the
-scalar int128 code, so there is nothing to gain from a 2-lane kernel there.
-The portable backend exists for testing, not for speed.
+On arm64 `best_backend()` is the libsecp256k1 fallback. NEON has no 64x64
+lane multiply, so the NEON kernel assembles each 52x52 product from four
+26x26 ones (`vec_neon.hpp`); that costs more than the two lanes give back,
+and it ends up 4.5x slower than libsecp256k1 and slower than the one-lane
+portable backend, whose multiply is a single 64x64 -> 128 on this core. The
+M6 already verifies a signature in 13 us with the scalar int128 code. The
+NEON backend is there so the lane kernel is exercised and measurable on
+AArch64, not for speed; the same goes for the portable one.
 
 ## GPU backends
 
@@ -248,7 +256,7 @@ algebraic batch is the speed-up available for Schnorr inputs. The two are not
 combined here: doing so would mean lifting the `R_i` with the vector field and
 vectorising the bucket accumulation, which is a separate piece of work.
 
-## Why there is no NEON or WebAssembly backend
+## Why NEON is not selected, and why there is no WebAssembly backend
 
 The lane kernel only pays off when a lane can multiply 52-bit limbs in one
 instruction. NEON and WASM SIMD128 have no 64x64 lane multiply, only

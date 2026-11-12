@@ -15,9 +15,10 @@ option(ENABLE_POSITION_INDEPENDENT_CODE "Enable POSITION_INDEPENDENT_CODE proper
 # compiler supports for the target and picks one at run time (CPUID), unless
 # the whole build already targets that ISA (-march with IFMA), in which case
 # the choice is static. "none" compiles no vector kernel: every call goes to
-# libsecp256k1 (this is also what non-x86 targets, e.g. NEON, get).
-set(KTH_SECP256K1_TURBO_BACKENDS "auto" CACHE STRING "Vector backends: auto | avx512ifma | none")
-set_property(CACHE KTH_SECP256K1_TURBO_BACKENDS PROPERTY STRINGS auto avx512ifma none)
+# libsecp256k1. On AArch64 "auto" compiles the NEON kernel, which is never
+# selected by default (it is slower than libsecp256k1 there).
+set(KTH_SECP256K1_TURBO_BACKENDS "auto" CACHE STRING "Vector backends: auto | avx512ifma | neon | none")
+set_property(CACHE KTH_SECP256K1_TURBO_BACKENDS PROPERTY STRINGS auto avx512ifma neon none)
 
 add_library(${PROJECT_NAME} STATIC
     src/batch_verify.cpp
@@ -56,6 +57,19 @@ if (NOT KTH_SECP256K1_TURBO_BACKENDS STREQUAL "none" AND CMAKE_SYSTEM_PROCESSOR 
 endif()
 if (NOT KTH_SECP256K1_TURBO_AVX512_FLAGS)
     message(STATUS "Knuth: secp256k1-turbo AVX-512 IFMA backend not built for this target; libsecp256k1 fallback only")
+endif()
+
+# The NEON kernel: two lanes, built on every AArch64 target (NEON is part of
+# the baseline there, so it needs no flags and no run-time check). It is
+# compiled in for testing and measurement; best_backend() never selects it.
+set(KTH_SECP256K1_TURBO_NEON OFF)
+if (KTH_SECP256K1_TURBO_BACKENDS MATCHES "^(auto|neon)$" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$" AND NOT MSVC)
+    set(KTH_SECP256K1_TURBO_NEON ON)
+    target_sources(${PROJECT_NAME} PRIVATE src/kernel_neon.cpp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_SECP256K1_TURBO_HAVE_NEON=1)
+    message(STATUS "Knuth: secp256k1-turbo NEON backend built (2 lanes; not selected by default)")
+elseif (KTH_SECP256K1_TURBO_BACKENDS STREQUAL "neon")
+    message(FATAL_ERROR "Knuth: KTH_SECP256K1_TURBO_BACKENDS=neon needs an AArch64 target")
 endif()
 
 # GPU backends. The device code (gpu/kernel_core.h) is shared: CUDA compiles
@@ -158,6 +172,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         # one, the host reference is part of the library; without, the test
         # brings it along, so the kernel is still covered where no GPU is.
         target_sources(kth_secp256k1_turbo_test PRIVATE gpu/gpu_host.cpp)
+    endif()
+    if (KTH_SECP256K1_TURBO_NEON)
+        target_sources(kth_secp256k1_turbo_test PRIVATE test/field_neon.cpp)
+        target_compile_definitions(kth_secp256k1_turbo_test PRIVATE KTH_SECP256K1_TURBO_HAVE_NEON=1)
     endif()
     target_include_directories(kth_secp256k1_turbo_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/gpu)
     target_compile_definitions(kth_secp256k1_turbo_test PRIVATE KTH_SECP256K1_TURBO_CHECK_LIMBS=1)

@@ -65,6 +65,7 @@ item make_valid(rng& r, scheme s, int pubkey_form) {
 std::vector<backend> backends() {
     std::vector<backend> b = {backend::scalar_portable};
     if (backend_available(backend::avx512_ifma)) b.push_back(backend::avx512_ifma);
+    if (backend_available(backend::neon)) b.push_back(backend::neon);
     for (backend g : {backend::cuda, backend::metal}) {
         if (!backend_available(g)) continue;
         set_gpu_min_batch(1);  // exercise the device for every batch size

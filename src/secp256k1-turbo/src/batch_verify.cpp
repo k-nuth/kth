@@ -102,6 +102,9 @@ kernel_fn kernel_for(backend b) {
 #if defined(KTH_SECP256K1_TURBO_HAVE_AVX512IFMA)
         case backend::avx512_ifma: return &kernel_avx512ifma;
 #endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_NEON)
+        case backend::neon: return &kernel_neon;
+#endif
         default: return nullptr;
     }
 }
@@ -256,6 +259,13 @@ bool backend_available(backend b) {
 #else
             return false;
 #endif
+        case backend::neon:
+#if defined(KTH_SECP256K1_TURBO_HAVE_NEON)
+            // Part of the AArch64 baseline: nothing to detect at run time.
+            return true;
+#else
+            return false;
+#endif
         case backend::cuda:
 #if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
             return gpu::cuda_available();
@@ -307,6 +317,7 @@ std::string_view backend_name(backend b) {
         case backend::secp256k1_fallback: return "secp256k1 (scalar, per signature)";
         case backend::scalar_portable: return "portable 1-lane";
         case backend::avx512_ifma: return "avx512-ifma 8-lane";
+        case backend::neon: return "neon 2-lane";
         case backend::cuda: return "cuda (one thread per signature)";
         case backend::metal: return "metal (one thread per signature)";
     }
@@ -315,7 +326,8 @@ std::string_view backend_name(backend b) {
 
 std::size_t lanes(backend b) {
     if (is_gpu(b)) return 0;
-    return b == backend::avx512_ifma ? 8 : 1;
+    if (b == backend::avx512_ifma) return 8;
+    return b == backend::neon ? 2 : 1;
 }
 
 std::size_t verify_ecdsa(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b) {

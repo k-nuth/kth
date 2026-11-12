@@ -101,6 +101,11 @@ void bench_scheme(bool schnorr, std::size_t n) {
             ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::avx512_ifma));
         });
     }
+    if (backend_available(backend::neon)) {
+        b.run("secp256k1-turbo, NEON 2-lane", [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::neon));
+        });
+    }
     for (backend g : {backend::cuda, backend::metal}) {
         if (!backend_available(g)) continue;
         b.run(std::string("secp256k1-turbo, ") + std::string(backend_name(g)), [&] {

@@ -63,6 +63,9 @@ void kernel_scalar(lane_batch& b, check_mode mode);
 #if defined(KTH_SECP256K1_TURBO_HAVE_AVX512IFMA)
 void kernel_avx512ifma(lane_batch& b, check_mode mode);
 #endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_NEON)
+void kernel_neon(lane_batch& b, check_mode mode);
+#endif
 
 template <class V>
 struct ecmult {

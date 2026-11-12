@@ -90,6 +90,9 @@ std::vector<kernel_fn> kernels() {
 #if defined(KTH_SECP256K1_TURBO_HAVE_AVX512IFMA)
     if (cpu_supports_avx512ifma()) k.push_back(&kernel_avx512ifma);
 #endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_NEON)
+    k.push_back(&kernel_neon);
+#endif
     return k;
 }
 
