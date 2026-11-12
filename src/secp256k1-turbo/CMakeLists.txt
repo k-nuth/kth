@@ -170,17 +170,23 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS ${PROJECT_NAME}
-    EXPORT ${PROJECT_NAME}-targets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES "${KTH_SECP256K1_TURBO_GPU_MANIFEST}" DESTINATION ${CMAKE_INSTALL_DATADIR}/kth)
-install(EXPORT ${PROJECT_NAME}-targets
-    FILE ${PROJECT_NAME}-config.cmake
-    NAMESPACE ${PROJECT_NAME}::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
+# Installed when the library is part of what is being packaged: built on its
+# own, or as the node's signature verification. Otherwise nothing links it, and
+# a build of the node's own targets does not produce the archive an install
+# rule here would then fail to find.
+if (NOT DEFINED KTH_SIGNATURE_VERIFICATION OR KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+    install(TARGETS ${PROJECT_NAME}
+        EXPORT ${PROJECT_NAME}-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES "${KTH_SECP256K1_TURBO_GPU_MANIFEST}" DESTINATION ${CMAKE_INSTALL_DATADIR}/kth)
+    install(EXPORT ${PROJECT_NAME}-targets
+        FILE ${PROJECT_NAME}-config.cmake
+        NAMESPACE ${PROJECT_NAME}::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+    )
+endif()
