@@ -1,0 +1,132 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+// Throughput of signature verification: libsecp256k1 one signature at a
+// time (what consensus does today) versus the lane-parallel batch kernels.
+
+#define ANKERL_NANOBENCH_IMPLEMENT
+#include <nanobench.h>
+
+#include <array>
+#include <cstdio>
+#include <random>
+#include <vector>
+
+#include <secp256k1.h>
+#include <secp256k1_schnorr.h>
+
+#include <secp256k1_turbo/batch_verify.hpp>
+
+using namespace secp256k1_turbo;
+using ankerl::nanobench::Bench;
+
+namespace {
+
+struct item {
+    std::array<std::uint8_t, 64> sig;
+    std::array<std::uint8_t, 32> msg;
+    std::array<std::uint8_t, 33> pubkey;
+    signature_input view() const { return {sig.data(), msg.data(), pubkey.data(), pubkey.size()}; }
+};
+
+secp256k1_context* ctx = nullptr;
+
+std::vector<item> make_items(std::size_t n, bool schnorr, std::uint64_t seed) {
+    std::mt19937_64 g(seed);
+    std::vector<item> items(n);
+    for (auto& it : items) {
+        std::array<std::uint8_t, 32> seckey;
+        do { for (auto& b : seckey) b = static_cast<std::uint8_t>(g()); } while (secp256k1_ec_seckey_verify(ctx, seckey.data()) != 1);
+        for (auto& b : it.msg) b = static_cast<std::uint8_t>(g());
+        secp256k1_pubkey pk;
+        secp256k1_ec_pubkey_create(ctx, &pk, seckey.data());
+        std::size_t len = 33;
+        secp256k1_ec_pubkey_serialize(ctx, it.pubkey.data(), &len, &pk, SECP256K1_EC_COMPRESSED);
+        if (schnorr) {
+            secp256k1_schnorr_sign(ctx, it.sig.data(), it.msg.data(), seckey.data(), nullptr, nullptr);
+        } else {
+            secp256k1_ecdsa_signature sig;
+            secp256k1_ecdsa_sign(ctx, &sig, it.msg.data(), seckey.data(), nullptr, nullptr);
+            secp256k1_ecdsa_signature_serialize_compact(ctx, it.sig.data(), &sig);
+        }
+    }
+    return items;
+}
+
+// The per-signature path as consensus runs it: parse the key and the signature, verify.
+std::size_t verify_one_by_one(std::vector<item> const& items, bool schnorr) {
+    std::size_t ok = 0;
+    for (auto const& it : items) {
+        secp256k1_pubkey pk;
+        if (secp256k1_ec_pubkey_parse(ctx, &pk, it.pubkey.data(), it.pubkey.size()) != 1) continue;
+        if (schnorr) {
+            ok += secp256k1_schnorr_verify(ctx, it.sig.data(), it.msg.data(), &pk) == 1;
+        } else {
+            secp256k1_ecdsa_signature sig;
+            if (secp256k1_ecdsa_signature_parse_compact(ctx, &sig, it.sig.data()) != 1) continue;
+            ok += secp256k1_ecdsa_verify(ctx, &sig, it.msg.data(), &pk) == 1;
+        }
+    }
+    return ok;
+}
+
+std::size_t verify_batch(std::vector<signature_input> const& in, std::vector<std::uint8_t>& out, bool schnorr, backend b) {
+    return schnorr ? verify_schnorr_bch(in, out, b) : verify_ecdsa(in, out, b);
+}
+
+void bench_scheme(bool schnorr, std::size_t n) {
+    char const* name = schnorr ? "Schnorr (BCH)" : "ECDSA";
+    auto const items = make_items(n, schnorr, schnorr ? 7 : 11);
+    std::vector<signature_input> in;
+    for (auto const& it : items) in.push_back(it.view());
+    std::vector<std::uint8_t> out(n);
+
+    Bench b;
+    b.title(std::string(name) + " verify, batch of " + std::to_string(n))
+        .unit("signature")
+        .batch(n)
+        .relative(true)
+        .minEpochIterations(2)
+        .warmup(1);
+    b.run("libsecp256k1, one at a time", [&] {
+        ankerl::nanobench::doNotOptimizeAway(verify_one_by_one(items, schnorr));
+    });
+    b.run("secp256k1-turbo, portable 1-lane", [&] {
+        ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::scalar_portable));
+    });
+    if (backend_available(backend::avx512_ifma)) {
+        b.run("secp256k1-turbo, AVX-512 IFMA 8-lane", [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::avx512_ifma));
+        });
+    }
+}
+
+void bench_batch_sizes(bool schnorr) {
+    if (!backend_available(backend::avx512_ifma)) return;
+    char const* name = schnorr ? "Schnorr (BCH)" : "ECDSA";
+    auto const items = make_items(1024, schnorr, 23);
+    Bench b;
+    b.title(std::string(name) + " AVX-512 IFMA, cost per signature by batch size").unit("signature").relative(true).minEpochIterations(4);
+    for (std::size_t n : {std::size_t(1), std::size_t(4), std::size_t(8), std::size_t(16), std::size_t(64), std::size_t(256), std::size_t(1024)}) {
+        std::vector<signature_input> in;
+        for (std::size_t i = 0; i < n; ++i) in.push_back(items[i].view());
+        std::vector<std::uint8_t> out(n);
+        b.batch(n).run("batch of " + std::to_string(n), [&] {
+            ankerl::nanobench::doNotOptimizeAway(verify_batch(in, out, schnorr, backend::avx512_ifma));
+        });
+    }
+}
+
+} // namespace
+
+int main() {
+    ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    std::printf("best backend: %s (%zu lanes)\n", std::string(backend_name(best_backend())).c_str(), lanes(best_backend()));
+    bench_scheme(false, 2048);
+    bench_scheme(true, 2048);
+    bench_batch_sizes(false);
+    bench_batch_sizes(true);
+    secp256k1_context_destroy(ctx);
+    return 0;
+}
