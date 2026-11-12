@@ -390,6 +390,14 @@ code validate_block_batch(
 #endif
 
         for (auto const& tx : block.transactions()) {
+#if defined(KTH_CURRENCY_BCH)
+            // Descartes (BCHN: Upgrade 9) restricts every transaction's
+            // version, including coinbase. Blocks do not go through accept().
+            if (script::is_enabled(block_flags[i], domain::machine::script_flags::bch_tokens)
+                && (tx.version() < transaction_version_min || tx.version() > transaction_version_max)) {
+                return refuse(i, error::invalid_tx_version);
+            }
+#endif
             auto const finality_time = script::is_enabled(block_flags[i], domain::machine::script_flags::bip113_rule)
                 ? block_mtp[i] : block.header().timestamp();
             // Coinbase finality is covered too: a non-final input sequence
@@ -535,6 +543,11 @@ code validate_block_batch(
 
         for (auto const& tx : blocks[i]->transactions()) {
             if (tx.is_coinbase()) {
+#if defined(KTH_CURRENCY_BCH)
+                if (auto const ec = tx.validate_tokens(block_flags[i]); ec) {
+                    return refuse(i, ec);
+                }
+#endif
                 for (auto const& o : tx.outputs()) {
                     coinbase_value += o.value();
                 }
@@ -623,10 +636,24 @@ code validate_block_batch(
                 in_value += out->value();
             }
 
+#if defined(KTH_CURRENCY_BCH)
+            if (auto const ec = tx.validate_token_birth(block_flags[i], network); ec) {
+                return refuse(i, ec);
+            }
+#endif
+
             if (script::is_enabled(block_flags[i], domain::machine::script_flags::bip68_rule)
                 && tx.is_locked(ticks, height, block_mtp[i])) {
                 return refuse(i, error::sequence_locked);
             }
+
+#if defined(KTH_CURRENCY_BCH)
+            // Conservation and NFT capabilities need the actual spent token
+            // data. Both intra-batch and stored prevouts are populated above.
+            if (auto const ec = tx.validate_tokens(block_flags[i]); ec) {
+                return refuse(i, ec);
+            }
+#endif
 
             if (in_value < out_value) {
                 return refuse(i, error::spend_exceeds_value);

@@ -128,7 +128,7 @@ code validate_transaction::check_standardness(transaction_const_ptr const& tx) c
     auto const& state = *state_ptr;
 
     // Run contextual tx checks.
-    co_return tx->accept(
+    auto const ec = tx->accept(
 #if defined(KTH_CURRENCY_BCH)
         state.ticks(),
 #endif
@@ -142,6 +142,12 @@ code validate_transaction::check_standardness(transaction_const_ptr const& tx) c
         true /*transaction_pool*/,
         duplicate
     );
+    if (ec) co_return ec;
+#if defined(KTH_CURRENCY_BCH)
+    co_return tx->validate_token_birth(state.enabled_flags(), state.network());
+#else
+    co_return error::success;
+#endif
 }
 
 // Connect sequence.
