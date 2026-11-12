@@ -4,135 +4,30 @@
 
 #include <secp256k1_turbo/batch_verify.hpp>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
+#include <thread>
 #include <vector>
 
 #include <secp256k1.h>
 #include <secp256k1_schnorr.h>
 
 #include "cpu.hpp"
-#include "fe52.hpp"
 #include "g_table.hpp"
 #include "kernel.hpp"
-#include "scalar256.hpp"
-#include "sha256.hpp"
+#include "prepare.hpp"
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA) || defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+#include "../gpu/gpu_backend.hpp"
+#endif
 
 namespace secp256k1_turbo {
 
 namespace {
-
-// Per-signature scalar preprocessing, before anything is laid out in lanes.
-struct prepared {
-    bool ok = false;               // passed every structural check
-    std::uint64_t qx[5] = {};      // field limbs
-    std::uint64_t qy[5] = {};      // only when !decompress
-    bool decompress = false;
-    bool parity_odd = false;
-    u256 u1 = sn::ZERO;            // G scalar
-    u256 u2 = sn::ZERO;            // Q scalar
-    std::uint64_t r[5] = {};       // r as field limbs
-    std::uint64_t rn[5] = {};      // r + n as field limbs (ECDSA)
-    bool use_rn = false;
-    u256 s_mont = sn::ZERO;        // ECDSA: s in Montgomery form (for the batch inversion)
-    u256 z = sn::ZERO;             // ECDSA: message scalar
-    u256 rs = sn::ZERO;            // ECDSA: r as scalar
-    std::uint8_t compressed[33];   // Schnorr: compressed pubkey for the challenge
-};
-
-// Mirrors secp256k1_ec_pubkey_parse: 02/03 compressed, 04 uncompressed, 06/07 hybrid.
-bool parse_pubkey(std::uint8_t const* pk, std::size_t size, prepared& p) {
-    if (size == 33 && (pk[0] == 0x02 || pk[0] == 0x03)) {
-        if (!be32_less_than_p(pk + 1)) return false;
-        fe_limbs_from_be32(pk + 1, p.qx);
-        p.decompress = true;
-        p.parity_odd = pk[0] == 0x03;
-        std::memcpy(p.compressed, pk, 33);
-        return true;
-    }
-    if (size == 65 && (pk[0] == 0x04 || pk[0] == 0x06 || pk[0] == 0x07)) {
-        if (!be32_less_than_p(pk + 1) || !be32_less_than_p(pk + 33)) return false;
-        bool const odd = (pk[64] & 1) != 0;
-        if (pk[0] != 0x04 && odd != (pk[0] == 0x07)) return false;
-        fe_limbs_from_be32(pk + 1, p.qx);
-        fe_limbs_from_be32(pk + 33, p.qy);
-        p.decompress = false;
-        p.parity_odd = odd;
-        p.compressed[0] = odd ? 0x03 : 0x02;
-        std::memcpy(p.compressed + 1, pk + 1, 32);
-        return true;
-    }
-    return false;
-}
-
-// n as a 256-bit integer, for r + n.
-constexpr std::uint8_t N_BE[32] = {
-    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
-    0xBA,0xAE,0xDC,0xE6,0xAF,0x48,0xA0,0x3B,0xBF,0xD2,0x5E,0x8C,0xD0,0x36,0x41,0x41};
-
-void prepare_ecdsa(signature_input const& in, prepared& p) {
-    p.ok = false;
-    if (!parse_pubkey(in.pubkey, in.pubkey_size, p)) return;
-    u256 r, s;
-    if (!sn::from_be32(in.sig64, r) || !sn::from_be32(in.sig64 + 32, s)) return;  // overflow
-    if (sn::is_zero(r) || sn::is_zero(s)) return;
-    if (sn::lt(sn::N_HALF, s)) return;  // high-S, rejected like secp256k1_ecdsa_verify
-    sn::from_be32(in.msg32, p.z);        // reduced mod n, overflow allowed
-    p.rs = r;
-    p.s_mont = sn::to_mont(s);
-    // r as a field element (r < n < p), and r + n when that is still < p.
-    fe_limbs_from_be32(in.sig64, p.r);
-    std::uint8_t rn_be[32];
-    unsigned carry = 0;
-    for (int i = 31; i >= 0; --i) {
-        unsigned const t = static_cast<unsigned>(in.sig64[i]) + N_BE[i] + carry;
-        rn_be[i] = static_cast<std::uint8_t>(t);
-        carry = t >> 8;
-    }
-    p.use_rn = carry == 0 && be32_less_than_p(rn_be);
-    if (p.use_rn) fe_limbs_from_be32(rn_be, p.rn);
-    p.ok = true;
-}
-
-void prepare_schnorr(signature_input const& in, prepared& p) {
-    p.ok = false;
-    if (!parse_pubkey(in.pubkey, in.pubkey_size, p)) return;
-    u256 s;
-    if (!sn::from_be32(in.sig64 + 32, s)) return;    // s >= n
-    if (!be32_less_than_p(in.sig64)) return;         // r >= p
-    fe_limbs_from_be32(in.sig64, p.r);
-    p.use_rn = false;
-    // e = SHA256(r || compressed(P) || msg) mod n
-    std::uint8_t buf[97];
-    std::memcpy(buf, in.sig64, 32);
-    std::memcpy(buf + 32, p.compressed, 33);
-    std::memcpy(buf + 65, in.msg32, 32);
-    std::uint8_t h[32];
-    sha256(buf, 97, h);
-    u256 e;
-    sn::from_be32(h, e);
-    p.u1 = s;
-    p.u2 = sn::neg_mod(e);
-    p.ok = true;
-}
-
-// s^-1 for every valid ECDSA item with one modular inversion (Montgomery's trick).
-void finish_ecdsa_scalars(std::vector<prepared>& items) {
-    std::vector<std::size_t> idx;
-    idx.reserve(items.size());
-    for (std::size_t i = 0; i < items.size(); ++i) if (items[i].ok) idx.push_back(i);
-    if (idx.empty()) return;
-    std::vector<u256> prefix(idx.size());
-    prefix[0] = items[idx[0]].s_mont;
-    for (std::size_t k = 1; k < idx.size(); ++k) prefix[k] = sn::mont_mul(prefix[k - 1], items[idx[k]].s_mont);
-    u256 inv = sn::inverse_mont(prefix.back());
-    for (std::size_t k = idx.size(); k-- > 0;) {
-        prepared& p = items[idx[k]];
-        u256 const s_inv = (k == 0) ? inv : sn::mont_mul(inv, prefix[k - 1]);   // Montgomery form of s^-1
-        if (k != 0) inv = sn::mont_mul(inv, p.s_mont);
-        p.u1 = sn::mont_mul(p.z, s_inv);   // z * s^-1 (plain form)
-        p.u2 = sn::mont_mul(p.rs, s_inv);  // r * s^-1
-    }
-}
 
 void fill_lane(lane_batch& b, std::size_t lane, prepared const& p) {
     for (int i = 0; i < 5; ++i) {
@@ -218,8 +113,120 @@ kernel_fn kernel_for(backend b) {
 // the lanes, and 9 or 10 signatures take one run plus one or two verifications.
 constexpr std::size_t max_scalar_tail = 2;
 
+constexpr std::size_t gpu_disabled = std::numeric_limits<std::size_t>::max();
+
+// KTH_SECP256K1_TURBO_GPU_MIN_BATCH overrides the default threshold; "off" or
+// 0 keeps every batch on the CPU (the device stays available for explicit
+// requests).
+std::size_t initial_gpu_min_batch() {
+    char const* s = std::getenv("KTH_SECP256K1_TURBO_GPU_MIN_BATCH");
+    if (s == nullptr || *s == '\0') return 512;
+    if (std::strcmp(s, "off") == 0) return gpu_disabled;
+    char* end = nullptr;
+    unsigned long long const v = std::strtoull(s, &end, 10);
+    if (end == s || *end != '\0' || v == 0) return gpu_disabled;
+    return static_cast<std::size_t>(v);
+}
+
+std::atomic<std::size_t> gpu_min_batch_value{initial_gpu_min_batch()};
+std::atomic<std::size_t> host_threads_value{0};  // 0: automatic
+
+bool is_gpu(backend b) { return b == backend::cuda || b == backend::metal; }
+
+// Runs fn(begin, end) over [0, n) in chunks on up to hardware_concurrency()
+// threads (the caller's included). Below min_chunk items it runs inline.
+template <class Fn>
+void parallel_chunks(std::size_t n, std::size_t min_chunk, Fn const& fn) {
+    // Spawning a thread costs tens of microseconds: a handful of big chunks
+    // beats one per hardware thread for the batch sizes a GPU is used for.
+    std::size_t hw = host_threads_value.load(std::memory_order_relaxed);
+    if (hw == 0) hw = std::min<std::size_t>(8, std::max<std::size_t>(1, std::thread::hardware_concurrency() / 2));
+    std::size_t const threads = std::min(hw, std::max<std::size_t>(1, n / min_chunk));
+    if (threads <= 1) { fn(0, n); return; }
+    std::size_t const chunk = (n + threads - 1) / threads;
+    std::vector<std::thread> pool;
+    pool.reserve(threads - 1);
+    for (std::size_t t = 1; t < threads; ++t) {
+        std::size_t const b = t * chunk, e = std::min(n, b + chunk);
+        if (b >= e) break;
+        pool.emplace_back([&fn, b, e] { fn(b, e); });
+    }
+    fn(0, std::min(n, chunk));
+    for (auto& th : pool) th.join();
+}
+
+// Host preprocessing of a range: parse, scalars, and (ECDSA) the batched
+// inversion over that range only, so ranges are independent.
+void prepare_range(std::span<signature_input const> inputs, std::vector<prepared>& items, check_mode mode, std::size_t b, std::size_t e) {
+    for (std::size_t i = b; i < e; ++i) {
+        if (mode == check_mode::ecdsa) prepare_ecdsa(inputs[i], items[i]);
+        else prepare_schnorr(inputs[i], items[i]);
+    }
+    if (mode == check_mode::ecdsa) finish_ecdsa_scalars(items, b, e);
+}
+
+// KTH_SECP256K1_TURBO_TRACE=1 prints the host/device split of every GPU batch.
+bool trace_enabled() {
+    static bool const on = std::getenv("KTH_SECP256K1_TURBO_TRACE") != nullptr;
+    return on;
+}
+using clock_t_ = std::chrono::steady_clock;
+double us_since(clock_t_::time_point t0) {
+    return std::chrono::duration<double, std::micro>(clock_t_::now() - t0).count();
+}
+
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA) || defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+// A GPU chunk large enough to spread its layout over host threads.
+constexpr std::size_t gpu_parallel_chunk = 1024;
+
+// Returns false when the device could not run the batch (the caller then
+// verifies on the CPU).
+bool run_gpu(std::span<signature_input const> inputs, std::span<std::uint8_t> results, check_mode mode, backend b, std::size_t& valid) {
+    auto const t0 = clock_t_::now();
+    bool const schnorr = mode == check_mode::schnorr_bch;
+    double fill_us = 0;
+    // The batch is laid out straight into the runtime's input buffer, one
+    // chunk at a time while the device works on the previous ones.
+    gpu::fill_fn const fill = [&](gpu_raw_input* dst, std::size_t begin, std::size_t end) {
+        auto const t1 = clock_t_::now();
+        parallel_chunks(end - begin, gpu_parallel_chunk, [&](std::size_t lo, std::size_t hi) {
+            for (std::size_t i = begin + lo; i < begin + hi; ++i) gpu::fill_raw_input(inputs[i], dst[i]);
+        });
+        fill_us += us_since(t1);
+    };
+    bool ok = false;
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
+    if (b == backend::cuda) ok = gpu::cuda_verify(inputs.size(), schnorr, fill, results.data());
+#endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+    if (b == backend::metal) ok = gpu::metal_verify(inputs.size(), schnorr, fill, results.data());
+#endif
+    if (trace_enabled()) {
+        double const total_us = us_since(t0);
+        std::fprintf(stderr, "secp256k1-turbo gpu: n=%zu host layout=%.0fus total=%.0fus (%.0f ns/sig)\n",
+                     inputs.size(), fill_us, total_us, 1000.0 * total_us / inputs.size());
+    }
+    if (!ok) return false;
+    valid = 0;
+    for (std::size_t i = 0; i < inputs.size(); ++i) valid += results[i];
+    return true;
+}
+#endif
+
 std::size_t verify(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b, check_mode mode) {
     if (!backend_available(b)) b = best_backend();
+    if (is_gpu(b) && inputs.size() < gpu_min_batch_value.load(std::memory_order_relaxed)) b = best_backend();
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA) || defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+    if (is_gpu(b)) {
+        // The device path needs no host-side preparation: no per-item
+        // state is allocated (at a million signatures that alone would be
+        // hundreds of megabytes to zero and fault in on every call).
+        std::size_t valid = 0;
+        if (run_gpu(inputs, results, mode, b, valid)) return valid;
+        // The device failed (driver, memory): verify on the CPU instead.
+        b = best_backend();
+    }
+#endif
     kernel_fn const kernel = kernel_for(b);
     if (kernel == nullptr) return run_fallback(inputs, results, mode);
     std::size_t lane_count = inputs.size();
@@ -227,14 +234,10 @@ std::size_t verify(std::span<signature_input const> inputs, std::span<std::uint8
         std::size_t const tail = inputs.size() % max_lanes;
         if (tail != 0 && tail <= max_scalar_tail) lane_count -= tail;
     }
-    std::size_t valid = run_fallback(inputs.subspan(lane_count), results.subspan(lane_count), mode);
+    std::size_t const valid = run_fallback(inputs.subspan(lane_count), results.subspan(lane_count), mode);
     if (lane_count == 0) return valid;
     std::vector<prepared> items(lane_count);
-    for (std::size_t i = 0; i < lane_count; ++i) {
-        if (mode == check_mode::ecdsa) prepare_ecdsa(inputs[i], items[i]);
-        else prepare_schnorr(inputs[i], items[i]);
-    }
-    if (mode == check_mode::ecdsa) finish_ecdsa_scalars(items);
+    prepare_range(inputs, items, mode, 0, lane_count);
     return valid + run_lanes(items, results, mode, kernel);
 }
 
@@ -253,6 +256,18 @@ bool backend_available(backend b) {
 #else
             return false;
 #endif
+        case backend::cuda:
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
+            return gpu::cuda_available();
+#else
+            return false;
+#endif
+        case backend::metal:
+#if defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+            return gpu::metal_available();
+#else
+            return false;
+#endif
     }
     return false;
 }
@@ -262,16 +277,46 @@ backend best_backend() {
     return backend::secp256k1_fallback;
 }
 
+backend best_backend(std::size_t n) {
+    std::size_t const min = gpu_min_batch_value.load(std::memory_order_relaxed);
+    if (min != gpu_disabled && n >= min) {
+        if (backend_available(backend::cuda)) return backend::cuda;
+        if (backend_available(backend::metal)) return backend::metal;
+    }
+    return best_backend();
+}
+
+std::size_t gpu_min_batch() { return gpu_min_batch_value.load(std::memory_order_relaxed); }
+void set_gpu_min_batch(std::size_t n) { gpu_min_batch_value.store(n == 0 ? gpu_disabled : n, std::memory_order_relaxed); }
+std::size_t host_threads() { return host_threads_value.load(std::memory_order_relaxed); }
+void set_host_threads(std::size_t n) { host_threads_value.store(n, std::memory_order_relaxed); }
+
+std::string device_name(backend b) {
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
+    if (b == backend::cuda) return gpu::cuda_device_name();
+#endif
+#if defined(KTH_SECP256K1_TURBO_HAVE_METAL)
+    if (b == backend::metal) return gpu::metal_device_name();
+#endif
+    (void)b;
+    return "";
+}
+
 std::string_view backend_name(backend b) {
     switch (b) {
         case backend::secp256k1_fallback: return "secp256k1 (scalar, per signature)";
         case backend::scalar_portable: return "portable 1-lane";
         case backend::avx512_ifma: return "avx512-ifma 8-lane";
+        case backend::cuda: return "cuda (one thread per signature)";
+        case backend::metal: return "metal (one thread per signature)";
     }
     return "?";
 }
 
-std::size_t lanes(backend b) { return b == backend::avx512_ifma ? 8 : 1; }
+std::size_t lanes(backend b) {
+    if (is_gpu(b)) return 0;
+    return b == backend::avx512_ifma ? 8 : 1;
+}
 
 std::size_t verify_ecdsa(std::span<signature_input const> inputs, std::span<std::uint8_t> results, backend b) {
     return verify(inputs, results, b, check_mode::ecdsa);

@@ -82,6 +82,11 @@ class KthRecipe(KnuthConanFileV2):
         # lane-parallel batches by src/secp256k1-turbo (AVX-512 IFMA where the
         # CPU has it, libsecp256k1 elsewhere).
         "signature_verification": ['secp256k1', 'secp256k1_turbo'],
+        # GPU backends of src/secp256k1-turbo (used for large batches when a
+        # device is present): none (default), cuda (needs nvcc; CUDACXX or
+        # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
+        # whose toolchain is found).
+        "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -120,6 +125,7 @@ class KthRecipe(KnuthConanFileV2):
         "currency": "BCH",
         "mempool_backend": "cfm",
         "signature_verification": "secp256k1",
+        "secp256k1_gpu": "none",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -390,6 +396,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["CURRENCY"] = self.options.currency
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
         tc.variables["KTH_SIGNATURE_VERIFICATION"] = self.options.signature_verification
+        tc.variables["KTH_SECP256K1_TURBO_GPU"] = self.options.secp256k1_gpu
 
         # Header index capacity based on compilation year
         header_capacity = _calculate_header_capacity(datetime.now().year, str(self.options.currency))
@@ -417,6 +424,24 @@ class KthRecipe(KnuthConanFileV2):
     def package(self):
         cmake = CMake(self)
         cmake.install()
+
+    def _secp256k1_turbo_gpu_manifest(self):
+        """The GPU runtimes src/secp256k1-turbo was built with, and where its
+        CUDA runtime library was found. Empty when the package has no record,
+        which is a build with no GPU backend."""
+        backends, cuda_libdir = [], ""
+        if not self.package_folder:
+            return backends, cuda_libdir
+        manifest = os.path.join(self.package_folder, "share", "kth", "secp256k1-turbo-gpu.txt")
+        if os.path.isfile(manifest):
+            with open(manifest) as f:
+                for line in f:
+                    key, _, value = line.strip().partition("=")
+                    if key == "backends":
+                        backends = [b for b in value.split(",") if b]
+                    elif key == "cuda_libdir":
+                        cuda_libdir = value
+        return backends, cuda_libdir
 
     def package_info(self):
         # Set the main CMake file name
@@ -480,6 +505,26 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1_turbo"].names["cmake_find_package"] = "secp256k1-turbo"
         self.cpp_info.components["secp256k1_turbo"].names["cmake_find_package_multi"] = "secp256k1-turbo"
         self.cpp_info.components["secp256k1_turbo"].requires = ["secp256k1"]
+        # Which GPU runtimes the library was built with is decided by its
+        # CMake, from the toolchains it found, and recorded next to it. Read
+        # here instead of worked out again: an "auto" build that found nvcc on
+        # PATH links the CUDA backend whether or not this process has
+        # CUDAToolkit_ROOT set, and its consumers need the runtime either way.
+        gpu_backends, cuda_libdir = self._secp256k1_turbo_gpu_manifest()
+        if "metal" in gpu_backends:
+            self.cpp_info.components["secp256k1_turbo"].frameworks = ["Metal", "Foundation"]
+        if "cuda" in gpu_backends:
+            # The static CUDA runtime the backend was linked against. A
+            # consumer whose toolkit lives elsewhere says so with
+            # CUDAToolkit_ROOT; otherwise it is where the build found it.
+            cuda_root = os.environ.get("CUDAToolkit_ROOT")
+            if cuda_root:
+                self.cpp_info.components["secp256k1_turbo"].libdirs.append(os.path.join(cuda_root, "lib64"))
+                self.cpp_info.components["secp256k1_turbo"].libdirs.append(os.path.join(cuda_root, "lib"))
+            elif cuda_libdir:
+                self.cpp_info.components["secp256k1_turbo"].libdirs.append(cuda_libdir)
+            self.cpp_info.components["secp256k1_turbo"].libs.append("cudart_static")
+            self.cpp_info.components["secp256k1_turbo"].system_libs.extend(["dl", "pthread", "rt"])
 
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
