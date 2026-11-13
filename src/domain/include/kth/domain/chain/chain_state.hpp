@@ -195,6 +195,7 @@ struct KD_API chain_state {
     [[nodiscard]]
     uint32_t median_time_past() const;
 
+    /// Required compact target, or zero when this context has no valid target.
     [[nodiscard]]
     uint32_t work_required() const;
 

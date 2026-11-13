@@ -42,6 +42,7 @@
 #include <asio/thread_pool.hpp>
 
 namespace kth::node::detail { struct p2p_node_test_seam; }
+namespace kth::node::detail { struct ws_discovery_inbox; }
 
 namespace kth::node {
 using namespace kth::network;
@@ -175,6 +176,8 @@ public:
     ::asio::awaitable<void> serve(peer_session& peer);
 
 private:
+    ::asio::awaitable<void> answer_mempool(peer_session& peer,
+                                           detail::tx_announcement_schedule* announcing);
     ::asio::awaitable<void> announce_transactions(peer_session& peer,
                                                   detail::tx_announcement_schedule& schedule);
 
@@ -213,12 +216,22 @@ struct handshake_response {
 /// Channel type for handshake response (one-shot)
 using handshake_response_channel = concurrent_channel<handshake_response>;
 
+struct peer_lifecycle_end {
+    bool admitted = false;
+    std::chrono::steady_clock::duration connected_for{};
+};
+
+using peer_lifecycle_channel = select_channel<peer_lifecycle_end>;
+
 struct peer_event {
     peer_session::ptr peer;
     peer_direction direction;
     // Optional response channel for connect() to wait on handshake result
     // If nullptr, no response is expected (e.g., for seeding connections)
     std::shared_ptr<handshake_response_channel> response_channel;
+    // Closed only after the supervisor has joined the full session lifecycle.
+    // A configured endpoint's owner waits here before attempting a replacement.
+    std::shared_ptr<peer_lifecycle_channel> lifecycle_ended = nullptr;
 };
 
 /// Type of peer lifecycle event for sync layer notification
@@ -251,7 +264,7 @@ public:
     using ptr = std::shared_ptr<p2p_node>;
     using address = domain::message::network_address;
 
-    explicit p2p_node(settings const& settings);
+    explicit p2p_node(network::settings const& settings);
     ~p2p_node();
 
     // Lifecycle
@@ -295,7 +308,7 @@ public:
     // -------------------------------------------------------------------------
 
     [[nodiscard]]
-    settings const& network_settings() const;
+    network::settings const& network_settings() const;
 
     [[nodiscard]]
     bool stopped() const;
@@ -540,9 +553,14 @@ private:
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
     ::asio::awaitable<void> run_i2p_inbound();
-    ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer);
-    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer);
+    ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer, bool discovery);
+    ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> maintain_outbound_connections();
+    ::asio::awaitable<void> maintain_configured_peer(std::string host, uint16_t port);
+    ::asio::awaitable<bool> wait_configured_retry(std::chrono::seconds delay);
+    awaitable_expected<peer_session::ptr> connect(
+        std::string const& host, uint16_t port,
+        std::shared_ptr<peer_lifecycle_channel> lifecycle_ended);
     [[nodiscard]] bool ingest_peer_addresses(raw_message const& raw, uint32_t version);
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
@@ -561,7 +579,7 @@ private:
     static
     uint64_t generate_ping_nonce();
 
-    settings const& settings_;
+    network::settings const& settings_;
     threadpool pool_;
     peer_manager manager_;
     peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
@@ -582,6 +600,11 @@ private:
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
+
+    /// Native WS listener owns its acceptor on its own execution context.
+    ::asio::awaitable<void> run_websocket_inbound();
+    ::asio::awaitable<void> run_websocket_discovery();
+    std::unique_ptr<detail::ws_discovery_inbox> ws_discovery_;
 
     /// The whole lifecycle, in one atomic word.
     ///

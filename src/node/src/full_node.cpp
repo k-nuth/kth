@@ -81,11 +81,7 @@ full_node::full_node(configuration const& configuration)
     spdlog::debug("[full_node] network_settings_.threads = {}", network_settings_.threads);
 
     // Set user agent after initialization (network_ holds reference to network_settings_)
-    std::vector<std::string> features;
-#if defined(KTH_CURRENCY_BCH)
-    features.push_back(format_eb(configuration.chain.default_consensus_block_size));
-#endif
-    network_settings_.user_agent = get_user_agent(features);
+    network_settings_.user_agent = get_user_agent({});
 #endif
 }
 
@@ -120,18 +116,6 @@ full_node::~full_node() {
     // Reload the persisted mempool (re-validated against the current tip) before
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
-
-    // Serve BIP-35 `mempool` -> inv. The node is the bridge: it injects a
-    // chain-backed handler into the network layer, which stays chain-agnostic.
-    network_.register_message_handler<domain::message::memory_pool>(
-        [this](peer_session& peer, domain::message::memory_pool const&)
-            -> ::asio::awaitable<message_result> {
-            auto const inv = co_await chain_.fetch_mempool(50000, 0);
-            if (inv && *inv) {
-                co_await peer.send(**inv);
-            }
-            co_return message_result::handled;
-        });
 
     // Serve the connected chain: headers for a locator, and the blocks a
     // peer asks for after an announcement or during its own sync. Both run in
@@ -188,14 +172,43 @@ full_node::~full_node() {
                 return detail::max_announcements(max_block_size);
 #endif
             },
+            .pool = [this]() -> ::asio::awaitable<detail::admitted_batch> {
+                auto pooled = co_await chain_.mempool_snapshot();
+                co_return detail::admitted_batch{std::move(pooled.entries), pooled.last};
+            },
         });
     }
+
+// The gRPC server binds first: if it cannot, nothing else has started yet.
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    if (rpc_settings_.enabled) {
+        grpc_server_ = std::make_unique<grpc_rpc::server>(rpc_settings_, chain_, network_type_);
+        auto const port = grpc_server_->start();
+        if ( ! port) {
+            // Asked for and unavailable is a failed start, not a node quietly
+            // running without the service it was configured to offer. Before the
+            // network starts, so a failed start leaves only the chain, closed here
+            // as for a network that fails to start.
+            spdlog::error("[node] gRPC server failed to start: {}", port.error());
+            grpc_server_.reset();
+            (void)chain_.stop();
+            co_return error::listen_failed;
+        }
+    } else {
+        spdlog::info("[node] gRPC server disabled (rpc.enabled=false).");
+    }
+#endif
 
 #if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
         spdlog::error("[node] Failure starting network: {}", ec.message());
+#if defined(KTH_WITH_GRPC)
+        // Asked to wind down, not joined here: join() of the node ends it, before
+        // the chain is destroyed. Its calls see the stopped chain meanwhile.
+        if (grpc_server_) grpc_server_->stop();
+#endif
         (void)chain_.stop();
         co_return ec;
     }
@@ -208,12 +221,21 @@ full_node::~full_node() {
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
-#elif ! defined(__EMSCRIPTEN__)
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
-        spdlog::warn("[node] rpc.enabled=true but this build has no JSON-RPC support "
-            "(compile with the with_rpc option).");
+        capnp_reader_ = std::make_unique<capnp_rpc::chain_reader>(chain_);
+        capnp_server_ = std::make_unique<capnp_rpc::server>(rpc_settings_, *capnp_reader_,
+            network_.thread_pool().get_executor());
+    } else {
+        spdlog::info("[node] Cap'n Proto RPC server disabled (rpc.enabled=false).");
+    }
+#elif ! defined(__EMSCRIPTEN__) && ! defined(KTH_WITH_GRPC)
+    if (rpc_settings_.enabled) {
+        spdlog::warn("[node] rpc.enabled=true but this build has no RPC server "
+            "(compile with Conan rpc=jsonrpc|grpc|capnproto, or CMake KTH_RPC_BACKEND=jsonrpc|grpc|capnproto).");
     }
 #endif
+
 
     spdlog::info("[node] Node started successfully.");
     co_return error::success;
@@ -258,6 +280,12 @@ full_node::~full_node() {
         // after every core task has finished, even without full_node::stop().
         if (rpc_server_) rpc_server_->stop();
 #endif
+#if defined(KTH_WITH_GRPC)
+        if (grpc_server_) grpc_server_->stop();
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC)
+        if (capnp_server_) capnp_server_->stop();
+#endif
     };
     co_await (core() && run_rpc());
     spdlog::debug("[full_node] All parallel tasks completed");
@@ -272,6 +300,8 @@ full_node::~full_node() {
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) co_await rpc_server_->run();
+#elif defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) co_await capnp_server_->run();
 #endif
     co_return;
 }
@@ -402,6 +432,13 @@ void full_node::stop() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // Only asks (never blocks): this can run on a node executor thread.
+    if (grpc_server_) grpc_server_->stop();
+#endif
+#if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
+    if (capnp_server_) capnp_server_->stop();
+#endif
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
@@ -412,6 +449,16 @@ void full_node::stop() {
 }
 
 void full_node::join() {
+#if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
+    // First: in-flight calls still run chain work on the network executor and
+    // read the chain, so both must outlive them. join() is the owner's thread,
+    // not an executor thread, so waiting here blocks no node work. Ask first, in
+    // case the owner went straight to join().
+    if (grpc_server_) {
+        grpc_server_->stop();
+        grpc_server_->join();
+    }
+#endif
 #if ! defined(__EMSCRIPTEN__)
     network_.join();
 #endif

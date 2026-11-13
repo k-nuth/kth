@@ -254,8 +254,11 @@ public:
     //
     //   * `complete()` — the operation reached ITS OWN safe boundary. Which
     //     boundary that is belongs to the operation, not to the gate: a connect
-    //     batch is safe once `utxo_sync` returns, because its LMDB record and
-    //     its UTXO-Z mutations have to agree on disk; a compaction is safe the
+    //     batch is safe once every mutation is applied and the first half of the
+    //     UTXO store's barrier has returned — the set is whole, and the half
+    //     still owed runs beside readers and latches the gate itself if it
+    //     fails; a rewind is safe once `utxo_sync` returns, because its LMDB
+    //     record and its UTXO-Z mutations have to agree on disk; a compaction is safe the
     //     moment `compact_all()` returns success, because it changes which files
     //     hold the set and not what the set contains, so there is no second
     //     store for it to agree with and no barrier it owes. Baking either rule

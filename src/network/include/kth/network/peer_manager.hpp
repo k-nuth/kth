@@ -65,6 +65,10 @@ public:
     /// @return success if added, error if duplicate or at capacity
     ::asio::awaitable<code> add(peer_session::ptr peer);
 
+    /// Outbound admission can require an IP not already in the registry.
+    /// The check and insertion run together on the manager's strand.
+    ::asio::awaitable<code> add(peer_session::ptr peer, bool unique_ip);
+
     /// Remove a peer from the manager
     /// @param peer The peer session to remove
     ::asio::awaitable<void> remove(peer_session::ptr peer);

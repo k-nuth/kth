@@ -1,3 +1,5 @@
+name: 🏗️ Build (container)
+
 on:
   workflow_call:
     inputs:
@@ -148,15 +150,23 @@ jobs:
 
       # - uses: actions/setup-node@v4
       #   with:
-      #     node-version: '20.x'
+      #     node-version: '24.x'
 
       - name: 🔧 Setup Conan
         uses: ./ci_utils/.github/actions/setup-conan
 
       - name: 🔧 Setup kthbuild
         uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: 🔧 Ensure archive extraction tools
+        shell: bash
+        run: |
+          if ! command -v unzip >/dev/null 2>&1; then
+            apt-get update -qq
+            apt-get install -y --no-install-recommends unzip
+          fi
+
       - name: 🔧 Get CMake
-        uses: lukka/get-cmake@6d674ef0d7703f12f77182ca400e1e7be99fd399
+        uses: lukka/get-cmake@16e8153a8b4918849d92aad131befe67a3705daa  # v4.5.0
 
       # - uses: github/codeql-action/init@v2
       #   with:
@@ -295,7 +305,7 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS --format=json --out-file=build/dependency-graph.json
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o with_websocket=True --format=json --out-file=build/dependency-graph.json
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"

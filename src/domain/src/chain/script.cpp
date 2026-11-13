@@ -13,7 +13,6 @@
 #include <sstream>
 #include <utility>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/constants.hpp>
@@ -37,7 +36,6 @@
 
 using namespace kth::domain::machine;
 using namespace kth::infrastructure::machine;
-using namespace boost::adaptors;
 
 namespace kth::domain::chain {
 

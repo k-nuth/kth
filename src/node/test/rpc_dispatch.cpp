@@ -1867,6 +1867,13 @@ TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispat
                  scenario{error::missing_previous_output, block_validity::invalid, R"("bad-txns-inputs-missingorspent")"},
                  scenario{error::coinbase_maturity, block_validity::invalid, R"("bad-txns-premature-spend-of-coinbase")"},
                  scenario{error::spend_exceeds_value, block_validity::invalid, R"("bad-txns-in-belowout")"},
+                 scenario{error::invalid_tx_version, block_validity::invalid, R"("bad-txns-version")"},
+#if defined(KTH_CURRENCY_BCH)
+                 scenario{error::token_fungible_insufficient, block_validity::invalid, R"("bad-txns-token-in-belowout")"},
+                 scenario{error::token_input_created_pre_activation, block_validity::invalid, R"("bad-txns-vin-token-created-pre-activation")"},
+                 scenario{error::token_unparseable_output, block_validity::invalid, R"("bad-txns-vout-tokenprefix")"},
+                 scenario{error::token_unparseable_input, block_validity::invalid, R"("bad-txns-vin-tokenprefix")"},
+#endif
                  scenario{error::invalid_script, block_validity::invalid, R"("rejected")"},
                  scenario{error::operation_failed, block_validity::unknown, "", -25},
                  scenario{error::file_system, block_validity::unknown, "", -25},

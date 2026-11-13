@@ -134,7 +134,7 @@ if (_has_pedantic_warning_flag)
   _add_c_compile_flag(-pedantic _has_pedantic_flag)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten" AND NOT KTH_BROWSER_NODE)
     message(STATUS "Knuth: OS is Emscripten")
     message(STATUS "Knuth: CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS}")
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -matomics -mbulk-memory")
@@ -484,6 +484,7 @@ set(kth_headers
     include/kth/capi/detail/buffers.hpp
     include/kth/capi/detail/enum_cast.hpp
     include/kth/capi/detail/errors.hpp
+    include/kth/capi/detail/async_exception.hpp
     include/kth/capi/detail/exception_barrier.hpp
     include/kth/capi/detail/handle_access.hpp
     include/kth/capi/detail/ownership.hpp
@@ -512,6 +513,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   )
 endif()
 
+
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources src/node/header_sync.cpp)
+  list(APPEND kth_headers include/kth/capi/node/header_sync.h)
+endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -683,6 +689,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include(Catch)
     kth_register_tests(kth_capi_test)
 
+    # This test resolves its own Asio dependency, independently of the node's
+    # transport selection and targets imported in sibling directories.
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-mining-info"
+                     "${CMAKE_CURRENT_BINARY_DIR}/mining-info-callback")
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../test/c-api-async"
+                     "${CMAKE_CURRENT_BINARY_DIR}/async-callbacks")
+
     if(CURRENCY STREQUAL "BCH")
         add_executable(kth_payment_address_errors_test test/wallet/payment_address_errors.c)
         set_target_properties(kth_payment_address_errors_test PROPERTIES LINKER_LANGUAGE CXX)
@@ -718,6 +731,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # public symbol the snippet references drifts.
     add_executable(kth_readme_c_compile_check test/readme_c_compile_check.c)
     target_link_libraries(kth_readme_c_compile_check PRIVATE ${PROJECT_NAME})
+
+    # Compile and link the component README itself, rather than a separate copy.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/README.md" kth_capi_readme)
+    string(REGEX MATCH "```c\n([^`]*)```" kth_capi_example "${kth_capi_readme}")
+    if(NOT kth_capi_example)
+        message(FATAL_ERROR "C API README has no C example")
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/component_readme.c" "${CMAKE_MATCH_1}")
+    add_executable(kth_component_readme_compile_check
+        "${CMAKE_CURRENT_BINARY_DIR}/component_readme.c")
+    set_target_properties(kth_component_readme_compile_check PROPERTIES
+        C_STANDARD 23 C_STANDARD_REQUIRED YES)
+    target_link_libraries(kth_component_readme_compile_check PRIVATE ${PROJECT_NAME})
 
     # Chain-interface mempool readers — compile + link signature check.
     add_executable(kth_chain_mempool_compile_check test/chain/chain_mempool_compile_check.c)
