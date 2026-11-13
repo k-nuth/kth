@@ -357,7 +357,6 @@ set(kth_headers
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
-    include/kth/infrastructure/impl/utility/pending.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
     include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
@@ -394,7 +393,6 @@ set(kth_headers
     include/kth/infrastructure/utility/monitor.hpp
     include/kth/infrastructure/utility/noncopyable.hpp
     include/kth/infrastructure/utility/ostream_writer.hpp
-    include/kth/infrastructure/utility/pending.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
     include/kth/infrastructure/utility/duration_jitter.hpp
