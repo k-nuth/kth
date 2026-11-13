@@ -507,21 +507,76 @@ TEST_CASE("mainnet ASERT: on-schedule 60-tick blocks target ten times the anchor
     REQUIRE(state.work_required() == expected);
 }
 
-TEST_CASE("mainnet ASERT uses the anchor's own shortened interval when activation precedes it", "[faster_blocks][asert_anchor_ticks]") {
+TEST_CASE("ASERT anchor interval and tick stay fixed when activation precedes it", "[faster_blocks][asert_anchor_ticks]") {
+    constexpr size_t anchor = kth::mainnet_asert_anchor_block_height;
+    // Each branch reaches the fixed anchor tick at a different raw height.
+    for (auto const early : {50u, 100u}) {
+        auto const activation = anchor - early;
+        auto const equality_parent = activation + early * 10;
+        for (auto const offset : {0u, 1u, 10u}) {
+            CAPTURE(early, offset);
+            auto const candidate = equality_parent + offset + 1;
+            auto const tick_term = offset * 60 + 600;
+            auto values = data_at(candidate, activation_time + 5, activation);
+            values.timestamp.ordered.back() = uint32_t(kth::mainnet_asert_anchor_block_ancestor_time + tick_term);
+            values.timestamp.self = values.timestamp.ordered.back() + 60;
+            values.bits.ordered.back() = kth::mainnet_asert_anchor_block_bits;
+            auto const state = make_state(std::move(values), kth::cantor_t(0));
+            REQUIRE(state.is_faster_blocks_active());
+            REQUIRE(state.ticks().block_interval(anchor) == 60);
+            CHECK(state.ticks().height_to_tick(candidate - 1) == anchor * 600 + offset * 60);
+            auto const target = chain::compact::from_compact(kth::mainnet_asert_anchor_block_bits).value();
+            CHECK(state.work_required() == chain::compact(target.big() * 10).normal());
+        }
+    }
+}
+
+TEST_CASE("ASERT rejects a negative parent tick delta even with the minimum difficulty exception", "[faster_blocks][asert_anchor_ticks]") {
     constexpr size_t anchor = kth::mainnet_asert_anchor_block_height;
     constexpr size_t activation = anchor - 100;
-    constexpr size_t candidate = anchor + 11;
-    // Both anchor and candidate have60-tick intervals. T(parent)-T(anchor)
-    // is10*60 and the anchor supplies another60, so an on-schedule chain
-    // retains the anchor target (the interval ratio is60/60, not600/60).
-    auto values = data_at(candidate, activation_time + 5, activation);
-    values.timestamp.ordered.back() = uint32_t(kth::mainnet_asert_anchor_block_ancestor_time + 11 * 60);
-    values.timestamp.self = values.timestamp.ordered.back() + 60;
-    values.bits.ordered.back() = kth::mainnet_asert_anchor_block_bits;
-    auto const state = make_state(std::move(values), kth::cantor_t(0));
-    REQUIRE(state.is_faster_blocks_active());
-    REQUIRE(state.ticks().block_interval(anchor) == 60);
-    CHECK(state.work_required() == kth::mainnet_asert_anchor_block_bits);
+    constexpr size_t equality_parent = activation + 1000;
+    constexpr uint32_t parent_time = kth::mainnet_asert_anchor_block_ancestor_time + 600;
+    for (auto const easy : {false, true}) {
+        auto const flags = std::to_underlying(domain::machine::script_flags::retarget) |
+            (easy ? std::to_underlying(domain::machine::script_flags::easy_blocks) : 0u);
+        for (auto const offset : {-1, 0, 1}) {
+            CAPTURE(easy, offset);
+            auto values = data_at(equality_parent + offset + 1, parent_time, activation);
+            for (auto& stamp : values.timestamp.ordered) stamp = parent_time;
+            values.timestamp.self = parent_time + (easy ? 121 : 60);
+            values.bits.ordered.back() = kth::mainnet_asert_anchor_block_bits;
+            chain::chain_state::checkpoints const none{};
+            chain::chain_state const state(std::move(values), flags, none, domain::config::network::mainnet,
+                chain::chain_state::assert_anchor_block_info_t{anchor,
+                    kth::mainnet_asert_anchor_block_ancestor_time, kth::mainnet_asert_anchor_block_bits},
+                2u * 24 * 60 * 60, chain::abla::default_config(32'000'000, false), cantor_t{0});
+            if (offset < 0) {
+                CHECK(state.work_required() == 0);
+                // The contextual header boundary must refuse even a header
+                // carrying the returned value, including the unusable zero.
+                chain::header const candidate{4, null_hash, null_hash, parent_time + 121, state.work_required(), 0};
+                CHECK(candidate.accept(state, chain::hash(candidate)) == error::incorrect_proof_of_work);
+            } else {
+                CHECK(state.work_required() != 0);
+                if (easy) CHECK(state.work_required() == retarget_proof_of_work_limit);
+                chain::header const candidate{4, null_hash, null_hash, parent_time + 121, state.work_required(), 0};
+                CHECK(candidate.accept(state, chain::hash(candidate)) == error::success);
+            }
+        }
+    }
+}
+
+TEST_CASE("a non-retargeting branch does not acquire an ASERT anchor restriction", "[faster_blocks][asert_anchor_ticks]") {
+    auto values = data_at(1, activation_time, 0);
+    values.bits.ordered.back() = 0x207fffff;
+    chain::chain_state::checkpoints const none{};
+    chain::chain_state const state(std::move(values), 0, none, domain::config::network::regtest,
+        chain::chain_state::assert_anchor_block_info_t{kth::mainnet_asert_anchor_block_height,
+            kth::mainnet_asert_anchor_block_ancestor_time, kth::mainnet_asert_anchor_block_bits},
+        2u * 24 * 60 * 60, chain::abla::default_config(32'000'000, false), cantor_t{0});
+    CHECK(state.work_required() == 0x207fffff);
+    chain::header const candidate{4, null_hash, null_hash, activation_time + 1001, state.work_required(), 0};
+    CHECK(candidate.accept(state, chain::hash(candidate)) == error::success);
 }
 
 TEST_CASE("mainnet ASERT: before activation the result is the legacy uniform-600 value", "[faster_blocks]") {
@@ -550,4 +605,37 @@ TEST_CASE("tick schedules compare by their complete interval history", "[faster_
     CHECK(block_ticks::activated_at(100) == block_ticks::activated_at(100));
     CHECK_FALSE(block_ticks::activated_at(100) == block_ticks::activated_at(101));
     CHECK_FALSE(block_ticks{} == block_ticks::activated_at(100));
+}
+
+TEST_CASE("coinbase finality exemption starts strictly after Faster Blocks activation",
+          "[faster_blocks][coinbase_exemption]") {
+    auto const ticks = block_ticks::activated_at(100);
+    constexpr uint32_t time = 1'700'000'000;
+    for (auto const height : {99u, 100u, 101u, 102u}) {
+        for (auto const locktime : {0u, 100u, 101u, time, max_uint32}) {
+            for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
+                for (auto const version : {1u, 2u}) {
+                    CAPTURE(height, locktime, sequence, version);
+                    chain::input::list inputs{chain::input{
+                        chain::output_point{null_hash, chain::point::null_index}, chain::script{}, sequence}};
+                    chain::transaction cb{version, locktime, inputs, chain::output::list{}};
+                    REQUIRE(cb.is_coinbase());
+                    auto const legacy = locktime == 0 || sequence == max_uint32 ||
+                        (locktime < locktime_threshold ? locktime < height : locktime < time);
+                    CHECK(cb.is_final(height, time) == legacy);
+                    CHECK(cb.is_final(ticks, height, time) == (height > 100 || legacy));
+                    // A coinbase has no funding coin: relative locks remain inapplicable.
+                    CHECK_FALSE(cb.is_locked(ticks, height, time));
+                    inputs.front().set_previous_output(chain::output_point{null_hash, 0});
+                    chain::transaction ordinary{version, locktime, std::move(inputs), chain::output::list{}};
+                    REQUIRE_FALSE(ordinary.is_coinbase());
+                    auto const normalized = locktime == 0 || sequence == max_uint32 ||
+                        (locktime < locktime_threshold
+                            ? ticks.height_to_tick(height) > uint64_t(locktime) * 600
+                            : locktime < time);
+                    CHECK(ordinary.is_final(ticks, height, time) == normalized);
+                }
+            }
+        }
+    }
 }

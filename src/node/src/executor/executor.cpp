@@ -18,7 +18,6 @@
 #include <print>
 #include <thread>
 
-#include <boost/core/null_deleter.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
@@ -53,7 +52,6 @@ using namespace kth::network;
 #endif
 
 using namespace std::placeholders;
-using boost::null_deleter;
 using std::error_code;
 using kth::database::data_base;
 using std::placeholders::_1;

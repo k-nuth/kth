@@ -10,7 +10,6 @@
 // #include <cstddef>
 
 #include <kth/infrastructure/define.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 

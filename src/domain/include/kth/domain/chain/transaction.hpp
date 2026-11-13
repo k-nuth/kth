@@ -242,6 +242,19 @@ struct KD_API transaction {
     [[nodiscard]]
     size_t min_tx_size(script_flags_t flags) const;
 
+#if defined(KTH_CURRENCY_BCH)
+    /// CashTokens contextual rules, shared by mempool and block validation.
+    /// Every non-null prevout cache must be populated before calling this.
+    /// Coinbase transactions need no prevouts and cannot create tokens.
+    [[nodiscard]]
+    code validate_tokens(script_flags_t flags) const;
+
+    /// Reject parsed token prevouts created before their network's Descartes
+    /// activation. Requires populated prevouts, like validate_tokens().
+    [[nodiscard]]
+    code validate_token_birth(script_flags_t flags, config::network network) const;
+#endif
+
     /// Contextual validation — requires flags, height, etc. Prevout cache must be populated.
     /// Call after check() passes and prevout cache is filled.
     [[nodiscard]]
@@ -293,10 +306,6 @@ private:
     [[nodiscard]]
     bool all_inputs_final() const;
 
-#if defined(KTH_CURRENCY_BCH)
-    [[nodiscard]]
-    code validate_tokens(script_flags_t flags) const;
-#endif
 
     uint32_t version_{0};
     uint32_t locktime_{0};

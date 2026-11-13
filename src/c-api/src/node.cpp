@@ -7,8 +7,6 @@
 #include <cstdio>
 #include <memory>
 
-#include <boost/iostreams/device/file_descriptor.hpp>
-// #include <boost/thread/latch.hpp>
 
 #include <kth/capi/config/settings_helper.hpp>
 #include <kth/capi/helpers.hpp>
