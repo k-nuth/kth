@@ -7,9 +7,21 @@ name: 🔌 RPC backends
 # adds its own entry to the matrix.
 
 on:
+  # Each backend is a full build of the node, so they do not run on every push
+  # to master: master's tip is built nightly, a pull request builds them when it
+  # touches what selects or implements a backend, and a release branch or tag
+  # builds them on every push.
+  schedule:
+    - cron: '0 3 * * *'
   push:
-    branches: [master]
-    paths: &paths
+    branches:
+      - 'release/**'
+      - 'hotfix/**'
+      - 'dev-publish/**'
+    tags:
+      - v*
+  pull_request:
+    paths:
       - '.github/workflows/rpc-backends.yml'
       - '.github/conan/rpc-ci'
       - 'scripts/test_rpc_ci.py'
@@ -17,10 +29,28 @@ on:
       - 'conanfile.py'
       - 'conan.lock'
       - 'scripts/test_rpc_backend.py'
-      - 'src/node/**'
+      - 'src/node/CMakeLists.txt'
+      # Sources outside the backend directories with code only one backend
+      # compiles; scripts/test_rpc_ci.py checks this list against the tree.
+      - 'src/node-exe/CMakeLists.txt'
+      - 'src/node/examples/**'
+      - 'src/node/include/kth/node/full_node.hpp'
+      - 'src/node/include/kth/node/settings.hpp'
+      - 'src/node/src/full_node.cpp'
+      - 'src/node/test/internal_shutdown_exit.cpp'
+      - 'src/node/test/local_block_admission.cpp'
+      - 'src/node/include/kth/node/rpc/**'
+      - 'src/node/include/kth/node/grpc_rpc/**'
+      - 'src/node/include/kth/node/capnp_rpc/**'
+      - 'src/node/src/rpc/**'
+      - 'src/node/src/grpc_rpc/**'
+      - 'src/node/src/capnp_rpc/**'
+      - 'src/node/test/*rpc*'
+      - 'src/node/test/grpc_*'
+      - 'src/node/test/capnp_*'
+      - 'src/node/proto/**'
+      - 'src/node/schema/**'
       - 'test_package/**'
-  pull_request:
-    paths: *paths
   workflow_dispatch: {}
 
 permissions:
@@ -147,7 +177,7 @@ jobs:
     needs: backend
     if: >-
       always() && github.ref == 'refs/heads/master' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

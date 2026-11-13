@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Validate both installed packages without rebuilding the tested variant."""
+"""Validate the installed packages without rebuilding the tested variant.
+
+The tested variant is always packaged and consumed. The other `consensus`
+variant is a second full build; KTH_VALIDATE_ALTERNATE_PACKAGE=0 leaves it out.
+"""
 import argparse
 import json
 import os
@@ -48,6 +52,14 @@ def main():
     run(["conan", "export-pkg", "conanfile.py", *common, "--no-remote",
          "-of", build, "-o", "tests=True", "-o", "consensus=True"], root)
     tested_seconds = time.monotonic() - start
+
+    if os.environ.get("KTH_VALIDATE_ALTERNATE_PACKAGE", "1") == "0":
+        metrics = {"tested_package_seconds": round(tested_seconds, 2),
+                   "alternate_package": "skipped",
+                   "dependency_build_policy": "never"}
+        (build / "package-validation.json").write_text(json.dumps(metrics, indent=2) + "\n")
+        print(json.dumps(metrics), flush=True)
+        return
 
     # This is a distinct ABI (WITH_CONSENSUS is public), so it needs a distinct
     # build. Use the workspace and the same compiler cache, not a fresh source
