@@ -15,7 +15,6 @@ int kth::main(int argc, char* argv[]) {
 // int kth::main(int argc, char* argv[]) {
 
 //     data_chunk out;
-//     data_sink ostream(out);
 
 //     uint8_t const raw_input_data[] =
 //     {
@@ -123,7 +122,6 @@ int kth::main(int argc, char* argv[]) {
 //     constexpr uint32_t expected_data_length = 285;
 
 //     constexpr uint32_t size = 1;
-//     /* result */ png::write_png(input_data, size, ostream);
 
 
 

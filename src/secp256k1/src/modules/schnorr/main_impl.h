@@ -28,6 +28,42 @@ int secp256k1_schnorr_verify(
     return secp256k1_schnorr_sig_verify(secp256k1_get_hash_context(ctx), sig64, &q, msg32);
 }
 
+int secp256k1_schnorr_verify_batch(
+    const secp256k1_context* ctx,
+    const unsigned char* const* sig64s,
+    const unsigned char* const* msg32s,
+    const secp256k1_pubkey* const* pubkeys,
+    size_t n,
+    const unsigned char* seed32
+) {
+    secp256k1_ge *ges;
+    size_t i;
+    int ret;
+    VERIFY_CHECK(ctx != NULL);
+    if (n == 0) {
+        return 1;
+    }
+    ARG_CHECK(sig64s != NULL);
+    ARG_CHECK(msg32s != NULL);
+    ARG_CHECK(pubkeys != NULL);
+    if (n == 1) {
+        return secp256k1_schnorr_verify(ctx, sig64s[0], msg32s[0], pubkeys[0]);
+    }
+    ges = (secp256k1_ge *)checked_malloc(&ctx->error_callback, n * sizeof(secp256k1_ge));
+    for (i = 0; i < n; i++) {
+        ARG_CHECK(sig64s[i] != NULL);
+        ARG_CHECK(msg32s[i] != NULL);
+        ARG_CHECK(pubkeys[i] != NULL);
+        if (!secp256k1_pubkey_load(ctx, &ges[i], pubkeys[i])) {
+            free(ges);
+            return 0;
+        }
+    }
+    ret = secp256k1_schnorr_sig_verify_batch(secp256k1_get_hash_context(ctx), &ctx->error_callback, sig64s, msg32s, ges, n, seed32, SECP256K1_SCHNORR_BATCH_STRAUSS_MAX, SECP256K1_SCHNORR_BATCH_CHUNK);
+    free(ges);
+    return ret;
+}
+
 int secp256k1_schnorr_sign(
     const secp256k1_context *ctx,
     unsigned char *sig64,
