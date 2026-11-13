@@ -116,7 +116,10 @@ program::op_iterator program::begin() const {
 
 inline
 program::op_iterator program::jump() const {
-    return active_frames_.empty() ? jump_ : active_frames_.back().jump;
+    // Kept as an offset, so it means the same in a copy of this program.
+    return active_frames_.empty()
+        ? script_ops_.begin() + static_cast<ptrdiff_t>(jump_)
+        : active_frames_.back().ops.begin() + static_cast<ptrdiff_t>(active_frames_.back().jump);
 }
 
 inline
@@ -141,9 +144,7 @@ void program::set_active_script(chain::script const* s) {
         reset_active_script();
         return;
     }
-    auto ops = chain::operations(*s);
-    auto const begin = ops.begin();
-    active_frames_.push_back({s, std::move(ops), begin});
+    active_frames_.push_back({s, chain::operations(*s), 0});
 }
 
 inline
@@ -219,12 +220,10 @@ bool program::mark_code_separator(size_t pc) {
     if (pc >= size) {
         return false;
     }
-    auto const target = ops.begin() + static_cast<ptrdiff_t>(pc + 1);
-
     if (active_frames_.empty()) {
-        jump_ = target;
+        jump_ = pc + 1;
     } else {
-        active_frames_.back().jump = target;
+        active_frames_.back().jump = pc + 1;
     }
     return true;
 }

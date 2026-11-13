@@ -346,10 +346,14 @@ private:
     // `script` type is intentionally cache-free (PR refactor: caller
     // owns the cache), so `program` parses each script once on push
     // and iterates the resulting list.
+    //
+    // `jump` is an offset into `ops`, not an iterator: a copy of the
+    // program owns a copy of `ops`, and an iterator would go on pointing
+    // into the original's.
     struct active_frame {
         chain::script const* script;
         operation::list ops;
-        op_iterator jump;
+        size_t jump;
     };
     std::vector<active_frame> active_frames_;
 
@@ -359,7 +363,9 @@ private:
 
     size_t negative_count_{0};
     size_t operation_count_{0};
-    op_iterator jump_;
+    // Offset into `script_ops_` of the operation after the last
+    // OP_CODESEPARATOR of the outermost frame (see `active_frame::jump`).
+    size_t jump_{0};
     data_stack primary_;
     data_stack alternate_;
     bool_stack condition_;
