@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/chain_state.hpp>
@@ -35,7 +34,6 @@ namespace kth::domain::chain {
 
 using namespace infrastructure::config;
 using namespace kth::domain::machine;
-using namespace boost::adaptors;
 
 // Constructors.
 //-----------------------------------------------------------------------------
