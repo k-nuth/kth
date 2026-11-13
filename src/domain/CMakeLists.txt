@@ -587,6 +587,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/light_block.cpp
         test/chain/output.cpp
         test/chain/output_point.cpp
+        test/config_integer.cpp
         test/chain/point.cpp
         test/from_data_noexcept.cpp
         test/to_data_noexcept.cpp
