@@ -370,10 +370,16 @@ stay open, downstream work pays `sv2.mining.address` meanwhile, and the node
 declares the tip again after 1 second, then 2, doubling up to 30 while the
 pool keeps answering that way, and from 1 second again on the next tip. Every
 request takes one of the pool's tokens, so a pool that stays behind sees two
-requests a minute. `DeclareMiningJob.Error` or `SetCustomMiningJob.Error` with
-`stale-payout-outputs` is the same: the pool's node left the tip between its
-payout answer and the job. Any other `RequestPayoutOutputs.Error`, or no
-answer within `sv2.jd.response_timeout_seconds`, falls back to solo.
+requests a minute. Any other `RequestPayoutOutputs.Error`, or no answer
+within `sv2.jd.response_timeout_seconds`, falls back to solo.
+
+A declared or custom job can meet the same difference one step later.
+`DeclareMiningJob.Error` or `SetCustomMiningJob.Error` with `stale-chain-tip`
+(the job's parent is not the pool's chain tip), with `template-unavailable`
+(the pool could not check the job at that moment) or, when payout outputs
+were requested, with `stale-payout-outputs`, ends the attempt the same way:
+no fallback, and the tip is declared again after the wait. Every other code
+on those two messages is a refusal.
 
 Either way, `full-template` then sends `DeclareMiningJob` with the coinbase
 prefix and suffix and the transaction list, answers `ProvideMissingTransactions`

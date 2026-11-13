@@ -200,6 +200,10 @@ inline constexpr uint16_t requested_payout_outputs_extension = 0x5052;
 inline constexpr uint32_t exact_outputs_flag = 1u;
 
 inline constexpr std::string_view error_stale_payout_outputs = "stale-payout-outputs";
+// A declared or custom job whose parent is not the pool's chain tip, and one the
+// pool could not check at the moment. Neither says the job is wrong.
+inline constexpr std::string_view error_stale_chain_tip = "stale-chain-tip";
+inline constexpr std::string_view error_template_unavailable = "template-unavailable";
 
 struct request_extensions {
     static constexpr uint8_t message_type = 0x00;

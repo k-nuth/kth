@@ -1021,6 +1021,33 @@ TEST_CASE("sv2 JD stale payout outputs allocate again after a notice and wait wi
     REQUIRE(stale_custom.deferred);
     REQUIRE_FALSE(installed_late.pending());
 
+    // The pool's node on another block, or unable to check the job just now,
+    // with or without the payout outputs extension: the attempt ends and the
+    // owner declares again.
+    for (auto const code : {error_stale_chain_tip, error_template_unavailable}) {
+        CAPTURE(code);
+        auto plain = installing(false);
+        auto const answer = process(plain, jd_peer::mining,
+            set_custom_mining_job_error{7, 1, std::string(code)});
+        REQUIRE(answer.error.empty());
+        REQUIRE(answer.deferred);
+        REQUIRE_FALSE(plain.pending());
+        REQUIRE(decode<allocate_mining_job_token>(
+            plain.start(mining_template(), channel()).declaration).request_id == 2);
+
+        auto declared = declaring();
+        auto const refused = process(declared, jd_peer::declaration,
+            declare_mining_job_error{1, std::string(code), {}});
+        REQUIRE(refused.error.empty());
+        REQUIRE(refused.deferred);
+        REQUIRE_FALSE(declared.pending());
+    }
+    // The stale payout code means nothing to a declaration that did not ask
+    // for payout outputs: there it is a refusal like any unknown code.
+    auto unasked = installing(false);
+    require_failure(unasked, process(unasked, jd_peer::mining,
+        set_custom_mining_job_error{7, 1, std::string(error_stale_payout_outputs)}));
+
     auto refused_late = requesting(false);
     REQUIRE_FALSE(process(refused_late, jd_peer::declaration,
         payout_success(1, paid_outputs(), true)).mining.empty());

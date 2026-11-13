@@ -70,6 +70,8 @@ private:
     [[nodiscard]] result send_allocation();
     [[nodiscard]] result retry_allocation();
     [[nodiscard]] result defer();
+    // Whether a job refusal with this code only asks to declare again later.
+    [[nodiscard]] bool later(std::string_view code) const;
     [[nodiscard]] result request_payout(data_chunk token, size_t reservation);
     [[nodiscard]] result declare_work(data_chunk token);
     [[nodiscard]] result note_stale(byte_span payload);

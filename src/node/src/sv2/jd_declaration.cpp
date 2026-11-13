@@ -297,6 +297,14 @@ jd_declaration::result jd_declaration::retry_allocation() {
     return send_allocation();
 }
 
+bool jd_declaration::later(std::string_view code) const {
+    // The pool's node is on another block than this one, or the pool could not
+    // check the job at the moment. Both pass by themselves, and neither is a
+    // judgement of the job.
+    return code == error_stale_chain_tip || code == error_template_unavailable
+        || (payout_outputs_ && code == error_stale_payout_outputs);
+}
+
 jd_declaration::result jd_declaration::defer() {
     // The same end as supersede(): the request is over, and a late reply to it
     // must not be applied to the declaration that follows.
@@ -537,8 +545,9 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
             if ( ! message || message->request_id != request_id_) return fail("invalid declaration refusal");
             if (restart_) return retry_allocation();
             // The pool's node left this tip between its payout answer and
-            // the declaration. The same race as a stale payout answer.
-            if (payout_outputs_ && message->error_code == error_stale_payout_outputs) return defer();
+            // the declaration, or could not check the template just now.
+            // The same race as a stale payout answer.
+            if (later(message->error_code)) return defer();
             return fail("JDS refused the local template: " + message->error_code);
         }
         if (header.msg_type == declare_mining_job_success::message_type) {
@@ -587,7 +596,7 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
                 return fail("invalid custom job refusal");
             }
             if (restart_) return retry_allocation();
-            if (payout_outputs_ && message->error_code == error_stale_payout_outputs) return defer();
+            if (later(message->error_code)) return defer();
             return fail("pool refused the local custom job: " + message->error_code);
         }
         if (header.msg_type == set_custom_mining_job_success::message_type) {
