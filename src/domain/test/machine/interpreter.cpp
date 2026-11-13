@@ -696,6 +696,24 @@ TEST_CASE("a copied program keeps its code separator position in its own operati
     CHECK(assigned.jump() == assigned.begin());
 }
 
+TEST_CASE("a copied program keeps a code separator position past the start",
+          "[program][copy]") {
+    // OP_1 OP_CODESEPARATOR OP_1: once it has run, the position is the
+    // operation after the separator, not the start of the script.
+    chain::script const separated(to_chunk("51ab51"_base16), false);
+    program const start(separated);
+    auto const finished = step_copies_to_the_end(start);
+    REQUIRE(finished.last);
+    REQUIRE(finished.prog.jump() == finished.prog.begin() + 2);
+
+    program const copy(finished.prog);
+    CHECK(copy.jump() == copy.begin() + 2);
+
+    program assigned(separated);
+    assigned = finished.prog;
+    CHECK(assigned.jump() == assigned.begin() + 2);
+}
+
 TEST_CASE("a signed spend verifies when every debug step is taken on a copy",
           "[interpreter][debug][copy]") {
     auto const tx = signed_spend();

@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 #include <kth/domain/chain/script.hpp>
@@ -43,7 +44,7 @@ void program::reserve_stacks() {
 
 program::program()
     : script_(&default_script_),
-      script_ops_(chain::operations(default_script_)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(default_script_))),
       transaction_(&default_tx_)
 {
     reserve_stacks();
@@ -51,14 +52,14 @@ program::program()
 
 program::program(script const& script)
     : script_(&script),
-      script_ops_(chain::operations(script)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(&default_tx_) {
     reserve_stacks();
 }
 
 program::program(script const& script, chain::transaction const& transaction, uint32_t input_index, script_flags_t flags, uint64_t value)
     : script_(&script),
-      script_ops_(chain::operations(script)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(&transaction),
       input_index_(input_index),
       flags_(flags),
@@ -80,7 +81,7 @@ program::program(
 #endif // ! KTH_CURRENCY_BCH
 )
     : script_(&script),
-      script_ops_(chain::operations(script)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(&transaction),
       input_index_(input_index),
       flags_(flags),
@@ -97,7 +98,7 @@ program::program(
 // Metrics are propagated so sig_checks accumulate across evaluations (matching BCHN).
 program::program(script const& script, program const& x)
     : script_(&script),
-      script_ops_(chain::operations(script)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
       flags_(x.flags_),
@@ -115,7 +116,7 @@ program::program(script const& script, program const& x)
 // Metrics are propagated so sig_checks accumulate across evaluations (matching BCHN).
 program::program(script const& script, program&& x, bool /*unused*/)
     : script_(&script),
-      script_ops_(chain::operations(script)),
+      script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
       flags_(x.flags_),
