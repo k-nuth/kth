@@ -53,8 +53,9 @@ struct jd_notice {
 // the listener and its solo mining sessions have independent lifetimes.
 struct jd_client {
     // settings have passed validate_jd_settings and solo payout validation.
+    // route is how both upstream connections leave the node.
     jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
-        blockchain::block_chain* chain = nullptr);
+        blockchain::block_chain* chain = nullptr, jd_route route = {});
 
     ::asio::awaitable<void> run();
     void stop();

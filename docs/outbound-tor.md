@@ -41,7 +41,9 @@ database records, bans, misbehavior scores, performance samples, or cooldowns
 because their numeric addresses are unknown. An error that would ban a numeric
 peer on its own disconnects a hostname peer.
 
-These options affect outbound P2P traffic. They do not change inbound listening,
-RPC, or mining services. `onion`/`onlynet` options and an inbound Tor service are
+These options affect outbound P2P traffic and the upstream connections of the
+[Stratum V2 Job Declaration client](sv2.md#job-declaration), which are opened
+through the same proxy. They do not change inbound listening, RPC, or the mining
+listeners. `onion`/`onlynet` options and an inbound Tor service are
 not provided. [I2P support](i2p.md) uses its own SAM bridge and takes precedence
 over the SOCKS proxy for I2P destinations.

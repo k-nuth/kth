@@ -26,7 +26,10 @@
 
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/node/detail/scope_action.hpp>
+#include <kth/network/sam.hpp>
+#include <kth/network/socks5.hpp>
 #include <kth/node/sv2/framing.hpp>
+#include <kth/node/sv2/jd_settings.hpp>
 #include <kth/node/sv2/noise.hpp>
 
 namespace kth::node::sv2 {
@@ -50,12 +53,13 @@ size_t wire_size(data_chunk const& frame) {
 } // namespace
 
 jd_connection::jd_connection(::asio::any_io_executor executor, std::string host,
-    uint16_t port, hash_digest authority, std::chrono::milliseconds timeout)
+    uint16_t port, hash_digest authority, std::chrono::milliseconds timeout, jd_route route)
     : owner_(::asio::make_strand(std::move(executor)))
     , host_(std::move(host))
     , port_(port)
     , authority_(authority)
     , timeout_(timeout)
+    , route_(std::move(route))
     , outgoing_(owner_, max_queued_frames)
     , stopping_(owner_, 1)
 {}
@@ -113,24 +117,62 @@ void jd_connection::stop() {
         stopping_.close();
     };
     detail::scope_action cleanup([&] { close("upstream stopped"); }, true);
-    if (host_.empty() || host_.size() > 255 || port_ == 0
+    // An I2P stream has no port; every other upstream has one.
+    if (host_.empty() || host_.size() > 255 || (port_ == 0) != jd_i2p_host(host_)
         || timeout_.count() <= 0 || timeout_ > std::chrono::minutes(10)) {
         co_return "invalid upstream connection settings";
     }
 
     std::optional<noise_transport> transport;
     auto exchange = [&]() -> ::asio::awaitable<bool> {
-        auto [resolve_error, endpoints] = co_await resolver.async_resolve(host_,
-            std::to_string(port_), ::asio::as_tuple(::asio::use_awaitable));
-        if (resolve_error) {
-            reason = "upstream address resolution failed";
+        if (jd_i2p_host(host_)) {
+            if (route_.i2p == nullptr) {
+                reason = "an .i2p upstream needs net.i2psam";
+                co_return false;
+            }
+            // The session builds its tunnels after the node starts. The
+            // startup deadline below bounds the wait.
+            ::asio::steady_timer poll(owner_);
+            while ( ! route_.i2p->ready()) {
+                poll.expires_after(std::chrono::milliseconds(200));
+                auto [poll_error] = co_await poll.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (poll_error) {
+                    reason = "upstream stopped";
+                    co_return false;
+                }
+            }
+            auto stream = co_await route_.i2p->connect(host_);
+            if ( ! stream) {
+                reason = "upstream connection through I2P failed";
+                co_return false;
+            }
+            socket = std::move(*stream);
+        } else if ( ! route_.proxy.empty()) {
+            // The proxy resolves the name. A local lookup would tell a DNS
+            // server which pool this node mines for.
+            auto proxied = co_await network::async_socks5_connect(owner_, route_.proxy,
+                host_, port_, route_.proxy_randomize, route_.proxy_dial_timeout);
+            if ( ! proxied) {
+                reason = "upstream connection through the proxy failed";
+                co_return false;
+            }
+            socket = std::move(*proxied);
+        } else if (jd_onion_host(host_)) {
+            reason = "an .onion upstream needs net.proxy";
             co_return false;
-        }
-        auto [connect_error, endpoint] = co_await ::asio::async_connect(socket, endpoints,
-            ::asio::as_tuple(::asio::use_awaitable));
-        if (connect_error) {
-            reason = "upstream connection failed";
-            co_return false;
+        } else {
+            auto [resolve_error, endpoints] = co_await resolver.async_resolve(host_,
+                std::to_string(port_), ::asio::as_tuple(::asio::use_awaitable));
+            if (resolve_error) {
+                reason = "upstream address resolution failed";
+                co_return false;
+            }
+            auto [connect_error, endpoint] = co_await ::asio::async_connect(socket, endpoints,
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (connect_error) {
+                reason = "upstream connection failed";
+                co_return false;
+            }
         }
 
         auto ephemeral = noise_keypair::generate();
@@ -164,8 +206,12 @@ void jd_connection::stop() {
         transport.emplace(*initiator.keys(), true, max_payload_size);
         co_return true;
     };
+    // A stream through Tor or I2P gets its dial allowance first; a direct
+    // connection keeps the one deadline it had.
+    auto const dial_allowance = jd_i2p_host(host_) ? route_.i2p_dial_timeout
+        : ! route_.proxy.empty() ? route_.proxy_dial_timeout : std::chrono::milliseconds(0);
     ::asio::steady_timer deadline(owner_);
-    deadline.expires_after(timeout_);
+    deadline.expires_after(timeout_ + dial_allowance);
     auto startup_timeout = [&]() -> ::asio::awaitable<void> {
         auto [error] = co_await deadline.async_wait(::asio::as_tuple(::asio::use_awaitable));
         if ( ! error) {

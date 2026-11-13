@@ -271,6 +271,34 @@ Each upstream always uses Noise, including when the local listener explicitly
 uses plaintext. A different signing authority, a certificate outside its
 validity window or an unauthenticated frame ends that attempt.
 
+Both upstream connections leave the node the way its peer connections do. With
+[`net.proxy`](outbound-tor.md) set, each is opened through that SOCKS5 proxy:
+the hostname goes to the proxy unresolved, `net.proxy_randomize` gives each
+connection its own credentials, and a proxy failure fails the attempt, with no
+direct connection in its place. An upstream can then be a Tor v3 onion address:
+
+```ini
+net.proxy             = 127.0.0.1:9050
+sv2.jd.mining_address = <56 base32 characters>.onion:3333
+```
+
+With [`net.i2psam`](i2p.md) set, an upstream can be an I2P address. It is
+written with port 0, as an I2P peer is, because SAM 3.1 has no ports:
+
+```ini
+net.i2psam            = 127.0.0.1:7656
+sv2.jd.mining_address = <52 base32 characters>.b32.i2p:0
+```
+
+I2P upstreams are opened through a SAM session of their own. Its destination is
+made for that session, kept nowhere, and accepts nothing, so it is not the
+address the node's I2P peers see. I2P addresses go to the bridge and never to
+the proxy. An onion address without `net.proxy`, an I2P address without
+`net.i2psam`, an I2P address with a nonzero port, an address that is not a
+valid Tor v3 or `.b32.i2p` address, and any other address with port 0 stop
+startup. Opening the stream may take up to 20 seconds through the proxy and 90
+seconds through I2P, on top of `sv2.handshake_timeout_seconds`.
+
 Both upstream `SetupConnection` messages identify the node (specification
 section 3.6.1): `vendor` is `Knuth` followed by the node's version, for example
 `Knuth 1.5.2`, and `hardware_version` is `Knuth Bitcoin Cash full node`.

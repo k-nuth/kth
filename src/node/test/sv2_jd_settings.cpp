@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include <kth/infrastructure/config/authority.hpp>
+#include <kth/infrastructure/message/network_address.hpp>
 #include <kth/node/sv2/jd_settings.hpp>
 #include <kth/node/sv2/noise.hpp>
 
@@ -151,4 +153,94 @@ TEST_CASE("sv2 JD validation refuses missing prerequisites and malformed upstrea
         settings.jd.response_timeout_seconds = timeout;
         check(settings, "deadlines");
     }
+}
+
+TEST_CASE("sv2 JD an onion upstream needs the proxy and an I2P upstream needs the bridge", "[sv2 jd]") {
+    using infrastructure::config::authority;
+    using infrastructure::message::address_network;
+    using infrastructure::message::network_address;
+    hash_digest key{};
+    key.front() = 5;
+    auto const onion = authority(network_address(0, 0, address_network::torv3, key, 3336)).to_hostname();
+    auto const i2p = authority(network_address(0, 0, address_network::i2p, key, 0)).to_hostname();
+
+    auto settings = configured_jd();
+    std::string error;
+    // Ordinary addresses need neither, with or without them.
+    CHECK(validate_jd_route(settings, "", "", error));
+    CHECK(error.empty());
+    CHECK(validate_jd_route(settings, "127.0.0.1:9050", "127.0.0.1:7656", error));
+
+    settings.jd.mining_address = onion + ":3336";
+    CHECK(validate_jd_settings(settings, error));
+    CHECK_FALSE(validate_jd_route(settings, "", "127.0.0.1:7656", error));
+    CHECK(error.find("onion service and needs net.proxy") != std::string::npos);
+    CHECK(error.find(settings.jd.mining_address) != std::string::npos);
+    CHECK(validate_jd_route(settings, "127.0.0.1:9050", "", error));
+    CHECK(error.empty());
+
+    settings = configured_jd();
+    settings.jd.jds_address = i2p + ":0";
+    CHECK(validate_jd_settings(settings, error));
+    CHECK_FALSE(validate_jd_route(settings, "127.0.0.1:9050", "", error));
+    CHECK(error.find("I2P address and needs net.i2psam") != std::string::npos);
+    CHECK(validate_jd_route(settings, "", "127.0.0.1:7656", error));
+
+    // A node that declares no jobs has no upstream to route.
+    settings.jd.enabled = false;
+    CHECK(validate_jd_route(settings, "", "", error));
+
+    CHECK(jd_onion_host("a.onion"));
+    CHECK(jd_onion_host("A.ONION."));
+    CHECK_FALSE(jd_onion_host("onion"));
+    CHECK_FALSE(jd_onion_host("a.onion.example"));
+    CHECK(jd_i2p_host("a.b32.i2p"));
+    CHECK_FALSE(jd_i2p_host("i2p"));
+    CHECK_FALSE(jd_i2p_host("a.i2p.example"));
+}
+
+TEST_CASE("sv2 JD overlay upstreams follow the peer address rules", "[sv2 jd]") {
+    using infrastructure::config::authority;
+    using infrastructure::message::address_network;
+    using infrastructure::message::network_address;
+    hash_digest key{};
+    key.front() = 5;
+    auto const onion = authority(network_address(0, 0, address_network::torv3, key, 3336)).to_hostname();
+    auto const i2p = authority(network_address(0, 0, address_network::i2p, key, 0)).to_hostname();
+
+    // SAM 3.1 has no ports: an I2P upstream is written with port 0.
+    auto const stream = parse_jd_endpoint(i2p + ":0");
+    REQUIRE(stream);
+    CHECK(stream->host == i2p);
+    CHECK(stream->port == 0);
+    CHECK_FALSE(parse_jd_endpoint(i2p + ":3336"));
+    // Only a .b32.i2p address names a destination without an address book.
+    CHECK_FALSE(parse_jd_endpoint("pool.i2p:0"));
+    CHECK_FALSE(parse_jd_endpoint(i2p.substr(1) + ":0"));
+    auto shouted = i2p;
+    for (auto& c : shouted) {
+        if (c >= 'a' && c <= 'z') c = char(c - ('a' - 'A'));
+    }
+    CHECK_FALSE(parse_jd_endpoint(shouted + ":0"));
+
+    auto const service = parse_jd_endpoint(onion + ":3336");
+    REQUIRE(service);
+    CHECK(service->host == onion);
+    CHECK(service->port == 3336);
+    CHECK_FALSE(parse_jd_endpoint(onion + ":0"));
+    // A Tor v3 address carries a checksum; a changed character fails it.
+    auto altered = onion;
+    altered[0] = altered[0] == 'a' ? 'b' : 'a';
+    CHECK_FALSE(parse_jd_endpoint(altered + ":3336"));
+    CHECK_FALSE(parse_jd_endpoint("expyuzz4wqqyqhjn.onion:3336"));
+
+    // Port 0 stays refused for every other upstream.
+    CHECK_FALSE(parse_jd_endpoint("pool.example:0"));
+    CHECK_FALSE(parse_jd_endpoint("127.0.0.1:0"));
+
+    auto settings = configured_jd();
+    settings.jd.mining_address = i2p + ":3336";
+    std::string error;
+    CHECK_FALSE(validate_jd_settings(settings, error));
+    CHECK(error.find("or an I2P address with port 0") != std::string::npos);
 }

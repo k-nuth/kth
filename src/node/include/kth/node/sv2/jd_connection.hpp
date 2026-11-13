@@ -22,7 +22,33 @@
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/node/sv2/framing.hpp>
 
+namespace kth::network {
+class sam_session;
+} // namespace kth::network
+
 namespace kth::node::sv2 {
+
+// How an upstream connection leaves the node. A pool learns the address a
+// miner connects from, and a DNS server learns which pool a node asks for, so
+// a node that keeps its peer connections behind Tor or I2P keeps these two
+// there as well.
+struct jd_route {
+    // net.proxy, a numeric SOCKS5 address. When set, every upstream is reached
+    // through it, its hostname goes to the proxy unresolved, and a failure of
+    // the proxy fails the connection: nothing is dialed directly.
+    std::string proxy;
+    // net.proxy_randomize: fresh SOCKS5 credentials for each connection, which
+    // Tor keeps on separate circuits.
+    bool proxy_randomize = true;
+    // The SAM session an .i2p upstream is dialed through. Not owned.
+    network::sam_session* i2p = nullptr;
+    // How long opening the stream may take, on top of the connection's own
+    // deadline for the handshake. A Tor circuit to an onion service is built
+    // in several round trips, and an I2P session builds its tunnels before
+    // its first stream.
+    std::chrono::milliseconds proxy_dial_timeout = std::chrono::seconds(20);
+    std::chrono::milliseconds i2p_dial_timeout = std::chrono::seconds(90);
+};
 
 // One authenticated upstream, with no reconnect. The protocol owner supplies
 // complete plaintext frames and consumes them on this connection's strand.
@@ -37,7 +63,8 @@ struct jd_connection {
 
     jd_connection(::asio::any_io_executor executor, std::string host,
         uint16_t port, hash_digest authority,
-        std::chrono::milliseconds timeout = std::chrono::seconds(10));
+        std::chrono::milliseconds timeout = std::chrono::seconds(10),
+        jd_route route = {});
 
     // A false handler result ends the connection. The return value explains
     // its terminal outcome; it is also delivered for failures before ready.
@@ -58,6 +85,7 @@ private:
     uint16_t const port_;
     hash_digest const authority_;
     std::chrono::milliseconds const timeout_;
+    jd_route const route_;
     std::atomic_bool accepting_{true};
     std::atomic_bool started_{false};
     ::asio::experimental::concurrent_channel<void(std::error_code, data_chunk)> outgoing_;

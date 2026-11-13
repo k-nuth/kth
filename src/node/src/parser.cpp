@@ -364,11 +364,13 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--sv2.jd.enabled", cfg.sv2.jd.enabled,
         "Enable the Stratum V2 Job Declaration client (default false).");
     app.add_option("--sv2.jd.mining_address", cfg.sv2.jd.mining_address,
-        "Pool Mining Protocol host:port, or [IPv6]:port.");
+        "Pool Mining Protocol host:port or [IPv6]:port; an onion address needs net.proxy, "
+        "and a .b32.i2p address takes port 0 and needs net.i2psam.");
     app.add_option("--sv2.jd.mining_authority_public_key", cfg.sv2.jd.mining_authority_public_key,
         "Base58Check Noise authority key pinned for the pool Mining Protocol connection.");
     app.add_option("--sv2.jd.jds_address", cfg.sv2.jd.jds_address,
-        "Job Declaration Server host:port, or [IPv6]:port.");
+        "Job Declaration Server host:port or [IPv6]:port; an onion address needs net.proxy, "
+        "and a .b32.i2p address takes port 0 and needs net.i2psam.");
     app.add_option("--sv2.jd.jds_authority_public_key", cfg.sv2.jd.jds_authority_public_key,
         "Base58Check Noise authority key pinned for the Job Declaration Server.");
     app.add_option("--sv2.jd.user_identity", cfg.sv2.jd.user_identity,

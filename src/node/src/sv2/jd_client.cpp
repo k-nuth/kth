@@ -98,16 +98,16 @@ constexpr auto hash_rate_hold = std::chrono::seconds(1);
 } // namespace
 
 jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
-    blockchain::block_chain* chain)
+    blockchain::block_chain* chain, jd_route route)
     : owner_(::asio::make_strand(executor))
     , mining_(owner_, endpoint(settings.jd.mining_address).host,
         endpoint(settings.jd.mining_address).port,
         authority(settings.jd.mining_authority_public_key),
-        std::chrono::seconds(settings.handshake_timeout_seconds))
+        std::chrono::seconds(settings.handshake_timeout_seconds), route)
     , declaration_(owner_, endpoint(settings.jd.jds_address).host,
         endpoint(settings.jd.jds_address).port,
         authority(settings.jd.jds_authority_public_key),
-        std::chrono::seconds(settings.handshake_timeout_seconds))
+        std::chrono::seconds(settings.handshake_timeout_seconds), route)
     , mining_session_(jd_peer::mining, endpoint(settings.jd.mining_address).host,
         endpoint(settings.jd.mining_address).port, settings.jd.user_identity,
         settings.jd.mode == "full-template")

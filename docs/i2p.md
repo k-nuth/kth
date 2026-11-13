@@ -59,3 +59,7 @@ unavailable transports are excluded from automatic peer selection. Ordinary IP
 and DNS peers retain their existing connection behavior. There is no `onlynet`
 option: to keep a node on I2P alone, give it no seeds (regtest has none), disable
 TCP with `net.inbound_port = 0`, and configure only I2P `net.peer` entries.
+
+A [Stratum V2 Job Declaration](sv2.md#job-declaration) upstream with an I2P
+address uses the same bridge through a separate session with a transient
+destination, whatever `net.i2p_accept_incoming` is.

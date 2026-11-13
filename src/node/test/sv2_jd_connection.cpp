@@ -29,7 +29,12 @@
 #include <asio/use_future.hpp>
 #include <asio/write.hpp>
 
+#include <kth/infrastructure/config/authority.hpp>
+#include <kth/infrastructure/formats/base_64.hpp>
+#include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/message/network_address.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
+#include <kth/network/sam.hpp>
 #include <kth/node/sv2/connection.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/jd_connection.hpp>
@@ -78,13 +83,60 @@ enum class behavior {
     drop, split_response, coalesced_partial, delayed_certificate
 };
 
+// What stands in front of the pool on the fixture's listener. After a proxy or
+// a bridge hands the stream over, the bytes that follow are the pool's own.
+enum class front { none, socks5, socks5_refusing, socks5_silent, sam };
+
+// An I2P destination as a SAM bridge writes it: 391 bytes whose certificate
+// names the key types, in I2P's base64 alphabet.
+data_chunk i2p_destination(uint8_t identity) {
+    data_chunk bytes(391, 0);
+    bytes[0] = identity;
+    bytes[384] = 5;
+    bytes[386] = 4;
+    bytes[388] = 7;
+    return bytes;
+}
+
+std::string i2p_base64(data_chunk const& bytes) {
+    auto text = encode_base64(bytes);
+    for (auto& c : text) {
+        if (c == '+') c = '-';
+        else if (c == '/') c = '~';
+    }
+    return text;
+}
+
+// A Tor v3 onion address of a made-up service key.
+std::string onion_name(uint8_t identity) {
+    hash_digest key{};
+    key.front() = identity;
+    return infrastructure::config::authority(infrastructure::message::network_address(0, 0,
+        infrastructure::message::address_network::torv3, key, 3336)).to_hostname();
+}
+
+std::string i2p_name(data_chunk const& destination) {
+    return infrastructure::config::authority(infrastructure::message::network_address(0, 0,
+        infrastructure::message::address_network::i2p, sha256_hash(destination), 0)).to_hostname();
+}
+
 // The acceptor reports its bound port after listen(). Every asynchronous wait
 // is pumped only to a deadline; fixture cleanup also has a fixed deadline.
 struct upstream_fixture {
     ::asio::io_context io;
     ::asio::ip::tcp::acceptor acceptor{io};
     ::asio::ip::tcp::socket peer{io};
+    // A SAM bridge's control connection, which stays open under its session.
+    ::asio::ip::tcp::socket control{io};
     ::asio::steady_timer pause{io};
+    front via = front::none;
+    // What the proxy or the bridge was asked to reach.
+    std::string asked_host;
+    uint16_t asked_port = 0;
+    // The user name the proxy was given, when credentials were offered.
+    std::string proxy_user;
+    bool transient_session = false;
+    data_chunk const pool_destination = i2p_destination(1);
     noise_keypair authority = keypair(4);
     noise_keypair static_key = keypair(3);
     noise_certificate certificate;
@@ -123,6 +175,7 @@ struct upstream_fixture {
         std::error_code ignored;
         acceptor.close(ignored);
         peer.close(ignored);
+        control.close(ignored);
         pause.cancel();
         io.restart();
         io.run_for(1s);
@@ -158,6 +211,135 @@ struct upstream_fixture {
         run_client();
     }
 
+    // The client asks for `host:port` along `route`. With a proxy or a bridge in
+    // front, that address is only a name: nothing listens there.
+    void start_client_through(jd_route route, std::string host, uint16_t target,
+        std::chrono::milliseconds timeout = 3s) {
+        client = std::make_shared<jd_connection>(io.get_executor(), std::move(host),
+            target, authority.public_key(), timeout, std::move(route));
+        run_client();
+    }
+
+    [[nodiscard]] std::string listener() const {
+        return "127.0.0.1:" + std::to_string(port);
+    }
+
+    ::asio::awaitable<std::optional<std::string>> line(::asio::ip::tcp::socket& socket) {
+        std::string text;
+        while (text.size() < 4096) {
+            char c = 0;
+            auto [error, size] = co_await ::asio::async_read(socket, ::asio::buffer(&c, 1),
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (error) co_return std::nullopt;
+            if (c == '\n') co_return text;
+            text.push_back(c);
+        }
+        co_return std::nullopt;
+    }
+
+    ::asio::awaitable<bool> say(::asio::ip::tcp::socket& socket, std::string text) {
+        auto [error, size] = co_await ::asio::async_write(socket, ::asio::buffer(text),
+            ::asio::as_tuple(::asio::use_awaitable));
+        co_return ! error;
+    }
+
+    ::asio::awaitable<bool> take(::asio::ip::tcp::socket& socket, uint8_t* bytes, size_t count) {
+        auto [error, size] = co_await ::asio::async_read(socket, ::asio::buffer(bytes, count),
+            ::asio::as_tuple(::asio::use_awaitable));
+        co_return ! error;
+    }
+
+    ::asio::awaitable<bool> sam_hello(::asio::ip::tcp::socket& socket) {
+        auto const hello = co_await line(socket);
+        co_return hello && *hello == "HELLO VERSION MIN=3.1 MAX=3.1"
+            && co_await say(socket, "HELLO REPLY RESULT=OK VERSION=3.1\n");
+    }
+
+    // The session a bridge is asked for first. The client's must be one made
+    // for it and kept nowhere.
+    ::asio::awaitable<bool> sam_session_created() {
+        if ( ! co_await sam_hello(control)) co_return false;
+        auto const create = co_await line(control);
+        if ( ! create || ! create->starts_with("SESSION CREATE STYLE=STREAM ID=")) co_return false;
+        transient_session = create->find(" DESTINATION=TRANSIENT ") != std::string::npos;
+        auto secret = i2p_destination(9);
+        secret.insert(secret.end(), 288, 0x4a);
+        co_return co_await say(control, "SESSION STATUS RESULT=OK DESTINATION=" + i2p_base64(secret) + "\n");
+    }
+
+    // The proxy's or the bridge's part on the accepted stream. True once the
+    // stream is the pool's.
+    ::asio::awaitable<bool> hand_over() {
+        if (via == front::sam) {
+            auto const name = i2p_name(pool_destination);
+            if ( ! co_await sam_hello(peer)) co_return false;
+            auto const lookup = co_await line(peer);
+            if ( ! lookup) co_return false;
+            if (*lookup != "NAMING LOOKUP NAME=" + name) {
+                // What a bridge answers for a name it cannot find.
+                (void)co_await say(peer, "NAMING REPLY RESULT=KEY_NOT_FOUND NAME="
+                    + lookup->substr(lookup->rfind('=') + 1) + "\n");
+                co_return false;
+            }
+            if ( ! co_await say(peer, "NAMING REPLY RESULT=OK NAME=" + name + " VALUE="
+                    + i2p_base64(pool_destination) + "\n")) co_return false;
+            auto const connect = co_await line(peer);
+            if ( ! connect || ! connect->starts_with("STREAM CONNECT ID=")) co_return false;
+            asked_host = name;
+            co_return co_await say(peer, "STREAM STATUS RESULT=OK\n");
+        }
+        if (via == front::socks5_silent) {
+            // Accepts and never answers, as a proxy whose circuit never opens.
+            pause.expires_after(2s);
+            (void)co_await pause.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            co_return false;
+        }
+        // SOCKS5 (RFC 1928): the greeting with its methods, then one CONNECT.
+        std::array<uint8_t, 2> greeting{};
+        if ( ! co_await take(peer, greeting.data(), greeting.size()) || greeting[0] != 0x05) co_return false;
+        std::array<uint8_t, 255> methods{};
+        if ( ! co_await take(peer, methods.data(), greeting[1])) co_return false;
+        // Username and password (RFC 1929) when the client offers them, as Tor
+        // answers; otherwise no authentication.
+        auto const credentials = greeting[1] == 2 && methods[1] == 0x02;
+        if ( ! co_await say(peer, std::string{char(0x05), char(credentials ? 0x02 : 0x00)})) co_return false;
+        if (credentials) {
+            std::array<uint8_t, 2> head{};
+            if ( ! co_await take(peer, head.data(), head.size()) || head[0] != 0x01) co_return false;
+            proxy_user.assign(head[1], char(0));
+            if ( ! co_await take(peer, reinterpret_cast<uint8_t*>(proxy_user.data()), head[1])) co_return false;
+            uint8_t secret_size = 0;
+            if ( ! co_await take(peer, &secret_size, 1)) co_return false;
+            std::array<uint8_t, 255> secret{};
+            if ( ! co_await take(peer, secret.data(), secret_size)) co_return false;
+            if ( ! co_await say(peer, std::string{char(0x01), char(0x00)})) co_return false;
+        }
+        std::array<uint8_t, 4> request{};
+        if ( ! co_await take(peer, request.data(), request.size())) co_return false;
+        if (request[0] != 0x05 || request[1] != 0x01 || request[2] != 0x00) co_return false;
+        if (request[3] == 0x03) {
+            uint8_t length = 0;
+            if ( ! co_await take(peer, &length, 1)) co_return false;
+            std::string name(length, '\0');
+            if ( ! co_await take(peer, reinterpret_cast<uint8_t*>(name.data()), length)) co_return false;
+            asked_host = std::move(name);
+        } else if (request[3] == 0x01) {
+            std::array<uint8_t, 4> address{};
+            if ( ! co_await take(peer, address.data(), address.size())) co_return false;
+            asked_host = ::asio::ip::address_v4(address).to_string();
+        } else {
+            co_return false;
+        }
+        std::array<uint8_t, 2> target{};
+        if ( ! co_await take(peer, target.data(), target.size())) co_return false;
+        asked_port = uint16_t((uint16_t{target[0]} << 8) | target[1]);
+        // Reply code 5 is "connection refused"; the bound address is unused.
+        std::string reply{char(0x05), char(via == front::socks5_refusing ? 0x05 : 0x00), char(0x00),
+            char(0x01), char(0), char(0), char(0), char(0), char(0), char(0)};
+        if ( ! co_await say(peer, std::move(reply))) co_return false;
+        co_return via == front::socks5;
+    }
+
     void run_client() {
         result = ::asio::co_spawn(io, client->run([this] {
             ready = true;
@@ -175,9 +357,15 @@ struct upstream_fixture {
     }
 
     ::asio::awaitable<void> serve(behavior mode) {
+        if (via == front::sam) {
+            auto [control_error] = co_await acceptor.async_accept(control,
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (control_error || ! co_await sam_session_created()) co_return;
+        }
         auto [accept_error] = co_await acceptor.async_accept(peer,
             ::asio::as_tuple(::asio::use_awaitable));
         if (accept_error) co_return;
+        if (via != front::none && ! co_await hand_over()) co_return;
         if (mode == behavior::silent_handshake) {
             pause.expires_after(2s);
             (void)co_await pause.async_wait(::asio::as_tuple(::asio::use_awaitable));
@@ -511,4 +699,198 @@ TEST_CASE("sv2 JD upstream rejects invalid transport settings before connecting"
         CHECK(fixture.finish() == "invalid upstream connection settings");
         CHECK_FALSE(fixture.ready);
     }
+}
+
+// -----------------------------------------------------------------------------
+// Routes: a SOCKS5 proxy, and I2P through a SAM bridge
+// -----------------------------------------------------------------------------
+
+TEST_CASE("sv2 JD upstream reaches the pool through a SOCKS5 proxy and leaves its name to the proxy",
+          "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    fixture.via = front::socks5;
+    fixture.start_server(behavior::split_response);
+    // No resolver knows this name (RFC 2606), so only the proxy can be asked
+    // for it: a local lookup would end the connection before it began.
+    fixture.start_client_through(jd_route{fixture.listener(), false, nullptr}, "pool.invalid", 3336);
+    REQUIRE(fixture.wait_until([&] { return ! fixture.received.empty(); }));
+    CHECK(fixture.ready);
+    CHECK(fixture.asked_host == "pool.invalid");
+    CHECK(fixture.asked_port == 3336);
+    CHECK(fixture.proxy_user.empty());
+    REQUIRE(fixture.sent.size() == 1);
+    CHECK(fixture.sent.front() == frame(setup()));
+    CHECK(fixture.received.front() == frame(setup_connection_success{2, 0}));
+    fixture.client->stop();
+    CHECK(fixture.finish() == "upstream stopped");
+}
+
+TEST_CASE("sv2 JD upstream offers the proxy fresh credentials when the node randomizes them",
+          "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    fixture.via = front::socks5;
+    fixture.start_server(behavior::split_response);
+    fixture.start_client_through(jd_route{fixture.listener(), true, nullptr}, "pool.invalid", 3336);
+    REQUIRE(fixture.wait_until([&] { return ! fixture.received.empty(); }));
+    CHECK(fixture.asked_host == "pool.invalid");
+    // Tor puts connections with different credentials on different circuits.
+    CHECK(fixture.proxy_user.size() == 64);
+    fixture.client->stop();
+    CHECK(fixture.finish() == "upstream stopped");
+}
+
+TEST_CASE("sv2 JD upstream never goes around a proxy that refuses", "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    fixture.via = front::socks5_refusing;
+    fixture.start_server(behavior::exchange);
+    // The pool's own address is open and would answer a direct connection.
+    ::asio::ip::tcp::acceptor direct(fixture.io, {::asio::ip::address_v4::loopback(), 0});
+    auto const pool_port = direct.local_endpoint().port();
+    fixture.start_client_through(jd_route{fixture.listener(), false, nullptr}, "127.0.0.1", pool_port);
+    CHECK(fixture.finish() == "upstream connection through the proxy failed");
+    CHECK(fixture.asked_host == "127.0.0.1");
+    CHECK(fixture.asked_port == pool_port);
+    CHECK_FALSE(fixture.ready);
+    std::error_code error;
+    direct.non_blocking(true, error);
+    REQUIRE_FALSE(error);
+    ::asio::ip::tcp::socket nobody(fixture.io);
+    direct.accept(nobody, error);
+    CHECK(error == ::asio::error::would_block);
+}
+
+TEST_CASE("sv2 JD upstream reports a proxy that is not there", "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    // A port that was open a moment ago and is closed now.
+    uint16_t closed = 0;
+    {
+        ::asio::ip::tcp::acceptor gone(fixture.io, {::asio::ip::address_v4::loopback(), 0});
+        closed = gone.local_endpoint().port();
+    }
+    fixture.start_client_through(jd_route{"127.0.0.1:" + std::to_string(closed), false, nullptr},
+        "pool.invalid", 3336);
+    CHECK(fixture.finish() == "upstream connection through the proxy failed");
+    CHECK_FALSE(fixture.ready);
+}
+
+TEST_CASE("sv2 JD upstream refuses an onion or I2P address it has no route for", "[sv2 jd][socks5][i2p]") {
+    auto const i2p = i2p_name(i2p_destination(1));
+    struct expectation {
+        std::string host;
+        uint16_t port;
+        char const* reason;
+    };
+    for (auto const& [host, target, reason] : {
+            expectation{onion_name(1), 3336, "an .onion upstream needs net.proxy"},
+            expectation{"POOL.ONION.", 3336, "an .onion upstream needs net.proxy"},
+            expectation{i2p, 0, "an .i2p upstream needs net.i2psam"},
+            expectation{"Pool.B32.I2P", 0, "an .i2p upstream needs net.i2psam"},
+            // An I2P stream has no port, and nothing else is reached without one.
+            expectation{i2p, 3336, "invalid upstream connection settings"},
+            expectation{onion_name(1), 0, "invalid upstream connection settings"}}) {
+        CAPTURE(host, target);
+        upstream_fixture fixture;
+        fixture.start_client_through(jd_route{}, host, target);
+        CHECK(fixture.finish() == reason);
+        CHECK_FALSE(fixture.ready);
+    }
+}
+
+TEST_CASE("sv2 JD upstream leaves an onion name to the proxy", "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    fixture.via = front::socks5;
+    fixture.start_server(behavior::split_response);
+    auto const pool = onion_name(7);
+    fixture.start_client_through(jd_route{fixture.listener(), true, nullptr}, pool, 3336);
+    REQUIRE(fixture.wait_until([&] { return ! fixture.received.empty(); }));
+    CHECK(fixture.asked_host == pool);
+    CHECK(fixture.asked_port == 3336);
+    fixture.client->stop();
+    CHECK(fixture.finish() == "upstream stopped");
+}
+
+TEST_CASE("sv2 JD upstream gives a proxy its dial allowance and no longer", "[sv2 jd][socks5]") {
+    upstream_fixture fixture;
+    fixture.via = front::socks5_silent;
+    fixture.start_server(behavior::exchange);
+    jd_route route{fixture.listener(), false, nullptr};
+    route.proxy_dial_timeout = 300ms;
+    auto const begin = std::chrono::steady_clock::now();
+    // The connection's own deadline is shorter than the allowance: the proxy
+    // is not cut off by it.
+    fixture.start_client_through(route, "pool.invalid", 3336, 100ms);
+    CHECK(fixture.finish() == "upstream connection through the proxy failed");
+    auto const took = std::chrono::steady_clock::now() - begin;
+    CHECK(took >= 300ms);
+    CHECK(took < 2s);
+    CHECK_FALSE(fixture.ready);
+}
+
+TEST_CASE("sv2 JD upstream waits for an I2P session only as long as its dial allowance", "[sv2 jd][i2p]") {
+    upstream_fixture fixture;
+    // The bridge is not there: the session never becomes ready.
+    uint16_t closed = 0;
+    {
+        ::asio::ip::tcp::acceptor gone(fixture.io, {::asio::ip::address_v4::loopback(), 0});
+        closed = gone.local_endpoint().port();
+    }
+    auto session = std::make_shared<network::sam_session>(fixture.io.get_executor(),
+        "127.0.0.1:" + std::to_string(closed), kth::path{}, false, 5s);
+    auto running = ::asio::co_spawn(fixture.io, [session]() -> ::asio::awaitable<void> {
+        co_await session->run();
+    }, ::asio::use_future);
+    jd_route route{{}, true, session.get()};
+    route.i2p_dial_timeout = 300ms;
+    fixture.start_client_through(route, i2p_name(i2p_destination(1)), 0, 200ms);
+    CHECK(fixture.finish() == "upstream connection or handshake timed out");
+    CHECK_FALSE(fixture.ready);
+    session->stop();
+    REQUIRE(fixture.wait_until([&] { return running.wait_for(0s) == std::future_status::ready; }));
+}
+
+TEST_CASE("sv2 JD upstream reaches an I2P pool through a session made for it", "[sv2 jd][i2p]") {
+    upstream_fixture fixture;
+    fixture.via = front::sam;
+    fixture.start_server(behavior::split_response);
+    // The session is started together with the client, as the node does: the
+    // connection waits for it inside its own deadline.
+    auto session = std::make_shared<network::sam_session>(fixture.io.get_executor(), fixture.listener(),
+        kth::path{}, false, 5s);
+    auto running = ::asio::co_spawn(fixture.io, [session]() -> ::asio::awaitable<void> {
+        co_await session->run();
+    }, ::asio::use_future);
+    auto const pool = i2p_name(fixture.pool_destination);
+    fixture.start_client_through(jd_route{{}, true, session.get()}, pool, 0, 5s);
+    REQUIRE(fixture.wait_until([&] { return ! fixture.received.empty(); }, 5s));
+    CHECK(fixture.ready);
+    CHECK(fixture.transient_session);
+    CHECK(fixture.asked_host == pool);
+    CHECK(fixture.received.front() == frame(setup_connection_success{2, 0}));
+    fixture.client->stop();
+    CHECK(fixture.finish() == "upstream stopped");
+    session->stop();
+    std::error_code ignored;
+    fixture.control.close(ignored);
+    REQUIRE(fixture.wait_until([&] { return running.wait_for(0s) == std::future_status::ready; }));
+}
+
+TEST_CASE("sv2 JD upstream reports an I2P pool the bridge cannot reach", "[sv2 jd][i2p]") {
+    upstream_fixture fixture;
+    fixture.via = front::sam;
+    fixture.start_server(behavior::exchange);
+    auto session = std::make_shared<network::sam_session>(fixture.io.get_executor(), fixture.listener(),
+        kth::path{}, false, 5s);
+    auto running = ::asio::co_spawn(fixture.io, [session]() -> ::asio::awaitable<void> {
+        co_await session->run();
+    }, ::asio::use_future);
+    // Another destination than the one the bridge knows: its lookup gets no
+    // answer the client accepts.
+    fixture.start_client_through(jd_route{{}, true, session.get()}, i2p_name(i2p_destination(2)), 0, 5s);
+    CHECK(fixture.finish() == "upstream connection through I2P failed");
+    CHECK_FALSE(fixture.ready);
+    session->stop();
+    std::error_code ignored;
+    fixture.control.close(ignored);
+    fixture.peer.close(ignored);
+    REQUIRE(fixture.wait_until([&] { return running.wait_for(0s) == std::future_status::ready; }));
 }

@@ -21,6 +21,7 @@
 #include <asio/as_tuple.hpp>
 #include <asio/buffer.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel.hpp>
 #include <asio/ip/address.hpp>
@@ -39,6 +40,7 @@
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/detail/scope_action.hpp>
+#include <kth/network/sam.hpp>
 #include <kth/node/mining/block_submit.hpp>
 #include <kth/node/mining/work.hpp>
 #include <kth/node/sv2/connection.hpp>
@@ -336,9 +338,10 @@ template_provider_session::result template_provider_session::process(
 
 template_provider::template_provider(sv2_settings const& settings,
     ::asio::any_io_executor executor, blockchain::block_chain& chain,
-    domain::config::network network)
+    domain::config::network network, upstream_route route)
     : settings_(settings)
     , network_(network)
+    , route_(std::move(route))
     , chain_(chain)
     , owner_(::asio::make_strand(executor))
     , stop_requests_(owner_, 1)
@@ -807,8 +810,27 @@ void template_provider::stop() {
         (void)listening_.try_send(ec, uint16_t{});
         co_return;
     }
+    // An .i2p upstream gets a session of its own, with a destination made for
+    // it and kept nowhere: the pool then cannot tell which I2P peer of the
+    // network this miner's node is. It accepts nothing.
+    std::shared_ptr<network::sam_session> upstream_i2p;
+    if (settings_.jd.enabled && ! route_.i2p_bridge.empty()) {
+        auto const mining_at = parse_jd_endpoint(settings_.jd.mining_address);
+        auto const jds_at = parse_jd_endpoint(settings_.jd.jds_address);
+        if ((mining_at && jd_i2p_host(mining_at->host)) || (jds_at && jd_i2p_host(jds_at->host))) {
+            upstream_i2p = std::make_shared<network::sam_session>(owner_, route_.i2p_bridge,
+                kth::path{}, false, std::chrono::seconds(90));
+            ::asio::co_spawn(owner_, [session = upstream_i2p]() -> ::asio::awaitable<void> {
+                co_await session->run();
+            }, ::asio::detached);
+        }
+    }
+    detail::scope_action close_i2p([&] { if (upstream_i2p) upstream_i2p->stop(); }, true);
     std::unique_ptr<jd_client> upstream;
-    if (settings_.jd.enabled) upstream = std::make_unique<jd_client>(settings_, owner_, &chain_);
+    if (settings_.jd.enabled) {
+        upstream = std::make_unique<jd_client>(settings_, owner_, &chain_,
+            jd_route{route_.proxy, route_.proxy_randomize, upstream_i2p.get()});
+    }
     (void)listening_.try_send(std::error_code{}, bound.port());
     spdlog::info("[sv2] {} listening on {}:{} ({})",
         settings_.mining.enabled ? "Template Provider and Mining Protocol" : "Template Provider",

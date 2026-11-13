@@ -29,6 +29,17 @@ std::optional<jd_endpoint> parse_jd_endpoint(std::string_view text);
 [[nodiscard]]
 bool validate_jd_settings(sv2_settings const& settings, std::string& error);
 
+// Whether a host is a Tor onion service name or an I2P name.
+[[nodiscard]] bool jd_onion_host(std::string_view host);
+[[nodiscard]] bool jd_i2p_host(std::string_view host);
+
+// An .onion upstream can only be reached through net.proxy, and an .i2p one
+// through net.i2psam. Checked at startup with the network settings, so a
+// node does not start to mine solo because of an address it cannot dial.
+[[nodiscard]]
+bool validate_jd_route(sv2_settings const& settings, std::string const& proxy,
+    std::string const& i2p_bridge, std::string& error);
+
 } // namespace kth::node::sv2
 
 #endif // KTH_NODE_SV2_JD_SETTINGS_HPP
