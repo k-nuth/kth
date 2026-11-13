@@ -205,6 +205,16 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
     app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
     app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    app.add_option("--net.proxy", cfg.network.proxy,
+        "SOCKS5 proxy as numeric IP:port; empty disables proxying.");
+    app.add_option("--net.proxy_randomize", cfg.network.proxy_randomize,
+        "Use fresh SOCKS5 credentials for each outbound connection (default true).");
+    app.add_option("--net.i2psam", cfg.network.i2psam,
+        "I2P SAM 3.1 bridge as numeric IP:port; empty disables I2P.");
+    app.add_option("--net.i2p_accept_incoming", cfg.network.i2p_accept_incoming,
+        "Accept I2P peers and keep a persistent destination (default true).");
+    app.add_option("--net.i2p_private_key_file", cfg.network.i2p_private_key_file,
+        "I2P private key file; defaults to i2p_private_key next to the database.");
     app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
     app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
     app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
@@ -418,6 +428,19 @@ bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[mayb
     return true;
 }
 
+bool check_i2p_bridge([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(__EMSCRIPTEN__)
+    if ( ! cfg.network.i2psam.empty()) {
+        auto const bridge = authority::parse_from(cfg.network.i2psam);
+        if ( ! bridge || bridge->is_overlay() || bridge->port() == 0) {
+            error << "Error: net.i2psam requires a numeric IP and nonzero port." << std::endl;
+            return false;
+        }
+    }
+#endif
+    return true;
+}
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -534,7 +557,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
-        if ( ! check_standardness_policy(configured, error)) {
+        if ( ! check_standardness_policy(configured, error) || ! check_i2p_bridge(configured, error)) {
             return false;
         }
 
@@ -610,7 +633,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         }
     }
 
-    if ( ! check_standardness_policy(configured, error)) {
+    if ( ! check_standardness_policy(configured, error) || ! check_i2p_bridge(configured, error)) {
         return false;
     }
 

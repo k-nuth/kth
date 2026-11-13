@@ -49,6 +49,7 @@ enum class get_result {
 
 struct KN_API peer_database {
     using clock = std::chrono::system_clock;
+    using reachability = std::function<bool(infrastructure::config::authority const&)>;
     static constexpr size_t default_capacity = 10000;
 
     /// Construct database with optional persistence file
@@ -117,7 +118,8 @@ struct KN_API peer_database {
     /// Fetch a random non-banned address for connection
     /// Returns error code if no addresses available
     [[nodiscard]]
-    code fetch_address(domain::message::network_address& out) const;
+    code fetch_address(domain::message::network_address& out,
+        reachability const& reachable = {}) const;
 
     /// Remove an address
     [[nodiscard]]
@@ -207,7 +209,8 @@ struct KN_API peer_database {
 
     /// Get addresses suitable for connection (not banned, good reputation)
     [[nodiscard]]
-    std::vector<infrastructure::config::authority> get_connectable(size_t max_count) const;
+    std::vector<infrastructure::config::authority> get_connectable(size_t max_count,
+        reachability const& reachable = {}) const;
 
     /// Get addresses to avoid (banned or bad reputation)
     [[nodiscard]]
@@ -243,10 +246,8 @@ private:
     /// Format a record for persistence
     std::string format_record(peer_record const& record) const;
 
-    // Key type for the map (normalized IP address, port ignored for banning)
-    // But we store full authority in the record
-    // Note: salted_ip_hasher works with normalized_address via implicit conversion to asio::ip::address
-    boost::concurrent_flat_map<normalized_address, peer_record, kth::salted_ip_hasher> records_;
+    // Ports do not split reputation or bans for the same network address.
+    boost::concurrent_flat_map<normalized_address, peer_record, salted_address_hasher> records_;
     kth::path file_path_;
     size_t capacity_;
 };

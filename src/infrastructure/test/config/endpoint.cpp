@@ -8,6 +8,21 @@
 using namespace kth;
 using namespace kth::infrastructure::config;
 
+TEST_CASE("endpoint accepts only validated overlay peer names", "[endpoint][i2p][onion]") {
+    std::string const i2p = std::string(52, 'a') + ".b32.i2p";
+    auto const peer = endpoint::parse_from(i2p + ":0");
+    REQUIRE(peer);
+    REQUIRE(peer->host() == i2p);
+    REQUIRE(peer->port() == 0);
+    REQUIRE( ! endpoint::parse_from("invalid.b32.i2p:0"));
+    REQUIRE( ! endpoint::parse_from("invalid.onion:8333"));
+    REQUIRE( ! endpoint::parse_from("INVALID.ONION:8333"));
+    REQUIRE( ! endpoint::parse_from("example.i2p:0"));
+    REQUIRE( ! endpoint::parse_from(i2p + ".:0"));
+    REQUIRE( ! endpoint::parse_from(i2p + "..:0"));
+    REQUIRE( ! endpoint::parse_from("duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion.:8333"));
+}
+
 TEST_CASE("endpoint constructor accepts host and port", "[endpoint]") {
     endpoint const host{"foo", 0};
     REQUIRE(host.scheme() == "");
