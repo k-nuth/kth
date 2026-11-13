@@ -358,7 +358,6 @@ set(kth_headers
     include/kth/infrastructure/impl/utility/data.ipp
     include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
-    include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
     include/kth/infrastructure/message/message_tools.hpp
@@ -700,6 +699,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
+    test/utility/parse_integer.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
