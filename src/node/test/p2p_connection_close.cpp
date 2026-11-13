@@ -91,6 +91,9 @@ TEST_CASE("p2p child: short established sessions do not accumulate bans", "[.p2p
         {
         network::settings config(domain::config::network::regtest);
         config.inbound_port = 0;
+        // No listener: the inbound sessions are handed to the node, and they
+        // count against this limit.
+        config.inbound_connections = 8;
         config.outbound_connections = 0;
         config.host_pool_capacity = 64;
         config.seeds.clear();
@@ -142,6 +145,9 @@ TEST_CASE("p2p child: inbound peers leave the outbound target unmet", "[.p2p-chi
     {
     network::settings config(domain::config::network::regtest);
     config.inbound_port = 0;
+    // No listener: the three inbound sessions are handed to the node, and
+    // they count against this limit.
+    config.inbound_connections = 8;
     config.outbound_connections = 2;
     config.host_pool_capacity = 64;
     config.seeds.clear();
