@@ -70,6 +70,28 @@ void tx_announcement_schedule::take(admitted_batch const& batch, bool complete,
     }
 }
 
+void take_mempool(admitted_batch const& pool, network::tx_inventory& inventory,
+                  std::vector<hash_digest>& out) {
+    auto const filter = inventory.fee_filter();
+    for (auto const& entry : pool.entries) {
+        if (filter != 0 && fee_per_kb(entry) < filter) {
+            continue;
+        }
+        auto const txid = entry.tx->hash();
+        out.push_back(txid);
+        inventory.add_known(txid);
+    }
+    inventory.mempool_answered(pool.last);
+}
+
+void tx_announcement_schedule::skip_to(uint64_t last) {
+    cursor_ = std::max(cursor_, last);
+    last_ = std::max(last_, last);
+    if (cursor_ >= last_) {
+        due_ = time_point::max();
+    }
+}
+
 void tx_announcement_schedule::on_announced(time_point now, clock::duration delay) {
     due_ = cursor_ < last_ ? now + delay : time_point::max();
 }

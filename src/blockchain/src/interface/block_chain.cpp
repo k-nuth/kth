@@ -30,6 +30,7 @@
 #include <kth/blockchain/populate/populate_chain_state.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/database.hpp>
+#include <kth/database/in_place_directory.hpp>
 #include <kth/domain.hpp>
 #include <kth/domain/multi_crypto_support.hpp>
 
@@ -118,6 +119,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , notify_limit_seconds_(chain_settings.notify_limit_hours * hour_seconds)
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
+    , in_place_nocow_(database_settings.nocow)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -215,6 +217,18 @@ bool block_chain::start(uint32_t disk_magic) {
     // Open UTXO-Z database (in a subdirectory of the main database)
     utxoz::set_log_prefix("UTXO-Z");
     auto utxoz_path = database_.internal_db_dir.parent_path() / "utxoz";
+    // UTXO-Z rewrites its memory-mapped containers in place. On btrfs a new
+    // store is created NOCOW: there, every write to a page already on disk
+    // reserves space for a copy, and a sustained stream of them stalls the
+    // writers. An existing store is left as it is (not_empty).
+    if (in_place_nocow_) {
+        auto const prepared = database::prepare_in_place_directory(utxoz_path);
+        if (prepared) {
+            spdlog::info("[blockchain] {}: {}", utxoz_path.string(), database::in_place_directory_name(*prepared));
+        } else {
+            spdlog::warn("[blockchain] {}: could not set NOCOW ({})", utxoz_path.string(), prepared.error().message());
+        }
+    }
     // Scoped to the open itself. Held for the rest of start() it would deadlock
     // against the reference-mode wiring below, which takes a window of its own —
     // and only in reference mode, so a full-mode build would never show it and
@@ -542,7 +556,10 @@ bool block_chain::start(uint32_t disk_magic) {
                 return false;
             }
         } else {
-            auto const first = static_cast<int32_t>(settings_.max_checkpoint_height) + 1;
+            // Undo is captured from the first height that is validated, which is
+            // the trusted height + 1, not the anchor + 1: in full-validation mode
+            // it starts at height 1.
+            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||
@@ -1150,6 +1167,26 @@ block_chain::flush_undo(std::span<int32_t const> file_numbers) {
 
 database::barrier_outcome block_chain::utxo_sync(utxo_write_window const& window) {
     return utxoz_db_.with_write(window, [](auto& db) { return db.sync(); });
+}
+
+std::expected<database::pending_barrier, database::barrier_outcome>
+block_chain::utxo_begin_sync(utxo_write_window const& window) {
+    return utxoz_db_.with_write(window, [](auto& db) { return db.begin_sync(); });
+}
+
+database::barrier_outcome block_chain::utxo_finish_sync(database::pending_barrier&& pending) {
+    auto lease = utxo_gate_.read();
+    if ( ! lease) {
+        // Latched already, by whatever got there first. The barrier was not
+        // made, and that is the answer whoever asked for it needs.
+        return database::barrier_outcome::failed;
+    }
+
+    auto const outcome = std::move(pending).finish();
+    if (outcome != database::barrier_outcome::crossed) {
+        utxo_gate_.latch_observed();
+    }
+    return outcome;
 }
 
 database::durability_level block_chain::durability() const {
@@ -2429,6 +2466,12 @@ void block_chain::mempool_remove_for_block(domain::chain::block const& block) {
 
     validation_high_priority_lock const lock(validation_mutex_);
     note_mempool_block_connected();
+
+    // As for the raw form: through initial sync the pool is empty, and every
+    // transaction of every block would otherwise be looked up for nothing.
+    if (mempool_.size() == 0) {
+        return;
+    }
     mempool_limit_.removed(mempool_.remove_for_block(block));
 }
 
@@ -2571,6 +2614,24 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
             validation_low_priority_lock const lock(validation_mutex_);
             co_return mempool_admitted{mempool_admissions_.after(after, limit, mempool_),
                                        mempool_admissions_.last()};
+        }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_snapshot() {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this]() -> ::asio::awaitable<mempool_admitted> {
+            mempool_admitted out{};
+            {
+                validation_low_priority_lock const lock(validation_mutex_);
+                out.last = mempool_admissions_.last();
+                out.entries.reserve(mempool_.size());
+                mempool_.for_each([&](mempool_entry const& entry) {
+                    out.entries.push_back(entry);
+                });
+            }
+            // A copy now: sorted without holding the lock.
+            std::ranges::sort(out.entries, {}, &mempool_entry::entry_id);
+            co_return out;
         }, ::asio::use_awaitable);
 }
 

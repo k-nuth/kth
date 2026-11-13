@@ -39,6 +39,10 @@ peer_manager::~peer_manager() {
 // =============================================================================
 
 ::asio::awaitable<code> peer_manager::add(peer_session::ptr peer) {
+    co_return co_await add(std::move(peer), false);
+}
+
+::asio::awaitable<code> peer_manager::add(peer_session::ptr peer, bool unique_ip) {
     if (stopped()) {
         co_return error::service_stopped;
     }
@@ -56,7 +60,7 @@ peer_manager::~peer_manager() {
     }
 
     // Execute on strand
-    auto result = co_await ::asio::co_spawn(strand_, [this, peer, nonce]() -> ::asio::awaitable<code> {
+    auto result = co_await ::asio::co_spawn(strand_, [this, peer, nonce, unique_ip]() -> ::asio::awaitable<code> {
         // Check capacity
         if (max_connections_ > 0 && peers_.size() >= max_connections_) {
             co_return error::channel_stopped;  // At capacity
@@ -71,7 +75,12 @@ peer_manager::~peer_manager() {
         // unspecified address, so comparing authorities would treat them as one.
         auto const& new_destination = peer->destination();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
-            if (existing_peer->destination() == new_destination) {
+            // One session per address, where the caller asks for it, compares
+            // addresses. A destination given by hostname has none.
+            bool const same_address = unique_ip && peer->has_numeric_authority()
+                && existing_peer->has_numeric_authority()
+                && existing_peer->authority().asio_ip() == peer->authority().asio_ip();
+            if (existing_peer->destination() == new_destination || same_address) {
                 co_return error::address_in_use;
             }
         }

@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <kth/infrastructure/math/hash.hpp>
@@ -88,10 +89,21 @@ public:
 
     void set_fee_filter(uint64_t fee_per_kb) { fee_filter_ = fee_per_kb; }
 
+    /// The peer's `mempool` was answered with the pool as it was when the
+    /// last admission was `through`: what was pooled then may be served
+    /// to it as well (BCHN timeLastMempoolReq).
+    void mempool_answered(uint64_t through) { mempool_answered_ = through; }
+
+    /// The last admission the pool held when the peer's `mempool` was last
+    /// answered; nullopt when it never was.
+    [[nodiscard]]
+    std::optional<uint64_t> mempool_answered() const { return mempool_answered_; }
+
 private:
     rolling_bloom_filter known_;
     rolling_bloom_filter announced_;
     uint64_t fee_filter_{0};
+    std::optional<uint64_t> mempool_answered_;
 };
 
 /// What a peer's service hears when a transaction is admitted: the last

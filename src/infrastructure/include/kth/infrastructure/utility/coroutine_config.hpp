@@ -125,7 +125,7 @@
 
 #if ! defined(KTH_USE_COROUTINES)
     // Auto-detect
-    #if KTH_HAS_CPP20 && KTH_HAS_COROUTINE_SUPPORT && KTH_HAS_ASIO_COROUTINES && !defined(__EMSCRIPTEN__)
+    #if KTH_HAS_CPP20 && KTH_HAS_COROUTINE_SUPPORT && KTH_HAS_ASIO_COROUTINES && (!defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE))
         #define KTH_USE_COROUTINES 1
     #else
         #define KTH_USE_COROUTINES 0

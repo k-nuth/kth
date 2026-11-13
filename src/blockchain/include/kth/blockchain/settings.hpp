@@ -23,6 +23,19 @@ struct KB_API settings {
     /// Fork flags combiner.
     domain::script_flags_t enabled_flags() const;
 
+    /// Fill `checkpoints_sorted` and `max_checkpoint_height` from `checkpoints`.
+    /// The constructor does it for the network's own list; call it again after
+    /// replacing or extending `checkpoints` so the derived fields describe them.
+    void derive_checkpoints();
+
+    /// The highest height whose blocks may be connected WITHOUT historical
+    /// validation (0 = none: validate from height 1). This is the permission
+    /// boundary, and it is not `max_checkpoint_height`, which is the highest
+    /// checkpoint anchor and stays the same in either mode.
+    size_t trusted_checkpoint_height() const {
+        return full_validation ? 0 : max_checkpoint_height;
+    }
+
     /// Properties.
     uint32_t cores = 0;
     bool priority = true;
@@ -88,6 +101,23 @@ struct KB_API settings {
     infrastructure::config::checkpoint::list checkpoints_sorted;  // Pre-sorted by height
     size_t max_checkpoint_height = 0;                             // Pre-computed max
     bool fix_checkpoints = true;
+    // Withdraws the permission checkpoints give, keeping the checkpoints. By
+    // default every block at or below the highest checkpoint is connected
+    // merkle-only (no script, signature or UTXO validation, no undo, outputs
+    // pruned by the bloom). With this set the checkpoints still pin the header
+    // chain -- the list, its sorted copy and `max_checkpoint_height` are exactly
+    // what they would otherwise be -- but every block from height 1 is validated
+    // in full. Whether blocks may be skipped is `trusted_checkpoint_height()`,
+    // never `max_checkpoint_height`.
+    bool full_validation = false;
+    // How many fully validated blocks are connected per batch. Each batch ends
+    // with the UTXO store's durability barrier, and every page the batch touched
+    // is written then; larger batches touch each page once for more blocks and
+    // keep more outputs created and spent inside the batch off the store. The
+    // batch's parsed blocks and undo data are held in memory until it is
+    // applied, which is what bounds it (about 1 GB of peak memory per 100
+    // blocks around height 450,000). 1..1000.
+    uint32_t validation_batch_blocks = 500;
     bool allow_collisions = true;
     bool easy_blocks = false;
     bool retarget = true;

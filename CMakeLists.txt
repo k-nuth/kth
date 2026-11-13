@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project(kth VERSION 0.0.0 LANGUAGES CXX C)
 
+include(cmake/KthRpcBackend.cmake)
+
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -36,6 +38,24 @@ else()
 endif()
 message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 
+# Signature verification: secp256k1 (libsecp256k1, one signature at a time,
+# inline in the script interpreter) | secp256k1_turbo (the interpreters defer
+# the checks whose failure is final and the block validator verifies them in
+# lane-parallel batches with src/secp256k1-turbo). Set at the root so the
+# define reaches every module that compiles the interpreters.
+set(KTH_SIGNATURE_VERIFICATION "secp256k1" CACHE STRING "Signature verification: secp256k1 | secp256k1_turbo")
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+    add_definitions(-DKTH_SIGVERIFY_TURBO_BATCH)
+elseif (NOT KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1")
+    message(FATAL_ERROR "Invalid signature verification: ${KTH_SIGNATURE_VERIFICATION} (expected secp256k1|secp256k1_turbo)")
+endif()
+message(STATUS "Knuth: Signature verification: ${KTH_SIGNATURE_VERIFICATION}")
+# GPU backends of src/secp256k1-turbo: none | auto | cuda | metal. Off by
+# default in the node build; src/secp256k1-turbo/CMakeLists.txt documents the
+# toolchains each one needs.
+set(KTH_SECP256K1_TURBO_GPU "none" CACHE STRING "secp256k1-turbo GPU backends: none | auto | cuda | metal")
+message(STATUS "Knuth: secp256k1-turbo GPU backends: ${KTH_SECP256K1_TURBO_GPU}")
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -57,6 +77,22 @@ option(WITH_EXAMPLES "Compile with examples." OFF)
 option(ENABLE_SHARED "" OFF)
 option(ENABLE_SHARED_NODE_CINT "" ON)
 option(KTH_ASIO_STANDALONE "Use standalone Asio instead of Boost.Asio" OFF)
+option(KTH_BROWSER_NODE "Build the experimental Worker-owned WebSocket node" OFF)
+if(KTH_BROWSER_NODE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR NOT KTH_ASIO_STANDALONE)
+        message(FATAL_ERROR "KTH_BROWSER_NODE requires Emscripten and standalone Asio")
+    endif()
+    add_compile_definitions(KTH_BROWSER_NODE ASIO_DISABLE_THREADS)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fwasm-exceptions>)
+    add_link_options(-fwasm-exceptions -lwebsocket.js)
+    find_package(asio REQUIRED)
+    # Selections wait on the Worker runtime's timer, the one timer it wakes for
+    # (asio 1.38.3-kth.3, docs/asio-select-sync.md).
+    add_compile_definitions(
+        ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"
+        ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
+endif()
+option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
@@ -114,6 +150,10 @@ if(ENABLE_TEST)
 endif()
 
 add_subdirectory(src)
+option(KTH_BROWSER_CONTROLS "Build browser runtime and transport controls" OFF)
+if(KTH_BROWSER_NODE AND KTH_BROWSER_CONTROLS)
+    add_subdirectory(experiments/browser-worker)
+endif()
 
 # Exercise the real parser translation unit's currency selection with the
 # generated target flags. flags.make is provided by the Makefiles generator.
