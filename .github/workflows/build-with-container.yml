@@ -157,6 +157,14 @@ jobs:
 
       - name: 🔧 Setup kthbuild
         uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: 🔧 Ensure archive extraction tools
+        shell: bash
+        run: |
+          if ! command -v unzip >/dev/null 2>&1; then
+            apt-get update -qq
+            apt-get install -y --no-install-recommends unzip
+          fi
+
       - name: 🔧 Get CMake
         uses: lukka/get-cmake@16e8153a8b4918849d92aad131befe67a3705daa  # v4.5.0
 
