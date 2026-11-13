@@ -636,3 +636,100 @@ TEST_CASE("the active chain is never observed in a torn state", "[header_organiz
     // Quiesced, the chain and the counter agree on the final branch.
     CHECK(index.active_at(index.active_tip_height()) == heads.back());
 }
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("contextual header validation rejects negative ASERT tick delta before minimum difficulty",
+          "[validate block tests][asert_anchor_ticks]") {
+    using domain::chain::chain_state;
+    using domain::machine::script_flags;
+    constexpr size_t anchor = mainnet_asert_anchor_block_height;
+    constexpr size_t activation = anchor - 100;
+    constexpr size_t equality_parent = activation + 1000;
+    constexpr uint32_t parent_time = mainnet_asert_anchor_block_ancestor_time + 600;
+    for (auto const easy : {false, true}) {
+        for (auto const offset : {-1, 0, 1}) {
+            CAPTURE(easy, offset);
+            chain_state::data values{};
+            values.height = equality_parent + offset + 1;
+            values.bits.self = mainnet_asert_anchor_block_bits;
+            values.version.self = 4;
+            values.timestamp.self = parent_time + 121;
+            values.timestamp.retarget = parent_time;
+            for (size_t i = 0; i < 11; ++i) {
+                values.bits.ordered.push_back(mainnet_asert_anchor_block_bits);
+                values.version.ordered.push_back(4);
+                values.timestamp.ordered.push_back(parent_time);
+            }
+            values.faster_blocks_activation_height = activation;
+            auto const flags = std::to_underlying(script_flags::retarget) |
+                (easy ? std::to_underlying(script_flags::easy_blocks) : 0u);
+            chain_state::checkpoints const none{};
+            chain_state const state(std::move(values), flags, none, domain::config::network::mainnet,
+                chain_state::assert_anchor_block_info_t{anchor, mainnet_asert_anchor_block_ancestor_time,
+                    mainnet_asert_anchor_block_bits}, 2u * 24 * 60 * 60,
+                domain::chain::abla::default_config(32'000'000, false), cantor_t{0});
+            domain::chain::header const candidate{4, null_hash, null_hash, parent_time + 121, state.work_required(), 0};
+            CHECK(validate_header::accept_header(candidate, domain::chain::hash(candidate), state) ==
+                (offset < 0 ? error::incorrect_proof_of_work : error::success));
+        }
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("full header acceptance rejects a negative fixed ASERT anchor delta",
+          "[header_validation][asert_anchor_ticks][asert_accept_full]") {
+    namespace chain = kth::domain::chain;
+    constexpr auto network = domain::config::network::testnet4;
+    constexpr uint32_t anchor = testnet4_asert_anchor_block_height;
+    constexpr uint32_t base_time = 1'700'000'000;
+    header_index index(anchor + 2);
+    auto const genesis = chain::block::genesis_testnet4().header();
+    auto previous = chain::hash(genesis);
+    auto parent = index.add(previous, genesis);
+    REQUIRE(parent.inserted);
+    // Seed the public index with ancestry, not a fabricated chain_state.
+    // accept_full is contextual: prior header PoW is outside this control.
+    for (uint32_t height = 1; height <= anchor; ++height) {
+        chain::header const ancestor{4, previous, make_hash(height),
+            base_time + height * 60, retarget_proof_of_work_limit, height};
+        previous = chain::hash(ancestor);
+        parent = index.add(previous, ancestor);
+        REQUIRE(parent.inserted);
+    }
+    REQUIRE(index.get_height(parent.index) == int32_t(anchor));
+    auto const timestamp = base_time + (anchor + 1) * 60 + 121;
+    for (auto const easy : {false, true}) {
+        CAPTURE(easy);
+        settings s(network);
+        s.checkpoints.clear();
+        s.derive_checkpoints();
+        s.full_validation = true;
+        s.easy_blocks = easy;
+        s.cantor_activation_time = base_time;
+        validate_header validator(s, network);
+        chain::header const invalid{4, previous, null_hash, timestamp, 0, 0};
+        auto const invalid_hash = chain::hash(invalid);
+        auto const state = validator.chain_state_at(invalid, invalid_hash, anchor + 1, parent.index, index);
+        REQUIRE(state);
+        REQUIRE((*state)->is_euler_enabled());
+        REQUIRE((*state)->is_faster_blocks_active());
+        REQUIRE((*state)->ticks().height_to_tick(anchor) < uint64_t(anchor) * 600);
+        REQUIRE((*state)->work_required() == 0);
+        CHECK(validator.accept_full(invalid, invalid_hash, anchor + 1, parent.index, index)
+            == error::incorrect_proof_of_work);
+
+        // The same ancestry with no early interval change is usable. This
+        // excludes missing history, checkpoints, version or MTP as the cause.
+        s.cantor_activation_time = max_uint64;
+        validate_header uniform_validator(s, network);
+        auto const uniform = uniform_validator.chain_state_at(invalid, invalid_hash, anchor + 1, parent.index, index);
+        REQUIRE(uniform);
+        REQUIRE_FALSE((*uniform)->is_faster_blocks_active());
+        REQUIRE((*uniform)->work_required() != 0);
+        chain::header const valid{4, previous, null_hash, timestamp, (*uniform)->work_required(), 0};
+        CHECK(uniform_validator.accept_full(valid, chain::hash(valid), anchor + 1, parent.index, index)
+            == error::success);
+    }
+}
+#endif

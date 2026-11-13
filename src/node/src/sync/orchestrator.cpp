@@ -1826,6 +1826,14 @@ static
         detail::header_walk walk;
         std::vector<network::peer_session::ptr> header_peers;
 
+        // The height a peer is told in the version message is the connected
+        // tip's. The node sets it once at startup; from then on it follows
+        // each published connected tip, including rewinds and initial download.
+        auto record_connected_tip = [&] {
+            if (auto const view = chain.chain_view()) {
+                network.set_top_block({view->tip_hash, view->connected_tip_height});
+            }
+        };
         // The last header of the latest held batch, and the peer that sent it:
         // where a `from_last_batch` stimulus to that peer starts its locator.
         std::optional<std::pair<uint64_t, hash_digest>> held_batch_end;
@@ -2175,6 +2183,10 @@ static
 
                     auto const outcome = reorg.result;
                     auto const switched = outcome.ok;
+                    // A successful switch, or one that only disconnected part
+                    // way, publishes its actual connected tip before returning.
+                    // Replacement bodies may not arrive for some time.
+                    record_connected_tip();
 
                     // Resync from the tip the switch actually reports, so a partially
                     // disconnected range is re-downloaded instead of stranded. When it
@@ -2511,6 +2523,7 @@ static
                 // not authority to advance validation or finalization.
                 refresh_validated_tip(chain, organizer);
                 settle_connected();
+                record_connected_tip();
                 announce_connected_tip();
                 // The orphans a connected block resolves (detail/tx_relay.hpp).
                 network.tx_relay().tip_moved();

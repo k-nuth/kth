@@ -5,6 +5,7 @@
 #ifndef KTH_DOMAIN_MACHINE_INTERPRETER_IPP_
 #define KTH_DOMAIN_MACHINE_INTERPRETER_IPP_
 
+#include <kth/domain/machine/sigcheck_defer.hpp>
 #include <bit>
 #include <cstdint>
 #include <utility>
@@ -1871,10 +1872,15 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
             program.flags(),
             program.value());
 
-        bool const verified = verify_schnorr(
-            byte_span{public_key.data(), public_key.size()},
-            sighash_digest,
-            byte_span{distinguished.data(), distinguished.size()});
+        bool verified;
+        {
+            // A failed check is final under NULLFAIL: the check may be deferred.
+            KTH_SIGCHECK_DEFER_SCOPE(chain::script::is_enabled(program.flags(), script_flags::bch_nullfail));
+            verified = verify_schnorr(
+                byte_span{public_key.data(), public_key.size()},
+                sighash_digest,
+                byte_span{distinguished.data(), distinguished.size()});
+        }
 
         // BCHN: TallySigChecks(1) and TallyHashOp are called whenever sig is non-empty,
         // regardless of verification success/failure, and before the NULLFAIL check.
@@ -1902,6 +1908,8 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
         ? program.version() : script_version::unversioned;
 #endif
 
+    // A failed check is final under NULLFAIL: the check may be deferred.
+    KTH_SIGCHECK_DEFER_SCOPE(chain::script::is_enabled(program.flags(), script_flags::bch_nullfail));
     auto const [res, size] = chain::script::check_signature(
         signature,
         sighash,
@@ -2003,6 +2011,8 @@ std::pair<interpreter::result, size_t> op_check_data_common(program& program, op
         // Hash the message with SHA256
         auto const msg_hash = sha256_hash(byte_span{message.data(), message.size()});
 
+        // A failed check is final under NULLFAIL: the check may be deferred.
+        KTH_SIGCHECK_DEFER_SCOPE(chain::script::is_enabled(program.flags(), script_flags::bch_nullfail));
         if (sig.size() == schnorr_signature_size) {
             // Schnorr verification
             success = verify_schnorr(
@@ -2237,10 +2247,16 @@ interpreter::result op_check_multisig_internal(program& program, opcode op_code)
                 program.flags(),
                 program.value());
 
-            if ( ! verify_schnorr(
+            // Schnorr multisig: every check must pass, so it may be deferred.
+            bool verified;
+            {
+                KTH_SIGCHECK_DEFER_SCOPE(true);
+                verified = verify_schnorr(
                     byte_span{pub_key.data(), pub_key.size()},
                     sighash_digest,
-                    byte_span{distinguished.data(), distinguished.size()})) {
+                    byte_span{distinguished.data(), distinguished.size()});
+            }
+            if ( ! verified) {
                 return {error::sig_nullfail, op_code};
             }
 

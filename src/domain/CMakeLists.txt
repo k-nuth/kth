@@ -587,6 +587,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/light_block.cpp
         test/chain/output.cpp
         test/chain/output_point.cpp
+        test/config_integer.cpp
         test/chain/point.cpp
         test/from_data_noexcept.cpp
         test/to_data_noexcept.cpp
@@ -718,7 +719,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_to_data PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_to_data PRIVATE nanobench::nanobench)
 
+  # Script debugger benchmarks: a debug step against a plain operation.
+  add_executable(kth_domain_bench_debugger bench/debugger/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
 endif()

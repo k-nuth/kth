@@ -110,20 +110,28 @@ std::optional<script_execution_context> const& program::context() const {
 inline
 program::op_iterator program::begin() const {
     return active_frames_.empty()
-        ? script_ops_.begin()
-        : active_frames_.back().ops.begin();
+        ? script_ops_->begin()
+        : active_frames_.back().ops->begin();
 }
 
 inline
 program::op_iterator program::jump() const {
-    return active_frames_.empty() ? jump_ : active_frames_.back().jump;
+    // Kept as an offset, so it means the same in a copy of this program.
+    return active_frames_.empty()
+        ? script_ops_->begin() + static_cast<ptrdiff_t>(jump_)
+        : active_frames_.back().ops->begin() + static_cast<ptrdiff_t>(active_frames_.back().jump);
 }
 
 inline
 program::op_iterator program::end() const {
     return active_frames_.empty()
-        ? script_ops_.end()
-        : active_frames_.back().ops.end();
+        ? script_ops_->end()
+        : active_frames_.back().ops->end();
+}
+
+inline
+operation::list const& program::operations() const {
+    return active_frames_.empty() ? *script_ops_ : *active_frames_.back().ops;
 }
 
 inline
@@ -141,9 +149,7 @@ void program::set_active_script(chain::script const* s) {
         reset_active_script();
         return;
     }
-    auto ops = chain::operations(*s);
-    auto const begin = ops.begin();
-    active_frames_.push_back({s, std::move(ops), begin});
+    active_frames_.push_back({s, std::make_shared<operation::list const>(chain::operations(*s)), 0});
 }
 
 inline
@@ -202,8 +208,8 @@ bool program::increment_operation_count(int32_t public_keys) {
 inline
 bool program::mark_code_separator(size_t pc) {
     auto const& ops = active_frames_.empty()
-        ? script_ops_
-        : active_frames_.back().ops;
+        ? *script_ops_
+        : *active_frames_.back().ops;
     auto const size = ops.size();
     // Script must be non-empty and `pc` must point at a real op
     // (since we anchor the marker at `pc + 1`, pc == size-1 is the
@@ -219,12 +225,10 @@ bool program::mark_code_separator(size_t pc) {
     if (pc >= size) {
         return false;
     }
-    auto const target = ops.begin() + static_cast<ptrdiff_t>(pc + 1);
-
     if (active_frames_.empty()) {
-        jump_ = target;
+        jump_ = pc + 1;
     } else {
-        active_frames_.back().jump = target;
+        active_frames_.back().jump = pc + 1;
     }
     return true;
 }

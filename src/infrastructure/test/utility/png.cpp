@@ -115,14 +115,38 @@ TEST_CASE("png size one success", "[png tests]") {
     };
 
     data_chunk out;
-    data_sink ostream(out);
     constexpr uint32_t size = 1;
 
-    auto const result = png::write_png(raw_input_data, size, ostream);
+    auto const result = png::write_png(raw_input_data, size, out);
 
     REQUIRE(result);
     REQUIRE(out.size() == sizeof(expected_data));
     REQUIRE(std::memcmp(out.data(), expected_data, sizeof(expected_data)) == 0);
+}
+
+
+TEST_CASE("png rejects invalid input without modifying output", "[png tests]") {
+    data_chunk out{0xaa};
+    auto const original = out;
+    data_chunk const one_pixel{3, 0, 0, 0, 1, 0, 0, 0, 1};
+    data_chunk const zero_width{3, 0, 0, 0, 0, 0, 0, 0};
+    REQUIRE_FALSE(png::write_png(one_pixel, 0, out));
+    REQUIRE_FALSE(png::write_png(zero_width, 1, out));
+    REQUIRE_FALSE(png::write_png(byte_span{one_pixel}.first(8), 1, out));
+    REQUIRE_FALSE(png::write_png(one_pixel, 0xffffffffu, 72, 0xffffffffu,
+        39, png::get_default_foreground(), png::get_default_background(), out));
+    REQUIRE(out == original);
+}
+
+TEST_CASE("png appends encoded bytes to a byte buffer", "[png tests]") {
+    data_chunk const one_pixel{3, 0, 0, 0, 1, 0, 0, 0, 1};
+    data_chunk plain;
+    REQUIRE(png::write_png(one_pixel, 1, plain));
+    data_chunk appended{0xaa, 0xbb};
+    REQUIRE(png::write_png(one_pixel, 1, appended));
+    REQUIRE(appended[0] == 0xaa);
+    REQUIRE(appended[1] == 0xbb);
+    REQUIRE(data_chunk(appended.begin() + 2, appended.end()) == plain);
 }
 
 #endif // KTH_WITH_PNG

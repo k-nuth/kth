@@ -64,6 +64,14 @@ if (NOT GLOBAL_BUILD)
   find_package(secp256k1 REQUIRED)
 endif()
 
+set(KTH_SIGNATURE_VERIFICATION "secp256k1" CACHE STRING "Signature verification: secp256k1 | secp256k1_turbo")
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+  add_definitions(-DKTH_SIGVERIFY_TURBO_BATCH)
+  if (NOT TARGET secp256k1-turbo::secp256k1-turbo)
+    find_package(secp256k1-turbo REQUIRED)
+  endif()
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Boost.Program_options is gone — the CLI is now built on CLI11.
   find_package(Boost COMPONENTS thread REQUIRED)
@@ -234,7 +242,6 @@ set(kth_sources_just_legacy
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
         src/utility/monitor.cpp
-        src/utility/ostream_writer.cpp
         src/utility/prioritized_mutex.cpp
         src/utility/scope_lock.cpp
 
@@ -352,10 +359,7 @@ set(kth_headers
 
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
-    include/kth/infrastructure/impl/utility/ostream_writer.ipp
-    include/kth/infrastructure/impl/utility/pending.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
-    include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
     include/kth/infrastructure/message/message_tools.hpp
@@ -378,7 +382,6 @@ set(kth_headers
     include/kth/infrastructure/utility/collection.hpp
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
-    include/kth/infrastructure/utility/container_sink.hpp
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
@@ -389,8 +392,6 @@ set(kth_headers
     include/kth/infrastructure/utility/interprocess_lock.hpp
     include/kth/infrastructure/utility/monitor.hpp
     include/kth/infrastructure/utility/noncopyable.hpp
-    include/kth/infrastructure/utility/ostream_writer.hpp
-    include/kth/infrastructure/utility/pending.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
     include/kth/infrastructure/utility/duration_jitter.hpp
@@ -602,6 +603,9 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC fmt::fmt-header-only)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+  target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1-turbo::secp256k1-turbo)
+endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
@@ -670,7 +674,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/formats/base_64.cpp
     test/formats/base_85.cpp
 
-    test/log/log.cpp
 
     test/machine/number.cpp
 
@@ -697,6 +700,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
+    test/utility/parse_integer.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
