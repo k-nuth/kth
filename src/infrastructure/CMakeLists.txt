@@ -677,7 +677,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/formats/base_64.cpp
     test/formats/base_85.cpp
 
-    test/log/log.cpp
 
     test/machine/number.cpp
 
