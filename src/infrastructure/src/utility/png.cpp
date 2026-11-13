@@ -11,12 +11,10 @@
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/color.hpp>
-#include <kth/infrastructure/utility/container_sink.hpp>
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 namespace kth {
 
-bool png::write_png(byte_span data, uint32_t size, std::ostream& out) {
+bool png::write_png(byte_span data, uint32_t size, data_chunk& out) {
     return png::write_png(data, size, dots_per_inch, margin, inches_per_meter,
         get_default_foreground(), get_default_background(), out);
 }
@@ -24,8 +22,8 @@ bool png::write_png(byte_span data, uint32_t size, std::ostream& out) {
 extern "C" void sink_write(png_structp png_ptr, png_bytep data, png_size_t length) {
     static_assert(sizeof(length) <= sizeof(size_t), "png_size_t too large");
     auto const size = size_t(length);
-    auto& sink = *reinterpret_cast<ostream_writer*>(png_get_io_ptr(png_ptr));
-    sink.write_bytes(reinterpret_cast<uint8_t const*>(data), size);
+    auto& out = *static_cast<data_chunk*>(png_get_io_ptr(png_ptr));
+    out.insert(out.end(), data, data + size);
 }
 
 extern "C" void error_callback(png_structp png_ptr, png_const_charp error_message) {
@@ -34,7 +32,7 @@ extern "C" void error_callback(png_structp png_ptr, png_const_charp error_messag
 
 bool png::write_png(byte_span input, uint32_t size, uint32_t dots_per_inch,
     uint32_t margin, uint32_t inches_per_meter, color const& foreground,
-    color const& background, std::ostream& out)
+    color const& background, data_chunk& out)
 {
     if (size == 0) {
         return false;
@@ -53,35 +51,48 @@ bool png::write_png(byte_span input, uint32_t size, uint32_t dots_per_inch,
     }
     auto const width = *width_exp;
 
-    if (kth::max_size_t / width < width) {
+    if (width == 0 || kth::max_size_t / width < width) {
         return false;
     }
 
-    auto const area = width * width;
+    auto const area = size_t{width} * width;
     auto const data = reader.read_bytes(area);
     if ( ! data) {
         return false;
     }
 
+    // libpng limits dimensions to 31 bits. Compute in 64 bits before narrowing.
+    auto const unscaled_width = uint64_t{width} + uint64_t{margin} * 2;
+    if (unscaled_width > PNG_UINT_31_MAX / size) {
+        return false;
+    }
+
+    auto const expanded_width = unscaled_width * size;
+
+    struct resources {
+        png_structp png = nullptr;
+        png_infop info = nullptr;
+        ~resources() { if (png) png_destroy_write_struct(&png, &info); }
+    } owned;
+    data_chunk encoded;
     try {
         static constexpr int32_t bit_depth = 1;
         static constexpr int32_t bits_per_byte = 8;
         static constexpr uint8_t margin_value = 0xff;
 
-        // TODO: unguarded overflow conditions.
-        auto const margin_size = margin * size;
-        auto const realwidth = (width + margin * 2) * size;
+        auto const margin_size = uint64_t{margin} * size;
+        auto const realwidth = static_cast<uint32_t>(expanded_width);
         auto const row_size = (realwidth + 7) / bits_per_byte;
 
         data_chunk row;
         row.reserve(row_size);
 
-        auto png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+        auto png_ptr = owned.png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, error_callback, nullptr);
         if (png_ptr == nullptr) {
             return false;
         }
 
-        auto info_ptr = png_create_info_struct(png_ptr);
+        auto info_ptr = owned.info = png_create_info_struct(png_ptr);
         if (info_ptr == nullptr) {
             return false;
         }
@@ -101,9 +112,7 @@ bool png::write_png(byte_span input, uint32_t size, uint32_t dots_per_inch,
         png_set_PLTE(png_ptr, info_ptr, palette, 2);
         png_set_tRNS(png_ptr, info_ptr, alpha_values, 2, nullptr);
 
-        ostream_writer sink(out);
-        png_set_write_fn(png_ptr, &sink, sink_write, nullptr);
-        png_set_error_fn(png_ptr, nullptr, error_callback, nullptr);
+        png_set_write_fn(png_ptr, &encoded, sink_write, nullptr);
 
         png_set_IHDR(png_ptr, info_ptr, realwidth, realwidth, bit_depth,
             PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
@@ -155,9 +164,7 @@ bool png::write_png(byte_span input, uint32_t size, uint32_t dots_per_inch,
         }
 
         png_write_end(png_ptr, info_ptr);
-        png_destroy_write_struct(&png_ptr, &info_ptr);
-
-        out.flush();
+        out.insert(out.end(), encoded.begin(), encoded.end());
     } catch (std::runtime_error const&) {
         return false;
     }

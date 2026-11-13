@@ -22,7 +22,7 @@ conan profile detect --exist-ok
 The C API is included in the unified `kth` package:
 
 ```sh
-conan install --requires=kth/1.6.1 -o 'kth/*:shared=True' --build=missing
+conan install --requires=kth/1.7.0 -o 'kth/*:shared=True' --build=missing
 ```
 
 ### "Hello, Knuth!"
@@ -111,7 +111,7 @@ startup, before shutdown.
 Create `conanfile.txt` with the shared-library requirement and Conan 2 generators:
 
 ```sh
-printf "[requires]\nkth/1.6.1\n[options]\nkth/*:shared=True\n[generators]\nCMakeDeps\nCMakeToolchain\n" > conanfile.txt
+printf "[requires]\nkth/1.7.0\n[options]\nkth/*:shared=True\n[generators]\nCMakeDeps\nCMakeToolchain\n" > conanfile.txt
 ```
 
 Save this as `CMakeLists.txt` alongside `hello_knuth.c`:

@@ -78,7 +78,7 @@ jobs:
 
       - uses: ./ci_utils/.github/actions/setup-conan
       - uses: ./ci_utils/.github/actions/setup-kthbuild
-      - uses: lukka/get-cmake@6d674ef0d7703f12f77182ca400e1e7be99fd399
+      - uses: lukka/get-cmake@16e8153a8b4918849d92aad131befe67a3705daa  # v4.5.0
 
       # - uses: github/codeql-action/init@v2
       #   with:
