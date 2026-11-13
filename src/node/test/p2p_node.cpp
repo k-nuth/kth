@@ -721,7 +721,9 @@ TEST_CASE("p2p_node connect rejects a numeric destination already in the manager
     REQUIRE(numeric);
     REQUIRE(add_result == error::success);
     REQUIRE(admitted == 1);
-    REQUIRE(negotiations >= 1);
+    // A literal IP already in the manager is refused before any dial, so the
+    // proxy is not asked for it.
+    REQUIRE(negotiations == 0);
     REQUIRE( ! connect_result.has_value());
     REQUIRE(connect_result.error() == error::address_in_use);
 }
