@@ -497,9 +497,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_primitives.cpp
           test/sv2_messages.cpp
           test/sv2_connection.cpp
-          test/settings.cpp
-          test/utility.cpp
-          test/utility.hpp)
+          test/settings.cpp)
 
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
