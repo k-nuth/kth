@@ -208,5 +208,48 @@ class Grpc(ConanFile):
                          'Native RPC CI would compile two different gRPC binaries')
 
 
+def pull_request_paths():
+    block = re.search(r"^  pull_request:\n    paths:\n((?:      .*\n)+)", WORKFLOW.read_text(), re.M)
+    if block is None:
+        raise AssertionError('Missing pull_request paths')
+    return re.findall(r"^      - '(.+)'$", block[1], re.M)
+
+
+def path_pattern(glob):
+    """A GitHub Actions path filter as a regular expression: `*` stays inside
+    one directory and `**` crosses them."""
+    parts = re.split(r'(\*\*|\*)', glob)
+    return re.compile(''.join(
+        '.*' if part == '**' else '[^/]*' if part == '*' else re.escape(part) for part in parts))
+
+
+class RpcPathFilterTests(unittest.TestCase):
+    """A pull request builds the backends only when it touches a listed path,
+    so every file with code that depends on the backend has to be listed."""
+
+    GUARD = re.compile(r'KTH_WITH_(?:RPC|GRPC|CAPNPROTO_RPC)\b')
+    SOURCES = ('.cpp', '.hpp', '.h', '.ipp', '.cmake', '.txt')
+
+    def test_every_backend_dependent_file_triggers_the_workflow(self):
+        patterns = [path_pattern(glob) for glob in pull_request_paths()]
+        dependent = [path for path in (ROOT / 'src/node/examples').rglob('*') if path.is_file()]
+        for top in ('src', 'cmake', 'test_package'):
+            for path in (ROOT / top).rglob('*'):
+                if path.is_file() and path.name.endswith(self.SOURCES) \
+                        and self.GUARD.search(path.read_text(errors='replace')):
+                    dependent.append(path)
+        self.assertGreater(len(dependent), 10)
+        missing = sorted({path.relative_to(ROOT).as_posix() for path in dependent
+                          if not any(pattern.fullmatch(path.relative_to(ROOT).as_posix())
+                                     for pattern in patterns)})
+        self.assertEqual(missing, [], 'Backend-dependent files outside the pull request paths')
+
+    def test_path_patterns_follow_the_workflow_glob_rules(self):
+        self.assertTrue(path_pattern('src/node/src/rpc/**').fullmatch('src/node/src/rpc/a/b.cpp'))
+        self.assertTrue(path_pattern('src/node/test/*rpc*').fullmatch('src/node/test/json_rpc_x.cpp'))
+        self.assertFalse(path_pattern('src/node/test/*rpc*').fullmatch('src/node/test/rpc/x.cpp'))
+        self.assertFalse(path_pattern('src/node/src/full_node.cpp').fullmatch('src/node/src/full_node.cpp.in'))
+
+
 if __name__ == '__main__':
     unittest.main()

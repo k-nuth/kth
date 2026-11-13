@@ -136,6 +136,12 @@ target_link_libraries(consumer PRIVATE kth::kth)
              "-DCMAKE_TOOLCHAIN_FILE=generators/conan_toolchain.cmake", "-DCMAKE_BUILD_TYPE=Release"], root, env)
         run(["cmake", "--build", "build/build/Release"], root, env)
         command = step["run"].replace("${{ inputs.build-version }}", "ci-smoke")
+        # The short form, as on a pull request: the tested variant is packaged
+        # and consumed, and nothing else is built.
+        run(["bash", "-e", "-c", command], root, dict(env, KTH_VALIDATE_ALTERNATE_PACKAGE="0"))
+        builds = (root / "built.log").read_text().splitlines()
+        if builds != ["ON"]:
+            raise AssertionError(f"the short validation built another variant: {builds}")
         run(["bash", "-e", "-c", command], root, env)
         builds = (root / "built.log").read_text().splitlines()
         if builds != ["ON", "OFF"]:
