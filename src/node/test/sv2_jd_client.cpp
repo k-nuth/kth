@@ -1870,7 +1870,7 @@ TEST_CASE("sv2 JD payout error and timeout fall back without replacing the solo 
     require_no_reconnect(fixture);
 }
 
-TEST_CASE("sv2 JD repeated stale payout answers fall back to solo", "[sv2 jd]") {
+TEST_CASE("sv2 JD stale payout answers keep both upstreams and the pool is asked again", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_pay_repeat");
     client_fixture fixture;
     auto configuration = settings(fixture.pool, fixture.jds);
@@ -1882,31 +1882,46 @@ TEST_CASE("sv2 JD repeated stale payout answers fall back to solo", "[sv2 jd]") 
     handshake_upstreams(fixture, true, nullptr, true);
     miner_link miner(fixture, provider.port);
     REQUIRE(pays(coinbase_from(miner.work), solo->script, 1));
+    auto const tip = chain->chain().chain_view();
+    REQUIRE(tip);
+
+    // The pool's node is on another tip than this one: every request for this
+    // tip is answered stale, with no notice. Twice here, which used to end the
+    // session. The second wait is twice the first: every request takes one of
+    // the pool's tokens.
     auto const reserved = output_bytes(paid_split(false));
-    auto const first = fixture.jds.receive<allocate_mining_job_token>();
-    fixture.jds.send(allocate_mining_job_token_success{first.request_id, {1, 2, 3}, reserved});
-    auto const first_request = fixture.jds.receive<request_payout_outputs>();
-    REQUIRE(first_request.request_id == first.request_id);
-    fixture.jds.send(request_payout_outputs_error{first_request.request_id,
-        std::string(error_stale_payout_outputs)});
-    auto const second = fixture.jds.receive<allocate_mining_job_token>();
-    REQUIRE(second.request_id == first.request_id + 1);
-    fixture.jds.send(allocate_mining_job_token_success{second.request_id, {1, 2, 3}, reserved});
-    auto const second_request = fixture.jds.receive<request_payout_outputs>();
-    REQUIRE(second_request.request_id == second.request_id);
-    fixture.jds.send(request_payout_outputs_error{second_request.request_id,
-        std::string(error_stale_payout_outputs)});
-    auto pool_closed = fixture.begin_read(fixture.pool.socket, 1);
-    auto jds_closed = fixture.begin_read(fixture.jds.socket, 1);
-    auto pending = fixture.begin_read(miner.socket, 1);
-    REQUIRE(fixture.wait_until([&] { return pool_closed->done && jds_closed->done; }));
-    REQUIRE(pool_closed->size == 0);
-    REQUIRE(pool_closed->error == ::asio::error::eof);
-    REQUIRE(jds_closed->size == 0);
-    REQUIRE(jds_closed->error == ::asio::error::eof);
-    CHECK_FALSE(pending->done);
-    solo_job(fixture, provider.port, solo->script);
-    require_no_reconnect(fixture);
+    uint32_t previous_id = 0;
+    for (int round = 0; round < 2; ++round) {
+        CAPTURE(round);
+        auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
+        if (round != 0) REQUIRE(allocation.request_id == previous_id + 1);
+        previous_id = allocation.request_id;
+        fixture.jds.send(allocate_mining_job_token_success{allocation.request_id, {1, 2, 3}, reserved});
+        auto const request = fixture.jds.receive<request_payout_outputs>();
+        REQUIRE(request.request_id == allocation.request_id);
+        auto const asked = std::chrono::steady_clock::now();
+        fixture.jds.send(request_payout_outputs_error{request.request_id,
+            std::string(error_stale_payout_outputs)});
+
+        // Not at once: the answer would be the same. The next token is asked
+        // for after the wait, on the same two connections.
+        auto const arrived = [&] {
+            std::error_code ignored;
+            return fixture.jds.socket.available(ignored) > 0;
+        };
+        CHECK_FALSE(fixture.wait_until(arrived, 400ms));
+        REQUIRE(fixture.wait_until(arrived));
+        CHECK(std::chrono::steady_clock::now() - asked >= (round == 0 ? 800ms : 1800ms));
+    }
+
+    // The pool's node reaches the tip, and the same session declares on it:
+    // the third token, the payout outputs, the declaration and the custom job.
+    auto const round = complete_payout(fixture, miner, true, true, tip->connected_tip_height + 1);
+    REQUIRE(round.request.request_id == previous_id + 1);
+    fixture.pool.send(set_custom_mining_job_success{round.custom.channel_id,
+        round.custom.request_id, 77});
+    auto pool_quiet = fixture.begin_read(fixture.pool.socket, 1);
+    CHECK_FALSE(fixture.wait_until([&] { return pool_quiet->done; }, 300ms));
 }
 
 TEST_CASE("sv2 JD forwards a share for an upstream job id of zero without falling back", "[sv2 jd]") {

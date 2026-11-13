@@ -145,6 +145,12 @@ private:
     blockchain::block_chain* const chain_;
     std::chrono::seconds const response_timeout_;
     std::optional<std::chrono::steady_clock::time_point> job_deadline_;
+    // When to declare the current tip again after the pool had no payout
+    // outputs for it, how long the next such wait is, and whether the wait
+    // has been logged.
+    std::optional<std::chrono::steady_clock::time_point> payout_retry_;
+    std::chrono::seconds payout_wait_{1};
+    bool payout_waiting_ = false;
     ::asio::steady_timer declaration_wake_;
     // Wakes report_hash_rate() for a changed sum, unless an update was just
     // sent: then it expires at the end of the hold and the loop reads the sum.

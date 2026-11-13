@@ -95,6 +95,15 @@ constexpr size_t max_pending_solutions = 2;
 // of downstream opens, updates and closes reaches the pool as one latest sum.
 constexpr auto hash_rate_hold = std::chrono::seconds(1);
 
+// How long to leave a pool whose node is on another tip before asking it for
+// payout outputs again. A node is behind a new block for less than the first
+// wait. Each further wait on the same tip is twice the one before, up to the
+// longest: every request takes a token, and a pool keeps a token for minutes
+// and closes a connection that holds too many. At the longest wait a pool
+// that stays behind sees two requests a minute.
+constexpr auto payout_retry_delay = std::chrono::seconds(1);
+constexpr auto payout_retry_longest = std::chrono::seconds(30);
+
 } // namespace
 
 jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
@@ -374,6 +383,22 @@ bool jd_client::dispatch(jd_declaration::result result) {
         stop();
         return false;
     }
+    if (result.deferred) {
+        // Both upstreams stay. Until the pool answers for this tip the
+        // downstream work pays the solo address, as before the first
+        // declaration.
+        if ( ! payout_waiting_) {
+            payout_waiting_ = true;
+            spdlog::info("[sv2 jd] Pool has no payout outputs for this node's tip yet; asking again");
+        }
+        job_deadline_.reset();
+        payout_retry_ = std::chrono::steady_clock::now() + payout_wait_;
+        payout_wait_ = std::min(payout_wait_ * 2, std::chrono::seconds(payout_retry_longest));
+        retire_cached();
+        publish_solo();
+        wake_declarations();
+        return true;
+    }
     if (result.progress) {
         if (jobs_.pending()) job_deadline_ = std::chrono::steady_clock::now() + response_timeout_;
         else job_deadline_.reset();
@@ -389,6 +414,8 @@ bool jd_client::dispatch(jd_declaration::result result) {
     // miners a coinbase the pool never received.
     if (jobs_.work()) publish_pool();
     if (result.accepted) {
+        payout_waiting_ = false;
+        payout_wait_ = payout_retry_delay;
         spdlog::info("[sv2 jd] Pool accepted local template as job {}",
             jobs_.work()->upstream_job_id);
         flush_cached();
@@ -424,7 +451,15 @@ bool jd_client::dispatch(jd_declaration::result result) {
         }
         if (chain_ && mining_session_.ready() && declaration_session_.ready() && ! jobs_.pending()) {
             auto const view = chain_->chain_view();
-            if (view && previous != view->tip_hash && mining_session_.channel()) {
+            // The pool had no payout outputs for this tip a moment ago. The
+            // tip is the same, so nothing else would declare it again.
+            auto const retrying = payout_retry_
+                && std::chrono::steady_clock::now() >= *payout_retry_;
+            if (view && (previous != view->tip_hash || retrying) && mining_session_.channel()) {
+                payout_retry_.reset();
+                // Another tip is another race: the pool's node is behind it
+                // for a moment at most, unless it is behind for good.
+                if (previous != view->tip_hash) payout_wait_ = payout_retry_delay;
                 // Allocation outputs fit B0_64K. Reserve their maximum size
                 // before selecting transactions; the builder checks the exact
                 // completed coinbase against the returned block limit.
@@ -442,14 +477,19 @@ bool jd_client::dispatch(jd_declaration::result result) {
                     // be flushed under the next job id.
                     retire_cached();
                     if ( ! dispatch(jobs_.start(std::move(*value), *mining_session_.channel()))) co_return;
+                } else if (retrying && ! jobs_.pending()) {
+                    // No template to declare this time. Keep the wait, or the
+                    // same tip is never declared.
+                    payout_retry_ = std::chrono::steady_clock::now() + payout_wait_;
                 }
             }
         }
         // A tip or reply can arrive while the template fetch is suspended.
         // Remember that wake even when there was no timer wait to cancel.
         if (declaration_changed_) continue;
-        declaration_wake_.expires_at(job_deadline_.value_or(
-            std::chrono::steady_clock::time_point::max()));
+        auto wake = job_deadline_.value_or(std::chrono::steady_clock::time_point::max());
+        if (payout_retry_) wake = std::min(wake, *payout_retry_);
+        declaration_wake_.expires_at(wake);
         (void)co_await declaration_wake_.async_wait(::asio::as_tuple(::asio::use_awaitable));
     }
 }

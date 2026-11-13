@@ -297,6 +297,23 @@ jd_declaration::result jd_declaration::retry_allocation() {
     return send_allocation();
 }
 
+jd_declaration::result jd_declaration::defer() {
+    // The same end as supersede(): the request is over, and a late reply to it
+    // must not be applied to the declaration that follows.
+    if (retired_request_ids_.size() == max_retired_request_ids) {
+        retired_request_ids_.pop_front();
+    }
+    retired_request_ids_.push_back(request_id_);
+    state_ = state::idle;
+    restart_ = false;
+    work_.reset();
+    transactions_.clear();
+    // template_ stays, as after fail(): the solo payout keeps that selection.
+    result out;
+    out.deferred = true;
+    return out;
+}
+
 jd_declaration::result jd_declaration::declare_work(data_chunk token) {
     if ( ! full_template_) return install(std::move(token));
     declare_mining_job message;
@@ -373,7 +390,6 @@ jd_declaration::result jd_declaration::note_stale(byte_span payload) {
     if ( ! parse<payout_outputs_stale>(payload)) return fail("malformed payout stale notice");
     if (state_ == state::failed) return {};
     ++notice_epoch_;
-    unexplained_stale_ = 0;
     // One request stays in flight. The reply that is already owed is consumed,
     // then a new token is allocated. A second request is not sent early.
     if (pending()) restart_ = true;
@@ -425,12 +441,16 @@ jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_succ
 
 jd_declaration::result jd_declaration::refuse_payout(request_payout_outputs_error const& error) {
     // A token allocated before the latest notice is the race that notice describes.
-    // One stale answer after that notice is retried; the next is a refusal.
     if (error.error_code == error_stale_payout_outputs) {
         if (token_epoch_ < notice_epoch_) return retry_allocation();
-        if (unexplained_stale_ >= 1) return fail("repeated stale payout outputs");
-        ++unexplained_stale_;
-        return retry_allocation();
+        // With no notice, the token is on the pool's current share and the
+        // request names another block than the pool's own template: the
+        // pool's node and this one are not on the same tip. That happens at
+        // every new block, to whichever of the two hears of it last, and it
+        // ends when that one catches up. Asking again at once gets the same
+        // answer, and it is not a refusal of this client, so the attempt
+        // ends here and the owner starts another after a wait.
+        return defer();
     }
     return fail("payout outputs refused: " + error.error_code);
 }

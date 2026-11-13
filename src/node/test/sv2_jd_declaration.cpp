@@ -873,7 +873,7 @@ TEST_CASE("sv2 JD rejects a payout success that is not the reserved revenue", "[
     refuse_incomplete(payout_outputs_stale{}, jd_peer::declaration, [] { return requesting(); });
 }
 
-TEST_CASE("sv2 JD stale payout outputs allocate again until the race repeats", "[sv2 jd]") {
+TEST_CASE("sv2 JD stale payout outputs allocate again after a notice and wait without one", "[sv2 jd]") {
     auto noticed = requesting();
     auto const notice = process(noticed, jd_peer::declaration, payout_outputs_stale{});
     REQUIRE(notice.error.empty());
@@ -885,27 +885,65 @@ TEST_CASE("sv2 JD stale payout outputs allocate again until the race repeats", "
     REQUIRE(decode<allocate_mining_job_token>(consumed.declaration).request_id == 2);
     REQUIRE_FALSE(noticed.work());
 
+    // A stale answer with no notice before it: the pool's node is on another
+    // tip. The attempt ends with nothing sent and nothing failed, and the same
+    // object declares again.
     auto raced = requesting();
     auto const first = process(raced, jd_peer::declaration,
         request_payout_outputs_error{1, std::string(error_stale_payout_outputs)});
     REQUIRE(first.error.empty());
-    REQUIRE(decode<allocate_mining_job_token>(first.declaration).request_id == 2);
-    auto const second_request = process(raced, jd_peer::declaration, allocation(2));
-    REQUIRE(decode<request_payout_outputs>(second_request.declaration).request_id == 2);
-    auto const repeated = process(raced, jd_peer::declaration,
-        request_payout_outputs_error{2, std::string(error_stale_payout_outputs)});
-    require_failure(raced, repeated);
-    REQUIRE(repeated.error.find("repeated stale") != std::string::npos);
+    REQUIRE(first.deferred);
+    REQUIRE(first.declaration.empty());
+    REQUIRE(first.mining.empty());
+    REQUIRE_FALSE(first.progress);
+    REQUIRE_FALSE(first.accepted);
+    REQUIRE_FALSE(raced.pending());
     REQUIRE(raced.has_template());
     REQUIRE_FALSE(raced.work());
 
-    // A notice clears the unexplained count, including one that arrives while
-    // the replacement token is still being allocated.
+    // A reply to the request that ended is ignored, whatever it says.
+    auto const late = process(raced, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    REQUIRE(late.error.empty());
+    REQUIRE_FALSE(late.deferred);
+    REQUIRE(late.declaration.empty());
+    REQUIRE_FALSE(raced.pending());
+
+    auto const again = raced.start(mining_template(), channel());
+    REQUIRE(again.error.empty());
+    REQUIRE_FALSE(again.deferred);
+    REQUIRE(decode<allocate_mining_job_token>(again.declaration).request_id == 2);
+    auto const second_request = process(raced, jd_peer::declaration, allocation(2));
+    REQUIRE(decode<request_payout_outputs>(second_request.declaration).request_id == 2);
+
+    // It can happen any number of times, one block after another, and never
+    // becomes a refusal.
+    for (uint32_t id = 2; id < 12; ++id) {
+        CAPTURE(id);
+        auto const stale = process(raced, jd_peer::declaration,
+            request_payout_outputs_error{id, std::string(error_stale_payout_outputs)});
+        REQUIRE(stale.error.empty());
+        REQUIRE(stale.deferred);
+        REQUIRE_FALSE(raced.pending());
+        REQUIRE(decode<allocate_mining_job_token>(
+            raced.start(mining_template(), channel()).declaration).request_id == id + 1);
+        REQUIRE(decode<request_payout_outputs>(
+            process(raced, jd_peer::declaration, allocation(id + 1)).declaration).request_id == id + 1);
+    }
+    auto const settled = process(raced, jd_peer::declaration, payout_success(12, paid_outputs(), true));
+    REQUIRE(settled.error.empty());
+    REQUIRE_FALSE(settled.deferred);
+    REQUIRE(raced.pending());
+
+    // A notice that arrives while the replacement token is being allocated
+    // still makes that token the stale one: it is replaced, not waited on.
     auto reset = requesting();
-    auto const counted = process(reset, jd_peer::declaration,
+    auto const while_requesting = process(reset, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(while_requesting.error.empty());
+    auto const explained = process(reset, jd_peer::declaration,
         request_payout_outputs_error{1, std::string(error_stale_payout_outputs)});
-    REQUIRE(counted.error.empty());
-    REQUIRE(decode<allocate_mining_job_token>(counted.declaration).request_id == 2);
+    REQUIRE(explained.error.empty());
+    REQUIRE_FALSE(explained.deferred);
+    REQUIRE(decode<allocate_mining_job_token>(explained.declaration).request_id == 2);
     auto const while_allocating = process(reset, jd_peer::declaration, payout_outputs_stale{});
     REQUIRE(while_allocating.error.empty());
     REQUIRE(while_allocating.declaration.empty());
@@ -913,15 +951,13 @@ TEST_CASE("sv2 JD stale payout outputs allocate again until the race repeats", "
     REQUIRE(decode<allocate_mining_job_token>(discarded.declaration).request_id == 3);
     REQUIRE(decode<request_payout_outputs>(
         process(reset, jd_peer::declaration, allocation(3)).declaration).request_id == 3);
-    REQUIRE(decode<allocate_mining_job_token>(process(reset, jd_peer::declaration,
-        request_payout_outputs_error{3, std::string(error_stale_payout_outputs)}).declaration)
-        .request_id == 4);
-    REQUIRE(decode<request_payout_outputs>(
-        process(reset, jd_peer::declaration, allocation(4)).declaration).request_id == 4);
-    auto const again = process(reset, jd_peer::declaration,
-        request_payout_outputs_error{4, std::string(error_stale_payout_outputs)});
-    require_failure(reset, again);
-    REQUIRE(again.error.find("repeated stale") != std::string::npos);
+    // The token of request 3 was allocated after the last notice, so a stale
+    // answer to it is the tip difference again.
+    auto const unexplained = process(reset, jd_peer::declaration,
+        request_payout_outputs_error{3, std::string(error_stale_payout_outputs)});
+    REQUIRE(unexplained.error.empty());
+    REQUIRE(unexplained.deferred);
+    REQUIRE_FALSE(reset.pending());
 
     jd_declaration capped("account.worker", true);
     capped.use_payout_outputs(true);
