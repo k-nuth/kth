@@ -376,7 +376,7 @@ op_result interpreter::run(program& program) {
     function_table_t function_table;
     size_t invoke_depth = 0;
 
-    auto const outcome = run_script(program, program.get_script().operations(),
+    auto const outcome = run_script(program, program.operations(),
                                     function_table, invoke_depth);
     if ( ! outcome) return outcome;
 
@@ -409,7 +409,9 @@ namespace {
 // frame so the caller can iterate through the function body
 // one op at a time) is future work tied to BCH 2026-May surfacing.
 op_result step_one(debug_snapshot& s) {
-    auto const ops = s.prog.get_script().operations();
+    // The program's own parsed operations: parsing the script here would
+    // make every step cost as much as the script is long.
+    auto const& ops = s.prog.operations();
     if (s.step >= ops.size()) {
         return {error::invalid_operation_count, std::nullopt};
     }
@@ -480,7 +482,7 @@ debug_snapshot interpreter::debug_begin(program prog) {
     // An empty script has nothing to step through; mark the snapshot
     // done up front so `debug_run` / `debug_step` don't synthesise a
     // spurious `invalid_operation_count` on the first tick.
-    if (s.prog.get_script().operations().empty()) {
+    if (s.prog.operations().empty()) {
         s.done = true;
     }
     return s;
@@ -495,7 +497,7 @@ debug_snapshot interpreter::debug_step(debug_snapshot snapshot) {
         snapshot.done = true;
         return snapshot;
     }
-    if (snapshot.step >= snapshot.prog.get_script().operations().size()) {
+    if (snapshot.step >= snapshot.prog.operations().size()) {
         snapshot.done = true;
     }
     return snapshot;
