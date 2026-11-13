@@ -6,7 +6,6 @@
 #define KTH_INFRASTRUCTURE_PNG_HPP
 
 #include <cstdint>
-#include <ostream>
 
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/define.hpp>
@@ -34,13 +33,15 @@ struct KI_API png {
         return default_background;
     }
 
+    // Append encoded PNG bytes on success; leave out unchanged on failure.
     static
-    bool write_png(byte_span data, uint32_t size, std::ostream& out);
+    bool write_png(byte_span data, uint32_t size, data_chunk& out);
 
+    // Append encoded PNG bytes on success; leave out unchanged on failure.
     static
     bool write_png(byte_span data, uint32_t size,
         uint32_t dots_per_inch, uint32_t margin, uint32_t inches_per_meter,
-        color const& foreground, color const& background, std::ostream& out);
+        color const& foreground, color const& background, data_chunk& out);
 };
 
 } // namespace kth
