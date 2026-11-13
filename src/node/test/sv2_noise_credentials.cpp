@@ -295,9 +295,11 @@ TEST_CASE("Noise online authority signs a current certificate long after startup
     CHECK(current->valid_from == later - 3600);
     CHECK(current->not_valid_after == later + validity);
     CHECK(current->verify(authority, provider, later));
-    // A client whose clock is up to an hour behind the provider's accepts it.
+    // A client whose clock is up to an hour behind the provider's accepts it,
+    // and the client's own leeway comes on top of that.
     CHECK(current->verify(authority, provider, later - 3600));
-    CHECK_FALSE(current->verify(authority, provider, later - 3601));
+    CHECK(current->verify(authority, provider, later - 3600 - certificate_clock_leeway_seconds));
+    CHECK_FALSE(current->verify(authority, provider, later - 3601 - certificate_clock_leeway_seconds));
 
     // Near the end of the timestamp range the lifetime is cut, never wrapped.
     auto const last = credentials->certificate_at(std::numeric_limits<uint32_t>::max() - 1);
