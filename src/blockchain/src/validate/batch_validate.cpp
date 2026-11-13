@@ -25,6 +25,12 @@
 #include <kth/domain/chain/faster_blocks.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <mutex>
+#include <secp256k1_turbo/batch_verify.hpp>
+#include <secp256k1_turbo/deferred.hpp>
+#endif
+
 namespace kth::blockchain {
 
 using namespace kth::domain::chain;
@@ -163,7 +169,8 @@ code validate_block_batch(
     std::vector<block_const_ptr> const& blocks,
     std::span<hash_list const> txids,
     size_t start_height,
-    batch_rejection& rejection) {
+    batch_rejection& rejection,
+    [[maybe_unused]] database::header_abla_record const* unpublished_parent) {
 
     if (blocks.empty()) {
         return error::success;
@@ -272,7 +279,8 @@ code validate_block_batch(
         if (last_idx == header_index::null_index) {
             return fault(error::not_found);
         }
-        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes, last_idx);
+        auto states = abla_states_for_batch(chain, settings, network, uint32_t(start_height), sizes,
+            last_idx, unpublished_parent);
         if ( ! states) {
             return fault(states.error());
         }
@@ -390,10 +398,18 @@ code validate_block_batch(
 #endif
 
         for (auto const& tx : block.transactions()) {
+#if defined(KTH_CURRENCY_BCH)
+            // Descartes (BCHN: Upgrade 9) restricts every transaction's
+            // version, including coinbase. Blocks do not go through accept().
+            if (script::is_enabled(block_flags[i], domain::machine::script_flags::bch_tokens)
+                && (tx.version() < transaction_version_min || tx.version() > transaction_version_max)) {
+                return refuse(i, error::invalid_tx_version);
+            }
+#endif
             auto const finality_time = script::is_enabled(block_flags[i], domain::machine::script_flags::bip113_rule)
                 ? block_mtp[i] : block.header().timestamp();
-            // Coinbase finality is covered too: a non-final input sequence
-            // makes its locktime binding like any other transaction's.
+            // The branch schedule gates the coinbase exemption after H_a;
+            // ordinary transactions retain their absolute timelocks.
             if (!tx.is_final(block_schedule[i], height, finality_time)) {
                 return refuse(i, error::block_non_final);
             }
@@ -527,14 +543,20 @@ code validate_block_batch(
         uint64_t coinbase_value = 0;
         auto const& ticks = block_schedule[i];
 
-        // CHIP-2025-03: from the block built on H_a, a coinbase with version 1,
-        // locktime 0 and outputs of at least 25 BCH is invalid.
-        if (block_governed[i] != 0 && blocks[i]->has_forbidden_coinbase_shape()) {
+        // Test networks enforce the shape after H_a; mainnet uses the fixed
+        // collision heights and the exact-TXID exception from the CHIP.
+        if ((network == domain::config::network::mainnet || block_governed[i] != 0)
+            && blocks[i]->has_forbidden_coinbase_shape(network, height)) {
             return refuse(i, error::coinbase_shape);
         }
 
         for (auto const& tx : blocks[i]->transactions()) {
             if (tx.is_coinbase()) {
+#if defined(KTH_CURRENCY_BCH)
+                if (auto const ec = tx.validate_tokens(block_flags[i]); ec) {
+                    return refuse(i, ec);
+                }
+#endif
                 for (auto const& o : tx.outputs()) {
                     coinbase_value += o.value();
                 }
@@ -623,10 +645,24 @@ code validate_block_batch(
                 in_value += out->value();
             }
 
+#if defined(KTH_CURRENCY_BCH)
+            if (auto const ec = tx.validate_token_birth(block_flags[i], network); ec) {
+                return refuse(i, ec);
+            }
+#endif
+
             if (script::is_enabled(block_flags[i], domain::machine::script_flags::bip68_rule)
                 && tx.is_locked(ticks, height, block_mtp[i])) {
                 return refuse(i, error::sequence_locked);
             }
+
+#if defined(KTH_CURRENCY_BCH)
+            // Conservation and NFT capabilities need the actual spent token
+            // data. Both intra-batch and stored prevouts are populated above.
+            if (auto const ec = tx.validate_tokens(block_flags[i]); ec) {
+                return refuse(i, ec);
+            }
+#endif
 
             if (in_value < out_value) {
                 return refuse(i, error::spend_exceeds_value);
@@ -678,30 +714,110 @@ code validate_block_batch(
     // block and the same code on every run, whatever the interleaving.
     std::atomic<size_t> failed_height{std::numeric_limits<size_t>::max()};
     std::atomic<bool> threw{false};
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // A deferred batch that reports an invalid signature none of the inline
+    // re-runs reproduces: the backend and the interpreter disagree. Not a
+    // verdict on any block, like a worker that threw.
+    std::atomic<bool> deferred_mismatch{false};
+#endif
+
+    // Records a refused task and lowers the failed height to it.
+    auto record_failure = [&](size_t t, code const& ec) {
+        task_errors[t] = ec;
+        auto seen = failed_height.load(std::memory_order_acquire);
+        while (tasks[t].height < seen &&
+               ! failed_height.compare_exchange_weak(seen, tasks[t].height,
+                     std::memory_order_acq_rel, std::memory_order_acquire)) {
+        }
+    };
 
     auto run_bucket = [&](size_t bucket) {
       try {
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+        // Deferred signature checks: the interpreter records every check whose
+        // failure would be final instead of verifying it, and this worker
+        // verifies all of them in lane-parallel batches once its transactions
+        // are done. A failing batch rejects the block like a failing script.
+        {
+            static std::once_flag once;
+            std::call_once(once, [] {
+                // The workers already use every core: a GPU batch must not
+                // spread its host preprocessing over more threads.
+                secp256k1_turbo::set_host_threads(1);
+                auto const gpu = secp256k1_turbo::best_backend(std::numeric_limits<size_t>::max());
+                if (gpu != secp256k1_turbo::best_backend()) {
+                    spdlog::info("[batch_validate] deferred signature checks: {} (batches of {}+ on {}: {})",
+                        secp256k1_turbo::backend_name(secp256k1_turbo::best_backend()),
+                        secp256k1_turbo::gpu_min_batch(),
+                        secp256k1_turbo::backend_name(gpu), secp256k1_turbo::device_name(gpu));
+                } else {
+                    spdlog::info("[batch_validate] deferred signature checks: {}",
+                        secp256k1_turbo::backend_name(secp256k1_turbo::best_backend()));
+                }
+            });
+        }
+        secp256k1_turbo::deferred::begin();
+#endif
         // A stride visits tasks in increasing index, and tasks are emitted in
         // height order, so once a task is above the failed height every later
         // one in this stride is too.
+        //
+        // `judged_end` is the first task of the stride this pass did not run.
+        // Everything below it fed whatever the deferred batch holds.
+        size_t judged_end = bucket;
         for (size_t t = bucket; t < tasks.size(); t += workers) {
             auto const& task = tasks[t];
             if (threw.load(std::memory_order_relaxed) ||
                 task.height > failed_height.load(std::memory_order_acquire)) {
                 break;
             }
+            judged_end = t + workers;
             auto const res = validate_input::verify_transaction(*task.tx, task.flags);
             if (res.first != error::success) {
-                task_errors[t] = res.first;
-                auto seen = failed_height.load(std::memory_order_acquire);
-                while (task.height < seen &&
-                       ! failed_height.compare_exchange_weak(seen, task.height,
-                             std::memory_order_acq_rel, std::memory_order_acquire)) {
-                }
+                record_failure(t, res.first);
                 continue;
             }
             task_sigchecks[t] = res.second;
         }
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+        auto const deferred = secp256k1_turbo::deferred::end();
+        if (deferred.invalid != 0 && ! threw.load(std::memory_order_relaxed)) {
+            // Judge this worker's transactions again inline (no collection is
+            // active now, so the interpreter verifies every signature itself),
+            // up to the failed height, so the verdicts and the attribution are
+            // the ones the inline path gives.
+            //
+            // The failed height may have dropped since the first pass, set by
+            // another worker. A transaction above it that this worker did run
+            // put its signatures in the batch and is not judged again here: it
+            // cannot be the attributed block. If one was left out, an invalid
+            // signature the batch reported may be its own, so not reproducing
+            // it says nothing about the backend — and the batch is refused
+            // anyway, at the height that made this pass stop.
+            bool reproduced = false;
+            bool omitted = false;
+            for (size_t t = bucket; t < judged_end; t += workers) {
+                auto const& task = tasks[t];
+                if (task.height > failed_height.load(std::memory_order_acquire)) {
+                    omitted = true;
+                    break;
+                }
+                if (task_errors[t] != error::success) {
+                    reproduced = true;
+                    continue;
+                }
+                auto const res = validate_input::verify_transaction(*task.tx, task.flags);
+                if (res.first != error::success) {
+                    record_failure(t, res.first);
+                    reproduced = true;
+                }
+            }
+            if ( ! reproduced && ! omitted && ! deferred_mismatch.exchange(true)) {
+                spdlog::error("[batch_validate] deferred signature batch reported {} invalid of {} but inline verification passed",
+                    deferred.invalid, deferred.total);
+            }
+        }
+#endif
       } catch (std::exception const& e) {
         // A worker thread must not let an exception escape (std::terminate).
         if ( ! threw.exchange(true)) {
@@ -724,6 +840,11 @@ code validate_block_batch(
         // Not a verdict on any block: a worker did not finish judging.
         return fault(error::operation_failed);
     }
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    if (deferred_mismatch.load(std::memory_order_acquire)) {
+        return fault(error::operation_failed);
+    }
+#endif
 
     // The first refused transaction in emission order. Every task at or below
     // the lowest failing height was judged (see run_bucket), so the first

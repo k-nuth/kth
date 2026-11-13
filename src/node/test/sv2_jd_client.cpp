@@ -1717,7 +1717,7 @@ TEST_CASE("sv2 JD fallback pays the solo address on the next downstream job", "[
         auto const forwarded = fixture.pool.receive<submit_shares_extended>();
         REQUIRE(forwarded.job_id == 77);
         fixture.pool.send(submit_shares_error{forwarded.channel_id,
-            forwarded.sequence_number, "stale-share"});
+            forwarded.sequence_number, "invalid-share"});
     } else {
         fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
             declared.custom.request_id, 77});
@@ -1876,7 +1876,7 @@ TEST_CASE("sv2 JD payout error and timeout fall back without replacing the solo 
     require_no_reconnect(fixture);
 }
 
-TEST_CASE("sv2 JD repeated stale payout answers fall back to solo", "[sv2 jd]") {
+TEST_CASE("sv2 JD stale payout answers keep both upstreams and the pool is asked again", "[sv2 jd]") {
     auto chain = started_chain("sv2_jd_pay_repeat");
     client_fixture fixture;
     auto configuration = settings(fixture.pool, fixture.jds);
@@ -1888,30 +1888,156 @@ TEST_CASE("sv2 JD repeated stale payout answers fall back to solo", "[sv2 jd]") 
     handshake_upstreams(fixture, true, nullptr, true);
     miner_link miner(fixture, provider.port);
     REQUIRE(pays(coinbase_from(miner.work), solo->script, 1));
+    auto const tip = chain->chain().chain_view();
+    REQUIRE(tip);
+
+    // The pool's node is on another tip than this one: every request for this
+    // tip is answered stale, with no notice. Twice here, which used to end the
+    // session. The second wait is twice the first: every request takes one of
+    // the pool's tokens.
     auto const reserved = output_bytes(paid_split(false));
-    auto const first = fixture.jds.receive<allocate_mining_job_token>();
-    fixture.jds.send(allocate_mining_job_token_success{first.request_id, {1, 2, 3}, reserved});
-    auto const first_request = fixture.jds.receive<request_payout_outputs>();
-    REQUIRE(first_request.request_id == first.request_id);
-    fixture.jds.send(request_payout_outputs_error{first_request.request_id,
-        std::string(error_stale_payout_outputs)});
-    auto const second = fixture.jds.receive<allocate_mining_job_token>();
-    REQUIRE(second.request_id == first.request_id + 1);
-    fixture.jds.send(allocate_mining_job_token_success{second.request_id, {1, 2, 3}, reserved});
-    auto const second_request = fixture.jds.receive<request_payout_outputs>();
-    REQUIRE(second_request.request_id == second.request_id);
-    fixture.jds.send(request_payout_outputs_error{second_request.request_id,
-        std::string(error_stale_payout_outputs)});
-    auto pool_closed = fixture.begin_read(fixture.pool.socket, 1);
-    auto jds_closed = fixture.begin_read(fixture.jds.socket, 1);
-    auto pending = fixture.begin_read(miner.socket, 1);
-    REQUIRE(fixture.wait_until([&] { return pool_closed->done && jds_closed->done; }));
-    REQUIRE(pool_closed->size == 0);
-    REQUIRE(pool_closed->error == ::asio::error::eof);
-    REQUIRE(jds_closed->size == 0);
-    REQUIRE(jds_closed->error == ::asio::error::eof);
-    CHECK_FALSE(pending->done);
-    solo_job(fixture, provider.port, solo->script);
+    uint32_t previous_id = 0;
+    for (int round = 0; round < 2; ++round) {
+        CAPTURE(round);
+        auto const allocation = fixture.jds.receive<allocate_mining_job_token>();
+        if (round != 0) REQUIRE(allocation.request_id == previous_id + 1);
+        previous_id = allocation.request_id;
+        fixture.jds.send(allocate_mining_job_token_success{allocation.request_id, {1, 2, 3}, reserved});
+        auto const request = fixture.jds.receive<request_payout_outputs>();
+        REQUIRE(request.request_id == allocation.request_id);
+        auto const asked = std::chrono::steady_clock::now();
+        fixture.jds.send(request_payout_outputs_error{request.request_id,
+            std::string(error_stale_payout_outputs)});
+
+        // Not at once: the answer would be the same. The next token is asked
+        // for after the wait, on the same two connections.
+        auto const arrived = [&] {
+            std::error_code ignored;
+            return fixture.jds.socket.available(ignored) > 0;
+        };
+        CHECK_FALSE(fixture.wait_until(arrived, 400ms));
+        REQUIRE(fixture.wait_until(arrived));
+        CHECK(std::chrono::steady_clock::now() - asked >= (round == 0 ? 800ms : 1800ms));
+    }
+
+    // The pool's node reaches the tip, and the same session declares on it:
+    // the third token, the payout outputs, the declaration and the custom job.
+    auto const round = complete_payout(fixture, miner, true, true, tip->connected_tip_height + 1);
+    REQUIRE(round.request.request_id == previous_id + 1);
+    fixture.pool.send(set_custom_mining_job_success{round.custom.channel_id,
+        round.custom.request_id, 77});
+    auto pool_quiet = fixture.begin_read(fixture.pool.socket, 1);
+    CHECK_FALSE(fixture.wait_until([&] { return pool_quiet->done; }, 300ms));
+}
+
+TEST_CASE("sv2 JD declares the tip again when the pool's payouts move under the installed job", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_pay_moved");
+    client_fixture fixture;
+    auto const configuration = settings(fixture.pool, fixture.jds);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true, nullptr, true);
+    miner_link miner(fixture, provider.port);
+    auto const tip = chain->chain().chain_view();
+    REQUIRE(tip);
+    auto const first = complete_payout(fixture, miner, true, true, tip->connected_tip_height + 1);
+    fixture.pool.send(set_custom_mining_job_success{first.custom.channel_id,
+        first.custom.request_id, 77});
+
+    // The pool's share chain moved, twice in a moment. The outputs of job 77
+    // are those of a token the pool has left, and the pool counts shares on
+    // that job only until enough newer jobs follow it. Two notices inside one
+    // spacing are one new declaration, on the same two connections.
+    fixture.jds.send(payout_outputs_stale{});
+    fixture.jds.send(payout_outputs_stale{});
+    auto const arrived = [&] {
+        std::error_code ignored;
+        return fixture.jds.socket.available(ignored) > 0;
+    };
+    REQUIRE(fixture.wait_until(arrived, 8s));
+    auto const second = complete_payout(fixture, miner, true, true, tip->connected_tip_height + 1);
+    REQUIRE(second.request.request_id == first.request.request_id + 1);
+    fixture.pool.send(set_custom_mining_job_success{second.custom.channel_id,
+        second.custom.request_id, 78});
+    CHECK_FALSE(fixture.wait_until(arrived, 300ms));
+}
+
+TEST_CASE("sv2 JD declares again when the pool no longer holds the accepted job", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_share_stale");
+    client_fixture fixture;
+    auto const configuration = settings(fixture.pool, fixture.jds);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+    data_chunk const extranonce(miner.opened.extranonce_size, 0x5a);
+    auto const nonce = find_nonce(declared.pooled, extranonce, false);
+    fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id, 1,
+        declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+        declared.pooled.job.version, extranonce}));
+    auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+    REQUIRE(forwarded.job_id == 77);
+
+    // The pool has dropped job 77: its own jobs moved on. The share is lost,
+    // neither connection is closed, and the template is declared again.
+    captured_log log;
+    fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
+        "stale-share"});
+    auto const arrived = [&] {
+        std::error_code ignored;
+        return fixture.jds.socket.available(ignored) > 0;
+    };
+    REQUIRE(fixture.wait_until(arrived, 8s));
+    REQUIRE(log.count("Pool no longer holds job 77") >= 1);
+    REQUIRE(log.count("pool refused a valid share") == 0);
+    auto const again = declare_local_template(fixture, miner, true);
+    REQUIRE(again.custom.request_id == declared.custom.request_id + 1);
+    fixture.pool.send(set_custom_mining_job_success{again.custom.channel_id,
+        again.custom.request_id, 78});
+    auto quiet = fixture.begin_read(fixture.pool.socket, 1);
+    CHECK_FALSE(fixture.wait_until([&] { return quiet->done; }, 300ms));
+}
+
+TEST_CASE("sv2 JD falls back when the pool answers share after share as stale", "[sv2 jd]") {
+    auto chain = started_chain("sv2_jd_share_stale_run");
+    client_fixture fixture;
+    auto configuration = settings(fixture.pool, fixture.jds);
+    std::string error;
+    auto const payout = node::mining::payout_from_address(configuration.mining.address,
+        domain::config::network::regtest, error);
+    REQUIRE(payout);
+    provider_run provider(fixture, configuration, chain);
+    handshake_upstreams(fixture, true);
+    miner_link miner(fixture, provider.port);
+    auto const declared = declare_local_template(fixture, miner, true);
+    fixture.pool.send(set_custom_mining_job_success{declared.custom.channel_id,
+        declared.custom.request_id, 77});
+
+    // Eight stale answers in a row are the race with the pool's job stream.
+    // The ninth, with no share counted in between, is a pool that does not
+    // count valid work, and ends the session as any refused share does.
+    captured_log log;
+    for (uint8_t round = 0; round < 9; ++round) {
+        CAPTURE(round);
+        data_chunk const extranonce(miner.opened.extranonce_size, uint8_t(0x60 + round));
+        auto const nonce = find_nonce(declared.pooled, extranonce, false);
+        fixture.write(miner.socket, frame(submit_shares_extended{miner.opened.channel_id,
+            uint32_t{round} + 1, declared.pooled.job.job_id, nonce, declared.pooled.prev.ntime_start,
+            declared.pooled.job.version, extranonce}));
+        auto const forwarded = fixture.pool.receive<submit_shares_extended>();
+        REQUIRE(forwarded.job_id == 77);
+        // The node answers the miner itself. Read each answer, so the frame
+        // that follows the last one is the solo job.
+        REQUIRE(receive_plain<submit_shares_success>(fixture, miner.socket).last_sequence_number
+            == uint32_t{round} + 1);
+        fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
+            "stale-share"});
+    }
+    require_solo_again(miner, declared.pooled, payout->script);
+    REQUIRE(log.count("pool refused a valid share on an accepted job (stale-share)") >= 1);
+    fixture.eof(fixture.pool.socket);
+    fixture.eof(fixture.jds.socket);
     require_no_reconnect(fixture);
 }
 
