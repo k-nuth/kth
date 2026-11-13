@@ -39,7 +39,7 @@ jobs:
     steps:
       - id: check
         continue-on-error: true
-        uses: prince-chrismc/check-actor-permissions-action@v2
+        uses: prince-chrismc/check-actor-permissions-action@00b85696974a3461836b27f5e17128c65d677a1b  # v4.0.0
         with:
           permission: write
 
@@ -49,7 +49,7 @@ jobs:
     outputs:
       build-version: ${{ steps.version.outputs.build-version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           submodules: true
           fetch-depth: 0 # Required due to the way Git works, without it this action won't be able to find any or the correct tags
@@ -69,7 +69,7 @@ jobs:
   #     # name: docker.pkg.github.com/${{ github.repository }}/alpine-image
   #     name: docker.pkg.github.com/k-nuth/kth/alpine-image
   #   steps:
-  #     - uses: actions/checkout@v3
+  #     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
   #       with:
   #         submodules: true
   #     - id: version
