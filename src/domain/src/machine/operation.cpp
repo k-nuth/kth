@@ -7,7 +7,6 @@
 #include <charconv>
 #include <string>
 
-#include <boost/algorithm/string.hpp>
 
 // #include <kth/domain/constants.hpp>
 #include <kth/domain/machine/opcode.hpp>

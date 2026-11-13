@@ -695,6 +695,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
+    test/utility/string_algorithms.cpp
     test/utility/parse_integer.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
