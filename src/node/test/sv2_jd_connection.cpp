@@ -358,7 +358,9 @@ TEST_CASE("sv2 JD upstream bounds a silent or incomplete handshake", "[sv2 jd]")
 TEST_CASE("sv2 JD upstream checks certificate validity when a slow handshake completes", "[sv2 jd]") {
     upstream_fixture fixture;
     auto const now = unix_time();
-    fixture.set_certificate(now - 60, now + 1);
+    // Inside the client's clock leeway by one second when the handshake
+    // starts, and outside it when the delayed certificate arrives.
+    fixture.set_certificate(now - 60, now + 1 - certificate_clock_leeway_seconds);
     fixture.start_server(behavior::delayed_certificate);
     fixture.start_client(3s);
     CHECK(fixture.finish() == "upstream Noise authentication failed");
