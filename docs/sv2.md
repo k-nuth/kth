@@ -46,10 +46,11 @@ a little behind still accepts it, and lasts `sv2.certificate_validity_seconds`
 after it (default 2592000, or 30 days). The authority key stays the same across
 restarts.
 
-Wherever Knuth checks a certificate itself, its own clock may be up to 10
-seconds outside the certificate's validity times. A certificate carries whole
-seconds, and a server that signs from its current second would otherwise be
-refused by a client whose clock is a moment behind it.
+When Knuth is the client and checks a server's certificate, its own clock may
+be up to 10 seconds outside the certificate's validity times. A certificate
+carries whole seconds, and a server that signs from its current second would
+otherwise be refused by a client whose clock is a moment behind it. Knuth's own
+certificate is served only inside its validity period.
 
 Startup prints `Noise authority public key: <key>`. Give that public key to the
 Job Declarator or pool over a trusted channel and configure it as the client's

@@ -144,14 +144,11 @@ std::optional<noise_certificate> noise_certificate::sign(
 }
 
 bool noise_certificate::verify(hash_digest const& authority_public,
-    hash_digest const& static_public, uint32_t now) const {
+    hash_digest const& static_public, uint32_t now, uint32_t clock_leeway) const {
     if (version != 0 || valid_from >= not_valid_after) return false;
-    // A server may sign a certificate that is valid from its own current
-    // second, and two clocks never agree to the second: a client half a
-    // second behind would refuse about half of such handshakes. The window
-    // is widened at both ends by the leeway, without wrapping.
-    auto const earliest = valid_from - std::min(valid_from, certificate_clock_leeway_seconds);
-    auto const latest = not_valid_after + std::min(certificate_clock_leeway_seconds,
+    // The window is widened at both ends by the leeway, without wrapping.
+    auto const earliest = valid_from - std::min(valid_from, clock_leeway);
+    auto const latest = not_valid_after + std::min(clock_leeway,
         std::numeric_limits<uint32_t>::max() - not_valid_after);
     if (now < earliest || now > latest) return false;
     secp256k1_xonly_pubkey authority;
@@ -320,7 +317,13 @@ bool noise_initiator::finish(byte_span response) {
     auto const certificate_bytes = state_.decrypt(response.subspan(144));
     if ( ! certificate_bytes) return false;
     auto const certificate = noise_certificate::parse(*certificate_bytes);
-    if ( ! certificate || ! certificate->verify(authority_, xonly(remote_static), now_)) return false;
+    // A server may sign a certificate that is valid from its own current
+    // second, and two clocks never agree to the second: a client half a second
+    // behind would refuse about half of such handshakes.
+    if ( ! certificate || ! certificate->verify(authority_, xonly(remote_static), now_,
+            certificate_clock_leeway_seconds)) {
+        return false;
+    }
     keys_ = state_.split();
     return true;
 }
