@@ -1001,6 +1001,34 @@ TEST_CASE("sv2 JD stale payout outputs allocate again after a notice and wait wi
     REQUIRE(early.error.empty());
     REQUIRE_FALSE(early.outdated);
 
+    // A declared or custom job on a token the pool has left can be refused with
+    // the same code. It ends the attempt the same way; any other code is still
+    // a refusal.
+    auto declared_late = requesting();
+    REQUIRE(process(declared_late, jd_peer::declaration, payout_success(1, paid_outputs(), true)).error.empty());
+    auto const stale_declaration = process(declared_late, jd_peer::declaration,
+        declare_mining_job_error{1, std::string(error_stale_payout_outputs), {}});
+    REQUIRE(stale_declaration.error.empty());
+    REQUIRE(stale_declaration.deferred);
+    REQUIRE_FALSE(declared_late.pending());
+
+    auto installed_late = requesting(false);
+    REQUIRE_FALSE(process(installed_late, jd_peer::declaration,
+        payout_success(1, paid_outputs(), true)).mining.empty());
+    auto const stale_custom = process(installed_late, jd_peer::mining,
+        set_custom_mining_job_error{7, 1, std::string(error_stale_payout_outputs)});
+    REQUIRE(stale_custom.error.empty());
+    REQUIRE(stale_custom.deferred);
+    REQUIRE_FALSE(installed_late.pending());
+
+    auto refused_late = requesting(false);
+    REQUIRE_FALSE(process(refused_late, jd_peer::declaration,
+        payout_success(1, paid_outputs(), true)).mining.empty());
+    auto const refused_custom = process(refused_late, jd_peer::mining,
+        set_custom_mining_job_error{7, 1, "invalid-job-param-value-version"});
+    require_failure(refused_late, refused_custom);
+    REQUIRE_FALSE(refused_custom.deferred);
+
     jd_declaration capped("account.worker", true);
     capped.use_payout_outputs(true);
     REQUIRE(decode<allocate_mining_job_token>(

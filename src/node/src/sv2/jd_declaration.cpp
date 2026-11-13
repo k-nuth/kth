@@ -536,6 +536,9 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
             auto const message = parse<declare_mining_job_error>(payload);
             if ( ! message || message->request_id != request_id_) return fail("invalid declaration refusal");
             if (restart_) return retry_allocation();
+            // The pool's node left this tip between its payout answer and
+            // the declaration. The same race as a stale payout answer.
+            if (payout_outputs_ && message->error_code == error_stale_payout_outputs) return defer();
             return fail("JDS refused the local template: " + message->error_code);
         }
         if (header.msg_type == declare_mining_job_success::message_type) {
@@ -584,6 +587,7 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
                 return fail("invalid custom job refusal");
             }
             if (restart_) return retry_allocation();
+            if (payout_outputs_ && message->error_code == error_stale_payout_outputs) return defer();
             return fail("pool refused the local custom job: " + message->error_code);
         }
         if (header.msg_type == set_custom_mining_job_success::message_type) {

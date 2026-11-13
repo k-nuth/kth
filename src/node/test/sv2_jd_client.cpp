@@ -2021,6 +2021,10 @@ TEST_CASE("sv2 JD falls back when the pool answers share after share as stale", 
             declared.pooled.job.version, extranonce}));
         auto const forwarded = fixture.pool.receive<submit_shares_extended>();
         REQUIRE(forwarded.job_id == 77);
+        // The node answers the miner itself. Read each answer, so the frame
+        // that follows the last one is the solo job.
+        REQUIRE(receive_plain<submit_shares_success>(fixture, miner.socket).last_sequence_number
+            == uint32_t{round} + 1);
         fixture.pool.send(submit_shares_error{forwarded.channel_id, forwarded.sequence_number,
             "stale-share"});
     }
