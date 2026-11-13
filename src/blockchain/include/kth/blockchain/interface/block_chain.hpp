@@ -332,7 +332,9 @@ struct KB_API block_chain {
     //   6  drain the deferred deletions           a failure is fatal, not logged
     //   7  flush_undo(every rev file touched)     not just the last
     //   8  the undo directory                     inside flush_undo
-    //   9  utxo_sync()
+    //   9  utxo_sync()                            or its two halves: the first
+    //                                             under the window, the second
+    //                                             after it, beside readers
     //  10  publish_transition(...)                ONE transaction: heights AND clear
     //  11  env_sync()
     //  12  mempool, publish_chain_view(), end_transition()
@@ -383,6 +385,33 @@ struct KB_API block_chain {
     /// recursive.
     [[nodiscard]]
     database::barrier_outcome utxo_sync(utxo_write_window const& window);
+
+    /// Step 9 in two halves, for an operation that wants lookups admitted
+    /// before the barrier is whole.
+    ///
+    /// The first half runs under the operation's window, like every mutation.
+    /// It flushes what the deletions wrote through the store's file cache and
+    /// returns what is still owed. The error is the outcome utxo_sync() would
+    /// have reported, `unsupported` included.
+    [[nodiscard]]
+    std::expected<database::pending_barrier, database::barrier_outcome>
+    utxo_begin_sync(utxo_write_window const& window);
+
+    /// The second half, taken AFTER the window has ended: the active
+    /// containers, the files and the directory. Lookups may run while it does.
+    ///
+    /// It holds a read lease for as long as it runs. That is what keeps every
+    /// mutation out: a window waits for the leases to drain, so no writer can
+    /// reach the store between the two halves' end. A lease is the right
+    /// capability and not a weaker one borrowed for convenience — the store's
+    /// own rule for this half is exactly a reader's: any number of lookups
+    /// beside it, nothing that mutates.
+    ///
+    /// Anything but `crossed` latches the gate. The window that applied the
+    /// mutations has already ended, so it can no longer do that itself, and
+    /// what it applied is not known to be on disk.
+    [[nodiscard]]
+    database::barrier_outcome utxo_finish_sync(database::pending_barrier&& pending);
 
     /// What this node may claim about a published transition: the weakest of
     /// the four barriers above, not any one store's answer.

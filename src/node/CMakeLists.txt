@@ -133,16 +133,13 @@ set(kth_sources_just_legacy
   src/parser.cpp
   src/settings.cpp
   src/user_agent.cpp
-
-  src/utility/check_list.cpp
-  src/utility/header_list.cpp
-  src/utility/performance.cpp
 )
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/detail/configured_peers.cpp
     src/detail/block_announcements.cpp
     src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
@@ -161,9 +158,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/ws_discovery_task.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
-
-    src/utility/reservation.cpp
-    src/utility/reservations.cpp
 
     # CSP-based sync system
     src/sync/chunk_coordinator.cpp
@@ -308,12 +302,6 @@ set(kth_headers
   include/kth/node/executor/executor.hpp
   include/kth/node/executor/executor_info.hpp
   include/kth/node/define.hpp
-
-  include/kth/node/utility/reservation.hpp
-  include/kth/node/utility/check_list.hpp
-  include/kth/node/utility/header_list.hpp
-  include/kth/node/utility/performance.hpp
-  include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
   include/kth/node/parser.hpp
@@ -451,7 +439,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_executable(kth_node_test
           test/user_agent.cpp
           test/chain_view.cpp
-          test/check_list.cpp
           test/chunk_coordinator.cpp
           test/fatal_shutdown.cpp
           test/mempool_admission.cpp
@@ -488,7 +475,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/full_node_network.cpp
           test/template_prevout_refresh.cpp
           test/p2p_websocket_config.cpp
-          test/header_list.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
@@ -502,12 +488,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
+          test/configured_peers.cpp
           test/p2p_node.cpp
           test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
-          test/performance.cpp
-          test/reservation.cpp
-          test/reservations.cpp
           test/sync_decisions.cpp
           test/mining_job_store.cpp
           test/mining_block_submit.cpp
@@ -516,9 +500,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_messages.cpp
           test/sv2_connection.cpp
           test/sv2_template_provider.cpp
-          test/settings.cpp
-          test/utility.cpp
-          test/utility.hpp)
+          test/settings.cpp)
 
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")

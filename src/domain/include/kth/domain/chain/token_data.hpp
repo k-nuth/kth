@@ -8,6 +8,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -477,6 +478,15 @@ expect<void> from_data(byte_reader& reader, fungible& x, bool /*has_commitment*/
     if ( ! amt) {
         return std::unexpected(amt.error());
     }
+    // An encoded amount is present and therefore strictly positive, even
+    // when the same prefix also carries an NFT. Zero is only implicit when
+    // the amount bit is absent.
+    if (*amt == 0) {
+        return std::unexpected(error::token_amount_bitfield_mismatch);
+    }
+    if (*amt > uint64_t(std::numeric_limits<int64_t>::max())) {
+        return std::unexpected(error::token_amount_overflow);
+    }
     x.amount = amount_t(*amt);
     return {};
 }
@@ -490,6 +500,11 @@ expect<void> from_data(byte_reader& reader, non_fungible& x, bool has_commitment
     auto const size = reader.read_size_little_endian();
     if ( ! size) {
         return std::unexpected(size.error());
+    }
+    // An empty commitment is represented by absence of the length bit,
+    // never by an explicitly serialized zero length.
+    if (*size == 0) {
+        return std::unexpected(error::token_commitment_bitfield_mismatch);
     }
     if (*size > max_commitment_size) {
         return std::unexpected(error::invalid_script_size);
