@@ -216,12 +216,22 @@ struct handshake_response {
 /// Channel type for handshake response (one-shot)
 using handshake_response_channel = concurrent_channel<handshake_response>;
 
+struct peer_lifecycle_end {
+    bool admitted = false;
+    std::chrono::steady_clock::duration connected_for{};
+};
+
+using peer_lifecycle_channel = select_channel<peer_lifecycle_end>;
+
 struct peer_event {
     peer_session::ptr peer;
     peer_direction direction;
     // Optional response channel for connect() to wait on handshake result
     // If nullptr, no response is expected (e.g., for seeding connections)
     std::shared_ptr<handshake_response_channel> response_channel;
+    // Closed only after the supervisor has joined the full session lifecycle.
+    // A configured endpoint's owner waits here before attempting a replacement.
+    std::shared_ptr<peer_lifecycle_channel> lifecycle_ended = nullptr;
 };
 
 /// Type of peer lifecycle event for sync layer notification
@@ -545,6 +555,11 @@ private:
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> maintain_outbound_connections();
+    ::asio::awaitable<void> maintain_configured_peer(std::string host, uint16_t port);
+    ::asio::awaitable<bool> wait_configured_retry(std::chrono::seconds delay);
+    awaitable_expected<peer_session::ptr> connect(
+        std::string const& host, uint16_t port,
+        std::shared_ptr<peer_lifecycle_channel> lifecycle_ended);
 
     // Peer supervisor - manages all peer lifecycles (structured concurrency)
     ::asio::awaitable<void> peer_supervisor();

@@ -11,6 +11,7 @@
 #include <span>
 #include <vector>
 
+#include <kth/database/databases/header_abla_entry.hpp>
 #include <kth/domain.hpp>
 
 #include <kth/domain/config/network.hpp>
@@ -103,6 +104,10 @@ code validate_block_batch(
 // from here, so a caller that also needs them afterwards, to build the UTXO
 // delta, computes them once. A count that does not match the batch is refused
 // as operation_failed, attributed to no block.
+//
+// `unpublished_parent` is the ABLA record of the block before start_height when
+// the caller has derived it and not yet published it (abla_states_for_batch);
+// null reads the stored one.
 KB_API
 code validate_block_batch(
     block_chain& chain,
@@ -111,7 +116,8 @@ code validate_block_batch(
     std::vector<block_const_ptr> const& blocks,
     std::span<hash_list const> txids,
     size_t start_height,
-    batch_rejection& rejection);
+    batch_rejection& rejection,
+    database::header_abla_record const* unpublished_parent = nullptr);
 
 // Stored blocks parsed for validation, in the order given, with each block's
 // transaction identifiers (txids[i] == blocks[i]->to_hashes()).
