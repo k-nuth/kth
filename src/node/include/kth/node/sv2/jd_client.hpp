@@ -105,6 +105,8 @@ private:
     [[nodiscard]] bool send_declaration(data_chunk frame);
     ::asio::awaitable<void> declare_templates();
     void wake_declarations();
+    // Declare the current tip again, no sooner than the spacing allows.
+    void request_refresh();
     ::asio::awaitable<void> report_hash_rate();
     void wake_hash_rate();
     bool dispatch(jd_declaration::result result);
@@ -151,6 +153,12 @@ private:
     std::optional<std::chrono::steady_clock::time_point> payout_retry_;
     std::chrono::seconds payout_wait_{1};
     bool payout_waiting_ = false;
+    // When to declare the current tip again because the pool's payouts moved,
+    // when the last declaration started, and how many shares in a row the
+    // pool has answered as stale on the job it had accepted.
+    std::optional<std::chrono::steady_clock::time_point> refresh_at_;
+    std::chrono::steady_clock::time_point last_declared_{};
+    uint32_t stale_share_run_ = 0;
     ::asio::steady_timer declaration_wake_;
     // Wakes report_hash_rate() for a changed sum, unless an update was just
     // sent: then it expires at the end of the hold and the loop reads the sum.

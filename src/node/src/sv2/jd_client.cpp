@@ -5,6 +5,7 @@
 #include <kth/node/sv2/jd_client.hpp>
 
 #include <algorithm>
+#include <string_view>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -103,6 +104,18 @@ constexpr auto hash_rate_hold = std::chrono::seconds(1);
 // that stays behind sees two requests a minute.
 constexpr auto payout_retry_delay = std::chrono::seconds(1);
 constexpr auto payout_retry_longest = std::chrono::seconds(30);
+
+// The least time between two declarations of one tip that follow the pool's
+// payouts. A pool whose payouts follow a share chain moves them every few
+// seconds, and every declaration takes a token the pool keeps for minutes.
+constexpr auto payout_refresh_spacing = std::chrono::seconds(4);
+
+// Shares in a row a pool may answer as stale on the job it accepted. The
+// pool drops a job once enough newer ones follow it, so one such answer is
+// the race with its job stream and the job is declared again. A pool that
+// answers every share that way is not counting them.
+constexpr uint32_t max_stale_share_run = 8;
+constexpr std::string_view error_stale_share = "stale-share";
 
 } // namespace
 
@@ -354,6 +367,14 @@ void jd_client::wake_declarations() {
     declaration_wake_.cancel();
 }
 
+void jd_client::request_refresh() {
+    auto const now = std::chrono::steady_clock::now();
+    auto const earliest = last_declared_ + payout_refresh_spacing;
+    // Several notices inside one spacing are one refresh.
+    if ( ! refresh_at_) refresh_at_ = std::max(now, earliest);
+    wake_declarations();
+}
+
 ::asio::awaitable<void> jd_client::report_hash_rate() {
     // The only sender of UpdateChannel. After one is sent, later changes wait
     // out the hold and go together; otherwise the loop sleeps until a change.
@@ -382,6 +403,14 @@ bool jd_client::dispatch(jd_declaration::result result) {
         spdlog::warn("[sv2 jd] {}; continuing solo mining", result.error);
         stop();
         return false;
+    }
+    if (result.outdated) {
+        // While the pool's node is on another tip its notices say nothing
+        // about that tip, and the wait already set decides when to ask.
+        // Otherwise the installed job stays in use until the next one is
+        // accepted.
+        if ( ! payout_retry_) request_refresh();
+        return true;
     }
     if (result.deferred) {
         // Both upstreams stay. Until the pool answers for this tip the
@@ -416,6 +445,7 @@ bool jd_client::dispatch(jd_declaration::result result) {
     if (result.accepted) {
         payout_waiting_ = false;
         payout_wait_ = payout_retry_delay;
+        stale_share_run_ = 0;
         spdlog::info("[sv2 jd] Pool accepted local template as job {}",
             jobs_.work()->upstream_job_id);
         flush_cached();
@@ -455,8 +485,13 @@ bool jd_client::dispatch(jd_declaration::result result) {
             // tip is the same, so nothing else would declare it again.
             auto const retrying = payout_retry_
                 && std::chrono::steady_clock::now() >= *payout_retry_;
-            if (view && (previous != view->tip_hash || retrying) && mining_session_.channel()) {
+            // The pool's payouts moved under the job installed for this tip.
+            auto const refreshing = refresh_at_
+                && std::chrono::steady_clock::now() >= *refresh_at_;
+            if (view && (previous != view->tip_hash || retrying || refreshing)
+                && mining_session_.channel()) {
                 payout_retry_.reset();
+                refresh_at_.reset();
                 // Another tip is another race: the pool's node is behind it
                 // for a moment at most, unless it is behind for good.
                 if (previous != view->tip_hash) payout_wait_ = payout_retry_delay;
@@ -476,8 +511,9 @@ bool jd_client::dispatch(jd_declaration::result result) {
                     // token exists. A cached share from that coinbase must not
                     // be flushed under the next job id.
                     retire_cached();
+                    last_declared_ = std::chrono::steady_clock::now();
                     if ( ! dispatch(jobs_.start(std::move(*value), *mining_session_.channel()))) co_return;
-                } else if (retrying && ! jobs_.pending()) {
+                } else if ((retrying || refreshing) && ! jobs_.pending()) {
                     // No template to declare this time. Keep the wait, or the
                     // same tip is never declared.
                     payout_retry_ = std::chrono::steady_clock::now() + payout_wait_;
@@ -489,6 +525,7 @@ bool jd_client::dispatch(jd_declaration::result result) {
         if (declaration_changed_) continue;
         auto wake = job_deadline_.value_or(std::chrono::steady_clock::time_point::max());
         if (payout_retry_) wake = std::min(wake, *payout_retry_);
+        if (refresh_at_) wake = std::min(wake, *refresh_at_);
         declaration_wake_.expires_at(wake);
         (void)co_await declaration_wake_.async_wait(::asio::as_tuple(::asio::use_awaitable));
     }
@@ -693,6 +730,7 @@ std::optional<std::string> jd_client::share_reply(message_header const& header,
         if ( ! upstream || message->channel_id != *upstream) {
             return "share success for another channel";
         }
+        stale_share_run_ = 0;
         return std::nullopt;
     }
     // The mining handler calls this only for Success or Error. Success returned above.
@@ -722,6 +760,17 @@ std::optional<std::string> jd_client::share_reply(message_header const& header,
     if ( ! work || ! work->upstream_accepted || found->generation != work->generation) {
         spdlog::debug("[sv2 jd] ignoring stale share error {} for sequence {}",
             code, message->sequence_number);
+        return std::nullopt;
+    }
+    // The pool no longer holds the job it accepted: enough newer jobs of its
+    // own have followed on this channel. The share is lost and the template
+    // is declared again. Any other code, and this one share after share, is
+    // a pool that does not count valid work.
+    if (message->error_code == error_stale_share && stale_share_run_ < max_stale_share_run) {
+        ++stale_share_run_;
+        spdlog::info("[sv2 jd] Pool no longer holds job {}; declaring the template again",
+            work->upstream_job_id);
+        request_refresh();
         return std::nullopt;
     }
     return "pool refused a valid share on an accepted job (" + code + ")";

@@ -959,6 +959,48 @@ TEST_CASE("sv2 JD stale payout outputs allocate again after a notice and wait wi
     REQUIRE(unexplained.deferred);
     REQUIRE_FALSE(reset.pending());
 
+    // A notice with nothing in flight. Under an installed job its outputs are
+    // those of a token the pool has left, and after a declaration that ended
+    // on a stale answer it is what that declaration waits for: both ask the
+    // owner to declare again, and neither sends or fails anything.
+    auto installed = requesting(false);
+    auto const custom = process(installed, jd_peer::declaration, payout_success(1, paid_outputs(), true));
+    REQUIRE(custom.error.empty());
+    REQUIRE_FALSE(custom.mining.empty());
+    REQUIRE(process(installed, jd_peer::mining, set_custom_mining_job_success{7, 1, 123}).accepted);
+    auto const moved = process(installed, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(moved.error.empty());
+    REQUIRE(moved.outdated);
+    REQUIRE_FALSE(moved.deferred);
+    REQUIRE(moved.declaration.empty());
+    REQUIRE(moved.mining.empty());
+    // The installed job is still the work until the owner starts the next one.
+    REQUIRE(installed.work());
+    REQUIRE(installed.work()->upstream_accepted);
+    auto const renewed = installed.start(mining_template(), channel());
+    REQUIRE(renewed.error.empty());
+    REQUIRE(decode<allocate_mining_job_token>(renewed.declaration).request_id == 2);
+
+    auto waiting = requesting();
+    REQUIRE(process(waiting, jd_peer::declaration,
+        request_payout_outputs_error{1, std::string(error_stale_payout_outputs)}).deferred);
+    auto const woken = process(waiting, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(woken.error.empty());
+    REQUIRE(woken.outdated);
+    REQUIRE_FALSE(waiting.pending());
+
+    // In flight, a notice only marks the token: the reply owed is consumed
+    // first. Before any template there is nothing to declare again.
+    auto flying = requesting();
+    auto const marked = process(flying, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(marked.error.empty());
+    REQUIRE_FALSE(marked.outdated);
+    jd_declaration fresh("account.worker", true);
+    fresh.use_payout_outputs(true);
+    auto const early = process(fresh, jd_peer::declaration, payout_outputs_stale{});
+    REQUIRE(early.error.empty());
+    REQUIRE_FALSE(early.outdated);
+
     jd_declaration capped("account.worker", true);
     capped.use_payout_outputs(true);
     REQUIRE(decode<allocate_mining_job_token>(

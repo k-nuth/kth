@@ -30,6 +30,10 @@ struct jd_declaration {
         // is on another tip than this one. Nothing is in flight and nothing
         // failed. The owner starts the declaration again after a wait.
         bool deferred = false;
+        // The pool's payouts moved while nothing was in flight: the outputs of
+        // the installed job, or the answer this object waits for, rest on
+        // what the pool has left. The owner declares the template again.
+        bool outdated = false;
         std::string error;
     };
 

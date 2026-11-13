@@ -392,8 +392,18 @@ jd_declaration::result jd_declaration::note_stale(byte_span payload) {
     ++notice_epoch_;
     // One request stays in flight. The reply that is already owed is consumed,
     // then a new token is allocated. A second request is not sent early.
-    if (pending()) restart_ = true;
-    return {};
+    if (pending()) {
+        restart_ = true;
+        return {};
+    }
+    // Nothing is in flight. An installed job keeps the outputs of the token
+    // it was declared with, and the pool counts shares on it only for as
+    // long as it keeps that job. A declaration that ended on a stale answer
+    // waits for exactly this. Either way the template is declared again.
+    if ( ! has_template_) return {};
+    result out;
+    out.outdated = true;
+    return out;
 }
 
 jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_success const& success) {
