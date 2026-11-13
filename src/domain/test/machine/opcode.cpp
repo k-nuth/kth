@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <locale>
+
 #include <test_helpers.hpp>
 
 using namespace kth;
@@ -604,3 +606,22 @@ TEST_CASE("opcode from string right legacy name false", "[opcode]") {
 }
 
 // End Test Suite
+
+TEST_CASE("opcode names use ASCII case independently of the global locale", "[opcode]") {
+    struct unusual_case final : std::ctype<char> {
+        char do_tolower(char ch) const override {
+            return ch == 'A' ? 'x' : std::ctype<char>::do_tolower(ch);
+        }
+    };
+    struct restore_locale {
+        std::locale previous;
+        ~restore_locale() { std::locale::global(previous); }
+    } restore{std::locale()};
+    std::locale::global(std::locale(restore.previous, new unusual_case));
+
+    opcode result{};
+    REQUIRE(opcode_from_string(result, "ADD"));
+    CHECK(result == opcode::add);
+    REQUIRE(opcode_from_string(result, "aDd"));
+    CHECK(result == opcode::add);
+}

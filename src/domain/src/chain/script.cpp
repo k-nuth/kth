@@ -125,20 +125,24 @@ expect<script> script::from_data_with_size(byte_reader& reader, size_t size) {
     return script {data_chunk(std::begin(*bytes), std::end(*bytes)), false};
 }
 
-bool script::from_string(std::string const& mnemonic) {
-    reset();
-
+expect<script> script::parse_from(std::string_view mnemonic) {
     auto const tokens = split(mnemonic);
     operation::list ops;
     ops.resize(tokens.empty() || tokens.front().empty() ? 0 : tokens.size());
-
     for (size_t index = 0; index < ops.size(); ++index) {
-        if ( ! ops[index].from_string(tokens[index])) {
-            return false;
-        }
+        if (!ops[index].from_string(tokens[index]))
+            return std::unexpected(error::illegal_value);
     }
+    script result;
+    result.from_operations(std::move(ops));
+    return result;
+}
 
-    from_operations(ops);
+bool script::from_string(std::string const& mnemonic) {
+    reset();
+    auto result = parse_from(mnemonic);
+    if (!result) return false;
+    *this = std::move(*result);
     return true;
 }
 

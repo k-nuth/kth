@@ -9,7 +9,6 @@
 
 #include <fmt/format.h>
 
-#include <boost/algorithm/string.hpp>
 
 #include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -433,7 +432,12 @@ std::string opcode_to_string(opcode value, script_flags_t active_flags) {
 bool opcode_from_string(opcode& out_code, std::string const& value) {       //NOLINT
 
     // Normalize to ASCII lower case.
-    auto const norm = boost::algorithm::to_lower_copy(value);
+    auto norm = value;
+    for (auto& ch : norm) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch + ('a' - 'A'));
+        }
+    }
     RETURN_IF_OPCODE("zero", push_size_0);
     RETURN_IF_OPCODE("push_0", push_size_0);
     RETURN_IF_OPCODE("push_1", push_size_1);
