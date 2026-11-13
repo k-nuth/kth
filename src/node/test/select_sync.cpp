@@ -578,7 +578,7 @@ struct fast_path_fixture {
     std::atomic<size_t> pings_seen{0};
     tracked session_run, router, serve, worker;
 
-    fast_path_fixture() {
+    explicit fast_path_fixture(uint32_t stall_timeout_secs = 3600) {
         REQUIRE(chain.created());
         REQUIRE(chain.start());
 
@@ -586,7 +586,7 @@ struct fast_path_fixture {
         REQUIRE(chain.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
 
         coordinator = std::make_shared<chunk_coordinator>(chain.organizer().index(), 1, fast_block_count,
-            chunk_coordinator_config{.chunk_size = fast_chunk_size, .stall_timeout_secs = 3600});
+            chunk_coordinator_config{.chunk_size = fast_chunk_size, .stall_timeout_secs = stall_timeout_secs});
 
         auto [client, server] = make_connected_sockets(ctx);
         session = std::make_shared<network::peer_session>(std::move(server), settings);
@@ -698,6 +698,35 @@ TEST_CASE("select: a worker on a full fast channel holds one chunk, keeps the re
     CHECK(report->coordinator_epoch == 1u);
     CHECK(f.fast_val.pending() == 0u);
 
+    f.finish();
+}
+
+TEST_CASE("select: a chunk held on a full fast channel is not handed to another peer by the stall check",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "stall check with a held chunk");
+    // No stall allowance at all: any chunk still being requested from its peer
+    // is overdue the moment the check runs.
+    fast_path_fixture f(0);
+    f.start_worker();
+
+    // Chunk 0 delivered, chunk 1 downloaded and held: validation has no room.
+    REQUIRE(run_until(f.ctx, [&] { return f.worker_suspended_on_second_chunk(); }));
+    f.worker.check();
+
+    std::this_thread::sleep_for(5ms);
+    f.coordinator->check_timeouts();
+
+    // The held chunk is downloaded, not stalled: it stays the worker's, and a
+    // second peer asking now gets the third chunk rather than a second copy.
+    CHECK(f.coordinator->get_progress().chunks_in_progress == 1u);
+    auto const other = f.coordinator->claim_chunk();
+    REQUIRE(other);
+    CHECK(other->chunk_id == 2u);
+    CHECK(f.worker_suspended_on_second_chunk());
+
+    f.coordinator->stop();
+    REQUIRE(drain_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
     f.finish();
 }
 

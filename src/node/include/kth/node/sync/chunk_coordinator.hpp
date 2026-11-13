@@ -15,18 +15,25 @@
 // DESIGN:
 // -------
 // - One slot per chunk of N blocks: the slot's position is the chunk id
-// - Slots have 3 states: FREE (0), IN_PROGRESS (1), COMPLETED (2)
-// - Claim operation is lock-free using CAS
-// - Failed and stalled chunks reset to FREE for retry by another peer
+// - A slot is FREE, IN_PROGRESS (being requested from a peer), DELIVERING
+//   (downloaded, waiting for the consumer to take it) or COMPLETED
+// - A slot is one atomic word: state, claim number and claim time together, so
+//   every transition is a single compare-and-swap
+// - A claim names its chunk and its claim number. Only the current claim of a
+//   chunk can give it back: a peer whose claim was handed to another peer
+//   cannot free the chunk under the peer that holds it now
+// - Failed and stalled chunks reset to FREE for retry by another peer. Only a
+//   chunk still being requested can stall; a downloaded one waiting for room
+//   downstream is not late
 // - A chunk counts as completed once, whoever reports it and however often
 //
 // FLOW:
 // -----
-// 1. Peer calls claim_chunk() to get a chunk_id (or nullopt if done)
-// 2. Peer uses chunk_range() to get block heights
-// 3. Peer downloads blocks and sends them to validation channel
-// 4. On success: chunk_completed(chunk_id)
-// 5. On failure: chunk_failed(chunk_id) - slot reset to FREE
+// 1. Peer calls claim_chunk() to get a claim (or nullopt if nothing is free)
+// 2. Peer uses chunk_range() to get block heights and requests the blocks
+// 3. With the blocks in hand: chunk_downloaded(claim), then the hand-over
+// 4. On success: chunk_completed(claim)
+// 5. On failure: chunk_failed(claim) - slot reset to FREE
 //
 // NO MUTEXES - Only atomic operations for lock-free coordination.
 //
@@ -37,6 +44,7 @@
 #include <cstdint>
 #include <optional>
 #include <stop_token>
+#include <utility>
 #include <vector>
 
 #include <kth/blockchain/header_index.hpp>
@@ -52,13 +60,23 @@ struct chunk_coordinator_config {
     uint32_t stall_timeout_secs{15};
 };
 
+/// One peer's hold on one chunk. The claim number tells this hold from an
+/// earlier one of the same chunk that stalled and was handed on.
+struct chunk_claim {
+    uint32_t chunk_id{0};
+    uint32_t number{0};
+
+    friend bool operator==(chunk_claim const&, chunk_claim const&) = default;
+};
+
 /// Lock-free chunk coordinator for parallel block downloads
 struct chunk_coordinator {
     /// Slot states (lock-free via atomic)
     enum slot_state : uint8_t {
         FREE = 0,        // Available for assignment
-        IN_PROGRESS = 1, // Assigned, download in progress
-        COMPLETED = 2    // Download completed successfully
+        IN_PROGRESS = 1, // Assigned, being requested from the peer
+        DELIVERING = 2,  // Downloaded, waiting for the consumer to take it
+        COMPLETED = 3    // Handed over. Final: a completed chunk never changes
     };
 
     /// Construct coordinator for a block range
@@ -80,10 +98,10 @@ struct chunk_coordinator {
     // Peer Interface (Lock-Free)
     // -------------------------------------------------------------------------
 
-    /// Claim a chunk to download
-    /// @return chunk_id, or nullopt if all chunks assigned/completed
+    /// Claim the lowest free chunk
+    /// @return the claim, or nullopt if every chunk is assigned or completed
     [[nodiscard]]
-    std::optional<uint32_t> claim_chunk();
+    std::optional<chunk_claim> claim_chunk();
 
     /// Get block range for a chunk
     /// @return {start_height, end_height} for the chunk
@@ -100,20 +118,33 @@ struct chunk_coordinator {
     [[nodiscard]]
     uint64_t generation() const { return index_.generation(); }
 
-    /// Report that a chunk was completed successfully. A chunk that stalled
-    /// is handed to a second peer and both may finish it: only the first
-    /// report counts.
-    void chunk_completed(uint32_t chunk_id);
+    /// Report that the chunk's blocks have arrived and are about to be handed
+    /// over. From here the chunk cannot stall: how long the hand-over waits is
+    /// decided by the consumer, not by the peer. Ignored if the claim is no
+    /// longer the chunk's current one.
+    void chunk_downloaded(chunk_claim claim);
 
-    /// Report that a chunk failed (will be reset to FREE for retry)
-    void chunk_failed(uint32_t chunk_id);
+    /// Report that a chunk was handed over. A chunk that stalled is given to a
+    /// second peer and both may deliver it: every delivery is valid, and only
+    /// the first one counts.
+    void chunk_completed(chunk_claim claim);
+
+    /// Give a chunk back (reset to FREE for retry). Ignored unless the claim is
+    /// the chunk's current one.
+    void chunk_failed(chunk_claim claim);
 
     // -------------------------------------------------------------------------
     // Status
     // -------------------------------------------------------------------------
 
-    /// Check for stalled downloads and reset them to FREE
+    /// Reset to FREE the chunks whose request has been pending for longer than
+    /// the stall timeout
     void check_timeouts();
+
+    /// The same check against a clock reading the caller took. Peers keep
+    /// claiming while the check runs, so a claim can be newer than `now`; such
+    /// a claim has not been pending at all and is left alone.
+    void check_timeouts(std::chrono::steady_clock::time_point now);
 
     /// Check if all chunks have been completed
     [[nodiscard]]
@@ -149,6 +180,8 @@ private:
     /// Get current time in milliseconds
     static uint64_t now_ms();
 
+    static uint64_t to_ms(std::chrono::steady_clock::time_point time);
+
     // Configuration
     chunk_coordinator_config const config_;
 
@@ -162,14 +195,42 @@ private:
 
     // =========================================================================
     // Lock-free slot management (NO MUTEXES)
-    // slots_[i] is the state of chunk i.
+    //
+    // slots_[i] is chunk i, packed in one word:
+    //   bits  0-1   state
+    //   bits  2-17  claim number, one more on each claim of this chunk
+    //   bits 18-63  time of the claim, in milliseconds
+    // The claim number wraps after 65536 claims of the same chunk; a hold that
+    // old is long gone.
     // =========================================================================
-    using slot_state_atomic = std::atomic<uint8_t>;
-    using slot_time_atomic = std::atomic<uint64_t>;
-    static constexpr size_t bytes_per_slot = sizeof(slot_state_atomic) + sizeof(slot_time_atomic);
+    using slot_word = uint64_t;
+    static constexpr unsigned number_shift = 2;
+    static constexpr unsigned time_shift = 18;
+    static constexpr slot_word state_mask = (slot_word{1} << number_shift) - 1;
+    static constexpr slot_word number_mask = (slot_word{1} << (time_shift - number_shift)) - 1;
+    static constexpr size_t bytes_per_slot = sizeof(std::atomic<slot_word>);
 
-    std::vector<slot_state_atomic> slots_;
-    std::vector<slot_time_atomic> slot_times_;
+    static constexpr slot_word pack(slot_state state, uint32_t number, uint64_t time_ms) {
+        return (slot_word{time_ms} << time_shift)
+             | ((slot_word{number} & number_mask) << number_shift)
+             | slot_word{state};
+    }
+    static constexpr slot_state state_of(slot_word word) { return slot_state(word & state_mask); }
+    static constexpr uint32_t number_of(slot_word word) { return uint32_t((word >> number_shift) & number_mask); }
+    static constexpr uint64_t time_of(slot_word word) { return word >> time_shift; }
+
+    /// True if `word` is a hold (requesting or delivering) that `claim` names.
+    static constexpr bool holds(slot_word word, chunk_claim claim) {
+        auto const state = state_of(word);
+        return (state == IN_PROGRESS || state == DELIVERING) && number_of(word) == claim.number;
+    }
+
+    std::vector<std::atomic<slot_word>> slots_;
+
+    // Every chunk below this one is COMPLETED. COMPLETED is final, so the mark
+    // only moves forward and claims start their search from it instead of from
+    // the first chunk of the range.
+    std::atomic<uint32_t> completed_floor_{0};
 
     // Status
     std::atomic<bool> stopped_{false};
