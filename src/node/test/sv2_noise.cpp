@@ -188,14 +188,27 @@ TEST_CASE("sv2 noise keys and certificates reject invalid inputs", "[sv2 noise]"
     auto cert = certificate();
     CHECK(cert.verify(authority, server, valid_from));
     CHECK(cert.verify(authority, server, valid_until));
-    // The verifier's clock may be up to the leeway behind or ahead of the
-    // signer's, and no further.
-    CHECK(cert.verify(authority, server, valid_from - 1));
-    CHECK(cert.verify(authority, server, valid_from - certificate_clock_leeway_seconds));
-    CHECK_FALSE(cert.verify(authority, server, valid_from - certificate_clock_leeway_seconds - 1));
-    CHECK(cert.verify(authority, server, valid_until + 1));
-    CHECK(cert.verify(authority, server, valid_until + certificate_clock_leeway_seconds));
-    CHECK_FALSE(cert.verify(authority, server, valid_until + certificate_clock_leeway_seconds + 1));
+    CHECK_FALSE(cert.verify(authority, server, valid_from - 1));
+    CHECK_FALSE(cert.verify(authority, server, valid_until + 1));
+    // With a leeway, the verifier's clock may be that far behind or ahead of
+    // the signer's, and no further.
+    auto const leeway = certificate_clock_leeway_seconds;
+    CHECK(cert.verify(authority, server, valid_from - 1, leeway));
+    CHECK(cert.verify(authority, server, valid_from - leeway, leeway));
+    CHECK_FALSE(cert.verify(authority, server, valid_from - leeway - 1, leeway));
+    CHECK(cert.verify(authority, server, valid_until + 1, leeway));
+    CHECK(cert.verify(authority, server, valid_until + leeway, leeway));
+    CHECK_FALSE(cert.verify(authority, server, valid_until + leeway + 1, leeway));
+    // The widened window stops at the ends of the timestamp range.
+    auto const last = std::numeric_limits<uint32_t>::max();
+    auto const early = noise_certificate::sign(keypair(4).secret(), server, 3, 100);
+    REQUIRE(early);
+    CHECK(early->verify(authority, server, 0, leeway));
+    CHECK_FALSE(early->verify(authority, server, last, leeway));
+    auto const late = noise_certificate::sign(keypair(4).secret(), server, last - 100, last - 3);
+    REQUIRE(late);
+    CHECK(late->verify(authority, server, last, leeway));
+    CHECK_FALSE(late->verify(authority, server, 0, leeway));
     CHECK_FALSE(cert.verify(keypair(5).public_key(), server, now));
     CHECK_FALSE(cert.verify(authority, keypair(6).public_key(), now));
     CHECK_FALSE(cert.verify(invalid, server, now));
