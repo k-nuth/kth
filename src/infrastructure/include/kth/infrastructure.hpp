@@ -129,10 +129,6 @@
 #include <kth/infrastructure/wallet/qrcode.hpp>
 #endif
 
-#if ! defined(__EMSCRIPTEN__)
-#include <kth/infrastructure/utility/pending.hpp>
-#endif
-
 // =============================================================================
 // DEPRECATED - moved to deprecated/ folder (see doc/asio.md)
 // =============================================================================
