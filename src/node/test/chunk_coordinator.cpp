@@ -184,6 +184,37 @@ TEST_CASE("chunk_coordinator timeout resets stalled slots", "[chunk_coordinator]
     REQUIRE(c2.has_value());
 }
 
+TEST_CASE("chunk_coordinator counts a chunk once when two peers complete it", "[chunk_coordinator]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 20);
+
+    // One slot per chunk, as the node runs it: two chunks, 1-10 and 11-20.
+    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 0, .stall_timeout_secs = 0};
+    chunk_coordinator coord(index, 1, 20, cfg);
+
+    // A slow peer takes the first chunk and stalls; the chunk is handed to a
+    // second peer, and then both finish it.
+    auto const slow = coord.claim_chunk();
+    REQUIRE(slow == 0u);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    coord.check_timeouts();
+    auto const second = coord.claim_chunk();
+    REQUIRE(second == 0u);
+
+    coord.chunk_completed(*slow);
+    coord.chunk_completed(*second);
+
+    // The second chunk was never downloaded.
+    CHECK(coord.get_progress().chunks_completed == 1);
+    CHECK_FALSE(coord.is_complete());
+
+    auto const last = coord.claim_chunk();
+    REQUIRE(last == 1u);
+    coord.chunk_completed(*last);
+    CHECK(coord.get_progress().chunks_completed == 2);
+    CHECK(coord.is_complete());
+}
+
 TEST_CASE("chunk_coordinator chunk_failed resets slot to FREE", "[chunk_coordinator]") {
     header_index index(1024);
     populate_dummy_headers(index, 1, 100);
