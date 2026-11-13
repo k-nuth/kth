@@ -19,6 +19,7 @@
 #endif
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/chain_mmr.hpp>
 #include <kth/blockchain/finalization.hpp>
 #include <kth/blockchain/parking.hpp>
 #include <kth/blockchain/header_index.hpp>

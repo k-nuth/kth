@@ -39,6 +39,7 @@ struct KB_API settings {
     /// Properties.
     uint32_t cores = 0;
     bool priority = true;
+    bool mmr_index = false;
 #if defined(KTH_CURRENCY_BCH)
     // The network's relay floor, BCHN's minrelaytxfee: 1000 satoshis per 1000
     // bytes, by serialized size. Signature work is not priced at this floor;

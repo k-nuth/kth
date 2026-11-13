@@ -137,7 +137,11 @@ struct KD_API version {
         // NODE_CF means that the node supports BIP 157/158 style
         // compact filters on block data.
         node_compact_filters = (1U << 8),
+
 #endif  // KTH_CURRENCY_BCH
+
+        // NODE_SHV means the node serves header inclusion proofs.
+        node_shv = (1U << 9),
 
         // NODE_NETWORK_LIMITED means the same as NODE_NETWORK with the limitation
         // of only serving the last 288 (2 day) blocks.

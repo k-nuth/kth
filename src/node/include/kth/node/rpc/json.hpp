@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,6 +35,12 @@ std::expected<request, rpc_error> parse_request(std::string_view body);
 // a non-array, or a non-string element each yields an empty string in that slot;
 // handlers validate arity and emptiness themselves.
 std::vector<std::string> params_strings(std::string_view params_json);
+
+// Strict JSON scalar readers. Unlike params_strings/params_uint, these retain
+// the distinction between an empty string and the wrong type, and reject
+// numeric strings. Used by the BCHN-compatible SHV argument validation.
+[[nodiscard]] std::optional<std::string> params_string(std::string_view params_json, std::size_t index);
+[[nodiscard]] std::optional<std::int32_t> params_int32(std::string_view params_json, std::size_t index);
 
 // The positional param at `index` as an unsigned integer. Accepts a JSON number
 // (e.g. getblockhash's `[0]`) or a numeric string (`["0"]`); nullopt when absent

@@ -54,6 +54,9 @@ std::string render_blockchain_info(blockchain_info const& info) {
     w.field("headers", uint64_t(info.headers));
     w.field("bestblockhash", encode_hash(info.best_block_hash));
     w.field("difficulty", info.difficulty);
+    if (info.shv_root) {
+        w.field("shvroot", encode_hash(*info.shv_root));
+    }
     if (info.progress) {
         w.field("ticks", info.progress->ticks);
         w.field("target_time", info.progress->target_time);
@@ -533,7 +536,8 @@ std::string render_block_header(domain::chain::header const& header,
                                 size_t height, hash_digest const& hash,
                                 int64_t confirmations,
                                 std::optional<chain_progress> progress,
-                                std::optional<int64_t> confirmations_ticks) {
+                                std::optional<int64_t> confirmations_ticks,
+                                std::optional<hash_digest> shv_root) {
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(hash));
@@ -551,6 +555,21 @@ std::string render_block_header(domain::chain::header const& header,
     w.field("time", int64_t(header.timestamp()));
     w.field("bits", encode_base16(header.bits()));
     w.field("nonce", int64_t(header.nonce()));
+    if (shv_root) {
+        w.field("shvroot", encode_hash(*shv_root));
+    }
+    w.end_object();
+    return w.str();
+}
+
+std::string render_shv(domain::chain::header const& header,
+    hash_list const& proof, hash_digest const& target, bool to_root) {
+    writer w;
+    w.begin_object();
+    w.key("branch");
+    write_hash_array(w, proof);
+    w.field("header", header_to_hex(header));
+    w.field(to_root ? "root" : "peak", encode_hash(target));
     w.end_object();
     return w.str();
 }

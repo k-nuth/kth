@@ -150,6 +150,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/local_admission_tasks.cpp
+    src/detail/shv.cpp
     src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
     src/executor/executor.cpp
@@ -316,6 +317,7 @@ set(kth_headers
   include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
+  include/kth/node/detail/shv.hpp
   include/kth/node/parser.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
@@ -516,6 +518,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_messages.cpp
           test/sv2_connection.cpp
           test/settings.cpp
+          test/shv.cpp
+          test/shv_transport.cpp
+          test/shv_chain.cpp
           test/utility.cpp
           test/utility.hpp)
 
