@@ -188,8 +188,14 @@ TEST_CASE("sv2 noise keys and certificates reject invalid inputs", "[sv2 noise]"
     auto cert = certificate();
     CHECK(cert.verify(authority, server, valid_from));
     CHECK(cert.verify(authority, server, valid_until));
-    CHECK_FALSE(cert.verify(authority, server, valid_from - 1));
-    CHECK_FALSE(cert.verify(authority, server, valid_until + 1));
+    // The verifier's clock may be up to the leeway behind or ahead of the
+    // signer's, and no further.
+    CHECK(cert.verify(authority, server, valid_from - 1));
+    CHECK(cert.verify(authority, server, valid_from - certificate_clock_leeway_seconds));
+    CHECK_FALSE(cert.verify(authority, server, valid_from - certificate_clock_leeway_seconds - 1));
+    CHECK(cert.verify(authority, server, valid_until + 1));
+    CHECK(cert.verify(authority, server, valid_until + certificate_clock_leeway_seconds));
+    CHECK_FALSE(cert.verify(authority, server, valid_until + certificate_clock_leeway_seconds + 1));
     CHECK_FALSE(cert.verify(keypair(5).public_key(), server, now));
     CHECK_FALSE(cert.verify(authority, keypair(6).public_key(), now));
     CHECK_FALSE(cert.verify(invalid, server, now));
@@ -247,7 +253,9 @@ TEST_CASE("sv2 noise authenticates the first flight and both second flight tags"
 
 TEST_CASE("sv2 noise initiator refuses unauthenticated or out of date certificates", "[sv2 noise]") {
     for (auto const authority : {keypair(4).public_key(), keypair(5).public_key()}) {
-        for (auto const time : {valid_from - 1, now, valid_until + 1}) {
+        // Outside the window by more than the leeway a clock may be off.
+        for (auto const time : {valid_from - certificate_clock_leeway_seconds - 1, now,
+                valid_until + certificate_clock_leeway_seconds + 1}) {
             if (authority == keypair(4).public_key() && time == now) continue;
             noise_initiator initiator(keypair(1), authority, time);
             noise_responder responder(keypair(2), keypair(3), certificate());
@@ -258,6 +266,19 @@ TEST_CASE("sv2 noise initiator refuses unauthenticated or out of date certificat
             CHECK_FALSE(initiator.finish(*second));
             CHECK_FALSE(initiator.keys());
         }
+    }
+    // A client whose clock is a little behind the signer's, or a little ahead of
+    // the end of the window, still completes the handshake.
+    for (auto const time : {valid_from - certificate_clock_leeway_seconds,
+            valid_until + certificate_clock_leeway_seconds}) {
+        noise_initiator initiator(keypair(1), keypair(4).public_key(), time);
+        noise_responder responder(keypair(2), keypair(3), certificate());
+        auto const first = initiator.start();
+        REQUIRE(first);
+        auto const second = responder.respond(*first);
+        REQUIRE(second);
+        CHECK(initiator.finish(*second));
+        CHECK(initiator.keys());
     }
     for (int const defect : {0, 1, 2}) {
         auto cert = certificate(defect == 0 ? 6 : 3);

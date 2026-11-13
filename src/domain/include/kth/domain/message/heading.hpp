@@ -10,7 +10,6 @@
 #include <istream>
 #include <string>
 
-#include <boost/array.hpp>
 
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>

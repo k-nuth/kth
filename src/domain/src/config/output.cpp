@@ -30,12 +30,12 @@ expect<output> output::parse_from(std::string_view tuple) {
         return std::unexpected(kth::error::illegal_value);
     }
 
-    uint64_t amount = 0;
-    deserialize(amount, tokens[1], true);
-    if (amount > max_money()) {
+    auto const parsed_amount = parse_integer<uint64_t>(tokens[1]);
+    if ( ! parsed_amount || *parsed_amount > max_money()) {
         return std::unexpected(kth::error::illegal_value);
     }
 
+    auto const amount = *parsed_amount;
     auto const& target = tokens.front();
 
     if (auto payment = wallet::payment_address::parse_from(target); payment) {

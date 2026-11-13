@@ -46,6 +46,11 @@ a little behind still accepts it, and lasts `sv2.certificate_validity_seconds`
 after it (default 2592000, or 30 days). The authority key stays the same across
 restarts.
 
+Wherever Knuth checks a certificate itself, its own clock may be up to 10
+seconds outside the certificate's validity times. A certificate carries whole
+seconds, and a server that signs from its current second would otherwise be
+refused by a client whose clock is a moment behind it.
+
 Startup prints `Noise authority public key: <key>`. Give that public key to the
 Job Declarator or pool over a trusted channel and configure it as the client's
 authority public key. It is the SV2 section 4.7 encoding: Base58Check of
@@ -415,14 +420,38 @@ move that revenue into the first output. The serialized outputs must fit the
 token's reservation and must not carry token data. A malformed success falls
 back to solo rather than retrying.
 
-`PayoutOutputsStale` means tokens allocated before the notice are stale. The
-reply already in flight is consumed, then the node allocates a new token and
-requests again. `stale-payout-outputs` on a token from before that notice is
-the same race. One such answer for a token allocated after the latest notice
-is retried; a second is a refusal. A notice on every reply cannot allocate
-forever: eight restarts are allowed and the next one falls back to solo. Any
-other `RequestPayoutOutputs.Error`, or no answer within
-`sv2.jd.response_timeout_seconds`, also falls back to solo.
+`PayoutOutputsStale` means tokens allocated before the notice are stale. With
+a request in flight, the reply already owed is consumed, then the node
+allocates a new token and requests again. `stale-payout-outputs` on a token
+from before that notice is the same race. A notice on every reply cannot
+allocate forever: eight restarts are allowed and the next one falls back to
+solo.
+
+With a job installed, the notice means the pool's payouts have moved under
+that job, and a pool counts shares on a job only for as long as it keeps it.
+The node declares the tip again, at most once every 4 seconds however many
+notices arrive, and the installed job stays in use until the new one is
+accepted.
+
+`stale-payout-outputs` for a token allocated after the latest notice means
+the pool's own node is on another block than this one: the request names a
+height, previous hash and nbits that the pool's template does not have. It
+happens at every new block, to whichever of the two nodes hears of it last,
+and ends when that one catches up. It is not a fallback. Both connections
+stay open, downstream work pays `sv2.mining.address` meanwhile, and the node
+declares the tip again after 1 second, then 2, doubling up to 30 while the
+pool keeps answering that way, and from 1 second again on the next tip. Every
+request takes one of the pool's tokens, so a pool that stays behind sees two
+requests a minute. Any other `RequestPayoutOutputs.Error`, or no answer
+within `sv2.jd.response_timeout_seconds`, falls back to solo.
+
+A declared or custom job can meet the same difference one step later.
+`DeclareMiningJob.Error` or `SetCustomMiningJob.Error` with `stale-chain-tip`
+(the job's parent is not the pool's chain tip), with `template-unavailable`
+(the pool could not check the job at that moment) or, when payout outputs
+were requested, with `stale-payout-outputs`, ends the attempt the same way:
+no fallback, and the tip is declared again after the wait. Every other code
+on those two messages is a refusal.
 
 Either way, `full-template` then sends `DeclareMiningJob` with the coinbase
 prefix and suffix and the transaction list, answers `ProvideMissingTransactions`
@@ -480,9 +509,12 @@ Fallback follows specification section 6.2. The node returns downstream work
 to the solo payout, and logs why, when the JDS does not answer
 `AllocateMiningJobToken` or `RequestPayoutOutputs` within
 `sv2.jd.response_timeout_seconds`, the JDS sends `DeclareMiningJob.Error` or
-any `RequestPayoutOutputs.Error` other than a bounded stale retry, the pool
+any `RequestPayoutOutputs.Error` other than `stale-payout-outputs`, the pool
 refuses `SetCustomMiningJob`, the pool refuses a share on an accepted job, or
-either connection drops. Negotiation silence closes only the Job Declaration
+either connection drops. `stale-share` for a share on the accepted job is not
+such a refusal by itself: the pool has dropped that job, the share is lost,
+and the node declares the tip again. Nine such answers in a row, with no share
+accepted in between, are a refusal. Negotiation silence closes only the Job Declaration
 socket and opens one connection that does not negotiate. It is not one of
 these fallbacks when that connection comes up. The next job after the pool
 coinbase was in use pays `sv2.mining.address`. A

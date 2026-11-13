@@ -313,6 +313,31 @@ jd_declaration::result jd_declaration::retry_allocation() {
     return send_allocation();
 }
 
+bool jd_declaration::later(std::string_view code) const {
+    // The pool's node is on another block than this one, or the pool could not
+    // check the job at the moment. Both pass by themselves, and neither is a
+    // judgement of the job.
+    return code == error_stale_chain_tip || code == error_template_unavailable
+        || (payout_outputs_ && code == error_stale_payout_outputs);
+}
+
+jd_declaration::result jd_declaration::defer() {
+    // The same end as supersede(): the request is over, and a late reply to it
+    // must not be applied to the declaration that follows.
+    if (retired_request_ids_.size() == max_retired_request_ids) {
+        retired_request_ids_.pop_front();
+    }
+    retired_request_ids_.push_back(request_id_);
+    state_ = state::idle;
+    restart_ = false;
+    work_.reset();
+    transactions_.clear();
+    // template_ stays, as after fail(): the solo payout keeps that selection.
+    result out;
+    out.deferred = true;
+    return out;
+}
+
 jd_declaration::result jd_declaration::declare_work(data_chunk token) {
     if ( ! full_template_) return install(std::move(token));
     declare_mining_job message;
@@ -408,11 +433,20 @@ jd_declaration::result jd_declaration::note_stale(byte_span payload) {
     if ( ! parse<payout_outputs_stale>(payload)) return fail("malformed payout stale notice");
     if (state_ == state::failed) return {};
     ++notice_epoch_;
-    unexplained_stale_ = 0;
     // One request stays in flight. The reply that is already owed is consumed,
     // then a new token is allocated. A second request is not sent early.
-    if (pending()) restart_ = true;
-    return {};
+    if (pending()) {
+        restart_ = true;
+        return {};
+    }
+    // Nothing is in flight. An installed job keeps the outputs of the token
+    // it was declared with, and the pool counts shares on it only for as
+    // long as it keeps that job. A declaration that ended on a stale answer
+    // waits for exactly this. Either way the template is declared again.
+    if ( ! has_template_) return {};
+    result out;
+    out.outdated = true;
+    return out;
 }
 
 jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_success const& success) {
@@ -460,12 +494,16 @@ jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_succ
 
 jd_declaration::result jd_declaration::refuse_payout(request_payout_outputs_error const& error) {
     // A token allocated before the latest notice is the race that notice describes.
-    // One stale answer after that notice is retried; the next is a refusal.
     if (error.error_code == error_stale_payout_outputs) {
         if (token_epoch_ < notice_epoch_) return retry_allocation();
-        if (unexplained_stale_ >= 1) return fail("repeated stale payout outputs");
-        ++unexplained_stale_;
-        return retry_allocation();
+        // With no notice, the token is on the pool's current share and the
+        // request names another block than the pool's own template: the
+        // pool's node and this one are not on the same tip. That happens at
+        // every new block, to whichever of the two hears of it last, and it
+        // ends when that one catches up. Asking again at once gets the same
+        // answer, and it is not a refusal of this client, so the attempt
+        // ends here and the owner starts another after a wait.
+        return defer();
     }
     return fail("payout outputs refused: " + error.error_code);
 }
@@ -595,6 +633,10 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
             auto const message = parse<declare_mining_job_error>(payload);
             if ( ! message || message->request_id != request_id_) return fail("invalid declaration refusal");
             if (restart_) return retry_allocation();
+            // The pool's node left this tip between its payout answer and
+            // the declaration, or could not check the template just now.
+            // The same race as a stale payout answer.
+            if (later(message->error_code)) return defer();
             return fail("JDS refused the local template: " + message->error_code);
         }
         if (header.msg_type == declare_mining_job_success::message_type) {
@@ -621,6 +663,7 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
                 return fail("invalid custom job refusal");
             }
             if (restart_) return retry_allocation();
+            if (later(message->error_code)) return defer();
             return fail("pool refused the local custom job: " + message->error_code);
         }
         if (header.msg_type == set_custom_mining_job_success::message_type) {
