@@ -37,6 +37,11 @@ private:
     byte_array<64> ellswift_{};
 };
 
+// How far the verifier's clock may be behind or ahead of the signer's. The
+// certificate carries whole seconds, and the reference implementation of the
+// protocol signs from its current second and allows the same leeway.
+inline constexpr uint32_t certificate_clock_leeway_seconds = 10;
+
 struct noise_certificate {
     static constexpr size_t size = 74;
 
@@ -48,6 +53,7 @@ struct noise_certificate {
     [[nodiscard]] static std::optional<noise_certificate> sign(
         hash_digest const& authority_secret, hash_digest const& static_public,
         uint32_t from, uint32_t until, hash_digest const& auxiliary = {});
+    // `now` may be outside the validity window by certificate_clock_leeway_seconds.
     [[nodiscard]] bool verify(hash_digest const& authority_public,
         hash_digest const& static_public, uint32_t now) const;
     [[nodiscard]] byte_array<size> bytes() const;

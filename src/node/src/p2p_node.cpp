@@ -6,6 +6,7 @@
 
 #include <kth/node/detail/block_announcements.hpp>
 #include <kth/node/detail/outbound_connections.hpp>
+#include <kth/node/detail/scope_action.hpp>
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
@@ -13,6 +14,7 @@
 #include <kth/node/detail/ws_discovery_task.hpp>
 
 #include <algorithm>
+#include <set>
 
 #include <kth/node/handlers/ping.hpp>
 #include <kth/node/handlers/pong.hpp>
@@ -238,16 +240,15 @@ p2p_node::~p2p_node() {
         co_await ::asio::post(pool_.get_executor(), ::asio::use_awaitable);
     }
 
-    // Connect to configured manual peers (supervisor is now ready)
-    if (!settings_.peers.empty()) {
-        spdlog::debug("[p2p_node] run() - connecting to {} manual peers", settings_.peers.size());
-        for (auto const& peer : settings_.peers) {
-            auto result = co_await connect(peer.host(), peer.port());
-            if (!result) {
-                spdlog::warn("[p2p_node] Failed to connect to configured peer {}:{} - {}",
-                    peer.host(), peer.port(), result.error().message());
-            }
-        }
+    // One owner per configured endpoint, independent of the discovered-peer
+    // target. Its session completion is a retained event, not a shared-state
+    // poll or a sync-layer notification that another consumer might take.
+    std::set<std::pair<std::string, uint16_t>> configured;
+    for (auto const& peer : settings_.peers) {
+        if ( ! configured.emplace(peer.host(), peer.port()).second) continue;
+        network_tasks.spawn(fmt::format("configured_{}:{}", peer.host(), peer.port()),
+            ::asio::co_spawn(::asio::make_strand(pool_.get_executor()),
+                maintain_configured_peer(peer.host(), peer.port()), ::asio::use_awaitable));
     }
 
     spdlog::debug("[p2p_node] All tasks spawned, waiting on join...");
@@ -755,11 +756,37 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
     std::string const& host,
     uint16_t port)
 {
+    co_return co_await connect(host, port, nullptr);
+}
+
+awaitable_expected<peer_session::ptr> p2p_node::connect(
+    std::string const& host,
+    uint16_t port,
+    std::shared_ptr<peer_lifecycle_channel> lifecycle_ended)
+{
+    // Before handoff this attempt owns the completion. After it, the
+    // supervisor closes it, including failed handshakes and exceptional exits.
+    bool handed = false;
+    detail::scope_action complete([&]() noexcept {
+        if (lifecycle_ended && !handed) lifecycle_ended->close();
+    }, true);
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
 
     auto executor = co_await ::asio::this_coro::executor;
+
+    // A literal IP needs no network probe to discover that another session
+    // already represents it. Keep the later checks for DNS and admission races.
+    std::error_code parse_ec;
+    auto const literal = ::asio::ip::make_address(host, parse_ec);
+    if ( ! parse_ec) {
+        // Authorities store IPv4 as mapped IPv6, just like the post-dial check.
+        auto const ip = infrastructure::config::authority(literal, port).asio_ip();
+        if (co_await manager_.exists_by_ip(ip)) {
+            co_return std::unexpected(error::address_in_use);
+        }
+    }
 
     // Use async_connect from peer_session.hpp
     auto result = co_await async_connect(
@@ -799,8 +826,9 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
     if (new_peer_channel_ && new_peer_channel_->is_open()) {
         co_await new_peer_channel_->async_send(
             std::error_code{},
-            peer_event{peer, peer_direction::outbound, response_channel},
+            peer_event{peer, peer_direction::outbound, response_channel, lifecycle_ended},
             ::asio::use_awaitable);
+        handed = true;
     } else {
         peer->stop();
         co_return std::unexpected(error::service_stopped);
@@ -1376,10 +1404,6 @@ select_channel<peer_notification>& p2p_node::peer_events() {
     // The read loop and the peer's service, joined: each ends the session when
     // it ends, which closes what the other waits on.
     co_await (read_peer_messages(peer, discovery) && dispatcher_.serve(*peer));
-
-    spdlog::debug("[p2p_node] Calling manager_.remove() for [{}]", peer->authority());
-    co_await manager_.remove(peer);
-    spdlog::debug("[p2p_node] manager_.remove() completed for [{}]", peer->authority());
 }
 
 ::asio::awaitable<void> p2p_node::read_peer_messages(peer_session::ptr peer, bool discovery_enabled) {
@@ -1772,6 +1796,12 @@ void p2p_node::wake_status_task() noexcept {
                         pending_connections_.erase(ip);
 
                         if (!result) {
+                            if (result.error() == error::address_in_use) {
+                                // Another live session holds this IP. Keep the
+                                // candidate for when that session closes.
+                                spdlog::trace("[p2p_node] Retaining occupied discovered address {}", authority);
+                                co_return;
+                            }
                             spdlog::trace("[p2p_node] Connection failed to {}: {}",
                                 authority, result.error().message());
                             // Add to cooldown to prevent rapid reconnection
@@ -1857,6 +1887,7 @@ void p2p_node::wake_status_task() noexcept {
         auto peer = event.peer;
         auto direction = event.direction;
         auto response_channel = event.response_channel;
+        auto lifecycle_ended = event.lifecycle_ended;
 
         // Lifecycle tasks own peers. Tracking shutdown must not retain every
         // closed session/socket forever as clients disconnect and reconnect.
@@ -1882,10 +1913,26 @@ void p2p_node::wake_status_task() noexcept {
         // first completion handler without synchronisation, so everything in
         // the group has to complete on one strand. The channel waits of the
         // handshake and the protocols are selections and need no strand.
-        peer_tasks.spawn(task_name, ::asio::co_spawn(peer->get_executor(), [this, peer, direction, response_channel]() -> ::asio::awaitable<void> {
+        peer_tasks.spawn(task_name, ::asio::co_spawn(peer->get_executor(), [this, peer, direction, response_channel, lifecycle_ended]() -> ::asio::awaitable<void> {
+            peer_lifecycle_end outcome;
+            detail::scope_action complete([&]() noexcept {
+                if (lifecycle_ended) {
+                    // Exactly one producer and one buffered record. Publication
+                    // follows cleanup; close also latches failed handoffs.
+                    (void)lifecycle_ended->try_send(std::move(outcome));
+                    lifecycle_ended->close();
+                }
+            }, true);
+            // Set only after this session is admitted. The two branches below
+            // share its strand, and cleanup reads it only after both are joined.
+            std::optional<std::chrono::steady_clock::time_point> admitted_at;
+            std::optional<std::chrono::steady_clock::time_point> transport_ended_at;
             try {
                 co_await (
                     [&]() -> ::asio::awaitable<void> {
+                        detail::scope_action ended([&]() noexcept {
+                            transport_ended_at = std::chrono::steady_clock::now();
+                        }, true);
                         co_await peer->run();
                         spdlog::debug("[p2p_node] Peer [{}] run() completed", peer->authority());
                     }() &&
@@ -1911,7 +1958,7 @@ void p2p_node::wake_status_task() noexcept {
                         }
 
                         // Add to peer manager
-                        auto add_ec = co_await manager_.add(peer);
+                        auto add_ec = co_await manager_.add(peer, direction == peer_direction::outbound);
                         if (add_ec != error::success) {
                             spdlog::debug("[p2p_node] Failed to add peer [{}] to manager: {}",
                                 peer->authority(), add_ec.message());
@@ -1922,6 +1969,8 @@ void p2p_node::wake_status_task() noexcept {
                             spdlog::debug("[p2p_node] Peer [{}] lambda completed (add failed)", peer->authority());
                             co_return;
                         }
+
+                        admitted_at = std::chrono::steady_clock::now();
 
                         // Update peer_database with version info from handshake
                         if (auto ver = peer->peer_version(); ver) {
@@ -1936,9 +1985,6 @@ void p2p_node::wake_status_task() noexcept {
                             }
                             // If created_not_stored: at capacity, data is lost (acceptable)
                         }
-
-                        // Track connection time to detect quick disconnects
-                        auto const connection_start = std::chrono::steady_clock::now();
 
                         // Notify sync layer of new peer (CSP pattern)
                         spdlog::info("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
@@ -1972,43 +2018,6 @@ void p2p_node::wake_status_task() noexcept {
                         // Run protocols until peer disconnects
                         co_await run_peer_protocols(peer, handshake_result->ws_discovery);
 
-                        // A short connection is not evidence of a protocol offence:
-                        // a browser may close a tab, or a transport/proxy may restart.
-                        // Keep an outbound retry cooldown, but never turn normal
-                        // session lifecycle into IP-wide misbehavior points. Actual
-                        // malformed/invalid protocol data keeps its existing scoring.
-                        auto const connection_duration = std::chrono::steady_clock::now() - connection_start;
-                        constexpr auto min_connection_duration = 5s;
-                        if (direction == peer_direction::outbound &&
-                            connection_duration < min_connection_duration) {
-                            constexpr auto quick_disconnect_cooldown = 30s;
-                            failed_connections_.insert_or_assign(
-                                peer->authority().asio_ip(),
-                                std::chrono::steady_clock::now() + quick_disconnect_cooldown);
-                            spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms), cooling down retries",
-                                peer->authority(),
-                                std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
-                        }
-
-                        // Notify sync layer of peer disconnection (CSP pattern)
-                        spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
-                            peer->authority(), peer->nonce());
-                        peer_notification_channel_->try_send(
-                            peer_notification{peer, peer_event_type::disconnected});
-                        // And the relay, so what this peer was asked passes to
-                        // another announcer now.
-                        // Waited for, not tried: this is not a read loop, and a
-                        // session's end the relay never hears would keep it.
-                        // A stopping node closes the channel, which ends it.
-                        if (settings_.relay_transactions) {
-                            auto handed = co_await ::asio::experimental::make_select(
-                                ::asio::experimental::send(tx_relay_->commands,
-                                    detail::tx_relay_command{detail::tx_peer_gone{peer->nonce()}})
-                            ).async_wait(co_await ::asio::this_coro::executor, {}, stop_token(),
-                                ::asio::as_tuple(::asio::deferred));
-                            (void)handed;
-                        }
-
                         spdlog::debug("[p2p_node] Peer [{}] lambda completed (protocols ended)", peer->authority());
                     }()
                 );
@@ -2020,6 +2029,62 @@ void p2p_node::wake_status_task() noexcept {
                 if (response_channel) {
                     response_channel->try_send(std::error_code{}, handshake_response{error::operation_failed});
                 }
+            } catch (...) {
+                spdlog::debug("[p2p_node] Peer [{}] task threw an unknown exception", peer->authority());
+                if (response_channel) {
+                    response_channel->try_send(std::error_code{}, handshake_response{error::operation_failed});
+                }
+            }
+
+            // Exceptions from either branch still release only this admitted
+            // session. Removal finishes before disconnect notices and before
+            // the completion guard wakes a configured endpoint's retry owner.
+            peer->stop();
+            if (admitted_at) {
+                outcome.admitted = true;
+                // Handler cleanup may outlive the transport. Only the live
+                // transport counts toward a successful connection's duration.
+                outcome.connected_for = std::max(
+                    transport_ended_at.value_or(*admitted_at) - *admitted_at,
+                    std::chrono::steady_clock::duration::zero());
+                co_await manager_.remove(peer);
+                // A short connection is not evidence of a protocol offence:
+                // a browser may close a tab, or a transport/proxy may restart.
+                // Keep an outbound retry cooldown, but never turn normal
+                // session lifecycle into IP-wide misbehavior points. Actual
+                // malformed/invalid protocol data keeps its existing scoring.
+                auto const connection_duration = outcome.connected_for;
+                constexpr auto min_connection_duration = 5s;
+                if (direction == peer_direction::outbound &&
+                    connection_duration < min_connection_duration) {
+                    constexpr auto quick_disconnect_cooldown = 30s;
+                    failed_connections_.insert_or_assign(
+                        peer->authority().asio_ip(),
+                        std::chrono::steady_clock::now() + quick_disconnect_cooldown);
+                    spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms), cooling down retries",
+                        peer->authority(),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
+                }
+
+                // Notify sync layer of peer disconnection (CSP pattern)
+                spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
+                    peer->authority(), peer->nonce());
+                peer_notification_channel_->try_send(
+                    peer_notification{peer, peer_event_type::disconnected});
+                // And the relay, so what this peer was asked passes to
+                // another announcer now.
+                // Waited for, not tried: this is not a read loop, and a
+                // session's end the relay never hears would keep it.
+                // A stopping node closes the channel, which ends it.
+                if (settings_.relay_transactions) {
+                    auto handed = co_await ::asio::experimental::make_select(
+                        ::asio::experimental::send(tx_relay_->commands,
+                            detail::tx_relay_command{detail::tx_peer_gone{peer->nonce()}})
+                    ).async_wait(co_await ::asio::this_coro::executor, {}, stop_token(),
+                        ::asio::as_tuple(::asio::deferred));
+                    (void)handed;
+                }
+
             }
 
             spdlog::debug("[p2p_node] Peer [{}] full lifecycle completed", peer->authority());
