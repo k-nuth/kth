@@ -240,7 +240,6 @@ set(kth_sources_just_legacy
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
         src/utility/monitor.cpp
-        src/utility/ostream_writer.cpp
         src/utility/prioritized_mutex.cpp
         src/utility/scope_lock.cpp
 
@@ -356,7 +355,6 @@ set(kth_headers
 
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
-    include/kth/infrastructure/impl/utility/ostream_writer.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
@@ -380,7 +378,6 @@ set(kth_headers
     include/kth/infrastructure/utility/collection.hpp
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
-    include/kth/infrastructure/utility/container_sink.hpp
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
@@ -391,7 +388,6 @@ set(kth_headers
     include/kth/infrastructure/utility/interprocess_lock.hpp
     include/kth/infrastructure/utility/monitor.hpp
     include/kth/infrastructure/utility/noncopyable.hpp
-    include/kth/infrastructure/utility/ostream_writer.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
     include/kth/infrastructure/utility/duration_jitter.hpp
