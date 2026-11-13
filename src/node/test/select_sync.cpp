@@ -586,7 +586,7 @@ struct fast_path_fixture {
         REQUIRE(chain.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
 
         coordinator = std::make_shared<chunk_coordinator>(chain.organizer().index(), 1, fast_block_count,
-            chunk_coordinator_config{.chunk_size = fast_chunk_size, .slots = 0, .stall_timeout_secs = 3600});
+            chunk_coordinator_config{.chunk_size = fast_chunk_size, .stall_timeout_secs = 3600});
 
         auto [client, server] = make_connected_sockets(ctx);
         session = std::make_shared<network::peer_session>(std::move(server), settings);

@@ -14,11 +14,11 @@
 //
 // DESIGN:
 // -------
-// - Uses a slot-based system where each slot represents a chunk of N blocks
+// - One slot per chunk of N blocks: the slot's position is the chunk id
 // - Slots have 3 states: FREE (0), IN_PROGRESS (1), COMPLETED (2)
 // - Claim operation is lock-free using CAS
-// - When all slots in a round are COMPLETED, advance to next round
-// - Failed chunks reset to FREE for retry by another peer
+// - Failed and stalled chunks reset to FREE for retry by another peer
+// - A chunk counts as completed once, whoever reports it and however often
 //
 // FLOW:
 // -----
@@ -47,9 +47,6 @@ namespace kth::node::sync {
 struct chunk_coordinator_config {
     /// Blocks per chunk (matches Bitcoin protocol getdata limit)
     size_t chunk_size{16};
-
-    /// Number of slots. If 0, uses one slot per chunk.
-    size_t slots{0};
 
     /// Timeout before a slot is considered stalled (seconds)
     uint32_t stall_timeout_secs{15};
@@ -103,7 +100,9 @@ struct chunk_coordinator {
     [[nodiscard]]
     uint64_t generation() const { return index_.generation(); }
 
-    /// Report that a chunk was completed successfully
+    /// Report that a chunk was completed successfully. A chunk that stalled
+    /// is handed to a second peer and both may finish it: only the first
+    /// report counts.
     void chunk_completed(uint32_t chunk_id);
 
     /// Report that a chunk failed (will be reset to FREE for retry)
@@ -139,7 +138,6 @@ struct chunk_coordinator {
         uint32_t total_chunks;
         uint32_t chunks_completed;
         uint32_t chunks_in_progress;
-        uint32_t current_round;
         uint32_t start_height;
         uint32_t end_height;
     };
@@ -148,9 +146,6 @@ struct chunk_coordinator {
     progress get_progress() const;
 
 private:
-    /// Try to advance to next round if all slots completed
-    void try_advance_round();
-
     /// Get current time in milliseconds
     static uint64_t now_ms();
 
@@ -164,22 +159,17 @@ private:
     uint32_t const start_height_;
     uint32_t const end_height_;
     uint32_t const total_chunks_;
-    size_t const num_slots_;
 
     // =========================================================================
     // Lock-free slot management (NO MUTEXES)
-    // When slots < total_chunks, slots are reused across rounds.
-    // Round R: slot[i] corresponds to chunk (R * num_slots_ + i).
-    // When slots == total_chunks (default), there is exactly 1 round.
+    // slots_[i] is the state of chunk i.
     // =========================================================================
     using slot_state_atomic = std::atomic<uint8_t>;
     using slot_time_atomic = std::atomic<uint64_t>;
     static constexpr size_t bytes_per_slot = sizeof(slot_state_atomic) + sizeof(slot_time_atomic);
 
-    std::atomic<uint32_t> round_{0};
     std::vector<slot_state_atomic> slots_;
     std::vector<slot_time_atomic> slot_times_;
-    std::atomic<bool> resetting_{false};  // guard for round advancement
 
     // Status
     std::atomic<bool> stopped_{false};

@@ -7,14 +7,12 @@
 // =============================================================================
 //
 // Standalone simulation of the chunk download system with mixed fast/slow peers.
-// Reproduces the "roller coaster" throughput pattern observed in real sync.
 //
-// Usage: chunk_sim [duration_secs] [fast_peers] [slow_peers] [total_blocks] [slots]
+// Usage: chunk_sim [duration_secs] [fast_peers] [slow_peers] [total_blocks]
 //   duration_secs: simulation duration (default: 60)
 //   fast_peers:    number of fast peers (default: 10)
 //   slow_peers:    number of slow peers (default: 5)
 //   total_blocks:  number of blocks to simulate (default: 1000000)
-//   slots:         number of slots, 0 = one per chunk (default: 0)
 //
 // Output: CSV to stdout with per-second stats
 //   second,chunks/s,fast_blocked,slow_blocked,slots_free,slots_progress,slots_complete
@@ -93,24 +91,19 @@ int main(int argc, char* argv[]) {
     int fast_peers    = argc > 2 ? std::atoi(argv[2]) : 10;
     int slow_peers    = argc > 3 ? std::atoi(argv[3]) : 5;
     uint32_t const total_blocks = argc > 4 ? uint32_t(std::atoi(argv[4])) : 1'000'000;
-    size_t const slots = argc > 5 ? size_t(std::atoi(argv[5])) : 0;
 
     uint32_t const chunk_size = 16;
     uint32_t const total_chunks = (total_blocks + chunk_size - 1) / chunk_size;
 
     chunk_coordinator_config cfg{
         .chunk_size = chunk_size,
-        .slots = slots,
         .stall_timeout_secs = 15
     };
-
-    size_t effective_slots = slots > 0 ? std::min(slots, size_t(total_chunks)) : size_t(total_chunks);
 
     std::cerr << "=== Chunk Coordinator Simulation ===" << std::endl;
     std::cerr << "Duration:       " << duration_secs << "s" << std::endl;
     std::cerr << "Fast peers:     " << fast_peers << " (1-5ms/chunk)" << std::endl;
     std::cerr << "Slow peers:     " << slow_peers << " (100-500ms/chunk)" << std::endl;
-    std::cerr << "Slots:          " << effective_slots << (slots == 0 ? " (one per chunk)" : " (limited)") << std::endl;
     std::cerr << "Chunk size:     " << chunk_size << " blocks" << std::endl;
     std::cerr << "Total blocks:   " << total_blocks << std::endl;
     std::cerr << "Total chunks:   " << total_chunks << std::endl;

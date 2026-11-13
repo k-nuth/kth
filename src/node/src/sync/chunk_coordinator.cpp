@@ -21,19 +21,18 @@ chunk_coordinator::chunk_coordinator(
     , start_height_(start_height)
     , end_height_(end_height)
     , total_chunks_((end_height - start_height + config.chunk_size) / config.chunk_size)
-    , num_slots_(config.slots > 0 ? std::min(config.slots, size_t(total_chunks_)) : size_t(total_chunks_))
-    , slots_(num_slots_)
-    , slot_times_(num_slots_)
+    , slots_(total_chunks_)
+    , slot_times_(total_chunks_)
 {
     // Initialize all slots to FREE
-    for (size_t i = 0; i < num_slots_; ++i) {
+    for (size_t i = 0; i < slots_.size(); ++i) {
         slots_[i].store(FREE, std::memory_order_relaxed);
         slot_times_[i].store(0, std::memory_order_relaxed);
     }
 
-    auto const mem_kb = (num_slots_ * bytes_per_slot) / 1024;
-    spdlog::info("[chunk_coordinator] Created: blocks {}-{}, {} chunks, {} slots ({} KB)",
-        start_height, end_height, total_chunks_, num_slots_, mem_kb);
+    auto const mem_kb = (slots_.size() * bytes_per_slot) / 1024;
+    spdlog::info("[chunk_coordinator] Created: blocks {}-{}, {} chunks ({} KB)",
+        start_height, end_height, total_chunks_, mem_kb);
 }
 
 // =============================================================================
@@ -45,65 +44,25 @@ std::optional<uint32_t> chunk_coordinator::claim_chunk() {
         return std::nullopt;
     }
 
-    // 2026-02-07: FIX - Don't spin-wait! In a single-threaded io_context with coroutines,
-    // spinning blocks ALL coroutines on that thread, causing deadlock.
-    // Instead, return nullopt so the caller can retry after yielding to the scheduler.
-    if (resetting_.load(std::memory_order_acquire)) {
-        spdlog::debug("[chunk_coordinator] Round reset in progress, caller should retry");
-        return std::nullopt;
-    }
-
-    uint32_t r = round_.load(std::memory_order_acquire);
-
     // Search for a FREE slot using CAS
-    for (size_t i = 0; i < num_slots_; ++i) {
+    for (size_t i = 0; i < slots_.size(); ++i) {
         uint8_t expected = FREE;
         if (slots_[i].compare_exchange_strong(expected, IN_PROGRESS,
                 std::memory_order_acq_rel, std::memory_order_relaxed)) {
             // Got slot i - record assignment time
             slot_times_[i].store(now_ms(), std::memory_order_release);
 
-            uint32_t chunk_id = r * uint32_t(num_slots_) + uint32_t(i);
-
-            // Check if this chunk is beyond our target
-            auto [block_start, block_end] = chunk_range(chunk_id);
-            if (block_start > end_height_) {
-                // No more chunks needed - mark as completed and return nullopt
-                slots_[i].store(COMPLETED, std::memory_order_release);
-                return std::nullopt;
-            }
-
-            spdlog::debug("[chunk_coordinator] Claimed chunk {} (slot {}, round {}, blocks {}-{})",
-                chunk_id, i, r, block_start, block_end);
+            auto const chunk_id = uint32_t(i);
+            auto const [block_start, block_end] = chunk_range(chunk_id);
+            spdlog::debug("[chunk_coordinator] Claimed chunk {} (blocks {}-{})",
+                chunk_id, block_start, block_end);
 
             return chunk_id;
         }
     }
 
-    // All slots occupied - check if all are COMPLETED to advance round
-    bool all_completed = true;
-    for (size_t i = 0; i < num_slots_; ++i) {
-        if (slots_[i].load(std::memory_order_acquire) != COMPLETED) {
-            all_completed = false;
-            break;
-        }
-    }
-
-    if (all_completed) {
-        try_advance_round();
-        // 2026-02-07: FIX - Check if sync is complete BEFORE recursive call.
-        // Without this check, when sync is complete try_advance_round() returns early
-        // without resetting slots. The recursive call sees all slots still COMPLETED,
-        // enters this branch again, and causes infinite recursion.
-        if (is_complete()) {
-            return std::nullopt;
-        }
-        // Retry claim after round advance
-        return claim_chunk();
-    }
-
-    // Some slots are IN_PROGRESS - peer should wait and retry
-    spdlog::debug("[chunk_coordinator] All slots occupied, waiting...");
+    // Every chunk is in progress or completed: the caller waits and retries,
+    // or leaves once is_complete() says so.
     return std::nullopt;
 }
 
@@ -124,40 +83,33 @@ hash_digest chunk_coordinator::get_block_hash(uint32_t height) const {
 }
 
 void chunk_coordinator::chunk_completed(uint32_t chunk_id) {
-    uint32_t r = chunk_id / uint32_t(num_slots_);
-    size_t slot = chunk_id % num_slots_;
-
-    uint32_t current_round = round_.load(std::memory_order_acquire);
-    if (r != current_round) {
-        // Old round - ignore (already processed)
-        spdlog::debug("[chunk_coordinator] Chunk {} completed but from old round {} (current: {})",
-            chunk_id, r, current_round);
+    if (chunk_id >= slots_.size()) {
         return;
     }
 
-    // Mark as completed
-    slots_[slot].store(COMPLETED, std::memory_order_release);
+    // A chunk that stalled is freed and claimed again, so two peers can report
+    // the same one, and the first can report it while the slot is FREE or
+    // already taken by the second. Whichever state it leaves, the blocks were
+    // delivered; the exchange tells the first report from the later ones.
+    auto const previous = slots_[chunk_id].exchange(COMPLETED, std::memory_order_acq_rel);
+    if (previous == COMPLETED) {
+        spdlog::debug("[chunk_coordinator] Chunk {} completed again, already counted", chunk_id);
+        return;
+    }
     chunks_completed_.fetch_add(1, std::memory_order_relaxed);
 
-    spdlog::debug("[chunk_coordinator] Chunk {} completed (slot {})", chunk_id, slot);
-
-    // Try to advance round if all completed
-    try_advance_round();
+    spdlog::debug("[chunk_coordinator] Chunk {} completed", chunk_id);
 }
 
 void chunk_coordinator::chunk_failed(uint32_t chunk_id) {
-    uint32_t r = chunk_id / uint32_t(num_slots_);
-    size_t slot = chunk_id % num_slots_;
-
-    uint32_t current_round = round_.load(std::memory_order_acquire);
-    if (r != current_round) {
-        // Old round - ignore
+    if (chunk_id >= slots_.size()) {
         return;
     }
 
-    // Reset to FREE so another peer can take it
+    // Reset to FREE so another peer can take it. A chunk another peer already
+    // completed stays completed.
     uint8_t expected = IN_PROGRESS;
-    if (slots_[slot].compare_exchange_strong(expected, FREE,
+    if (slots_[chunk_id].compare_exchange_strong(expected, FREE,
             std::memory_order_acq_rel, std::memory_order_relaxed)) {
         spdlog::debug("[chunk_coordinator] Chunk {} failed, reset to FREE for retry", chunk_id);
     }
@@ -175,7 +127,7 @@ void chunk_coordinator::check_timeouts() {
     uint64_t now = now_ms();
     uint64_t timeout_ms = uint64_t(config_.stall_timeout_secs) * 1000;
 
-    for (size_t i = 0; i < num_slots_; ++i) {
+    for (size_t i = 0; i < slots_.size(); ++i) {
         if (slots_[i].load(std::memory_order_acquire) == IN_PROGRESS) {
             uint64_t assigned_at = slot_times_[i].load(std::memory_order_acquire);
             if (assigned_at > 0 && (now - assigned_at) > timeout_ms) {
@@ -183,10 +135,8 @@ void chunk_coordinator::check_timeouts() {
                 uint8_t expected = IN_PROGRESS;
                 if (slots_[i].compare_exchange_strong(expected, FREE,
                         std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                    uint32_t chunk_id = round_.load(std::memory_order_acquire) *
-                        uint32_t(num_slots_) + uint32_t(i);
-                    spdlog::warn("[chunk_coordinator] Chunk {} (slot {}) timed out after {}s, reset to FREE",
-                        chunk_id, i, config_.stall_timeout_secs);
+                    spdlog::warn("[chunk_coordinator] Chunk {} timed out after {}s, reset to FREE",
+                        i, config_.stall_timeout_secs);
                 }
             }
         }
@@ -209,20 +159,16 @@ void chunk_coordinator::stop() {
 }
 
 chunk_coordinator::progress chunk_coordinator::get_progress() const {
-    // Count slots in current round
     uint32_t in_progress = 0;
-    uint32_t completed_this_round = 0;
-    for (size_t i = 0; i < num_slots_; ++i) {
+    for (size_t i = 0; i < slots_.size(); ++i) {
         uint8_t state = slots_[i].load(std::memory_order_acquire);
         if (state == IN_PROGRESS) ++in_progress;
-        else if (state == COMPLETED) ++completed_this_round;
     }
 
     return {
         .total_chunks = total_chunks_,
         .chunks_completed = chunks_completed_.load(std::memory_order_acquire),
         .chunks_in_progress = in_progress,
-        .current_round = round_.load(std::memory_order_acquire),
         .start_height = start_height_,
         .end_height = end_height_
     };
@@ -231,50 +177,6 @@ chunk_coordinator::progress chunk_coordinator::get_progress() const {
 // =============================================================================
 // Private Helpers
 // =============================================================================
-
-void chunk_coordinator::try_advance_round() {
-    // Check if all slots are COMPLETED
-    for (size_t i = 0; i < num_slots_; ++i) {
-        if (slots_[i].load(std::memory_order_acquire) != COMPLETED) {
-            return;  // Not all completed
-        }
-    }
-
-    // All completed - try to acquire reset lock
-    bool expected = false;
-    if (!resetting_.compare_exchange_strong(expected, true,
-            std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        return;  // Another thread is resetting
-    }
-
-    // We have the reset lock
-    uint32_t old_round = round_.load(std::memory_order_acquire);
-    uint32_t new_round = old_round + 1;
-
-    // Check if we've processed all chunks
-    uint32_t chunks_in_new_round = new_round * uint32_t(num_slots_);
-    if (chunks_in_new_round >= total_chunks_) {
-        // All chunks assigned - no need to advance
-        resetting_.store(false, std::memory_order_release);
-        return;
-    }
-
-    spdlog::debug("[chunk_coordinator] Advancing to round {} (chunks {}-{})",
-        new_round, chunks_in_new_round,
-        std::min(chunks_in_new_round + uint32_t(num_slots_) - 1, total_chunks_ - 1));
-
-    // Reset all slots to FREE
-    for (size_t i = 0; i < num_slots_; ++i) {
-        slots_[i].store(FREE, std::memory_order_relaxed);
-        slot_times_[i].store(0, std::memory_order_relaxed);
-    }
-
-    // Advance round counter
-    round_.store(new_round, std::memory_order_release);
-
-    // Release reset lock
-    resetting_.store(false, std::memory_order_release);
-}
 
 uint64_t chunk_coordinator::now_ms() {
     return uint64_t(
