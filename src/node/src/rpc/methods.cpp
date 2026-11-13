@@ -80,21 +80,24 @@ bool is_block_file(std::string_view name) {
 
 // getblock and getrawtransaction arguments, as BCHN takes them: the hash, then
 // the verbosity as a boolean or a number (null keeps the default), then, for
-// getrawtransaction only, the block to read the transaction from. Types and
-// arity are checked before storage is touched.
+// getrawtransaction, the block to read the transaction from, and for getblock,
+// whether to add each script's byte code pattern. Types and arity are checked
+// before storage is touched.
 struct raw_read_arguments {
     hash_digest hash;
     std::optional<hash_digest> block_hash;
     // getblock: 0 hex, 1 fields and txids, 2 decoded transactions (default 1).
     // getrawtransaction: 0 hex, otherwise decoded (default 0).
     uint64_t verbosity;
+    // getblock: the byteCodePattern objects (default false).
+    bool patterns = false;
 };
 
 std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req, bool transaction) {
     auto const invalid = [&] {
         return kth::fail(make_error(error_code::invalid_params,
             transaction ? "getrawtransaction requires [txid, verbose=false, blockhash]" :
-                          "getblock requires [blockhash, verbosity=1]"));
+                          "getblock requires [blockhash, verbosity=1, patterns=false]"));
     };
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(req.params);
@@ -110,9 +113,20 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     for (auto element : args) {
         simdjson::ondemand::value value;
         simdjson::ondemand::json_type type;
-        if (count >= (transaction ? 3u : 2u) || element.get(value) != simdjson::SUCCESS ||
+        if (count >= 3u || element.get(value) != simdjson::SUCCESS ||
             value.type().get(type) != simdjson::SUCCESS) {
             return invalid();
+        }
+        if ( ! transaction && count == 2) {
+            if (type == simdjson::ondemand::json_type::boolean) {
+                if (value.get_bool().get(result.patterns) != simdjson::SUCCESS) {
+                    return invalid();
+                }
+            } else if (type != simdjson::ondemand::json_type::null) {
+                return kth::fail(make_error(error_code::invalid_params, "patterns must be a boolean"));
+            }
+            ++count;
+            continue;
         }
         if (count == 0 || count == 2) {
             if (count == 2 && type == simdjson::ondemand::json_type::null) {
@@ -761,9 +775,10 @@ get_raw_transaction(method_context& ctx, request const& req) {
     co_return render(*std::get<0>(*result), std::nullopt);
 }
 
-// getblock <blockhash> [verbosity=1] -> with verbosity 0 (or false) the
-// wire-serialized block as hex; with 1 (or true) its fields and txids; with 2
-// its fields and its transactions decoded.
+// getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
+// false) the wire-serialized block as hex; with 1 (or true) its fields and
+// txids; with 2 its fields and its transactions decoded, and with patterns each
+// of their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -825,7 +840,7 @@ get_block(method_context& ctx, request const& req) {
         }
     }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags());
+        view->state->network(), view->state->enabled_flags(), args->patterns);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its

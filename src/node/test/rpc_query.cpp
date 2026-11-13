@@ -509,3 +509,65 @@ TEST_CASE("verbose stale block retains its own ticks and negative depth sentinel
     }
 }
 #endif
+
+// The vectors come from a separate implementation of the same rules: a run of
+// pushes becomes its count (OP_1 to OP_16, then a script number), OP_1NEGATE
+// and OP_1 to OP_16 count as pushes of their value, OP_RESERVED does not, and a
+// script that ends inside a push keeps its last item from the byte before the
+// point where reading stopped.
+TEST_CASE("make_byte_code_pattern replaces each run of pushes by its count", "[rpc query][byte code pattern]") {
+    struct vector {
+        char const* name;
+        char const* script;
+        char const* pattern;
+        char const* fingerprint;
+        std::vector<char const*> data;
+        bool error;
+    };
+    std::string sig;
+    for (int i = 0; i < 71; ++i) sig += "30";
+    std::string key;
+    for (int i = 0; i < 33; ++i) key += "02";
+    std::vector<vector> const vectors{
+        {"p2pkh", "76a914000102030405060708090a0b0c0d0e0f1011121388ac", "76a95188ac",
+         "516879464c7ddd10dc73a3ecb9708b0fd24343287a16387dd6b961363b87714b",
+         {"000102030405060708090a0b0c0d0e0f10111213"}, false},
+        {"seventeen pushes", "5151515151515151515151515151515151", "0111",
+         "26e7f98cfafee5b213726e22632923bf31bf3e988233235f8f5ca5466b3ac0ed",
+         std::vector<char const*>(17, "01"), false},
+        {"OP_1NEGATE, OP_RESERVED, OP_ADD", "4f5093", "515093",
+         "501bc8605e327d6b7178bcb36fa190e11666269c36cd27117803248c2d135b0a", {"81"}, false},
+        {"OP_0", "00", "51",
+         "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260", {""}, false},
+        {"empty", "", "",
+         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", {}, false},
+        {"OP_PUSHDATA1 past the end", "4c05aa", "",
+         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", {"05aa"}, true},
+        {"OP_PUSHDATA2 without its length", "4d01", "",
+         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", {"4d01"}, true},
+    };
+    for (auto const& v : vectors) {
+        CAPTURE(v.name);
+        auto const script = decode_base16(std::string_view{v.script});
+        REQUIRE(script);
+        auto const parsed = make_byte_code_pattern(*script);
+        CHECK(encode_base16(parsed.pattern) == v.pattern);
+        CHECK(encode_base16(sha256_hash(parsed.pattern)) == v.fingerprint);
+        REQUIRE(parsed.data.size() == v.data.size());
+        for (size_t i = 0; i < v.data.size(); ++i) {
+            CHECK(encode_base16(parsed.data[i]) == v.data[i]);
+        }
+        CHECK(parsed.error == v.error);
+    }
+
+    // A signature and a public key: one run of two pushes.
+    auto const script = decode_base16("47" + sig + "21" + key);
+    REQUIRE(script);
+    auto const parsed = make_byte_code_pattern(*script);
+    CHECK(encode_base16(parsed.pattern) == "52");
+    CHECK(encode_base16(sha256_hash(parsed.pattern)) ==
+        "8c2574892063f995fdf756bce07f46c1a5193e54cd52837ed91e32008ccf41ac");
+    REQUIRE(parsed.data.size() == 2);
+    CHECK(encode_base16(parsed.data[0]) == sig);
+    CHECK(encode_base16(parsed.data[1]) == key);
+}

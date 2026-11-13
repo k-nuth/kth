@@ -1413,6 +1413,69 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
 }
 
+TEST_CASE("getblock adds each script's byte code pattern only when patterns is true", "[rpc dispatch][byte code pattern]") {
+    test::chain_fixture fixture("rpc_block_patterns");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblock","params":)" + params + R"(,"id":12})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const block = '"' + encode_hash(trunk[1].hash()) + '"';
+    auto const count = [](std::string const& text, std::string_view what) {
+        size_t n = 0;
+        for (auto at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+
+    // Each output script of the block's transactions gets its pattern, right
+    // after the script's kind; the coinbase input has no scriptSig to describe.
+    auto const& coinbase = trunk[1].transactions().front();
+    auto const pattern = node::rpc::make_byte_code_pattern(coinbase.outputs().front().script().bytes());
+    auto const with = request("[" + block + ",2,true]");
+    CHECK(count(with, R"("byteCodePattern":)") == coinbase.outputs().size());
+    CHECK(count(with, R"("byteCodePattern":{"fingerprint":")" + encode_base16(sha256_hash(pattern.pattern)) +
+        R"(","pattern":")" + encode_base16(pattern.pattern) + R"(","patternAsm":")") == 1);
+
+    // false, null, absent, or a block listed by txid: no patterns.
+    for (auto const& params : {"[" + block + ",2]", "[" + block + ",2,false]", "[" + block + ",2,null]",
+                               "[" + block + ",1,true]"}) {
+        CAPTURE(params);
+        auto const without = request(params);
+        CHECK(without.find("\"error\":null") != std::string::npos);
+        CHECK(count(without, R"("byteCodePattern":)") == 0);
+    }
+
+    // Anything else is refused before the block is read.
+    CHECK(request("[" + block + ",2,1]") ==
+        node::rpc::build_error("12", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + block + ",2,\"true\"]") ==
+        node::rpc::build_error("12", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + block + ",2,true,1]") ==
+        node::rpc::build_error("12", -32602, "getblock requires [blockhash, verbosity=1, patterns=false]"));
+}
+
 TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failure", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_block_file_damaged");
     REQUIRE(fixture.created());

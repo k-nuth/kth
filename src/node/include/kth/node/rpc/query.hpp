@@ -162,10 +162,27 @@ struct block_location {
 
 // The verbose getblock object. `with_transactions` (verbosity 2) lists each
 // transaction as verbose getrawtransaction's fields without the location;
-// otherwise (verbosity 1) by txid.
+// otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
+// scriptPubKey of those transactions carries its byteCodePattern object.
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
-                                 domain::config::network net, domain::script_flags_t flags);
+                                 domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns = false);
+
+// A script's byte code pattern, the "byteCodePattern" object getblock gives
+// with `patterns`: the script with each run of data pushes replaced by one
+// number, the count of the run, and the pushed data in order. A push of a
+// number (OP_1NEGATE, OP_1 to OP_16) counts as a data push of its value. A
+// script that ends in the middle of a push keeps the pattern up to there, and
+// its last data item is the rest of the script, from the byte before the point
+// where reading stopped.
+struct byte_code_pattern {
+    data_chunk pattern;
+    std::vector<data_chunk> data;
+    bool error = false;
+};
+
+byte_code_pattern make_byte_code_pattern(data_chunk const& script);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
