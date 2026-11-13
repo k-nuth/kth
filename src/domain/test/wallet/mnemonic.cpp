@@ -29,7 +29,9 @@ TEST_CASE("infrastructure mnemonic decode with trezor test vectors", "[infrastru
     for (auto const& vector: mnemonic_trezor_vectors) {
         auto const words = split(vector.mnemonic, ",");
         REQUIRE(validate_mnemonic(words));
-        auto const seed = decode_mnemonic(words, vector.passphrase);
+        auto const result = decode_mnemonic(words, vector.passphrase);
+        REQUIRE(result);
+        auto const& seed = *result;
         REQUIRE(encode_base16(seed) == vector.seed);
     }
 }
@@ -38,7 +40,9 @@ TEST_CASE("infrastructure mnemonic decode with bx test vectors", "[infrastructur
     for (auto const& vector: mnemonic_bx_to_seed_vectors) {
         auto const words = split(vector.mnemonic, ",");
         REQUIRE(validate_mnemonic(words));
-        auto const seed = decode_mnemonic(words, vector.passphrase);
+        auto const result = decode_mnemonic(words, vector.passphrase);
+        REQUIRE(result);
+        auto const& seed = *result;
         REQUIRE(encode_base16(seed) == vector.seed);
     }
 }
@@ -201,3 +205,9 @@ TEST_CASE("mnemonic dictionary zh Hans Hant intersection", "[mnemonic tests]") {
 }
 
 // End Test Suite
+
+#ifdef WITH_ICU
+TEST_CASE("mnemonic rejects malformed passphrases without deriving a seed", "[mnemonic][utf]") {
+    REQUIRE(decode_mnemonic({}, "\xc0\xaf") == std::unexpected(unicode_error::invalid_encoding));
+}
+#endif

@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <string>
+#include <kth/infrastructure/unicode/unicode.hpp>
 #include <vector>
 
 #include <kth/infrastructure/compat.hpp>
@@ -74,7 +75,7 @@ KD_API long_hash decode_mnemonic_normalized_passphrase(word_list const& mnemonic
  * Convert a mnemonic and passphrase to a wallet-generation seed.
  * Any passphrase can be used and will change the resulting seed.
  */
-KD_API long_hash decode_mnemonic(word_list const& mnemonic,
+KD_API std::expected<long_hash, unicode_error> decode_mnemonic(word_list const& mnemonic,
     std::string const& passphrase);
 
 #endif

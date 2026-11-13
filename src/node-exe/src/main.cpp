@@ -279,7 +279,7 @@ int kth::main(int argc, char* argv[]) {
     using namespace kth::node;
     using namespace kth;
 
-    set_utf8_stdio();
+    if (!set_utf8_stdio()) return console_result::failure;
 
     // Initialize SHA256 with best available implementation (ARM SHA-NI, x86 SHA-NI, AVX2, SSE4, etc.)
     auto const sha256_impl = SHA256AutoDetect();

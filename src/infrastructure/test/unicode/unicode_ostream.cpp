@@ -31,7 +31,7 @@ TEST_CASE("unicode ostream conditional test", "[unicode ostream tests]") {
 
 TEST_CASE("unicode ostream non ascii test", "[unicode ostream tests]") {
     auto const utf8 = "テスト";
-    auto const utf16 = to_utf16(utf8);
+    auto const utf16 = to_utf16(utf8).value();
 
     std::wstringstream wide_stream;
     std::stringstream narrow_stream;
@@ -78,7 +78,7 @@ TEST_CASE("unicode ostream overflow test", "[unicode ostream tests]") {
         "テストテストテストテストテストテストテストテストテストテスト"
         "テストテストテストテストテストテストテストテストテストテスト";
 
-    auto const utf16_600_chars = to_utf16(utf8_1800_bytes);
+    auto const utf16_600_chars = to_utf16(utf8_1800_bytes).value();
 
     std::wstringstream wide_stream;
     std::stringstream narrow_stream;

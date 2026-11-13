@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include <boost/locale.hpp>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/wallet/ec_private.hpp>
@@ -277,8 +276,10 @@ bool create_key_pair(encrypted_private& out_private, ec_compressed& out_point, e
 
 // This call requires an ICU build, the other excluded calls are dependencies.
 static
-data_chunk normal(std::string const& passphrase) {
-    return to_chunk(to_normal_nfc_form(passphrase));
+std::expected<data_chunk, unicode_error> normal(std::string const& passphrase) {
+    auto const normalized = to_normal_nfc_form(passphrase);
+    if (!normalized) return std::unexpected(normalized.error());
+    return to_chunk(*normalized);
 }
 
 static
@@ -291,7 +292,9 @@ bool create_token(encrypted_token& out_token,
                    owner_salt.size() == ek_entropy_size);
 
     auto const lot_sequence = owner_salt.size() == ek_salt_size;
-    auto factor = scrypt_token(normal(passphrase), owner_salt);
+    auto const normalized = normal(passphrase);
+    if (!normalized) return false;
+    auto factor = scrypt_token(*normalized, owner_salt);
 
     if (lot_sequence)
         factor = bitcoin_hash(splice(factor, owner_entropy));
@@ -336,7 +339,9 @@ bool encrypt(encrypted_private& out_private, ec_secret const& secret, std::strin
     if ( ! address_salt(salt, secret, version, compressed))
         return false;
 
-    auto const derived = split(scrypt_private(normal(passphrase), salt));
+    auto const normalized = normal(passphrase);
+    if (!normalized) return false;
+    auto const derived = split(scrypt_private(*normalized, salt));
     auto const prefix = parse_encrypted_private::prefix_factory(version,
                                                                 false);
 
@@ -361,7 +366,9 @@ static
 bool decrypt_multiplied(ec_secret& out_secret,
                                parse_encrypted_private const& parse,
                                std::string const& passphrase) {
-    auto secret = scrypt_token(normal(passphrase), parse.owner_salt());
+    auto const normalized = normal(passphrase);
+    if (!normalized) return false;
+    auto secret = scrypt_token(*normalized, parse.owner_salt());
 
     if (parse.lot_sequence())
         secret = bitcoin_hash(splice(secret, parse.entropy()));
@@ -402,7 +409,9 @@ bool decrypt_secret(ec_secret& out_secret,
                            std::string const& passphrase) {
     auto encrypt1 = splice(parse.entropy(), parse.data1());
     auto encrypt2 = parse.data2();
-    auto const derived = split(scrypt_private(normal(passphrase),
+    auto const normalized = normal(passphrase);
+    if (!normalized) return false;
+    auto const derived = split(scrypt_private(*normalized,
                                               parse.salt()));
 
     aes256_decrypt(derived.right, encrypt1);
@@ -445,7 +454,9 @@ bool decrypt(ec_compressed& out_point, uint8_t& out_version, bool& out_compresse
 
     auto const version = parse.address_version();
     auto const lot_sequence = parse.lot_sequence();
-    auto factor = scrypt_token(normal(passphrase), parse.owner_salt());
+    auto const normalized = normal(passphrase);
+    if (!normalized) return false;
+    auto factor = scrypt_token(*normalized, parse.owner_salt());
 
     if (lot_sequence)
         factor = bitcoin_hash(splice(factor, parse.entropy()));

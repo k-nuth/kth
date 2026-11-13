@@ -29,7 +29,7 @@ TEST_CASE("unicode istream conditional test", "[unicode istream tests]") {
 
 TEST_CASE("unicode istream non ascii test", "[unicode istream tests]") {
     auto const utf8 = "テスト";
-    auto const utf16 = to_utf16(utf8);
+    auto const utf16 = to_utf16(utf8).value();
 
     std::wstringstream wide_stream(utf16);
     std::stringstream narrow_stream(utf8);
@@ -43,7 +43,7 @@ TEST_CASE("unicode istream non ascii test", "[unicode istream tests]") {
 
 TEST_CASE("unicode istream tokenization test", "[unicode istream tests]") {
     auto const utf8 = "テスト\rス\nト\tテス スト";
-    auto const utf16 = to_utf16(utf8);
+    auto const utf16 = to_utf16(utf8).value();
 
     std::wstringstream wide_stream(utf16);
     std::stringstream narrow_stream(utf8);
@@ -90,7 +90,7 @@ TEST_CASE("unicode istream overflow test", "[unicode istream tests]") {
         "テストテストテストテストテストテストテストテストテストテスト"
         "テストテストテストテストテストテストテストテストテストテスト";
 
-    auto const utf16_600_chars = to_utf16(utf8_1800_bytes);
+    auto const utf16_600_chars = to_utf16(utf8_1800_bytes).value();
 
     std::wstringstream wide_stream(utf16_600_chars);
     std::stringstream narrow_stream(utf8_1800_bytes);
