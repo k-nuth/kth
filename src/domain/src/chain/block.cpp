@@ -16,7 +16,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
@@ -42,7 +41,6 @@
 namespace kth::domain::chain {
 
 using namespace kth::domain::machine;
-using namespace boost::adaptors;
 
 #if defined(KTH_CURRENCY_LTC)
 //Litecoin mainnet genesis block
