@@ -167,6 +167,8 @@ set(kth_sources_just_legacy
         src/chain/block.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
+        src/chain/compact_filter.cpp
+        src/chain/golomb_set.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
         # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
@@ -568,6 +570,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
         test/chain/chain_state.cpp
+        test/chain/compact_filter.cpp
+        test/chain/golomb_set.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/history.cpp
