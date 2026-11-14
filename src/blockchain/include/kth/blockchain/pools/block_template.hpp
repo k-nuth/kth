@@ -47,6 +47,13 @@ struct block_template {
 constexpr uint64_t default_coinbase_reserve_size = 1000;
 constexpr uint64_t default_coinbase_reserve_sigchecks = 100;
 
+// A caller's coinbase budget for fetch_mining_template: the space and the
+// SigChecks held back from the selection.
+struct coinbase_reserve {
+    uint64_t size = default_coinbase_reserve_size;
+    uint64_t sigchecks = default_coinbase_reserve_sigchecks;
+};
+
 struct block_template_context {
     uint64_t max_block_size;        // consensus block size limit
     uint64_t max_block_sigchecks;   // consensus block sigchecks limit
