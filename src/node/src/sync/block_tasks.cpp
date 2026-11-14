@@ -1659,25 +1659,26 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 .submission = chunk_submission,
                 .local_result = chunk_local
             };
-            if (chunk_local) {
-                // A local body is owed a definitive outcome, so the handoff to
-                // storage is a suspended send, not a bounded retry. This task is
-                // not a barrier participant, so suspending here holds no switch.
-                auto [send_ec] = co_await storage->async_send(std::error_code{},
-                    std::move(forward), ::asio::as_tuple(::asio::use_awaitable));
-                if (send_ec) {
-                    // Storage is closed: the shutdown. The outcome is still owed.
+            // The handoff to storage is a suspended send: a full channel means
+            // storage is behind, and the chunk waits for the slot its consumer
+            // frees. Meanwhile this task stops receiving, its input fills and
+            // the peers hold their chunks, so the delay reaches the download
+            // instead of dropping a validated chunk. This task is not a barrier
+            // participant, so suspending here holds no switch.
+            auto [send_ec] = co_await storage->async_send(std::error_code{},
+                std::move(forward), ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                // Storage is closed: the shutdown. A local body is still owed
+                // its outcome.
+                if (chunk_local) {
                     (void)chunk_local->try_send(chunk_validated{
                         .start_height = chunk_start,
                         .block_count = uint32_t(chunk_block_count),
                         .result = error::service_stopped,
                         .source_peer = nullptr,
                         .submission = chunk_submission});
-                    spdlog::debug("[fast_validation] Storage closed; local body not handed over");
-                    break;
                 }
-            } else if ( ! co_await try_send_with_retry(*storage, std::move(forward), 20, std::chrono::milliseconds(10))) {
-                spdlog::error("[fast_validation] Storage channel full after retries!");
+                spdlog::debug("[fast_validation] Storage closed; chunk at {} not handed over", chunk_start);
                 break;
             }
         } else {
