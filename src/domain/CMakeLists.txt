@@ -359,6 +359,7 @@ set(kth_headers
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
     include/kth/domain/chain/input_point.hpp
+    include/kth/domain/chain/detail/gpu_merkle.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/block_ticks.hpp
