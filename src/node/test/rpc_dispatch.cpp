@@ -855,6 +855,65 @@ TEST_CASE("getnetworkinfo reads the P2P node and rejects arguments", "[rpc dispa
     }
 }
 
+TEST_CASE("testmempoolaccept dispatch checks one transaction without pooling it", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_test_mempool_accept");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"testmempoolaccept","params":)" + params + R"(,"id":44})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // A spend of an output neither the chain nor the pool holds, large enough
+    // for the minimum transaction size so the missing prevout is what refuses it.
+    hash_digest unknown{};
+    unknown[0] = 0x01;
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{unknown, 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    domain::chain::transaction const tx{2u, 0u, std::move(ins), std::move(outs)};
+    auto const hex = encode_base16(to_data_chunk(tx, true));
+    auto const refused = node::rpc::build_success("44",
+        R"([{"txid":")" + encode_hash(tx.hash()) + R"(","allowed":false,"reject-reason":"missing-inputs"}])");
+    for (auto const& params : {R"([[")" + hex + R"("]])", R"([[")" + hex + R"("],true])",
+                               R"([[")" + hex + R"("],false])", R"([[")" + hex + R"("],null])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == refused);
+    }
+    CHECK(fixture.chain().mempool_ref().size() == 0);
+
+    // One transaction per call.
+    for (auto const& params : {std::string("[[]]"), R"([[")" + hex + R"(",")" + hex + R"("]])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("44", -8,
+            "testmempoolaccept takes exactly one transaction"));
+    }
+
+    // Hex that is not one transaction.
+    CHECK(request(R"([["zz"]])") == node::rpc::build_error("44", -22, "rawtx is not valid hex"));
+    CHECK(request(R"([["00"]])") == node::rpc::build_error("44", -22,
+        "rawtx is not a decodable transaction"));
+    CHECK(request(R"([[")" + hex + R"(00"]])") == node::rpc::build_error("44", -22,
+        "rawtx is not a decodable transaction"));
+
+    // Anything else is not the request this method takes.
+    for (auto const* params : {"[]", "{}", "null", R"(["00"])", "[[1]]",
+                               R"([["00"],"yes"])", R"([["00"],true,1])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("44", -32602,
+            "testmempoolaccept requires [[rawtx]] and an optional allowhighfees boolean"));
+    }
+}
+
 TEST_CASE("getrawmempool dispatch lists entries keyed by txid when verbose", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_raw_mempool_verbose");
     REQUIRE(fixture.created());

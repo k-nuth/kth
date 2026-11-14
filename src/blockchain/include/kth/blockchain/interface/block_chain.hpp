@@ -924,6 +924,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> transaction_validate(transaction_const_ptr tx) const;
 
+    /// Whether submit_transaction(tx) would admit `tx` to the mempool, without
+    /// admitting or announcing it. Yields the transaction's sigchecks when it would.
+    [[nodiscard]]
+    awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
+
     // =========================================================================
     // PROPERTIES
     // =========================================================================

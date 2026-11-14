@@ -217,15 +217,46 @@ bool transaction_organizer::stop() {
         co_return error::service_stopped;
     }
 
+    auto const sigchecks = co_await validate_attempt(tx);
+    if ( ! sigchecks) {
+        co_return sigchecks.error();
+    }
+
+    //#########################################################################
+    // Admit to the mempool. The tx is already validated (accept / fee / dust /
+    // connect above); this only records it. add() enforces first-seen: it
+    // returns false on a double-spend conflict with a pooled tx (or a duplicate).
+    auto const seen = first_seen.value_or(uint64_t(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()));
+    auto const committed = chain_.commit_validated_transaction(mempool_entry{
+        tx,
+        tx->fees(),
+        static_cast<uint32_t>(tx->serialized_size(true)),
+        static_cast<uint32_t>(*sigchecks),
+        seen}, published);
+    if (committed) co_return committed;
+    //#########################################################################
+
+    // This gets picked up by node tx-out protocol for announcement to peers.
+    notify(tx);
+
+    co_return error::success;
+}
+
+// The checks admission makes before it records a transaction, shared by
+// organize() and test_accept() so the two cannot drift apart. On success it
+// yields the transaction's sigchecks. The caller holds the admission token.
+awaitable_expected<size_t> transaction_organizer::validate_attempt(transaction_const_ptr tx) {
     // Checks that are independent of chain state.
     auto ec = co_await validator_.check(tx);
 
     if (stopped()) {
-        co_return error::service_stopped;
+        co_return std::unexpected(error::service_stopped);
     }
 
     if (ec) {
-        co_return ec;
+        co_return std::unexpected(ec);
     }
 
     // The tx-validation store entry created during validator_.accept below is
@@ -243,24 +274,24 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        co_return error::service_stopped;
+        co_return std::unexpected(error::service_stopped);
     }
 
     if (ec) {
         erase_tx_validation();
-        co_return ec;
+        co_return std::unexpected(ec);
     }
 
     if (tx->fees() < price(tx)) {
         erase_tx_validation();
-        co_return error::insufficient_fee;
+        co_return std::unexpected(error::insufficient_fee);
     }
 
 #if !defined(KTH_CURRENCY_BCH)
     if ( ! settings_.accept_non_standard_transactions &&
          tx->is_dusty(settings_.minimum_output_satoshis)) {
         erase_tx_validation();
-        co_return error::dusty_transaction;
+        co_return std::unexpected(error::dusty_transaction);
     }
 #endif
 
@@ -269,45 +300,74 @@ bool transaction_organizer::stop() {
 
     if (stopped()) {
         erase_tx_validation();
-        co_return error::service_stopped;
+        co_return std::unexpected(error::service_stopped);
     }
 
     if ( ! connected) {
         erase_tx_validation();
-        co_return connected.error();
+        co_return std::unexpected(connected.error());
     }
 
     // Only local Knuth policy can reject after consensus has succeeded.
     ec = validator_.check_standardness(tx);
     if (ec) {
         erase_tx_validation();
-        co_return ec;
+        co_return std::unexpected(ec);
     }
 
-    // Validation is over and nothing below reads the entry, so drop it here
-    // rather than repeating the erase down each remaining exit.
+    // Validation is over and nothing reads the entry any more.
     erase_tx_validation();
+    co_return *connected;
+}
 
-    //#########################################################################
-    // Admit to the mempool. The tx is already validated (accept / fee / dust /
-    // connect above); this only records it. add() enforces first-seen: it
-    // returns false on a double-spend conflict with a pooled tx (or a duplicate).
-    auto const seen = first_seen.value_or(uint64_t(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count()));
-    auto const committed = chain_.commit_validated_transaction(mempool_entry{
-        tx,
-        tx->fees(),
-        static_cast<uint32_t>(tx->serialized_size(true)),
-        static_cast<uint32_t>(*connected),
-        seen}, published);
-    if (committed) co_return committed;
-    //#########################################################################
+// Test acceptance sequence.
+//-----------------------------------------------------------------------------
 
-    // This gets picked up by node tx-out protocol for announcement to peers.
-    notify(tx);
+// This is called from blockchain::test_accept.
+awaitable_expected<size_t> transaction_organizer::test_accept(transaction_const_ptr tx) {
+    if (stopped()) co_return std::unexpected(error::service_stopped);
+    auto const [wait_error] = co_await admission_.async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (wait_error) {
+        if (wait_error == ::asio::experimental::error::channel_cancelled ||
+            wait_error == ::asio::error::operation_aborted) {
+            co_return std::unexpected(::asio::error::operation_aborted);
+        }
+        co_return std::unexpected(error::service_stopped);
+    }
+    return_admission const admission{admission_};
+    if (stopped()) co_return std::unexpected(error::service_stopped);
+    // Once admitted, drain the validator's posted work before transferring the
+    // token. Waiting callers can still cancel before they acquire it.
+    co_await ::asio::this_coro::reset_cancellation_state(::asio::disable_cancellation());
 
-    co_return error::success;
+    // The pool's first-seen rule, read instead of claimed. Admission refuses a
+    // transaction the pool already holds and one that spends an outpoint a
+    // pooled transaction spends (mempool::add); validation alone cannot see
+    // either, since prevouts are populated without the pool's spends.
+    auto const& pool = chain_.mempool_ref();
+    if (pool.contains(tx->hash())) {
+        co_return std::unexpected(error::duplicate_transaction);
+    }
+    for (auto const& input : tx->inputs()) {
+        if (pool.spender(input.previous_output())) {
+            co_return std::unexpected(error::double_spend_mempool);
+        }
+    }
+
+    auto const sigchecks = co_await validate_attempt(tx);
+    if ( ! sigchecks) {
+        co_return sigchecks;
+    }
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"). Admission asks it only when it records the transaction
+    // (block_chain::commit_validated_transaction), which a test never reaches,
+    // so the test asks it here, per virtual byte as admission does.
+    auto const minimum = chain_.mempool_minimum_fee_per_kb();
+    if (tx->fees() < fee_for(minimum, virtual_size(tx->serialized_size(true), *sigchecks))) {
+        co_return std::unexpected(error::insufficient_fee);
+    }
+    co_return sigchecks;
 }
 
 // Subscription.
