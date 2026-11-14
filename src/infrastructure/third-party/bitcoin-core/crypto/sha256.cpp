@@ -479,11 +479,58 @@ void TransformD64Wrapper(unsigned char* out, const unsigned char* in)
     WriteBE32(out + 28, s[7]);
 }
 
+#if defined(KTH_SHA256_COMPILE_TIME)
+// Compile-time dispatch: the implementation is the best one for the
+// instructions the compiler was told the target has, which is what the binary
+// requires of the CPU it runs on anyway. ENABLE_* says an implementation was
+// built; the compiler's feature macros say its instructions may be used.
+//
+// The selection is a set of constants. A call through a constant function
+// pointer is a direct call and a test of a null one is removed, so the code
+// below is the same for both kinds of dispatch.
+#if !defined(DISABLE_OPTIMIZED_SHA256) && defined(ENABLE_SSE41) && defined(ENABLE_X86_SHANI) \
+    && defined(__SHA__) && defined(__SSE4_1__)
+constexpr TransformType Transform = sha256_x86_shani::Transform;
+constexpr TransformD64Type TransformD64 = TransformD64Wrapper<sha256_x86_shani::Transform>;
+constexpr TransformD64Type TransformD64_2way = sha256d64_x86_shani::Transform_2way;
+constexpr TransformD64Type TransformD64_4way = nullptr;
+constexpr TransformD64Type TransformD64_8way = nullptr;
+constexpr char selected_implementation[] = "x86_shani(1way;2way)";
+#elif !defined(DISABLE_OPTIMIZED_SHA256) && defined(ENABLE_ARM_SHANI) && defined(__ARM_FEATURE_SHA2)
+constexpr TransformType Transform = sha256_arm_shani::Transform;
+constexpr TransformD64Type TransformD64 = TransformD64Wrapper<sha256_arm_shani::Transform>;
+constexpr TransformD64Type TransformD64_2way = sha256d64_arm_shani::Transform_2way;
+constexpr TransformD64Type TransformD64_4way = nullptr;
+constexpr TransformD64Type TransformD64_8way = nullptr;
+constexpr char selected_implementation[] = "arm_shani(1way;2way)";
+#elif !defined(DISABLE_OPTIMIZED_SHA256) && defined(ENABLE_SSE41) && defined(__SSE4_1__) \
+    && (defined(__x86_64__) || defined(__amd64__))
+constexpr TransformType Transform = sha256_sse4::Transform;
+constexpr TransformD64Type TransformD64 = TransformD64Wrapper<sha256_sse4::Transform>;
+constexpr TransformD64Type TransformD64_2way = nullptr;
+constexpr TransformD64Type TransformD64_4way = sha256d64_sse41::Transform_4way;
+#if defined(ENABLE_AVX2) && defined(__AVX2__)
+constexpr TransformD64Type TransformD64_8way = sha256d64_avx2::Transform_8way;
+constexpr char selected_implementation[] = "sse4(1way);sse41(4way);avx2(8way)";
+#else
+constexpr TransformD64Type TransformD64_8way = nullptr;
+constexpr char selected_implementation[] = "sse4(1way);sse41(4way)";
+#endif
+#else
+constexpr TransformType Transform = sha256::Transform;
+constexpr TransformD64Type TransformD64 = sha256::TransformD64;
+constexpr TransformD64Type TransformD64_2way = nullptr;
+constexpr TransformD64Type TransformD64_4way = nullptr;
+constexpr TransformD64Type TransformD64_8way = nullptr;
+constexpr char selected_implementation[] = "standard";
+#endif
+#else
 TransformType Transform = sha256::Transform;
 TransformD64Type TransformD64 = sha256::TransformD64;
 TransformD64Type TransformD64_2way = nullptr;
 TransformD64Type TransformD64_4way = nullptr;
 TransformD64Type TransformD64_8way = nullptr;
+#endif
 
 bool SelfTest() {
     // Input state (equal to the initial SHA256 state)
@@ -571,7 +618,7 @@ bool SelfTest() {
 }
 
 #if !defined(DISABLE_OPTIMIZED_SHA256)
-#if (defined(__x86_64__) || defined(__amd64__) || defined(__i386__))
+#if !defined(KTH_SHA256_COMPILE_TIME) && (defined(__x86_64__) || defined(__amd64__) || defined(__i386__))
 /** Check whether the OS has enabled AVX registers. */
 bool AVXEnabled()
 {
@@ -584,6 +631,18 @@ bool AVXEnabled()
 } // namespace
 
 
+#if defined(KTH_SHA256_COMPILE_TIME)
+std::string SHA256Implementation() {
+    return selected_implementation;
+}
+
+std::string SHA256AutoDetect(sha256_implementation::UseImplementation) {
+    // Nothing to detect and nothing to restrict: the implementation is part of
+    // the build.
+    assert(SelfTest());
+    return selected_implementation;
+}
+#else
 namespace {
 // A function-local static, so it is usable from the selection that runs while
 // the static objects of this file are still being initialized.
@@ -713,6 +772,7 @@ struct implementation_selector {
     implementation_selector() { SHA256AutoDetect(); }
 } const select_implementation_at_startup;
 } // namespace
+#endif // KTH_SHA256_COMPILE_TIME
 
 ////// SHA-256
 

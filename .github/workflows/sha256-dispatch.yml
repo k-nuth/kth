@@ -1,0 +1,63 @@
+name: SHA-256 dispatch
+on:
+  # Not on every push to master: the nightly run covers it. Pull requests run
+  # it only when they touch what it checks.
+  pull_request:
+    paths:
+      - src/infrastructure/third-party/bitcoin-core/crypto/**
+      - tests/sha256-dispatch/**
+      - .github/workflows/sha256-dispatch.yml
+  push:
+    branches: ['release/**', 'hotfix/**', 'dev-publish/**']
+    tags: ['v*']
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sha256-dispatch-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./ci_utils/.github/actions/setup-conan
+      - uses: ./ci_utils/.github/actions/setup-kthbuild
+      - run: python3 tests/sha256-dispatch/check_conan.py
+      - name: Baseline target
+        run: CXXFLAGS=-march=x86-64 EXPECTED_CT_IMPLEMENTATION=standard python3 tests/sha256-dispatch/check.py
+      - name: Native target
+        run: CXXFLAGS=-march=native python3 tests/sha256-dispatch/check.py
+      - name: SSE4.1 target
+        run: |
+          if grep -qw sse4_1 /proc/cpuinfo; then
+            CXXFLAGS='-msse4.1 -mno-sha -mno-avx2' EXPECTED_CT_IMPLEMENTATION='sse4(1way);sse41(4way)' python3 tests/sha256-dispatch/check.py
+          else
+            echo 'SSE4.1 target cannot execute on this runner'
+          fi
+      - name: AVX2 target without SHA-NI
+        run: |
+          if grep -qw avx2 /proc/cpuinfo; then
+            CXXFLAGS='-mavx2 -mno-sha' EXPECTED_CT_IMPLEMENTATION='sse4(1way);sse41(4way);avx2(8way)' python3 tests/sha256-dispatch/check.py
+          else
+            echo 'AVX2 target cannot execute on this runner'
+          fi
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Baseline target
+        run: python3 tests/sha256-dispatch/check.py
+      - name: Native target
+        run: CXXFLAGS=-mcpu=native python3 tests/sha256-dispatch/check.py
