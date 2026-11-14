@@ -49,11 +49,11 @@ struct KD_API addrv2_entry {
     static
     size_t expected_addr_size(bip155_network net);
 
-    /// Convert to network_address (only for IPv4/IPv6)
+    /// Convert IP, Tor v3 and I2P entries to a tagged network address.
     [[nodiscard]]
     std::optional<infrastructure::message::network_address> to_network_address() const;
 
-    /// Create from network_address. IPv4/IPv6 always yield a valid entry.
+    /// Create from a tagged IP, Tor v3 or I2P network address.
     static
     addrv2_entry from_network_address(infrastructure::message::network_address const& addr);
 
@@ -88,7 +88,7 @@ struct KD_API addrv2 {
     entry_list const& addresses() const;
 
 
-    /// Convert to legacy network_address list (IPv4/IPv6 only)
+    /// Convert supported entries, retaining their network tags.
     [[nodiscard]]
     infrastructure::message::network_address::list to_network_addresses() const;
 

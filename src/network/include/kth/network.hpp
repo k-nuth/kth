@@ -15,6 +15,8 @@
 #include <kth/domain.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/settings.hpp>
+#include <kth/network/socks5.hpp>
+#include <kth/network/sam.hpp>
 
 // Modern coroutine-based networking (keep these)
 #include <kth/network/peer_record.hpp>

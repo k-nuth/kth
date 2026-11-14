@@ -125,7 +125,9 @@ network::settings node_settings(std::string const& tag) {
     settings.protocol_maximum = 70015;
     settings.user_agent = "/KTH-header-tip-test:1/";
     settings.inbound_port = 0;
-    settings.inbound_connections = 0;
+    // No listener, but received_version_height() hands the node inbound
+    // sessions, and those count against this limit.
+    settings.inbound_connections = 8;
     settings.outbound_connections = 0;          // nothing dials out
     settings.threads = 1;
     settings.hosts_file = std::filesystem::temp_directory_path() / ("kth_" + tag + "_hosts_nonexistent.dat");

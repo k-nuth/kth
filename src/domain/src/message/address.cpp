@@ -4,6 +4,8 @@
 
 #include <kth/domain/message/address.hpp>
 
+#include <algorithm>
+
 // #include <kth/infrastructure/message/message_tools.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
@@ -23,6 +25,8 @@ expect<address> address::create(infrastructure::message::network_address::list a
     if (addresses.size() > max_address) {
         return std::unexpected(error::invalid_address_count);
     }
+    // Overlay identities have no legacy wire representation.
+    std::erase_if(addresses, [](auto const& address) { return address.is_overlay(); });
     return address(std::move(addresses));
 }
 
