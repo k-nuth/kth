@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <kth/node/sync/chunk_coordinator.hpp>
@@ -72,79 +73,43 @@ peer_result simulate_peer(
 // Basic tests
 // =============================================================================
 
-TEST_CASE("chunk_coordinator basic claim and complete with rounds", "[chunk_coordinator]") {
+TEST_CASE("chunk_coordinator claims each chunk once, in order", "[chunk_coordinator]") {
     header_index index(1024);
-    populate_dummy_headers(index, 1, 100);
+    populate_dummy_headers(index, 1, 95);
 
-    // 4 slots, 10 blocks per chunk -> 10 chunks -> 3 rounds (4+4+2)
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 4, .stall_timeout_secs = 5};
-    chunk_coordinator coord(index, 1, 100, cfg);
+    // 10 blocks per chunk -> 10 chunks, the last one short (91-95).
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 1, 95, cfg);
 
-    // Round 0: claim all 4 slots -> chunk_ids 0,1,2,3
-    auto c0 = coord.claim_chunk();
-    auto c1 = coord.claim_chunk();
-    auto c2 = coord.claim_chunk();
-    auto c3 = coord.claim_chunk();
+    REQUIRE(coord.get_progress().total_chunks == 10);
 
-    REQUIRE(c0.has_value());
-    REQUIRE(c1.has_value());
-    REQUIRE(c2.has_value());
-    REQUIRE(c3.has_value());
-    CHECK(*c0 == 0);
-    CHECK(*c3 == 3);
+    for (uint32_t expected = 0; expected < 10; ++expected) {
+        auto const chunk = coord.claim_chunk();
+        REQUIRE(chunk == expected);
+    }
+    CHECK(coord.chunk_range(0) == std::pair<uint32_t, uint32_t>{1, 10});
+    CHECK(coord.chunk_range(9) == std::pair<uint32_t, uint32_t>{91, 95});
 
-    // 5th claim should fail (all slots in use)
+    // Every chunk is in progress: nothing to claim, and nothing is complete.
     REQUIRE_FALSE(coord.claim_chunk().has_value());
+    CHECK(coord.get_progress().chunks_in_progress == 10);
+    CHECK_FALSE(coord.is_complete());
 
-    // Complete all 4 -> next claim triggers round advance
-    coord.chunk_completed(*c0);
-    coord.chunk_completed(*c1);
-    coord.chunk_completed(*c2);
-    coord.chunk_completed(*c3);
-
-    REQUIRE(coord.get_progress().chunks_completed == 4);
-
-    // Round 1: claim triggers try_advance_round -> chunk_ids 4,5,6,7
-    auto c4 = coord.claim_chunk();
-    REQUIRE(c4.has_value());
-    CHECK(*c4 == 4);
-    CHECK(coord.get_progress().current_round == 1);
-
-    auto c5 = coord.claim_chunk();
-    auto c6 = coord.claim_chunk();
-    auto c7 = coord.claim_chunk();
-    REQUIRE(c5.has_value());
-    REQUIRE(c6.has_value());
-    REQUIRE(c7.has_value());
-
-    coord.chunk_completed(*c4);
-    coord.chunk_completed(*c5);
-    coord.chunk_completed(*c6);
-    coord.chunk_completed(*c7);
-
-    REQUIRE(coord.get_progress().chunks_completed == 8);
-
-    // Round 2: only 2 chunks remaining (8,9)
-    auto c8 = coord.claim_chunk();
-    auto c9 = coord.claim_chunk();
-    REQUIRE(c8.has_value());
-    REQUIRE(c9.has_value());
-    CHECK(*c8 == 8);
-    CHECK(*c9 == 9);
-
-    coord.chunk_completed(*c8);
-    coord.chunk_completed(*c9);
-
+    for (uint32_t id = 0; id < 10; ++id) {
+        CHECK_FALSE(coord.is_complete());
+        coord.chunk_completed(id);
+        CHECK(coord.get_progress().chunks_completed == id + 1);
+    }
     REQUIRE(coord.is_complete());
-    REQUIRE(coord.get_progress().chunks_completed == 10);
+    REQUIRE_FALSE(coord.claim_chunk().has_value());
 }
 
 TEST_CASE("chunk_coordinator one slot per chunk - no blocking", "[chunk_coordinator]") {
     header_index index(1024);
     populate_dummy_headers(index, 1, 160);
 
-    // slots=0 means one slot per chunk (16 chunks for 160 blocks / 10)
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 0, .stall_timeout_secs = 5};
+    // 16 chunks for 160 blocks / 10
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
     chunk_coordinator coord(index, 1, 160, cfg);
 
     // Should be able to claim all 16 chunks without blocking
@@ -165,10 +130,10 @@ TEST_CASE("chunk_coordinator one slot per chunk - no blocking", "[chunk_coordina
 
 TEST_CASE("chunk_coordinator timeout resets stalled slots", "[chunk_coordinator]") {
     header_index index(1024);
-    populate_dummy_headers(index, 1, 100);
+    populate_dummy_headers(index, 1, 20);
 
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 2, .stall_timeout_secs = 1};
-    chunk_coordinator coord(index, 1, 100, cfg);
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 1};
+    chunk_coordinator coord(index, 1, 20, cfg);
 
     auto c0 = coord.claim_chunk();
     auto c1 = coord.claim_chunk();
@@ -188,8 +153,8 @@ TEST_CASE("chunk_coordinator counts a chunk once when two peers complete it", "[
     header_index index(1024);
     populate_dummy_headers(index, 1, 20);
 
-    // One slot per chunk, as the node runs it: two chunks, 1-10 and 11-20.
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 0, .stall_timeout_secs = 0};
+    // Two chunks, 1-10 and 11-20.
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 0};
     chunk_coordinator coord(index, 1, 20, cfg);
 
     // A slow peer takes the first chunk and stalls; the chunk is handed to a
@@ -217,69 +182,136 @@ TEST_CASE("chunk_coordinator counts a chunk once when two peers complete it", "[
 
 TEST_CASE("chunk_coordinator chunk_failed resets slot to FREE", "[chunk_coordinator]") {
     header_index index(1024);
-    populate_dummy_headers(index, 1, 100);
+    populate_dummy_headers(index, 1, 20);
 
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 2, .stall_timeout_secs = 5};
-    chunk_coordinator coord(index, 1, 100, cfg);
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 1, 20, cfg);
 
     auto c0 = coord.claim_chunk();
     auto c1 = coord.claim_chunk();
+    REQUIRE(c0.has_value());
+    REQUIRE(c1.has_value());
     REQUIRE_FALSE(coord.claim_chunk().has_value());
 
-    // Fail one - should become claimable again (same chunk_id, same round)
+    // Fail one - the same chunk becomes claimable again
     coord.chunk_failed(*c0);
     auto c2 = coord.claim_chunk();
     REQUIRE(c2.has_value());
-    REQUIRE(*c2 == *c0);  // Same chunk recycled in same round
+    REQUIRE(*c2 == *c0);
 }
 
-// =============================================================================
-// Roller coaster reproduction: limited slots
-// =============================================================================
-
-TEST_CASE("chunk_coordinator limited slots: fast peers blocked by slow peers", "[chunk_coordinator][slow_peer]") {
+TEST_CASE("chunk_coordinator keeps a chunk completed when a late claimant fails it", "[chunk_coordinator]") {
     header_index index(1024);
-    populate_dummy_headers(index, 1, 320);
+    populate_dummy_headers(index, 1, 20);
 
-    // 8 slots for 32 chunks -> 4 rounds, fast peers blocked at round boundaries
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 8, .stall_timeout_secs = 5};
-    chunk_coordinator coord(index, 1, 320, cfg);
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 0};
+    chunk_coordinator coord(index, 1, 20, cfg);
 
-    std::vector<peer_result> results(4);
-    auto const start = std::chrono::steady_clock::now();
+    // The first chunk stalls and is handed to a second peer; the slow peer
+    // then delivers it and the second peer fails.
+    auto const slow = coord.claim_chunk();
+    REQUIRE(slow == 0u);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    coord.check_timeouts();
+    auto const second = coord.claim_chunk();
+    REQUIRE(second == 0u);
+
+    coord.chunk_completed(*slow);
+    coord.chunk_failed(*second);
+
+    // The delivered chunk is not offered again: the next claim is the other one.
+    CHECK(coord.get_progress().chunks_completed == 1);
+    auto const next = coord.claim_chunk();
+    REQUIRE(next == 1u);
+    coord.chunk_completed(*next);
+    CHECK(coord.is_complete());
+}
+
+TEST_CASE("chunk_coordinator counts a stalled chunk its first peer delivers before it is claimed again", "[chunk_coordinator]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 20);
+
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 0};
+    chunk_coordinator coord(index, 1, 20, cfg);
+
+    auto const slow = coord.claim_chunk();
+    REQUIRE(slow == 0u);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    coord.check_timeouts();
+
+    // Freed by the timeout, delivered before anyone else took it.
+    coord.chunk_completed(*slow);
+    CHECK(coord.get_progress().chunks_completed == 1);
+
+    auto const next = coord.claim_chunk();
+    REQUIRE(next == 1u);
+}
+
+TEST_CASE("chunk_coordinator ignores reports for chunks outside the range", "[chunk_coordinator]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 20);
+
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 1, 20, cfg);
+
+    coord.chunk_completed(2);
+    coord.chunk_failed(2);
+    coord.chunk_completed(1000);
+
+    CHECK(coord.get_progress().chunks_completed == 0);
+    CHECK_FALSE(coord.is_complete());
+}
+
+TEST_CASE("chunk_coordinator hands each chunk to one of many concurrent peers", "[chunk_coordinator]") {
+    constexpr uint32_t chunks = 4000;
+    constexpr size_t peers = 8;
+
+    header_index index(chunks * 2);
+    populate_dummy_headers(index, 1, chunks);
+
+    // One block per chunk; nothing stalls, so no chunk is handed out twice.
+    chunk_coordinator_config cfg{.chunk_size = 1, .stall_timeout_secs = 3600};
+    chunk_coordinator coord(index, 1, chunks, cfg);
+
+    std::vector<std::atomic<uint32_t>> claims(chunks);
+    std::atomic<bool> complete_too_early{false};
 
     std::vector<std::thread> threads;
-    threads.emplace_back([&]{ results[0] = simulate_peer(coord, std::chrono::milliseconds(1), std::chrono::milliseconds(1)); });
-    threads.emplace_back([&]{ results[1] = simulate_peer(coord, std::chrono::milliseconds(1), std::chrono::milliseconds(1)); });
-    threads.emplace_back([&]{ results[2] = simulate_peer(coord, std::chrono::milliseconds(200), std::chrono::milliseconds(1)); });
-    threads.emplace_back([&]{ results[3] = simulate_peer(coord, std::chrono::milliseconds(200), std::chrono::milliseconds(1)); });
-
+    for (size_t i = 0; i < peers; ++i) {
+        threads.emplace_back([&] {
+            while (auto const chunk = coord.claim_chunk()) {
+                claims[*chunk].fetch_add(1, std::memory_order_relaxed);
+                // This chunk is still in progress, so the range is not done.
+                if (coord.is_complete()) {
+                    complete_too_early.store(true, std::memory_order_relaxed);
+                }
+                coord.chunk_completed(*chunk);
+            }
+        });
+    }
     for (auto& t : threads) t.join();
 
-    auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start).count();
-
-    REQUIRE(coord.is_complete());
-
-    size_t fast_blocked = results[0].blocked_count + results[1].blocked_count;
-    CHECK(fast_blocked > 0);  // Fast peers WERE blocked (the problem)
-
-    uint64_t ideal_ms = 32;  // 32 chunks * 1ms
-    CHECK(static_cast<uint64_t>(elapsed_ms) > ideal_ms * 5);  // Much slower than ideal
-
-    INFO("Elapsed: " << elapsed_ms << "ms, ideal: " << ideal_ms << "ms, fast_blocked: " << fast_blocked);
+    CHECK_FALSE(complete_too_early.load());
+    CHECK(coord.is_complete());
+    CHECK(coord.get_progress().chunks_completed == chunks);
+    CHECK(coord.get_progress().chunks_in_progress == 0);
+    size_t claimed_once = 0;
+    for (auto const& count : claims) {
+        if (count.load() == 1) ++claimed_once;
+    }
+    CHECK(claimed_once == chunks);
 }
 
 // =============================================================================
-// Solution: one slot per chunk eliminates blocking
+// Mixed fast and slow peers
 // =============================================================================
 
-TEST_CASE("chunk_coordinator full slots: fast peers never blocked", "[chunk_coordinator][slow_peer]") {
+TEST_CASE("chunk_coordinator fast peers are not held back by slow peers", "[chunk_coordinator][slow_peer]") {
     header_index index(1024);
     populate_dummy_headers(index, 1, 320);
 
-    // slots=0 -> one per chunk (32 slots for 32 chunks). No starvation possible.
-    chunk_coordinator_config cfg{.chunk_size = 10, .slots = 0, .stall_timeout_secs = 5};
+    // 32 chunks: a fast peer always finds one to claim until they run out.
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
     chunk_coordinator coord(index, 1, 320, cfg);
 
     std::vector<peer_result> results(4);
@@ -302,16 +334,14 @@ TEST_CASE("chunk_coordinator full slots: fast peers never blocked", "[chunk_coor
     size_t slow_chunks = results[2].chunks_completed + results[3].chunks_completed;
     size_t fast_blocked = results[0].blocked_count + results[1].blocked_count;
 
-    // With enough slots, fast peers are only blocked at the very end
-    // (waiting for slow peers to finish their last chunks), not at every round boundary.
-    // With limited slots (8), fast_blocked is typically in the thousands.
+    // Fast peers are only blocked at the very end, waiting for slow peers to
+    // finish their last chunks.
     CHECK(fast_blocked < 1000);
 
     // Fast peers should do most of the work
     CHECK(fast_chunks > slow_chunks);
 
     // Total time should be close to the slow peer time (they run in parallel)
-    // Not 5x worse like with limited slots
     CHECK(static_cast<uint64_t>(elapsed_ms) < 2000);
 
     INFO("Elapsed: " << elapsed_ms << "ms, fast=" << fast_chunks << " slow=" << slow_chunks << " fast_blocked=" << fast_blocked);
