@@ -32,6 +32,12 @@ struct context {
     id<MTLBuffer> in = nil;
     id<MTLBuffer> out = nil;
     std::size_t capacity = 0;
+    // Hashing: two buffers of hashes that take turns as input and output, and
+    // the word the merkle kernel reports equal siblings in.
+    id<MTLBuffer> hash_a = nil;
+    id<MTLBuffer> hash_b = nil;
+    id<MTLBuffer> hash_flag = nil;
+    std::size_t hash_capacity = 0;   // bytes of hash_a; hash_b holds half
     bool busy = false;
 };
 
@@ -44,6 +50,8 @@ struct state {
     id<MTLCommandQueue> queue = nil;
     id<MTLComputePipelineState> pipeline = nil;
     id<MTLComputePipelineState> field_test = nil;
+    id<MTLComputePipelineState> sha256d64 = nil;
+    id<MTLComputePipelineState> merkle_level = nil;
     id<MTLBuffer> g = nil;
     context ctx[context_count];
     std::mutex m;
@@ -58,6 +66,18 @@ bool reserve(state& s, context& c, std::size_t n) {
     c.out = [s.device newBufferWithLength:cap options:MTLResourceStorageModeShared];
     if (c.in == nil || c.out == nil) { c.capacity = 0; return false; }
     c.capacity = cap;
+    return true;
+}
+
+bool reserve_hashes(state& s, context& c, std::size_t bytes) {
+    if (bytes <= c.hash_capacity) return true;
+    std::size_t cap = c.hash_capacity ? c.hash_capacity : 65536;
+    while (cap < bytes) cap *= 2;
+    c.hash_a = [s.device newBufferWithLength:cap options:MTLResourceStorageModeShared];
+    c.hash_b = [s.device newBufferWithLength:cap / 2 options:MTLResourceStorageModeShared];
+    if (c.hash_flag == nil) c.hash_flag = [s.device newBufferWithLength:sizeof(u32) options:MTLResourceStorageModeShared];
+    if (c.hash_a == nil || c.hash_b == nil || c.hash_flag == nil) { c.hash_capacity = 0; return false; }
+    c.hash_capacity = cap;
     return true;
 }
 
@@ -103,6 +123,10 @@ void init(state& st) {
         if (st.pipeline == nil) return;
         id<MTLFunction> ft = [lib newFunctionWithName:@"field_test_kernel"];
         if (ft != nil) st.field_test = [dev newComputePipelineStateWithFunction:ft error:&err];
+        id<MTLFunction> d64 = [lib newFunctionWithName:@"sha256d64_kernel"];
+        if (d64 != nil) st.sha256d64 = [dev newComputePipelineStateWithFunction:d64 error:&err];
+        id<MTLFunction> lvl = [lib newFunctionWithName:@"merkle_level_kernel"];
+        if (lvl != nil) st.merkle_level = [dev newComputePipelineStateWithFunction:lvl error:&err];
         st.queue = [dev newCommandQueue];
         if (st.queue == nil) return;
         st.g = [dev newBufferWithBytes:secp256k1_turbo::gpu::g_table_words() length:GPU_G_WORDS * sizeof(u32) options:MTLResourceStorageModeShared];
@@ -181,6 +205,75 @@ bool metal_field_test(gpu_field_test_in const* in, std::size_t n, gpu_field_test
         std::memcpy(out, [bout contents], n * sizeof(gpu_field_test_out));
     }
     return true;
+}
+
+bool metal_sha256d64(std::uint8_t const* in, std::size_t n, std::uint8_t* out) {
+    state& s = get_state();
+    if (!s.ok || s.sha256d64 == nil || n > max_hashes) return false;
+    if (n == 0) return true;
+    context& c = acquire(s);
+    bool ok = reserve_hashes(s, c, 64 * n);
+    if (ok) @autoreleasepool {
+        std::memcpy([c.hash_a contents], in, 64 * n);
+        id<MTLCommandBuffer> cmd = [s.queue commandBuffer];
+        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        [enc setComputePipelineState:s.sha256d64];
+        [enc setBuffer:c.hash_a offset:0 atIndex:0];
+        [enc setBuffer:c.hash_b offset:0 atIndex:1];
+        u32 const nn = static_cast<u32>(n);
+        [enc setBytes:&nn length:sizeof(nn) atIndex:2];
+        NSUInteger tg = [s.sha256d64 maxTotalThreadsPerThreadgroup];
+        if (tg > metal_threadgroup) tg = metal_threadgroup;
+        [enc dispatchThreads:MTLSizeMake(n, 1, 1) threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        ok = [cmd status] == MTLCommandBufferStatusCompleted;
+        if (ok) std::memcpy(out, [c.hash_b contents], 32 * n);
+    }
+    release(s, c);
+    return ok;
+}
+
+bool metal_merkle_root(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated) {
+    state& s = get_state();
+    if (!s.ok || s.merkle_level == nil || n == 0 || n > max_hashes) return false;
+    context& c = acquire(s);
+    bool ok = reserve_hashes(s, c, 32 * n);
+    if (ok) @autoreleasepool {
+        std::memcpy([c.hash_a contents], hashes, 32 * n);
+        std::memset([c.hash_flag contents], 0, sizeof(u32));
+        // Every level is one dispatch of the same command buffer; the two
+        // buffers swap roles from one level to the next.
+        id<MTLCommandBuffer> cmd = [s.queue commandBuffer];
+        id<MTLBuffer> level = c.hash_a;
+        id<MTLBuffer> above = c.hash_b;
+        NSUInteger tg = [s.merkle_level maxTotalThreadsPerThreadgroup];
+        if (tg > metal_threadgroup) tg = metal_threadgroup;
+        for (std::size_t count = n; count > 1; count = (count + 1) / 2) {
+            id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+            [enc setComputePipelineState:s.merkle_level];
+            [enc setBuffer:level offset:0 atIndex:0];
+            [enc setBuffer:above offset:0 atIndex:1];
+            [enc setBuffer:c.hash_flag offset:0 atIndex:2];
+            u32 const nn = static_cast<u32>(count);
+            [enc setBytes:&nn length:sizeof(nn) atIndex:3];
+            [enc dispatchThreads:MTLSizeMake((count + 1) / 2, 1, 1) threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+            [enc endEncoding];
+            std::swap(level, above);
+        }
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        ok = [cmd status] == MTLCommandBufferStatusCompleted;
+        if (ok) {
+            std::memcpy(root, [level contents], 32);
+            u32 flag = 0;
+            std::memcpy(&flag, [c.hash_flag contents], sizeof(flag));
+            if (mutated != nullptr) *mutated = flag != 0;
+        }
+    }
+    release(s, c);
+    return ok;
 }
 
 } // namespace secp256k1_turbo::gpu

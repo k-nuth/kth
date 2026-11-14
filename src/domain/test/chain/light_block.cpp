@@ -15,6 +15,10 @@
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/infrastructure/math/checksum.hpp>
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <secp256k1_turbo/gpu_sha256.hpp>
+#endif
+
 using namespace kth;
 using namespace kd;
 
@@ -345,3 +349,56 @@ TEST_CASE("light_block detects duplicated merkle subtrees above the transaction 
     CHECK(mutated->generate_merkle_root() == root);
     CHECK_FALSE(mutated->is_valid_merkle_root());
 }
+
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+TEST_CASE("merkle root is the same whether the GPU or the CPU hashes the tree", "[chain light_block][gpu]") {
+    namespace gpu_sha256 = secp256k1_turbo::gpu_sha256;
+    if ( ! gpu_sha256::available()) {
+        WARN("no GPU device: skipped");
+        return;
+    }
+    auto const threshold = gpu_sha256::min_batch();
+
+    for (size_t const count : {size_t(1), size_t(2), size_t(3), size_t(7), size_t(64), size_t(1001)}) {
+        for (bool const equal_siblings : {false, true}) {
+            if (equal_siblings && count < 2) continue;
+
+            // Transactions that differ in their lock time only, so every hash
+            // is different; then, for the mutated case, the first two equal.
+            chain::transaction::list txs;
+            for (size_t i = 0; i < count; ++i) {
+                txs.emplace_back(1, uint32_t(i + 1), chain::input::list{}, chain::output::list{});
+            }
+            if (equal_siblings) txs[1] = txs[0];
+
+            chain::block const full(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, txs);
+            data_chunk raw(full.serialized_size());
+            byte_writer writer(raw);
+            REQUIRE(full.to_data(writer).has_value());
+            byte_reader reader(raw);
+            auto const light = chain::light_block::from_data(reader, true);
+            REQUIRE(light.has_value());
+
+            gpu_sha256::set_min_batch(0);       // every tree on the CPU
+            bool cpu_mutated = ! equal_siblings;
+            auto const cpu_root = light->generate_merkle_root(cpu_mutated);
+            auto const cpu_root_full = full.generate_merkle_root();
+
+            gpu_sha256::set_min_batch(1);       // every tree on the GPU
+            bool gpu_mutated = ! equal_siblings;
+            auto const gpu_root = light->generate_merkle_root(gpu_mutated);
+            auto const gpu_root_full = full.generate_merkle_root();
+
+            INFO("transactions: " << count << ", equal siblings: " << equal_siblings);
+            REQUIRE(cpu_root == cpu_root_full);
+            REQUIRE(gpu_root == cpu_root);
+            REQUIRE(gpu_root_full == cpu_root);
+            REQUIRE(cpu_mutated == equal_siblings);
+            REQUIRE(gpu_mutated == equal_siblings);
+        }
+    }
+
+    gpu_sha256::set_min_batch(threshold);
+}
+#endif
+

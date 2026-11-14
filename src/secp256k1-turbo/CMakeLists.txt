@@ -24,6 +24,7 @@ add_library(${PROJECT_NAME} STATIC
     src/cpu.cpp
     src/deferred.cpp
     src/g_table.cpp
+    src/gpu_sha256.cpp
     src/kernel_scalar.cpp
     src/sha256.cpp
 )
@@ -146,6 +147,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/verify.cpp
         test/deferred.cpp
         test/gpu_core.cpp
+        test/gpu_sha256.cpp
     )
     if (KTH_SECP256K1_TURBO_AVX512_FLAGS)
         target_sources(kth_secp256k1_turbo_test PRIVATE test/field_avx512ifma.cpp)
