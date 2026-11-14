@@ -584,6 +584,19 @@ bool AVXEnabled()
 } // namespace
 
 
+namespace {
+// A function-local static, so it is usable from the selection that runs while
+// the static objects of this file are still being initialized.
+std::string& implementation_name() {
+    static std::string name = "standard";
+    return name;
+}
+} // namespace
+
+std::string SHA256Implementation() {
+    return implementation_name();
+}
+
 std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implementation)
 {
     std::string ret = "standard";
@@ -688,8 +701,18 @@ std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implem
 #endif // DISABLE_OPTIMIZED_SHA256
 
     assert(SelfTest());
+    implementation_name() = ret;
     return ret;
 }
+
+namespace {
+// Selects the best implementation when the library is loaded. Without this a
+// program that links the library and never calls SHA256AutoDetect() hashes
+// with the portable transform, even on a CPU with SHA extensions.
+struct implementation_selector {
+    implementation_selector() { SHA256AutoDetect(); }
+} const select_implementation_at_startup;
+} // namespace
 
 ////// SHA-256
 
