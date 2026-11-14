@@ -350,7 +350,9 @@ TEST_CASE("sv2 JD upstream bounds a silent or incomplete handshake", "[sv2 jd]")
         auto const reason = fixture.finish();
         CHECK(reason == (mode == behavior::silent_handshake
             ? "upstream connection or handshake timed out" : "upstream handshake ended early"));
-        CHECK(fixture.client->authentication_failed());
+        // Nothing was shown, so nothing failed to authenticate: the entry gets
+        // its ordinary retry delay, not the authority hold.
+        CHECK_FALSE(fixture.client->authentication_failed());
         CHECK_FALSE(fixture.ready);
     }
 }

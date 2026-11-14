@@ -2090,7 +2090,7 @@ TEST_CASE("sv2 JD retains one silent recovery probe while the healthy entry stay
 TEST_CASE("sv2 JD recovery waits for accepted work, the hold and a local job boundary", "[sv2 jd]") {
     bool from_solo = false;
     SECTION("recover from another pool") {}
-    SECTION("recover from solo after every pool failed") { from_solo = true; }
+    SECTION("recover from solo after every pool failed, on the tip it has") { from_solo = true; }
     auto chain = started_chain("sv2_jd_recovery");
     client_fixture fixture;
     fake_upstream backup_pool(fixture, 6);
@@ -2143,20 +2143,29 @@ TEST_CASE("sv2 JD recovery waits for accepted work, the hold and a local job bou
     REQUIRE(fixture.client->notice()->generation == active_notice->generation);
     auto const hold_end = *recovered->entries[0].healthy_since + 1s;
     REQUIRE(fixture.wait_until([&] { return std::chrono::steady_clock::now() >= hold_end; }, 2s));
-    CHECK_FALSE(fixture.wait_until([&] {
-        return fixture.client->status()->active == std::optional<size_t>{0};
-    }, 100ms));
-    REQUIRE(fixture.client->notice()->generation == active_notice->generation);
-    auto const view = chain->chain().chain_view();
-    REQUIRE(view);
-    auto const block = test::mine_block(view->tip_hash, 2, uint32_t(zulu_time()), 0, {}, 0);
-    std::vector<domain::chain::block> const blocks{block};
-    REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
-    test::persist_headers(*chain, blocks, 2);
-    test::connect_bodies(*chain, blocks, 2);
-    REQUIRE(fixture.wait_until([&] {
-        return fixture.client->status()->active == std::optional<size_t>{0};
-    }));
+    if (from_solo) {
+        // Solo has no pool's job to finish. The entry takes over when its hold
+        // has passed, with no new block, and its job replaces the solo work.
+        REQUIRE(fixture.wait_until([&] {
+            return fixture.client->status()->active == std::optional<size_t>{0};
+        }));
+        REQUIRE(fixture.client->notice()->pool);
+    } else {
+        CHECK_FALSE(fixture.wait_until([&] {
+            return fixture.client->status()->active == std::optional<size_t>{0};
+        }, 100ms));
+        REQUIRE(fixture.client->notice()->generation == active_notice->generation);
+        auto const view = chain->chain().chain_view();
+        REQUIRE(view);
+        auto const block = test::mine_block(view->tip_hash, 2, uint32_t(zulu_time()), 0, {}, 0);
+        std::vector<domain::chain::block> const blocks{block};
+        REQUIRE(chain->organizer().add_headers(test::headers_of(blocks)).headers_added == 1);
+        test::persist_headers(*chain, blocks, 2);
+        test::connect_bodies(*chain, blocks, 2);
+        REQUIRE(fixture.wait_until([&] {
+            return fixture.client->status()->active == std::optional<size_t>{0};
+        }));
+    }
     REQUIRE_FALSE(fixture.client->status()->probe);
     if ( ! from_solo) {
         fixture.eof_after_pending(backup_pool.socket);
