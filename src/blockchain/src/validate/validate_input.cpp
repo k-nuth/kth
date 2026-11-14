@@ -332,8 +332,11 @@ std::pair<code, size_t> validate_input::verify_script(transaction const& tx, uin
 
 std::pair<code, size_t> validate_input::verify_transaction(transaction const& tx, script_flags_t flags) {
     size_t total_sig_checks = 0;
+    // The hashes of the whole transaction, shared by the signature hashes of
+    // all its inputs: computed once here instead of once per signature.
+    domain::chain::sighash_cache shared(tx);
     for (uint32_t i = 0; i < tx.inputs().size(); ++i) {
-        auto const result = domain::chain::verify_with_sigchecks(tx, i, flags);
+        auto const result = domain::chain::verify_with_sigchecks(tx, i, flags, &shared);
         if (result.first != error::success) {
             return {result.first, total_sig_checks};
         }

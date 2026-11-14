@@ -101,6 +101,16 @@ struct KD_API program {
     /// the intended shape, NOT `program(script, make_program(), true)`.
     program(chain::script const& script, program&& x, bool move);
 
+    /// The hashes of the whole transaction that its signature hashes share,
+    /// kept by whoever verifies its inputs (null: each signature hash computes
+    /// its own). Programs created from this one use the same.
+    /// \pre `shared`, when not null, is of this program's transaction and
+    /// outlives every program that uses it.
+    void set_sighash_cache(chain::sighash_cache* shared) { sighash_cache_ = shared; }
+
+    [[nodiscard]]
+    chain::sighash_cache* sighash_cache() const { return sighash_cache_; }
+
     [[nodiscard]]
     metrics& get_metrics();
 
@@ -340,6 +350,7 @@ private:
     std::shared_ptr<operation::list const> script_ops_;
     chain::transaction const* transaction_{nullptr};
     uint32_t input_index_{0};
+    chain::sighash_cache* sighash_cache_{nullptr};
     script_flags_t flags_{0};
     uint64_t value_{0};
 

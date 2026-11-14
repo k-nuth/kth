@@ -186,6 +186,7 @@ set(kth_sources_just_legacy
         src/chain/point.cpp
         src/chain/point_iterator.cpp
         src/chain/script.cpp
+        src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
         src/chain/utxo.cpp
@@ -377,6 +378,7 @@ set(kth_headers
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/script.hpp
+    include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
     include/kth/domain/chain/point_value.hpp
@@ -712,7 +714,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
 
+  # Signature hashes of a transaction: the shared hashes computed per input
+  # against kept for the transaction.
+  add_executable(kth_domain_bench_sighash bench/sighash/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_sighash PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_sighash PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_sighash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
