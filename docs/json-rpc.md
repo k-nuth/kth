@@ -96,7 +96,7 @@ counterpart.
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
-| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), `get_utxo` then `fetch_block(height)` (an unspent output), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
@@ -265,11 +265,13 @@ pushed data in order (`data`), and `error` for a script that ends in the middle
 of a push. `fee` per transaction and `ablastate` are not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
-mempool transaction. Confirmed transactions are not indexed by txid (#491), so
-for one of those pass the block hash as the third parameter:
-`getrawtransaction "<txid>" false "<blockhash>"`. KTH currently has neither a
-confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
-therefore require the block hash. An empty block hash is treated as omitted.
+mempool transaction, and for a confirmed one that still has an unspent output:
+the UTXO set records the height each output was created at, and the
+transaction is read from the block at that height. Confirmed transactions are
+not indexed by txid (#491), so one whose outputs are all spent needs its block
+hash as the third parameter: `getrawtransaction "<txid>" false "<blockhash>"`.
+That is what a BCHN node without its transaction index answers too. An empty
+block hash is treated as omitted.
 With `verbose` true (or 1) it returns the `decoderawtransaction` fields
 with `hex`, and for a transaction read from a block also `blockhash`,
 `confirmations`, `confirmations_ticks`, `time`, `blocktime` and

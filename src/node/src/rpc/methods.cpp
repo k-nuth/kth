@@ -723,10 +723,62 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
     co_return render_chain_tips(*tips);
 }
 
+// The height at which a confirmed transaction was mined, read from any output
+// of it that is still unspent: the UTXO set records the height each output was
+// created at. Nothing when every output is spent, or the transaction was never
+// mined. No index is kept or read for this.
+//
+// As BCHN's AccessByTxid, it asks for output 0, 1, 2 and so on, up to as many
+// outputs as the largest transaction can have: the smallest output is 9 bytes.
+std::expected<std::optional<size_t>, rpc_error>
+height_of_unspent_output(method_context& ctx, hash_digest const& txid, size_t tip) {
+    constexpr uint32_t max_outputs = uint32_t(max_tx_size / 9);
+    constexpr uint32_t batch = 1024;
+    auto const store_height = database::to_store_height(tip);
+    if ( ! store_height) {
+        return kth::fail(make_error(error_code::internal_error,
+            "tip height does not fit the UTXO store"));
+    }
+    // The active versions are asked one output at a time; what they cannot
+    // answer goes to the older ones a batch at a time, and only their miss is
+    // absence.
+    std::vector<utxoz::lookup_request> unresolved;
+    unresolved.reserve(batch);
+    for (uint32_t first = 0; first < max_outputs; first += batch) {
+        unresolved.clear();
+        auto const last = std::min(max_outputs, first + batch);
+        for (auto n = first; n < last; ++n) {
+            auto const utxo = ctx.chain.get_utxo(domain::chain::output_point{txid, n}, tip);
+            if (utxo) {
+                return std::optional<size_t>{utxo->height};
+            }
+            if (utxo.error() != database::result_code::not_resolved) {
+                return kth::fail(make_error(error_code::internal_error,
+                    "the UTXO store could not be read"));
+            }
+            unresolved.push_back(utxoz::lookup_request{
+                utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, n), *store_height});
+        }
+        auto const resolved = ctx.chain.utxo_resolve(unresolved);
+        if ( ! resolved) {
+            return kth::fail(make_error(error_code::internal_error,
+                "the UTXO store could not be read"));
+        }
+        if ( ! resolved->found.empty()) {
+            // Every output of a transaction was created at the same height.
+            return std::optional<size_t>{size_t(resolved->found.begin()->second.height())};
+        }
+    }
+    return std::optional<size_t>{};
+}
+
 // getrawtransaction <txid> [verbose] [blockhash] -> the wire-serialized
-// transaction as hex. With a block hash it is read from that block; without
-// one only the mempool can answer, since confirmed transactions are not
-// indexed by txid (#491).
+// transaction as hex. With a block hash it is read from that block. Without
+// one the mempool answers, and for a confirmed transaction the UTXO set: one
+// with an output still unspent is found in the block that output was created
+// in. Confirmed transactions are not indexed by txid (#491), so one whose
+// outputs are all spent needs its block hash, as on a BCHN node without its
+// transaction index.
 // C-API counterpart: kth_chain_sync_transaction (+ kth_chain_sync_block_by_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
@@ -779,14 +831,45 @@ get_raw_transaction(method_context& ctx, request const& req) {
     }
 
     auto const result = co_await ctx.chain.fetch_transaction(hash, /*require_confirmed*/ false);
-    if ( ! result) {
-        if (result.error() == error::not_found) {
-            co_return kth::fail(make_error(error_code::invalid_address_or_key,
-                "No such mempool transaction; pass the block hash for a confirmed one"));
-        }
+    if (result) {
+        co_return render(*std::get<0>(*result), std::nullopt);
+    }
+    if (result.error() != error::not_found) {
         co_return kth::fail(from_code(result.error()));
     }
-    co_return render(*std::get<0>(*result), std::nullopt);
+
+    // Not pooled. A confirmed one is in the block at the height its unspent
+    // outputs were created at, on the connected chain.
+    auto const height = height_of_unspent_output(ctx, hash, view->connected_tip_height);
+    if ( ! height) {
+        co_return kth::fail(height.error());
+    }
+    if (*height) {
+        auto const block = co_await ctx.chain.fetch_block(**height);
+        if ( ! block && block.error() != error::not_found) {
+            co_return kth::fail(from_code(block.error()));
+        }
+        if (block) {
+            auto const& found = std::get<0>(*block);
+            for (auto const& tx : found->transactions()) {
+                if (tx.hash() != hash) {
+                    continue;
+                }
+                if (args->verbosity == 0) {
+                    co_return render(tx, std::nullopt);
+                }
+                auto const block_hash = found->hash();
+                auto const progress = ctx.chain.get_block_progress(block_hash, view);
+                if ( ! progress) {
+                    co_return kth::fail(from_code(progress.error()));
+                }
+                co_return render(tx, transaction_location{block_hash,
+                    progress->confirmations, found->header().timestamp(), progress->confirmations_ticks});
+            }
+        }
+    }
+    co_return kth::fail(make_error(error_code::invalid_address_or_key,
+        "No such mempool transaction, and no unspent output of it leads to its block; pass the block hash"));
 }
 
 // getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or

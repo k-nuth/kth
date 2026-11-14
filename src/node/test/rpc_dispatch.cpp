@@ -1550,14 +1550,32 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
     REQUIRE(request("getblock", "[" + quoted(null_hash) + "]") ==
         node::rpc::build_error("12", -5, "Block not found"));
 
-    // A confirmed transaction: with its block hash, and not without one.
+    // A confirmed transaction with its block hash.
     auto const& coinbase = trunk[2].transactions().front();
     REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",false," + quoted(trunk[2].hash()) + "]") ==
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(coinbase))));
     REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",false," + quoted(trunk[1].hash()) + "]") ==
         node::rpc::build_error("12", -5, "No such transaction found in the provided block"));
+
+    // And without one: its output is unspent, so the UTXO set leads to its
+    // block. The answer is the one the block hash gives, with the block in it.
     REQUIRE(request("getrawtransaction", "[" + quoted(coinbase.hash()) + "]") ==
-        node::rpc::build_error("12", -5, "No such mempool transaction; pass the block hash for a confirmed one"));
+        node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(coinbase))));
+    auto const located = request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",true]");
+    CHECK(located.find("\"blockhash\":\"" + encode_hash(trunk[2].hash()) + "\"") != std::string::npos);
+    CHECK(located.find("\"confirmations\":1") != std::string::npos);
+    CHECK(located == request("getrawtransaction", "[" + quoted(coinbase.hash()) + ",true," + quoted(trunk[2].hash()) + "]"));
+    // The first connected block's, two blocks under the tip.
+    auto const deep = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + ",true]");
+    CHECK(deep.find("\"blockhash\":\"" + encode_hash(trunk[0].hash()) + "\"") != std::string::npos);
+    CHECK(deep.find("\"confirmations\":3") != std::string::npos);
+
+    // A transaction of a block that is not connected has no output in the
+    // UTXO set, and neither has one nobody made: both need a block hash.
+    auto const unlocated = node::rpc::build_error("12", -5,
+        "No such mempool transaction, and no unspent output of it leads to its block; pass the block hash");
+    REQUIRE(request("getrawtransaction", "[" + quoted(trunk[3].transactions().front().hash()) + "]") == unlocated);
+    REQUIRE(request("getrawtransaction", "[" + quoted(null_hash) + "]") == unlocated);
 
     // A mempool transaction, by txid alone.
     domain::chain::input::list ins;
