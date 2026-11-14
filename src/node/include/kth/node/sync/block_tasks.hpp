@@ -87,7 +87,8 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 // Manages block download tasks. Spawns one download task per peer.
 // - Input: single channel with variant (stop, peers_updated, block_range_request)
 // - Output: downloaded blocks to block_download_channel
-// - Creates chunk_coordinator for lock-free chunk assignment
+// - Owns the chunk_coordinator of the current range: workers ask it for chunks
+//   and report on them through their output channel
 // - Maintains internal task_group for download workers
 //
 // =============================================================================
@@ -106,7 +107,7 @@ extern std::atomic<uint64_t> g_blocks_received_by_validation;
 /// same task id and epoch it was handed, exactly as the real worker does.
 using download_worker_launcher = std::function<void(
     network::peer_session::ptr peer,
-    std::shared_ptr<chunk_coordinator> coordinator,
+    std::shared_ptr<download_range> range,
     uint64_t task_id,
     uint64_t coordinator_epoch,
     block_download_task_output_channel& output)>;
@@ -124,16 +125,42 @@ using download_worker_launcher = std::function<void(
 // =============================================================================
 //
 // Downloads blocks from a single peer.
-// - Claims chunks via chunk_coordinator (lock-free CAS)
+// - Asks the supervisor for chunks (chunk_client) and waits for each answer
 // - Downloads blocks and sends to block_download_channel
-// - Reports success/failure to coordinator for proper retry handling
-// - Exits when peer disconnects or no more chunks
+// - Reports what became of each chunk, so a failed one is retried elsewhere
+// - Exits when peer disconnects or the range has no more work
 //
 // =============================================================================
 
+/// A worker's side of the chunk protocol with the supervisor, which owns the
+/// chunks of the range. One per worker; used by that worker only.
+struct chunk_client {
+    chunk_client(
+        block_download_task_output_channel& output,
+        std::shared_ptr<download_range> range,
+        uint64_t coordinator_epoch);
+
+    /// Ask for a chunk and wait for the answer. Suspended until a chunk is
+    /// free for this worker; nullopt when the range has no more work, was
+    /// stopped, or the supervisor is gone.
+    [[nodiscard]]
+    ::asio::awaitable<chunk_reply> next();
+
+    /// Say what became of a chunk this worker holds.
+    ::asio::awaitable<void> report(chunk_claim claim, chunk_report::event what);
+
+private:
+    ::asio::awaitable<bool> send(block_download_task_output message);
+
+    block_download_task_output_channel& output_;
+    std::shared_ptr<download_range> range_;
+    uint64_t coordinator_epoch_;
+    chunk_reply_channel_ptr reply_;
+};
+
 ::asio::awaitable<void> block_download_task(
     network::peer_session::ptr peer,
-    std::shared_ptr<chunk_coordinator> coordinator,  // Lock-free chunk assignment (shared to keep alive)
+    std::shared_ptr<download_range> range,   // The range this worker downloads (shared to keep alive)
     std::atomic<uint32_t>& active_peers,     // Atomic peer counter for metrics
     block_download_task_output_channel& output,  // Single output: blocks + task_ended
     uint64_t task_id,            // this instance, so a late report cannot retire a newer one (#652)

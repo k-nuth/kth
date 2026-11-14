@@ -6,19 +6,39 @@
 #define KTH_NODE_SYNC_CHUNK_COORDINATOR_HPP
 
 // =============================================================================
-// Chunk Coordinator - Lock-Free Slot-Based Chunk Assignment
+// Chunk assignment for parallel block downloads
 // =============================================================================
 //
-// This coordinator ONLY handles chunk assignment for parallel block downloads.
-// Validation is handled by a separate task via channels (CSP pattern).
+// A range of blocks is downloaded in chunks, each by one peer at a time. Two
+// types take part, and they are deliberately separate:
 //
-// DESIGN:
-// -------
-// - One slot per chunk of N blocks: the slot's position is the chunk id
-// - A slot is FREE, IN_PROGRESS (being requested from a peer), DELIVERING
-//   (downloaded, waiting for the consumer to take it) or COMPLETED
-// - A slot is one atomic word: state, claim number and claim time together, so
-//   every transition is a single compare-and-swap
+// - chunk_coordinator is the state of a range: which chunk is free, held or
+//   delivered, and which workers are waiting for one. It has ONE OWNER, the
+//   download supervisor, and is plain data: no atomics, no locks. Nothing but
+//   the supervisor's coroutine calls it.
+//
+// - download_range is what the workers of a range share: the fixed description
+//   of the range, the header index to read hashes from, and the stop of the
+//   range. It holds no chunk state.
+//
+// A worker never touches the coordinator. It talks to the supervisor through
+// the workers' output channel (messages.hpp): a chunk_request, answered on the
+// worker's own reply channel, and a chunk_report for each thing that happens
+// to the chunk it holds.
+//
+// FLOW:
+// -----
+// 1. The worker sends chunk_request and suspends on its reply channel
+// 2. The supervisor answers with a chunk_assignment as soon as a chunk is free:
+//    at once, or when a chunk is given back or stalls. No worker polls
+// 3. With the blocks in hand the worker reports `downloaded`, hands them over
+//    and reports `completed`; anything else is reported as `failed`
+// 4. When every chunk is completed the supervisor answers every waiting and
+//    later request with "no more work", and the workers leave
+//
+// A slot is FREE, IN_PROGRESS (being requested from a peer), DELIVERING
+// (downloaded, waiting for the consumer to take it) or COMPLETED.
+//
 // - A claim names its chunk and its claim number. Only the current claim of a
 //   chunk can give it back: a peer whose claim was handed to another peer
 //   cannot free the chunk under the peer that holds it now
@@ -27,27 +47,19 @@
 //   downstream is not late
 // - A chunk counts as completed once, whoever reports it and however often
 //
-// FLOW:
-// -----
-// 1. Peer calls claim_chunk() to get a claim (or nullopt if nothing is free)
-// 2. Peer uses chunk_range() to get block heights and requests the blocks
-// 3. With the blocks in hand: chunk_downloaded(claim), then the hand-over
-// 4. On success: chunk_completed(claim)
-// 5. On failure: chunk_failed(claim) - slot reset to FREE
-//
-// NO MUTEXES - Only atomic operations for lock-free coordination.
-//
 // =============================================================================
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <optional>
 #include <stop_token>
 #include <utility>
 #include <vector>
 
 #include <kth/blockchain/header_index.hpp>
+#include <kth/infrastructure/utility/async_channel.hpp>
 
 namespace kth::node::sync {
 
@@ -56,7 +68,8 @@ struct chunk_coordinator_config {
     /// Blocks per chunk (matches Bitcoin protocol getdata limit)
     size_t chunk_size{16};
 
-    /// Timeout before a slot is considered stalled (seconds)
+    /// How long a request may be pending before its chunk is given to another
+    /// peer (seconds)
     uint32_t stall_timeout_secs{15};
 };
 
@@ -69,44 +82,39 @@ struct chunk_claim {
     friend bool operator==(chunk_claim const&, chunk_claim const&) = default;
 };
 
-/// Lock-free chunk coordinator for parallel block downloads
-struct chunk_coordinator {
-    /// Slot states (lock-free via atomic)
-    enum slot_state : uint8_t {
-        FREE = 0,        // Available for assignment
-        IN_PROGRESS = 1, // Assigned, being requested from the peer
-        DELIVERING = 2,  // Downloaded, waiting for the consumer to take it
-        COMPLETED = 3    // Handed over. Final: a completed chunk never changes
-    };
+/// A chunk given to a worker: the claim to report with, and its blocks.
+struct chunk_assignment {
+    chunk_claim claim;
+    uint32_t start_height{0};
+    uint32_t end_height{0};
 
-    /// Construct coordinator for a block range
-    chunk_coordinator(
-        blockchain::header_index const& index,
-        uint32_t start_height,
-        uint32_t end_height,
-        chunk_coordinator_config const& config = {});
+    friend bool operator==(chunk_assignment const&, chunk_assignment const&) = default;
+};
 
-    ~chunk_coordinator() = default;
+/// The answer to a chunk_request: a chunk, or nullopt when the range has no
+/// more work for the worker.
+using chunk_reply = std::optional<chunk_assignment>;
 
-    // Non-copyable, non-movable (contains atomics)
-    chunk_coordinator(chunk_coordinator const&) = delete;
-    chunk_coordinator& operator=(chunk_coordinator const&) = delete;
-    chunk_coordinator(chunk_coordinator&&) = delete;
-    chunk_coordinator& operator=(chunk_coordinator&&) = delete;
+/// A worker's reply channel. Capacity one: a worker has one request pending at
+/// most, so an answer always finds room. Shared, so an answer to a worker that
+/// has just left lands in a channel that still exists.
+using chunk_reply_channel = select_channel<chunk_reply>;
+using chunk_reply_channel_ptr = std::shared_ptr<chunk_reply_channel>;
 
-    // -------------------------------------------------------------------------
-    // Peer Interface (Lock-Free)
-    // -------------------------------------------------------------------------
+// =============================================================================
+// download_range: what the workers of a range share
+// =============================================================================
 
-    /// Claim the lowest free chunk
-    /// @return the claim, or nullopt if every chunk is assigned or completed
-    [[nodiscard]]
-    std::optional<chunk_claim> claim_chunk();
+struct download_range {
+    download_range(blockchain::header_index const& index, uint32_t start_height, uint32_t end_height)
+        : index_(index), start_height_(start_height), end_height_(end_height)
+    {}
 
-    /// Get block range for a chunk
-    /// @return {start_height, end_height} for the chunk
-    [[nodiscard]]
-    std::pair<uint32_t, uint32_t> chunk_range(uint32_t chunk_id) const;
+    download_range(download_range const&) = delete;
+    download_range& operator=(download_range const&) = delete;
+
+    [[nodiscard]] uint32_t start_height() const { return start_height_; }
+    [[nodiscard]] uint32_t end_height() const { return end_height_; }
 
     /// Get block hash for a height (from header index)
     [[nodiscard]]
@@ -118,53 +126,117 @@ struct chunk_coordinator {
     [[nodiscard]]
     uint64_t generation() const { return index_.generation(); }
 
-    /// Report that the chunk's blocks have arrived and are about to be handed
-    /// over. From here the chunk cannot stall: how long the hand-over waits is
-    /// decided by the consumer, not by the peer. Ignored if the claim is no
-    /// longer the chunk's current one.
+    /// Stop the range: replaced by another one, or shutdown. Requested by the
+    /// supervisor only.
+    void stop() { stop_source_.request_stop(); }
+
+    [[nodiscard]]
+    bool is_stopped() const { return stop_source_.stop_requested(); }
+
+    /// A token that is stopped by stop(). Workers arm their waits with it: a
+    /// selection armed with this token completes with operation_aborted the
+    /// moment the range is stopped.
+    [[nodiscard]]
+    std::stop_token stop_token() const { return stop_source_.get_token(); }
+
+private:
+    blockchain::header_index const& index_;
+    uint32_t const start_height_;
+    uint32_t const end_height_;
+    std::stop_source stop_source_;
+};
+
+// =============================================================================
+// chunk_coordinator: the state of a range. One owner, no synchronization.
+// =============================================================================
+
+struct chunk_coordinator {
+    using clock = std::chrono::steady_clock;
+    using time_point = clock::time_point;
+
+    enum slot_state : uint8_t {
+        FREE = 0,        // Available for assignment
+        IN_PROGRESS = 1, // Assigned, being requested from the peer
+        DELIVERING = 2,  // Downloaded, waiting for the consumer to take it
+        COMPLETED = 3    // Handed over. Final: a completed chunk never changes
+    };
+
+    chunk_coordinator(
+        uint32_t start_height,
+        uint32_t end_height,
+        chunk_coordinator_config const& config = {});
+
+    chunk_coordinator(chunk_coordinator const&) = delete;
+    chunk_coordinator& operator=(chunk_coordinator const&) = delete;
+
+    // -------------------------------------------------------------------------
+    // Requests from workers
+    // -------------------------------------------------------------------------
+
+    /// A worker asks for a chunk. Answered on `reply` at once when a chunk is
+    /// free or the range has no more work; otherwise the request waits, and is
+    /// answered when a chunk is given back or stalls, or when the range ends.
+    /// Requests are served in the order they arrive.
+    void request_chunk(chunk_reply_channel_ptr reply, time_point now = clock::now());
+
+    /// Answer every waiting request with "no more work". For a range that is
+    /// being stopped or replaced.
+    void dismiss_waiting();
+
+    /// Requests waiting for a chunk
+    [[nodiscard]]
+    size_t waiting() const { return waiting_.size(); }
+
+    // -------------------------------------------------------------------------
+    // Chunk state
+    // -------------------------------------------------------------------------
+
+    /// Claim the lowest free chunk
+    /// @return the claim, or nullopt if every chunk is assigned or completed
+    [[nodiscard]]
+    std::optional<chunk_claim> claim_chunk(time_point now = clock::now());
+
+    /// Get block range for a chunk
+    /// @return {start_height, end_height} for the chunk
+    [[nodiscard]]
+    std::pair<uint32_t, uint32_t> chunk_range(uint32_t chunk_id) const;
+
+    /// The chunk's blocks have arrived and are about to be handed over. From
+    /// here the chunk cannot stall: how long the hand-over waits is decided by
+    /// the consumer, not by the peer. Ignored if the claim is no longer the
+    /// chunk's current one.
     void chunk_downloaded(chunk_claim claim);
 
-    /// Report that a chunk was handed over. A chunk that stalled is given to a
-    /// second peer and both may deliver it: every delivery is valid, and only
-    /// the first one counts.
+    /// A chunk was handed over. A chunk that stalled is given to a second peer
+    /// and both may deliver it: every delivery is valid, and only the first
+    /// one counts.
     void chunk_completed(chunk_claim claim);
 
-    /// Give a chunk back (reset to FREE for retry). Ignored unless the claim is
-    /// the chunk's current one.
-    void chunk_failed(chunk_claim claim);
+    /// Give a chunk back (reset to FREE for retry) and hand it to a waiting
+    /// request, if any. Ignored unless the claim is the chunk's current one.
+    void chunk_failed(chunk_claim claim, time_point now = clock::now());
+
+    // -------------------------------------------------------------------------
+    // Stalled requests
+    // -------------------------------------------------------------------------
+
+    /// When the oldest pending request stalls, or nullopt if none is pending.
+    /// The owner waits until then and calls check_timeouts().
+    [[nodiscard]]
+    std::optional<time_point> next_deadline();
+
+    /// Reset to FREE the chunks whose request has been pending for the stall
+    /// timeout at `now`, and hand them to the waiting requests.
+    void check_timeouts(time_point now = clock::now());
 
     // -------------------------------------------------------------------------
     // Status
     // -------------------------------------------------------------------------
 
-    /// Reset to FREE the chunks whose request has been pending for longer than
-    /// the stall timeout
-    void check_timeouts();
-
-    /// The same check against a clock reading the caller took. Peers keep
-    /// claiming while the check runs, so a claim can be newer than `now`; such
-    /// a claim has not been pending at all and is left alone.
-    void check_timeouts(std::chrono::steady_clock::time_point now);
-
     /// Check if all chunks have been completed
     [[nodiscard]]
-    bool is_complete() const;
+    bool is_complete() const { return chunks_completed_ >= total_chunks_; }
 
-    /// Check if coordinator was stopped
-    [[nodiscard]]
-    bool is_stopped() const;
-
-    /// Stop the coordinator (all claim_chunk() will return nullopt)
-    void stop();
-
-    /// A token that is stopped by stop(). Workers wait on it instead of polling
-    /// is_stopped() while suspended on a channel: a selection armed with this
-    /// token completes with operation_aborted the moment the coordinator is
-    /// stopped, whether by a replacing range or by shutdown.
-    [[nodiscard]]
-    std::stop_token stop_token() const { return stop_source_.get_token(); }
-
-    /// Progress information
     struct progress {
         uint32_t total_chunks;
         uint32_t chunks_completed;
@@ -177,65 +249,50 @@ struct chunk_coordinator {
     progress get_progress() const;
 
 private:
-    /// Get current time in milliseconds
-    static uint64_t now_ms();
+    struct slot {
+        slot_state state{FREE};
+        uint32_t number{0};   // one more on each claim of this chunk
+    };
 
-    static uint64_t to_ms(std::chrono::steady_clock::time_point time);
+    /// A pending request and when it stalls. Claims are made in time order, so
+    /// the queue is ordered by deadline.
+    struct pending_request {
+        time_point deadline;
+        chunk_claim claim;
+    };
 
-    // Configuration
+    [[nodiscard]]
+    bool is_pending(chunk_claim claim) const;
+
+    /// True if `claim` names the chunk's current hold (requesting or delivering).
+    [[nodiscard]]
+    bool holds(chunk_claim claim) const;
+
+    /// Back to FREE, from a hold.
+    void release(uint32_t chunk_id);
+
+    /// Hand the free chunks to the waiting requests, oldest request first.
+    void serve_waiting(time_point now);
+
     chunk_coordinator_config const config_;
-
-    // Header index for hash lookups
-    blockchain::header_index const& index_;
-
-    // Range to download
     uint32_t const start_height_;
     uint32_t const end_height_;
     uint32_t const total_chunks_;
 
-    // =========================================================================
-    // Lock-free slot management (NO MUTEXES)
-    //
-    // slots_[i] is chunk i, packed in one word:
-    //   bits  0-1   state
-    //   bits  2-17  claim number, one more on each claim of this chunk
-    //   bits 18-63  time of the claim, in milliseconds
-    // The claim number wraps after 65536 claims of the same chunk; a hold that
-    // old is long gone.
-    // =========================================================================
-    using slot_word = uint64_t;
-    static constexpr unsigned number_shift = 2;
-    static constexpr unsigned time_shift = 18;
-    static constexpr slot_word state_mask = (slot_word{1} << number_shift) - 1;
-    static constexpr slot_word number_mask = (slot_word{1} << (time_shift - number_shift)) - 1;
-    static constexpr size_t bytes_per_slot = sizeof(std::atomic<slot_word>);
-
-    static constexpr slot_word pack(slot_state state, uint32_t number, uint64_t time_ms) {
-        return (slot_word{time_ms} << time_shift)
-             | ((slot_word{number} & number_mask) << number_shift)
-             | slot_word{state};
-    }
-    static constexpr slot_state state_of(slot_word word) { return slot_state(word & state_mask); }
-    static constexpr uint32_t number_of(slot_word word) { return uint32_t((word >> number_shift) & number_mask); }
-    static constexpr uint64_t time_of(slot_word word) { return word >> time_shift; }
-
-    /// True if `word` is a hold (requesting or delivering) that `claim` names.
-    static constexpr bool holds(slot_word word, chunk_claim claim) {
-        auto const state = state_of(word);
-        return (state == IN_PROGRESS || state == DELIVERING) && number_of(word) == claim.number;
-    }
-
-    std::vector<std::atomic<slot_word>> slots_;
+    std::vector<slot> slots_;
 
     // Every chunk below this one is COMPLETED. COMPLETED is final, so the mark
-    // only moves forward and claims start their search from it instead of from
-    // the first chunk of the range.
-    std::atomic<uint32_t> completed_floor_{0};
+    // only moves forward.
+    uint32_t completed_floor_{0};
 
-    // Status
-    std::atomic<bool> stopped_{false};
-    std::stop_source stop_source_;   // Requested by stop(); see stop_token()
-    std::atomic<uint32_t> chunks_completed_{0};
+    // No chunk below this one is FREE. Lowered when a chunk is given back.
+    uint32_t free_floor_{0};
+
+    uint32_t chunks_completed_{0};
+    uint32_t chunks_held_{0};
+
+    std::deque<pending_request> pending_;
+    std::deque<chunk_reply_channel_ptr> waiting_;
 };
 
 } // namespace kth::node::sync

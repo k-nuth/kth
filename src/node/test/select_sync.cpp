@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -161,7 +162,7 @@ network::peer_session::ptr make_idle_peer(::asio::io_context& ctx, uint64_t nonc
 
 // -----------------------------------------------------------------------------
 // The supervisor, as in download_supervisor.cpp, with one more seam setting:
-// the launch may run the REAL worker against a coordinator that is already
+// the launch may run the REAL worker against a range that is already
 // stopped, so the worker's only act is its task_ended report — the production
 // suspended send, exercised under a full channel.
 // -----------------------------------------------------------------------------
@@ -170,7 +171,7 @@ struct launch_record {
     uint64_t nonce{0};
     uint64_t task_id{0};
     uint64_t epoch{0};
-    std::shared_ptr<chunk_coordinator> coordinator;
+    std::shared_ptr<download_range> range;
     network::peer_session::ptr peer;
 };
 
@@ -180,11 +181,11 @@ struct recording_launcher {
 
     download_worker_launcher make() {
         return [this](network::peer_session::ptr peer,
-                      std::shared_ptr<chunk_coordinator> coordinator,
+                      std::shared_ptr<download_range> range,
                       uint64_t task_id, uint64_t epoch,
                       block_download_task_output_channel& out) {
             output = &out;
-            launches.push_back(launch_record{peer->nonce(), task_id, epoch, coordinator, peer});
+            launches.push_back(launch_record{peer->nonce(), task_id, epoch, range, peer});
         };
     }
 
@@ -220,8 +221,8 @@ struct supervisor_fixture {
         REQUIRE(chain.start());
     }
 
-    // The REAL worker for a recorded launch, started against its coordinator
-    // after that coordinator has been stopped, so its only act is the task_ended
+    // The REAL worker for a recorded launch, started against its range
+    // after that range has been stopped, so its only act is the task_ended
     // report — the production suspended send — with the identity the seam was
     // handed. Spawned by the test, not by the seam, so the test chooses the
     // moment: a report sent while the supervisor cannot be draining is a report
@@ -229,9 +230,9 @@ struct supervisor_fixture {
     std::shared_ptr<tracked> start_real_worker(size_t index) {
         REQUIRE(index < launcher.launches.size());
         auto& l = launcher.launches[index];
-        l.coordinator->stop();
+        l.range->stop();
         auto w = std::make_shared<tracked>();
-        w->spawn(report_ctx, block_download_task(l.peer, l.coordinator, active_peers, *launcher.output,
+        w->spawn(report_ctx, block_download_task(l.peer, l.range, active_peers, *launcher.output,
             l.task_id, l.epoch, nullptr));
         l.peer.reset();
         report_workers.push_back(w);
@@ -568,7 +569,13 @@ struct fast_path_fixture {
     ::asio::io_context ctx;
     test::chain_fixture chain{"select_sync_fast_path"};
     std::vector<domain::chain::block> blocks;
-    std::shared_ptr<chunk_coordinator> coordinator;
+    // The range and its chunks, as the supervisor holds them. `owner` plays the
+    // supervisor's part of the chunk protocol and nothing else: it is the only
+    // coroutine that touches `coordinator`, and the cases read it between two
+    // runs of the context, never during one.
+    std::shared_ptr<download_range> range;
+    std::optional<chunk_coordinator> coordinator;
+    std::deque<download_task_ended> reports;
     fast_validation_input_channel fast_val{1};
     block_download_task_output_channel task_output{8};
     std::atomic<uint32_t> active_peers{0};
@@ -576,7 +583,7 @@ struct fast_path_fixture {
     network::peer_session::ptr session;
     std::optional<remote_peer> remote;
     std::atomic<size_t> pings_seen{0};
-    tracked session_run, router, serve, worker;
+    tracked session_run, router, serve, worker, owner;
 
     explicit fast_path_fixture(uint32_t stall_timeout_secs = 3600) {
         REQUIRE(chain.created());
@@ -585,8 +592,10 @@ struct fast_path_fixture {
         blocks = test::make_chain_for_select(domain::chain::block::genesis_regtest(), fast_block_count);
         REQUIRE(chain.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
 
-        coordinator = std::make_shared<chunk_coordinator>(chain.organizer().index(), 1, fast_block_count,
+        range = std::make_shared<download_range>(chain.organizer().index(), 1, fast_block_count);
+        coordinator.emplace(1, fast_block_count,
             chunk_coordinator_config{.chunk_size = fast_chunk_size, .stall_timeout_secs = stall_timeout_secs});
+        owner.spawn(ctx, own_chunks());
 
         auto [client, server] = make_connected_sockets(ctx);
         session = std::make_shared<network::peer_session>(std::move(server), settings);
@@ -598,9 +607,59 @@ struct fast_path_fixture {
         serve.spawn(ctx, remote->serve());
     }
 
+    // What the supervisor does with the workers' output, reduced to the chunk
+    // protocol: requests and reports go to the coordinator, the end of a
+    // worker is kept for the case to read. Ends when the channel is closed.
+    ::asio::awaitable<void> own_chunks() {
+        auto const executor = co_await ::asio::this_coro::executor;
+        while (true) {
+            auto completion = co_await ::asio::experimental::make_select(
+                ::asio::experimental::receive(task_output)
+            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto& [ec, selected] = completion;
+            if (ec) co_return;
+            auto& msg = *selected.value<0>();
+            if (auto* request = std::get_if<chunk_request>(&msg)) {
+                if (range->is_stopped()) {
+                    request->reply->try_send(chunk_reply{});
+                } else {
+                    coordinator->request_chunk(std::move(request->reply));
+                }
+            } else if (auto* report = std::get_if<chunk_report>(&msg)) {
+                switch (report->what) {
+                    case chunk_report::event::downloaded: coordinator->chunk_downloaded(report->claim); break;
+                    case chunk_report::event::completed:  coordinator->chunk_completed(report->claim); break;
+                    case chunk_report::event::failed:     coordinator->chunk_failed(report->claim); break;
+                }
+            } else if (auto* ended = std::get_if<download_task_ended>(&msg)) {
+                reports.push_back(*ended);
+            }
+        }
+    }
+
     void start_worker() {
-        worker.spawn(ctx, block_download_task(session, coordinator, active_peers, task_output,
+        worker.spawn(ctx, block_download_task(session, range, active_peers, task_output,
             /*task_id*/ 11, /*epoch*/ 1, &fast_val));
+    }
+
+    // Run what is ready and nothing more: the owner has read everything the
+    // worker sent so far, so the coordinator shows it.
+    void settle() {
+        ctx.restart();
+        ctx.poll();
+    }
+
+    // What the supervisor does to a range it stops.
+    void stop_range() {
+        range->stop();
+        coordinator->dismiss_waiting();
+    }
+
+    // The owner leaves when the workers' output is closed, as at shutdown.
+    void stop_owner() {
+        task_output.close();
+        REQUIRE(run_until(ctx, [&] { return owner.done.load(); }));
+        owner.check();
     }
 
     // The worker has delivered chunk 0 (buffered, capacity 1) and is suspended
@@ -618,11 +677,11 @@ struct fast_path_fixture {
     }
 
     std::optional<download_task_ended> take_report() {
-        std::error_code ec;
-        while (auto msg = task_output.try_receive(ec)) {
-            if (auto* ended = std::get_if<download_task_ended>(&*msg)) return *ended;
-        }
-        return std::nullopt;
+        settle();
+        if (reports.empty()) return std::nullopt;
+        auto const ended = reports.front();
+        reports.pop_front();
+        return ended;
     }
 
     // Stop the session and run everything to its end.
@@ -634,6 +693,7 @@ struct fast_path_fixture {
             return session_run.done.load() && router.done.load() && serve.done.load() && worker.done.load();
         }));
         session_run.check(); router.check(); serve.check(); worker.check();
+        stop_owner();
         ctx.restart();
         ctx.run_for(5s);
         CHECK(ctx.stopped());
@@ -657,6 +717,7 @@ TEST_CASE("select: a worker on a full fast channel holds one chunk, keeps the re
     // the third chunk — two requests on the wire, one slot in progress.
     CHECK(f.remote->getdata_count.load() == 2u);
     CHECK(f.remote->blocks_sent.load() == 2u * fast_chunk_size);
+    f.settle();
     auto progress = f.coordinator->get_progress();
     CHECK(progress.chunks_completed == 1u);
     CHECK(progress.chunks_in_progress == 1u);
@@ -713,7 +774,7 @@ TEST_CASE("select: a chunk held on a full fast channel is not handed to another 
     REQUIRE(run_until(f.ctx, [&] { return f.worker_suspended_on_second_chunk(); }));
     f.worker.check();
 
-    std::this_thread::sleep_for(5ms);
+    f.settle();
     f.coordinator->check_timeouts();
 
     // The held chunk is downloaded, not stalled: it stays the worker's, and a
@@ -724,31 +785,32 @@ TEST_CASE("select: a chunk held on a full fast channel is not handed to another 
     CHECK(other->chunk_id == 2u);
     CHECK(f.worker_suspended_on_second_chunk());
 
-    f.coordinator->stop();
+    f.stop_range();
     REQUIRE(drain_until(f.ctx, [&] { return f.worker.done.load(); }));
     f.worker.check();
     f.finish();
 }
 
-TEST_CASE("select: stopping the coordinator releases a suspended worker and returns its chunk to the range",
+TEST_CASE("select: stopping the range releases a suspended worker and returns its chunk to the range",
           "[node][select_sync][fast_path]") {
-    watchdog guard(120s, "coordinator stop with a held chunk");
+    watchdog guard(120s, "range stop with a held chunk");
     fast_path_fixture f;
     f.start_worker();
     REQUIRE(run_until(f.ctx, [&] { return f.worker_suspended_on_second_chunk(); }));
 
-    // Cancellation through the coordinator's stop token: the send is aborted
+    // Cancellation through the range's stop token: the send is aborted
     // with its payload still the worker's, which gives the chunk back (FREE) and
     // leaves without delivering it. Chunk 0 stays buffered for its consumer.
     //
     // Poll-driven: the wake-up must come from the token (a queued cancellation
     // turn), not from the worker's 10 s report tick. A worker that ignored the
     // token would leave the context dry here with the chunk still held.
-    f.coordinator->stop();
+    f.stop_range();
     REQUIRE(drain_until(f.ctx, [&] { return f.worker.done.load(); }));
     f.worker.check();
     CHECK(f.fast_val.pending() == 0u);
     CHECK(f.fast_val.buffered() == 1u);
+    f.settle();
     auto progress = f.coordinator->get_progress();
     CHECK(progress.chunks_completed == 1u);
     CHECK(progress.chunks_in_progress == 0u);
@@ -808,10 +870,12 @@ TEST_CASE("select: a peer that stops while its chunk is held does not forfeit th
     auto second = f.take_chunk();
     REQUIRE(second);
     CHECK(second->start_height == 1u + fast_chunk_size);
+    f.settle();
     CHECK(f.coordinator->get_progress().chunks_completed == 2u);
     CHECK(f.take_report().has_value());
 
     REQUIRE(run_until(f.ctx, [&] { return f.router.done.load() && f.serve.done.load(); }));
+    f.stop_owner();
     f.ctx.restart();
     f.ctx.run_for(5s);
     CHECK(f.ctx.stopped());
