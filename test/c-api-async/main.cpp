@@ -351,6 +351,108 @@ int main() {
         bc.drain();
         require(out.calls == 1 && bc.active == 0 && ! out.bad, "fresh block lost after stale event");
     });
+    test("internal tip wake-up skipped before a block event", [&] {
+        chain_type chain;
+        completion received{ &chain };
+        received.stop_after = 1;
+        blocks.start(chain, received);
+        try {
+            require(chain.block_events->wire.try_send(std::error_code{}, size_t{ 42 },
+                        chain_type::blocks{}, chain_type::blocks{}),
+                    "tip wake-up refused");
+            chain.poll();
+            require(received.calls == 0 && chain.active == 1 && chain.unsubscribed == 0,
+                    "internal tip wake-up reached the caller or ended its subscription");
+            blocks.publish(chain);
+            chain.poll();
+            require(received.calls == 1 && received.errors == 0 && received.released == 2 &&
+                        received.first_scalar == 42 && chain.active == 0 && chain.unsubscribed == 1 && ! received.bad,
+                    "block event or unsubscribe lost after an internal tip wake-up");
+        } catch (...) {
+            chain.cleanup();
+            throw;
+        }
+    });
+    test("internal tip wake-up preserves the terminal subscription error", [&] {
+        chain_type chain;
+        completion received{ &chain };
+        blocks.start(chain, received);
+        try {
+            require(chain.block_events->wire.try_send(std::error_code{}, size_t{ 42 },
+                        chain_type::blocks{}, chain_type::blocks{}),
+                    "tip wake-up refused");
+            chain.poll();
+            require(received.calls == 0 && chain.active == 1 && chain.unsubscribed == 0,
+                    "internal tip wake-up reached the caller or ended its subscription");
+            blocks.cancel(chain);
+            chain.poll();
+            require(received.calls == 1 && received.errors == 1 && received.status == kth_ec_service_stopped &&
+                        received.released == 0 && chain.active == 0 && chain.unsubscribed == 1 && ! received.bad,
+                    "terminal error or subscription cleanup lost after an internal tip wake-up");
+        } catch (...) {
+            chain.cleanup();
+            throw;
+        }
+    });
+    test("block subscription preserves an incoming-only event", [&] {
+        chain_type chain;
+        completion received{ &chain };
+        received.stop_after = 1;
+        blocks.start(chain, received);
+        try {
+            auto incoming = std::make_shared<chain_type::blocks::element_type>(
+                1, std::make_shared<kth::domain::message::block>());
+            require(chain.block_events->wire.try_send(std::error_code{}, size_t{ 42 },
+                        incoming, chain_type::blocks{}),
+                    "incoming-only event refused");
+            chain.poll();
+            require(received.calls == 1 && received.errors == 0 && received.released == 1 &&
+                        received.first_scalar == 42 && chain.active == 0 && chain.unsubscribed == 1 && ! received.bad,
+                    "incoming-only event or unsubscribe lost");
+        } catch (...) {
+            chain.cleanup();
+            throw;
+        }
+    });
+    test("block subscription preserves a replaced-only event", [&] {
+        chain_type chain;
+        completion received{ &chain };
+        received.stop_after = 1;
+        blocks.start(chain, received);
+        try {
+            auto replaced = std::make_shared<chain_type::blocks::element_type>(
+                1, std::make_shared<kth::domain::message::block>());
+            require(chain.block_events->wire.try_send(std::error_code{}, size_t{ 42 },
+                        chain_type::blocks{}, replaced),
+                    "replaced-only event refused");
+            chain.poll();
+            require(received.calls == 1 && received.errors == 0 && received.released == 1 &&
+                        received.first_scalar == 42 && chain.active == 0 && chain.unsubscribed == 1 && ! received.bad,
+                    "replaced-only event or unsubscribe lost");
+        } catch (...) {
+            chain.cleanup();
+            throw;
+        }
+    });
+    test("block subscription preserves allocated empty lists", [&] {
+        chain_type chain;
+        completion received{ &chain };
+        received.stop_after = 1;
+        blocks.start(chain, received);
+        try {
+            auto incoming = std::make_shared<chain_type::blocks::element_type>();
+            auto replaced = std::make_shared<chain_type::blocks::element_type>();
+            require(chain.block_events->wire.try_send(std::error_code{}, size_t{ 42 }, incoming, replaced),
+                    "allocated empty lists refused");
+            chain.poll();
+            require(received.calls == 1 && received.errors == 0 && received.released == 2 &&
+                        received.first_scalar == 42 && chain.active == 0 && chain.unsubscribed == 1 && ! received.bad,
+                    "allocated empty lists mistaken for an internal wake-up");
+        } catch (...) {
+            chain.cleanup();
+            throw;
+        }
+    });
     std::cout << "Passed " << passed << ", failed " << failed << '\n';
     return failed ? 1 : 0;
 }
