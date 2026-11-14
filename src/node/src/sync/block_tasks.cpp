@@ -282,7 +282,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     } guard{active_peers, addr, chunks_downloaded, download_times_ms, send_times_ms, network_times_us, deserialize_times_us};
 
     // Track current chunk for cleanup on exception
-    std::optional<uint32_t> current_chunk_id;
+    std::optional<chunk_claim> current_claim;
 
     // Set when the fast validation channel has been closed: the one way out of
     // the loop below that neither the peer nor the coordinator announces.
@@ -330,8 +330,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
             continue;
         }
 
-        uint32_t chunk_id = *maybe_chunk;
-        current_chunk_id = chunk_id;  // Track for exception cleanup
+        auto const claim = *maybe_chunk;
+        uint32_t chunk_id = claim.chunk_id;
+        current_claim = claim;  // Track for exception cleanup
         auto [chunk_start, chunk_end] = coordinator->chunk_range(chunk_id);
 
         spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
@@ -358,7 +359,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         if (blocks.empty()) {
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;
         }
 
@@ -369,7 +370,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (coordinator->generation() != request_generation) {
             spdlog::info("[block_download] Chain switched while building chunk {} — releasing it",
                 chunk_id);
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;
         }
 
@@ -385,7 +386,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 addr, chunk_id, download_ms, result.error().message(),
                 peer->stopped(), coordinator->is_stopped());
             // Report failure - slot reset to FREE for retry by another peer
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             break;
         }
 
@@ -394,12 +395,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (result->size() != expected_count) {
             spdlog::warn("[block_download] Peer {} returned {} blocks for chunk {} (expected {}), failing chunk",
                 addr, result->size(), chunk_id, expected_count);
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;  // Try another chunk instead of disconnecting
         }
 
         spdlog::debug("[block_download] Peer {} downloaded {} blocks for chunk {} in {}ms",
             addr, result->size(), chunk_id, download_ms);
+
+        // The peer has answered. What is left is the hand-over, whose wait is
+        // set by validation and storage: the stall check must not take that for
+        // a slow peer and give the chunk to another one to download again.
+        coordinator->chunk_downloaded(claim);
         download_times_ms.push_back(download_ms);
 
         // Accumulate network and deserialize times from individual blocks
@@ -441,7 +447,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             if (outcome != chunk_handover::delivered) {
                 spdlog::info("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
                     addr, chunk_id, to_string(outcome));
-                coordinator->chunk_failed(chunk_id);
+                coordinator->chunk_failed(claim);
                 send_error = true;
                 if (outcome == chunk_handover::channel_closed) {
                     // Fast validation is gone, which only shutdown does. Nothing
@@ -462,7 +468,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if (peer->stopped() || coordinator->is_stopped()) {
                     spdlog::debug("[block_download] Peer {} stopping before send (block {})",
                         addr, height);
-                    coordinator->chunk_failed(chunk_id);
+                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -497,7 +503,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if (!sent) {
                     spdlog::error("[block_download] Could not hand block {} to the supervisor ({}) - consumer may be stuck!",
                         height, send_ec ? send_ec.message() : "no room for 1s");
-                    coordinator->chunk_failed(chunk_id);
+                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -521,8 +527,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         send_times_ms.push_back(send_ms);
 
         // Report success only after all blocks sent
-        coordinator->chunk_completed(chunk_id);
-        current_chunk_id.reset();  // Clear - chunk successfully handed off
+        coordinator->chunk_completed(claim);
+        current_claim.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
 
         // Report performance to peer_provider (via supervisor). Best effort:
@@ -543,18 +549,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
     } catch (::asio::system_error const& e) {
         // Asio system errors (e.g., operation_aborted during shutdown) are expected
         spdlog::debug("[block_download] Peer {} asio error: {} ({})", addr, e.what(), e.code().value());
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     } catch (std::exception const& e) {
         spdlog::error("[block_download] Peer {} exception: {}", addr, e.what());
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     } catch (...) {
         spdlog::error("[block_download] Peer {} unknown exception", addr);
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     }
 

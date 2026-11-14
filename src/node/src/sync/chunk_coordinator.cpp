@@ -22,12 +22,10 @@ chunk_coordinator::chunk_coordinator(
     , end_height_(end_height)
     , total_chunks_((end_height - start_height + config.chunk_size) / config.chunk_size)
     , slots_(total_chunks_)
-    , slot_times_(total_chunks_)
 {
     // Initialize all slots to FREE
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        slots_[i].store(FREE, std::memory_order_relaxed);
-        slot_times_[i].store(0, std::memory_order_relaxed);
+    for (auto& slot : slots_) {
+        slot.store(pack(FREE, 0, 0), std::memory_order_relaxed);
     }
 
     auto const mem_kb = (slots_.size() * bytes_per_slot) / 1024;
@@ -39,31 +37,57 @@ chunk_coordinator::chunk_coordinator(
 // Peer Interface (Lock-Free)
 // =============================================================================
 
-std::optional<uint32_t> chunk_coordinator::claim_chunk() {
+std::optional<chunk_claim> chunk_coordinator::claim_chunk() {
     if (stopped_.load(std::memory_order_acquire)) {
         return std::nullopt;
     }
 
-    // Search for a FREE slot using CAS
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        uint8_t expected = FREE;
-        if (slots_[i].compare_exchange_strong(expected, IN_PROGRESS,
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            // Got slot i - record assignment time
-            slot_times_[i].store(now_ms(), std::memory_order_release);
+    // Start at the first chunk that may not be completed and move that mark
+    // over the completed chunks found on the way.
+    auto const floor = completed_floor_.load(std::memory_order_acquire);
+    auto new_floor = floor;
+    bool prefix_completed = true;
 
-            auto const chunk_id = uint32_t(i);
-            auto const [block_start, block_end] = chunk_range(chunk_id);
-            spdlog::debug("[chunk_coordinator] Claimed chunk {} (blocks {}-{})",
-                chunk_id, block_start, block_end);
-
-            return chunk_id;
+    std::optional<chunk_claim> claim;
+    uint64_t now = 0;
+    for (size_t i = floor; i < slots_.size() && ! claim; ++i) {
+        auto word = slots_[i].load(std::memory_order_acquire);
+        auto const state = state_of(word);
+        if (prefix_completed && state == COMPLETED) {
+            new_floor = uint32_t(i) + 1;
+            continue;
         }
+        prefix_completed = false;
+        if (state != FREE) {
+            continue;
+        }
+
+        if (now == 0) {
+            now = now_ms();
+        }
+        auto const number = (number_of(word) + 1) & uint32_t(number_mask);
+        if (slots_[i].compare_exchange_strong(word, pack(IN_PROGRESS, number, now),
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            claim = chunk_claim{.chunk_id = uint32_t(i), .number = number};
+        }
+        // Otherwise another peer took it first: go on to the next one.
     }
 
-    // Every chunk is in progress or completed: the caller waits and retries,
+    // Forward only: a concurrent claim may have moved it further already.
+    auto seen = floor;
+    while (seen < new_floor && ! completed_floor_.compare_exchange_weak(seen, new_floor,
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+    }
+
+    if (claim) {
+        auto const [block_start, block_end] = chunk_range(claim->chunk_id);
+        spdlog::debug("[chunk_coordinator] Claimed chunk {} (blocks {}-{})",
+            claim->chunk_id, block_start, block_end);
+    }
+
+    // No claim: every chunk is held or completed. The caller waits and retries,
     // or leaves once is_complete() says so.
-    return std::nullopt;
+    return claim;
 }
 
 std::pair<uint32_t, uint32_t> chunk_coordinator::chunk_range(uint32_t chunk_id) const {
@@ -82,8 +106,24 @@ hash_digest chunk_coordinator::get_block_hash(uint32_t height) const {
     return index_.get_hash(idx);
 }
 
-void chunk_coordinator::chunk_completed(uint32_t chunk_id) {
-    if (chunk_id >= slots_.size()) {
+void chunk_coordinator::chunk_downloaded(chunk_claim claim) {
+    if (claim.chunk_id >= slots_.size()) {
+        return;
+    }
+
+    // One attempt is enough: the only thing that can change a held slot under
+    // its holder is the stall check freeing it, and then there is no hold left
+    // to mark.
+    auto word = slots_[claim.chunk_id].load(std::memory_order_acquire);
+    if (state_of(word) == IN_PROGRESS && number_of(word) == claim.number) {
+        slots_[claim.chunk_id].compare_exchange_strong(word,
+            pack(DELIVERING, claim.number, time_of(word)),
+            std::memory_order_acq_rel, std::memory_order_relaxed);
+    }
+}
+
+void chunk_coordinator::chunk_completed(chunk_claim claim) {
+    if (claim.chunk_id >= slots_.size()) {
         return;
     }
 
@@ -91,27 +131,32 @@ void chunk_coordinator::chunk_completed(uint32_t chunk_id) {
     // the same one, and the first can report it while the slot is FREE or
     // already taken by the second. Whichever state it leaves, the blocks were
     // delivered; the exchange tells the first report from the later ones.
-    auto const previous = slots_[chunk_id].exchange(COMPLETED, std::memory_order_acq_rel);
-    if (previous == COMPLETED) {
-        spdlog::debug("[chunk_coordinator] Chunk {} completed again, already counted", chunk_id);
+    auto const previous = slots_[claim.chunk_id].exchange(
+        pack(COMPLETED, 0, 0), std::memory_order_acq_rel);
+    if (state_of(previous) == COMPLETED) {
+        spdlog::debug("[chunk_coordinator] Chunk {} completed again, already counted", claim.chunk_id);
         return;
     }
     chunks_completed_.fetch_add(1, std::memory_order_relaxed);
 
-    spdlog::debug("[chunk_coordinator] Chunk {} completed", chunk_id);
+    spdlog::debug("[chunk_coordinator] Chunk {} completed", claim.chunk_id);
 }
 
-void chunk_coordinator::chunk_failed(uint32_t chunk_id) {
-    if (chunk_id >= slots_.size()) {
+void chunk_coordinator::chunk_failed(chunk_claim claim) {
+    if (claim.chunk_id >= slots_.size()) {
         return;
     }
 
-    // Reset to FREE so another peer can take it. A chunk another peer already
-    // completed stays completed.
-    uint8_t expected = IN_PROGRESS;
-    if (slots_[chunk_id].compare_exchange_strong(expected, FREE,
-            std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        spdlog::debug("[chunk_coordinator] Chunk {} failed, reset to FREE for retry", chunk_id);
+    // Reset to FREE so another peer can take it, but only by the peer that
+    // holds it: a claim that stalled and was handed on names a hold that is
+    // gone, and a completed chunk stays completed.
+    auto word = slots_[claim.chunk_id].load(std::memory_order_acquire);
+    while (holds(word, claim)) {
+        if (slots_[claim.chunk_id].compare_exchange_weak(word, pack(FREE, claim.number, 0),
+                std::memory_order_acq_rel, std::memory_order_acquire)) {
+            spdlog::debug("[chunk_coordinator] Chunk {} failed, reset to FREE for retry", claim.chunk_id);
+            return;
+        }
     }
 }
 
@@ -120,25 +165,35 @@ void chunk_coordinator::chunk_failed(uint32_t chunk_id) {
 // =============================================================================
 
 void chunk_coordinator::check_timeouts() {
+    check_timeouts(std::chrono::steady_clock::now());
+}
+
+void chunk_coordinator::check_timeouts(std::chrono::steady_clock::time_point time) {
     if (stopped_.load(std::memory_order_acquire)) {
         return;
     }
 
-    uint64_t now = now_ms();
-    uint64_t timeout_ms = uint64_t(config_.stall_timeout_secs) * 1000;
+    uint64_t const now = to_ms(time);
+    uint64_t const timeout_ms = uint64_t(config_.stall_timeout_secs) * 1000;
 
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        if (slots_[i].load(std::memory_order_acquire) == IN_PROGRESS) {
-            uint64_t assigned_at = slot_times_[i].load(std::memory_order_acquire);
-            if (assigned_at > 0 && (now - assigned_at) > timeout_ms) {
-                // Slot stalled - reset to FREE
-                uint8_t expected = IN_PROGRESS;
-                if (slots_[i].compare_exchange_strong(expected, FREE,
-                        std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                    spdlog::warn("[chunk_coordinator] Chunk {} timed out after {}s, reset to FREE",
-                        i, config_.stall_timeout_secs);
-                }
-            }
+    for (size_t i = completed_floor_.load(std::memory_order_acquire); i < slots_.size(); ++i) {
+        auto word = slots_[i].load(std::memory_order_acquire);
+        // Only a request can stall. The claim time travels in the same word as
+        // the state, so the swap frees this claim or nothing: a chunk claimed
+        // again in between has another word.
+        if (state_of(word) != IN_PROGRESS) {
+            continue;
+        }
+        // A chunk claimed after the clock was read is newer than `now`, and the
+        // unsigned difference would wrap into a huge age.
+        auto const claimed_at = time_of(word);
+        if (now <= claimed_at || now - claimed_at <= timeout_ms) {
+            continue;
+        }
+        if (slots_[i].compare_exchange_strong(word, pack(FREE, number_of(word), 0),
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            spdlog::warn("[chunk_coordinator] Chunk {} timed out after {}s, reset to FREE",
+                i, config_.stall_timeout_secs);
         }
     }
 }
@@ -160,9 +215,9 @@ void chunk_coordinator::stop() {
 
 chunk_coordinator::progress chunk_coordinator::get_progress() const {
     uint32_t in_progress = 0;
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        uint8_t state = slots_[i].load(std::memory_order_acquire);
-        if (state == IN_PROGRESS) ++in_progress;
+    for (size_t i = completed_floor_.load(std::memory_order_acquire); i < slots_.size(); ++i) {
+        auto const state = state_of(slots_[i].load(std::memory_order_acquire));
+        if (state == IN_PROGRESS || state == DELIVERING) ++in_progress;
     }
 
     return {
@@ -179,9 +234,13 @@ chunk_coordinator::progress chunk_coordinator::get_progress() const {
 // =============================================================================
 
 uint64_t chunk_coordinator::now_ms() {
+    return to_ms(std::chrono::steady_clock::now());
+}
+
+uint64_t chunk_coordinator::to_ms(std::chrono::steady_clock::time_point time) {
     return uint64_t(
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()
+            time.time_since_epoch()
         ).count()
     );
 }
