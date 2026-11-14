@@ -20,6 +20,7 @@
 #include <kth/domain/chain/light_block.hpp>
 #include <kth/infrastructure/utility/async_channel.hpp>
 #include <kth/network/peer_session.hpp>
+#include <kth/node/sync/chunk_coordinator.hpp>
 
 namespace kth::node::sync {
 
@@ -187,11 +188,38 @@ struct download_task_ended {
     uint64_t coordinator_epoch;
 };
 
+/// A download worker asking for a chunk of its range.
+///
+/// The supervisor owns the chunks of the range and answers on `reply`: a
+/// chunk_assignment as soon as one is free, or nullopt when the range has no
+/// more work for the worker. `coordinator_epoch` is the range the worker was
+/// started for; a request for a range that is no longer current is answered
+/// with nullopt.
+struct chunk_request {
+    uint64_t coordinator_epoch;
+    chunk_reply_channel_ptr reply;
+};
+
+/// A download worker reporting what happened to the chunk it holds.
+struct chunk_report {
+    enum class event : uint8_t {
+        downloaded,  ///< The blocks arrived; the hand-over to validation follows.
+        completed,   ///< The blocks were handed over.
+        failed       ///< The chunk is given back, to be downloaded by another worker.
+    };
+
+    uint64_t coordinator_epoch;
+    chunk_claim claim;
+    event what;
+};
+
 // Block download supervisor input - single channel (CSP pattern)
 using block_download_input = std::variant<stop_request, peers_updated, block_range_request>;
 
-// Block download task output - single channel with blocks, lifecycle, and performance
-using block_download_task_output = std::variant<downloaded_light_block, download_task_ended, peer_performance>;
+// Block download task output - single channel with blocks, lifecycle, performance
+// and the chunk protocol of the workers
+using block_download_task_output = std::variant<downloaded_light_block, download_task_ended, peer_performance,
+    chunk_request, chunk_report>;
 
 // The supervisor waits on its input, its workers' output and its timeout tick
 // through ONE task-owned selector (see block_download_supervisor). There is no
