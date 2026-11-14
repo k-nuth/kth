@@ -154,8 +154,12 @@ public:
 // ENABLE UNICODE PATHS ON WINDOWS FROM UTF8 STRING REGARDLESS OF BUILD CONFIGURATION.
 inline
 void* CreateFileUTF8(std::string const& name, unsigned long access, unsigned long mode, struct boost::interprocess::winapi::interprocess_security_attributes *psec, unsigned long creation, unsigned long attributes, void *ptemplate) {
-   //  return kth::interprocess::CreateFileW(kth::to_utf16(name).c_str(), access, mode, psec, creation, attributes, ptemplate);
-    return CreateFileW(kth::to_utf16(name).c_str(), access, mode, psec, creation, attributes, ptemplate);
+    auto const wide = kth::to_utf16(name);
+    if (!wide) {
+        SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+        return INVALID_HANDLE_VALUE;
+    }
+    return CreateFileW(wide->c_str(), access, mode, psec, creation, attributes, ptemplate);
 }
 
 // ADAPTED FROM boost/interprocess/winapi/win32_api.hpp UNDER SAME LICENSE AS ABOVE.

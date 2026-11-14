@@ -186,6 +186,8 @@ class KthRecipe(KnuthConanFileV2):
         # with the rest of the graph. The changed dependency gets a new binary ID.
         self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
                       transitive_headers=True, transitive_libs=True, force=True)
+        if self.options.with_icu:
+            self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
@@ -207,9 +209,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-        if self.settings.os != "Emscripten":
-            self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
+        # Unicode conversion on every platform; also accelerates native Base64.
+        self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
@@ -334,6 +335,11 @@ class KthRecipe(KnuthConanFileV2):
         # standalone deps-build path where this conanfile isn't the
         # consumer.)
         self.options["boost/*"].without_cobalt = True
+        self.options["boost/*"].without_locale = True
+        if self.options.with_icu:
+            # Embed normalization data: no ICU_DATA environment or sidecar files.
+            self.options["icu/*"].data_packaging = "static"
+            self.options["icu/*"].with_icuio = False
 
         self.options["spdlog/*"].header_only = True
 
@@ -557,6 +563,8 @@ class KthRecipe(KnuthConanFileV2):
                 'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
+        if self.options.with_icu:
+            infrastructure_defines.append("WITH_ICU")
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
@@ -575,9 +583,9 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
-        if self.settings.os != "Emscripten":
-            self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+        if self.options.with_icu:
+            self.cpp_info.components["infrastructure"].requires.append("icu::icu-uc")
+        self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
         if self.options.with_png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")

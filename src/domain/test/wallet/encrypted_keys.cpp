@@ -49,7 +49,9 @@ TEST_CASE("encrypted fixture unicode passphrase matches encrypted test vector", 
     std::string passphrase(encoded_password.begin(), encoded_password.end());
 
     // This confirms that the passphrase decodes as expected in BIP38.
-    auto const normal = to_normal_nfc_form(passphrase);
+    auto const result = to_normal_nfc_form(passphrase);
+    REQUIRE(result);
+    auto const& normal = *result;
     data_chunk normalized(normal.size());
     std::copy_n(normal.begin(), normal.size(), normalized.begin());
     REQUIRE(encode_base16(normalized) == "cf9300f0909080f09f92a9");
@@ -158,7 +160,7 @@ TEST_CASE("encrypted create token entropy passphrase expected", "[encrypted crea
 
 #define KD_REQUIRE_ENCRYPT(secret, passphrase, version, compressed, expected)     \
     encrypted_private out_private;                                                \
-    REQUIRE(encrypt(out_private, secret, passphrase, version, compressed));
+    REQUIRE(encrypt(out_private, secret, passphrase, version, compressed)); \
     REQUIRE(encode_base58(out_private) == expected)
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#no-compression-no-ec-multiply
@@ -306,7 +308,7 @@ TEST_CASE("encrypted decrypt private vector 7 multiplied lot expected", "[encryp
 TEST_CASE("encrypted decrypt private vector 8 multiplied expected", "[encrypted decrypt1]") {
     uint8_t const expected_version = 0x00;
     auto const key = base58_literal("6PfPAw5HErFdzMyBvGMwSfSWjKmzgm3jDg7RxQyVCSSBJFZLAZ6hVupmpn");
-    KD_REQUIRE_DECRYPT_SECRET(key, "kth test");
+    KD_REQUIRE_DECRYPT_SECRET(key, "libbitcoin test");
     REQUIRE(encode_base16(out_secret) == "fb4bfb0bfe151d524b0b11983b9f826d6a0bc7f7bdc480864a1b557ff0c59eb4");
     REQUIRE(out_version == expected_version);
     REQUIRE( ! out_is_compressed);
@@ -335,10 +337,13 @@ TEST_CASE("encrypted decrypt private vector 9 multiplied expected", "[encrypted 
     ec_compressed out_point;                                                            \
     uint8_t out_version = 42;                                                           \
     bool out_is_compressed = true;                                                      \
-    REQUIRE(decrypt(out_point, out_version, out_is_compressed, key, passphrase));
-    REQUIRE(out_version == version);
-    REQUIRE( ! out_is_compressed);
-    auto const derived_address = payment_address({out_point, out_is_compressed}, out_version).encoded()
+    REQUIRE(decrypt(out_point, out_version, out_is_compressed, key, passphrase)); \
+    REQUIRE(out_version == version); \
+    REQUIRE( ! out_is_compressed); \
+    auto const address = payment_address::from_ec_public( \
+        ec_public::from_verified_point(out_point, out_is_compressed), out_version); \
+    REQUIRE(address); \
+    auto const derived_address = address->encoded_legacy()
 
 // github.com/bitcoin/bips/blob/master/bip-0038.mediawiki#ec-multiply-no-compression-lotsequence-numbers
 TEST_CASE("encrypted decrypt public vector 6 lot expected", "[encrypted decrypt public]") {
@@ -362,7 +367,7 @@ TEST_CASE("encrypted decrypt public vector 7 lot expected", "[encrypted decrypt 
 TEST_CASE("encrypted decrypt public vector 8 expected", "[encrypted decrypt public]") {
     uint8_t const version = 0x00;
     auto const key = base58_literal("cfrm38V5Nm1mn7GxPBAGTXawqXRwE1EbR19GqsvJ9JmF5VKLqi8nETmULpELkQvExCGkTNCH2An");
-    KD_REQUIRE_DECRYPT_POINT(key, "kth test", version);
+    KD_REQUIRE_DECRYPT_POINT(key, "libbitcoin test", version);
     REQUIRE(encode_base16(out_point) == "02c13b65302bbbed4f7ad67bc68e928b58e7748d84091a2d42680dc52e7916079e");
     REQUIRE(derived_address == "1NQgLnFz1ZzF6KkCJ4SM3xz3Jy1q2hEEax");
 }
@@ -696,3 +701,14 @@ TEST_CASE("encrypted create token lot private and public compressed testnet decr
 // ----------------------------------------------------------------------------
 
 // End Test Suite
+
+#ifdef WITH_ICU
+TEST_CASE("BIP38 rejects malformed passphrases without changing the output", "[encrypted keys][utf]") {
+    encrypted_private encrypted{};
+    auto const original = encrypted;
+    ec_secret secret{};
+    secret.back() = 1;
+    REQUIRE_FALSE(encrypt(encrypted, secret, "\xc0\xaf", 0, true));
+    REQUIRE(encrypted == original);
+}
+#endif

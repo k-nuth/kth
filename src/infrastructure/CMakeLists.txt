@@ -24,7 +24,7 @@ option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_PNG)
@@ -87,7 +87,7 @@ find_package(ctre REQUIRED)
 find_package(GMP REQUIRED)
 
 if (WITH_ICU)
-  find_package(ICU REQUIRED)
+  find_package(ICU COMPONENTS uc REQUIRED)
 endif()
 
 if (KTH_WITH_PNG)
@@ -114,10 +114,8 @@ include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
-# Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  find_package(simdutf REQUIRED)
-endif()
+# Unicode conversion on all platforms; native Base64 also uses this backend.
+find_package(simdutf REQUIRED)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(KTH_WASM_SIMD)
@@ -174,7 +172,6 @@ set(kth_sources_just_legacy
         src/config/base58.cpp
         src/config/base64.cpp
         src/config/checkpoint.cpp
-        src/config/directory.cpp
         src/config/endpoint.cpp
         src/config/hash160.cpp
         src/config/hash256.cpp
@@ -606,13 +603,11 @@ target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
 
-# Link the native SIMD backend; WebAssembly uses the in-tree kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
-endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
 
 if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_ICU)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::uc)
 endif()
 
 if (KTH_WITH_PNG)
@@ -684,6 +679,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/path.cpp
     test/network_address.cpp
 
+    test/unicode/utf.cpp
     test/unicode/unicode.cpp
     test/unicode/unicode_istream.cpp
     test/unicode/unicode_ostream.cpp
@@ -743,7 +739,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_include_directories(kth_infrastructure_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
   target_link_libraries(kth_infrastructure_test PRIVATE ${PROJECT_NAME})
-  target_link_libraries(kth_infrastructure_test PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(kth_infrastructure_test PRIVATE simdutf::simdutf Catch2::Catch2WithMain)
 
   include(CTest)
   kth_register_tests(kth_infrastructure_test)

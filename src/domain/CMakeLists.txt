@@ -21,7 +21,7 @@ option(WITH_CONSOLE "Compile console application." OFF)
 option(GLOBAL_BUILD "" ON)
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_QRENCODE)
@@ -85,10 +85,6 @@ endif()
 
 if (${CURRENCY} STREQUAL "LTC")
   find_package(OpenSSL REQUIRED)
-endif()
-
-if (WITH_ICU)
-  find_package(ICU REQUIRED)
 endif()
 
 find_package(tiny-aes-c REQUIRED)
@@ -462,10 +458,6 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
-if (WITH_ICU)
-  target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${ICU_INCLUDE_DIR})
-endif()
-
 if (${CURRENCY} STREQUAL "LTC")
   target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif()
@@ -479,10 +471,6 @@ endif()
 
 if (${CURRENCY} STREQUAL "LTC")
   target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
-endif()
-
-if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC infrastructure::infrastructure)

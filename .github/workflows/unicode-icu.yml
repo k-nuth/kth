@@ -1,0 +1,70 @@
+name: Unicode with ICU
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  push:
+    branches:
+      - 'release/**'
+      - 'hotfix/**'
+      - 'dev-publish/**'
+    tags:
+      - v*
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/infrastructure/**
+      - src/domain/**
+      - conanfile.py
+      - conan.lock
+      - cmake/kth-config.cmake.in
+      - .github/workflows/unicode-icu.yml
+permissions:
+  contents: read
+concurrency:
+  group: unicode-icu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  icu:
+    runs-on: ubuntu-24.04
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./ci_utils/.github/actions/setup-conan
+      - uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/unicode-icu-dependencies.tgz
+          key: unicode-icu-v1-${{ runner.os }}-${{ hashFiles('conan.lock', 'conanfile.py', 'ci_utils/.conan/profiles/*', '.github/conan/rpc-ci') }}
+      - name: Import dependencies
+        if: steps.dependencies.outputs.cache-hit == 'true'
+        run: conan cache restore "$RUNNER_TEMP/unicode-icu-dependencies.tgz"
+      - name: Install ICU-enabled dependencies
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b .github/conan/rpc-ci -pr:h .github/conan/rpc-ci \
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=none -o with_icu=True
+      - name: Export dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        run: conan cache save "*:*" --no-source --file="$RUNNER_TEMP/unicode-icu-dependencies.tgz"
+      - name: Cache dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/unicode-icu-dependencies.tgz
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Build infrastructure and domain with ICU
+        run: |
+          cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_infrastructure_test kth_domain_test
+      - name: Test normalization, BIP38 and BIP39
+        run: |
+          ./build/build/Release/src/infrastructure/kth_infrastructure_test --list-tests --verbosity quiet | grep -Fx 'direct ICU normalization preserves canonical wallet forms'
+          ./build/build/Release/src/infrastructure/kth_infrastructure_test
+          ./build/build/Release/src/domain/kth_domain_test

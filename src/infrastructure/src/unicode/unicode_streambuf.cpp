@@ -12,7 +12,6 @@
 #include <streambuf>
 #include <utility>
 
-#include <kth/infrastructure/constants.hpp>
 #include <kth/infrastructure/unicode/unicode.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
@@ -78,8 +77,17 @@ std::streambuf::int_type unicode_streambuf::underflow() {
     // Convert utf16 to utf8, returning bytes written.
     auto const bytes = to_utf8(narrow_, narrow_size_, wide_, read);
 
+    // streambuf has no expected/error return channel. Throw only at this
+    // legacy standard-stream boundary so istream records badbit, not clean EOF.
+    if ( ! bytes) {
+        throw std::ios_base::failure("Invalid Unicode input.");
+    }
+    if (*bytes == 0) {
+        return traits_type::eof();
+    }
+
     // Reset gptr and egptr, eback never changes.
-    setg(narrow_, narrow_, &narrow_[bytes]);
+    setg(narrow_, narrow_, &narrow_[*bytes]);
 
     // Return the first character in the input sequence.
     return traits_type::to_int_type(*gptr());
@@ -111,11 +119,17 @@ std::streambuf::int_type unicode_streambuf::overflow(std::streambuf::int_type ch
         // Convert utf8 to utf16, returning chars written and bytes unread.
         auto const chars = to_utf16(wide_, narrow_size_, narrow_, write, unwritten);
 
+        if ( ! chars) {
+            setp(narrow_, &narrow_[narrow_size_ - 1]);
+            return traits_type::eof();
+        }
+
         // Write to the wide output buffer.
-        auto const written = wide_buffer_->sputn(wide_, chars);
+        auto const written = wide_buffer_->sputn(wide_, *chars);
 
         // Handle write failure as an EOF.
-        if (written != chars) {
+        if (written != static_cast<std::streamsize>(*chars)) {
+            setp(narrow_, &narrow_[narrow_size_ - 1]);
             return traits_type::eof();
         }
     }
@@ -131,7 +145,7 @@ std::streambuf::int_type unicode_streambuf::overflow(std::streambuf::int_type ch
     pbump(unwritten);
 
     // Return the overflow byte or EOF sentinel.
-    return character;
+    return traits_type::not_eof(character);
 }
 
 // Flush our output sequence.
@@ -139,12 +153,12 @@ int unicode_streambuf::sync() {
     int const success = 0;
     int const failure = -1;
 
-    // We expect EOF to be returned, because we passed it.
+    // EOF indicates failure; successful flushing returns not_eof.
     if (overflow(traits_type::eof()) == traits_type::eof()) {
-        return success;
+        return failure;
     }
 
-    return failure;
+    return success;
 }
 
 } // namespace kth
