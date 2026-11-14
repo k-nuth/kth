@@ -182,17 +182,16 @@ class KthRecipe(KnuthConanFileV2):
     def requirements(self):
         if self.options.with_websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
-        # Pin our recipe and align published UTXO-Z 2.0.0's Boost requirement
-        # with the rest of the graph. The changed dependency gets a new binary ID.
+        # Pin our recipe; UTXO-Z asks for the same revision.
         self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
-                      transitive_headers=True, transitive_libs=True, force=True)
+                      transitive_headers=True, transitive_libs=True)
         if self.options.with_icu:
             self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/2.0.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/2.1.0", transitive_headers=True, transitive_libs=True)
 
         # GMP is required for BigInt support in the native interpreter.
         self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
