@@ -205,6 +205,16 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
     app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
     app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    app.add_option("--net.proxy", cfg.network.proxy,
+        "SOCKS5 proxy as numeric IP:port; empty disables proxying.");
+    app.add_option("--net.proxy_randomize", cfg.network.proxy_randomize,
+        "Use fresh SOCKS5 credentials for each outbound connection (default true).");
+    app.add_option("--net.i2psam", cfg.network.i2psam,
+        "I2P SAM 3.1 bridge as numeric IP:port; empty disables I2P.");
+    app.add_option("--net.i2p_accept_incoming", cfg.network.i2p_accept_incoming,
+        "Accept I2P peers and keep a persistent destination (default true).");
+    app.add_option("--net.i2p_private_key_file", cfg.network.i2p_private_key_file,
+        "I2P private key file; defaults to i2p_private_key next to the database.");
     app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
     app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
     app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
@@ -323,6 +333,52 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the Stratum V2 listener.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Stratum V2 listener binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Stratum V2 listener (default 8442).");
+    app.add_option("--sv2.noise", cfg.sv2.noise,
+        "Require the Noise handshake and encrypted transport (default true).");
+    app.add_option("--sv2.static_key_file", cfg.sv2.static_key_file,
+        "Provider's 32-byte static secret key file (generated if absent).");
+    app.add_option("--sv2.authority_key_file", cfg.sv2.authority_key_file,
+        "Certificate authority's 32-byte secret key file (generated if absent).");
+    app.add_option("--sv2.certificate_file", cfg.sv2.certificate_file,
+        "Offline-signed 74-byte certificate file (empty signs at startup).");
+    app.add_option("--sv2.authority_public_key", cfg.sv2.authority_public_key,
+        "Base58Check authority public key (required with an offline certificate).");
+    app.add_option("--sv2.certificate_validity_seconds", cfg.sv2.certificate_validity_seconds,
+        "Lifetime in seconds of certificates signed at startup (default 2592000).");
+    app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
+        "Deadline in seconds for the complete Noise handshake (default 10).");
+    app.add_option("--sv2.mining.enabled", cfg.sv2.mining.enabled,
+        "Accept Mining Protocol clients on the Stratum V2 listener.");
+    app.add_option("--sv2.mining.address", cfg.sv2.mining.address,
+        "cashaddr that solo Mining Protocol coinbases pay (required when mining is enabled).");
+    app.add_option("--sv2.mining.open_channel_timeout_seconds", cfg.sv2.mining.open_channel_timeout_seconds,
+        "Deadline in seconds for a Mining Protocol connection to open its first channel (default 60).");
+    app.add_option("--sv2.jd.enabled", cfg.sv2.jd.enabled,
+        "Enable the Stratum V2 Job Declaration client (default false).");
+    app.add_option("--sv2.jd.mining_address", cfg.sv2.jd.mining_address,
+        "Pool Mining Protocol host:port or [IPv6]:port; an onion address needs net.proxy, "
+        "and a .b32.i2p address takes port 0 and needs net.i2psam.");
+    app.add_option("--sv2.jd.mining_authority_public_key", cfg.sv2.jd.mining_authority_public_key,
+        "Base58Check Noise authority key pinned for the pool Mining Protocol connection.");
+    app.add_option("--sv2.jd.jds_address", cfg.sv2.jd.jds_address,
+        "Job Declaration Server host:port or [IPv6]:port; an onion address needs net.proxy, "
+        "and a .b32.i2p address takes port 0 and needs net.i2psam.");
+    app.add_option("--sv2.jd.jds_authority_public_key", cfg.sv2.jd.jds_authority_public_key,
+        "Base58Check Noise authority key pinned for the Job Declaration Server.");
+    app.add_option("--sv2.jd.user_identity", cfg.sv2.jd.user_identity,
+        "Pool account identity (1 to 255 UTF-8 bytes).");
+    app.add_option("--sv2.jd.mode", cfg.sv2.jd.mode,
+        "Job Declaration mode: coinbase-only or full-template (default coinbase-only).");
+    app.add_option("--sv2.jd.response_timeout_seconds", cfg.sv2.jd.response_timeout_seconds,
+        "Upstream response deadline in seconds, from 1 to 600 (default 10).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
@@ -369,6 +425,19 @@ bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[mayb
         error << "Error: acceptnonstdtxn is not allowed on mainnet; "
                  "standardness policy cannot be disabled on the main network." << std::endl;
         return false;
+    }
+#endif
+    return true;
+}
+
+bool check_i2p_bridge([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(__EMSCRIPTEN__)
+    if ( ! cfg.network.i2psam.empty()) {
+        auto const bridge = authority::parse_from(cfg.network.i2psam);
+        if ( ! bridge || bridge->is_overlay() || bridge->port() == 0) {
+            error << "Error: net.i2psam requires a numeric IP and nonzero port." << std::endl;
+            return false;
+        }
     }
 #endif
     return true;
@@ -490,7 +559,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
-        if ( ! check_standardness_policy(configured, error)) {
+        if ( ! check_standardness_policy(configured, error) || ! check_i2p_bridge(configured, error)) {
             return false;
         }
 
@@ -566,7 +635,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         }
     }
 
-    if ( ! check_standardness_policy(configured, error)) {
+    if ( ! check_standardness_policy(configured, error) || ! check_i2p_bridge(configured, error)) {
         return false;
     }
 

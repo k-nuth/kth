@@ -31,6 +31,11 @@ settings::settings()
     , manual_attempt_limit(0)
     , connect_batch_size(5)
     , connect_timeout_seconds(5)
+    , proxy()
+    , proxy_randomize(true)
+    , i2psam()
+    , i2p_accept_incoming(true)
+    , i2p_private_key_file()
     , channel_handshake_seconds(6000)
     , channel_heartbeat_minutes(2)  // BCHN: PING_INTERVAL = 2 minutes
     , channel_inactivity_minutes(10)
@@ -241,6 +246,8 @@ bool ip_in_subnet(infrastructure::message::ip_address const& target,
 
 permission_flags settings::get_whitelist_permissions(
     infrastructure::config::authority const& addr) const {
+
+    if (addr.is_overlay()) return permission_flags::none;
 
     // Check whitelist entries for matching address (CIDR-aware).
     for (auto const& entry : whitelist) {
