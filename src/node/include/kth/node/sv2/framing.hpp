@@ -63,6 +63,21 @@ struct message_header {
     static expect<message_header> from_data(byte_reader& source);
 };
 
+// Header extension field for a message type. Base messages leave the low 15
+// bits clear. A message that names `extension_id` is framed in that extension.
+// The channel bit is still taken from `channel_message`.
+template <typename Message>
+constexpr uint16_t framed_extension_type() {
+    uint16_t value = 0;
+    if constexpr (requires { Message::extension_id; }) value = Message::extension_id;
+    if constexpr (requires { Message::channel_message; }) {
+        if (Message::channel_message) {
+            value = static_cast<uint16_t>(value | message_header::channel_msg_flag);
+        }
+    }
+    return value;
+}
+
 } // namespace kth::node::sv2
 
 #endif // KTH_NODE_SV2_FRAMING_HPP
