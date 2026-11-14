@@ -26,6 +26,9 @@ enum class error_code : int {
     // Application-level (Bitcoin RPC_MISC_ERROR family).
     misc_error       = -1,
     invalid_parameter = -8,
+    // The server is shutting down (RPC_CLIENT_NOT_CONNECTED). Ends a
+    // long-polled getblocktemplate that was still held.
+    client_not_connected = -9,
     deserialization_error = -22,
     verify_error = -25,
     in_warmup = -28,

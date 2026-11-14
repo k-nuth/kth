@@ -305,7 +305,7 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_, network_};
+        method_context mctx{chain_, jobs_, network_, stopping_.get_token()};
         std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {
@@ -318,6 +318,10 @@ void server::stop() {
     // Startup may have a waiter even if run() will never be entered.
     // This channel is concurrent; socket shutdown still belongs to owner_.
     listening_.close();
+    // A held long poll waits for a new template, which may be minutes away,
+    // and the drain of connections below waits for it. Its wait ends on this
+    // token, from whatever thread stops the server.
+    stopping_.request_stop();
     (void)stop_requests_.try_send(std::error_code{}, 1);
 }
 

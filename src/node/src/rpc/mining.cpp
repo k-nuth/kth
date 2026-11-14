@@ -5,7 +5,10 @@
 #include <kth/node/rpc/mining.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
+#include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -65,6 +68,30 @@ std::string render_mining_template(
     return w.str();
 }
 
+std::string make_longpollid(blockchain::mining_template const& tmpl) {
+    return encode_hash(tmpl.previous_block_hash) + std::to_string(tmpl.mempool_generation);
+}
+
+std::optional<longpoll_state> parse_longpollid(std::string_view id) {
+    constexpr size_t tip_digits = 2 * hash_size;
+    if (id.size() <= tip_digits) {
+        return std::nullopt;
+    }
+    auto const tip = decode_hash(id.substr(0, tip_digits));
+    auto const digits = id.substr(tip_digits);
+    // Only the spelling make_longpollid writes, so one state has one id.
+    if ( ! tip || (digits.size() > 1 && digits.front() == '0')) {
+        return std::nullopt;
+    }
+    uint64_t generation = 0;
+    auto const last = digits.data() + digits.size();
+    auto const parsed = std::from_chars(digits.data(), last, generation);
+    if (parsed.ec != std::errc{} || parsed.ptr != last) {
+        return std::nullopt;
+    }
+    return longpoll_state{*tip, generation};
+}
+
 std::string render_block_template(blockchain::mining_template const& tmpl,
     std::optional<chain_progress> progress) {
 
@@ -120,6 +147,7 @@ std::string render_block_template(blockchain::mining_template const& tmpl,
     w.end_array();
     w.key("coinbaseaux").begin_object().field("flags", "").end_object();
     w.field("coinbasevalue", uint64_t(tmpl.coinbase_value));
+    w.field("longpollid", make_longpollid(tmpl));
     w.field("target", target_hex);
     w.field("mintime", int64_t(tmpl.min_time));
     w.key("mutable").begin_array()

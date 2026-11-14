@@ -6,6 +6,7 @@
 #define KTH_NODE_RPC_SERVER_HPP
 
 #include <cstdint>
+#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -43,6 +44,7 @@ struct server {
 
     // A bounded stop message, including when run() has not started yet.
     // Socket cancellation itself is performed only by the RPC owner strand.
+    // A held long poll ends on it, from any thread.
     void stop();
 
     // One startup outcome: the actual bound port, or the listener's error.
@@ -65,6 +67,9 @@ private:
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
+    // Every request's method_context carries its token, so a handler that
+    // waits on the chain ends when the server stops.
+    std::stop_source stopping_;
 };
 
 } // namespace kth::node::rpc
