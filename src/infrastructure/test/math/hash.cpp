@@ -7,9 +7,19 @@
 #include <test_helpers.hpp>
 #include <kth/infrastructure.hpp>
 
+#include <crypto/sha256.h>
+
 using namespace kth;
 
 // Start Test Suite: hash tests
+
+// Nothing in this program has asked for an implementation yet, as in a program
+// that only links the library. This test has to stay the first one to do it.
+TEST_CASE("sha256 uses the best implementation without being asked to", "[hash tests]") {
+    auto const in_use = SHA256Implementation();
+    auto const best = SHA256AutoDetect();
+    REQUIRE(in_use == best);
+}
 
 TEST_CASE("sha1 hash test", "[hash tests]") {
     for (auto const& result: sha1_tests) {
