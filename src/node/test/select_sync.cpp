@@ -903,6 +903,64 @@ TEST_CASE("select: fast_validation_task drains what is buffered after close and 
     CHECK(input.pending() == 0u);
 }
 
+TEST_CASE("select: fast_validation_task keeps a validated chunk until storage has room for it",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "fast validation waiting for storage");
+    test::chain_fixture fixture("select_sync_validation_storage");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const blocks = test::make_chain_for_select(domain::chain::block::genesis_regtest(), 4);
+
+    ::asio::io_context ctx;
+    fast_validation_input_channel input(4);
+    chunk_validated_channel output(ctx.get_executor(), 16);
+    block_storage_input_channel storage(ctx.get_executor(), 1);
+
+    auto chunk_of = [&](uint32_t start, uint32_t count) {
+        std::vector<std::shared_ptr<domain::chain::light_block const>> light;
+        for (uint32_t h = start; h < start + count; ++h) light.push_back(test::to_light(blocks[h - 1]));
+        return downloaded_chunk{
+            .start_height = start, .chunk_id = start, .blocks = std::move(light),
+            .source_peer = nullptr, .generation = fixture.chain().headers().generation()};
+    };
+
+    // Storage is behind: its one slot is taken and nobody is receiving.
+    REQUIRE(storage.try_send(std::error_code{}, block_storage_input{storage_reorg_wake{}}));
+    REQUIRE(input.try_send(fast_validation_input{chunk_of(1, 2)}));
+    REQUIRE(input.try_send(fast_validation_input{chunk_of(3, 2)}));
+
+    tracked task;
+    task.spawn(ctx, fast_validation_task(fixture.chain(), input, output, &storage));
+
+    // Well past any bounded wait the task could apply to a full channel. The
+    // first chunk is validated and cannot be handed over; the task keeps it and
+    // leaves the second one in its input.
+    auto const until = std::chrono::steady_clock::now() + 1s;
+    while (std::chrono::steady_clock::now() < until) {
+        ctx.poll();
+        ctx.restart();
+        std::this_thread::sleep_for(5ms);
+    }
+    REQUIRE_FALSE(task.done.load());
+    CHECK(input.buffered() == 1u);
+
+    // Storage catches up: every chunk arrives, in order.
+    std::vector<uint32_t> stored;
+    auto take = [&] {
+        return storage.try_receive([&](std::error_code, block_storage_input msg) {
+            if (auto const* chunk = std::get_if<downloaded_chunk>(&msg)) stored.push_back(chunk->start_height);
+        });
+    };
+    REQUIRE(take());   // The wake-up that held the slot.
+    REQUIRE(run_until(ctx, [&] { take(); return stored.size() == 2u; }));
+    CHECK(stored[0] == 1u);
+    CHECK(stored[1] == 3u);
+
+    input.close();
+    REQUIRE(run_until(ctx, [&] { return task.done.load(); }));
+    task.check();
+}
+
 // =============================================================================
 // The coordinator's range request
 // =============================================================================
