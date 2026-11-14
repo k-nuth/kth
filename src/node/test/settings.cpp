@@ -12,6 +12,13 @@ using namespace kth;
 // constructors
 //-----------------------------------------------------------------------------
 
+TEST_CASE("sv2 settings default to disabled localhost listener", "[settings tests][sv2 template_provider]") {
+    node::sv2_settings const configuration;
+    REQUIRE_FALSE(configuration.enabled);
+    REQUIRE(configuration.bind == "127.0.0.1");
+    REQUIRE(configuration.port == 8442u);
+}
+
 TEST_CASE("settings construct default context expected", "[settings tests]") {
     node::settings configuration;
     REQUIRE(configuration.sync_peers == 0u);

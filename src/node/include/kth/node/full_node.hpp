@@ -63,6 +63,9 @@
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
 #include <kth/node/grpc_rpc/server.hpp>
 #endif
+#if ! defined(__EMSCRIPTEN__)
+#include <kth/node/sv2/template_provider.hpp>
+#endif
 
 #include <asio/awaitable.hpp>
 
@@ -213,6 +216,7 @@ private:
     ::asio::awaitable<void> run_blockchain_subscriber();
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
+    ::asio::awaitable<void> run_sv2();
     ::asio::awaitable<void> run_sync();
 #endif
 
@@ -230,6 +234,7 @@ private:
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+    node::sv2_settings sv2_settings_;
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<rpc::server> rpc_server_;
 #endif
@@ -242,6 +247,9 @@ private:
     // Declared in this order so the server is destroyed before its reader.
     std::unique_ptr<capnp_rpc::chain_reader> capnp_reader_;
     std::unique_ptr<capnp_rpc::server> capnp_server_;
+#endif
+#if ! defined(__EMSCRIPTEN__)
+    std::unique_ptr<sv2::template_provider> template_provider_;
 #endif
 };
 
