@@ -3,6 +3,8 @@ name: 🚀 Docker image
 on:
   release:
     types: [published]
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       version:
@@ -12,9 +14,23 @@ on:
 
 jobs:
   node-image:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
     uses: k-nuth/docker-images/.github/workflows/build-node.yml@master
     with:
       version: ${{ github.event.release.tag_name || inputs.version }}
+
+  # Built from source, since a master commit has no published package.
+  # Publishes :master and :master-<short sha>, never :latest or a version.
+  master-image:
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    uses: k-nuth/docker-images/.github/workflows/build-node-from-source.yml@master
+    with:
+      repository: ${{ github.repository }}
+      ref: ${{ github.sha }}
+      tag: master
