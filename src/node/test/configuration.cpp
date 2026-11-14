@@ -50,6 +50,273 @@ private:
 
 } // namespace
 
+TEST_CASE("sv2 listener settings survive network selection and config loading", "[configuration tests][parser][sv2 template_provider]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled=true",
+        "--sv2.bind", "::1", "--sv2.port", "18442"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(8, argv, error));
+    CHECK(parser.configured.sv2.enabled);
+    CHECK(parser.configured.sv2.bind == "::1");
+    CHECK(parser.configured.sv2.port == 18442u);
+
+    config_file file("sv2", "sv2.enabled=true\nsv2.bind=127.0.0.2\nsv2.port=0");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    CHECK(from_file.configured.sv2.enabled);
+    CHECK(from_file.configured.sv2.bind == "127.0.0.2");
+    CHECK(from_file.configured.sv2.port == 0u);
+
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.enabled);
+    CHECK(copied.sv2.bind == "127.0.0.2");
+    CHECK(copied.sv2.port == 0u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.enabled=false", "--sv2.bind", "127.0.0.1", "--sv2.port", "8442"};
+    REQUIRE(overridden.parse(10, override_argv, error));
+    CHECK_FALSE(overridden.configured.sv2.enabled);
+    CHECK(overridden.configured.sv2.bind == "127.0.0.1");
+    CHECK(overridden.configured.sv2.port == 8442u);
+}
+
+TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][parser][sv2 template_provider]") {
+    for (auto const* port : {"-1", "65536", "invalid"}) {
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        char const* argv[]{"kth", "--sv2.port", port};
+        CHECK_FALSE(parser.parse(3, argv, error));
+    }
+}
+
+TEST_CASE("sv2 mining settings survive network selection config and overrides", "[configuration tests][parser][sv2 mining]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled=true",
+        "--sv2.mining.enabled=true", "--sv2.mining.address", "bchreg:payout"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(7, argv, error));
+    CHECK(parser.configured.sv2.enabled);
+    CHECK(parser.configured.sv2.mining.enabled);
+    CHECK(parser.configured.sv2.mining.address == "bchreg:payout");
+
+    config_file file("sv2_mining", "sv2.enabled=true\nsv2.mining.enabled=true\n"
+        "sv2.mining.address=bchreg:configured\nsv2.mining.open_channel_timeout_seconds=30");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    CHECK(from_file.configured.sv2.mining.enabled);
+    CHECK(from_file.configured.sv2.mining.address == "bchreg:configured");
+    CHECK(from_file.configured.sv2.mining.open_channel_timeout_seconds == 30u);
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.mining.enabled);
+    CHECK(copied.sv2.mining.address == "bchreg:configured");
+    CHECK(copied.sv2.mining.open_channel_timeout_seconds == 30u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.mining.enabled=false", "--sv2.mining.address", "bchreg:selected",
+        "--sv2.mining.open_channel_timeout_seconds", "45"};
+    REQUIRE(overridden.parse(10, override_argv, error));
+    CHECK_FALSE(overridden.configured.sv2.mining.enabled);
+    CHECK(overridden.configured.sv2.mining.address == "bchreg:selected");
+    CHECK(overridden.configured.sv2.mining.open_channel_timeout_seconds == 45u);
+}
+
+TEST_CASE("sv2 mining enable option rejects an invalid boolean", "[configuration tests][parser][sv2 mining]") {
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    char const* argv[]{"kth", "--sv2.mining.enabled=invalid"};
+    CHECK_FALSE(parser.parse(2, argv, error));
+}
+
+TEST_CASE("sv2 JD settings survive network selection config copying and command line overrides", "[configuration tests][parser][sv2 jd]") {
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.jd.enabled=true",
+        "--sv2.jd.mining_address", "pool.example:3333",
+        "--sv2.jd.mining_authority_public_key", "pool-pin",
+        "--sv2.jd.jds_address", "[::1]:3334",
+        "--sv2.jd.jds_authority_public_key", "jds-pin",
+        "--sv2.jd.user_identity", "account.worker", "--sv2.jd.mode", "full-template",
+        "--sv2.jd.response_timeout_seconds", "12"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(18, argv, error));
+    auto const& selected = parser.configured.sv2.jd;
+    CHECK(selected.enabled);
+    CHECK(selected.mining_address == "pool.example:3333");
+    CHECK(selected.mining_authority_public_key == "pool-pin");
+    CHECK(selected.jds_address == "[::1]:3334");
+    CHECK(selected.jds_authority_public_key == "jds-pin");
+    CHECK(selected.user_identity == "account.worker");
+    CHECK(selected.mode == "full-template");
+    CHECK(selected.response_timeout_seconds == 12u);
+
+    config_file file("sv2_jd", "sv2.jd.enabled=true\nsv2.jd.mining_address=pool.example:4444\n"
+        "sv2.jd.mining_authority_public_key=configured-pool-pin\nsv2.jd.jds_address=jds.example:4445\n"
+        "sv2.jd.jds_authority_public_key=configured-jds-pin\nsv2.jd.user_identity=configured-worker\n"
+        "sv2.jd.mode=full-template\nsv2.jd.response_timeout_seconds=19");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.jd.enabled);
+    CHECK(copied.sv2.jd.mining_address == "pool.example:4444");
+    CHECK(copied.sv2.jd.mining_authority_public_key == "configured-pool-pin");
+    CHECK(copied.sv2.jd.jds_address == "jds.example:4445");
+    CHECK(copied.sv2.jd.jds_authority_public_key == "configured-jds-pin");
+    CHECK(copied.sv2.jd.user_identity == "configured-worker");
+    CHECK(copied.sv2.jd.mode == "full-template");
+    CHECK(copied.sv2.jd.response_timeout_seconds == 19u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* overrides[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.jd.enabled=false", "--sv2.jd.mode", "coinbase-only",
+        "--sv2.jd.user_identity", "selected-worker"};
+    REQUIRE(overridden.parse(10, overrides, error));
+    CHECK_FALSE(overridden.configured.sv2.jd.enabled);
+    CHECK(overridden.configured.sv2.jd.mode == "coinbase-only");
+    CHECK(overridden.configured.sv2.jd.user_identity == "selected-worker");
+    CHECK(overridden.configured.sv2.jd.mining_address == "pool.example:4444");
+    CHECK(overridden.configured.sv2.jd.response_timeout_seconds == 19u);
+
+    node::parser defaulted(domain::config::network::mainnet);
+    char const* enabled_only[]{"kth", "--network", "regtest", "--sv2.jd.enabled=true"};
+    REQUIRE(defaulted.parse(4, enabled_only, error));
+    CHECK(defaulted.configured.sv2.jd.mode == "coinbase-only");
+}
+
+TEST_CASE("sv2 JD parser refuses malformed enable and deadline values", "[configuration tests][parser][sv2 jd]") {
+    node::parser enabled(domain::config::network::regtest);
+    std::ostringstream error;
+    char const* invalid_bool[]{"kth", "--sv2.jd.enabled=invalid"};
+    CHECK_FALSE(enabled.parse(2, invalid_bool, error));
+    for (auto const* value : {"-1", "4294967296", "invalid"}) {
+        node::parser timeout(domain::config::network::regtest);
+        char const* argv[]{"kth", "--sv2.jd.response_timeout_seconds", value};
+        CHECK_FALSE(timeout.parse(3, argv, error));
+    }
+}
+
+TEST_CASE("sv2 JD failover parser preserves typed priority config copying and CLI overrides", "[configuration tests][parser][sv2 jd]") {
+    std::string const first = "z-pool.example:3333|pool-key|[::1]:3334|jds-key|first.worker|full-template";
+    std::string const second = "a-pool.example:4444|backup-key|jds.example:4445|backup-jds-key|second.worker|coinbase-only";
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.jd.upstream", first.c_str(),
+        "--sv2.jd.upstream", second.c_str(), "--sv2.jd.retry_initial_seconds", "2",
+        "--sv2.jd.retry_max_seconds", "60", "--sv2.jd.authority_hold_seconds", "300",
+        "--sv2.jd.recovery_hold_seconds", "3", "--sv2.jd.probe_interval_seconds", "4",
+        "--sv2.jd.max_latency_milliseconds", "250", "--sv2.jd.max_stale_percent", "25",
+        "--sv2.jd.max_reject_percent", "15", "--sv2.jd.health_window", "40"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(static_cast<int>(sizeof(argv) / sizeof(argv[0])), argv, error));
+    auto const& selected = parser.configured.sv2.jd;
+    REQUIRE(selected.upstreams.size() == 2);
+    CHECK(selected.upstreams[0] == first);
+    CHECK(selected.upstreams[1] == second);
+    CHECK(selected.retry_initial_seconds == 2);
+    CHECK(selected.retry_max_seconds == 60);
+    CHECK(selected.authority_hold_seconds == 300);
+    CHECK(selected.recovery_hold_seconds == 3);
+    CHECK(selected.probe_interval_seconds == 4);
+    CHECK(selected.max_latency_milliseconds == 250);
+    CHECK(selected.max_stale_percent == 25);
+    CHECK(selected.max_reject_percent == 15);
+    CHECK(selected.health_window == 40);
+
+    config_file file("sv2_jd_failover", "sv2.jd.upstream=\"" + first + "\"\nsv2.jd.retry_initial_seconds=7\n"
+        "sv2.jd.upstream=\"" + second + "\"\nsv2.jd.retry_max_seconds=70\n"
+        "sv2.jd.authority_hold_seconds=600\nsv2.jd.recovery_hold_seconds=9\n"
+        "sv2.jd.probe_interval_seconds=8\nsv2.jd.max_latency_milliseconds=900\n"
+        "sv2.jd.max_stale_percent=30\nsv2.jd.max_reject_percent=40\nsv2.jd.health_window=50");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    node::configuration const copied(from_file.configured);
+    CHECK(copied.sv2.jd.upstreams == selected.upstreams);
+    CHECK(copied.sv2.jd.retry_initial_seconds == 7);
+    CHECK(copied.sv2.jd.retry_max_seconds == 70);
+    CHECK(copied.sv2.jd.authority_hold_seconds == 600);
+    CHECK(copied.sv2.jd.recovery_hold_seconds == 9);
+    CHECK(copied.sv2.jd.probe_interval_seconds == 8);
+    CHECK(copied.sv2.jd.max_latency_milliseconds == 900);
+    CHECK(copied.sv2.jd.max_stale_percent == 30);
+    CHECK(copied.sv2.jd.max_reject_percent == 40);
+    CHECK(copied.sv2.jd.health_window == 50);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* overrides[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.jd.upstream", second.c_str(), "--sv2.jd.upstream", first.c_str(),
+        "--sv2.jd.health_window", "12"};
+    REQUIRE(overridden.parse(11, overrides, error));
+    REQUIRE(overridden.configured.sv2.jd.upstreams.size() == 2);
+    CHECK(overridden.configured.sv2.jd.upstreams[0] == second);
+    CHECK(overridden.configured.sv2.jd.upstreams[1] == first);
+    CHECK(overridden.configured.sv2.jd.health_window == 12);
+    CHECK(overridden.configured.sv2.jd.retry_initial_seconds == 7);
+
+    config_file array_file("sv2_jd_failover_array", "sv2.jd.upstream=[\"" + second
+        + "\", \"" + first + "\"]");
+    node::parser array_parser(domain::config::network::regtest);
+    REQUIRE(array_parser.parse_from_file(array_file.path(), error));
+    CHECK(array_parser.configured.sv2.jd.upstreams == overridden.configured.sv2.jd.upstreams);
+
+    config_file duplicate_scalar("sv2_jd_duplicate_scalar",
+        "sv2.jd.health_window=20\nsv2.jd.health_window=30");
+    node::parser strict_parser(domain::config::network::regtest);
+    CHECK_FALSE(strict_parser.parse_from_file(duplicate_scalar.path(), error));
+}
+
+TEST_CASE("sv2 JD failover parser refuses malformed unsigned thresholds", "[configuration tests][parser][sv2 jd]") {
+    for (auto const* option : {"--sv2.jd.retry_initial_seconds", "--sv2.jd.retry_max_seconds",
+        "--sv2.jd.authority_hold_seconds", "--sv2.jd.recovery_hold_seconds", "--sv2.jd.probe_interval_seconds",
+        "--sv2.jd.max_latency_milliseconds", "--sv2.jd.max_stale_percent", "--sv2.jd.max_reject_percent",
+        "--sv2.jd.health_window"}) {
+        INFO(option);
+        for (auto const* value : {"-1", "4294967296", "invalid"}) {
+            node::parser parser(domain::config::network::regtest);
+            std::ostringstream error;
+            char const* argv[]{"kth", option, value};
+            CHECK_FALSE(parser.parse(3, argv, error));
+        }
+    }
+}
+
+TEST_CASE("sv2 Noise credentials survive config and command line parsing", "[configuration tests][parser][sv2 noise]") {
+    config_file file("sv2_noise", "sv2.noise=false\nsv2.static_key_file=provider.key\n"
+        "sv2.authority_key_file=authority.key\nsv2.certificate_file=provider.cert\n"
+        "sv2.authority_public_key=pinned\nsv2.certificate_validity_seconds=600\n"
+        "sv2.handshake_timeout_seconds=3");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    auto const& settings = parser.configured.sv2;
+    CHECK_FALSE(settings.noise);
+    CHECK(settings.static_key_file == "provider.key");
+    CHECK(settings.authority_key_file == "authority.key");
+    CHECK(settings.certificate_file == "provider.cert");
+    CHECK(settings.authority_public_key == "pinned");
+    CHECK(settings.certificate_validity_seconds == 600u);
+    CHECK(settings.handshake_timeout_seconds == 3u);
+
+    auto const path = file.path().string();
+    node::parser overridden(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
+        "--sv2.noise=true", "--sv2.static_key_file", "selected.key",
+        "--sv2.authority_key_file", "selected-authority.key",
+        "--sv2.certificate_file", "selected.cert", "--sv2.authority_public_key", "selected-pin",
+        "--sv2.certificate_validity_seconds", "900", "--sv2.handshake_timeout_seconds", "4"};
+    REQUIRE(overridden.parse(18, argv, error));
+    auto const& selected = overridden.configured.sv2;
+    CHECK(selected.noise);
+    CHECK(selected.static_key_file == "selected.key");
+    CHECK(selected.authority_key_file == "selected-authority.key");
+    CHECK(selected.certificate_file == "selected.cert");
+    CHECK(selected.authority_public_key == "selected-pin");
+    CHECK(selected.certificate_validity_seconds == 900u);
+    CHECK(selected.handshake_timeout_seconds == 4u);
+}
+
 namespace {
 
 #if !defined(KTH_CURRENCY_BCH)
