@@ -49,6 +49,18 @@ function(kth_add_secp256k1)
 endfunction()
 kth_add_secp256k1()
 
+# GCC 16, when AVX-512VL is enabled (any -march that includes it), moves the
+# 64-bit integers of the field and scalar arithmetic through vector registers
+# around every multiplication, and a signature verification takes about 1.6x as
+# long. GCC 14 and Clang do not do it. The library uses no vector instructions,
+# so it is built without that extension; the flag comes after the -march of the
+# build and changes nothing when the extension was not enabled.
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 16
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|amd64)")
+    target_compile_options(secp256k1 PRIVATE -mno-avx512vl)
+    target_compile_options(secp256k1_precomputed PRIVATE -mno-avx512vl)
+endif()
+
 # Knuth links this alias; upstream exports the bare `secp256k1` target.
 if(NOT TARGET secp256k1::secp256k1)
     add_library(secp256k1::secp256k1 ALIAS secp256k1)
