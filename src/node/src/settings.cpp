@@ -38,4 +38,26 @@ rpc_settings::rpc_settings()
     , gbt_store_time(3600)
 {}
 
+sv2_settings::mining_settings::mining_settings()
+    : enabled(false)
+    , address()
+    , open_channel_timeout_seconds(60)
+{}
+
+sv2_settings::sv2_settings()
+    : enabled(false)
+    , bind("127.0.0.1")
+    , port(8442)
+    , noise(true)
+    , static_key_file(".sv2-static-key")
+    , authority_key_file(".sv2-authority-key")
+    , certificate_file()
+    , authority_public_key()
+    , certificate_validity_seconds(30 * 24 * 60 * 60)
+    , handshake_timeout_seconds(10)
+    , template_refresh_seconds(10)
+    , minimum_fee_gain_satoshis(1000)
+    , mining()
+{}
+
 } // namespace kth::node
