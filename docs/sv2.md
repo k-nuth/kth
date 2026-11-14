@@ -395,8 +395,12 @@ Connection failures, dropped connections, token or message response timeouts,
 retry delay. The delay doubles on repeated failures, from
 `sv2.jd.retry_initial_seconds` to `sv2.jd.retry_max_seconds`. A successful
 setup alone does not reset that history: the entry must remain healthy through
-the recovery hold. A Noise handshake or authentication failure flags the
-entry and holds it for at least `sv2.jd.authority_hold_seconds`. A refused
+the recovery hold. A Noise authentication failure flags the entry and holds it
+for at least `sv2.jd.authority_hold_seconds`: an answer signed by another
+authority, a certificate outside its validity window, or a frame that fails
+its tag. A server that accepts the connection and then stays silent or closes
+before answering the handshake has shown nothing either way, and gets the
+ordinary retry delay. A refused
 `SetupConnection` or missing required feature disables that entry until node
 restart. Under specification section 6.2, refusing a valid share for an
 accepted job on the current tip flags the pool as dishonest and applies the
@@ -406,9 +410,11 @@ While a lower-priority entry is active, Knuth probes higher-priority entries
 in order, with at most one probe at a time. A probe keeps its Mining and JDS
 connections through the recovery hold and declares local work independently.
 It must accept a local custom job and remain healthy for
-`sv2.jd.recovery_hold_seconds` before it can replace the active entry. Recovery
-switches only when a new connected tip starts the next local job, including
-when recovering from solo after all entries failed. Probe attempts are spaced by
+`sv2.jd.recovery_hold_seconds` before it can replace the active entry. A
+switch from one pool to another happens only when a new connected tip starts
+the next local job, so the active pool's job is worked to its end. When every
+entry had failed and the node is on solo work, the recovered entry takes over
+as soon as its hold has passed. Probe attempts are spaced by
 `sv2.jd.probe_interval_seconds`. There are at most two upstream pairs open:
 the active pair and one probe pair.
 

@@ -137,8 +137,6 @@ bool jd_connection::authentication_failed() const {
             co_return false;
         }
 
-        authentication_failed_ = true;
-
         auto ephemeral = noise_keypair::generate();
         auto [write_error, written] = co_await ::asio::async_write(socket,
             ::asio::buffer(ephemeral.ellswift()), ::asio::as_tuple(::asio::use_awaitable));
@@ -164,11 +162,15 @@ bool jd_connection::authentication_failed() const {
         noise_initiator initiator(std::move(ephemeral), authority_, *now);
         auto const first = initiator.start();
         if ( ! first || ! initiator.finish(response)) {
+            // Only an answer that was read and failed its checks says anything
+            // about who answered. A server that stays silent or closes early
+            // has shown nothing: a pool that is restarting or overloaded does
+            // that, and so does any slow link.
+            authentication_failed_ = true;
             reason = "upstream Noise authentication failed";
             co_return false;
         }
         transport.emplace(*initiator.keys(), true, max_payload_size);
-        authentication_failed_ = false;
         co_return true;
     };
     ::asio::steady_timer deadline(owner_);

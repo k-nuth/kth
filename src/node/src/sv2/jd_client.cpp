@@ -386,6 +386,7 @@ bool jd_client::recover_at_boundary() {
         active_->moving = false;
         active_->stop();
     }
+    bool const from_solo = ! active_;
     active_.swap(probe_);
     // The probe's channel carried zero. Its pool now gets the shares, so it
     // is told the current sum at once.
@@ -393,7 +394,8 @@ bool jd_client::recover_at_boundary() {
     active_->wake_hash_rate();
     publish_pool(*active_);
     update_status();
-    spdlog::info("[sv2 jd] Entry {} recovered; active at job boundary", active_->index + 1);
+    spdlog::info("[sv2 jd] Entry {} recovered; active{}", active_->index + 1,
+        from_solo ? "" : " at job boundary");
     return true;
 }
 
@@ -492,8 +494,11 @@ void jd_client::start_attempt(size_t index, bool probe) {
                         previous = view->tip_hash;
                     }
                 }
-                // Observe boundaries even while every entry is held on solo.
-                if (boundary && recover_at_boundary()) solo = false;
+                // A switch between pools waits for a boundary, so the active
+                // pool's job is worked to its end. Solo has no pool's job to
+                // finish, and every minute on it is a minute off the pool: a
+                // recovered entry takes over once its hold has passed.
+                if ((boundary || solo) && recover_at_boundary()) solo = false;
                 if ( ! active_ && ! solo) {
                     if (auto const index = policy_.begin(now)) start_attempt(*index, false);
                     else {
@@ -526,8 +531,9 @@ void jd_client::start_attempt(size_t index, bool probe) {
                     }
                 }
                 // Without a chain, readiness supplies the test-only boundary.
-                // With a chain, recovery still waits for a connected-tip event.
-                if ( ! chain_ && probe_ && ! probe_->stopped && probe_->healthy) {
+                // With a chain, recovery from another pool still waits for a
+                // connected-tip event; from solo it waits for the hold alone.
+                if (( ! chain_ || solo) && probe_ && ! probe_->stopped && probe_->healthy) {
                     auto const& entry = policy_.entries()[probe_->index];
                     if (entry.healthy_since) {
                         wake_at = std::min(wake_at, *entry.healthy_since
