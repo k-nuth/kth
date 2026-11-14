@@ -1,7 +1,7 @@
 {
     "version": "0.5",
     "requires": [
-        "utxoz/2.0.0#2a0d47dc2abbffc21c10aaf348406179%1794523373.493",
+        "utxoz/2.1.0#c26a0a9ec54ead09752bd024ba2a04dc%1794613573.704",
         "tiny-aes-c/1.0.0#0f0a930c53a0d33d5a91a4c930f836ab%1750950589.092",
         "spdlog/1.17.0#bcbaaf7147bda6ad24ffbd1ac3d7142c%1767636069.964",
         "simdutf/9.3.2#545fccb18154ece1c64afaae668efcb3%1793444685.931",
@@ -23,10 +23,5 @@
         "cmake/4.4.4#fec9c7048fae91e03c31e59977cd9c12%1791276141.315"
     ],
     "python_requires": [],
-    "overrides": {
-        "boost/1.91.0": [
-            "boost/1.92.0#d713722c43fa43d090bb14511e42ba0f"
-        ]
-    },
     "config_requires": []
 }
