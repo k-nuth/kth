@@ -73,9 +73,9 @@ uint32_t calculate_mtp(std::deque<uint32_t> const& timestamps) {
 //     the chunk now; the selector's payload slot is empty;
 //   * the `after` case wins: the chunk is still in the selector's payload slot.
 //     The worker re-reads what could have changed while it waited — the
-//     coordinator stopped, or the chain switched under the chunk — and either
+//     range stopped, or the chain switched under the chunk — and either
 //     keeps waiting or gives the chunk up and frees the slot;
-//   * the selection fails: `operation_aborted` from the coordinator's stop token
+//   * the selection fails: `operation_aborted` from the range's stop token
 //     or `broken_pipe` from the channel's close() at shutdown. The chunk is still
 //     in the payload slot (a failed send keeps its payload); the worker drops it.
 //
@@ -99,7 +99,7 @@ constexpr auto fast_admission_report_interval = std::chrono::seconds(10);
 
 ::asio::awaitable<chunk_handover> hand_over_chunk(
     fast_chunk_selector& sender,
-    chunk_coordinator const& coordinator,
+    download_range const& range,
     uint64_t request_generation,
     uint32_t chunk_id,
     std::string const& addr)
@@ -118,11 +118,11 @@ constexpr auto fast_admission_report_interval = std::chrono::seconds(10);
         if ( ! ec) {
             // The report interval elapsed with the chunk still held. The payload
             // slot still owns it; only this task can touch it.
-            if (coordinator.is_stopped()) {
+            if (range.is_stopped()) {
                 sender.value<0>().reset();
                 co_return chunk_handover::coordinator_stopped;
             }
-            if (coordinator.generation() != request_generation) {
+            if (range.generation() != request_generation) {
                 // Storage would drop it anyway (its heights now name other
                 // blocks); freeing it here lets the range re-claim the chunk
                 // against the new chain instead of holding stale data.
@@ -139,7 +139,7 @@ constexpr auto fast_admission_report_interval = std::chrono::seconds(10);
             continue;
         }
 
-        // operation_aborted: the coordinator's stop token. broken_pipe: the
+        // operation_aborted: the range's stop token. broken_pipe: the
         // channel was closed. Either way the chunk is still ours and nobody is
         // going to take it.
         sender.value<0>().reset();
@@ -152,7 +152,7 @@ constexpr auto fast_admission_report_interval = std::chrono::seconds(10);
 char const* to_string(chunk_handover outcome) {
     switch (outcome) {
         case chunk_handover::delivered:           return "delivered";
-        case chunk_handover::coordinator_stopped: return "coordinator stopped";
+        case chunk_handover::coordinator_stopped: return "range stopped";
         case chunk_handover::stale_generation:    return "chain switched";
         case chunk_handover::channel_closed:      return "channel closed";
     }
@@ -185,12 +185,64 @@ std::atomic<uint64_t> g_block_download_task_id{0};
 std::atomic<uint32_t> g_active_download_peers{0};
 
 // =============================================================================
+// Chunk client: a worker's side of the chunk protocol
+// =============================================================================
+
+chunk_client::chunk_client(
+    block_download_task_output_channel& output,
+    std::shared_ptr<download_range> range,
+    uint64_t coordinator_epoch)
+    : output_(output)
+    , range_(std::move(range))
+    , coordinator_epoch_(coordinator_epoch)
+    , reply_(std::make_shared<chunk_reply_channel>(1))
+{}
+
+::asio::awaitable<bool> chunk_client::send(block_download_task_output message) {
+    // A suspended send with no deadline and no stop token: the supervisor is
+    // the only consumer of this channel and always comes back to it, so a full
+    // channel is waited out. It fails only when the supervisor has closed the
+    // channel, which is its way out.
+    auto const executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(output_, std::move(message))
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    (void)selected;
+    co_return ! ec;
+}
+
+::asio::awaitable<chunk_reply> chunk_client::next() {
+    if ( ! co_await send(block_download_task_output{chunk_request{coordinator_epoch_, reply_}})) {
+        co_return std::nullopt;
+    }
+    // Suspended until the supervisor answers: at once if a chunk is free, when
+    // one is given back or stalls otherwise. The stop of the range ends the
+    // wait; whatever answer arrives after that belongs to a range that is gone.
+    auto const executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*reply_)
+    ).async_wait(executor, {}, range_->stop_token(), ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec) {
+        co_return std::nullopt;
+    }
+    co_return std::move(*selected.value<0>());
+}
+
+::asio::awaitable<void> chunk_client::report(chunk_claim claim, chunk_report::event what) {
+    // Not delivered only when the supervisor is gone, and the state of the
+    // range with it.
+    (void)co_await send(block_download_task_output{chunk_report{coordinator_epoch_, claim, what}});
+}
+
+// =============================================================================
 // Block Download Task (per-peer)
 // =============================================================================
 
 ::asio::awaitable<void> block_download_task(
     network::peer_session::ptr peer,
-    std::shared_ptr<chunk_coordinator> coordinator,
+    std::shared_ptr<download_range> range,
     std::atomic<uint32_t>& active_peers,
     block_download_task_output_channel& output,
     uint64_t task_id,
@@ -281,23 +333,28 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
     } guard{active_peers, addr, chunks_downloaded, download_times_ms, send_times_ms, network_times_us, deserialize_times_us};
 
-    // Track current chunk for cleanup on exception
+    // The chunk this worker holds, if any. Whatever way the loop below is
+    // left, a chunk still held is given back after it.
     std::optional<chunk_claim> current_claim;
 
+    // The supervisor owns the chunks of the range; this is how the worker asks
+    // for one and says what became of it.
+    chunk_client chunks(output, range, coordinator_epoch);
+
     // Set when the fast validation channel has been closed: the one way out of
-    // the loop below that neither the peer nor the coordinator announces.
+    // the loop below that neither the peer nor the range announces.
     bool fast_path_closed = false;
 
     auto executor = co_await ::asio::this_coro::executor;
 
     // The fast-path sender, owned by this worker for its whole life (see
-    // hand_over_chunk). Armed with the coordinator's stop token: a worker
+    // hand_over_chunk). Armed with the range's stop token: a worker
     // suspended on a full channel is woken the moment its range is replaced or
     // the supervisor shuts down, instead of noticing between retries.
     std::optional<fast_chunk_selector> fast_sender;
     if (fast_val) {
         fast_sender.emplace(executor, ::asio::experimental::channel_select_options{},
-            coordinator->stop_token(),
+            range->stop_token(),
             ::asio::experimental::send(*fast_val, fast_validation_input{}),
             ::asio::experimental::after(::asio::steady_timer::time_point::max()));
         // A send case takes part while it holds a payload, and the case was
@@ -309,48 +366,48 @@ std::atomic<uint32_t> g_active_download_peers{0};
     try {
 
     // Log initial state
-    spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, thread_id={})",
-        addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete(),
+    spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, range_stopped={}, thread_id={})",
+        addr, peer->stopped(), range->is_stopped(),
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
-    while (!peer->stopped() && !coordinator->is_stopped()) {
-        // Claim chunk via coordinator - lock-free CAS
-        auto maybe_chunk = coordinator->claim_chunk();
-        if (!maybe_chunk) {
-            // No more chunks or all slots busy - wait and retry
-            if (coordinator->is_complete() || coordinator->is_stopped()) {
-                spdlog::info("[block_download] Peer {} exiting: sync complete or stopped (complete={}, stopped={})",
-                    addr, coordinator->is_complete(), coordinator->is_stopped());
-                break;
-            }
-            // Slots busy - wait with backoff before retry (avoid busy-wait)
-            ::asio::steady_timer timer(executor);
-            timer.expires_after(std::chrono::milliseconds(20));
-            co_await timer.async_wait(::asio::use_awaitable);
-            continue;
+    while (!peer->stopped() && !range->is_stopped()) {
+        // Ask the supervisor for a chunk. Suspended until there is one for this
+        // worker: nothing is retried and nothing is polled.
+        auto const assignment = co_await chunks.next();
+        if (!assignment) {
+            spdlog::info("[block_download] Peer {} exiting: no more work in the range (range_stopped={})",
+                addr, range->is_stopped());
+            break;
         }
 
-        auto const claim = *maybe_chunk;
+        auto const claim = assignment->claim;
         uint32_t chunk_id = claim.chunk_id;
-        current_claim = claim;  // Track for exception cleanup
-        auto [chunk_start, chunk_end] = coordinator->chunk_range(chunk_id);
+        current_claim = claim;
+        auto const chunk_start = assignment->start_height;
+        auto const chunk_end = assignment->end_height;
 
-        spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
+        spdlog::debug("[block_download] Peer {} was given chunk {} (blocks {}-{})",
             addr, chunk_id, chunk_start, chunk_end);
+
+        if (peer->stopped()) {
+            // The peer went away while the request was waiting. The chunk is
+            // given back after the loop, for a worker whose peer is there.
+            break;
+        }
 
         // Capture the generation BEFORE reading any hash. Reading it after the
         // download would stamp blocks of the old branch with the new generation
         // if a switch landed while we waited on the peer — they would then be
         // accepted as current, which is precisely the corruption the stamp exists
         // to stop.
-        auto const request_generation = coordinator->generation();
+        auto const request_generation = range->generation();
 
-        // Build request with hashes from coordinator
+        // Build request with hashes from the header index
         std::vector<std::pair<uint32_t, hash_digest>> blocks;
         blocks.reserve(chunk_end - chunk_start + 1);
 
         for (uint32_t h = chunk_start; h <= chunk_end; ++h) {
-            auto hash = coordinator->get_block_hash(h);
+            auto hash = range->get_block_hash(h);
             if (hash == null_hash) {
                 spdlog::error("[block_download] No hash for height {}", h);
                 continue;
@@ -359,7 +416,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         if (blocks.empty()) {
-            coordinator->chunk_failed(claim);
+            co_await chunks.report(claim, chunk_report::event::failed);
+            current_claim.reset();
             continue;
         }
 
@@ -367,10 +425,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // which case they are a mix of two branches. Drop the request and let the
         // chunk be re-claimed against the new chain rather than downloading a
         // set that was never a chain.
-        if (coordinator->generation() != request_generation) {
+        if (range->generation() != request_generation) {
             spdlog::info("[block_download] Chain switched while building chunk {} — releasing it",
                 chunk_id);
-            coordinator->chunk_failed(claim);
+            co_await chunks.report(claim, chunk_report::event::failed);
+            current_claim.reset();
             continue;
         }
 
@@ -382,11 +441,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
             std::chrono::steady_clock::now() - download_start).count();
 
         if (!result) {
-            spdlog::info("[block_download] Peer {} FAILED chunk {} after {}ms: {} (peer_stopped={}, coord_stopped={})",
+            spdlog::info("[block_download] Peer {} FAILED chunk {} after {}ms: {} (peer_stopped={}, range_stopped={})",
                 addr, chunk_id, download_ms, result.error().message(),
-                peer->stopped(), coordinator->is_stopped());
-            // Report failure - slot reset to FREE for retry by another peer
-            coordinator->chunk_failed(claim);
+                peer->stopped(), range->is_stopped());
+            // The chunk is given back after the loop, for retry by another peer
             break;
         }
 
@@ -395,7 +453,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (result->size() != expected_count) {
             spdlog::warn("[block_download] Peer {} returned {} blocks for chunk {} (expected {}), failing chunk",
                 addr, result->size(), chunk_id, expected_count);
-            coordinator->chunk_failed(claim);
+            co_await chunks.report(claim, chunk_report::event::failed);
+            current_claim.reset();
             continue;  // Try another chunk instead of disconnecting
         }
 
@@ -405,7 +464,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // The peer has answered. What is left is the hand-over, whose wait is
         // set by validation and storage: the stall check must not take that for
         // a slow peer and give the chunk to another one to download again.
-        coordinator->chunk_downloaded(claim);
+        co_await chunks.report(claim, chunk_report::event::downloaded);
         download_times_ms.push_back(download_ms);
 
         // Accumulate network and deserialize times from individual blocks
@@ -442,12 +501,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 .generation = request_generation
             });
             auto const outcome = co_await hand_over_chunk(
-                *fast_sender, *coordinator, request_generation, chunk_id, addr);
+                *fast_sender, *range, request_generation, chunk_id, addr);
 
             if (outcome != chunk_handover::delivered) {
                 spdlog::info("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
                     addr, chunk_id, to_string(outcome));
-                coordinator->chunk_failed(claim);
                 send_error = true;
                 if (outcome == chunk_handover::channel_closed) {
                     // Fast validation is gone, which only shutdown does. Nothing
@@ -465,10 +523,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 auto const height = blk.height;
 
                 // Check stop conditions before sending
-                if (peer->stopped() || coordinator->is_stopped()) {
+                if (peer->stopped() || range->is_stopped()) {
                     spdlog::debug("[block_download] Peer {} stopping before send (block {})",
                         addr, height);
-                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -480,7 +537,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 // One second of backpressure per block, as before, but as a
                 // suspended send racing an `after` case: the block is handed
                 // over the instant the supervisor makes room, and a stop of the
-                // coordinator ends the wait at once. A send that loses keeps its
+                // range ends the wait at once. A send that loses keeps its
                 // payload, which is dropped here with the chunk failed.
                 auto completion = co_await ::asio::experimental::make_select(
                     ::asio::experimental::send(output, block_download_task_output{
@@ -495,7 +552,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                             .sent_to_supervisor_us = static_cast<uint64_t>(sent_to_supervisor_us)
                         }}),
                     ::asio::experimental::after(std::chrono::steady_clock::now() + 1s)
-                ).async_wait(executor, {}, coordinator->stop_token(),
+                ).async_wait(executor, {}, range->stop_token(),
                     ::asio::as_tuple(::asio::deferred));
                 auto& [send_ec, selected] = completion;
                 bool const sent = ! send_ec && selected.index == 0;
@@ -503,7 +560,6 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if (!sent) {
                     spdlog::error("[block_download] Could not hand block {} to the supervisor ({}) - consumer may be stuck!",
                         height, send_ec ? send_ec.message() : "no room for 1s");
-                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -513,12 +569,14 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         // If send failed, DON'T exit - try another chunk
-        // Only exit if peer/coordinator stopped, or the consumer is gone
-        if (send_error && (peer->stopped() || coordinator->is_stopped() || fast_path_closed)) {
-            break;
+        // Only exit if the peer or the range stopped, or the consumer is gone
+        if (send_error && (peer->stopped() || range->is_stopped() || fast_path_closed)) {
+            break;  // The chunk is given back after the loop
         }
         if (send_error) {
             // Channel issue but we're not stopped - continue with next chunk
+            co_await chunks.report(claim, chunk_report::event::failed);
+            current_claim.reset();
             continue;
         }
 
@@ -527,7 +585,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         send_times_ms.push_back(send_ms);
 
         // Report success only after all blocks sent
-        coordinator->chunk_completed(claim);
+        co_await chunks.report(claim, chunk_report::event::completed);
         current_claim.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
 
@@ -543,25 +601,23 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
     // Log why we exited the while loop
-    spdlog::info("[block_download] Peer {} exited main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, chunks={})",
-        addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete(), chunks_downloaded);
+    spdlog::info("[block_download] Peer {} exited main loop (peer_stopped={}, range_stopped={}, chunks={})",
+        addr, peer->stopped(), range->is_stopped(), chunks_downloaded);
 
     } catch (::asio::system_error const& e) {
         // Asio system errors (e.g., operation_aborted during shutdown) are expected
         spdlog::debug("[block_download] Peer {} asio error: {} ({})", addr, e.what(), e.code().value());
-        if (current_claim) {
-            coordinator->chunk_failed(*current_claim);
-        }
     } catch (std::exception const& e) {
         spdlog::error("[block_download] Peer {} exception: {}", addr, e.what());
-        if (current_claim) {
-            coordinator->chunk_failed(*current_claim);
-        }
     } catch (...) {
         spdlog::error("[block_download] Peer {} unknown exception", addr);
-        if (current_claim) {
-            coordinator->chunk_failed(*current_claim);
-        }
+    }
+
+    // A chunk still held when the loop was left, by a break or by an exception,
+    // goes back to the range. Sent from here because a handler cannot suspend.
+    if (current_claim) {
+        co_await chunks.report(*current_claim, chunk_report::event::failed);
+        current_claim.reset();
     }
 
     // Notify supervisor that this task is ending (CSP: communicate via channel).
@@ -611,10 +667,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
     task_group tasks("block_supervisor_tasks", executor);
 
-    // Coordinator - created when we get a range
-    // NOTE: Using shared_ptr so download tasks can safely hold a reference even if
-    // a new range request arrives. Each task keeps the old coordinator alive until done.
-    std::shared_ptr<chunk_coordinator> coordinator;
+    // The current range, created when one is requested. Two parts:
+    //
+    //   * `range` is what its workers share: the heights, the header index and
+    //     the stop of the range. A shared_ptr, so a worker of a range that was
+    //     replaced still has the one it was started for;
+    //   * `chunks` is the state of the range: which chunk is free, held or
+    //     delivered, and which workers wait for one. It is owned by this
+    //     coroutine and by nothing else. Workers ask for chunks and report on
+    //     them through task_output; they never touch it.
+    std::shared_ptr<download_range> range;
+    std::optional<chunk_coordinator> chunks;
     std::atomic<uint32_t> active_peers{0};
 
     // Who owns each peer's download slot, and which peers exist at all (#652).
@@ -644,9 +707,16 @@ std::atomic<uint32_t> g_active_download_peers{0};
     uint64_t last_bytes_downloaded = 0;
     auto last_stats_time = std::chrono::steady_clock::now();
 
-    // Periodic timeout check cadence (stalled chunk detection).
-    constexpr auto timeout_tick = std::chrono::seconds(10);
-    auto next_tick = std::chrono::steady_clock::now() + timeout_tick;
+    // Stop the current range: its workers' waits are aborted through its token,
+    // and the requests waiting here are answered so no worker is left behind.
+    auto stop_range = [&] {
+        if (range) {
+            range->stop();
+        }
+        if (chunks) {
+            chunks->dismiss_waiting();
+        }
+    };
 
     // Helper to spawn download task for a peer (returns true if spawned)
     // Returns false ONLY for conditions checked before the start: no coordinator,
@@ -655,7 +725,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     auto spawn_download = [&](network::peer_session::ptr const& peer) -> bool {
         // Re-checked here and not only by the caller: a snapshot can age between
         // the decision and this point.
-        if ( ! peer || peer->stopped() || ! coordinator) return false;
+        if ( ! peer || peer->stopped() || ! range) return false;
 
         auto const nonce = peer->nonce();
         if (ownership.has_worker(nonce)) {
@@ -679,11 +749,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // The seam replaces the download itself and nothing else: the
             // bookkeeping below and the report handling are the real ones either
             // way.
-            launcher(peer, coordinator, task_id, epoch, task_output);
+            launcher(peer, range, task_id, epoch, task_output);
         } else {
             tasks.spawn(task_name, block_download_task(
                 peer,
-                coordinator,  // Pass shared_ptr - task keeps coordinator alive until done
+                range,  // Pass shared_ptr - the task keeps its range alive until done
                 active_peers,
                 task_output,
                 task_id,
@@ -701,7 +771,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         return true;
     };
 
-    // Start `nonce` against the CURRENT coordinator, using the peer the latest
+    // Start `nonce` against the CURRENT range, using the peer the latest
     // snapshot holds — never a pointer captured by the worker that just ended.
     auto spawn_known = [&](uint64_t nonce) -> bool {
         auto const it = known_peers.find(nonce);
@@ -767,8 +837,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // the only slot its peer has, and this is the moment that peer can be
         // given to the current coordinator — which is what replaces the
         // accidental peer event this defect depended on.
-        auto const wants_workers = coordinator && ! coordinator->is_stopped() &&
-            ! coordinator->is_complete();
+        auto const wants_workers = range && chunks && ! range->is_stopped() &&
+            ! chunks->is_complete();
         auto const handoff = ownership.ended(
             ended.peer_nonce, ended.task_id, ended.coordinator_epoch, wants_workers);
 
@@ -797,23 +867,21 @@ std::atomic<uint32_t> g_active_download_peers{0};
             request.start_height, request.end_height,
             request.end_height - request.start_height + 1);
 
-        // Stop old coordinator if one exists - this signals running tasks to exit gracefully
-        // Tasks hold shared_ptr so old coordinator stays alive until they finish
-        if (coordinator) {
-            spdlog::debug("[block_supervisor] Stopping old coordinator before creating new one");
-            coordinator->stop();
+        // Stop the old range if one exists - this signals its workers to exit
+        // gracefully. They hold a shared_ptr, so it stays alive until they finish
+        if (range) {
+            spdlog::debug("[block_supervisor] Stopping the old range before creating the new one");
+            stop_range();
         }
 
-        // Create new coordinator for this range
-        coordinator = std::make_shared<chunk_coordinator>(
-            organizer.index(),
-            request.start_height,
-            request.end_height
-        );
+        // Create the new range and its chunks
+        range = std::make_shared<download_range>(
+            organizer.index(), request.start_height, request.end_height);
+        chunks.emplace(request.start_height, request.end_height);
 
-        // The coordinator is installed FIRST, then the epoch moves, and only
-        // then are workers started — so nothing is ever started against a
-        // coordinator that is no longer current.
+        // The range is installed FIRST, then the epoch moves, and only then
+        // are workers started — so nothing is ever started against a range
+        // that is no longer current.
         //
         // begin_range() answers with the known peers that have no live slot.
         // A peer whose previous worker is still finishing is deliberately not
@@ -849,10 +917,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
         ownership.set_known(nonces);
 
         spdlog::info("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
-            "(coordinator={})", peers_msg.peers.size(), known_peers.size(),
-            ownership.worker_count(), coordinator ? "yes" : "no");
+            "(range={})", peers_msg.peers.size(), known_peers.size(),
+            ownership.worker_count(), range ? "yes" : "no");
 
-        if ( ! coordinator) {
+        if ( ! range) {
             // Nothing to attach them to yet. They are remembered rather than
             // buffered: the next range starts from what is known, so this no
             // longer has to be the only chance they get.
@@ -867,6 +935,28 @@ std::atomic<uint32_t> g_active_download_peers{0};
             spawned, ownership.worker_count() - spawned);
     };
 
+    // A worker asks for a chunk. The epoch tells a worker of the current range
+    // from one that outlived its own: the latter has no more work.
+    auto on_chunk_request = [&](chunk_request& request) {
+        if ( ! request.reply) return;
+        if ( ! chunks || ! range || range->is_stopped() || request.coordinator_epoch != ownership.epoch()) {
+            request.reply->try_send(chunk_reply{});
+            return;
+        }
+        chunks->request_chunk(std::move(request.reply));
+    };
+
+    auto on_chunk_report = [&](chunk_report const& report) {
+        if ( ! chunks || report.coordinator_epoch != ownership.epoch()) {
+            return;  // About a range that is gone, and its chunks with it
+        }
+        switch (report.what) {
+            case chunk_report::event::downloaded: chunks->chunk_downloaded(report.claim); break;
+            case chunk_report::event::completed:  chunks->chunk_completed(report.claim); break;
+            case chunk_report::event::failed:     chunks->chunk_failed(report.claim); break;
+        }
+    };
+
     // -------------------------------------------------------------------------
     // Main loop: ONE selection over the input, the workers' output and the
     // timeout tick.
@@ -879,17 +969,20 @@ std::atomic<uint32_t> g_active_download_peers{0};
     //   * stop and task_ended are never dropped — there is no intermediate queue
     //     to be full. A worker's task_ended is a suspended send on task_output,
     //     and this loop is its only consumer;
-    //   * the 10s timeout cadence — an `after` case that is re-armed after each
-    //     tick, instead of a timer task whose try_send could be refused by a
-    //     full queue (which also ended that task for good);
-    //   * one coroutine touches the coordinator and the ownership bookkeeping,
-    //     and nothing runs between a start and its record (#652).
+    //   * stalled requests — an `after` case armed for the moment the oldest
+    //     pending request stalls (never, when none is pending), instead of a
+    //     periodic scan of the chunks;
+    //   * one coroutine owns the chunks of the range and the ownership
+    //     bookkeeping, and nothing runs between a start and its record (#652).
+    //     Workers ask and report through task_output and are answered on their
+    //     own reply channels: a worker with nothing to download is suspended
+    //     until this loop has a chunk for it.
     //
     // What it does NOT preserve is the cross-source interleaving of the old
     // queue, which was an artefact of bridge scheduling and retry delays, not a
     // contract: no handler depends on a block arriving before or after a peer
     // snapshot. The arbitration is BIASED, in this order: input (stop, range,
-    // peers) first, the tick second, the workers' output last. Control before
+    // peers) first, the stall deadline second, the workers' output last. Control before
     // data, so a stop or a new range is attended within one wait however full
     // task_output is. Sustained control traffic may delay worker reports; this
     // priority policy does not provide a general starvation bound.
@@ -898,7 +991,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     arbitration.biased = true;
     auto events = ::asio::experimental::make_selector(executor, arbitration, std::stop_token{},
         ::asio::experimental::receive(input),
-        ::asio::experimental::after(next_tick),
+        ::asio::experimental::after(::asio::steady_timer::time_point::max()),
         ::asio::experimental::receive(task_output));
     constexpr size_t input_case = 0;
     constexpr size_t tick_case = 1;
@@ -907,7 +1000,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
     spdlog::info("[block_supervisor] Entering main event loop");
     uint64_t events_processed = 0;
     while (true) {
-        events.case_at<tick_case>().time = next_tick;
+        // When the oldest pending request stalls; never, with none pending.
+        auto const deadline = chunks ? chunks->next_deadline() : std::nullopt;
+        events.case_at<tick_case>().time = deadline.value_or(::asio::steady_timer::time_point::max());
         auto [ec, index] = co_await events.wait(::asio::as_tuple(::asio::deferred));
 
         if (ec) {
@@ -920,19 +1015,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 spdlog::error("[block_supervisor] Selection failed ({}, case {}); stopping",
                     ec.message(), index);
             }
-            if (coordinator) {
-                coordinator->stop();
-            }
+            stop_range();
             break;
         }
         ++events_processed;
 
         if (index == tick_case) {
-            // Periodic timeout - check for stalled chunks
-            if (coordinator && !coordinator->is_stopped()) {
-                coordinator->check_timeouts();
+            // A request has been pending for the stall timeout: its chunk goes
+            // back to the range, and to a waiting worker if there is one.
+            if (chunks) {
+                chunks->check_timeouts();
             }
-            next_tick = std::chrono::steady_clock::now() + timeout_tick;
             continue;
         }
 
@@ -946,6 +1039,16 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if ( ! co_await forward_block(*block)) {
                     break;
                 }
+                continue;
+            }
+
+            if (auto* request = std::get_if<chunk_request>(&msg)) {
+                on_chunk_request(*request);
+                continue;
+            }
+
+            if (auto* report = std::get_if<chunk_report>(&msg)) {
+                on_chunk_report(*report);
                 continue;
             }
 
@@ -969,10 +1072,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         if (std::holds_alternative<stop_request>(msg)) {
             spdlog::info("[block_supervisor] Stop signal received");
-            if (coordinator) {
-                spdlog::info("[block_supervisor] Stopping coordinator...");
-                coordinator->stop();
-            }
+            spdlog::info("[block_supervisor] Stopping the range...");
+            stop_range();
             break;
         }
 
@@ -987,12 +1088,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
     }
 
-    // Stop coordinator FIRST to signal all tasks to exit: their chunk claims
-    // return nothing and their selections armed with its token are aborted.
-    spdlog::info("[block_supervisor:shutdown] Step 1/3: Stopping coordinator...");
-    if (coordinator) {
-        coordinator->stop();
-    }
+    // Stop the range FIRST to signal all tasks to exit: their requests are
+    // answered with no work and their selections armed with its token are aborted.
+    spdlog::info("[block_supervisor:shutdown] Step 1/3: Stopping the range...");
+    stop_range();
 
     // Close the workers' output BEFORE waiting: a worker suspended on its
     // task_ended send completes with broken_pipe and exits. Nobody receives
@@ -1007,10 +1106,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
     co_await tasks.join();
     spdlog::info("[block_supervisor:shutdown] All tasks completed");
 
-    // NOW it's safe to destroy the coordinator. The selector is destroyed with
-    // this frame, after its last wait, as its contract requires.
-    spdlog::info("[block_supervisor] Destroying coordinator...");
-    coordinator.reset();
+    // NOW it's safe to drop the range. The selector is destroyed with this
+    // frame, after its last wait, as its contract requires.
+    spdlog::info("[block_supervisor] Dropping the range...");
+    chunks.reset();
+    range.reset();
 
     spdlog::info("[block_supervisor] Task ended cleanly");
 }

@@ -5,98 +5,16 @@
 #include <kth/node/sync/chunk_coordinator.hpp>
 
 #include <algorithm>
-#include <thread>
 
 #include <spdlog/spdlog.h>
 
 namespace kth::node::sync {
 
-chunk_coordinator::chunk_coordinator(
-    blockchain::header_index const& index,
-    uint32_t start_height,
-    uint32_t end_height,
-    chunk_coordinator_config const& config)
-    : config_(config)
-    , index_(index)
-    , start_height_(start_height)
-    , end_height_(end_height)
-    , total_chunks_((end_height - start_height + config.chunk_size) / config.chunk_size)
-    , slots_(total_chunks_)
-{
-    // Initialize all slots to FREE
-    for (auto& slot : slots_) {
-        slot.store(pack(FREE, 0, 0), std::memory_order_relaxed);
-    }
-
-    auto const mem_kb = (slots_.size() * bytes_per_slot) / 1024;
-    spdlog::info("[chunk_coordinator] Created: blocks {}-{}, {} chunks ({} KB)",
-        start_height, end_height, total_chunks_, mem_kb);
-}
-
 // =============================================================================
-// Peer Interface (Lock-Free)
+// download_range
 // =============================================================================
 
-std::optional<chunk_claim> chunk_coordinator::claim_chunk() {
-    if (stopped_.load(std::memory_order_acquire)) {
-        return std::nullopt;
-    }
-
-    // Start at the first chunk that may not be completed and move that mark
-    // over the completed chunks found on the way.
-    auto const floor = completed_floor_.load(std::memory_order_acquire);
-    auto new_floor = floor;
-    bool prefix_completed = true;
-
-    std::optional<chunk_claim> claim;
-    uint64_t now = 0;
-    for (size_t i = floor; i < slots_.size() && ! claim; ++i) {
-        auto word = slots_[i].load(std::memory_order_acquire);
-        auto const state = state_of(word);
-        if (prefix_completed && state == COMPLETED) {
-            new_floor = uint32_t(i) + 1;
-            continue;
-        }
-        prefix_completed = false;
-        if (state != FREE) {
-            continue;
-        }
-
-        if (now == 0) {
-            now = now_ms();
-        }
-        auto const number = (number_of(word) + 1) & uint32_t(number_mask);
-        if (slots_[i].compare_exchange_strong(word, pack(IN_PROGRESS, number, now),
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            claim = chunk_claim{.chunk_id = uint32_t(i), .number = number};
-        }
-        // Otherwise another peer took it first: go on to the next one.
-    }
-
-    // Forward only: a concurrent claim may have moved it further already.
-    auto seen = floor;
-    while (seen < new_floor && ! completed_floor_.compare_exchange_weak(seen, new_floor,
-            std::memory_order_acq_rel, std::memory_order_acquire)) {
-    }
-
-    if (claim) {
-        auto const [block_start, block_end] = chunk_range(claim->chunk_id);
-        spdlog::debug("[chunk_coordinator] Claimed chunk {} (blocks {}-{})",
-            claim->chunk_id, block_start, block_end);
-    }
-
-    // No claim: every chunk is held or completed. The caller waits and retries,
-    // or leaves once is_complete() says so.
-    return claim;
-}
-
-std::pair<uint32_t, uint32_t> chunk_coordinator::chunk_range(uint32_t chunk_id) const {
-    uint32_t block_start = start_height_ + chunk_id * uint32_t(config_.chunk_size);
-    uint32_t block_end = std::min(block_start + uint32_t(config_.chunk_size) - 1, end_height_);
-    return {block_start, block_end};
-}
-
-hash_digest chunk_coordinator::get_block_hash(uint32_t height) const {
+hash_digest download_range::get_block_hash(uint32_t height) const {
     // Address by height through the active chain: the index also holds side
     // branches, numbered in arrival order, so an entry's index is not its height.
     auto const idx = index_.active_at(static_cast<int32_t>(height));
@@ -106,19 +24,129 @@ hash_digest chunk_coordinator::get_block_hash(uint32_t height) const {
     return index_.get_hash(idx);
 }
 
-void chunk_coordinator::chunk_downloaded(chunk_claim claim) {
-    if (claim.chunk_id >= slots_.size()) {
+// =============================================================================
+// chunk_coordinator
+// =============================================================================
+
+chunk_coordinator::chunk_coordinator(
+    uint32_t start_height,
+    uint32_t end_height,
+    chunk_coordinator_config const& config)
+    : config_(config)
+    , start_height_(start_height)
+    , end_height_(end_height)
+    , total_chunks_(uint32_t((end_height - start_height + config.chunk_size) / config.chunk_size))
+    , slots_(total_chunks_)
+{
+    spdlog::info("[chunk_coordinator] Created: blocks {}-{}, {} chunks ({} KB)",
+        start_height, end_height, total_chunks_, (slots_.size() * sizeof(slot)) / 1024);
+}
+
+// -----------------------------------------------------------------------------
+// Requests from workers
+// -----------------------------------------------------------------------------
+
+void chunk_coordinator::request_chunk(chunk_reply_channel_ptr reply, time_point now) {
+    if ( ! reply) {
         return;
     }
+    if (is_complete()) {
+        reply->try_send(chunk_reply{});
+        return;
+    }
+    // Behind the requests already waiting, which are served first.
+    waiting_.push_back(std::move(reply));
+    serve_waiting(now);
+}
 
-    // One attempt is enough: the only thing that can change a held slot under
-    // its holder is the stall check freeing it, and then there is no hold left
-    // to mark.
-    auto word = slots_[claim.chunk_id].load(std::memory_order_acquire);
-    if (state_of(word) == IN_PROGRESS && number_of(word) == claim.number) {
-        slots_[claim.chunk_id].compare_exchange_strong(word,
-            pack(DELIVERING, claim.number, time_of(word)),
-            std::memory_order_acq_rel, std::memory_order_relaxed);
+void chunk_coordinator::dismiss_waiting() {
+    for (auto const& reply : waiting_) {
+        reply->try_send(chunk_reply{});
+    }
+    waiting_.clear();
+}
+
+void chunk_coordinator::serve_waiting(time_point now) {
+    while ( ! waiting_.empty()) {
+        auto const claim = claim_chunk(now);
+        if ( ! claim) {
+            break;
+        }
+        auto const [block_start, block_end] = chunk_range(claim->chunk_id);
+        auto const reply = std::move(waiting_.front());
+        waiting_.pop_front();
+        if ( ! reply->try_send(chunk_reply{chunk_assignment{*claim, block_start, block_end}})) {
+            // The worker's channel is closed or still holds an answer it never
+            // took: nobody will download this chunk. Free it for the next one.
+            spdlog::debug("[chunk_coordinator] Chunk {} could not be handed to its worker", claim->chunk_id);
+            release(claim->chunk_id);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Chunk state
+// -----------------------------------------------------------------------------
+
+std::optional<chunk_claim> chunk_coordinator::claim_chunk(time_point now) {
+    while (completed_floor_ < slots_.size() && slots_[completed_floor_].state == COMPLETED) {
+        ++completed_floor_;
+    }
+    free_floor_ = std::max(free_floor_, completed_floor_);
+    while (free_floor_ < slots_.size() && slots_[free_floor_].state != FREE) {
+        ++free_floor_;
+    }
+    if (free_floor_ >= slots_.size()) {
+        // Every chunk is held or completed.
+        return std::nullopt;
+    }
+
+    auto const chunk_id = free_floor_;
+    auto& taken = slots_[chunk_id];
+    taken.state = IN_PROGRESS;
+    ++taken.number;
+    ++chunks_held_;
+    ++free_floor_;
+
+    chunk_claim const claim{.chunk_id = chunk_id, .number = taken.number};
+    pending_.push_back({now + std::chrono::seconds(config_.stall_timeout_secs), claim});
+
+    auto const [block_start, block_end] = chunk_range(chunk_id);
+    spdlog::debug("[chunk_coordinator] Claimed chunk {} (blocks {}-{})", chunk_id, block_start, block_end);
+    return claim;
+}
+
+std::pair<uint32_t, uint32_t> chunk_coordinator::chunk_range(uint32_t chunk_id) const {
+    uint32_t block_start = start_height_ + chunk_id * uint32_t(config_.chunk_size);
+    uint32_t block_end = std::min(block_start + uint32_t(config_.chunk_size) - 1, end_height_);
+    return {block_start, block_end};
+}
+
+bool chunk_coordinator::is_pending(chunk_claim claim) const {
+    if (claim.chunk_id >= slots_.size()) {
+        return false;
+    }
+    auto const& current = slots_[claim.chunk_id];
+    return current.state == IN_PROGRESS && current.number == claim.number;
+}
+
+bool chunk_coordinator::holds(chunk_claim claim) const {
+    if (claim.chunk_id >= slots_.size()) {
+        return false;
+    }
+    auto const& current = slots_[claim.chunk_id];
+    return (current.state == IN_PROGRESS || current.state == DELIVERING) && current.number == claim.number;
+}
+
+void chunk_coordinator::release(uint32_t chunk_id) {
+    slots_[chunk_id].state = FREE;
+    --chunks_held_;
+    free_floor_ = std::min(free_floor_, chunk_id);
+}
+
+void chunk_coordinator::chunk_downloaded(chunk_claim claim) {
+    if (is_pending(claim)) {
+        slots_[claim.chunk_id].state = DELIVERING;
     }
 }
 
@@ -130,119 +158,84 @@ void chunk_coordinator::chunk_completed(chunk_claim claim) {
     // A chunk that stalled is freed and claimed again, so two peers can report
     // the same one, and the first can report it while the slot is FREE or
     // already taken by the second. Whichever state it leaves, the blocks were
-    // delivered; the exchange tells the first report from the later ones.
-    auto const previous = slots_[claim.chunk_id].exchange(
-        pack(COMPLETED, 0, 0), std::memory_order_acq_rel);
-    if (state_of(previous) == COMPLETED) {
+    // delivered; only the first report counts.
+    auto& current = slots_[claim.chunk_id];
+    if (current.state == COMPLETED) {
         spdlog::debug("[chunk_coordinator] Chunk {} completed again, already counted", claim.chunk_id);
         return;
     }
-    chunks_completed_.fetch_add(1, std::memory_order_relaxed);
-
+    if (current.state != FREE) {
+        --chunks_held_;
+    }
+    current.state = COMPLETED;
+    ++chunks_completed_;
     spdlog::debug("[chunk_coordinator] Chunk {} completed", claim.chunk_id);
+
+    if (is_complete()) {
+        // Nothing is left to hand out: the workers still waiting can leave.
+        dismiss_waiting();
+    }
 }
 
-void chunk_coordinator::chunk_failed(chunk_claim claim) {
-    if (claim.chunk_id >= slots_.size()) {
+void chunk_coordinator::chunk_failed(chunk_claim claim, time_point now) {
+    // Only by the peer that holds it: a claim that stalled and was handed on
+    // names a hold that is gone, and a completed chunk stays completed.
+    if ( ! holds(claim)) {
         return;
     }
-
-    // Reset to FREE so another peer can take it, but only by the peer that
-    // holds it: a claim that stalled and was handed on names a hold that is
-    // gone, and a completed chunk stays completed.
-    auto word = slots_[claim.chunk_id].load(std::memory_order_acquire);
-    while (holds(word, claim)) {
-        if (slots_[claim.chunk_id].compare_exchange_weak(word, pack(FREE, claim.number, 0),
-                std::memory_order_acq_rel, std::memory_order_acquire)) {
-            spdlog::debug("[chunk_coordinator] Chunk {} failed, reset to FREE for retry", claim.chunk_id);
-            return;
-        }
-    }
+    release(claim.chunk_id);
+    spdlog::debug("[chunk_coordinator] Chunk {} failed, reset to FREE for retry", claim.chunk_id);
+    serve_waiting(now);
 }
 
-// =============================================================================
-// Status
-// =============================================================================
+// -----------------------------------------------------------------------------
+// Stalled requests
+// -----------------------------------------------------------------------------
 
-void chunk_coordinator::check_timeouts() {
-    check_timeouts(std::chrono::steady_clock::now());
+std::optional<chunk_coordinator::time_point> chunk_coordinator::next_deadline() {
+    // Requests that were answered, given back or handed on are no longer
+    // pending: their entries are dropped when they reach the front.
+    while ( ! pending_.empty() && ! is_pending(pending_.front().claim)) {
+        pending_.pop_front();
+    }
+    if (pending_.empty()) {
+        return std::nullopt;
+    }
+    return pending_.front().deadline;
 }
 
-void chunk_coordinator::check_timeouts(std::chrono::steady_clock::time_point time) {
-    if (stopped_.load(std::memory_order_acquire)) {
-        return;
-    }
-
-    uint64_t const now = to_ms(time);
-    uint64_t const timeout_ms = uint64_t(config_.stall_timeout_secs) * 1000;
-
-    for (size_t i = completed_floor_.load(std::memory_order_acquire); i < slots_.size(); ++i) {
-        auto word = slots_[i].load(std::memory_order_acquire);
-        // Only a request can stall. The claim time travels in the same word as
-        // the state, so the swap frees this claim or nothing: a chunk claimed
-        // again in between has another word.
-        if (state_of(word) != IN_PROGRESS) {
-            continue;
-        }
-        // A chunk claimed after the clock was read is newer than `now`, and the
-        // unsigned difference would wrap into a huge age.
-        auto const claimed_at = time_of(word);
-        if (now <= claimed_at || now - claimed_at <= timeout_ms) {
-            continue;
-        }
-        if (slots_[i].compare_exchange_strong(word, pack(FREE, number_of(word), 0),
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+void chunk_coordinator::check_timeouts(time_point now) {
+    bool freed = false;
+    while ( ! pending_.empty()) {
+        auto const front = pending_.front();
+        if (is_pending(front.claim)) {
+            if (front.deadline > now) {
+                break;
+            }
+            release(front.claim.chunk_id);
+            freed = true;
             spdlog::warn("[chunk_coordinator] Chunk {} timed out after {}s, reset to FREE",
-                i, config_.stall_timeout_secs);
+                front.claim.chunk_id, config_.stall_timeout_secs);
         }
+        pending_.pop_front();
+    }
+    if (freed) {
+        serve_waiting(now);
     }
 }
 
-bool chunk_coordinator::is_complete() const {
-    return chunks_completed_.load(std::memory_order_acquire) >= total_chunks_;
-}
-
-bool chunk_coordinator::is_stopped() const {
-    return stopped_.load(std::memory_order_acquire);
-}
-
-void chunk_coordinator::stop() {
-    stopped_.store(true, std::memory_order_release);
-    // After the flag, so a worker woken by the token observes is_stopped().
-    // std::stop_source is thread safe and idempotent.
-    stop_source_.request_stop();
-}
+// -----------------------------------------------------------------------------
+// Status
+// -----------------------------------------------------------------------------
 
 chunk_coordinator::progress chunk_coordinator::get_progress() const {
-    uint32_t in_progress = 0;
-    for (size_t i = completed_floor_.load(std::memory_order_acquire); i < slots_.size(); ++i) {
-        auto const state = state_of(slots_[i].load(std::memory_order_acquire));
-        if (state == IN_PROGRESS || state == DELIVERING) ++in_progress;
-    }
-
     return {
         .total_chunks = total_chunks_,
-        .chunks_completed = chunks_completed_.load(std::memory_order_acquire),
-        .chunks_in_progress = in_progress,
+        .chunks_completed = chunks_completed_,
+        .chunks_in_progress = chunks_held_,
         .start_height = start_height_,
         .end_height = end_height_
     };
-}
-
-// =============================================================================
-// Private Helpers
-// =============================================================================
-
-uint64_t chunk_coordinator::now_ms() {
-    return to_ms(std::chrono::steady_clock::now());
-}
-
-uint64_t chunk_coordinator::to_ms(std::chrono::steady_clock::time_point time) {
-    return uint64_t(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            time.time_since_epoch()
-        ).count()
-    );
 }
 
 } // namespace kth::node::sync

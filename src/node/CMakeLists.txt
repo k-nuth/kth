@@ -594,10 +594,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   #     TIMEOUT 60
   #     PROCESSORS 4
   #     RUN_SERIAL TRUE)
-
-  # Chunk coordinator simulation tool
-  add_executable(chunk_sim tools/chunk_sim.cpp)
-  target_link_libraries(chunk_sim PRIVATE ${PROJECT_NAME})
 endif()
 
 
