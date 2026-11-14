@@ -112,6 +112,21 @@ request still its own when it is full, and ends on the supervisor's receive, on
 the channel's `close()` (`broken_pipe`) or on the network's stop
 (`operation_aborted`). Nothing polls and nothing is rebuilt.
 
+### The coordinator's chunk results
+
+Validation and storage results still use `concurrent_channel`s. Both bridges
+await room in the coordinator's event channel before taking another result.
+Dropping one leaves a gap in its consecutive chunk results and the body range
+in flight, so downloads can stall short of the header tip until a restart.
+A full channel now applies backpressure without losing the result or ending
+the bridge.
+
+These bridges do not participate in the reorg barrier. Storage's own bounded
+result sends remain unchanged so storage can reach that barrier while the
+coordinator waits for it. As with the other `concurrent_channel` bridges,
+shutdown cancels outstanding operations before closing the channels: `close()`
+alone does not wake a send already waiting for room.
+
 ### Per-request response channels of a peer
 
 `peer_session::response_channel` (`block_responses()`, `addr_responses()`) is a
