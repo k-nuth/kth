@@ -602,7 +602,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_download_channel& output,
     blockchain::header_organizer& organizer,
     fast_validation_input_channel* fast_val,
-    download_worker_launcher launcher
+    download_worker_launcher launcher,
+    std::chrono::milliseconds timeout_tick
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
@@ -645,7 +646,6 @@ std::atomic<uint32_t> g_active_download_peers{0};
     auto last_stats_time = std::chrono::steady_clock::now();
 
     // Periodic timeout check cadence (stalled chunk detection).
-    constexpr auto timeout_tick = std::chrono::seconds(10);
     auto next_tick = std::chrono::steady_clock::now() + timeout_tick;
 
     // Helper to spawn download task for a peer (returns true if spawned)
@@ -929,8 +929,15 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         if (index == tick_case) {
             // Periodic timeout - check for stalled chunks
-            if (coordinator && !coordinator->is_stopped()) {
+            if (coordinator && ! coordinator->is_stopped()) {
                 coordinator->check_timeouts();
+                // Workers can all end while the range is unfinished, with
+                // nothing else arriving to start one again.
+                if ( ! coordinator->is_complete() && ownership.worker_count() == 0) {
+                    for (auto const& [nonce, _] : known_peers) {
+                        (void)spawn_known(nonce);
+                    }
+                }
             }
             next_tick = std::chrono::steady_clock::now() + timeout_tick;
             continue;
