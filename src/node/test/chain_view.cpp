@@ -62,7 +62,8 @@ constexpr uint64_t reserve_pool_entries = 60000;
 // remain within the captured pool, so prevout refresh never invents funding.
 inline size_t seed_template_pool(blockchain::mempool& pool,
                                 domain::chain::transaction const& coinbase,
-                                uint64_t count, domain::script_flags_t flags) {
+                                uint64_t count, domain::script_flags_t flags,
+                                uint32_t sigchecks = 1u) {
     domain::machine::operation::list ops;
     for (size_t i = 0; i < 40; ++i) ops.emplace_back(domain::machine::opcode::nop);
     ops.emplace_back(domain::machine::opcode::push_positive_1);
@@ -96,7 +97,7 @@ inline size_t seed_template_pool(blockchain::mempool& pool,
         previous = tx.hash();
         admitted += pool.add(blockchain::mempool_entry{
             std::make_shared<domain::message::transaction>(tx), fee,
-            uint32_t(tx.serialized_size(true)), 1u, i});
+            uint32_t(tx.serialized_size(true)), sigchecks, i});
     }
     return admitted;
 }
@@ -213,6 +214,72 @@ TEST_CASE("a started chain publishes the tip it has connected", "[chain_view]") 
     // context for the block after it.
     CHECK(view->state->height() == 1u);
     CHECK(view->tip_hash == domain::chain::block::genesis_regtest().hash());
+}
+
+TEST_CASE("tip subscribers wake only after template capture reopens", "[chain_view][sv2 template_provider]") {
+    built_chain built("view_tip_notification", 1);
+    auto& chain = built.chain();
+    auto const channel = chain.subscribe_blockchain();
+    REQUIRE(channel);
+
+    bool received = false;
+    auto const receive = [&] {
+        return channel->try_receive([&](std::error_code ec, size_t height,
+                                        auto incoming, auto outgoing) {
+            REQUIRE_FALSE(ec);
+            CHECK_FALSE(chain.transition_in_progress());
+            CHECK(height == chain.chain_view()->connected_tip_height);
+            CHECK_FALSE(incoming);
+            CHECK_FALSE(outgoing);
+            received = true;
+        });
+    };
+
+    built.add_headers(built.trunk, 1);
+    CHECK_FALSE(receive());
+    REQUIRE(chain.begin_transition());
+    REQUIRE_FALSE(chain.publish_chain_view(0));
+    CHECK_FALSE(receive());
+
+    chain.end_transition();
+    CHECK(receive());
+    CHECK(received);
+    chain.unsubscribe_blockchain(channel);
+}
+
+TEST_CASE("mining templates keep the caller's SigChecks reserve in the cache key", "[chain_view][sv2 template_provider]") {
+    // Templates refresh their prevouts, so the pool spends a mature coinbase.
+    // 100 entries of 3000 SigChecks each are more than one block may hold, so
+    // the SigChecks reserve decides how many are selected.
+    constexpr uint32_t chain_len = 140;
+    built_chain built("view_sigchecks_reserve", chain_len);
+    built.add_headers(built.trunk, 1);
+    connect_bodies(built.fixture, built.trunk, 1);
+    auto& chain = built.chain();
+
+    REQUIRE(seed_template_pool(chain.mempool_ref(), built.trunk.front().transactions().front(),
+        100, chain.chain_view()->state->enabled_flags(), 3000u) == 100);
+
+    auto const fetch = [&](uint64_t reserve) {
+        ::asio::io_context ctx;
+        std::optional<blockchain::mining_template> out;
+        ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+            if (auto const result = co_await chain.fetch_mining_template(blockchain::coinbase_reserve{1000u, reserve})) {
+                out = *result;
+            }
+        }, ::asio::detached);
+        ctx.run_for(std::chrono::seconds(30));
+        REQUIRE(out);
+        return *out;
+    };
+
+    auto const original = fetch(0u);
+    auto const reserved = fetch(65535u);
+    REQUIRE_FALSE(reserved.selection.txs.empty());
+    CHECK(reserved.selection.txs.size() < original.selection.txs.size());
+    CHECK(reserved.selection.total_sigchecks + 65535u < reserved.sigchecks_limit);
+    auto const restored = fetch(0u);
+    CHECK(restored.selection.txs.size() == original.selection.txs.size());
 }
 
 TEST_CASE("headers alone move neither the view nor the generation", "[chain_view]") {

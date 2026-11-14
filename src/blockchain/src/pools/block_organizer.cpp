@@ -56,8 +56,17 @@ block_organizer::block_broadcaster::channel_ptr block_organizer::subscribe() {
     return broadcaster_.subscribe();
 }
 
+block_organizer::block_broadcaster::channel_ptr block_organizer::subscribe(
+    block_broadcaster::executor_type executor) {
+    return broadcaster_.subscribe(std::move(executor));
+}
+
 void block_organizer::unsubscribe(block_broadcaster::channel_ptr const& channel) {
     broadcaster_.unsubscribe(channel);
+}
+
+void block_organizer::notify_tip(size_t height) {
+    broadcaster_.publish(height, {}, {});
 }
 
 void block_organizer::filter(get_data_ptr message) const {

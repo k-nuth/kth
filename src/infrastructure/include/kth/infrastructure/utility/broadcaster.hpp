@@ -69,15 +69,19 @@ public:
         close();
     }
 
-    /// Subscribe and get a channel to receive events.
+    /// Subscribe and get a channel to receive events on `executor`.
     /// Returns nullptr if the broadcaster is stopped.
+    ///
+    /// A channel's completions, including the close notice, run through the
+    /// channel's executor. A subscriber that must outlive this publisher's
+    /// executor passes its own.
     [[nodiscard]]
-    channel_ptr subscribe() {
+    channel_ptr subscribe(executor_type executor) {
         if (stopped_) {
             return nullptr;
         }
 
-        auto channel = std::make_shared<channel_type>(executor_, buffer_size_);
+        auto channel = std::make_shared<channel_type>(std::move(executor), buffer_size_);
 
         {
             std::lock_guard lock(mutex_);
@@ -85,6 +89,13 @@ public:
         }
 
         return channel;
+    }
+
+    /// Subscribe on this broadcaster's executor.
+    /// Returns nullptr if the broadcaster is stopped.
+    [[nodiscard]]
+    channel_ptr subscribe() {
+        return subscribe(executor_);
     }
 
     /// Unsubscribe a specific channel.
