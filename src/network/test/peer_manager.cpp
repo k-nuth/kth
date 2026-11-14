@@ -116,6 +116,53 @@ TEST_CASE("peer_manager construction unlimited", "[peer_manager]") {
     REQUIRE(!manager.stopped());
 }
 
+TEST_CASE("peer_manager keys proxied peers by destination", "[peer_manager][socks5]") {
+    ::asio::io_context ctx;
+    peer_manager manager(ctx.get_executor());
+    auto const settings = make_test_settings_pm();
+    auto make = [&](std::string const& host) {
+        return std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+            infrastructure::config::endpoint(host, 8333));
+    };
+    auto first = make("First.Example.");
+    auto second = make("second.example");
+    auto duplicate = make("first.example");
+    CHECK( ! first->has_numeric_authority());
+    CHECK(first->destination().host() == "first.example");
+    CHECK(first->authority_with_agent() == "first.example:8333");
+    auto numeric = make("[2001:DB8::1]");
+    CHECK(numeric->has_numeric_authority());
+    CHECK(numeric->authority().to_hostname() == "[2001:db8::1]");
+
+    std::vector<code> admissions;
+    std::vector<bool> found;
+    bool done = false;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        admissions.push_back(co_await manager.add(first));
+        admissions.push_back(co_await manager.add(second));
+        admissions.push_back(co_await manager.add(duplicate));
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        found.push_back(co_await manager.exists_by_destination(
+            infrastructure::config::endpoint("missing.example", 8333)));
+        found.push_back(co_await manager.exists_by_authority(infrastructure::config::authority::any()));
+        found.push_back(co_await manager.exists_by_ip(::asio::ip::address_v6::any()));
+        co_await manager.remove(first);
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        manager.stop_all();
+        found.push_back(co_await manager.exists_by_destination(second->destination()));
+        done = true;
+    }, ::asio::detached);
+    run_until_pm(ctx, [&] { return done; });
+    REQUIRE(done);
+    REQUIRE(admissions.size() == 3);
+    CHECK(admissions[0] == error::success);
+    CHECK(admissions[1] == error::success);
+    CHECK(admissions[2] == error::address_in_use);
+    CHECK(found == std::vector<bool>{true, false, false, false, false, false});
+    kth::test::drain_context(ctx);
+    CHECK(manager.count_snapshot() == 0);
+}
+
 // =============================================================================
 // Add/Remove Tests
 // =============================================================================
