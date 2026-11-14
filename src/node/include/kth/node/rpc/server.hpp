@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_RPC_SERVER_HPP
 #define KTH_NODE_RPC_SERVER_HPP
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -34,8 +35,11 @@ namespace kth::node::rpc {
 // and routes them through the dispatcher. Started only when rpc.enabled is true
 // and the build defines KTH_WITH_RPC.
 struct server {
+    // `started` is when the node started, which uptime counts from. It
+    // defaults to the server's construction for servers built on their own.
     server(rpc_settings const& settings, blockchain::block_chain& chain,
-        ::asio::any_io_executor executor, p2p_node const* network = nullptr);
+        ::asio::any_io_executor executor, p2p_node const* network = nullptr,
+        std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now());
 
     // Bind the listener and accept connections until the executor is stopped.
     // Intended to be co_spawned. Returns on a fatal bind error or shutdown.
@@ -57,6 +61,7 @@ private:
     rpc_settings const& settings_;
     blockchain::block_chain& chain_;
     p2p_node const* network_;
+    std::chrono::steady_clock::time_point const started_;
     dispatcher dispatcher_;
     mining::job_store jobs_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header
