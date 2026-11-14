@@ -128,11 +128,10 @@ bool tail_is_all_zero(FILE* file, uint32_t offset, uint32_t file_size) {
 }
 
 hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_data) {
-    data_chunk input;
-    input.reserve(prev_hash.size() + undo_data.size());
-    input.insert(input.end(), prev_hash.begin(), prev_hash.end());
-    input.insert(input.end(), undo_data.begin(), undo_data.end());
-    return bitcoin_hash(input);
+    // SHA-256 twice over the parent hash followed by the payload. The two
+    // pieces are hashed one after the other: the payload is not copied behind
+    // the parent hash first.
+    return sha256_hash(sha256_hash(prev_hash, undo_data));
 }
 
 } // anonymous namespace
@@ -1372,13 +1371,8 @@ bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
         return false;
     }
 
-    // Calculate checksum: SHA256(prev_hash || undo_data)
-    data_chunk checksum_input;
-    checksum_input.reserve(prev_hash.size() + undo_data.size());
-    checksum_input.insert(checksum_input.end(), prev_hash.begin(), prev_hash.end());
-    checksum_input.insert(checksum_input.end(), undo_data.begin(), undo_data.end());
-
-    auto checksum = bitcoin_hash(checksum_input);
+    // The same function the readers verify with.
+    auto const checksum = undo_checksum(prev_hash, undo_data);
 
     // Write checksum
     if (std::fwrite(checksum.data(), 1, checksum.size(), file) != checksum.size()) {

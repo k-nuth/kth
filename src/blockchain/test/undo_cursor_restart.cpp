@@ -1412,3 +1412,56 @@ TEST_CASE("missing files - a directory that cannot be listed is refused",
     CHECK_FALSE(opened);
     CHECK_FALSE(store.append_enabled());
 }
+
+TEST_CASE("undo record - the checksum on disk is SHA-256 twice over the parent hash and the payload",
+          "[database][undo][checksum]") {
+    // The stored value, computed here from the bytes of the file and the
+    // definition, whatever way the store computes it.
+    scratch s("checksum_on_disk");
+    s.make_block_file(0);
+
+    uint8_t record = 0;
+    for (size_t const script_bytes : {size_t(0), size_t(1), size_t(55), size_t(1000), size_t(70000)}) {
+        // A different block each time: one file holds one record per block.
+        ++record;
+        auto const block = make_hash(0xA1, record);
+        auto const parent = make_hash(0xA0, record);
+        uint32_t payload_offset = 0;
+        size_t payload_size = 0;
+        {
+            block_store store(s.dir, regtest_magic);
+            REQUIRE(store.initialize());
+            authorise_appends(store);
+
+            auto const undo = make_undo(uint8_t(0xA0 + record), record, script_bytes);
+            payload_size = undo.serialized_size();
+            auto const pos = store.write_undo(undo, 0, block, parent);
+            REQUIRE(pos.file == 0);
+            payload_offset = pos.pos;
+            REQUIRE(store.flush_undo(std::array<int32_t, 1>{0}).has_value());
+
+            // The reader computes the same value: the record is accepted with
+            // its parent, and refused with another one.
+            REQUIRE(store.read_undo(pos, block, parent).has_value());
+            REQUIRE_FALSE(store.read_undo(pos, block, make_hash(0x5A, record)).has_value());
+        }
+
+        // The parent hash, then the payload as it was written.
+        data_chunk hashed(parent.begin(), parent.end());
+        hashed.resize(parent.size() + payload_size);
+        hash_digest stored{};
+        auto const path = s.rev(0).string();
+        auto* const file = std::fopen(path.c_str(), "rb");
+        REQUIRE(file != nullptr);
+        auto const sought = std::fseek(file, long(payload_offset), SEEK_SET);
+        auto const payload_read = std::fread(hashed.data() + parent.size(), 1, payload_size, file);
+        auto const checksum_read = std::fread(stored.data(), 1, stored.size(), file);
+        std::fclose(file);
+        REQUIRE(sought == 0);
+        REQUIRE(payload_read == payload_size);
+        REQUIRE(checksum_read == stored.size());
+
+        CAPTURE(script_bytes);
+        REQUIRE(stored == bitcoin_hash(hashed));
+    }
+}
