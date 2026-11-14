@@ -419,7 +419,18 @@ std::pair<hash_digest, size_t> script::generate_version_0_signature_hash(
     script const& script_code,
     uint64_t value,
     uint8_t sighash_type,
-    script_flags_t active_flags) {
+    script_flags_t active_flags,
+    sighash_cache* shared) {
+
+    // The hashes of the whole transaction come from `shared` when the caller
+    // keeps them for this transaction, and are computed here otherwise.
+    if (shared != nullptr && &shared->tx() != &tx) {
+        shared = nullptr;
+    }
+    auto const inpoints_hash = [&] { return shared ? shared->inpoints_hash() : tx.inpoints_hash(); };
+    auto const sequences_hash = [&] { return shared ? shared->sequences_hash() : tx.sequences_hash(); };
+    auto const outputs_hash = [&] { return shared ? shared->outputs_hash() : tx.outputs_hash(); };
+    auto const utxos_hash = [&] { return shared ? shared->utxos_hash() : tx.utxos_hash(); };
 
     // Unlike unversioned algorithm this does not allow an invalid input index.
     KTH_ASSERT(input_index < tx.inputs().size());
@@ -477,15 +488,15 @@ std::pair<hash_digest, size_t> script::generate_version_0_signature_hash(
     write_ok(writer.write_little_endian<uint32_t>(tx.version()));
 
     // 2. inpoints hash (32-byte hash).
-    write_ok(writer.write_hash( ! any ? tx.inpoints_hash() : null_hash));
+    write_ok(writer.write_hash( ! any ? inpoints_hash() : null_hash));
 
     // 3. Optional utxos hash (32-byte hash).
     if (is_enabled(active_flags, domain::machine::script_flags::bch_tokens) && utxos) {
-        write_ok(writer.write_hash(tx.utxos_hash()));
+        write_ok(writer.write_hash(utxos_hash()));
     }
 
     // 4. sequences hash (32-byte hash).
-    write_ok(writer.write_hash( ! any && all ? tx.sequences_hash() : null_hash));
+    write_ok(writer.write_hash( ! any && all ? sequences_hash() : null_hash));
 
     // 5. outpoint (32-byte hash + 4-byte little endian).
     write_ok(input.previous_output().to_data(writer, true));
@@ -508,7 +519,7 @@ std::pair<hash_digest, size_t> script::generate_version_0_signature_hash(
 
     // 10. outputs hash (32-byte hash).
     write_ok(writer.write_hash(all ?
-        tx.outputs_hash() :
+        outputs_hash() :
         (single && input_index < tx.outputs().size() ?
             single_out_hash() :
             null_hash)));
@@ -537,6 +548,7 @@ std::pair<hash_digest, size_t> script::generate_signature_hash(
     , script_version version
 #endif // ! KTH_CURRENCY_BCH
     , uint64_t value
+    , sighash_cache* shared
 ) {
 
 #if defined(KTH_CURRENCY_BCH)
@@ -544,7 +556,7 @@ std::pair<hash_digest, size_t> script::generate_signature_hash(
     // Otherwise fall back to classic sighash (pre-fork transactions).
     auto const has_forkid = (sighash_type & sighash_algorithm::forkid) != 0;
     if (has_forkid && is_enabled(active_flags, domain::machine::script_flags::bch_sighash_forkid)) {
-        return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags);
+        return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags, shared);
     }
     return script::generate_unversioned_signature_hash(tx, input_index, script_code, sighash_type);
 #else
@@ -552,7 +564,7 @@ std::pair<hash_digest, size_t> script::generate_signature_hash(
         case script_version::unversioned:
             return generate_unversioned_signature_hash(tx, input_index, script_code, sighash_type);
         case script_version::zero:
-            return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags);
+            return generate_version_0_signature_hash(tx, input_index, script_code, value, sighash_type, active_flags, shared);
         case script_version::reserved:
         default:
             KTH_ASSERT_MSG(false, "invalid script version");
@@ -573,7 +585,8 @@ std::pair<bool, size_t> script::check_signature(
 #if ! defined(KTH_CURRENCY_BCH)
     , script_version version
 #endif // ! KTH_CURRENCY_BCH
-    , uint64_t value) {
+    , uint64_t value
+    , sighash_cache* shared) {
 
     if (public_key.empty()) {
         return {false, 0};
@@ -587,7 +600,8 @@ std::pair<bool, size_t> script::check_signature(
 #if ! defined(KTH_CURRENCY_BCH)
                                                                 version,
 #endif // ! KTH_CURRENCY_BCH
-                                                                value);
+                                                                value,
+                                                                shared);
 
     return { verify_signature(public_key, sighash, signature), size };
 }

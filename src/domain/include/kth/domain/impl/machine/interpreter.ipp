@@ -1870,7 +1870,8 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
             script_code,
             sighash,
             program.flags(),
-            program.value());
+            program.value(),
+            program.sighash_cache());
 
         bool verified;
         {
@@ -1921,7 +1922,8 @@ std::pair<interpreter::result, size_t> op_check_sig_common(program& program, opc
 #if ! defined(KTH_CURRENCY_BCH)
         version,
 #endif
-        program.value()
+        program.value(),
+        program.sighash_cache()
     );
 
     // BCHN: TallySigChecks(1) and TallyHashOp are called whenever sig is non-empty,
@@ -2245,7 +2247,8 @@ interpreter::result op_check_multisig_internal(program& program, opcode op_code)
                 script_code,
                 sighash,
                 program.flags(),
-                program.value());
+                program.value(),
+                program.sighash_cache());
 
             // Schnorr multisig: every check must pass, so it may be deferred.
             bool verified;
@@ -2349,7 +2352,8 @@ interpreter::result op_check_multisig_internal(program& program, opcode op_code)
 #if ! defined(KTH_CURRENCY_BCH)
                 version,
 #endif // ! KTH_CURRENCY_BCH
-                program.value()
+                program.value(),
+                program.sighash_cache()
             );
             sig_verified = res;
         }

@@ -318,6 +318,14 @@ private:
 KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value);
 KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags);
 
+/// The same, for a caller that verifies several inputs of `tx`: `shared` keeps
+/// the hashes of the whole transaction that every signature hash uses, so they
+/// are computed once for the transaction instead of once per signature. Null
+/// is the functions above.
+/// \pre `shared`, when not null, was created for `tx`.
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value, sighash_cache* shared);
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags, sighash_cache* shared);
+
 code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 code verify(transaction const& tx, uint32_t input, script_flags_t flags);
 
