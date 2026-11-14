@@ -87,6 +87,11 @@ class KthRecipe(KnuthConanFileV2):
         # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
         # whose toolchain is found).
         "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
+        # How SHA-256 picks its implementation: runtime (CPU detection when the
+        # library is loaded), compile_time (fixed by the instructions of the
+        # target) or auto: compile_time when the package is built for the CPU
+        # of this machine (march_strategy=optimized), runtime otherwise.
+        "sha256_dispatch": ["auto", "runtime", "compile_time"],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -126,6 +131,7 @@ class KthRecipe(KnuthConanFileV2):
         "mempool_backend": "cfm",
         "signature_verification": "secp256k1",
         "secp256k1_gpu": "none",
+        "sha256_dispatch": "auto",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -381,6 +387,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
         tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
+        tc.variables["KTH_SHA256_DISPATCH"] = self._sha256_dispatch()
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
@@ -432,6 +439,18 @@ class KthRecipe(KnuthConanFileV2):
     def package(self):
         cmake = CMake(self)
         cmake.install()
+
+    def _sha256_dispatch(self):
+        """A package built for the CPU of this machine can fix the SHA-256
+        implementation: the instructions it would detect are the ones it was
+        compiled for. A package built for a reference microarchitecture runs on
+        CPUs that have more than it assumes, so it detects them."""
+        dispatch = str(self.options.sha256_dispatch)
+        if dispatch != "auto":
+            return dispatch
+        # The microarchitecture options exist for x86-64 only.
+        optimized = str(self.options.get_safe("march_strategy")) == "optimized"
+        return "compile_time" if optimized else "runtime"
 
     def _secp256k1_turbo_gpu_manifest(self):
         """The GPU runtimes src/secp256k1-turbo was built with, and where its
