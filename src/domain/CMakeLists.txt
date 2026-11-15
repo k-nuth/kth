@@ -185,6 +185,7 @@ set(kth_sources_just_legacy
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_iterator.cpp
+        src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
         src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
@@ -378,6 +379,7 @@ set(kth_headers
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
+    include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
     include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
@@ -586,6 +588,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/point_value.cpp
         test/chain/points_value.cpp
         test/chain/satoshi_words.cpp
+        test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
         test/chain/transaction.cpp
         test/main.cpp
