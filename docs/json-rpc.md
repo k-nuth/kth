@@ -96,7 +96,7 @@ counterpart.
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
-| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), `get_utxo` then `fetch_block(height)` (an unspent output), or `fetch_block(blockhash)` |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), `get_utxo` then `fetch_block(hash)` on the captured tip's ancestry (an unspent output), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
@@ -271,7 +271,14 @@ transaction is read from the block at that height. Confirmed transactions are
 not indexed by txid (#491), so one whose outputs are all spent needs its block
 hash as the third parameter: `getrawtransaction "<txid>" false "<blockhash>"`.
 That is what a BCHN node without its transaction index answers too. An empty
-block hash is treated as omitted.
+block hash is treated as omitted. The UTXO search suspends the RPC request and
+runs on a dedicated read worker, separate from block and transaction validation.
+Each server admits only one scan, with no waiting queue. Additional scans receive
+`-1` (lookup busy); retry later or provide the block hash to avoid the scan.
+Shutdown closes admission, stops scans between bounded batches, drains requests
+and joins the read worker before destroying its resources. If the connected publication changes or a
+transition is in progress during the lookup, it returns a retryable `-1`
+error rather than reporting a transaction as absent from a mixed chain state.
 With `verbose` true (or 1) it returns the `decoderawtransaction` fields
 with `hex`, and for a transaction read from a block also `blockhash`,
 `confirmations`, `confirmations_ticks`, `time`, `blocktime` and

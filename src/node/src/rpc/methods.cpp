@@ -23,8 +23,12 @@
 
 
 #include <asio/awaitable.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/post.hpp>
+#include <asio/use_awaitable.hpp>
 #include <simdjson.h>
 
+#include <kth/node/detail/scope_action.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #if defined(KTH_CURRENCY_BCH)
 #include <kth/blockchain/tick_schedule.hpp>
@@ -723,6 +727,23 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
     co_return render_chain_tips(*tips);
 }
 
+// A store lookup is only evidence about the publication it began with. A
+// transition can mutate UTXOs before publishing its new tip; check both sides
+// of the publication load, rather than treating that window as absence.
+bool unspent_lookup_is_current(blockchain::block_chain const& chain,
+    blockchain::block_chain::chain_view_ptr const& view) {
+    if (chain.transition_in_progress()) {
+        return false;
+    }
+    auto const current = chain.chain_view();
+    return current == view && ! chain.transition_in_progress();
+}
+
+rpc_error unspent_lookup_changed() {
+    return make_error(error_code::misc_error,
+        "Chain state changed during transaction lookup; retry the request");
+}
+
 // The height at which a confirmed transaction was mined, read from any output
 // of it that is still unspent: the UTXO set records the height each output was
 // created at. Nothing when every output is spent, or the transaction was never
@@ -730,13 +751,18 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
 //
 // As BCHN's AccessByTxid, it asks for output 0, 1, 2 and so on, up to as many
 // outputs as the largest transaction can have: the smallest output is 9 bytes.
-std::expected<std::optional<size_t>, rpc_error>
-height_of_unspent_output(method_context& ctx, hash_digest const& txid, size_t tip) {
+::asio::awaitable<std::expected<std::optional<size_t>, rpc_error>>
+height_of_unspent_output(blockchain::block_chain& chain, hash_digest const& txid,
+    blockchain::block_chain::chain_view_ptr const& view, unspent_reader& reader) {
+    // Cancellation is a result at this boundary, including on the next post.
+    // as_tuple cannot disable the coroutine's automatic cancellation throw.
+    co_await ::asio::this_coro::throw_if_cancelled(false);
+    auto const tip = view->connected_tip_height;
     constexpr uint32_t max_outputs = uint32_t(max_tx_size / 9);
     constexpr uint32_t batch = 1024;
     auto const store_height = database::to_store_height(tip);
     if ( ! store_height) {
-        return kth::fail(make_error(error_code::internal_error,
+        co_return kth::fail(make_error(error_code::internal_error,
             "tip height does not fit the UTXO store"));
     }
     // The active versions are asked one output at a time; what they cannot
@@ -745,31 +771,53 @@ height_of_unspent_output(method_context& ctx, hash_digest const& txid, size_t ti
     std::vector<utxoz::lookup_request> unresolved;
     unresolved.reserve(batch);
     for (uint32_t first = 0; first < max_outputs; first += batch) {
+        // Yield at batch boundaries so cancellation reaches the worker before
+        // the next bounded set of synchronous store reads, including startup.
+        (void)co_await ::asio::post(::asio::as_tuple(::asio::use_awaitable));
+        auto const cancellation = co_await ::asio::this_coro::cancellation_state;
+        if (cancellation.cancelled() != ::asio::cancellation_type::none) {
+            co_return kth::fail(from_code(error::service_stopped));
+        }
+        if (chain.stopped() || ! reader.admitted.is_open()) {
+            co_return kth::fail(from_code(error::service_stopped));
+        }
+        if ( ! unspent_lookup_is_current(chain, view)) {
+            co_return kth::fail(unspent_lookup_changed());
+        }
         unresolved.clear();
         auto const last = std::min(max_outputs, first + batch);
         for (auto n = first; n < last; ++n) {
-            auto const utxo = ctx.chain.get_utxo(domain::chain::output_point{txid, n}, tip);
+            auto const utxo = chain.get_utxo(domain::chain::output_point{txid, n}, tip);
             if (utxo) {
-                return std::optional<size_t>{utxo->height};
+                co_return std::optional<size_t>{utxo->height};
+            }
+            // get_utxo uses key_not_found for an entry created above the
+            // requested height. It is not a storage failure.
+            if (utxo.error() == database::result_code::key_not_found) {
+                continue;
             }
             if (utxo.error() != database::result_code::not_resolved) {
-                return kth::fail(make_error(error_code::internal_error,
+                co_return kth::fail(make_error(error_code::internal_error,
                     "the UTXO store could not be read"));
             }
             unresolved.push_back(utxoz::lookup_request{
                 utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, n), *store_height});
         }
-        auto const resolved = ctx.chain.utxo_resolve(unresolved);
+        auto const resolved = chain.utxo_resolve(unresolved);
         if ( ! resolved) {
-            return kth::fail(make_error(error_code::internal_error,
+            co_return kth::fail(make_error(error_code::internal_error,
                 "the UTXO store could not be read"));
         }
         if ( ! resolved->found.empty()) {
             // Every output of a transaction was created at the same height.
-            return std::optional<size_t>{size_t(resolved->found.begin()->second.height())};
+            for (auto const& [key, entry] : resolved->found) {
+                if (entry.height() <= tip) {
+                    co_return std::optional<size_t>{size_t(entry.height())};
+                }
+            }
         }
     }
-    return std::optional<size_t>{};
+    co_return std::optional<size_t>{};
 }
 
 // getrawtransaction <txid> [verbose] [blockhash] -> the wire-serialized
@@ -840,12 +888,49 @@ get_raw_transaction(method_context& ctx, request const& req) {
 
     // Not pooled. A confirmed one is in the block at the height its unspent
     // outputs were created at, on the connected chain.
-    auto const height = height_of_unspent_output(ctx, hash, view->connected_tip_height);
+    // Admit one blocking scan on a dedicated worker, without a waiting queue.
+    // The server closes admission, drains sessions and joins worker frames.
+    // The request and coroutine borrow its reader; neither owns the executor.
+    auto const reader = ctx.unspent;
+    if (reader == nullptr) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "Unspent transaction reader unavailable; pass the block hash"));
+    }
+    if ( ! reader->admitted.try_send(std::error_code{}, 1)) {
+        co_return kth::fail(make_error(error_code::misc_error,
+            "Unspent transaction lookup busy or stopping; retry the request or pass the block hash"));
+    }
+    detail::scope_action release([reader] {
+        (void)reader->admitted.try_receive([](std::error_code, int) {});
+    }, true);
+    auto const height = co_await ::asio::co_spawn(reader->worker,
+        [&chain = ctx.chain, txid = hash, expected = view, reader]()
+            -> ::asio::awaitable<std::expected<std::optional<size_t>, rpc_error>> {
+            co_return co_await height_of_unspent_output(chain, txid, expected, *reader);
+        }, ::asio::use_awaitable);
+    release.run();
+    if ( ! unspent_lookup_is_current(ctx.chain, view)) {
+        co_return kth::fail(unspent_lookup_changed());
+    }
     if ( ! height) {
         co_return kth::fail(height.error());
     }
     if (*height) {
-        auto const block = co_await ctx.chain.fetch_block(**height);
+        // Heights in active_at() can already name a replacement branch. Bind
+        // the lookup to the captured connected tip's immutable ancestry.
+        auto const& index = ctx.chain.headers();
+        auto const tip = index.find(view->tip_hash);
+        auto const ancestor = tip == blockchain::header_index::null_index
+            ? blockchain::header_index::null_index : index.get_ancestor(tip, int32_t(**height));
+        if (ancestor == blockchain::header_index::null_index) {
+            co_return kth::fail(make_error(error_code::internal_error,
+                "connected chain not in the header index"));
+        }
+        auto const block_hash = index.get_hash(ancestor);
+        auto const block = co_await ctx.chain.fetch_block(block_hash);
+        if ( ! unspent_lookup_is_current(ctx.chain, view)) {
+            co_return kth::fail(unspent_lookup_changed());
+        }
         if ( ! block && block.error() != error::not_found) {
             co_return kth::fail(from_code(block.error()));
         }

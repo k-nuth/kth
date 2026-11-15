@@ -307,7 +307,7 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_, network_, started_};
+        method_context mctx{chain_, jobs_, network_, started_, &unspent_};
         std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {
@@ -334,6 +334,8 @@ void server::stop() {
 }
 
 ::asio::awaitable<void> server::run_owned() {
+    // Includes startup failures and exceptional exits after children drain.
+    detail::scope_action join_reader([this] { unspent_.join(); }, true);
     using ::asio::ip::tcp;
     using namespace ::asio::experimental::awaitable_operators;
 
@@ -387,6 +389,7 @@ void server::stop() {
     std::exception_ptr failure;
     auto close_owned = [&] {
         stopping = true;
+        unspent_.close();
         std::error_code ignored;
         acceptor.close(ignored);
         try {
@@ -466,7 +469,10 @@ void server::stop() {
         close_owned();
     };
     co_await (accept_connections() && receive_stop());
-    spdlog::info("[rpc] Listener stopped; all connections joined");
+    // A completion can reach a session before its worker-side coroutine frame
+    // is destroyed. Drain those frames too, while the reader is still alive.
+    join_reader.run();
+    spdlog::info("[rpc] Listener stopped; all connections and reader work joined");
     if (failure) std::rethrow_exception(failure);
 }
 

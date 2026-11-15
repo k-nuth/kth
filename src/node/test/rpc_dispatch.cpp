@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <kth/node/detail/scope_action.hpp>
 #include <string>
+#include <thread>
 #include <type_traits>
 
 #include <cstdio>
@@ -23,6 +24,9 @@
 #include <fmt/format.h>
 
 #include <asio/co_spawn.hpp>
+#include <asio/bind_cancellation_slot.hpp>
+#include <asio/bind_executor.hpp>
+#include <asio/cancellation_signal.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
 
@@ -36,6 +40,9 @@ using namespace kth;
 
 static_assert(!std::is_copy_constructible_v<node::rpc::dispatcher>);
 static_assert(!std::is_move_constructible_v<node::rpc::dispatcher>);
+static_assert(std::is_same_v<decltype(node::rpc::method_context::unspent),
+    node::rpc::unspent_reader*>);
+static_assert(!std::is_copy_constructible_v<node::rpc::unspent_reader>);
 
 TEST_CASE("getblockheader dispatch honors verbose and rejects invalid types", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_header_verbose");
@@ -427,10 +434,13 @@ TEST_CASE("unconnected replacement header never gets positive confirmations duri
     auto const candidate = fixture.organizer().add_headers(test::headers_of(b));
     REQUIRE(candidate.reorg_candidate);
     node::mining::job_store jobs(1, 60);
+    node::rpc::unspent_reader reader;
     node::rpc::method_context context{chain, jobs};
+    context.unspent = &reader;
     node::rpc::dispatcher dispatcher;
     node::rpc::register_builtin_methods(dispatcher);
     std::string observed;
+    std::string raw_observed;
     size_t captured_height = 0;
     std::optional<uint32_t> built_height;
     // Use the real persister, then query while execute_reorg still owes its
@@ -448,6 +458,13 @@ TEST_CASE("unconnected replacement header never gets positive confirmations duri
             auto result = ::asio::co_spawn(rpc_io, dispatcher.handle(context, body), ::asio::use_future);
             rpc_io.run();
             observed = result.get();
+            auto const raw_body = std::string(R"({"method":"getrawtransaction","params":[")") +
+                encode_hash(a.front().transactions().front().hash()) + R"("],"id":8})";
+            rpc_io.restart();
+            auto raw_result = ::asio::co_spawn(rpc_io,
+                dispatcher.handle(context, raw_body), ::asio::use_future);
+            rpc_io.run();
+            raw_observed = raw_result.get();
         }
         return ec;
     };
@@ -461,7 +478,10 @@ TEST_CASE("unconnected replacement header never gets positive confirmations duri
     REQUIRE(chain.chain_view()->connected_tip_height == 1);
     REQUIRE(captured_height == 3);
     REQUIRE(built_height == 1);
-    CAPTURE(observed);
+    CAPTURE(observed, raw_observed);
+    // The UTXOs have already rewound but the old publication is still visible:
+    // getrawtransaction must report a transient window, not a missing tx.
+    CHECK(raw_observed.find("\"code\":-1") != std::string::npos);
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(observed);
     simdjson::ondemand::document document;
@@ -1531,7 +1551,9 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
     test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
 
     node::mining::job_store jobs(1, 60);
+    node::rpc::unspent_reader reader;
     node::rpc::method_context context{fixture.chain(), jobs};
+    context.unspent = &reader;
     node::rpc::dispatcher dispatcher;
     node::rpc::register_builtin_methods(dispatcher);
     auto request = [&](std::string const& method, std::string const& params) {
@@ -2144,4 +2166,209 @@ TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispat
             }
         }
     }
+}
+
+TEST_CASE("unspent reader owner joins worker cleanup after result delivery", "[rpc dispatch][unspent lookup]") {
+    node::rpc::unspent_reader reader;
+    ::asio::io_context io;
+    std::promise<void> entered;
+    auto at_cleanup = entered.get_future();
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::promise<bool> finished;
+    auto cleanup = finished.get_future();
+    struct completion_tail {
+        node::rpc::unspent_reader& reader;
+        std::promise<void>& entered;
+        std::shared_future<void> release;
+        std::promise<bool>& finished;
+        ~completion_tail() {
+            entered.set_value();
+            release.wait();
+            finished.set_value( ! reader.admitted.is_open());
+        }
+    };
+    // co_spawn delivers its result before destroying the function that owns
+    // this tail. Hold that destruction to expose the lifetime boundary without
+    // a timing race. The function borrows the pool; it cannot destroy it.
+    auto tail = std::unique_ptr<completion_tail>(new completion_tail{
+        reader, entered, released, finished});
+    auto response = ::asio::co_spawn(reader.worker,
+        [tail = std::move(tail)]() -> ::asio::awaitable<int> { co_return 42; },
+        ::asio::bind_executor(io.get_executor(), ::asio::use_future));
+    std::thread receiver([&] { io.run(); });
+    node::detail::scope_action drain([&] {
+        release.set_value();
+        reader.join();
+        receiver.join();
+    }, true);
+    REQUIRE(at_cleanup.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+    REQUIRE(response.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+    CHECK(response.get() == 42);
+    CHECK(cleanup.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+    reader.close();
+    drain.run();
+    REQUIRE(cleanup.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    CHECK(cleanup.get());
+}
+
+TEST_CASE("getrawtransaction unspent lookup suspends RPC and refuses a changed publication", "[rpc dispatch][unspent lookup]") {
+    test::chain_fixture fixture("rpc_unspent_executor");
+    REQUIRE(fixture.created());
+    fixture.settings().cores = 1;
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    node::mining::job_store jobs(1, 60);
+    node::rpc::unspent_reader reader;
+    node::rpc::method_context context{chain, jobs};
+    context.unspent = &reader;
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    // Occupy the dedicated read worker. The test controls the handoff rather than
+    // inferring which executor ran the lookup from its elapsed time.
+    auto entered = std::make_shared<std::promise<void>>();
+    auto admitted = entered->get_future();
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    ::asio::post(context.unspent->worker, [entered, released] {
+        entered->set_value();
+        released.wait();
+    });
+    node::detail::scope_action unblock([&] { release.set_value(); }, true);
+    REQUIRE(admitted.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+
+    ::asio::io_context io;
+    std::string const request = R"({"method":"getrawtransaction","params":[")" +
+        encode_hash(null_hash) + R"("],"id":51})";
+    ::asio::cancellation_signal cancellation;
+    auto response = ::asio::co_spawn(io, dispatcher.handle(context, request),
+        ::asio::bind_cancellation_slot(cancellation.slot(), ::asio::use_future));
+    io.poll();
+    CHECK(response.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+    io.restart();
+    auto lightweight = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"uptime","id":52})"), ::asio::use_future);
+    io.poll();
+    CHECK(lightweight.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+
+    // A blocked read must leave the chain worker free and reject another scan
+    // immediately instead of queuing it on either executor.
+    auto chain_progress = std::make_shared<std::promise<void>>();
+    auto progressed = chain_progress->get_future();
+    ::asio::post(chain.executor(), [chain_progress] { chain_progress->set_value(); });
+    CHECK(progressed.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+    io.restart();
+    auto overloaded = ::asio::co_spawn(io, dispatcher.handle(context, request), ::asio::use_future);
+    io.poll();
+    auto const refused = overloaded.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    CHECK(refused);
+    if (refused) CHECK(overloaded.get().find("Unspent transaction lookup busy") != std::string::npos);
+
+    bool changed = false;
+    bool paused = false;
+    bool closing = false;
+    bool cancelled = false;
+    SECTION("cancellation before the admitted lookup starts") {
+        cancellation.emit(::asio::cancellation_type::terminal);
+        io.restart();
+        io.poll();
+        CHECK(response.wait_for(std::chrono::seconds(0)) != std::future_status::ready);
+        cancelled = true;
+    }
+    SECTION("shutdown before the admitted lookup starts") {
+        context.unspent->close();
+        closing = true;
+    }
+    SECTION("lookup queued behind work on an unchanged chain") {}
+    SECTION("a publication changes after the request captured it") {
+        CHECK(chain.publish_chain_view(0) == error::success);
+        changed = true;
+    }
+    SECTION("a transition starts while the lookup is queued") {
+        paused = chain.begin_transition();
+        CHECK(paused);
+        changed = true;
+    }
+    node::detail::scope_action reopen([&] { chain.end_transition(); }, paused);
+    unblock.run();
+    io.restart();
+    io.run();
+    if (cancelled) {
+        CHECK(response.get().find("\"code\":-32603") != std::string::npos);
+        io.restart();
+        auto next = ::asio::co_spawn(io, dispatcher.handle(context, request), ::asio::use_future);
+        io.run();
+        CHECK(next.get().find("\"code\":-5") != std::string::npos);
+        return;
+    }
+    auto const reply = response.get();
+    INFO(reply);
+    if (closing) {
+        CHECK(reply.find("\"code\":-32603") != std::string::npos);
+        CHECK(reply.find("\"code\":-5") == std::string::npos);
+    } else if (changed) {
+        CHECK(reply.find("\"code\":-1") != std::string::npos);
+        CHECK(reply.find("\"code\":-5") == std::string::npos);
+    } else {
+        CHECK(reply.find("\"code\":-5") != std::string::npos);
+        io.restart();
+        auto next = ::asio::co_spawn(io, dispatcher.handle(context, request), ::asio::use_future);
+        io.run();
+        CHECK(next.get().find("\"code\":-5") != std::string::npos);
+    }
+}
+
+TEST_CASE("getrawtransaction finds a later unspent output after the first is spent", "[rpc dispatch][unspent lookup]") {
+    test::chain_fixture fixture("rpc_unspent_later_output");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    using namespace domain::chain;
+    auto const genesis = block::genesis_regtest().hash();
+    auto const stamp = uint32_t(zulu_time()) - 104u * test::block_spacing;
+    auto const original = test::coinbase_tx(1, 0, 5000000000ull);
+    transaction split(1, 0, input::list(original.inputs()), output::list{
+        output{2500000000ull, test::miner_script(), std::nullopt},
+        output{2500000000ull, test::miner_script(), std::nullopt}});
+    block seed(header{0x20000000, genesis, null_hash, stamp, test::regtest_bits, 0}, {split});
+    auto const merkle = seed.generate_merkle_root();
+    std::optional<block> first;
+    for (uint64_t nonce = 0; nonce <= std::numeric_limits<uint32_t>::max(); ++nonce) {
+        header candidate{0x20000000, genesis, merkle, stamp, test::regtest_bits, uint32_t(nonce)};
+        if (candidate.is_valid_proof_of_work(domain::chain::hash(candidate), false)) {
+            first.emplace(std::move(candidate), transaction::list{split});
+            break;
+        }
+    }
+    REQUIRE(first);
+    std::vector<block> trunk{*first};
+    for (uint32_t height = 2; height <= 100; ++height) {
+        trunk.push_back(test::mine_block(trunk.back().hash(), height,
+            stamp + height * test::block_spacing, 0, {}, 0));
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    auto const spent = test::spend_p2pkh(split, 0, 2499999999ull,
+        fixture.chain().chain_view()->state->enabled_flags());
+    auto const next = test::mine_block(trunk.back().hash(), 101,
+        stamp + 101u * test::block_spacing, 0, {spent}, 1);
+    REQUIRE(fixture.organizer().add_headers({next.header()}).headers_added == 1);
+    test::persist_headers(fixture, {next}, 101);
+    test::connect_bodies(fixture, {next}, 101);
+
+    SECTION("on the live store") {}
+    SECTION("after reopening the persisted store") { REQUIRE(fixture.restart()); }
+    node::mining::job_store jobs(1, 60);
+    node::rpc::unspent_reader reader;
+    node::rpc::method_context context{fixture.chain(), jobs};
+    context.unspent = &reader;
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto const body = R"({"method":"getrawtransaction","params":[")" +
+        encode_hash(split.hash()) + R"("],"id":53})";
+    auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+    io.run();
+    CHECK(result.get() == node::rpc::build_success("53", '"' + node::rpc::transaction_to_hex(split) + '"'));
 }

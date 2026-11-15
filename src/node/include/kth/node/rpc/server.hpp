@@ -64,6 +64,7 @@ private:
     std::chrono::steady_clock::time_point const started_;
     dispatcher dispatcher_;
     mining::job_store jobs_;
+    unspent_reader unspent_;
     // Plaintext "user:password" (or "__cookie__:token") the Authorization header
     // must decode to.
     std::string expected_credentials_;

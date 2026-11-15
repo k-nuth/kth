@@ -7,13 +7,17 @@
 
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <expected>
 #include <functional>
+
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <asio/awaitable.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
+#include <asio/thread_pool.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/node/rpc/error.hpp>
@@ -33,6 +37,23 @@ struct job_store;
 
 namespace kth::node::rpc {
 
+// Dedicated blocking-read boundary. One admitted scan, no waiting queue. The
+// concurrent channel owns admission and closure across the RPC and read workers.
+// The owner closes admission, drains requests and joins before destroying any
+// member. Worker coroutines only borrow this object; they cannot own its pool.
+struct unspent_reader {
+    ::asio::thread_pool worker{1};
+    ::asio::experimental::concurrent_channel<void(std::error_code, int)> admitted{
+        worker.get_executor(), 1};
+
+    void close() { admitted.close(); }
+    void join() {
+        close();
+        worker.join();
+    }
+    ~unspent_reader() { join(); }
+};
+
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
 // cache, the P2P node and when the node started. Passed by reference; owned by
 // the server for the connection's lifetime.
@@ -45,6 +66,9 @@ struct method_context {
     // When the node started, for uptime. The server passes the node's own
     // start; a context built without one (tests) counts from its creation.
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    // Borrowed from the server (or an explicit owner in tests). Contexts that
+    // never scan UTXOs need no reader and create no worker thread.
+    unspent_reader* unspent = nullptr;
 };
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
