@@ -141,6 +141,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/full_node.cpp
     src/detail/configured_peers.cpp
     src/detail/block_announcements.cpp
+    src/detail/chunk_result_bridge.cpp
     src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
@@ -475,6 +476,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/p2p_websocket_config.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
+          test/chunk_result_bridge.cpp
           test/block_announcements.cpp
           test/tx_relay.cpp
           test/fee_filter.cpp
