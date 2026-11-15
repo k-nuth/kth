@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <kth/domain/chain/byte_code_pattern.hpp>
 #include <catch2/catch_approx.hpp>
 #include <optional>
 #include <boost/make_shared.hpp>
@@ -1452,7 +1453,7 @@ TEST_CASE("getblock adds each script's byte code pattern only when patterns is t
     // Each output script of the block's transactions gets its pattern, right
     // after the script's kind; the coinbase input has no scriptSig to describe.
     auto const& coinbase = trunk[1].transactions().front();
-    auto const pattern = node::rpc::make_byte_code_pattern(coinbase.outputs().front().script().bytes());
+    auto const pattern = domain::chain::make_byte_code_pattern(coinbase.outputs().front().script().bytes());
     auto const with = request("[" + block + ",2,true]");
     CHECK(count(with, R"("byteCodePattern":)") == coinbase.outputs().size());
     CHECK(count(with, R"("byteCodePattern":{"fingerprint":")" + encode_base16(sha256_hash(pattern.pattern)) +
