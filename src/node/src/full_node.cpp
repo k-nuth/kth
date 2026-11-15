@@ -89,6 +89,7 @@ full_node::full_node(configuration const& configuration)
     network_settings_.services = (network_settings_.services & ~filters)
         | (configuration.chain.compact_filters ? filters : 0);
     compact_filter_file_ = configuration.database.directory / "compact_filter_checkpoints";
+    script_filter_file_ = configuration.database.directory / "script_filter_checkpoints";
 #endif
 #endif
 }
@@ -143,6 +144,9 @@ full_node::~full_node() {
     if (chain_settings_.compact_filters) {
         compact_filters_ = std::make_unique<detail::compact_filter_service>(chain_,
             get_genesis_block(network_type_), compact_filter_file_);
+        // The script filter too, for the blocks the node has the spent
+        // outputs of.
+        compact_filters_->serve_script_filters(script_filter_file_);
         compact_filters_->load();
         network_.register_served_message_handler<domain::message::get_compact_filters>(
             [this](peer_session& peer, domain::message::get_compact_filters const& request) {
@@ -155,6 +159,14 @@ full_node::~full_node() {
         network_.register_served_message_handler<domain::message::get_compact_filter_checkpoint>(
             [this](peer_session& peer, domain::message::get_compact_filter_checkpoint const& request) {
                 return detail::handle_get_compact_filter_checkpoint(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_range>(
+            [this](peer_session& peer, domain::message::get_compact_filter_range const& request) {
+                return detail::handle_get_compact_filter_range(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_proof>(
+            [this](peer_session& peer, domain::message::get_compact_filter_proof const& request) {
+                return detail::handle_get_compact_filter_proof(*compact_filters_, peer, request);
             });
     }
 #endif
