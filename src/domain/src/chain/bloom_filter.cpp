@@ -10,7 +10,7 @@
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/machine/operation.hpp>
-#include <kth/domain/machine/script_pattern.hpp>
+#include <kth/infrastructure/math/elliptic_curve.hpp>
 #include <kth/infrastructure/math/murmur_hash.hpp>
 
 namespace kth::domain::chain {
@@ -51,6 +51,40 @@ bool any_push(byte_span script, Predicate matches) {
     return false;
 }
 
+// A public key as the nodes that serve these filters tell one: by its length
+// and its first byte. The hybrid form (06, 07) counts, which the standard
+// output patterns leave out.
+bool is_key(byte_span data) {
+    if (data.size() == ec_compressed_size) return data[0] == 0x02 || data[0] == 0x03;
+    if (data.size() == ec_uncompressed_size) return data[0] == 0x04 || data[0] == 0x06 || data[0] == 0x07;
+    return false;
+}
+
+// Whether an output script pays to a public key or to a bare multisig: the
+// outputs whose outpoint update_p2pubkey_only adds to the filter.
+bool pays_to_public_keys(script const& output_script) {
+    using machine::opcode;
+    using machine::operation;
+    auto const ops = output_script.operations();
+    auto const count = ops.size();
+
+    // <key> OP_CHECKSIG, the key pushed by its own length.
+    if (count == 2) {
+        return ops[1].code() == opcode::checksig && is_key(ops[0].data())
+            && uint8_t(ops[0].code()) == ops[0].data().size();
+    }
+
+    // OP_m <key>... OP_n OP_CHECKMULTISIG, with n keys and m of them needed.
+    if (count < 4 || ops[count - 1].code() != opcode::checkmultisig) return false;
+    auto const required = ops[0].code();
+    auto const total = ops[count - 2].code();
+    if ( ! operation::is_positive(required) || ! operation::is_positive(total)) return false;
+    auto const keys = size_t(operation::opcode_to_positive(total));
+    if (keys != count - 3 || operation::opcode_to_positive(required) > keys) return false;
+    return std::all_of(ops.begin() + 1, ops.end() - 2,
+        [](operation const& op) { return is_key(op.data()); });
+}
+
 } // namespace
 
 bloom_filter::bloom_filter(data_chunk bits, uint32_t hash_functions, uint32_t tweak, uint8_t flags)
@@ -60,7 +94,12 @@ bloom_filter::bloom_filter(data_chunk bits, uint32_t hash_functions, uint32_t tw
     , flags_(flags)
 {}
 
-bloom_filter bloom_filter::sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags) {
+expect<bloom_filter> bloom_filter::sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags) {
+    // A rate is a probability other than the two certainties. Written so that
+    // a NaN, which compares false with everything, is refused too.
+    if ( ! (false_positive_rate > 0.0 && false_positive_rate < 1.0)) {
+        return std::unexpected(error::illegal_value);
+    }
     auto const count = double(std::max(size_t{1}, elements));
     // The size that holds that many elements at that rate, and the number of
     // hash functions that is best for it, each within its limit.
@@ -118,12 +157,8 @@ bool bloom_filter::match_and_insert_outputs(transaction const& tx) {
         auto const update = flags_ & update_mask;
         if (update == update_all) {
             insert_outpoint(point(id, uint32_t(i)));
-        } else if (update == update_p2pubkey_only) {
-            auto const pattern = script.output_pattern();
-            if (pattern == machine::script_pattern::pay_to_public_key
-                || pattern == machine::script_pattern::pay_to_multisig) {
-                insert_outpoint(point(id, uint32_t(i)));
-            }
+        } else if (update == update_p2pubkey_only && pays_to_public_keys(script)) {
+            insert_outpoint(point(id, uint32_t(i)));
         }
     }
     return found;

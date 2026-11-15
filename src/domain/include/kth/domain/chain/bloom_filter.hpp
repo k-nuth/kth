@@ -11,6 +11,7 @@
 #include <kth/domain/chain/point.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
@@ -42,9 +43,10 @@ struct KD_API bloom_filter {
     bloom_filter(data_chunk bits, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
 
     // An empty filter sized for a number of elements at a false positive
-    // rate, as wallets size theirs.
+    // rate, as wallets size theirs. illegal_value unless the rate is above
+    // zero and below one.
     [[nodiscard]]
-    static bloom_filter sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags);
+    static expect<bloom_filter> sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags);
 
     // Whether a peer may load it.
     [[nodiscard]] bool within_limits() const;
