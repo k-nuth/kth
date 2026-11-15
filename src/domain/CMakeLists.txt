@@ -225,6 +225,8 @@ set(kth_sources_just_legacy
         src/message/compact_filter.cpp
         src/message/compact_filter_checkpoint.cpp
         src/message/compact_filter_headers.cpp
+        src/message/compact_filter_proof.cpp
+        src/message/compact_filter_range.cpp
         src/message/double_spend_proof.cpp
         src/message/fee_filter.cpp
         src/message/filter_add.cpp
@@ -235,6 +237,8 @@ set(kth_sources_just_legacy
 
         src/message/get_compact_filter_checkpoint.cpp
         src/message/get_compact_filter_headers.cpp
+        src/message/get_compact_filter_proof.cpp
+        src/message/get_compact_filter_range.cpp
         src/message/get_compact_filters.cpp
         src/message/get_data.cpp
         src/message/get_headers.cpp
@@ -354,8 +358,13 @@ set(kth_headers
     include/kth/domain/message/compact_filter.hpp
     include/kth/domain/message/compact_filter_checkpoint.hpp
     include/kth/domain/message/compact_filter_headers.hpp
+    include/kth/domain/message/compact_filter_proof.hpp
+    include/kth/domain/message/compact_filter_range.hpp
+    include/kth/domain/message/compact_filter_tree.hpp
     include/kth/domain/message/get_compact_filter_checkpoint.hpp
     include/kth/domain/message/get_compact_filter_headers.hpp
+    include/kth/domain/message/get_compact_filter_proof.hpp
+    include/kth/domain/message/get_compact_filter_range.hpp
     include/kth/domain/message/get_compact_filters.hpp
     include/kth/domain/message/get_block_transactions.hpp
     include/kth/domain/message/alert.hpp
@@ -628,6 +637,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/message/block_transactions.cpp
         test/message/compact_block.cpp
         test/message/compact_filters.cpp
+        test/message/script_filter_messages.cpp
         test/message/double_spend_proof.cpp
         test/message/fee_filter.cpp
         test/message/filter_add.cpp

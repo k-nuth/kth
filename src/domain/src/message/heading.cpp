@@ -103,6 +103,8 @@ message_type heading::type() const {
     if (command_ == compact_filter::command) return message_type::compact_filter;
     if (command_ == compact_filter_checkpoint::command) return message_type::compact_filter_checkpoint;
     if (command_ == compact_filter_headers::command) return message_type::compact_filter_headers;
+    if (command_ == compact_filter_proof::command) return message_type::compact_filter_proof;
+    if (command_ == compact_filter_range::command) return message_type::compact_filter_range;
     if (command_ == double_spend_proof::command) return message_type::double_spend_proof;
     if (command_ == fee_filter::command) return message_type::fee_filter;
     if (command_ == filter_add::command) return message_type::filter_add;
@@ -113,6 +115,8 @@ message_type heading::type() const {
     if (command_ == get_blocks::command) return message_type::get_blocks;
     if (command_ == get_compact_filter_checkpoint::command) return message_type::get_compact_filter_checkpoint;
     if (command_ == get_compact_filter_headers::command) return message_type::get_compact_filter_headers;
+    if (command_ == get_compact_filter_proof::command) return message_type::get_compact_filter_proof;
+    if (command_ == get_compact_filter_range::command) return message_type::get_compact_filter_range;
     if (command_ == get_compact_filters::command) return message_type::get_compact_filters;
     if (command_ == get_data::command) return message_type::get_data;
     if (command_ == get_headers::command) return message_type::get_headers;

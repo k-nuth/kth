@@ -18,6 +18,9 @@
 #include <kth/domain/message/compact_filter.hpp>
 #include <kth/domain/message/compact_filter_checkpoint.hpp>
 #include <kth/domain/message/compact_filter_headers.hpp>
+#include <kth/domain/message/compact_filter_proof.hpp>
+#include <kth/domain/message/compact_filter_range.hpp>
+#include <kth/domain/message/compact_filter_tree.hpp>
 #include <kth/domain/message/double_spend_proof.hpp>
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/filter_add.hpp>
@@ -29,6 +32,8 @@
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_compact_filter_checkpoint.hpp>
 #include <kth/domain/message/get_compact_filter_headers.hpp>
+#include <kth/domain/message/get_compact_filter_proof.hpp>
+#include <kth/domain/message/get_compact_filter_range.hpp>
 #include <kth/domain/message/get_compact_filters.hpp>
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/headers.hpp>
@@ -121,6 +126,8 @@ DECLARE_MESSAGE_POINTER_TYPES(compact_block);
 DECLARE_MESSAGE_POINTER_TYPES(compact_filter);
 DECLARE_MESSAGE_POINTER_TYPES(compact_filter_checkpoint);
 DECLARE_MESSAGE_POINTER_TYPES(compact_filter_headers);
+DECLARE_MESSAGE_POINTER_TYPES(compact_filter_proof);
+DECLARE_MESSAGE_POINTER_TYPES(compact_filter_range);
 DECLARE_MESSAGE_POINTER_TYPES(double_spend_proof);
 DECLARE_MESSAGE_POINTER_TYPES(get_address);
 DECLARE_MESSAGE_POINTER_TYPES(fee_filter);
@@ -129,6 +136,8 @@ DECLARE_MESSAGE_POINTER_TYPES(get_block_transactions);
 DECLARE_MESSAGE_POINTER_TYPES(get_data);
 DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_checkpoint);
 DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_headers);
+DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_proof);
+DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_range);
 DECLARE_MESSAGE_POINTER_TYPES(get_compact_filters);
 DECLARE_MESSAGE_POINTER_TYPES(get_headers);
 DECLARE_MESSAGE_POINTER_TYPES(header);

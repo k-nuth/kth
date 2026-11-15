@@ -49,6 +49,9 @@
 #include <kth/domain/message/compact_filter.hpp>
 #include <kth/domain/message/compact_filter_checkpoint.hpp>
 #include <kth/domain/message/compact_filter_headers.hpp>
+#include <kth/domain/message/compact_filter_proof.hpp>
+#include <kth/domain/message/compact_filter_range.hpp>
+#include <kth/domain/message/compact_filter_tree.hpp>
 #include <kth/domain/message/double_spend_proof.hpp>
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/filter_add.hpp>
@@ -60,6 +63,8 @@
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/get_compact_filter_checkpoint.hpp>
 #include <kth/domain/message/get_compact_filter_headers.hpp>
+#include <kth/domain/message/get_compact_filter_proof.hpp>
+#include <kth/domain/message/get_compact_filter_range.hpp>
 #include <kth/domain/message/get_compact_filters.hpp>
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/header.hpp>
