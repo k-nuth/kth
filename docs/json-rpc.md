@@ -257,12 +257,14 @@ too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+transaction with its `decoderawtransaction` fields and `hex`, and each one
+after the coinbase with its `fee`, in BCH, when the node has the undo record of
+the block. With `patterns`
 true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
 object: the script with each run of data pushes replaced by its count
 (`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
 pushed data in order (`data`), and `error` for a script that ends in the middle
-of a push. `fee` per transaction and `ablastate` are not reported.
+of a push. `ablastate` is not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
 mempool transaction. Confirmed transactions are not indexed by txid (#491), so
