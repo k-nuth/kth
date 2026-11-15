@@ -193,8 +193,11 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
         self.requires("utxoz/2.1.0", transitive_headers=True, transitive_libs=True)
 
-        # GMP is required for BigInt support in the native interpreter.
-        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        # GMP is required for BigInt support in the native interpreter. Pin our
+        # recipe: for WebAssembly it builds 64-bit limbs, where the Conan Center
+        # one builds 32-bit limbs.
+        self.requires("gmp/6.3.0#eea0ccd8d7c5f60191b024d168cde1aa",
+                      transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
             self.requires("openssl/4.1.0", transitive_headers=True, transitive_libs=True)
