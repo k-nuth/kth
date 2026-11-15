@@ -183,12 +183,16 @@ struct KD_API operation {
     [[nodiscard]]
     bool is_nominal_push() const;
 
+    /// The number of data bytes that follow `code` in a script: read from the
+    /// size prefix of the explicit pushes, the opcode itself for the direct
+    /// ones, zero for anything else. For reading a script in place.
+    [[nodiscard]]
+    static
+    expect<uint32_t> read_data_size(opcode code, byte_reader& reader);
+
 protected:
     operation(opcode code, data_chunk&& data, bool valid);
     operation(opcode code, data_chunk const& data, bool valid);
-
-    static
-    expect<uint32_t> read_data_size(opcode code, byte_reader& reader);
 
     opcode opcode_from_data(data_chunk const& data, bool minimal);
     void reset();

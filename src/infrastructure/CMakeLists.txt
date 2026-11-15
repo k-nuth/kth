@@ -353,6 +353,7 @@ set(kth_headers
     include/kth/infrastructure/math/crypto.hpp
     include/kth/infrastructure/math/elliptic_curve.hpp
     include/kth/infrastructure/math/hash.hpp
+    include/kth/infrastructure/math/murmur_hash.hpp
     include/kth/infrastructure/math/sip_hash.hpp
     include/kth/infrastructure/math/uint256.hpp
 
@@ -704,6 +705,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # They are auto-generated and added via file(GLOB) below.
     test/math/elliptic_curve.cpp
     test/math/hash.cpp
+    test/math/murmur_hash.cpp
     test/math/uint256.cpp
 
     test/path.cpp
