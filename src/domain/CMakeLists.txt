@@ -377,6 +377,8 @@ set(kth_headers
     include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
+    include/kth/domain/chain/compact_filter.hpp
+    include/kth/domain/chain/golomb_set.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/script.hpp
     include/kth/domain/chain/transaction.hpp
