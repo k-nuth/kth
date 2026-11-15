@@ -68,10 +68,14 @@ bool pays_to_public_keys(script const& output_script) {
     auto const ops = output_script.operations();
     auto const count = ops.size();
 
-    // <key> OP_CHECKSIG, the key pushed by its own length.
+    // A key counts when it is pushed the shortest way: by its own length.
+    auto const pushes_key = [](operation const& op) {
+        return is_key(op.data()) && op.is_minimal_push();
+    };
+
+    // <key> OP_CHECKSIG.
     if (count == 2) {
-        return ops[1].code() == opcode::checksig && is_key(ops[0].data())
-            && uint8_t(ops[0].code()) == ops[0].data().size();
+        return ops[1].code() == opcode::checksig && pushes_key(ops[0]);
     }
 
     // OP_m <key>... OP_n OP_CHECKMULTISIG, with n keys and m of them needed.
@@ -81,8 +85,7 @@ bool pays_to_public_keys(script const& output_script) {
     if ( ! operation::is_positive(required) || ! operation::is_positive(total)) return false;
     auto const keys = size_t(operation::opcode_to_positive(total));
     if (keys != count - 3 || operation::opcode_to_positive(required) > keys) return false;
-    return std::all_of(ops.begin() + 1, ops.end() - 2,
-        [](operation const& op) { return is_key(op.data()); });
+    return std::all_of(ops.begin() + 1, ops.end() - 2, pushes_key);
 }
 
 } // namespace

@@ -267,6 +267,8 @@ TEST_CASE("bloom filter tells a public key by its length and first byte, hybrid 
             paid{"41" "05" + tail + "ac", "05" + tail, false},
             // A key behind a length prefix is data, not a payment to it.
             paid{"4c41" + hybrid_even + "ac", hybrid_even, false},
+            // The same in a multisig: one of its two keys behind a length prefix.
+            paid{"51" "4c21" + compressed + "41" + hybrid_odd + "52ae", hybrid_odd, false},
             // Two keys announced, one there.
             paid{"51" "41" + hybrid_odd + "52ae", hybrid_odd, false}}) {
         CAPTURE(script);
