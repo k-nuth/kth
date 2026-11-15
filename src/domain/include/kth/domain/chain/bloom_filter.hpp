@@ -16,19 +16,13 @@
 
 namespace kth::domain::chain {
 
-// MurmurHash3, the 32-bit variant for x86: the hash of the peer bloom filter.
-[[nodiscard]]
-KD_API
-uint32_t murmur_hash3(uint32_t seed, byte_span data);
-
 // The filter a light wallet loads into a peer with `filterload` (BIP37): a
 // bit field, a number of hash functions, a tweak the wallet picks, and flags
 // that say what the node adds to the filter as transactions match.
 //
 // It lives for one connection and is the wallet's own, so a node keeps
 // nothing for it.
-class KD_API bloom_filter {
-public:
+struct KD_API bloom_filter {
     // The largest filter a peer may load, in bytes, and the most hash
     // functions it may ask for.
     static constexpr size_t max_size = 36000;
@@ -83,7 +77,7 @@ public:
     friend bool operator==(bloom_filter const&, bloom_filter const&) = default;
 
 private:
-    [[nodiscard]] uint32_t bit_of(uint32_t function, byte_span data) const;
+    [[nodiscard]] size_t bit_of(uint32_t function, byte_span data) const;
 
     data_chunk bits_;
     uint32_t hash_functions_ = 0;

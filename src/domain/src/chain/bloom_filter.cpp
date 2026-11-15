@@ -9,7 +9,9 @@
 #include <cmath>
 
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/machine/operation.hpp>
 #include <kth/domain/machine/script_pattern.hpp>
+#include <kth/infrastructure/math/murmur_hash.hpp>
 
 namespace kth::domain::chain {
 
@@ -17,10 +19,6 @@ namespace {
 
 constexpr double ln2_squared = 0.4804530139182014246671025263266649717305529515945455;
 constexpr double ln2 = 0.6931471805599453094172321214581765680755001343602552;
-
-constexpr uint32_t rotate_left(uint32_t value, int by) noexcept {
-    return (value << by) | (value >> (32 - by));
-}
 
 // The hash as it stands in a transaction, then the index in little-endian.
 std::array<uint8_t, hash_size + sizeof(uint32_t)> outpoint_bytes(point const& outpoint) {
@@ -34,42 +32,26 @@ std::array<uint8_t, hash_size + sizeof(uint32_t)> outpoint_bytes(point const& ou
     return bytes;
 }
 
-} // namespace
-
-uint32_t murmur_hash3(uint32_t seed, byte_span data) {
-    constexpr uint32_t c1 = 0xcc9e2d51;
-    constexpr uint32_t c2 = 0x1b873593;
-    auto hash = seed;
-    auto const blocks = data.size() / 4;
-    for (size_t i = 0; i < blocks; ++i) {
-        auto k = uint32_t(data[i * 4]) | (uint32_t(data[i * 4 + 1]) << 8)
-            | (uint32_t(data[i * 4 + 2]) << 16) | (uint32_t(data[i * 4 + 3]) << 24);
-        k *= c1;
-        k = rotate_left(k, 15);
-        k *= c2;
-        hash ^= k;
-        hash = rotate_left(hash, 13);
-        hash = hash * 5 + 0xe6546b64;
+// Whether `matches` holds for the data of one of the pushes of a script. The
+// script is read in place: nothing is copied out of it. An operation that
+// does not parse ends the script, so nothing past its last whole push is
+// looked at.
+template <typename Predicate>
+bool any_push(byte_span script, Predicate matches) {
+    byte_reader reader(script);
+    while (reader.remaining_size() != 0) {
+        auto const code = reader.read_byte();
+        if ( ! code) return false;
+        auto const size = machine::operation::read_data_size(machine::opcode(*code), reader);
+        if ( ! size) return false;
+        auto const data = reader.read_bytes(*size);
+        if ( ! data) return false;
+        if ( ! data->empty() && matches(*data)) return true;
     }
-    auto const tail = data.subspan(blocks * 4);
-    uint32_t k = 0;
-    if (tail.size() >= 3) k ^= uint32_t(tail[2]) << 16;
-    if (tail.size() >= 2) k ^= uint32_t(tail[1]) << 8;
-    if (tail.size() >= 1) {
-        k ^= uint32_t(tail[0]);
-        k *= c1;
-        k = rotate_left(k, 15);
-        k *= c2;
-        hash ^= k;
-    }
-    hash ^= uint32_t(data.size());
-    hash ^= hash >> 16;
-    hash *= 0x85ebca6b;
-    hash ^= hash >> 13;
-    hash *= 0xc2b2ae35;
-    hash ^= hash >> 16;
-    return hash;
+    return false;
 }
+
+} // namespace
 
 bloom_filter::bloom_filter(data_chunk bits, uint32_t hash_functions, uint32_t tweak, uint8_t flags)
     : bits_(std::move(bits))
@@ -94,9 +76,10 @@ bool bloom_filter::within_limits() const {
     return bits_.size() <= max_size && hash_functions_ <= max_hash_functions;
 }
 
-uint32_t bloom_filter::bit_of(uint32_t function, byte_span data) const {
+size_t bloom_filter::bit_of(uint32_t function, byte_span data) const {
     // The multiplier makes the seeds of the hash functions differ in many bits.
-    return murmur_hash3(function * 0xfba4c795 + tweak_, data) % uint32_t(bits_.size() * 8);
+    // The number of bits is not narrowed: a filter of any size has one.
+    return murmur_hash3(function * 0xfba4c795 + tweak_, data) % (bits_.size() * 8);
 }
 
 void bloom_filter::insert(byte_span data) {
@@ -130,23 +113,17 @@ bool bloom_filter::match_and_insert_outputs(transaction const& tx) {
     auto const& outputs = tx.outputs();
     for (size_t i = 0; i < outputs.size(); ++i) {
         auto const& script = outputs[i].script();
-        // An operation that does not parse carries no data, so nothing past
-        // the last whole push of a script is matched.
-        for (auto const& op : script.operations()) {
-            auto const& data = op.data();
-            if (data.empty() || ! contains(data)) continue;
-            found = true;
-            auto const update = flags_ & update_mask;
-            if (update == update_all) {
+        if ( ! any_push(script.bytes(), [this](byte_span data) { return contains(data); })) continue;
+        found = true;
+        auto const update = flags_ & update_mask;
+        if (update == update_all) {
+            insert_outpoint(point(id, uint32_t(i)));
+        } else if (update == update_p2pubkey_only) {
+            auto const pattern = script.output_pattern();
+            if (pattern == machine::script_pattern::pay_to_public_key
+                || pattern == machine::script_pattern::pay_to_multisig) {
                 insert_outpoint(point(id, uint32_t(i)));
-            } else if (update == update_p2pubkey_only) {
-                auto const pattern = script.output_pattern();
-                if (pattern == machine::script_pattern::pay_to_public_key
-                    || pattern == machine::script_pattern::pay_to_multisig) {
-                    insert_outpoint(point(id, uint32_t(i)));
-                }
             }
-            break;
         }
     }
     return found;
@@ -155,10 +132,7 @@ bool bloom_filter::match_and_insert_outputs(transaction const& tx) {
 bool bloom_filter::match_inputs(transaction const& tx) const {
     for (auto const& input : tx.inputs()) {
         if (contains_outpoint(input.previous_output())) return true;
-        for (auto const& op : input.script().operations()) {
-            auto const& data = op.data();
-            if ( ! data.empty() && contains(data)) return true;
-        }
+        if (any_push(input.script().bytes(), [this](byte_span data) { return contains(data); })) return true;
     }
     return false;
 }

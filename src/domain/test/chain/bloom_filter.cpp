@@ -71,22 +71,6 @@ bloom_filter with(std::string const& element, uint8_t flags) {
 
 } // namespace
 
-TEST_CASE("murmur hash 3 matches its known answers", "[bloom filter]") {
-    struct answer { uint32_t hash; uint32_t seed; char const* data; };
-    for (auto const& [hash, seed, data] : {
-            answer{0x00000000, 0x00000000, ""}, answer{0x6a396f08, 0xfba4c795, ""},
-            answer{0x81f16f39, 0xffffffff, ""}, answer{0x514e28b7, 0x00000000, "00"},
-            answer{0xea3f0b17, 0xfba4c795, "00"}, answer{0xfd6cf10d, 0x00000000, "ff"},
-            answer{0x16c6b7ab, 0x00000000, "0011"}, answer{0x8eb51c3d, 0x00000000, "001122"},
-            answer{0xb4471bf8, 0x00000000, "00112233"}, answer{0xe2301fa8, 0x00000000, "0011223344"},
-            answer{0xfc2e4a15, 0x00000000, "001122334455"}, answer{0xb074502c, 0x00000000, "00112233445566"},
-            answer{0x8034d2a0, 0x00000000, "0011223344556677"},
-            answer{0xb4698def, 0x00000000, "001122334455667788"}}) {
-        CAPTURE(seed, data);
-        CHECK(chain::murmur_hash3(seed, bytes(data)) == hash);
-    }
-}
-
 TEST_CASE("bloom filter of three elements serializes as other nodes build it", "[bloom filter]") {
     for (auto const& [tweak, expected] : {
             std::pair<uint32_t, char const*>{0, "03614e9b050000000000000001"},
@@ -208,5 +192,53 @@ TEST_CASE("bloom filter matches a transaction by what it carries", "[bloom filte
         // Part of a push is not the push.
         auto part = with("cafe12", bloom_filter::update_all);
         CHECK_FALSE(part.is_relevant_and_update(tx));
+    }
+}
+
+namespace {
+
+// A transaction of one input, with `input_script`, and one output, with
+// `output_script`.
+chain::transaction carrying(std::string const& input_script, std::string const& output_script) {
+    chain::input::list inputs;
+    inputs.emplace_back(chain::output_point{previous_first(), 0}, chain::script{bytes(input_script), false},
+        0xffffffffu);
+    chain::output::list outputs;
+    outputs.emplace_back(uint64_t{1000}, chain::script{bytes(output_script), false}, chain::token_data_opt{});
+    return chain::transaction{2, 0, std::move(inputs), std::move(outputs)};
+}
+
+} // namespace
+
+TEST_CASE("bloom filter matches a push whatever opcode carries it", "[bloom filter]") {
+    // cafe1234 as a direct push, and behind a one, two and four byte length.
+    for (auto const script : {"04cafe1234", "4c04cafe1234", "4d0400cafe1234", "4e04000000cafe1234"}) {
+        CAPTURE(script);
+        auto outputs = with("cafe1234", bloom_filter::update_none);
+        CHECK(outputs.match_and_insert_outputs(carrying("00", script)));
+        CHECK(with("cafe1234", bloom_filter::update_none).match_inputs(carrying(script, "6a")));
+    }
+    // The pushes after the first are looked at too, and opcodes between them
+    // carry nothing.
+    auto later = with("cafe1234", bloom_filter::update_none);
+    CHECK(later.match_and_insert_outputs(carrying("00", "6a02beef7604cafe1234")));
+    // A push of no bytes is no element, not even for the filter of nothing.
+    auto none = with("cafe1234", bloom_filter::update_none);
+    CHECK_FALSE(none.match_and_insert_outputs(carrying("00", "004c00")));
+}
+
+TEST_CASE("bloom filter looks at nothing past the last whole push of a script", "[bloom filter]") {
+    // The push before the one that is cut short still matches.
+    auto before = with("cafe1234", bloom_filter::update_none);
+    CHECK(before.match_and_insert_outputs(carrying("00", "04cafe123405beef")));
+    CHECK(with("cafe1234", bloom_filter::update_none).match_inputs(carrying("04cafe12344c", "6a")));
+
+    // What a cut push holds does not: five bytes announced, four there; and a
+    // length prefix that is itself cut.
+    for (auto const script : {"05cafe1234", "4c05cafe1234", "4d0500cafe1234", "4d04", "4e040000"}) {
+        CAPTURE(script);
+        auto cut = with("cafe1234", bloom_filter::update_none);
+        CHECK_FALSE(cut.match_and_insert_outputs(carrying("00", script)));
+        CHECK_FALSE(with("cafe1234", bloom_filter::update_none).match_inputs(carrying(script, "6a")));
     }
 }
