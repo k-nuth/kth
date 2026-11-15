@@ -118,6 +118,9 @@ struct jd_client::attempt {
         : index(index)
         , mining_at(std::move(mining_endpoint))
         , declaration_at(std::move(declaration_endpoint))
+        , max_latency(std::max(
+            jd_latency_limit(settings.jd, mining_at.host, ! route.proxy.empty()),
+            jd_latency_limit(settings.jd, declaration_at.host, ! route.proxy.empty())))
         , mining(executor, mining_at.host, mining_at.port, authority(upstream.mining_authority_public_key),
             std::chrono::seconds(settings.handshake_timeout_seconds), route)
         , declaration(executor, declaration_at.host, declaration_at.port,
@@ -128,7 +131,7 @@ struct jd_client::attempt {
         , declaration_session(jd_peer::declaration, declaration_at.host, declaration_at.port,
             upstream.user_identity, upstream.mode == "full-template")
         , jobs(upstream.user_identity, upstream.mode == "full-template")
-        , health(settings.jd)
+        , health(settings.jd, max_latency)
         , declaration_wake(executor)
         , hash_rate_wake(executor)
     {}
@@ -158,6 +161,9 @@ struct jd_client::attempt {
     size_t const index;
     jd_endpoint const mining_at;
     jd_endpoint const declaration_at;
+    // What both upstreams are held to: sv2.jd.max_latency_milliseconds, or
+    // more where the route to either one needs it.
+    std::chrono::milliseconds const max_latency;
     jd_connection mining;
     jd_connection declaration;
     jd_session mining_session;
@@ -321,8 +327,7 @@ void jd_client::mark_ready(attempt& value) {
             return false;
         }
         if ( ! was_ready && header->extension() == 0
-            && std::chrono::steady_clock::now() - sent
-                > std::chrono::milliseconds(settings_.jd.max_latency_milliseconds)) {
+            && std::chrono::steady_clock::now() - sent > value.max_latency) {
             fail(value, jd_failure::transient, "upstream setup latency exceeded threshold");
             return false;
         }
@@ -566,8 +571,7 @@ bool jd_client::dispatch(attempt& value, jd_declaration::result result) {
     }
     auto const now = std::chrono::steady_clock::now();
     if (result.progress) {
-        if (value.job_sent && now - *value.job_sent
-            > std::chrono::milliseconds(settings_.jd.max_latency_milliseconds)) {
+        if (value.job_sent && now - *value.job_sent > value.max_latency) {
             fail(value, jd_failure::transient, "upstream declaration latency exceeded threshold");
             return false;
         }
@@ -822,6 +826,13 @@ bool jd_client::follow_reconnect(attempt& value, jd_peer peer, byte_span payload
         + ":" + std::to_string(port));
     if ( ! target) {
         fail(value, jd_failure::transient, "upstream Reconnect named an invalid address");
+        return false;
+    }
+    // An upstream reached over I2P never learns the node's address. With no
+    // proxy, an address outside I2P would be dialed directly, so the pool
+    // cannot move the node there.
+    if ( ! jd_reconnect_keeps_route(present.host, target->host, ! route_.proxy.empty())) {
+        fail(value, jd_failure::transient, "upstream Reconnect named an address outside I2P");
         return false;
     }
     // A server that answered every new connection with Reconnect would

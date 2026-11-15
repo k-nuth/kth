@@ -4,6 +4,7 @@
 
 #include <test_helpers.hpp>
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -469,4 +470,65 @@ TEST_CASE("sv2 JD every entry of an upstream list needs the route its address na
     settings = configured_list();
     settings.jd.upstreams.push_back("not an entry");
     CHECK(validate_jd_route(settings, "", "", error));
+}
+
+TEST_CASE("sv2 JD an upstream is held to a latency limit that fits its route", "[sv2 jd]") {
+    using namespace std::chrono_literals;
+    using infrastructure::config::authority;
+    using infrastructure::message::address_network;
+    using infrastructure::message::network_address;
+    hash_digest key{};
+    key.front() = 5;
+    auto const onion = authority(network_address(0, 0, address_network::torv3, key, 3336)).to_hostname();
+    auto const i2p = authority(network_address(0, 0, address_network::i2p, key, 0)).to_hostname();
+
+    auto settings = configured_jd();
+    REQUIRE(settings.jd.max_latency_milliseconds == 5000);
+    // Dialed directly: the setting, whatever it is.
+    CHECK(jd_latency_limit(settings.jd, "pool.example", false) == 5000ms);
+    // Through the proxy, an onion service or any other host: at least 15 s.
+    CHECK(jd_latency_limit(settings.jd, "pool.example", true) == 15000ms);
+    CHECK(jd_latency_limit(settings.jd, onion, true) == 15000ms);
+    // Over I2P, whether or not there is a proxy as well: at least 45 s.
+    CHECK(jd_latency_limit(settings.jd, i2p, false) == 45000ms);
+    CHECK(jd_latency_limit(settings.jd, i2p, true) == 45000ms);
+
+    // The floors only raise: a setting above them stands, one below a direct
+    // connection's stays as set.
+    settings.jd.max_latency_milliseconds = 60000;
+    CHECK(jd_latency_limit(settings.jd, "pool.example", false) == 60000ms);
+    CHECK(jd_latency_limit(settings.jd, "pool.example", true) == 60000ms);
+    CHECK(jd_latency_limit(settings.jd, i2p, false) == 60000ms);
+    settings.jd.max_latency_milliseconds = 20000;
+    CHECK(jd_latency_limit(settings.jd, "pool.example", true) == 20000ms);
+    CHECK(jd_latency_limit(settings.jd, i2p, false) == 45000ms);
+    settings.jd.max_latency_milliseconds = 250;
+    CHECK(jd_latency_limit(settings.jd, "pool.example", false) == 250ms);
+    CHECK(jd_latency_limit(settings.jd, "pool.example", true) == 15000ms);
+}
+
+TEST_CASE("sv2 JD a Reconnect does not move an I2P upstream to an address dialed directly", "[sv2 jd]") {
+    using infrastructure::config::authority;
+    using infrastructure::message::address_network;
+    using infrastructure::message::network_address;
+    hash_digest key{};
+    key.front() = 5;
+    auto const onion = authority(network_address(0, 0, address_network::torv3, key, 3336)).to_hostname();
+    auto const i2p = authority(network_address(0, 0, address_network::i2p, key, 0)).to_hostname();
+    key.front() = 6;
+    auto const other_i2p = authority(network_address(0, 0, address_network::i2p, key, 0)).to_hostname();
+
+    // With no proxy, an address outside I2P is dialed directly.
+    CHECK_FALSE(jd_reconnect_keeps_route(i2p, "pool.example", false));
+    CHECK_FALSE(jd_reconnect_keeps_route(i2p, "203.0.113.7", false));
+    CHECK_FALSE(jd_reconnect_keeps_route(i2p, onion, false));
+    CHECK(jd_reconnect_keeps_route(i2p, other_i2p, false));
+    // With a proxy it leaves through the proxy, as every address outside I2P does.
+    CHECK(jd_reconnect_keeps_route(i2p, "pool.example", true));
+    CHECK(jd_reconnect_keeps_route(i2p, onion, true));
+    // An upstream that was dialed directly, or through the proxy, moves as before.
+    CHECK(jd_reconnect_keeps_route("pool.example", "other.example", false));
+    CHECK(jd_reconnect_keeps_route("pool.example", "other.example", true));
+    CHECK(jd_reconnect_keeps_route("pool.example", i2p, false));
+    CHECK(jd_reconnect_keeps_route(onion, "pool.example", true));
 }

@@ -290,6 +290,17 @@ TEST_CASE("sv2 jd health thresholds use a bounded full share window and keep exa
     REQUIRE_FALSE(latency.sample(false, false, 100ms));
 }
 
+TEST_CASE("sv2 jd health window is held to the latency limit its route was given", "[sv2 jd]") {
+    // The setting says 100 ms. The route to this upstream needs 15 seconds,
+    // and that is what its share answers are held to.
+    jd_health_window window(limits(), 15000ms);
+    REQUIRE_FALSE(window.sample(false, false, 101ms));
+    REQUIRE_FALSE(window.sample(false, false, 15000ms));
+    auto const slow = window.sample(false, false, 15001ms);
+    REQUIRE(slow);
+    REQUIRE(*slow == "upstream latency exceeded threshold");
+}
+
 TEST_CASE("sv2 jd status names identify every health state", "[sv2 jd]") {
     REQUIRE(std::string(jd_health_name(jd_health::available)) == "available");
     REQUIRE(std::string(jd_health_name(jd_health::connecting)) == "connecting");

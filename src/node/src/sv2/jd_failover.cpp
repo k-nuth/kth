@@ -10,10 +10,15 @@
 namespace kth::node::sv2 {
 
 jd_health_window::jd_health_window(sv2_settings::jd_settings const& settings)
+    : jd_health_window(settings, std::chrono::milliseconds(settings.max_latency_milliseconds))
+{}
+
+jd_health_window::jd_health_window(sv2_settings::jd_settings const& settings,
+    std::chrono::milliseconds max_latency)
     : size_(settings.health_window)
     , max_stale_(settings.max_stale_percent)
     , max_reject_(settings.max_reject_percent)
-    , max_latency_(settings.max_latency_milliseconds)
+    , max_latency_(max_latency)
 {}
 
 std::optional<std::string> jd_health_window::sample(bool stale, bool rejected,

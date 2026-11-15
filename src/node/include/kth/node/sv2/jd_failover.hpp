@@ -37,8 +37,10 @@ struct jd_status {
 };
 
 struct jd_health_window {
-    // Settings have passed validate_jd_settings.
+    // Settings have passed validate_jd_settings. The latency limit is the
+    // setting's unless the route to the upstream needs more (jd_latency_limit).
     explicit jd_health_window(sv2_settings::jd_settings const& settings);
+    jd_health_window(sv2_settings::jd_settings const& settings, std::chrono::milliseconds max_latency);
 
     [[nodiscard]] std::optional<std::string> sample(bool stale, bool rejected,
         std::chrono::milliseconds latency);

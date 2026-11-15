@@ -469,7 +469,9 @@ hold, so a server that redirects every new connection cannot keep Knuth
 reconnecting without a pause. The new addresses last until that entry fails;
 its retry then uses the configured addresses. A malformed `Reconnect`, or one
 naming an address the configuration would refuse, demotes the entry for its
-retry delay.
+retry delay. So does one that names an address outside I2P for an upstream
+reached over I2P when `net.proxy` is not set: that address would be dialed
+directly, and an I2P upstream never learns the node's address.
 
 `ChannelEndpointChanged` (section 3.6.4) is how a proxy in front of the pool
 says it moved the extended channel to another endpoint. The Mining connection
@@ -478,7 +480,10 @@ and its work stay as they are. One naming another channel, or arriving before
 the channel is open, ends the attempt like any other misaddressed message.
 
 Response latency above `sv2.jd.max_latency_milliseconds` also demotes an
-entry. Share health uses a rolling window of `sv2.jd.health_window` results;
+entry. An answer through Tor or over I2P crosses several relays each way, so
+an entry reached through `net.proxy` is held to that setting or to 15 seconds,
+whichever is longer, and an I2P entry to that setting or to 45 seconds. An
+entry dialed directly is held to the setting alone. Share health uses a rolling window of `sv2.jd.health_window` results;
 once that window is full, a stale or reject percentage strictly above its
 threshold demotes the entry. A refusal of a valid current-tip share is flagged
 immediately, without waiting for a full window.

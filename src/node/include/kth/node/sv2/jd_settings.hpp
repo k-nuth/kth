@@ -5,6 +5,7 @@
 #ifndef KTH_NODE_SV2_JD_SETTINGS_HPP
 #define KTH_NODE_SV2_JD_SETTINGS_HPP
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -49,6 +50,29 @@ bool validate_jd_settings(sv2_settings const& settings, std::string& error);
 [[nodiscard]]
 bool validate_jd_route(sv2_settings const& settings, std::string const& proxy,
     std::string const& i2p_bridge, std::string& error);
+
+// The longest an upstream may take to answer before it is failed as slow:
+// sv2.jd.max_latency_milliseconds, and not less than what the route to it
+// needs. An answer through Tor or over I2P crosses several relays each way,
+// and the limit that suits a direct connection would fail a healthy upstream
+// there at every slow circuit. The floors stand in the same relation to the
+// default limit as the dial allowances of jd_route do to a direct dial.
+inline constexpr std::chrono::milliseconds jd_proxy_latency_floor = std::chrono::seconds(15);
+inline constexpr std::chrono::milliseconds jd_i2p_latency_floor = std::chrono::seconds(45);
+
+// `host` is the upstream's, and `through_proxy` whether net.proxy is set: an
+// I2P host is reached over I2P, and any other through the proxy when there
+// is one.
+[[nodiscard]]
+std::chrono::milliseconds jd_latency_limit(sv2_settings::jd_settings const& settings, std::string_view host,
+    bool through_proxy);
+
+// Whether a Reconnect may move a connection from `present_host` to
+// `target_host`. An upstream reached over I2P does not learn the node's
+// address; with no proxy, an address outside I2P is dialed directly, so a
+// Reconnect from the one to the other is not followed.
+[[nodiscard]]
+bool jd_reconnect_keeps_route(std::string_view present_host, std::string_view target_host, bool through_proxy);
 
 } // namespace kth::node::sv2
 

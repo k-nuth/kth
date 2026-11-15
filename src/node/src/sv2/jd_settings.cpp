@@ -218,6 +218,18 @@ bool validate_jd_route(sv2_settings const& settings, std::string const& proxy,
     return true;
 }
 
+std::chrono::milliseconds jd_latency_limit(sv2_settings::jd_settings const& settings, std::string_view host,
+    bool through_proxy) {
+    std::chrono::milliseconds const configured(settings.max_latency_milliseconds);
+    if (jd_i2p_host(host)) return std::max(configured, jd_i2p_latency_floor);
+    if (through_proxy) return std::max(configured, jd_proxy_latency_floor);
+    return configured;
+}
+
+bool jd_reconnect_keeps_route(std::string_view present_host, std::string_view target_host, bool through_proxy) {
+    return through_proxy || ! jd_i2p_host(present_host) || jd_i2p_host(target_host);
+}
+
 bool validate_jd_settings(sv2_settings const& settings, std::string& error) {
     error.clear();
     auto const& jd = settings.jd;
