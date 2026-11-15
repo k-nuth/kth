@@ -10,6 +10,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(KTH_SHA256_DISPATCH "runtime" CACHE STRING "SHA-256 selection: runtime or compile_time")
+set_property(CACHE KTH_SHA256_DISPATCH PROPERTY STRINGS runtime compile_time)
+if(NOT KTH_SHA256_DISPATCH MATCHES "^(runtime|compile_time)$")
+    message(FATAL_ERROR "KTH_SHA256_DISPATCH must be runtime or compile_time")
+endif()
+
 option(ENABLE_SHARED "" OFF)
 option(KTH_WASM_SIMD "Enable SIMD128 Base64 kernels for WebAssembly" ON)
 option(KTH_WASM_CODEC_TESTS "Build standalone WebAssembly codec checks" OFF)
@@ -599,6 +605,30 @@ target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
 if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
   target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1-turbo::secp256k1-turbo)
 endif()
+if(KTH_SHA256_DISPATCH STREQUAL "compile_time")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_SHA256_COMPILE_TIME=1)
+
+    # The implementation is the best one for the instructions of the target.
+    # A target without the SHA extensions gives a binary that never uses them,
+    # on any CPU, where runtime dispatch would: say so.
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+        #if !defined(__SHA__) && !defined(__ARM_FEATURE_SHA2)
+        #error the target has no SHA extensions
+        #endif
+        int main() { return 0; }
+    " KTH_TARGET_HAS_SHA_EXTENSIONS)
+    if(KTH_TARGET_HAS_SHA_EXTENSIONS)
+        message(STATUS "Knuth: SHA-256 dispatch: compile time, with the SHA extensions of the target")
+    else()
+        message(WARNING "Knuth: SHA-256 dispatch is compile_time and the target does not enable "
+            "the SHA extensions. This binary will not use them on CPUs that have them; "
+            "runtime dispatch (KTH_SHA256_DISPATCH=runtime) would.")
+    endif()
+else()
+    message(STATUS "Knuth: SHA-256 dispatch: runtime")
+endif()
+
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
