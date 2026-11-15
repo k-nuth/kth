@@ -22,6 +22,8 @@
 
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/headers.hpp>
+#include <kth/domain/message/merkle_block.hpp>
+#include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/not_found.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/handlers/ping.hpp>
@@ -316,6 +318,84 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
         {type_id::block, c.side.hash()},
         {type_id::block, c.trunk[4].hash()},
         {type_id::block, unknown_hash()}});
+}
+
+TEST_CASE("getdata for a filtered block sends the proof and the matched transactions", "[chain_data][bloom filters]") {
+    served_chain c;
+    using domain::chain::bloom_filter;
+    using domain::message::inventory_vector;
+    using type_id = inventory_vector::type_id;
+    auto const coinbase = c.trunk[1].transactions().front().hash();
+    auto const request = domain::message::get_data::create({
+        {type_id::filtered_block, c.trunk[1].hash()},     // its coinbase is watched
+        {type_id::filtered_block, c.trunk[2].hash()},     // nothing in it is
+        {type_id::filtered_block, c.side.hash()},         // off the connected chain
+        {type_id::filtered_block, unknown_hash()}});
+    REQUIRE(request);
+
+    SECTION("with no filter loaded: every transaction of each block held, as BCHN answers") {
+        loopback_peer peer;
+        CHECK(serve(peer, node::handlers::chain_data::handle_get_data(c.fixture.chain(), *peer.session, *request)) ==
+            node::message_result::handled);
+        auto const sent = peer.received();
+        // A proof and the one transaction for each of the two blocks, then
+        // what is not served.
+        REQUIRE(sent.size() == 5);
+        CHECK(sent[0].command == domain::message::merkle_block::command);
+        CHECK(sent[1].command == domain::message::transaction::command);
+        CHECK(sent[2].command == domain::message::merkle_block::command);
+        CHECK(sent[3].command == domain::message::transaction::command);
+        CHECK(sent[4].command == domain::message::not_found::command);
+        byte_reader reader(sent[0].payload);
+        auto const first = domain::message::merkle_block::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(first);
+        CHECK(first->hashes() == hash_list{coinbase});
+        CHECK(first->flags() == data_chunk{0x01});
+    }
+    SECTION("with a filter: a merkleblock for each block held, and what it matched") {
+        loopback_peer peer;
+        auto filter = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+        filter.insert(coinbase);
+        peer.session->tx_inventory().load_filter(filter);
+        CHECK(serve(peer, node::handlers::chain_data::handle_get_data(c.fixture.chain(), *peer.session, *request)) ==
+            node::message_result::handled);
+
+        auto const sent = peer.received();
+        REQUIRE(sent.size() == 4);
+        auto const version = peer.session->negotiated_version();
+
+        REQUIRE(sent[0].command == domain::message::merkle_block::command);
+        byte_reader first_reader(sent[0].payload);
+        auto const first = domain::message::merkle_block::from_data(first_reader, version);
+        REQUIRE(first);
+        CHECK(domain::chain::hash(first->header()) == c.trunk[1].hash());
+        CHECK(first->total_transactions() == 1);
+        CHECK(first->hashes() == hash_list{coinbase});
+        CHECK(first->flags() == data_chunk{0x01});
+
+        REQUIRE(sent[1].command == domain::message::transaction::command);
+        byte_reader tx_reader(sent[1].payload);
+        auto const tx = domain::message::transaction::from_data(tx_reader, version);
+        REQUIRE(tx);
+        CHECK(tx->hash() == coinbase);
+        // It was sent, so it is not announced to the peer again.
+        CHECK(peer.session->tx_inventory().known(coinbase));
+
+        REQUIRE(sent[2].command == domain::message::merkle_block::command);
+        byte_reader second_reader(sent[2].payload);
+        auto const second = domain::message::merkle_block::from_data(second_reader, version);
+        REQUIRE(second);
+        CHECK(domain::chain::hash(second->header()) == c.trunk[2].hash());
+        CHECK(second->flags() == data_chunk{0x00});
+
+        REQUIRE(sent[3].command == domain::message::not_found::command);
+        byte_reader missing_reader(sent[3].payload);
+        auto const missing = domain::message::not_found::from_data(missing_reader, version);
+        REQUIRE(missing);
+        CHECK(missing->inventories() == inventory_vector::list{
+            {type_id::filtered_block, c.side.hash()},
+            {type_id::filtered_block, unknown_hash()}});
+    }
 }
 
 TEST_CASE("getheaders with a locator longer than BCHN accepts disconnects the peer", "[chain_data]") {

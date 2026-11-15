@@ -39,6 +39,9 @@ struct KB_API settings {
     /// Properties.
     uint32_t cores = 0;
     bool priority = true;
+    // Serve wallets that load a bloom filter (BIP37). On unless turned off,
+    // as on other Bitcoin Cash nodes (#477).
+    bool bloom_filters = true;
 #if defined(KTH_CURRENCY_BCH)
     // The network's relay floor, BCHN's minrelaytxfee: 1000 satoshis per 1000
     // bytes, by serialized size. Signature work is not priced at this floor;
