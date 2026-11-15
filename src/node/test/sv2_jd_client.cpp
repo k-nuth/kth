@@ -7,6 +7,7 @@
 #include "sync_harness.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -22,10 +23,13 @@
 #include <utility>
 #include <vector>
 
+#include <asio/as_tuple.hpp>
 #include <asio/buffer.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/address_v4.hpp>
+#include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/use_future.hpp>
@@ -385,8 +389,9 @@ struct client_fixture : io_driver {
         }
     }
 
-    void start(node::sv2_settings const& configuration, blockchain::block_chain* chain = nullptr) {
-        client = std::make_shared<jd_client>(configuration, io.get_executor(), chain);
+    void start(node::sv2_settings const& configuration, blockchain::block_chain* chain = nullptr,
+        jd_route route = {}) {
+        client = std::make_shared<jd_client>(configuration, io.get_executor(), chain, std::move(route));
         ready = ::asio::co_spawn(io, await_client_ready(client), ::asio::use_future);
         result = ::asio::co_spawn(io, run_client(client), ::asio::use_future);
     }
@@ -425,6 +430,121 @@ struct client_fixture : io_driver {
         client->stop();
         await(result);
         REQUIRE_NOTHROW(result.get());
+    }
+};
+
+// A SOCKS5 proxy on a loopback port (RFC 1928), as far as these tests go: no
+// authentication, one CONNECT to an IPv4 address or a name, then bytes both
+// ways until either side ends. Every upstream here listens on this host, so
+// the port asked for is the whole address. Its connections hold what they
+// use, so they outlive the relay that accepted them.
+struct socks5_relay {
+    using tcp = ::asio::ip::tcp;
+
+    std::shared_ptr<tcp::acceptor> acceptor;
+    std::shared_ptr<size_t> opened = std::make_shared<size_t>(0);
+    uint16_t port = 0;
+
+    explicit socks5_relay(io_driver& driver)
+        : acceptor(std::make_shared<tcp::acceptor>(driver.io))
+    {
+        std::error_code error;
+        tcp::endpoint const endpoint(::asio::ip::address_v4::loopback(), 0);
+        acceptor->open(endpoint.protocol(), error);
+        REQUIRE_FALSE(error);
+        acceptor->bind(endpoint, error);
+        REQUIRE_FALSE(error);
+        acceptor->listen(tcp::socket::max_listen_connections, error);
+        REQUIRE_FALSE(error);
+        auto const bound = acceptor->local_endpoint(error);
+        REQUIRE_FALSE(error);
+        port = bound.port();
+        REQUIRE(port != 0);
+        ::asio::co_spawn(driver.io, serve_all(acceptor, opened), ::asio::detached);
+    }
+
+    ~socks5_relay() {
+        std::error_code ignored;
+        acceptor->close(ignored);
+    }
+
+    [[nodiscard]] std::string address() const {
+        return "127.0.0.1:" + std::to_string(port);
+    }
+
+    static ::asio::awaitable<void> serve_all(std::shared_ptr<tcp::acceptor> listening,
+        std::shared_ptr<size_t> count) {
+        for (;;) {
+            auto [error, socket] = co_await listening->async_accept(::asio::as_tuple(::asio::use_awaitable));
+            if (error) co_return;
+            ::asio::co_spawn(listening->get_executor(),
+                serve(std::make_shared<tcp::socket>(std::move(socket)), count), ::asio::detached);
+        }
+    }
+
+    static ::asio::awaitable<bool> take(tcp::socket& socket, uint8_t* bytes, size_t size) {
+        auto [error, count] = co_await ::asio::async_read(socket, ::asio::buffer(bytes, size),
+            ::asio::as_tuple(::asio::use_awaitable));
+        co_return ! error;
+    }
+
+    static ::asio::awaitable<bool> say(tcp::socket& socket, std::string bytes) {
+        auto [error, count] = co_await ::asio::async_write(socket, ::asio::buffer(bytes),
+            ::asio::as_tuple(::asio::use_awaitable));
+        co_return ! error;
+    }
+
+    static ::asio::awaitable<void> pump(std::shared_ptr<tcp::socket> from, std::shared_ptr<tcp::socket> to) {
+        std::array<uint8_t, 4096> buffer{};
+        for (;;) {
+            auto [read_error, size] = co_await from->async_read_some(::asio::buffer(buffer),
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (read_error) break;
+            auto [write_error, written] = co_await ::asio::async_write(*to, ::asio::buffer(buffer.data(), size),
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (write_error) break;
+        }
+        // One side ended: the other pump's read ends with it.
+        std::error_code ignored;
+        from->close(ignored);
+        to->close(ignored);
+    }
+
+    static ::asio::awaitable<void> serve(std::shared_ptr<tcp::socket> client_side, std::shared_ptr<size_t> count) {
+        std::array<uint8_t, 2> greeting{};
+        if ( ! co_await take(*client_side, greeting.data(), greeting.size()) || greeting[0] != 0x05) co_return;
+        std::array<uint8_t, 255> methods{};
+        if ( ! co_await take(*client_side, methods.data(), greeting[1])) co_return;
+        if ( ! co_await say(*client_side, std::string{char(0x05), char(0x00)})) co_return;
+        std::array<uint8_t, 4> request{};
+        if ( ! co_await take(*client_side, request.data(), request.size())) co_return;
+        if (request[0] != 0x05 || request[1] != 0x01) co_return;
+        if (request[3] == 0x03) {
+            uint8_t length = 0;
+            if ( ! co_await take(*client_side, &length, 1)) co_return;
+            std::array<uint8_t, 255> name{};
+            if ( ! co_await take(*client_side, name.data(), length)) co_return;
+        } else if (request[3] == 0x01) {
+            std::array<uint8_t, 4> address{};
+            if ( ! co_await take(*client_side, address.data(), address.size())) co_return;
+        } else {
+            co_return;
+        }
+        std::array<uint8_t, 2> target{};
+        if ( ! co_await take(*client_side, target.data(), target.size())) co_return;
+        auto const target_port = uint16_t((uint16_t{target[0]} << 8) | target[1]);
+
+        auto pool_side = std::make_shared<tcp::socket>(client_side->get_executor());
+        auto [error] = co_await pool_side->async_connect(
+            tcp::endpoint(::asio::ip::address_v4::loopback(), target_port),
+            ::asio::as_tuple(::asio::use_awaitable));
+        if (error) co_return;
+        // Succeeded; the bound address is unused.
+        if ( ! co_await say(*client_side, std::string{char(0x05), char(0x00), char(0x00), char(0x01),
+                char(0), char(0), char(0), char(0), char(0), char(0)})) co_return;
+        ++*count;
+        ::asio::co_spawn(client_side->get_executor(), pump(client_side, pool_side), ::asio::detached);
+        co_await pump(pool_side, client_side);
     }
 };
 
@@ -1157,6 +1277,42 @@ TEST_CASE("sv2 JD starts the first configured entry and advances after connectio
     REQUIRE_NOTHROW(fixture.result.get());
     fixture.eof(backup_pool.socket);
     fixture.eof(backup_jds.socket);
+}
+
+TEST_CASE("sv2 JD an entry behind a proxy is held to the proxy's latency limit, not the setting",
+          "[sv2 jd][socks5]") {
+    client_fixture fixture;
+    fake_upstream backup_pool(fixture, 6);
+    fake_upstream backup_jds(fixture, 7);
+    socks5_relay proxy(fixture);
+    auto configuration = settings(fixture.pool, fixture.jds, backup_pool, backup_jds);
+    configuration.jd.response_timeout_seconds = 3;
+    configuration.jd.max_latency_milliseconds = 1000;
+    configuration.jd.upstreams.back() = upstream(backup_pool, backup_jds, "backup.worker", "coinbase-only");
+    fixture.start(configuration, nullptr, jd_route{proxy.address(), false, nullptr});
+    // Both connections of the first entry come through the proxy.
+    fixture.setup();
+    (void)fixture.jds.receive<setup_connection>();
+    CHECK(*proxy.opened == 2);
+    fixture.jds.send(setup_connection_success{2, 0});
+
+    // The late answer of "setup latency exceeds threshold" above: 1.1 seconds
+    // against a setting of 1, which demotes an entry dialed directly. An
+    // entry reached through the proxy is held to 15 seconds, so the client
+    // takes the answer and goes on to open its channel on the same pool.
+    auto const delayed_until = std::chrono::steady_clock::now() + 1100ms;
+    REQUIRE(fixture.wait_until([&] {
+        return std::chrono::steady_clock::now() >= delayed_until;
+    }, 2s));
+    auto const request = fixture.open();
+    fixture.accept(request);
+    CHECK_FALSE(backup_pool.accepted->done);
+    CHECK_FALSE(backup_jds.accepted->done);
+    CHECK(*proxy.opened == 2);
+
+    fixture.client->stop();
+    fixture.await(fixture.result);
+    REQUIRE_NOTHROW(fixture.result.get());
 }
 
 TEST_CASE("sv2 JD flags an authority mismatch and moves to the next entry without an immediate retry", "[sv2 jd]") {
