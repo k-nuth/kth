@@ -88,13 +88,14 @@ counterpart.
 | JSON-RPC method | C-API function | C++ (`block_chain`) |
 |---|---|---|
 | `getblockcount` | `kth_chain_sync_last_height` | `fetch_last_height().block` |
-| `getbestblockhash` | `kth_chain_sync_block_hash` | `get_last_heights()` + `get_block_hash()` |
-| `getblockhash` | `kth_chain_sync_block_hash` | `get_block_hash(height)` |
+| `getbestblockhash` | `kth_chain_sync_block_hash` | `chain_view().tip_hash` |
+| `getblockhash` (connected blocks only: a stored header past the connected tip is out of range) | `kth_chain_sync_block_hash` | `chain_view()` + `headers()` (the connected tip's ancestor) |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
 | `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
+| `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
 | `getblock` (verbosity 2: each transaction after the coinbase has its `fee`, in BCH, when the node has the block's undo record; a block connected at or below the checkpoint without `chain.full_validation` has none, and the field is left out) | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) + `fetch_spent_outputs(hash, block)` (the block's undo record) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -237,19 +238,31 @@ BCH per kB; a `node.sigop_fee_satoshis` set by the operator is charged on top
 per signature operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
 
+## uptime
+
+`uptime` returns the whole seconds since the node started, counted from when
+`full_node` was built, before the database is opened and the network comes up.
+It reads the steady clock, so changing the system clock does not change the
+answer. The method takes no arguments: anything other than omitted params or an
+empty array is a `-32602` error.
+
 ## Blocks and transactions
 
 Both methods take their arguments as BCHN does.
 
-`getblock "<hash>" [verbosity=1]` reads the block from the flat-file block
+`getblock "<hash>" [verbosity=1] [patterns=false]` reads the block from the flat-file block
 store, through the header index; a side-branch block the node holds is returned
 too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash`,
 `confirmations` (-1 off the connected chain), `confirmations_ticks`, `size`,
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. `fee` per
-transaction and `ablastate` are not reported.
+transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
+object: the script with each run of data pushes replaced by its count
+(`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
+pushed data in order (`data`), and `error` for a script that ends in the middle
+of a push. `fee` per transaction and `ablastate` are not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
 mempool transaction. Confirmed transactions are not indexed by txid (#491), so

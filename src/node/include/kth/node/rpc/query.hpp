@@ -163,7 +163,8 @@ struct block_location {
 
 // The verbose getblock object. `with_transactions` (verbosity 2) lists each
 // transaction as verbose getrawtransaction's fields without the location;
-// otherwise (verbosity 1) by txid.
+// otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
+// scriptPubKey of those transactions carries its byteCodePattern object.
 //
 // `fees`, when not empty, holds the fee of each transaction in satoshis, by
 // its place in the block: each one after the coinbase gets a `fee` field, in
@@ -172,6 +173,7 @@ struct block_location {
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns = false,
                                  std::span<uint64_t const> fees = {});
 
 // The fee of each transaction of a block, in satoshis, by its place in the

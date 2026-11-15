@@ -89,3 +89,16 @@ TEST_CASE("uint256 byte conversion preserves numeric order and all bits", "[hash
     REQUIRE(encode_hash(to_hash_digest(uint256_t(1))) == std::string(63, '0') + "1");
     REQUIRE(encode_hash(to_hash_digest(~uint256_t(0))) == std::string(64, 'f'));
 }
+
+TEST_CASE("sha256 of two pieces is sha256 of one after the other", "[hash]") {
+    data_chunk whole(300);
+    for (size_t i = 0; i < whole.size(); ++i) whole[i] = uint8_t(i * 7 + 3);
+
+    for (size_t const split : {size_t(0), size_t(1), size_t(32), size_t(63), size_t(64), size_t(65), size_t(299), size_t(300)}) {
+        byte_span const first(whole.data(), split);
+        byte_span const second(whole.data() + split, whole.size() - split);
+        CAPTURE(split);
+        REQUIRE(sha256_hash(first, second) == sha256_hash(whole));
+    }
+}
+
