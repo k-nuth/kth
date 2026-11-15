@@ -383,6 +383,8 @@ set(kth_headers
     include/kth/domain/chain/golomb_set.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/script.hpp
+    include/kth/domain/chain/script_filter.hpp
+    include/kth/domain/chain/script_filter_builder.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
     include/kth/domain/chain/point_value.hpp
