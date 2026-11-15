@@ -14,6 +14,10 @@
 #include <secp256k1_recovery.h>
 #include <secp256k1_schnorr.h>
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <secp256k1_turbo/deferred.hpp>
+#endif
+
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -355,6 +359,14 @@ bool verify_schnorr(byte_span point, hash_digest const& hash, byte_span signatur
         return false;
     }
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // Deferred: the interpreter only allows this where a failure is final.
+    if (secp256k1_turbo::deferred::allowed()) {
+        secp256k1_turbo::deferred::record_schnorr(signature.data(), hash.data(), point.data(), point.size());
+        return true;
+    }
+#endif
+
     secp256k1_pubkey pubkey;
     auto const context = verification.context();
 
@@ -392,6 +404,16 @@ bool verify_signature(byte_span point, hash_digest const& hash, ec_signature con
     // bitcoin does not have such a limitation, so we always normalize.
     secp256k1_ecdsa_signature normal;
     secp256k1_ecdsa_signature_normalize(context, &normal, &parsed);
+
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // Deferred: the interpreter only allows this where a failure is final.
+    if (secp256k1_turbo::deferred::allowed()) {
+        ec_signature compact;
+        secp256k1_ecdsa_signature_serialize_compact(context, compact.data(), &normal);
+        secp256k1_turbo::deferred::record_ecdsa(compact.data(), hash.data(), point.data(), point.size());
+        return true;
+    }
+#endif
 
     // This uses a byte span and calls secp256k1_ec_pubkey_parse() in place of
     // parse() so that we can support the der_verify data_chunk optimization.

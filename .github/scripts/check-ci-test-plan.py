@@ -47,7 +47,8 @@ def check(plan, shards):
             name = f"secp256k1.{family}.{case}"
             if name not in names:
                 failures.append(f"missing registered BCH Schnorr test: {name}")
-    for name in ("kth_infrastructure_compile_fail_tests", "kth_compile_check_driver_tests"):
+    for name in ("kth_infrastructure_compile_fail_tests", "kth_compile_check_driver_tests",
+                 "kth_capi_mining_info_callback", "kth_capi_async_callbacks"):
         if name not in names:
             failures.append(f"missing registered test: {name}")
     return failures

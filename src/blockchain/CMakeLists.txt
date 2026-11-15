@@ -313,6 +313,8 @@ if (ENABLE_TEST)
     find_package(Catch2 3 REQUIRED)
 
     set(kth_blockchain_test_sources
+        test/utxo_block_parse.cpp
+        test/parse_block_batch.cpp
         test/header_abla_persistence.cpp
         test/header_index.cpp
         test/header_organizer.cpp
@@ -341,11 +343,13 @@ if (ENABLE_TEST)
         test/batch_activation_boundary.cpp
         test/batch_structure.cpp
         test/batch_rejection_attribution.cpp
+        test/batch_contextual_consensus.cpp
         test/local_block_submission.cpp
         test/faster_blocks_batch.cpp
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp
         test/finalization.cpp
+        test/mainnet_checkpoints.cpp
         test/parking.cpp
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp

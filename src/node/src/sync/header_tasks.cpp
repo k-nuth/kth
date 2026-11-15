@@ -61,7 +61,10 @@ namespace kth::node::sync {
                 .reorg_candidate = result.reorg_candidate,
                 .reorg_fork_height = result.reorg_fork_height,
                 .reorg_branch_head = result.reorg_branch_head,
-                .submission = downloaded->submission
+                .submission = downloaded->submission,
+                .received = downloaded->headers.size(),
+                .last_header = downloaded->headers.empty()
+                    ? null_hash : domain::chain::hash(downloaded->headers.back())
             }, ::asio::as_tuple(::asio::use_awaitable));
 
             if (send_ec) {

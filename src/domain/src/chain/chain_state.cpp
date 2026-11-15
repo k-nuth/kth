@@ -8,7 +8,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/chain_state.hpp>
@@ -35,7 +34,6 @@ namespace kth::domain::chain {
 
 using namespace infrastructure::config;
 using namespace kth::domain::machine;
-using namespace boost::adaptors;
 
 // Constructors.
 //-----------------------------------------------------------------------------
@@ -1046,13 +1044,14 @@ uint32_t chain_state::daa_aserti3_2d(data const& values, assert_anchor_block_inf
 
     auto const time_diff = timestamp_high(values) - assert_anchor_block_info.ancestor_timestamp;
 
-    // The exponent is measured in ticks: T(prev) - T(anchor) plus the anchor's
-    // own interval (the legacy "+ 1" block). Read both from this branch's
-    // schedule: an explicit activation override may precede the fixed anchor.
-    // Before activation this is exactly 600 * (height - anchor.height).
-    auto const anchor_interval = ticks.block_interval(assert_anchor_block_info.height);
-    auto const anchor_tick = ticks.height_to_tick(assert_anchor_block_info.height);
-    auto const tick_term = int64_t(ticks.height_to_tick(values.height - 1u) - anchor_tick + anchor_interval);
+    // The fixed ASERT anchor keeps its original 600-tick interval and tick,
+    // even when an activation override shortens this branch before its height.
+    // work_required rejects a parent below the fixed anchor tick before here.
+    constexpr auto anchor_interval = base_block_interval;
+    auto const anchor_tick = uint64_t(assert_anchor_block_info.height) * base_block_interval;
+    auto const parent_tick = ticks.height_to_tick(values.height - 1u);
+    KTH_ASSERT(parent_tick >= anchor_tick);
+    auto const tick_term = int64_t(parent_tick - anchor_tick + anchor_interval);
 
     // The ASERT anchor bits come from a fixed consensus checkpoint, so the
     // compact is valid by definition and `.value()` cannot throw.
@@ -1149,6 +1148,14 @@ uint32_t chain_state::work_required(data const& values, config::network network,
     //TODO(fernando): could it be improved?
     bool const daa_cw144_active = is_daa_cw144_enabled(values.height, network);
     bool const daa_asert_active = is_euler_enabled(values.height, network);
+
+    // ASERT's anchor tick is a network constant, not a branch-derived tick.
+    // Reject a negative delta before unsigned subtraction or the testnet
+    // minimum-difficulty shortcut. Zero denotes an unusable required target.
+    if (daa_asert_active && ticks.height_to_tick(values.height - 1u)
+            < uint64_t(assert_anchor_block_info.height) * base_block_interval) {
+        return 0;
+    }
 
     // MTP activation way: The comment is left in case in the future it is necessary to do it again.
     // auto const last_time_span = median_time_past(values);

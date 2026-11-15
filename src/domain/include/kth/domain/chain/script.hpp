@@ -10,6 +10,7 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -85,6 +86,7 @@ struct KD_API script {
 
     void from_operations(operation::list const& ops);
     void from_operations(operation::list&& ops);
+    [[nodiscard]] static expect<script> parse_from(std::string_view mnemonic);
     bool from_string(std::string const& mnemonic);
 
     /// A script object is valid if the byte count matches the prefix.

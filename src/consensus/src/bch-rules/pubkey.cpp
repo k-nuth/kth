@@ -10,6 +10,8 @@
 #include <secp256k1_recovery.h>
 #include <secp256k1_schnorr.h>
 
+#include <script/sigcheck_defer.h>
+
 namespace {
 /* Global secp256k1_context object used for verification. */
 secp256k1_context *secp256k1_context_verify = nullptr;
@@ -192,6 +194,15 @@ bool CPubKey::VerifyECDSA(const uint256 &hash,
      * not historically been enforced in Bitcoin, so normalize them first.
      */
     secp256k1_ecdsa_signature_normalize(secp256k1_context_verify, &sig, &sig);
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // Deferred: the interpreter only allows this where a failure is final.
+    if (KTH_SIGCHECK_DEFER_ALLOWED()) {
+        uint8_t compact[64];
+        secp256k1_ecdsa_signature_serialize_compact(secp256k1_context_verify, compact, &sig);
+        secp256k1_turbo::deferred::record_ecdsa(compact, hash.data(), vch, size());
+        return true;
+    }
+#endif
     return secp256k1_ecdsa_verify(secp256k1_context_verify, &sig, hash.data(),
                                   &pubkey);
 }
@@ -205,6 +216,14 @@ bool CPubKey::VerifySchnorr(const uint256 &hash,
     if (vchSig.size() != 64) {
         return false;
     }
+
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    // Deferred: the interpreter only allows this where a failure is final.
+    if (KTH_SIGCHECK_DEFER_ALLOWED()) {
+        secp256k1_turbo::deferred::record_schnorr(vchSig.data(), hash.data(), vch, size());
+        return true;
+    }
+#endif
 
     secp256k1_pubkey pubkey;
     if (!secp256k1_ec_pubkey_parse(secp256k1_context_verify, &pubkey,

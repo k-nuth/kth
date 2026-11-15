@@ -38,6 +38,10 @@ peer_manager::~peer_manager() {
 // =============================================================================
 
 ::asio::awaitable<code> peer_manager::add(peer_session::ptr peer) {
+    co_return co_await add(std::move(peer), false);
+}
+
+::asio::awaitable<code> peer_manager::add(peer_session::ptr peer, bool unique_ip) {
     if (stopped()) {
         co_return error::service_stopped;
     }
@@ -55,7 +59,7 @@ peer_manager::~peer_manager() {
     }
 
     // Execute on strand
-    auto result = co_await ::asio::co_spawn(strand_, [this, peer, nonce]() -> ::asio::awaitable<code> {
+    auto result = co_await ::asio::co_spawn(strand_, [this, peer, nonce, unique_ip]() -> ::asio::awaitable<code> {
         // Check capacity
         if (max_connections_ > 0 && peers_.size() >= max_connections_) {
             co_return error::channel_stopped;  // At capacity
@@ -69,7 +73,8 @@ peer_manager::~peer_manager() {
         // Check for duplicate authority
         auto const& new_auth = peer->authority();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
-            if (existing_peer->authority() == new_auth) {
+            if (existing_peer->authority() == new_auth ||
+                (unique_ip && existing_peer->authority().asio_ip() == new_auth.asio_ip())) {
                 co_return error::address_in_use;  // Duplicate authority
             }
         }

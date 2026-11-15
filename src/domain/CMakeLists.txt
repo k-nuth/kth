@@ -21,7 +21,7 @@ option(WITH_CONSOLE "Compile console application." OFF)
 option(GLOBAL_BUILD "" ON)
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_QRENCODE)
@@ -85,10 +85,6 @@ endif()
 
 if (${CURRENCY} STREQUAL "LTC")
   find_package(OpenSSL REQUIRED)
-endif()
-
-if (WITH_ICU)
-  find_package(ICU REQUIRED)
 endif()
 
 find_package(tiny-aes-c REQUIRED)
@@ -462,10 +458,6 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
-if (WITH_ICU)
-  target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${ICU_INCLUDE_DIR})
-endif()
-
 if (${CURRENCY} STREQUAL "LTC")
   target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif()
@@ -481,10 +473,6 @@ if (${CURRENCY} STREQUAL "LTC")
   target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
-endif()
-
 target_link_libraries(${PROJECT_NAME} PUBLIC infrastructure::infrastructure)
 target_link_libraries(${PROJECT_NAME} PUBLIC tiny-aes-c::tiny-aes-c)
 if(KTH_WITH_JEMALLOC)
@@ -493,7 +481,7 @@ endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
-else()
+elseif(NOT KTH_BROWSER_NODE)
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
   target_link_options(${PROJECT_NAME} PUBLIC "-pthread")
   set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -587,6 +575,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/light_block.cpp
         test/chain/output.cpp
         test/chain/output_point.cpp
+        test/config_integer.cpp
         test/chain/point.cpp
         test/from_data_noexcept.cpp
         test/to_data_noexcept.cpp
@@ -718,7 +707,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_to_data PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_to_data PRIVATE nanobench::nanobench)
 
+  # Script debugger benchmarks: a debug step against a plain operation.
+  add_executable(kth_domain_bench_debugger bench/debugger/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
 endif()

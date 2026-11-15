@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <kth/domain/config/script.hpp>
 #include <kth/infrastructure/machine/sighash_algorithm.hpp>
 
 #include <print>
@@ -1357,4 +1358,25 @@ TEST_CASE("the p2pkh unlocking placeholder serializes to the size of a real spen
         signature.size(), pubkey.to_data().size()));
 
     CHECK(placeholder.serialized_size(true) == real.serialized_size(true));
+}
+
+TEST_CASE("script expected parser accepts empty input and rejects invalid mnemonics", "[script]") {
+    auto const empty = kth::domain::chain::script::parse_from("");
+    REQUIRE(empty);
+    REQUIRE(empty->is_valid());
+    REQUIRE(empty->serialized_size(false) == 0);
+    auto const valid = kth::domain::chain::script::parse_from("dup hash160");
+    REQUIRE(valid);
+    auto const invalid = kth::domain::chain::script::parse_from("not_an_opcode");
+    REQUIRE(invalid == std::unexpected(kth::error::illegal_value));
+}
+
+TEST_CASE("config script parser handles whitespace through the expected factory", "[script]") {
+    auto const empty = kth::domain::config::script::parse_from(" \t\n ");
+    REQUIRE(empty);
+    REQUIRE(empty->to_data().empty());
+    auto const valid = kth::domain::config::script::parse_from("  dup hash160  ");
+    REQUIRE(valid);
+    REQUIRE(valid->to_data() == kth::data_chunk{0x76, 0xa9});
+    REQUIRE_FALSE(kth::domain::config::script::parse_from("not_an_opcode"));
 }

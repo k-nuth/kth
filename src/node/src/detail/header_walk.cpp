@@ -92,6 +92,23 @@ walk_step header_walk::no_progress(uint64_t source, uint32_t tip) {
     return advance(tip);
 }
 
+walk_step header_walk::held_batch(uint64_t source, uint32_t last_height, uint32_t tip) {
+    if ( ! active_ || active_->peer != source) {
+        return {};      // the same rule as no_progress: only the asked peer answers
+    }
+    if (cursor_ && cursor_->peer == source && last_height <= cursor_->height) {
+        // Not further than its previous answer: it has nothing more to show
+        // from here.
+        return no_progress(source, tip);
+    }
+    answered();
+    cursor_ = held_cursor{source, last_height};
+    end_active();
+    parked_ = false;
+    active_ = walk_stimulus{source, ++last_seq_, true};
+    return walk_step{.confirm_tip = false, .stimulate = active_};
+}
+
 walk_step header_walk::failure(uint64_t source, uint32_t tip) {
     if ( ! active_ || active_->peer != source) {
         return {};
@@ -181,6 +198,7 @@ void header_walk::begin_walk() {
     walking_ = true;
     spent_.clear();
     evidence_ = false;
+    cursor_.reset();
 }
 
 void header_walk::end_active() {

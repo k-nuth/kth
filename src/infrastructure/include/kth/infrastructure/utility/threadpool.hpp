@@ -12,10 +12,28 @@
 #include <spdlog/spdlog.h>
 #include <asio/thread_pool.hpp>
 
+#if defined(KTH_BROWSER_NODE)
+#include <kth/infrastructure/utility/browser_runtime.hpp>
+namespace kth {
+struct threadpool {
+    using context_type = ::asio::io_context;
+    explicit threadpool(std::string_view, size_t = 1) {}
+    auto get_executor() { return browser::runtime::current().context().get_executor(); }
+    auto executor() { return get_executor(); }
+    // The node joins its coroutine nurseries before releasing this borrowed
+    // Worker executor; it must never stop or synchronously join the event loop.
+    void stop() {}
+    void join() {}
+    size_t size() const noexcept { return 1; }
+    context_type& get() { return browser::runtime::current().context(); }
+};
+}
+#else
 namespace kth {
 
 // Wrapper over asio::thread_pool that tracks the thread count.
 struct threadpool {
+    using context_type = ::asio::thread_pool;
     explicit
     threadpool(std::string_view name, size_t num_threads = std::thread::hardware_concurrency())
         : name_(name)
@@ -71,4 +89,5 @@ private:
 
 } // namespace kth
 
+#endif // KTH_BROWSER_NODE
 #endif // KTH_INFRASTRUCTURE_THREADPOOL_HPP

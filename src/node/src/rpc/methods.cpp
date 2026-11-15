@@ -340,6 +340,7 @@ std::optional<std::string> bip22_reject_reason(code const& ec, uint32_t version)
         {error::coinbase_maturity, "bad-txns-premature-spend-of-coinbase"},
         {error::spend_exceeds_value, "bad-txns-in-belowout"},
         {error::sequence_locked, "bad-txns-nonfinal"},
+        {error::invalid_tx_version, "bad-txns-version"},
         {error::transaction_version_out_of_range, "bad-txns-version"},
         {error::empty_transaction, "rejected"},
         {error::spend_overflow, "rejected"},

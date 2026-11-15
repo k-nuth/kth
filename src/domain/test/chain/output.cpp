@@ -970,3 +970,112 @@ TEST_CASE("output deserialization ...", "[output]") {
 }
 
 // End Test Suite
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("outputs preserve malformed token prefixes for contextual validation", "[output][token_prefix]") {
+    for (size_t size : {size_t{1}, size_t{33}, size_t{34}, size_t{35}, size_t{80}}) {
+        for (bool wire : {false, true}) {
+            DYNAMIC_SECTION("bytes=" << size << ", wire=" << wire) {
+                data_chunk bytes(size, 0);
+                bytes[0] = 0xef;
+                if (size >= 34) bytes[33] = 0x80; // reserved token bit
+                if (size == 35) {
+                    bytes[33] = 0x10; // amount present
+                    bytes[34] = 0xfd; // amount needs bytes outside this output
+                }
+                chain::output original(1000, chain::script(bytes, false), chain::token_data_opt{});
+                auto raw = to_data_chunk(original, wire);
+                auto const serialized = raw;
+                raw.insert(raw.end(), {0x01, 0x00, 0x51}); // following data is not token data
+                byte_reader reader(raw);
+                auto parsed = chain::output::from_data(reader, wire);
+                REQUIRE(parsed);
+                CHECK_FALSE(parsed->token_data());
+                CHECK(parsed->script().bytes() == bytes);
+                CHECK(to_data_chunk(*parsed, wire) == serialized);
+                CHECK(reader.remaining_size() == 3);
+            }
+        }
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("parsed token prefixes remain distinct from malformed raw prefixes", "[output][token_prefix]") {
+    hash_digest category{};
+    category[0] = 0x42;
+    chain::output token_output(1000, chain::script(data_chunk{0xef}, false),
+        chain::token_data_opt{chain::make_fungible(category, 1)});
+    auto const raw = to_data_chunk(token_output, true);
+    byte_reader reader(raw);
+    auto parsed = chain::output::from_data(reader, true);
+    REQUIRE(parsed);
+    REQUIRE(parsed->token_data());
+    CHECK(*parsed == token_output);
+    chain::input::list inputs;
+    inputs.emplace_back(chain::output_point{category, 0}, chain::script{}, 0xffffffff);
+    chain::transaction tx(2, 0, std::move(inputs), chain::output::list{*parsed});
+    tx.inputs()[0].previous_output().validation.cache =
+        chain::output(2000, chain::script(data_chunk{0x51}, false), chain::token_data_opt{});
+    CHECK(tx.validate_tokens(to_flags(machine::upgrade::bch_leibniz)) == error::success);
+}
+
+TEST_CASE("malformed token prevouts are rejected before and after Descartes", "[output][token_prefix]") {
+    hash_digest h{};
+    h[0] = 0x42;
+    chain::input::list inputs;
+    inputs.emplace_back(chain::output_point{h, 0}, chain::script{}, 0xffffffff);
+    chain::transaction tx(2, 0, std::move(inputs),
+        chain::output::list{chain::output(1000, chain::script(data_chunk{0x51}, false), chain::token_data_opt{})});
+    tx.inputs()[0].previous_output().validation.cache =
+        chain::output(2000, chain::script(data_chunk{0xef}, false), chain::token_data_opt{});
+    CHECK(tx.validate_tokens(to_flags(machine::upgrade::bch_gauss)) == error::token_pre_activation_input);
+    CHECK(tx.validate_tokens(to_flags(machine::upgrade::bch_leibniz)) == error::token_unparseable_input);
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("token decoding rejects noncanonical amount and commitment presence", "[output][token_prefix][token_canonical]") {
+    std::vector<data_chunk> const invalid{
+        {0x30, 0x00}, // NFT plus an explicitly encoded zero FT amount
+        {0x60, 0x00}, // commitment present, but empty
+        {0x10, 0xff, 0, 0, 0, 0, 0, 0, 0, 0x80} // 2^63
+    };
+    for (auto const& suffix : invalid) {
+        DYNAMIC_SECTION("suffix=" << encode_base16(suffix)) {
+            data_chunk payload(32, 0x42);
+            payload.insert(payload.end(), suffix.begin(), suffix.end());
+            byte_reader token_reader(payload);
+            CHECK_FALSE(chain::token::encoding::from_data(token_reader));
+            data_chunk raw_script{0xef};
+            raw_script.insert(raw_script.end(), payload.begin(), payload.end());
+            raw_script.push_back(0x51);
+            chain::output original(1000, chain::script(raw_script, false), chain::token_data_opt{});
+            for (bool wire : {false, true}) {
+                auto const raw = to_data_chunk(original, wire);
+                byte_reader reader(raw);
+                auto parsed = chain::output::from_data(reader, wire);
+                REQUIRE(parsed);
+                CHECK_FALSE(parsed->token_data());
+                CHECK(parsed->script().bytes() == raw_script);
+                CHECK(to_data_chunk(*parsed, wire) == raw);
+            }
+        }
+    }
+}
+
+TEST_CASE("token decoding preserves implicit zero NFT amount and legal encoded boundaries", "[output][token_prefix][token_canonical]") {
+    for (data_chunk suffix : {data_chunk{0x20}, data_chunk{0x60, 1, 0x42}, data_chunk{0x10, 1},
+            data_chunk{0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f}}) {
+        DYNAMIC_SECTION("suffix=" << encode_base16(suffix)) {
+            data_chunk payload(32, 0x42);
+            payload.insert(payload.end(), suffix.begin(), suffix.end());
+            byte_reader reader(payload);
+            auto parsed = chain::token::encoding::from_data(reader);
+            REQUIRE(parsed);
+            CHECK(reader.is_exhausted());
+            CHECK(chain::token::encoding::to_data(*parsed) == payload);
+        }
+    }
+}
+#endif

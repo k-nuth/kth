@@ -1,0 +1,24 @@
+name: README build controls
+on:
+  pull_request:
+    paths: &paths
+      - src/c-api/README.md
+      - src/c-api/CMakeLists.txt
+      - scripts/test_c_api_readme.py
+      - scripts/test_cosmetic_changes.py
+      - .github/workflows/cosmetic-changes.yml
+      - .github/workflows/readme-build-controls.yml
+  push:
+    branches: [master]
+    paths: *paths
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  controls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest scripts/test_c_api_readme.py scripts/test_cosmetic_changes.py

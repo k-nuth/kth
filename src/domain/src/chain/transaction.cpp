@@ -238,6 +238,13 @@ bool transaction::is_final(size_t block_height, uint32_t block_time) const {
 }
 
 bool transaction::is_final(block_ticks const& ticks, size_t block_height, uint32_t block_time) const {
+#if defined(KTH_CURRENCY_BCH)
+    // The activation block keeps the old rules. Later coinbases have no
+    // absolute timelock, regardless of their locktime and input sequence.
+    if (is_coinbase() && ! ticks.schedule().empty() && block_height > ticks.schedule().front().height) {
+        return true;
+    }
+#endif
     if (locktime_ == 0 || all_inputs_final()) {
         return true;
     }
@@ -733,12 +740,30 @@ bool is_overspent(transaction const& tx) {
 
 #if defined(KTH_CURRENCY_BCH)
 
+code transaction::validate_token_birth(script_flags_t flags, config::network network) const {
+    if (is_coinbase() || ! script::is_enabled(flags, machine::script_flags::bch_tokens)) {
+        return error::success;
+    }
+    for (auto const& in : inputs_) {
+        auto const& prevout = in.previous_output().validation;
+        if (prevout.cache.is_valid() && prevout.cache.token_data()
+            && ! chain_state::is_descartes_enabled(prevout.height, network)) {
+            return error::token_input_created_pre_activation;
+        }
+    }
+    return error::success;
+}
+
 code transaction::validate_tokens(script_flags_t flags) const {
+    auto const unparseable_prefix = [](output const& out) {
+        auto const& bytes = out.script().bytes();
+        return ! out.token_data() && ! bytes.empty() && bytes.front() == encoding::PREFIX_BYTE;
+    };
     if ( ! script::is_enabled(flags, machine::script_flags::bch_tokens)) {
         if ( ! is_coinbase()) {
             for (auto const& in : inputs_) {
                 auto const& cache = in.previous_output().validation.cache;
-                if (cache.is_valid() && cache.token_data().has_value()) {
+                if (cache.is_valid() && (cache.token_data() || unparseable_prefix(cache))) {
                     return error::token_pre_activation_input;
                 }
             }
@@ -746,12 +771,27 @@ code transaction::validate_tokens(script_flags_t flags) const {
         return error::success;
     }
 
-    if (is_coinbase()) {
-        for (auto const& out : outputs_) {
-            if (out.token_data().has_value()) {
-                return error::token_coinbase_has_tokens;
-            }
+    bool token_outputs = false;
+    for (auto const& out : outputs_) {
+        if (unparseable_prefix(out)) {
+            return error::token_unparseable_output;
         }
+        token_outputs = token_outputs || out.token_data().has_value();
+    }
+    if (is_coinbase()) {
+        return token_outputs ? error::token_coinbase_has_tokens : error::success;
+    }
+    bool token_inputs = false;
+    for (auto const& in : inputs_) {
+        auto const& cache = in.previous_output().validation.cache;
+        if (cache.is_valid() && unparseable_prefix(cache)) {
+            return error::token_unparseable_input;
+        }
+        token_inputs = token_inputs || cache.token_data().has_value();
+    }
+    // Prefix sanity checks above must run even for transactions with no parsed
+    // tokens. Only then can ordinary BCH transfers skip allocating token ledgers.
+    if ( ! token_inputs && ! token_outputs) {
         return error::success;
     }
 

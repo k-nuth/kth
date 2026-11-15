@@ -29,8 +29,8 @@ char* kth_wallet_cashaddr_decode(char const* str, char const* default_prefix, KT
     KTH_PRECONDITION(default_prefix != nullptr);
     KTH_PRECONDITION(out_payload != nullptr);
     KTH_PRECONDITION(out_payload_size != nullptr);
-    auto const str_cpp = std::string(str);
-    auto const default_prefix_cpp = std::string(default_prefix);
+    auto const str_cpp = std::string_view(str);
+    auto const default_prefix_cpp = std::string_view(default_prefix);
     auto const pair_cpp = kth::domain::wallet::cashaddr::decode(str_cpp, default_prefix_cpp);
     *out_payload = kth::create_c_array(pair_cpp.second, *out_payload_size);
     return kth::create_c_str(pair_cpp.first);

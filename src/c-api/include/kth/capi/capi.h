@@ -11,6 +11,9 @@
 #include <kth/capi/version.h>
 #include <kth/capi/visibility.h>
 #include <kth/capi/node.h>
+#if defined(KTH_BROWSER_NODE)
+#include <kth/capi/node/header_sync.h>
+#endif
 #include <kth/capi/node_info.h>
 #include <kth/capi/node/settings.h>
 

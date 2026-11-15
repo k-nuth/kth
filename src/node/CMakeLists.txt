@@ -75,7 +75,7 @@ add_definitions(-DKTH_NODE_BUILD_TIMESTAMP=${KTH_NODE_BUILD_TIMESTAMP})
 
 if (NOT GLOBAL_BUILD)
   find_package(blockchain REQUIRED)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
     find_package(network REQUIRED)
   endif()
 endif()
@@ -133,16 +133,13 @@ set(kth_sources_just_legacy
   src/parser.cpp
   src/settings.cpp
   src/user_agent.cpp
-
-  src/utility/check_list.cpp
-  src/utility/header_list.cpp
-  src/utility/performance.cpp
 )
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
     src/full_node.cpp
+    src/detail/configured_peers.cpp
     src/detail/block_announcements.cpp
     src/detail/fee_filter.cpp
     src/detail/header_ingest.cpp
@@ -157,11 +154,10 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # networking and the blockchain, which only the node module depends on).
     src/p2p_node.cpp
     src/handlers/chain_data.cpp
+    src/p2p_websocket.cpp
+    src/detail/ws_discovery_task.cpp
     src/handlers/ping.cpp
     src/handlers/pong.cpp
-
-    src/utility/reservation.cpp
-    src/utility/reservations.cpp
 
     # CSP-based sync system
     src/sync/chunk_coordinator.cpp
@@ -183,6 +179,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/messages.cpp
     src/sv2/connection.cpp
   )
+endif()
+
+# A browser node compiles what an ordinary WebAssembly node does, plus the
+# headers-only client and the network layer it runs on.
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
@@ -300,12 +302,6 @@ set(kth_headers
   include/kth/node/executor/executor.hpp
   include/kth/node/executor/executor_info.hpp
   include/kth/node/define.hpp
-
-  include/kth/node/utility/reservation.hpp
-  include/kth/node/utility/check_list.hpp
-  include/kth/node/utility/header_list.hpp
-  include/kth/node/utility/performance.hpp
-  include/kth/node/utility/reservations.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
   include/kth/node/parser.hpp
@@ -349,6 +345,10 @@ set(kth_headers
   include/kth/node/sync/compact_blocks.hpp
 )
 
+if(KTH_BROWSER_NODE)
+  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+endif()
+
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 if(TARGET kth_node_proto)
@@ -377,7 +377,7 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC blockchain::blockchain)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten" OR KTH_BROWSER_NODE)
   target_link_libraries(${PROJECT_NAME} PUBLIC network::network)
 endif()
 
@@ -437,8 +437,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_node_test
+          test/user_agent.cpp
           test/chain_view.cpp
-          test/check_list.cpp
           test/chunk_coordinator.cpp
           test/fatal_shutdown.cpp
           test/mempool_admission.cpp
@@ -471,9 +471,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_storage_wakeup.cpp
           test/select_sync.cpp
           test/configuration.cpp
+          test/full_validation.cpp
+          test/in_place_directory.cpp
         test/full_node_network.cpp
           test/template_prevout_refresh.cpp
-          test/header_list.cpp
+          test/p2p_websocket_config.cpp
           test/header_walk.cpp
           test/header_ingest.cpp
           test/block_announcements.cpp
@@ -487,11 +489,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp
+          test/configured_peers.cpp
           test/p2p_node.cpp
+          test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
-          test/performance.cpp
-          test/reservation.cpp
-          test/reservations.cpp
           test/sync_decisions.cpp
           test/mining_job_store.cpp
           test/mining_block_submit.cpp
@@ -499,9 +500,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_primitives.cpp
           test/sv2_messages.cpp
           test/sv2_connection.cpp
-          test/settings.cpp
-          test/utility.cpp
-          test/utility.hpp)
+          test/settings.cpp)
 
   # JSON-RPC unit tests build only when the server is compiled in.
   if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -523,6 +522,22 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Client example; built here so API drift in the generated headers fails CI.
     add_executable(kth_capnp_chain_client examples/capnp_chain_client.cpp)
     target_link_libraries(kth_capnp_chain_client PRIVATE ${PROJECT_NAME})
+  endif()
+
+  add_executable(kth_p2p_close_test test/p2p_connection_close.cpp)
+  target_link_libraries(kth_p2p_close_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_p2p_close_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  target_compile_definitions(kth_p2p_close_test PRIVATE KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_p2p_close_test>")
+  add_test(NAME kth_p2p_close_test COMMAND kth_p2p_close_test)
+
+  add_executable(kth_ws_config_test test/p2p_websocket_config.cpp)
+  target_link_libraries(kth_ws_config_test PRIVATE ${PROJECT_NAME} Catch2::Catch2WithMain)
+  target_include_directories(kth_ws_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  add_test(NAME kth_ws_config_test COMMAND kth_ws_config_test)
+
+  if(KTH_WITH_WEBSOCKET)
+    add_executable(kth_ws_fixture test/websocket_fixture.cpp)
+    target_link_libraries(kth_ws_fixture PRIVATE ${PROJECT_NAME})
   endif()
 
   target_include_directories(kth_node_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)

@@ -24,7 +24,7 @@ option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_PNG)
@@ -64,6 +64,14 @@ if (NOT GLOBAL_BUILD)
   find_package(secp256k1 REQUIRED)
 endif()
 
+set(KTH_SIGNATURE_VERIFICATION "secp256k1" CACHE STRING "Signature verification: secp256k1 | secp256k1_turbo")
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+  add_definitions(-DKTH_SIGVERIFY_TURBO_BATCH)
+  if (NOT TARGET secp256k1-turbo::secp256k1-turbo)
+    find_package(secp256k1-turbo REQUIRED)
+  endif()
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Boost.Program_options is gone — the CLI is now built on CLI11.
   find_package(Boost COMPONENTS thread REQUIRED)
@@ -79,7 +87,7 @@ find_package(ctre REQUIRED)
 find_package(GMP REQUIRED)
 
 if (WITH_ICU)
-  find_package(ICU REQUIRED)
+  find_package(ICU COMPONENTS uc REQUIRED)
 endif()
 
 if (KTH_WITH_PNG)
@@ -106,10 +114,8 @@ include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
-# Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  find_package(simdutf REQUIRED)
-endif()
+# Unicode conversion on all platforms; native Base64 also uses this backend.
+find_package(simdutf REQUIRED)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(KTH_WASM_SIMD)
@@ -166,7 +172,6 @@ set(kth_sources_just_legacy
         src/config/base58.cpp
         src/config/base64.cpp
         src/config/checkpoint.cpp
-        src/config/directory.cpp
         src/config/endpoint.cpp
         src/config/hash160.cpp
         src/config/hash256.cpp
@@ -232,7 +237,6 @@ set(kth_sources_just_legacy
         src/utility/flush_lock.cpp
         src/utility/interprocess_lock.cpp
         src/utility/monitor.cpp
-        src/utility/ostream_writer.cpp
         src/utility/prioritized_mutex.cpp
         src/utility/scope_lock.cpp
 
@@ -348,10 +352,7 @@ set(kth_headers
 
     include/kth/infrastructure/impl/utility/collection.ipp
     include/kth/infrastructure/impl/utility/data.ipp
-    include/kth/infrastructure/impl/utility/ostream_writer.ipp
-    include/kth/infrastructure/impl/utility/pending.ipp
     include/kth/infrastructure/impl/utility/serializer.ipp
-    include/kth/infrastructure/impl/utility/string.ipp
     include/kth/infrastructure/impl/utility/track.ipp
 
     include/kth/infrastructure/message/message_tools.hpp
@@ -374,7 +375,6 @@ set(kth_headers
     include/kth/infrastructure/utility/collection.hpp
     include/kth/infrastructure/utility/color.hpp
     include/kth/infrastructure/utility/conditional_lock.hpp
-    include/kth/infrastructure/utility/container_sink.hpp
     include/kth/infrastructure/utility/data.hpp
     include/kth/infrastructure/utility/deadline.hpp
     include/kth/infrastructure/utility/decorator.hpp
@@ -385,8 +385,6 @@ set(kth_headers
     include/kth/infrastructure/utility/interprocess_lock.hpp
     include/kth/infrastructure/utility/monitor.hpp
     include/kth/infrastructure/utility/noncopyable.hpp
-    include/kth/infrastructure/utility/ostream_writer.hpp
-    include/kth/infrastructure/utility/pending.hpp
     include/kth/infrastructure/utility/prioritized_mutex.hpp
 
     include/kth/infrastructure/utility/duration_jitter.hpp
@@ -584,7 +582,7 @@ target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
-else()
+elseif(NOT KTH_BROWSER_NODE)
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
   target_link_options(${PROJECT_NAME} PUBLIC "-pthread")
   if(KTH_WASM_SIMD)
@@ -598,17 +596,18 @@ endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC fmt::fmt-header-only)
 target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog_header_only)
 target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
+if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
+  target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1-turbo::secp256k1-turbo)
+endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
 
-# Link the native SIMD backend; WebAssembly uses the in-tree kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
-endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
 
 if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_ICU)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::uc)
 endif()
 
 if (KTH_WITH_PNG)
@@ -666,7 +665,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/formats/base_64.cpp
     test/formats/base_85.cpp
 
-    test/log/log.cpp
 
     test/machine/number.cpp
 
@@ -681,6 +679,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/path.cpp
     test/network_address.cpp
 
+    test/unicode/utf.cpp
     test/unicode/unicode.cpp
     test/unicode/unicode_istream.cpp
     test/unicode/unicode_ostream.cpp
@@ -692,6 +691,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
+    test/utility/string_algorithms.cpp
+    test/utility/parse_integer.cpp
     test/utility/serializer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
@@ -738,7 +739,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_include_directories(kth_infrastructure_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
   target_link_libraries(kth_infrastructure_test PRIVATE ${PROJECT_NAME})
-  target_link_libraries(kth_infrastructure_test PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(kth_infrastructure_test PRIVATE simdutf::simdutf Catch2::Catch2WithMain)
 
   include(CTest)
   kth_register_tests(kth_infrastructure_test)
