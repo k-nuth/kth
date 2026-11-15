@@ -48,12 +48,13 @@ struct p2p_node_test_seam {
         target.status_probe_ = std::move(probe);
     }
 
-    /// Hand a session to the peer supervisor as an outbound connection, as
-    /// connect() does once its socket is open, so a test can hold the other
-    /// end of the handshake.
+    /// Hand a session to the peer supervisor as an inbound connection, as the
+    /// acceptor does, so a test can hold the other end of the handshake.
+    /// Inbound, so any number of test peers on the loopback address are
+    /// admitted: an outbound session needs an address no other session holds.
     static bool queue_peer(p2p_node& target, network::peer_session::ptr peer) {
         return target.new_peer_channel_->try_send(std::error_code{},
-            peer_event{std::move(peer), peer_direction::outbound, nullptr});
+            peer_event{std::move(peer), peer_direction::inbound, nullptr});
     }
 
     /// Peers holding one of the high-bandwidth compact block slots.
