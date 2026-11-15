@@ -53,8 +53,9 @@ struct jd_notice {
 // one higher-priority pair may recover without disturbing downstream work.
 struct jd_client {
     // settings have passed validate_jd_settings and solo payout validation.
+    // route is how every upstream connection leaves the node.
     jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
-        blockchain::block_chain* chain = nullptr);
+        blockchain::block_chain* chain = nullptr, jd_route route = {});
 
     ::asio::awaitable<void> run();
     void stop();
@@ -126,6 +127,8 @@ private:
 
     ::asio::strand<::asio::any_io_executor> owner_;
     sv2_settings const settings_;
+    // How every entry's connections leave the node.
+    jd_route const route_;
     std::vector<sv2_settings::jd_upstream> const upstreams_;
     jd_failover policy_;
     // Addresses named by a followed Reconnect, per entry and connection. An

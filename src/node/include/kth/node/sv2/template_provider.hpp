@@ -110,10 +110,20 @@ struct jd_client;
 // Accepts Template Distribution and Mining Protocol clients on sv2.bind:sv2.port.
 // Like the JSON-RPC server it runs on the node's executor, with one coroutine
 // per connection, and every socket is owned by one strand.
+// The node's routes for outbound connections, which the Job Declaration
+// client's upstreams take as its peer connections do: net.proxy,
+// net.proxy_randomize and net.i2psam.
+struct upstream_route {
+    std::string proxy;
+    bool proxy_randomize = true;
+    std::string i2p_bridge;
+};
+
 struct template_provider {
     template_provider(sv2_settings const& settings, ::asio::any_io_executor executor,
         blockchain::block_chain& chain,
-        domain::config::network network = domain::config::network::mainnet);
+        domain::config::network network = domain::config::network::mainnet,
+        upstream_route route = {});
 
     // Bind the listener and serve connections until stop(). Intended to be
     // co_spawned. Returns on a bind error, or once every connection has ended
@@ -135,6 +145,7 @@ private:
 
     sv2_settings const settings_;
     domain::config::network const network_;
+    upstream_route const route_;
     blockchain::block_chain& chain_;
     std::optional<domain::chain::script> payout_;
     uint64_t next_salt_ = 1;

@@ -48,6 +48,17 @@ std::expected<endpoint, kth::code> endpoint::parse_from(std::string_view text) {
         }
     }
 
+    auto suffix = host;
+    for (auto& c : suffix) {
+        if (c >= 'A' && c <= 'Z') c = char(c + ('a' - 'A'));
+    }
+    while ( ! suffix.empty() && suffix.back() == '.') suffix.pop_back();
+    if (suffix.ends_with(".i2p") || suffix.ends_with(".onion")) {
+        auto const address = authority::parse_from(host, port);
+        if ( ! address) return std::unexpected(address.error());
+        host = address->to_hostname();
+    }
+
     return endpoint{std::move(scheme), std::move(host), port};
 }
 

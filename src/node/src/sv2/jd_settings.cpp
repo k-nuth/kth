@@ -65,11 +65,13 @@ bool dns_host(std::string_view host) {
 bool validate_upstream(sv2_settings::jd_upstream const& upstream,
     std::string const& prefix, std::string& error) {
     if ( ! parse_jd_endpoint(upstream.mining_address)) {
-        error = prefix + "mining_address must be a host:port or [IPv6]:port with a nonzero port";
+        error = prefix + "mining_address must be a host:port or [IPv6]:port with a nonzero port, "
+            "or an I2P address with port 0";
         return false;
     }
     if ( ! parse_jd_endpoint(upstream.jds_address)) {
-        error = prefix + "jds_address must be a host:port or [IPv6]:port with a nonzero port";
+        error = prefix + "jds_address must be a host:port or [IPv6]:port with a nonzero port, "
+            "or an I2P address with port 0";
         return false;
     }
     if (upstream.mining_authority_public_key.size() > 128
@@ -105,8 +107,22 @@ std::optional<jd_endpoint> parse_jd_endpoint(std::string_view text) {
     if (host.empty() || port_text.empty() || port_text.size() > 5) return std::nullopt;
     uint16_t port = 0;
     auto const parsed = std::from_chars(port_text.data(), port_text.data() + port_text.size(), port);
-    if (parsed.ec != std::errc{} || parsed.ptr != port_text.data() + port_text.size() || port == 0) {
+    if (parsed.ec != std::errc{} || parsed.ptr != port_text.data() + port_text.size()) {
         return std::nullopt;
+    }
+    // SAM 3.1 has no ports, so an I2P upstream is written with port 0, as an
+    // I2P peer is. Every other upstream needs its port. Overlay names follow
+    // the peer rules: a .b32.i2p address, or a Tor v3 onion address.
+    if (jd_i2p_host(host)) {
+        auto const address = infrastructure::config::authority::parse_from(host, port);
+        if (port != 0 || ! address || ! address->is_i2p()) return std::nullopt;
+        return jd_endpoint{std::string(host), port};
+    }
+    if (port == 0) return std::nullopt;
+    if (jd_onion_host(host)) {
+        auto const address = infrastructure::config::authority::parse_from(host, port);
+        if ( ! address || ! address->is_tor_v3()) return std::nullopt;
+        return jd_endpoint{std::string(host), port};
     }
     if (host.front() == '[') {
         if (host.back() != ']') return std::nullopt;
@@ -152,6 +168,54 @@ std::vector<sv2_settings::jd_upstream> jd_upstreams(sv2_settings::jd_settings co
         result.push_back(std::move(*value));
     }
     return result;
+}
+
+namespace {
+
+bool has_suffix(std::string_view host, std::string_view suffix) {
+    while ( ! host.empty() && host.back() == '.') host.remove_suffix(1);
+    if (host.size() <= suffix.size()) return false;
+    auto const tail = host.substr(host.size() - suffix.size());
+    return std::equal(tail.begin(), tail.end(), suffix.begin(), [](char a, char b) {
+        return (a >= 'A' && a <= 'Z' ? char(a + ('a' - 'A')) : a) == b;
+    });
+}
+
+} // namespace
+
+bool jd_onion_host(std::string_view host) { return has_suffix(host, ".onion"); }
+bool jd_i2p_host(std::string_view host) { return has_suffix(host, ".i2p"); }
+
+bool validate_jd_route(sv2_settings const& settings, std::string const& proxy,
+    std::string const& i2p_bridge, std::string& error) {
+    error.clear();
+    if ( ! settings.jd.enabled) return true;
+    // Every entry of the list, or the single pool: an entry is dialed only
+    // when the ones before it fail, and that is no time to learn it cannot be.
+    std::vector<std::string> addresses;
+    if (settings.jd.upstreams.empty()) {
+        addresses = {settings.jd.mining_address, settings.jd.jds_address};
+    } else {
+        for (auto const& text : settings.jd.upstreams) {
+            auto const upstream = parse_jd_upstream(text);
+            if ( ! upstream) continue;   // validate_jd_settings reports it
+            addresses.push_back(upstream->mining_address);
+            addresses.push_back(upstream->jds_address);
+        }
+    }
+    for (auto const& address : addresses) {
+        auto const endpoint = parse_jd_endpoint(address);
+        if ( ! endpoint) continue;   // validate_jd_settings reports it
+        if (jd_i2p_host(endpoint->host) && i2p_bridge.empty()) {
+            error = "the Job Declaration upstream " + address + " is an I2P address and needs net.i2psam";
+            return false;
+        }
+        if (jd_onion_host(endpoint->host) && proxy.empty()) {
+            error = "the Job Declaration upstream " + address + " is an onion service and needs net.proxy";
+            return false;
+        }
+    }
+    return true;
 }
 
 bool validate_jd_settings(sv2_settings const& settings, std::string& error) {

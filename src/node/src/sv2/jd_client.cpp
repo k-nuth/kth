@@ -114,15 +114,15 @@ struct jd_client::attempt {
     // authority keys always come from the configuration.
     attempt(size_t index, jd_endpoint mining_endpoint, jd_endpoint declaration_endpoint,
         sv2_settings::jd_upstream const& upstream, sv2_settings const& settings,
-        ::asio::any_io_executor executor)
+        jd_route const& route, ::asio::any_io_executor executor)
         : index(index)
         , mining_at(std::move(mining_endpoint))
         , declaration_at(std::move(declaration_endpoint))
         , mining(executor, mining_at.host, mining_at.port, authority(upstream.mining_authority_public_key),
-            std::chrono::seconds(settings.handshake_timeout_seconds))
+            std::chrono::seconds(settings.handshake_timeout_seconds), route)
         , declaration(executor, declaration_at.host, declaration_at.port,
             authority(upstream.jds_authority_public_key),
-            std::chrono::seconds(settings.handshake_timeout_seconds))
+            std::chrono::seconds(settings.handshake_timeout_seconds), route)
         , mining_session(jd_peer::mining, mining_at.host, mining_at.port,
             upstream.user_identity, upstream.mode == "full-template")
         , declaration_session(jd_peer::declaration, declaration_at.host, declaration_at.port,
@@ -207,9 +207,10 @@ struct jd_client::attempt {
 };
 
 jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor executor,
-    blockchain::block_chain* chain)
+    blockchain::block_chain* chain, jd_route route)
     : owner_(::asio::make_strand(executor))
     , settings_(settings)
+    , route_(std::move(route))
     , upstreams_(jd_upstreams(settings.jd))
     , policy_(upstreams_.size(), settings.jd)
     , redirects_(upstreams_.size())
@@ -404,7 +405,7 @@ void jd_client::start_attempt(size_t index, bool probe) {
     auto const& moved = redirects_[index];
     auto value = std::make_shared<attempt>(index,
         moved.mining.value_or(endpoint(upstream.mining_address)),
-        moved.declaration.value_or(endpoint(upstream.jds_address)), upstream, settings_, owner_);
+        moved.declaration.value_or(endpoint(upstream.jds_address)), upstream, settings_, route_, owner_);
     value->redirected = moved.mining || moved.declaration;
     // Before its channel request is built. Only the active pair's pool is sent
     // shares, so a probe opens with zero and an active pair with the sum.
