@@ -17,6 +17,7 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/compact_filters.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
@@ -82,6 +83,13 @@ full_node::full_node(configuration const& configuration)
 
     // Set user agent after initialization (network_ holds reference to network_settings_)
     network_settings_.user_agent = get_user_agent({});
+#if defined(KTH_CURRENCY_BCH)
+    // The service bit follows the setting: a wallet looks for it before it asks.
+    auto const filters = uint64_t(domain::message::version::service::node_compact_filters);
+    network_settings_.services = (network_settings_.services & ~filters)
+        | (configuration.chain.compact_filters ? filters : 0);
+    compact_filter_file_ = configuration.database.directory / "compact_filter_checkpoints";
+#endif
 #endif
 }
 
@@ -129,6 +137,27 @@ full_node::~full_node() {
         [this](peer_session& peer, domain::message::get_data const& request) {
             return handlers::chain_data::handle_get_data(chain_, peer, request);
         });
+#if defined(KTH_CURRENCY_BCH)
+    // Compact filters for light wallets, built from the blocks when a peer
+    // asks. Also in the peer's service: a range is up to a thousand filters.
+    if (chain_settings_.compact_filters) {
+        compact_filters_ = std::make_unique<detail::compact_filter_service>(chain_,
+            get_genesis_block(network_type_), compact_filter_file_);
+        compact_filters_->load();
+        network_.register_served_message_handler<domain::message::get_compact_filters>(
+            [this](peer_session& peer, domain::message::get_compact_filters const& request) {
+                return detail::handle_get_compact_filters(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_headers>(
+            [this](peer_session& peer, domain::message::get_compact_filter_headers const& request) {
+                return detail::handle_get_compact_filter_headers(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_checkpoint>(
+            [this](peer_session& peer, domain::message::get_compact_filter_checkpoint const& request) {
+                return detail::handle_get_compact_filter_checkpoint(*compact_filters_, peer, request);
+            });
+    }
+#endif
     // Each newly connected tip, owed to every peer by the sync coordinator, is
     // announced by the peer's own service.
     network_.set_tip_announcement_handler(
@@ -274,7 +303,7 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_filters());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -406,6 +435,31 @@ full_node::~full_node() {
 
     organizer.stop();
     spdlog::info("[full_node] run_sync() ENDED");
+}
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_compact_filters() {
+    if ( ! compact_filters_) co_return;
+    // On the network pool, like the sync: a first pass reads every block once.
+    co_await ::asio::co_spawn(network_.thread_pool().get_executor(),
+        [this]() -> ::asio::awaitable<void> {
+            auto executor = co_await ::asio::this_coro::executor;
+            ::asio::steady_timer timer(executor);
+            std::optional<uint64_t> seen;
+            while ( ! stopped()) {
+                // Once for each state the chain publishes: the filter headers
+                // follow the connected tip a thousand blocks at a time.
+                auto const view = chain_.chain_view();
+                if (view && seen != view->generation) {
+                    seen = view->generation;
+                    co_await compact_filters_->extend([this] { return stopped(); });
+                }
+                timer.expires_after(std::chrono::milliseconds(200));
+                auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (ec) break;
+            }
+        }, ::asio::use_awaitable);
 }
 #endif
 
