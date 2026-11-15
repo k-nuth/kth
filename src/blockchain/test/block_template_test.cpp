@@ -354,6 +354,10 @@ TEST_CASE("make_mining_template coinbase value follows the network's halving sch
     auto const first = make_mining_template(0x20000000u, null_hash, /*height*/ 149u,
         0x207fffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ false);
     REQUIRE(first.coinbase_value == 5000000000ull);
+    // The halving takes effect at height 150 itself, not one block later.
+    auto const boundary = make_mining_template(0x20000000u, null_hash, /*height*/ 150u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ false);
+    REQUIRE(boundary.coinbase_value == 2500000000ull);
     auto const mainnet = make_mining_template(0x20000000u, null_hash, /*height*/ 151u,
         0x1d00ffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ true);
     REQUIRE(mainnet.coinbase_value == 5000000000ull);
