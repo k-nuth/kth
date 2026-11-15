@@ -4,6 +4,8 @@
 
 #include <kth/domain/chain/byte_code_pattern.hpp>
 
+#include <utility>
+
 #include <kth/domain/machine/operation.hpp>
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
@@ -39,7 +41,7 @@ byte_code_pattern make_byte_code_pattern(byte_span script) {
             } else if (op->is_positive()) {
                 result.data.push_back(data_chunk{machine::operation::opcode_to_positive(code)});
             } else {
-                result.data.push_back(op->data());
+                result.data.push_back(std::move(*op).take_data());
             }
             ++pushes;
         } else {

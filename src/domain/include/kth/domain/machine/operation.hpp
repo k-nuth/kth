@@ -89,6 +89,10 @@ struct KD_API operation {
     [[nodiscard]]
     data_chunk const& data() const;
 
+    /// Transfer the payload without copying and reset this consumed operation.
+    [[nodiscard]]
+    data_chunk take_data() && noexcept;
+
     // Utilities.
     //-------------------------------------------------------------------------
 
