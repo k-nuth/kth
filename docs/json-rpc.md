@@ -95,6 +95,7 @@ counterpart.
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
+| `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -236,6 +237,14 @@ size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
 BCH per kB; a `node.sigop_fee_satoshis` set by the operator is charged on top
 per signature operation. The method takes no arguments: anything other than omitted params or
 an empty array is a `-32602` error.
+
+## uptime
+
+`uptime` returns the whole seconds since the node started, counted from when
+`full_node` was built, before the database is opened and the network comes up.
+It reads the steady clock, so changing the system clock does not change the
+answer. The method takes no arguments: anything other than omitted params or an
+empty array is a `-32602` error.
 
 ## Blocks and transactions
 
