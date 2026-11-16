@@ -297,7 +297,7 @@ TEST_CASE("render_block_verbose gives each transaction after the coinbase its fe
     CHECK(*fees == std::vector<uint64_t>{0, 219});
 
     // Between the outputs and the hex of the spend, and on no other transaction.
-    auto const json = render_block_verbose(block, location, true, regtest, flags, *fees);
+    auto const json = render_block_verbose(block, location, true, regtest, flags, false, *fees);
     auto const at = json.find(R"(}],"fee":0.00000219,"hex":"0200000001)");
     REQUIRE(at != std::string::npos);
     CHECK(json.find(R"("fee":)") == at + 3);
@@ -305,10 +305,10 @@ TEST_CASE("render_block_verbose gives each transaction after the coinbase its fe
 
     // Without fees, and with txids only, no transaction has the field.
     CHECK_FALSE(contains(render_block_verbose(block, location, true, regtest, flags), R"("fee":)"));
-    CHECK_FALSE(contains(render_block_verbose(block, location, false, regtest, flags, *fees), R"("fee":)"));
+    CHECK_FALSE(contains(render_block_verbose(block, location, false, regtest, flags, false, *fees), R"("fee":)"));
     // A list that is not one fee for each transaction is no list.
     std::vector<uint64_t> const one{0};
-    CHECK_FALSE(contains(render_block_verbose(block, location, true, regtest, flags, one), R"("fee":)"));
+    CHECK_FALSE(contains(render_block_verbose(block, location, true, regtest, flags, false, one), R"("fee":)"));
 }
 
 TEST_CASE("transaction_fees needs one spent output for each input and no transaction paying more than it spends",

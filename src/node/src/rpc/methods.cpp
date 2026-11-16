@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <array>
+#include <chrono>
 #include <expected>
 #include <limits>
 #include <memory>
@@ -80,21 +81,24 @@ bool is_block_file(std::string_view name) {
 
 // getblock and getrawtransaction arguments, as BCHN takes them: the hash, then
 // the verbosity as a boolean or a number (null keeps the default), then, for
-// getrawtransaction only, the block to read the transaction from. Types and
-// arity are checked before storage is touched.
+// getrawtransaction, the block to read the transaction from, and for getblock,
+// whether to add each script's byte code pattern. Types and arity are checked
+// before storage is touched.
 struct raw_read_arguments {
     hash_digest hash;
     std::optional<hash_digest> block_hash;
     // getblock: 0 hex, 1 fields and txids, 2 decoded transactions (default 1).
     // getrawtransaction: 0 hex, otherwise decoded (default 0).
     uint64_t verbosity;
+    // getblock: the byteCodePattern objects (default false).
+    bool patterns = false;
 };
 
 std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req, bool transaction) {
     auto const invalid = [&] {
         return kth::fail(make_error(error_code::invalid_params,
             transaction ? "getrawtransaction requires [txid, verbose=false, blockhash]" :
-                          "getblock requires [blockhash, verbosity=1]"));
+                          "getblock requires [blockhash, verbosity=1, patterns=false]"));
     };
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(req.params);
@@ -110,9 +114,20 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     for (auto element : args) {
         simdjson::ondemand::value value;
         simdjson::ondemand::json_type type;
-        if (count >= (transaction ? 3u : 2u) || element.get(value) != simdjson::SUCCESS ||
+        if (count >= 3u || element.get(value) != simdjson::SUCCESS ||
             value.type().get(type) != simdjson::SUCCESS) {
             return invalid();
+        }
+        if ( ! transaction && count == 2) {
+            if (type == simdjson::ondemand::json_type::boolean) {
+                if (value.get_bool().get(result.patterns) != simdjson::SUCCESS) {
+                    return invalid();
+                }
+            } else if (type != simdjson::ondemand::json_type::null) {
+                return kth::fail(make_error(error_code::invalid_params, "patterns must be a boolean"));
+            }
+            ++count;
+            continue;
         }
         if (count == 0 || count == 2) {
             if (count == 2 && type == simdjson::ondemand::json_type::null) {
@@ -486,26 +501,26 @@ submit_block_light(method_context& ctx, request const& req) {
 
 // ---- blockchain query methods --------------------------------------------
 
-// getbestblockhash -> the tip block hash.
+// getbestblockhash -> the connected tip's hash.
 // C-API counterpart: kth_chain_sync_block_hash (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_best_block_hash(method_context& ctx, request const& /*req*/) {
-    auto const heights = ctx.chain.get_last_heights();
-    if ( ! heights) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
         co_return kth::fail(make_error(error_code::internal_error,
-            "chain height unavailable"));
-    }
-    auto const hash = ctx.chain.get_block_hash(heights->block);
-    if ( ! hash) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "best block hash unavailable"));
+            "chain state unavailable"));
     }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(view->tip_hash));
     co_return w.str();
 }
 
-// getblockhash <height> -> the block hash at that height.
+// getblockhash <height> -> the hash of the connected block at that height.
+// The header store runs ahead of the connected chain while blocks download,
+// and is rewritten from the fork point before a reorganization connects
+// anything, so the hash is taken from the connected tip's ancestry instead.
+// A height past the connected tip is out of range even when its header is
+// stored: getblock could not return that block yet.
 // C-API counterpart: kth_chain_sync_block_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_hash(method_context& ctx, request const& req) {
@@ -514,13 +529,26 @@ get_block_hash(method_context& ctx, request const& req) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "getblockhash requires [height] (a non-negative integer)"));
     }
-    auto const hash = ctx.chain.get_block_hash(size_t(*height));
-    if ( ! hash) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    if (*height > view->connected_tip_height) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "block height out of range"));
     }
+    auto const& index = ctx.chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    auto const found = tip == blockchain::header_index::null_index
+        ? blockchain::header_index::null_index
+        : index.get_ancestor(tip, int32_t(*height));
+    if (found == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected chain not in the header index"));
+    }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(index.get_hash(found)));
     co_return w.str();
 }
 
@@ -761,10 +789,11 @@ get_raw_transaction(method_context& ctx, request const& req) {
     co_return render(*std::get<0>(*result), std::nullopt);
 }
 
-// getblock <blockhash> [verbosity=1] -> with verbosity 0 (or false) the
-// wire-serialized block as hex; with 1 (or true) its fields and txids; with 2
-// its fields and its transactions decoded, each with its fee when the node
-// has the outputs the block spends.
+// getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
+// false) the wire-serialized block as hex; with 1 (or true) its fields and
+// txids; with 2 its fields and its transactions decoded, each with its fee
+// when the node has the outputs the block spends, and with patterns each of
+// their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -828,20 +857,25 @@ get_block(method_context& ctx, request const& req) {
     // With the transactions decoded, each one's fee: what the outputs it
     // spends hold, from the block's undo record, less what it pays. A block
     // connected without that record has no fees to give, and the field is
-    // left out; a record that cannot be read is an error.
+    // left out. A record that cannot be read is an error, and so is one whose
+    // outputs do not cover what the block's transactions pay: the block was
+    // connected, so that record is not this block's.
     std::vector<uint64_t> fees;
     if (args->verbosity == 2) {
         auto const spent = co_await ctx.chain.fetch_spent_outputs(args->hash, block);
         if (spent) {
-            if (auto computed = transaction_fees(*block, spent->outputs)) {
-                fees = std::move(*computed);
+            auto computed = transaction_fees(*block, spent->outputs);
+            if ( ! computed) {
+                co_return kth::fail(make_error(error_code::internal_error,
+                    "the undo record of the block does not give the fees of its transactions"));
             }
+            fees = std::move(*computed);
         } else if (spent.error() != error::not_found) {
             co_return kth::fail(from_code(spent.error()));
         }
     }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags(), fees);
+        view->state->network(), view->state->enabled_flags(), args->patterns, fees);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its
@@ -1165,6 +1199,38 @@ get_network_info(method_context& ctx, request const& req) {
         .byte_fee_satoshis = ctx.chain.chain_settings().byte_fee_satoshis});
 }
 
+// uptime -> the whole seconds since the node started. The steady clock is
+// used, so a change of the system clock cannot make the answer jump or go
+// backwards. Fulcrum calls it to probe the node.
+// C-API counterpart: none (it describes this server's process).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+uptime(method_context& ctx, request const& req) {
+    // Omitted parameters and an empty array are the only accepted forms.
+    if ( ! req.params.empty()) {
+        auto const invalid_params = [] {
+            return kth::fail(make_error(error_code::invalid_params,
+                "uptime takes no arguments"));
+        };
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        for (auto element : args) {
+            (void)element;
+            co_return invalid_params();
+        }
+    }
+    auto const elapsed = std::chrono::steady_clock::now() - ctx.started;
+    auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    writer w;
+    w.value(uint64_t(seconds > 0 ? seconds : 0));
+    co_return w.str();
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool [verbose=false] -> the txids currently in the mempool; with
@@ -1356,6 +1422,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmininginfo", get_mining_info);
     d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
+    d.add("uptime", uptime);
 
     // Help MUST be the last method registered: capture the completed catalog,
     // including its own name, before any request can be served.

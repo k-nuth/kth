@@ -4,40 +4,26 @@
 
 #include <kth/blockchain/spent_outputs.hpp>
 
-#include <cstring>
 #include <map>
 #include <optional>
 #include <utility>
 
 #include <boost/unordered/unordered_flat_map.hpp>
+#include <utxoz/utils.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
+#include <kth/database/databases/utxo_entry.hpp>
 
 namespace kth::blockchain {
-
-namespace {
-
-utxoz::raw_outpoint key_of(domain::chain::output_point const& point) {
-    utxoz::raw_outpoint key{};
-    std::memcpy(key.data(), point.hash().data(), hash_size);
-    auto const index = point.index();
-    key[32] = uint8_t(index & 0xff);
-    key[33] = uint8_t((index >> 8) & 0xff);
-    key[34] = uint8_t((index >> 16) & 0xff);
-    key[35] = uint8_t((index >> 24) & 0xff);
-    return key;
-}
-
-} // namespace
 
 std::expected<domain::chain::output, database::result_code>
 output_of_stored_entry(std::span<uint8_t const> value) {
     byte_reader reader(value);
-    auto output = domain::chain::output::from_data(reader, true);
-    if ( ! output) {
+    auto const entry = database::utxo_entry::from_data(reader);
+    if ( ! entry) {
         return std::unexpected(database::result_code::other);
     }
-    return std::move(*output);
+    return entry->output();
 }
 
 std::expected<spent_output_list, database::result_code>
@@ -70,7 +56,7 @@ spent_outputs_with_heights(domain::chain::block const& blk, uint32_t height,
     for (size_t i = 1; i < txs.size(); ++i) {
         for (auto const& input : txs[i].inputs()) {
             auto const& point = input.previous_output();
-            if (auto const it = recorded.find(key_of(point)); it != recorded.end()) {
+            if (auto const it = recorded.find(utxoz::make_outpoint(std::span<uint8_t const, hash_size>{point.hash()}, point.index())); it != recorded.end()) {
                 auto output = read(*it->second);
                 if ( ! output) {
                     return std::unexpected(output.error());

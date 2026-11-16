@@ -19,8 +19,11 @@
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
 #include <asio/use_future.hpp>
+#include <utxoz/utils.hpp>
 
 #include <kth/blockchain/validate/batch_validate.hpp>
+#include <kth/database/block_undo.hpp>
+#include <kth/database/databases/utxo_entry.hpp>
 #include <kth/domain/chain/script_filter.hpp>
 #include <kth/domain/chain/script_filter_builder.hpp>
 #include <kth/node.hpp>
@@ -938,3 +941,48 @@ TEST_CASE("script filter headers stop at the first block connected without the o
     CHECK(service.checkpoint({regular_type, block_hash_at(sc, trunk_len)}));
     CHECK(run_on_own_context(service.headers({regular_type, 100, block_hash_at(sc, spend_height)})));
 }
+
+#if ! defined(KTH_UTXOZ_REFERENCE_MODE)
+TEST_CASE("getblock fails when the undo record does not cover what the block's transactions pay",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_spent_outputs_short", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto& chain = fixture.chain();
+
+    // The spending block was connected without a record. Give it one that
+    // reads well and holds the output it spends with one satoshi in it: less
+    // than the transaction pays.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const& funding = sc.blocks.front().transactions().front();
+    auto short_output = funding.outputs()[0];
+    short_output.set_value(1);
+    auto const stored = database::utxo_entry{short_output, 1, 0, true}.to_data();
+
+    database::block_undo undo;
+    undo.spent.push_back(database::spent_output{
+        utxoz::make_outpoint(std::span<uint8_t const, hash_size>{funding.hash()}, 0),
+        std::vector<uint8_t>(stored.begin(), stored.end()), 1});
+    auto const idx = chain.headers().find(spending.hash());
+    REQUIRE(idx != blockchain::header_index::null_index);
+    REQUIRE(chain.store_block_undo(idx, undo, spending.header().previous_block_hash()));
+
+    // The record is read: the outputs come back, in the order of the inputs.
+    auto const block = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(block);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), block->first));
+    REQUIRE(spent);
+    REQUIRE(spent->outputs.size() == 1);
+    CHECK(spent->outputs.front().value() == 1);
+
+    // It is not left out as a missing record is: the request fails.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") == std::string::npos);
+    CHECK(decoded.find("the undo record of the block does not give the fees of its transactions")
+        != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+    // The txids need no fees.
+    CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
+}
+#endif

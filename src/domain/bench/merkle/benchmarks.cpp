@@ -13,6 +13,10 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <crypto/sha256.h>
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <secp256k1_turbo/gpu_sha256.hpp>
+#endif
+
 #include "implementations.hpp"
 
 using namespace kth;
@@ -112,6 +116,44 @@ void benchmark_all_sizes() {
     }
 }
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+// The CPU against the GPU, every level on the device. This is where the
+// default of secp256k1_turbo::gpu_sha256::min_batch() comes from.
+void benchmark_gpu() {
+    namespace gpu_sha256 = secp256k1_turbo::gpu_sha256;
+    if ( ! gpu_sha256::available()) {
+        fmt::print("\nNo GPU device: the GPU comparison is skipped.\n");
+        return;
+    }
+    fmt::print("\n========== MERKLE ROOT: CPU vs GPU ({}) ==========\n", gpu_sha256::device_name());
+
+    for (size_t const size : {1000u, 2000u, 4000u, 8000u, 16000u, 32000u, 64000u, 250000u, 1000000u}) {
+        auto hashes = generate_random_hashes(size);
+
+        hash_digest gpu_root;
+        if ( ! gpu_sha256::merkle_root(gpu_root.data(), hashes.front().data(), hashes.size())
+            || gpu_root != generate_merkle_root_v4_sha256d64_batched(hashes)) {
+            fmt::print("ERROR: the GPU root differs at size {}\n", size);
+            return;
+        }
+
+        Bench()
+            .title(fmt::format("Merkle Root - {} txs", size))
+            .relative(true)
+            .run("CPU (SHA256D64 batched)", [&] {
+                ankerl::nanobench::doNotOptimizeAway(
+                    generate_merkle_root_v4_sha256d64_batched(hashes)
+                );
+            })
+            .run("GPU (every level on the device)", [&] {
+                hash_digest root;
+                gpu_sha256::merkle_root(root.data(), hashes.front().data(), hashes.size());
+                ankerl::nanobench::doNotOptimizeAway(root);
+            });
+    }
+}
+#endif
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -133,6 +175,9 @@ int main() {
     }
 
     benchmark_all_sizes();
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+    benchmark_gpu();
+#endif
 
     fmt::print("\n==============================================\n");
     fmt::print("  Benchmarks Complete!\n");

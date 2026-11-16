@@ -28,8 +28,8 @@ namespace kth::blockchain {
 using undo_output_reader = std::function<
     std::expected<domain::chain::output, database::result_code>(database::spent_output const&)>;
 
-// The output held by a full-mode undo entry: the stored UTXO entry opens with
-// the output in wire form.
+// The output held by a full-mode undo entry: the entry is a stored UTXO entry,
+// and is read as one.
 [[nodiscard]]
 KB_API
 std::expected<domain::chain::output, database::result_code>
