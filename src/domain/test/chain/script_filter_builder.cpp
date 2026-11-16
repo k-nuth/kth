@@ -266,13 +266,79 @@ TEST_CASE("the full key of a transaction selects its one leaf and the range proo
             all.subspan(run->first, 1), before, after, *hashes, other, 256));
     }
 
-    // The proof of the coinbase's leaf, as the range in the known vectors.
-    auto const coinbase = chain::script_range_hashes(all, 1, 4);
-    REQUIRE(coinbase);
-    REQUIRE(coinbase->size() == 3u);
-    require_hex((*coinbase)[0], "9d1f540224023621706bc5c9a4cb19c21abb295d62aebaa75137bbcb44dadfb5");
-    require_hex((*coinbase)[1], "d86f36e990d6b2c6dea6f0e7111c6271963b6a566f70e961a2dc675ab60b1e94");
-    require_hex((*coinbase)[2], "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c");
+    // The known answer for the third transaction's key: its leaf at 3, the
+    // leaves at 2 and 4 around it, and the edge hashes of leaves 2 to 4.
+    auto const third = chain::script_range_hashes(all, 2, 5);
+    REQUIRE(third);
+    REQUIRE(third->size() == 4u);
+    require_hex((*third)[0], "011f38b04041649c26e5fd43ef39688039baac0f4e062b27a375ebbd16ec7643");
+    require_hex((*third)[1], "e5c9cff033bb91a3f42a868728b860c8a4eb1e6047d483b7b3a066f694f2180e");
+    require_hex((*third)[2], "7fa40cb37ecdbeaaf92ea60c633b2865db56d1491be3a35a362f10b37ff451dc");
+    require_hex((*third)[3], "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c");
+}
+
+TEST_CASE("edge hashes of runs of the test block leaves are the known hashes", "[script filter builder]") {
+    auto const sample = script_filter_fixture();
+    auto const leaves = chain::script_leaves(sample.block, sample.spent);
+    REQUIRE(leaves);
+    std::span<chain::script_leaf const> const all = *leaves;
+    auto const root = chain::script_leaves_root(all);
+    require_hex(root, root_of_leaves);
+
+    struct run_hashes {
+        std::string_view name;
+        size_t lo;
+        size_t end;
+        std::vector<std::string_view> hashes;
+    };
+    std::vector<run_hashes> const runs{
+        {"leaves 3 to 5", 3, 6, {
+            "bc06de9a175f996d79d0469c45159b5a136c4087bf8f3caff3da391796d7b481",
+            "e5c9cff033bb91a3f42a868728b860c8a4eb1e6047d483b7b3a066f694f2180e",
+            "7fa40cb37ecdbeaaf92ea60c633b2865db56d1491be3a35a362f10b37ff451dc",
+            "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c"}},
+        {"leaf 12", 12, 13, {
+            "d9e2df3fd0725059985ccc95dc990bffca55ef321eab8caafb6f2daea6022b99",
+            "5c4ea30b1be5df50e4885834e104ea560df8fc1fccc241c7702aea4e74fe7f94"}},
+        {"leaf 0", 0, 1, {
+            "2892d10bbf543b5b6acb23ef107edeb7ed945fdd1cb928a0ce4c5390c75b5ca0",
+            "1e16bc5cb2c8ac67c08845267a55c3f7ff21ce8d405901f506a181766ab5b0fe",
+            "d86f36e990d6b2c6dea6f0e7111c6271963b6a566f70e961a2dc675ab60b1e94",
+            "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c"}},
+        {"leaves 3 to 7", 3, 8, {
+            "bc06de9a175f996d79d0469c45159b5a136c4087bf8f3caff3da391796d7b481",
+            "e5c9cff033bb91a3f42a868728b860c8a4eb1e6047d483b7b3a066f694f2180e",
+            "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c"}},
+        {"leaves 6 and 7", 6, 8, {
+            "560371e2c34b9f6c70d4c978410b91dfa757234e81a4c7553690fa75f2fe20fd",
+            "b6692d0b9854040529181ac8543dc25625365ea81e0d74e1e4a158f038b17eba",
+            "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c"}},
+        {"every leaf", 0, 13, {}},
+        {"leaves 5 to 8", 5, 9, {
+            "2512bd80ee8cef99a54e819ae61fdba6da828e4f874b8ecba5e47559c616c476",
+            "028cd0d953cf11c62fcdc442874451e08848c590fd48e660f38a22feccc2d24c",
+            "408c57a51c98a9c69d48d06595ce858e7907029112d242aa548d74621aa669b5",
+            "b6692d0b9854040529181ac8543dc25625365ea81e0d74e1e4a158f038b17eba",
+            "653b2ad635c5af1487dacc302ac3409c4411f1c9542a752543324bb4c42b7112"}},
+        {"leaves 5 to 6", 5, 7, {
+            "2512bd80ee8cef99a54e819ae61fdba6da828e4f874b8ecba5e47559c616c476",
+            "4ba16276b992ea6e8845f8628375efa37172d0250562f8e506fdb8c213dcce42",
+            "b6692d0b9854040529181ac8543dc25625365ea81e0d74e1e4a158f038b17eba",
+            "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c"}},
+    };
+    for (auto const& item : runs) {
+        INFO(item.name);
+        auto const hashes = chain::script_range_hashes(all, item.lo, item.end);
+        REQUIRE(hashes);
+        REQUIRE(hashes->size() == item.hashes.size());
+        for (size_t i = 0; i < item.hashes.size(); ++i) {
+            require_hex((*hashes)[i], item.hashes[i]);
+        }
+        auto const rebuilt = chain::script_range_root(static_cast<uint32_t>(all.size()),
+            static_cast<uint32_t>(item.lo), all.subspan(item.lo, item.end - item.lo), *hashes);
+        REQUIRE(rebuilt);
+        REQUIRE(*rebuilt == root);
+    }
 }
 
 TEST_CASE("roots of the test block leaf prefixes match the known roots", "[script filter builder]") {
@@ -289,8 +355,15 @@ TEST_CASE("roots of the test block leaf prefixes match the known roots", "[scrip
         {1, "9d1f540224023621706bc5c9a4cb19c21abb295d62aebaa75137bbcb44dadfb5"},
         {2, "e5c9cff033bb91a3f42a868728b860c8a4eb1e6047d483b7b3a066f694f2180e"},
         {3, "907cad6618a8f3ede71fa62a7169f055a19ebb073270e1693231429c719be61d"},
+        {4, "b6692d0b9854040529181ac8543dc25625365ea81e0d74e1e4a158f038b17eba"},
         {5, "bbc9efc7bb3eb741dc7ca721578860c688eeb07cdb49ceea332467f70cb2f9a3"},
+        {6, "eb0481c29b0b3197fa1b9ebbf43d768a95dfab1e85f9451129766bb759d29677"},
+        {7, "85a437edbde8f71e62542106569bd8d522f7b7c1e087a58ab5d8782e44478962"},
+        {8, "5c4ea30b1be5df50e4885834e104ea560df8fc1fccc241c7702aea4e74fe7f94"},
+        {9, "95e62d9c8547ef9a3f7ef1ff2e0c2bd28fce7da69d985742fec2655fc32ab4af"},
         {10, "69f2a3d4cdb63540fd67dead5141b47277a37aef1e2636c52e8ef56f25522dfb"},
+        {11, "527879eab9b88b17933fcabbbb16a5395090cbb704e5e9f8af9dfe0162422d2b"},
+        {12, "a61f9d9815d9c2ef572b96f51e44cfe01691125d2a5127e4c78c671acc65f49e"},
         {13, root_of_leaves},
     };
     for (auto const& item : roots) {
@@ -467,6 +540,8 @@ TEST_CASE("the script filter of the test block's loose transactions matches thei
     auto const want = chain::golomb_set::build(key, wanted);
     REQUIRE(want);
     REQUIRE(filter->to_data() == want->to_data());
+    // Six keys: A, B, the category, D and the two transactions.
+    require_hex(filter->to_data(), "0617ae8a5598e5c0fb85a9d946a2c972d0");
     REQUIRE(filter->size() == static_cast<uint32_t>(distinct.size()));
     for (auto const& item : distinct) {
         REQUIRE(filter->match(key, item));
