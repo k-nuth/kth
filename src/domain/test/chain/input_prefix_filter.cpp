@@ -399,17 +399,19 @@ TEST_CASE("a filter that is not the one encoding of a set is refused", "[input p
     }
 }
 
-TEST_CASE("a filter whose Rice parameter is not its count's is read, and hashes apart", "[input prefix filter]") {
-    // One value, 3, with k = 0 where one value has k = 15. The rules above
-    // take it; its hash is not the one encoding's, so the filter headers
-    // tell it apart.
-    auto const other = from_hex("0100e0");
-    auto const parsed = chain::parse_input_prefix_filter(other);
-    REQUIRE(parsed);
-    CHECK(parsed->values == std::vector<uint16_t>{3});
-    CHECK(encode_base16(chain::to_data(*parsed)) == "010f0003");
-    CHECK(chain::input_prefix_filter_hash(*parsed) != bitcoin_hash(other));
-    CHECK(encode_base16(bitcoin_hash(other)) == "6a1c6edee65da70f38e0e3980d31c6189b7e8a63f77d539da46279a3aa57562a");
+TEST_CASE("a filter whose Rice parameter is not its count's is refused", "[input prefix filter]") {
+    // One value, 3: the one encoding is 010f0003 (k = 15). The same value
+    // written with k = 0 or k = 14 is a second encoding of the same set, so
+    // it is refused, and each set has one filter and one hash.
+    auto const canonical = chain::parse_input_prefix_filter(from_hex("010f0003"));
+    REQUIRE(canonical);
+    CHECK(canonical->values == std::vector<uint16_t>{3});
+    for (auto const* hex : {"0100e0", "010e0006"}) {
+        INFO(hex);
+        auto const parsed = chain::parse_input_prefix_filter(from_hex(hex));
+        REQUIRE( ! parsed);
+        CHECK(parsed.error() == input_prefix_filter_error::rice_parameter);
+    }
 }
 
 TEST_CASE("a prefix of 0 to 16 bits matches a filter with a value under it", "[input prefix filter]") {

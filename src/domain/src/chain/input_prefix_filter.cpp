@@ -165,7 +165,9 @@ parse_input_prefix_filter(byte_span data) {
     if ( ! k) {
         return std::unexpected(input_prefix_filter_error::truncated);
     }
-    if (*k > max_input_prefix_rice_parameter) {
+    // Each count has one Rice parameter, so each set of values has one
+    // encoding; this also refuses any parameter above 15.
+    if (*k != input_prefix_rice_parameter(size_t(*count))) {
         return std::unexpected(input_prefix_filter_error::rice_parameter);
     }
 

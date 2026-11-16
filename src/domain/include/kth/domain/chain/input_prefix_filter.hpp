@@ -63,7 +63,7 @@ enum class input_prefix_filter_error {
     /// The count is not in its shortest form, or is above 65,536, the number
     /// of values there are.
     count,
-    /// A Rice parameter above 15.
+    /// A Rice parameter other than the one its count gives (never above 15).
     rice_parameter,
     /// A value after the first that is not above the one before it: a gap of 0.
     repeated_value,
@@ -106,7 +106,7 @@ KD_API
 data_chunk to_data(input_prefix_filter const& filter);
 
 /// Reads served bytes, and refuses any that are not the one encoding of a
-/// set: a Rice parameter above 15, a gap of 0 after the first value, a value
+/// set: a Rice parameter other than its count's, a gap of 0 after the first value, a value
 /// above 65,535, fewer or more values than the count, a padding bit set,
 /// trailing bytes, and a count not in its shortest form.
 [[nodiscard]]
