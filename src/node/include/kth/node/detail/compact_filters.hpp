@@ -70,12 +70,14 @@ struct compact_filter_checkpoint_record {
 // memory and in one small file, and any other is chained from the one below
 // it. That file is the only thing stored: 64 bytes for every thousand blocks.
 //
-// Two filter types are served, each with its own memory and its own file. The
-// regular filter (type 0) is built from the block alone. The script filter
+// Three filter types are served, each with its own memory and its own file.
+// The regular filter (type 0) is built from the block alone. The script filter
 // (type 1) also needs the outputs the block spends, which the node keeps in
 // the undo record of every block it validated: it is served once
 // serve_script_filters() names its file, and for the blocks that have that
-// record.
+// record. The input prefix filter (type 2) is built from the block alone too:
+// it is served once serve_input_prefix_filters() names its file, and for
+// every block the node holds.
 class KND_API compact_filter_service {
 public:
     using filter_ptr = std::shared_ptr<data_chunk const>;
@@ -117,6 +119,10 @@ public:
     // Serves the script filter too, with its filter header records in `file`.
     // Called before load(), and before any request is answered.
     void serve_script_filters(kth::path file);
+
+    // Serves the input prefix filter too, with its filter header records in
+    // `file`. Called before load(), and before any request is answered.
+    void serve_input_prefix_filters(kth::path file);
 
     [[nodiscard]] bool serves(uint8_t filter_type) const noexcept;
 
@@ -213,7 +219,7 @@ private:
 
     mutable std::mutex mutex_;
     // By filter type.
-    std::array<lane, 2> lanes_;
+    std::array<lane, 3> lanes_;
     // Newest first.
     std::list<std::pair<hash_digest, script_tree_ptr>> script_trees_;
     std::atomic<bool> extending_{false};

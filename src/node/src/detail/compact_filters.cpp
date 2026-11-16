@@ -12,6 +12,7 @@
 
 #include <kth/blockchain/header_index.hpp>
 #include <kth/domain/chain/compact_filter.hpp>
+#include <kth/domain/chain/input_prefix_filter.hpp>
 #include <kth/domain/chain/script_filter_builder.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/message/version.hpp>
@@ -28,6 +29,7 @@ using index_t = blockchain::header_index::index_t;
 constexpr auto null_index = blockchain::header_index::null_index;
 constexpr size_t record_size = 2 * hash_size;
 
+using domain::message::input_prefix_compact_filter;
 using domain::message::regular_compact_filter;
 using domain::message::script_compact_filter;
 
@@ -91,8 +93,24 @@ compact_filter_service::filter_ptr script_filter(domain::chain::block const& blo
     return std::make_shared<data_chunk const>(domain::chain::to_data(*filter));
 }
 
+// As it is served: the count, then the Rice-coded values.
+compact_filter_service::filter_ptr input_prefix_filter(domain::chain::block const& block) {
+    return std::make_shared<data_chunk const>(
+        domain::chain::to_data(domain::chain::build_input_prefix_filter(block)));
+}
+
+// The filters built from the block alone: the regular filter and the input
+// prefix filter.
+compact_filter_service::filter_ptr block_filter(uint8_t filter_type, domain::chain::block const& block) {
+    return filter_type == input_prefix_compact_filter ? input_prefix_filter(block) : regular_filter(block);
+}
+
 char const* name_of(uint8_t filter_type) {
-    return filter_type == script_compact_filter ? "script filters" : "compact filters";
+    switch (filter_type) {
+        case script_compact_filter: return "script filters";
+        case input_prefix_compact_filter: return "input prefix filters";
+        default: return "compact filters";
+    }
 }
 
 constexpr auto wire_version = domain::message::version::level::maximum;
@@ -113,11 +131,17 @@ compact_filter_service::compact_filter_service(blockchain::block_chain const& ch
     lanes_[regular_compact_filter].served = true;
     lanes_[regular_compact_filter].file = std::move(checkpoint_file);
     lanes_[script_compact_filter].type = script_compact_filter;
+    lanes_[input_prefix_compact_filter].type = input_prefix_compact_filter;
 }
 
 void compact_filter_service::serve_script_filters(kth::path file) {
     lanes_[script_compact_filter].served = true;
     lanes_[script_compact_filter].file = std::move(file);
+}
+
+void compact_filter_service::serve_input_prefix_filters(kth::path file) {
+    lanes_[input_prefix_compact_filter].served = true;
+    lanes_[input_prefix_compact_filter].file = std::move(file);
 }
 
 compact_filter_service::lane* compact_filter_service::lane_of(uint8_t filter_type) noexcept {
@@ -266,11 +290,11 @@ compact_filter_service::build(uint8_t filter_type, hash_digest const& block) {
         filter = script_filter(*(*source)->block, (*source)->spent.outputs);
     } else if (block == genesis_hash_) {
         // The node holds no stored record of the genesis block.
-        filter = regular_filter(genesis_);
+        filter = block_filter(filter_type, genesis_);
     } else {
         auto const fetched = co_await chain_.fetch_block(block);
         if ( ! fetched) co_return std::unexpected(fetched.error());
-        filter = regular_filter(*fetched->first);
+        filter = block_filter(filter_type, *fetched->first);
     }
     if ( ! filter) co_return std::unexpected(error::operation_failed);
     co_return filter;

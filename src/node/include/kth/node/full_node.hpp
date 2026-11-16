@@ -239,6 +239,7 @@ private:
     // reference, and both end before the node does.
     kth::path compact_filter_file_;
     kth::path script_filter_file_;
+    kth::path input_prefix_filter_file_;
     std::unique_ptr<detail::compact_filter_service> compact_filters_;
 #endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)

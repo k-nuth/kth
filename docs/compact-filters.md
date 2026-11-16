@@ -11,8 +11,8 @@ node.compact_filters = true
 
 It is off by default. When on, the node sets the compact filters service bit
 (bit 8) in its version message and answers three requests, for the regular
-filter (filter type 0) and the script filter (filter type 1), and for blocks of
-its connected chain:
+filter (filter type 0), the script filter (filter type 1) and the input prefix
+filter (filter type 2), and for blocks of its connected chain:
 
 | Request | Answer |
 |---|---|
@@ -73,13 +73,44 @@ requests above that are not answered. A node synced with
 `chain.full_validation = true` has the records, and the script filter, from the
 first block.
 
+## The input prefix filter
+
+The input prefix filter of a block (filter type 2) is for wallets of reusable
+payment addresses. A payment to such an address is found by one of its inputs:
+the sender grinds one of the first 30 inputs of the transaction until the
+double SHA-256 of the input starts with 4 to 16 bits of the receiver's scan
+key. The filter holds, for every transaction after the coinbase and each of its
+first 30 inputs, the first two bytes of the double SHA-256 of the input as it
+stands in the transaction (the outpoint, the script and the sequence), read as
+a big-endian number: the sorted distinct values, 0 to 65,536 of them.
+
+They go on the wire as a count, a CompactSize, and when there are any, a Rice
+parameter k in one byte and the gap of each value from the one before (from 0
+for the first), Rice coded: the gap shifted right by k in one-bits, a zero-bit,
+then the low k bits of the gap, most significant bit first, the last byte
+padded with zero-bits. k is the largest number with 2^k at most 45426 / N
+(integer division), and 0 when that is 0, so a set has one encoding and every
+node serves the same bytes. The filter hash and the filter headers are as for
+the other types.
+
+A wallet whose scan key starts with the b bits of p tests whether the filter
+has a value in `[p << (16 - b), (p + 1) << (16 - b))`, one test on the sorted
+values, and downloads the blocks that have one. It builds the same values from each
+block it downloads, so a node that serves another set is caught. No request
+names the wallet's prefix: the node sees only which blocks it downloads.
+
+The filter is built from the block alone, so it is served for every block the
+node holds, however the node synced. Nothing in it is a key a wallet looks up,
+so it has no entry tree, and a `getcfrange` or a `getcfproof` for it is not
+answered.
+
 ## What the node keeps
 
 Nothing for each block.
 
-- A filter is built from its block when a peer asks, and a script filter from
-  the block and its undo record. The most recent ones stay in memory, up to
-  32 MiB for each filter type.
+- A filter is built from its block when a peer asks, a script filter from the
+  block and its undo record, and an input prefix filter from the block alone.
+  The most recent ones stay in memory, up to 32 MiB for each filter type.
 - A filter hash is kept in memory the same way, up to 262,144 of them for each
   filter type.
 - The entries of a script filter are built again for a `getcfrange` or a
@@ -87,9 +118,10 @@ Nothing for each block.
 - Filter headers chain back to the first block, so one is kept for every
   thousand blocks: the ones a `cfcheckpt` carries. They are in memory and in
   a file in the database directory, `compact_filter_checkpoints` for the
-  regular filter and `script_filter_checkpoints` for the script filter, 64
-  bytes a record: the block hash and its filter header. Any other filter
-  header is chained from the record below it.
+  regular filter, `script_filter_checkpoints` for the script filter and
+  `input_prefix_filter_checkpoints` for the input prefix filter, 64 bytes a
+  record: the block hash and its filter header. Any other filter header is
+  chained from the record below it.
 
 Those files are the only thing stored. For a chain of a million blocks each is
 64 kB. The first time, the node computes them with one pass over its blocks, in the

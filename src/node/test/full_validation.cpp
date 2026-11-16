@@ -24,6 +24,7 @@
 #include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/database/block_undo.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
+#include <kth/domain/chain/input_prefix_filter.hpp>
 #include <kth/domain/chain/script_filter.hpp>
 #include <kth/domain/chain/script_filter_builder.hpp>
 #include <kth/node.hpp>
@@ -612,19 +613,23 @@ constexpr auto regular_type = domain::message::regular_compact_filter;
 struct filter_files {
     std::filesystem::path regular;
     std::filesystem::path script;
+    std::filesystem::path input_prefix;
 
     explicit filter_files(std::string const& tag)
         : regular(std::filesystem::temp_directory_path() / ("kth_" + tag + "_regular_checkpoints"))
         , script(std::filesystem::temp_directory_path() / ("kth_" + tag + "_script_checkpoints"))
+        , input_prefix(std::filesystem::temp_directory_path() / ("kth_" + tag + "_input_prefix_checkpoints"))
     {
         std::filesystem::remove(regular);
         std::filesystem::remove(script);
+        std::filesystem::remove(input_prefix);
     }
 
     ~filter_files() {
         std::error_code ignored;
         std::filesystem::remove(regular, ignored);
         std::filesystem::remove(script, ignored);
+        std::filesystem::remove(input_prefix, ignored);
     }
 };
 
@@ -986,6 +991,139 @@ TEST_CASE("script filter headers stop at the first block connected without the o
     // The regular filter is served for every block all the same.
     CHECK(service.checkpoint({regular_type, block_hash_at(sc, trunk_len)}));
     CHECK(run_on_own_context(service.headers({regular_type, 100, block_hash_at(sc, spend_height)})));
+}
+
+// -----------------------------------------------------------------------------
+// Input prefix filters served to light wallets: built from the block alone
+// -----------------------------------------------------------------------------
+//
+// The input prefix filter of a block holds the first two bytes of the double
+// SHA-256 of the first 30 inputs of each transaction after the coinbase. It
+// needs nothing but the block, so it is served for every block the node
+// holds, those connected below a checkpoint without an undo record included.
+
+namespace {
+
+constexpr auto input_prefix_type = domain::message::input_prefix_compact_filter;
+
+// The input prefix filter of the block at `h` as it is served.
+data_chunk served_input_prefix_filter(scenario const& sc, uint32_t h) {
+    auto const& block = h == 0 ? domain::chain::block::genesis_regtest() : sc.blocks[h - 1];
+    return domain::chain::to_data(domain::chain::build_input_prefix_filter(block));
+}
+
+// The definition, spelled out: all zeros before the first block.
+hash_digest input_prefix_header_at(scenario const& sc, uint32_t height) {
+    hash_digest header = null_hash;
+    for (uint32_t h = 0; h <= height; ++h) {
+        header = bitcoin_hash(splice(bitcoin_hash(served_input_prefix_filter(sc, h)), header));
+    }
+    return header;
+}
+
+} // namespace
+
+TEST_CASE("input prefix filters are served for every block from the block alone, below a checkpoint too",
+          "[node][full_validation][optimized][input_prefix_filters]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_input_prefix_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    filter_files const files("fv_input_prefix_opt");
+    compact_filter_service service(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+
+    // Until its file is named the input prefix filter is not served, and its
+    // requests are not answered, as for any filter type the node does not serve.
+    auto const spending_hash = block_hash_at(sc, spend_height);
+    CHECK( ! service.serves(input_prefix_type));
+    auto const unserved = run_on_own_context(service.filter_of(spending_hash, input_prefix_type));
+    REQUIRE( ! unserved);
+    CHECK(unserved.error() == error::not_found);
+    CHECK( ! run_on_own_context(service.headers({input_prefix_type, 0, block_hash_at(sc, 3)})));
+    CHECK( ! service.checkpoint({input_prefix_type, block_hash_at(sc, 3)}));
+    CHECK(service.checkpoints(input_prefix_type).empty());
+
+    service.serve_script_filters(files.script);
+    service.serve_input_prefix_filters(files.input_prefix);
+    CHECK(service.serves(input_prefix_type));
+    CHECK( ! service.serves(3));
+    service.load();
+
+    // The spending block holds the chain's one input after a coinbase, and
+    // it is below the anchor, with no undo record: its input prefix filter is
+    // that input's value, while it has no script filter.
+    auto const& spending = sc.blocks[spend_height - 1];
+    REQUIRE(spending.transactions().size() == 2);
+    auto const value = domain::chain::input_prefix(spending.transactions()[1].inputs()[0]);
+    for (uint32_t h : {0u, 1u, spend_height - 1, spend_height, anchor_height, anchor_height + 1, trunk_len}) {
+        CAPTURE(h);
+        auto const filter = run_on_own_context(service.filter_of(block_hash_at(sc, h), input_prefix_type));
+        REQUIRE(filter);
+        REQUIRE(*filter);
+        CHECK(**filter == served_input_prefix_filter(sc, h));
+        auto const parsed = domain::chain::parse_input_prefix_filter(**filter);
+        REQUIRE(parsed);
+        CHECK(parsed->values == (h == spend_height ? std::vector<uint16_t>{value} : std::vector<uint16_t>{}));
+        // And it is not the regular filter of the same block.
+        auto const regular = run_on_own_context(service.filter_of(block_hash_at(sc, h)));
+        REQUIRE(regular);
+        CHECK(**regular != **filter);
+    }
+    auto const script = run_on_own_context(service.filter_of(spending_hash, script_type));
+    REQUIRE( ! script);
+    CHECK(script.error() == error::not_found);
+
+    // One record for every `filter_interval` blocks up to the tip, across the
+    // spending block, where the script filter's records stop.
+    run_on_own_context(service.extend());
+    auto const records = service.checkpoints(input_prefix_type);
+    REQUIRE(records.size() == trunk_len / filter_interval);
+    for (size_t i = 0; i < records.size(); ++i) {
+        auto const height = uint32_t((i + 1) * filter_interval);
+        CAPTURE(height);
+        CHECK(records[i].block == block_hash_at(sc, height));
+        CHECK(records[i].filter_header == input_prefix_header_at(sc, height));
+    }
+    CHECK(service.checkpoints(script_type).size() == (spend_height - 1) / filter_interval);
+    CHECK(std::filesystem::file_size(files.input_prefix) == records.size() * 64u);
+
+    // cfcheckpt and cfheaders across the spending block.
+    auto const checkpoint = service.checkpoint({input_prefix_type, block_hash_at(sc, trunk_len)});
+    REQUIRE(checkpoint);
+    CHECK(checkpoint->filter_type == input_prefix_type);
+    CHECK(checkpoint->stop_hash == block_hash_at(sc, trunk_len));
+    REQUIRE(checkpoint->filter_headers.size() == records.size());
+    CHECK(checkpoint->filter_headers[24] == input_prefix_header_at(sc, 100));
+    CHECK(checkpoint->filter_headers[25] == input_prefix_header_at(sc, 104));
+    CHECK(checkpoint->filter_headers[25] != service.checkpoints(regular_type)[25].filter_header);
+
+    auto const headers = run_on_own_context(service.headers({input_prefix_type, spend_height,
+        block_hash_at(sc, spend_height + 1)}));
+    REQUIRE(headers);
+    CHECK(headers->filter_type == input_prefix_type);
+    CHECK(headers->previous_filter_header == input_prefix_header_at(sc, spend_height - 1));
+    REQUIRE(headers->filter_hashes.size() == 2);
+    CHECK(headers->filter_hashes[0] == bitcoin_hash(served_input_prefix_filter(sc, spend_height)));
+    CHECK(headers->filter_hashes[1] == bitcoin_hash(served_input_prefix_filter(sc, spend_height + 1)));
+    CHECK(headers->filter_hashes[0] != headers->filter_hashes[1]);
+    // From a record: the block right after one, up to the tip.
+    auto const high = run_on_own_context(service.headers({input_prefix_type, 105, block_hash_at(sc, trunk_len)}));
+    REQUIRE(high);
+    CHECK(high->previous_filter_header == input_prefix_header_at(sc, 104));
+    CHECK(high->filter_hashes.size() == trunk_len - 104);
+
+    // It has no entry tree: a range or a proof for it is not answered.
+    CHECK( ! run_on_own_context(service.range({input_prefix_type, spending_hash, 0, null_hash})));
+    CHECK( ! run_on_own_context(service.proof({input_prefix_type, spending_hash, 0})));
+
+    // Another run of the node reads its file.
+    compact_filter_service reopened(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+    reopened.serve_input_prefix_filters(files.input_prefix);
+    reopened.load();
+    CHECK(reopened.checkpoints(input_prefix_type) == records);
+    CHECK(reopened.checkpoint({input_prefix_type, block_hash_at(sc, trunk_len)}) == checkpoint);
 }
 
 #if ! defined(KTH_UTXOZ_REFERENCE_MODE)

@@ -90,6 +90,7 @@ full_node::full_node(configuration const& configuration)
         | (configuration.chain.compact_filters ? filters : 0);
     compact_filter_file_ = configuration.database.directory / "compact_filter_checkpoints";
     script_filter_file_ = configuration.database.directory / "script_filter_checkpoints";
+    input_prefix_filter_file_ = configuration.database.directory / "input_prefix_filter_checkpoints";
 #endif
 #endif
 }
@@ -147,6 +148,8 @@ full_node::~full_node() {
         // The script filter too, for the blocks the node has the spent
         // outputs of.
         compact_filters_->serve_script_filters(script_filter_file_);
+        // And the input prefix filter, for every block.
+        compact_filters_->serve_input_prefix_filters(input_prefix_filter_file_);
         compact_filters_->load();
         network_.register_served_message_handler<domain::message::get_compact_filters>(
             [this](peer_session& peer, domain::message::get_compact_filters const& request) {
