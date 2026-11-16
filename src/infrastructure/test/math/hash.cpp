@@ -7,9 +7,19 @@
 #include <test_helpers.hpp>
 #include <kth/infrastructure.hpp>
 
+#include <crypto/sha256.h>
+
 using namespace kth;
 
 // Start Test Suite: hash tests
+
+// Nothing in this program has asked for an implementation yet, as in a program
+// that only links the library. This test has to stay the first one to do it.
+TEST_CASE("sha256 uses the best implementation without being asked to", "[hash tests]") {
+    auto const in_use = SHA256Implementation();
+    auto const best = SHA256AutoDetect();
+    REQUIRE(in_use == best);
+}
 
 TEST_CASE("sha1 hash test", "[hash tests]") {
     for (auto const& result: sha1_tests) {
@@ -79,3 +89,16 @@ TEST_CASE("uint256 byte conversion preserves numeric order and all bits", "[hash
     REQUIRE(encode_hash(to_hash_digest(uint256_t(1))) == std::string(63, '0') + "1");
     REQUIRE(encode_hash(to_hash_digest(~uint256_t(0))) == std::string(64, 'f'));
 }
+
+TEST_CASE("sha256 of two pieces is sha256 of one after the other", "[hash]") {
+    data_chunk whole(300);
+    for (size_t i = 0; i < whole.size(); ++i) whole[i] = uint8_t(i * 7 + 3);
+
+    for (size_t const split : {size_t(0), size_t(1), size_t(32), size_t(63), size_t(64), size_t(65), size_t(299), size_t(300)}) {
+        byte_span const first(whole.data(), split);
+        byte_span const second(whole.data() + split, whole.size() - split);
+        CAPTURE(split);
+        REQUIRE(sha256_hash(first, second) == sha256_hash(whole));
+    }
+}
+
