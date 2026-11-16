@@ -36,6 +36,8 @@ enum class script_leaf_kind : uint8_t {
     output_category = 2,
     /// Token category of an output the block spends.
     spent_category = 3,
+    /// Hash of a transaction of the block. Its input or output index is 0.
+    transaction = 4,
 };
 
 /// One occurrence of a key in a block, and where that occurrence sits.
@@ -54,7 +56,7 @@ struct KD_API script_leaf {
 
 /// Why a leaf, a prefix, or a range proof was refused.
 enum class script_range_error {
-    /// A serialized leaf is not 41 bytes, or its kind is not 0 to 3.
+    /// A serialized leaf is not 41 bytes, or its kind is not 0 to 4.
     leaf,
     /// A key prefix is longer than 256 bits, or a bit past its length is set.
     prefix,
@@ -71,7 +73,7 @@ enum class script_range_error {
 KD_API
 std::array<uint8_t, script_leaf_size> to_data(script_leaf const& leaf);
 
-/// Parses one serialized leaf. A buffer of any other length, or a kind above 3, is refused.
+/// Parses one serialized leaf. A buffer of any other length, or a kind above 4, is refused.
 [[nodiscard]]
 KD_API
 std::expected<script_leaf, script_range_error> parse_script_leaf(byte_span data);

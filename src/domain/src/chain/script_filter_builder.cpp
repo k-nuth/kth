@@ -54,6 +54,9 @@ void append_category_leaf(std::vector<script_leaf>& leaves, token_data_opt const
 // The first transaction of a block is the coinbase: its input does not spend an output and takes nothing from `spent`.
 std::expected<size_t, script_filter_error>
 append_leaves(std::vector<script_leaf>& leaves, transaction const& tx, uint32_t tx_index, bool coinbase, std::span<output const> spent, size_t used) {
+    // Every transaction has a leaf of its own, so a wallet finds a confirmed transaction by its hash alone.
+    leaves.push_back(script_leaf{transaction_key(tx.hash()), tx_index, 0, script_leaf_kind::transaction});
+
     if ( ! coinbase) {
         auto const& inputs = tx.inputs();
         for (size_t j = 0; j < inputs.size(); ++j) {
@@ -122,6 +125,11 @@ hash_digest script_key(byte_span script) {
 hash_digest category_key(hash_digest const& category) {
     uint8_t const tag = 0x01;
     return sha256_hash(byte_span(&tag, 1), category);
+}
+
+hash_digest transaction_key(hash_digest const& hash) {
+    uint8_t const tag = 0x02;
+    return sha256_hash(byte_span(&tag, 1), hash);
 }
 
 std::expected<std::vector<script_leaf>, script_filter_error>
