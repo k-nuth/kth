@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cstdint>
 
-#include <boost/locale.hpp>
 
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/unicode/unicode.hpp>
@@ -130,11 +129,12 @@ long_hash decode_mnemonic_normalized_passphrase(word_list const& mnemonic, std::
 
 #ifdef WITH_ICU
 
-long_hash decode_mnemonic(word_list const& mnemonic, std::string const& passphrase) {
+std::expected<long_hash, unicode_error> decode_mnemonic(word_list const& mnemonic, std::string const& passphrase) {
     auto const sentence = join(mnemonic);
     std::string const prefix(passphrase_prefix);
     auto const salt = to_normal_nfkd_form(prefix + passphrase);
-    return pkcs5_pbkdf2_hmac_sha512(to_chunk(sentence), to_chunk(salt), hmac_iterations);
+    if (!salt) return std::unexpected(salt.error());
+    return pkcs5_pbkdf2_hmac_sha512(to_chunk(sentence), to_chunk(*salt), hmac_iterations);
 }
 
 #endif

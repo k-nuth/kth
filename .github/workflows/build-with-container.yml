@@ -52,6 +52,14 @@ on:
         required: false
         type: boolean
         default: true
+      validate-alternate-package:
+        description: >-
+          Also build, package and test the other `consensus` variant, which is
+          a distinct ABI and so a second full build. Off for pull requests and
+          pushes to master; on for the nightly run and for releases.
+        required: false
+        type: boolean
+        default: false
       advisory:
         description: >-
           When true, non-passing Build / Package / Test steps are marked
@@ -197,6 +205,9 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials.py"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/check-conan-credentials-selftest.py"
           python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package-selftest.py"
+          # The RPC backends build on a pull request only for the paths their
+          # workflow lists, so that list is checked on every build.
+          (cd "${GITHUB_WORKSPACE}" && python3 -m unittest scripts.test_rpc_ci.RpcPathFilterTests)
 
       - name: 🗄️ Setup ccache
         if: ${{ inputs.upload != true }}
@@ -499,6 +510,8 @@ jobs:
 
       - name: 📦 Validate installed package consumers
         if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
+        env:
+          KTH_VALIDATE_ALTERNATE_PACKAGE: ${{ inputs.validate-alternate-package && '1' || '0' }}
         run: |
           python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package.py" --version "${{ inputs.build-version }}" --profile linux-ci-cd --march-id ZLm9Pjh
 
