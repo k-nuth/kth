@@ -49,8 +49,8 @@ std::vector<node_vector> const& node_vectors() {
         "7962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000",
         {},
         "0000000000000000000000000000000000000000000000000000000000000000",
-        "904b96e24a5b5bb8b488ab0b8699406a89cd0ee8b9ec9d7a2711b5ab517e13f5013012a0",
-        "2907e70bbbb30da593e761451a1f4eb1cd630b1e0da62ed0272f3f0423a61edc",
+        "c2da4de436a49fc717279422a4e6f7047bb384c006c1ac38bd54f7f95ed43f4502602548242a00",
+        "15f81de96b9c966f49c191932510c835ea2e7e150079892abd22ffc6751f1748",
     },
     {
         126,
@@ -68,9 +68,9 @@ std::vector<node_vector> const& node_vectors() {
         "8b88ac00000000",
         {"76a914b2275cc60091cdde77bddb8c132f60494cb2ea6b88ac"},
         "ca783e12db56d2e1642716b5562344aec0eaa0be071afbe6a32d87989d05f164",
-        "8ad04c9491de79a7dd3f3d4b7163f83a3c1a4406fc172076dc877345ef0bd20b06cc65ddcbf1c3dbd28d834bf8c4bbfa"
-        "80",
-        "f0380fbcf33c6b758b6bdc19294600cde5ac96eae7894146c8dddfba372d2e70",
+        "3b7c45a5279d29547ac2755d20a3d0cccd514ec80628f71b2844120d2a4648b508e2ee947e15ab48b82928b84811bfd96b"
+        "ea8d54467c",
+        "3362679fcffacc8c327f41e9e79b3818bcca4f2359438ca3270350ea39b64ad1",
     },
     {
         127,
@@ -87,9 +87,10 @@ std::vector<node_vector> const& node_vectors() {
         "ff02f07be111000000001976a914040404040404040404040404040404040404040488ac0000000000000000176a1573"
         "63726970742066696c74657220766563746f727300000000",
         {"76a914b2275cc60091cdde77bddb8c132f60494cb2ea6b88ac", "a91469d7ef8f42a25e8791bb37d5fb48456f102a3cb987"},
-        "f0380fbcf33c6b758b6bdc19294600cde5ac96eae7894146c8dddfba372d2e70",
-        "96abbd5fe8f576296a2f50b3ebe8f03d61e2dba7968309a18d6ceab2be7861db04bbbb62037514a1956b1740",
-        "ad3062be24cf55c6ef4a95cdc08df52a30aa14b922a2d52e055730b5bfb0d36f",
+        "3362679fcffacc8c327f41e9e79b3818bcca4f2359438ca3270350ea39b64ad1",
+        "0203471b91863237e77edce7baf8aece3399215b146501a2d5da70a0cc33819107e621fae1832906b2f0e54a00d93660"
+        "c5896e",
+        "e5058dd1d7d008d1391eec4ec1abc95748c837760f02c0157b4b6357d925839b",
     },
     {
         128,
@@ -102,9 +103,10 @@ std::vector<node_vector> const& node_vectors() {
         "05050505050505050505050588acf0b9f505000000001976a914010101010101010101010101010101010101010188ac"
         "0000000000000000176a157363726970742066696c74657220766563746f727300000000",
         {"a914da1745e9b549bd0bfa1a569971c77eba30cd5a4b87"},
-        "ad3062be24cf55c6ef4a95cdc08df52a30aa14b922a2d52e055730b5bfb0d36f",
-        "d8b0a925f1c1550536bcd77d3a1b02768245badf91acb5c2ff43591152ad6b930422883ce091c043a77cdb40",
-        "4e57c5432d961c613358d6754b396a0fb43582c76981278527bc976c69df31ab",
+        "e5058dd1d7d008d1391eec4ec1abc95748c837760f02c0157b4b6357d925839b",
+        "d8dc712cae1f62a1a0e166f56489ebde33ff6acc598ab911749a451357e68bd80633cc5b7f4d5913400657bb47dda926"
+        "90",
+        "f395f6b7e31dc21b365269a24c1008cf758764062923b1a952719dd73a62f7a7",
     },
     {
         129,
@@ -113,9 +115,9 @@ std::vector<node_vector> const& node_vectors() {
         "00000000000000000000000000000000000000000000ffffffff13028100083ab923e718789d91062f626368642fffff"
         "ffff0100f2052a010000001976a914b2275cc60091cdde77bddb8c132f60494cb2ea6b88ac00000000",
         {},
-        "4e57c5432d961c613358d6754b396a0fb43582c76981278527bc976c69df31ab",
-        "70cc85d12c594282065f0bd3d401fbbc52ba2fe5f89f85c0c3910bd82c1a723701828018",
-        "98487e23d978d3347e71f381d17aedc76376df1a899a486cdea8e10de9584a0a",
+        "f395f6b7e31dc21b365269a24c1008cf758764062923b1a952719dd73a62f7a7",
+        "b4512eae7cb64b3b42807855f58b600362ebd292d59dabe1c4d92d26eb2e46490206bedc0d0680",
+        "4cd8c557a61b1ef8c7de3bfcfbb037e3e53632303a4e6bfac7e6067f853c0197",
     },
     };
     return vectors;
@@ -162,7 +164,7 @@ TEST_CASE("script filter of blocks from another node is the filter and header th
     }
 }
 
-TEST_CASE("script filter served by another node parses and matches the scripts its block spends", "[script filter builder]") {
+TEST_CASE("script filter served by another node parses and matches the scripts its block spends and its transactions", "[script filter builder]") {
     for (auto const& vector : node_vectors()) {
         CAPTURE(vector.height);
 
@@ -182,6 +184,11 @@ TEST_CASE("script filter served by another node parses and matches the scripts i
         for (auto const script_hex : vector.spent_script_hex) {
             auto const script = from_hex(script_hex);
             REQUIRE(parsed->set.match(key, chain::script_key(script)));
+        }
+
+        // Every transaction of the block, the coinbase included, by its hash alone.
+        for (auto const& tx : block->transactions()) {
+            REQUIRE(parsed->set.match(key, chain::transaction_key(tx.hash())));
         }
 
         // A script no block of the chain has is in none of them.

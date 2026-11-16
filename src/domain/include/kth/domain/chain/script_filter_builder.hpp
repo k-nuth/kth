@@ -41,8 +41,18 @@ hash_digest script_key(byte_span script);
 KD_API
 hash_digest category_key(hash_digest const& category);
 
+/// SHA-256 of 0x02 followed by the transaction hash, in the order the hash
+/// function writes it, as in an outpoint.
+/// A token category is the hash of an earlier transaction. The two tags keep
+/// the key of that transaction apart from the key of the category, so neither
+/// matches the blocks of the other.
+[[nodiscard]]
+KD_API
+hash_digest transaction_key(hash_digest const& hash);
+
 /// Sorted leaves of a block.
 /// `spent` holds the output each input spends, for every transaction after the first, in block order.
+/// Every transaction, the coinbase included, has one transaction leaf.
 /// A locking script that is empty or starts with OP_RETURN has no script leaf. Its token category still has a leaf.
 [[nodiscard]]
 KD_API
