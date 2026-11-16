@@ -504,6 +504,16 @@ std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int
     return run_on_own_context(dispatcher.handle(context, body));
 }
 
+// The JSON-RPC reply to getblockstats with `params`.
+std::string get_block_stats_reply(chain_fixture& fixture, std::string const& params) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"getblockstats","params":)" + params + R"(,"id":7})";
+    return run_on_own_context(dispatcher.handle(context, body));
+}
+
 } // namespace
 
 TEST_CASE("the outputs a block spends are read from its undo record, and getblock reports the fee",
@@ -617,3 +627,88 @@ TEST_CASE("getblock fails when the undo record does not cover what the block's t
     CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
 }
 #endif
+
+TEST_CASE("getblockstats reads the fees from the undo record, by hash or by height",
+          "[node][full_validation][spent_outputs][block_stats]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_block_stats", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto const request = [&](std::string const& params) { return get_block_stats_reply(fixture, params); };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+
+    // The block at spend_height: its coinbase, and the spend of block 1's
+    // coinbase output, 50 BCH, paying it back less 1,000 satoshis: 5 for each
+    // of its bytes, which are about 190 (a signature's encoding varies in
+    // length). Each pays one 34-byte output, which the UTXO set counts with 41
+    // bytes more: two created, one spent. Its median time is that of block 96,
+    // the middle one of blocks 91 to 101.
+    auto const& block = sc.blocks[spend_height - 1];
+    auto const size = std::to_string(block.transactions()[1].serialized_size(true));
+    std::string const rate = "0.00000005";
+    auto const all = request("[" + quoted(block.hash()) + "]");
+    CHECK(all == node::rpc::build_success("7", R"({"avgfee":0.00001,"avgfeerate":)" + rate +
+        R"(,"avgtxsize":)" + size + R"(,"blockhash":)" + quoted(block.hash()) +
+        R"(,"feerate_percentiles":[)" + rate + "," + rate + "," + rate + "," + rate + "," + rate +
+        R"(],"height":101,"ins":1,"maxfee":0.00001,"maxfeerate":)" + rate + R"(,"maxtxsize":)" + size +
+        R"(,"medianfee":0.00001,"mediantime":)" + std::to_string(sc.blocks[96 - 1].header().timestamp()) +
+        R"(,"mediantxsize":)" + size + R"(,"minfee":0.00001,"minfeerate":)" + rate + R"(,"mintxsize":)" +
+        size + R"(,"outs":2,"subsidy":50,"time":)" + std::to_string(block.header().timestamp()) +
+        R"(,"total_out":49.99999,"total_size":)" + size +
+        R"(,"totalfee":0.00001,"txs":2,"utxo_increase":1,"utxo_size_inc":75})"));
+
+    // By height, and with no stats or an empty list: all of them.
+    CHECK(request("[101]") == all);
+    CHECK(request("[" + quoted(block.hash()) + ",null]") == all);
+    CHECK(request("[101,[]]") == all);
+
+    // Only those asked for, each once and in name order.
+    CHECK(request(R"([101,["utxo_size_inc","height","avgfee","height"]])") ==
+        node::rpc::build_success("7", R"({"avgfee":0.00001,"height":101,"utxo_size_inc":75})"));
+
+    // A name it does not report: the first of them in name order.
+    CHECK(request(R"([101,["height","nosuchstat","alsobad"]])") ==
+        node::rpc::build_error("7", -8, "Invalid selected statistic alsobad"));
+    // No such block, no block that high, and no negative height.
+    CHECK(request("[" + quoted(null_hash) + "]") == node::rpc::build_error("7", -5, "Block not found"));
+    CHECK(request("[111]") ==
+        node::rpc::build_error("7", -8, "Target block height 111 after current tip 110"));
+    CHECK(request("[-1]") == node::rpc::build_error("7", -8, "Target block height -1 is negative"));
+
+    // Wrong types, a height past 32 bits and extra arguments.
+    for (auto const* params : {"[]", "null", "{}", R"("101")", "[true]", "[null]", "[1.5]", "[2147483648]",
+                               R"([101,"height"])", "[101,[1]]", "[101,{}]", "[101,[],1]"}) {
+        CAPTURE(params);
+        CHECK(request(params) ==
+            node::rpc::build_error("7", -32602, "getblockstats requires [hash_or_height, stats]"));
+    }
+    CHECK(request(R"(["101"])") == node::rpc::build_error("7", -32602, "invalid block hash"));
+}
+
+TEST_CASE("getblockstats of a block connected without an undo record answers what needs none",
+          "[node][full_validation][optimized][spent_outputs][block_stats]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    chain_fixture fixture("fv_block_stats_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto const request = [&](std::string const& params) { return get_block_stats_reply(fixture, params); };
+
+    // Below the anchor the node wrote no record of what the block spent: no
+    // fee, feerate or utxo_size_inc, with the error other nodes give for undo
+    // data they cannot read.
+    auto const unreadable = node::rpc::build_error("7", -1, "Can't read undo data from disk");
+    CHECK(request("[101]") == unreadable);
+    CHECK(request(R"([101,["height","totalfee"]])") == unreadable);
+    CHECK(request(R"([101,["utxo_size_inc"]])") == unreadable);
+
+    // What the block holds by itself needs no record.
+    auto const size = std::to_string(sc.blocks[spend_height - 1].transactions()[1].serialized_size(true));
+    CHECK(request(R"([101,["txs","utxo_increase","total_size","total_out","outs","ins","height"]])") ==
+        node::rpc::build_success("7", R"({"height":101,"ins":1,"outs":2,"total_out":49.99999,"total_size":)" +
+            size + R"(,"txs":2,"utxo_increase":1})"));
+    // A name it does not report is still refused.
+    CHECK(request(R"([101,["height","bogus"]])") ==
+        node::rpc::build_error("7", -8, "Invalid selected statistic bogus"));
+}

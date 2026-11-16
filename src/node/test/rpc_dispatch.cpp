@@ -1637,6 +1637,58 @@ TEST_CASE("getblock adds each script's byte code pattern only when patterns is t
         node::rpc::build_error("12", -32602, "getblock requires [blockhash, verbosity=1, patterns=false]"));
 }
 
+TEST_CASE("getblockstats dispatch answers for the blocks of the connected chain only", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_stats");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblockstats","params":)" + params + R"(,"id":14})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+
+    // Block 3 holds its coinbase alone: nothing spent, so no undo record is
+    // read, and every statistic of the transactions after the coinbase is 0.
+    // Its one output, 34 bytes, grows the UTXO set by those and 41 more. Its
+    // median time is block 2's, the middle one of genesis and blocks 1 to 3.
+    auto const& third = trunk[2];
+    auto const stats = request("[" + quoted(third.hash()) + "]");
+    CHECK(stats == node::rpc::build_success("14", R"({"avgfee":0,"avgfeerate":0,"avgtxsize":0,"blockhash":)" +
+        quoted(third.hash()) + R"(,"feerate_percentiles":[0,0,0,0,0],"height":3,"ins":0,"maxfee":0,)"
+        R"("maxfeerate":0,"maxtxsize":0,"medianfee":0,"mediantime":)" +
+        std::to_string(trunk[1].header().timestamp()) + R"(,"mediantxsize":0,"minfee":0,"minfeerate":0,)"
+        R"("mintxsize":0,"outs":1,"subsidy":50,"time":)" + std::to_string(third.header().timestamp()) +
+        R"(,"total_out":0,"total_size":0,"totalfee":0,"txs":1,"utxo_increase":1,"utxo_size_inc":75})"));
+    CHECK(request("[3]") == stats);
+
+    // A header the index holds past the connected tip is not on the chain the
+    // statistics are of, and neither is its height.
+    CHECK(request("[" + quoted(trunk[3].hash()) + "]") ==
+        node::rpc::build_error("14", -8, "Block is not in chain regtest"));
+    CHECK(request("[4]") == node::rpc::build_error("14", -8, "Target block height 4 after current tip 3"));
+}
+
 TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failure", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_block_file_damaged");
     REQUIRE(fixture.created());

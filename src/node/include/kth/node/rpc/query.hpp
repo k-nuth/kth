@@ -184,6 +184,35 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
 std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
                                                       std::span<domain::chain::output const> spent);
 
+// What getblockstats reports about a block beyond the block itself.
+struct block_stats_location {
+    size_t height;
+    uint32_t median_time;             // of the 11 blocks ending at this one
+    uint64_t subsidy;                 // satoshis
+};
+
+// Whether getblockstats needs the outputs a block spends for the statistics
+// named in `selected` (all of them when it is empty): the fees, the feerates
+// and utxo_size_inc do.
+bool block_stats_need_spent(std::span<std::string const> selected);
+
+// The first name in `selected`, in name order, that getblockstats does not
+// report. Nothing when it reports them all.
+std::optional<std::string> unknown_block_stat(std::span<std::string const> selected);
+
+// The getblockstats object: the statistics named in `selected`, all of them
+// when it is empty, in name order, as other Bitcoin Cash nodes compute them.
+// Amounts are in BCH and feerates in BCH per byte, each rounded down to whole
+// satoshis; the coinbase counts only in `outs`, `txs` and the UTXO figures.
+// `spent` holds the output each input spends, for every transaction after the
+// coinbase, in block order. Nothing when the statistics asked for need it and
+// it is missing, when it is not one output for each input, or when a
+// transaction pays more than it spends.
+std::optional<std::string> render_block_stats(domain::chain::block const& block,
+                                              block_stats_location const& location,
+                                              std::optional<std::span<domain::chain::output const>> spent,
+                                              std::span<std::string const> selected);
+
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.
 std::string render_block_header(domain::chain::header const& header,
