@@ -1033,6 +1033,53 @@ GPU_FN sc8 gpu_schnorr_challenge(const GPU_GLOBAL gpu_raw_input* in, u32 key_odd
     return e;
 }
 
+// Double SHA-256 of two 32-byte hashes side by side (64 bytes), the node of
+// a merkle tree. A hash is 8 words as they sit in memory (little-endian
+// words over its bytes), so each word is byte-swapped into a SHA-256 word and
+// back. The 64 bytes fill one block; the second block is only padding, and the
+// second hash is one block over the 32-byte digest.
+#define GPU_BSWAP32(x) (((x) >> 24) | (((x) >> 8) & 0x0000ff00u) | (((x) << 8) & 0x00ff0000u) | ((x) << 24))
+GPU_FN void gpu_sha256d_pair(const GPU_GLOBAL u32* left, const GPU_GLOBAL u32* right, GPU_GLOBAL u32* out) {
+    u32 st[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
+    u32 w[16];
+    for (int i = 0; i < 8; ++i) {
+        u32 const l = left[i];
+        u32 const r = right[i];
+        w[i] = GPU_BSWAP32(l);
+        w[8 + i] = GPU_BSWAP32(r);
+    }
+    sha256_compress(st, w);
+    w[0] = 0x80000000u;
+    for (int i = 1; i < 15; ++i) w[i] = 0;
+    w[15] = 64 * 8;
+    sha256_compress(st, w);
+
+    for (int i = 0; i < 8; ++i) w[i] = st[i];
+    w[8] = 0x80000000u;
+    for (int i = 9; i < 15; ++i) w[i] = 0;
+    w[15] = 32 * 8;
+    u32 st2[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
+    sha256_compress(st2, w);
+    for (int i = 0; i < 8; ++i) {
+        u32 const d = st2[i];
+        out[i] = GPU_BSWAP32(d);
+    }
+}
+
+// Node i of the level above a merkle level of n hashes (there are (n + 1) / 2
+// of them). The last hash of an odd level is paired with itself, which is the
+// Bitcoin rule. Returns 1 when the node hashes two real siblings that are
+// equal: a tree with such a pair has the root of a shorter list of hashes.
+GPU_FN u32 gpu_merkle_node(const GPU_GLOBAL u32* level, u32 n, u32 i, GPU_GLOBAL u32* out) {
+    const GPU_GLOBAL u32* left = level + 16 * i;
+    u32 const has_right = (2 * i + 1 < n) ? 1u : 0u;
+    const GPU_GLOBAL u32* right = has_right ? left + 8 : left;
+    gpu_sha256d_pair(left, right, out + 8 * i);
+    u32 diff = 0;
+    for (int k = 0; k < 8; ++k) diff |= left[k] ^ right[k];
+    return (has_right && diff == 0) ? 1u : 0u;
+}
+
 // The verification in three pieces: checks and scalar derivations, the
 // ladder, the verdict.
 struct gpu_prep {

@@ -123,7 +123,14 @@ jobs:
         env:
           ALLOW_CONAN_UPLOAD: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          # Parse build order and build each dependency
+          # Build from the consumer graph: standalone --requires installs lose
+          # its forced Boost version and header-only options for Emscripten.
+          conan install conanfile.py --version="${{ needs.setup.outputs.build-version }}" \
+            --lockfile=build/conan.lock --output-folder=build/dependencies \
+            --build=missing -pr:h ./ci_utils/conan/profiles/ems6 \
+            -o tests=False -o consensus=True
+
+          # Parse the original build order to upload the completed dependencies.
           # Extract references and their context (build or host)
           python3 << 'PYTHON_EOF' > deps_list.txt
           import json
@@ -158,12 +165,6 @@ jobs:
 
           while IFS='|' read -r ref context; do
             if [ -n "$ref" ]; then
-              echo "Building dependency: $ref (context: $context)"
-              if [ "$context" = "build" ]; then
-                conan install --tool-requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6
-              else
-                conan install --requires="$ref" -l build/conan.lock --build=missing -pr:h ./ci_utils/conan/profiles/ems6
-              fi
               # Skip uploading emsdk (too large for remote) and ninja (build tool)
               if [ "$ALLOW_CONAN_UPLOAD" != "true" ]; then
                 echo "Skipping Conan upload for external pull request: $ref"

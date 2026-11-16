@@ -8,6 +8,10 @@ include(CMakeFindDependencyMacro)
 
 # Find all dependencies that the kth components need
 find_dependency(Boost REQUIRED)
+find_dependency(simdutf CONFIG REQUIRED)
+if(@WITH_ICU@)
+    find_dependency(ICU COMPONENTS uc REQUIRED)
+endif()
 find_dependency(gmp REQUIRED)
 
 # Include all component config files
