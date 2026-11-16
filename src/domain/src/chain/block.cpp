@@ -295,6 +295,21 @@ chain::block block::genesis_chipnet() {
 }
 #endif
 
+chain::block block::genesis(domain::config::network network) {
+    switch (network) {
+        case domain::config::network::testnet: return genesis_testnet();
+        case domain::config::network::regtest: return genesis_regtest();
+#if defined(KTH_CURRENCY_BCH)
+        case domain::config::network::testnet4: return genesis_testnet4();
+        case domain::config::network::scalenet: return genesis_scalenet();
+        case domain::config::network::tempnet:
+        case domain::config::network::chipnet: return genesis_chipnet();
+#endif
+        default:
+        case domain::config::network::mainnet: return genesis_mainnet();
+    }
+}
+
 // With a 32 bit chain the size of the result should not exceed 43 and with a
 // 64 bit chain should not exceed 75, using a limit of: 10 + log2(height) + 1.
 size_t block::locator_size(size_t top) {
