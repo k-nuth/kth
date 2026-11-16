@@ -27,6 +27,13 @@ namespace kth::node::detail {
 struct p2p_node_test_seam {
     using probe_point = p2p_node::status_probe_point;
 
+    // A day-long retry makes cancellation observable without a tight timing
+    // assertion. This calls the same wait the configured endpoint owner uses.
+    static ::asio::awaitable<bool> wait_configured_retry(
+            p2p_node& target, std::chrono::seconds delay) {
+        co_return co_await target.wait_configured_retry(delay);
+    }
+
     static ::asio::awaitable<void> admit_peer(p2p_node& target,
         network::peer_session::ptr peer, peer_direction direction) {
         co_await target.new_peer_channel_->async_send(std::error_code{},

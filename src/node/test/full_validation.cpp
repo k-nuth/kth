@@ -278,6 +278,49 @@ TEST_CASE("full mode accepts the valid control and captures undo from the first 
     CHECK(out.undo_above);
 }
 
+TEST_CASE("full mode connects a chain cut into many batches exactly as it connects it in one",
+          "[node][full_validation]") {
+    // Batches of ten: eleven of them over this chain, and every one after the
+    // first is judged while the one before it is still being made durable and
+    // published. What is connected must not depend on that — the same height,
+    // and undo for the same blocks, as the single batch of the control above.
+    // The spend at 101 opens a batch whose input was created by a much earlier
+    // one, so a judgement that ran against a set missing an applied batch would
+    // not resolve it.
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc),
+        "--chain.validation_batch_blocks=10"}, error));
+
+    auto const out = connect_under("fv_full_many_batches", parser.configured.chain, sc);
+
+    CHECK(out.built == trunk_len);
+    CHECK(out.undo_first);
+    CHECK(out.undo_spend);
+    CHECK(out.undo_above);
+}
+
+TEST_CASE("full mode judges a batch ahead of its turn and still refuses it in its turn",
+          "[node][full_validation]") {
+    // The tampered spend at 101 with batches of ten: 1..100 are ten valid
+    // batches and the eleventh holds the invalid block. Its verdict is reached
+    // while the tenth is being finished, and must change nothing about the
+    // tenth: every block before the invalid one is connected, and nothing of
+    // the batch that holds it is.
+    auto const sc = build_scenario(/*tampered*/ true, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc),
+        "--chain.validation_batch_blocks=10"}, error));
+
+    auto const out = connect_under("fv_full_bad_ahead", parser.configured.chain, sc);
+
+    CHECK(out.built == spend_height - 1);
+    CHECK(out.undo_first);
+    CHECK_FALSE(out.undo_spend);
+}
+
 TEST_CASE("full mode still rejects a header that conflicts with the configured anchor",
           "[node][full_validation]") {
     auto const sc = build_scenario(false, 0);

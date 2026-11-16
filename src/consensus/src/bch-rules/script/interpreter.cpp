@@ -4,6 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <script/sigcheck_defer.h>
 #include <script/interpreter.h>
 
 #include <crypto/ripemd160.h>
@@ -1447,7 +1448,11 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
                                 const auto cleanedUp = CleanupScriptCode(scriptCode, vchSig, flags);
 
                                 size_t bytesHashed{};
-                                fSuccess = checker.CheckSig(vchSig, vchPubKey, cleanedUp.scriptCode, flags, &bytesHashed);
+                                {
+                                    // A failed check is final under NULLFAIL: it may be deferred.
+                                    KTH_SIGCHECK_DEFER_SCOPE((flags & SCRIPT_VERIFY_NULLFAIL) != 0);
+                                    fSuccess = checker.CheckSig(vchSig, vchPubKey, cleanedUp.scriptCode, flags, &bytesHashed);
+                                }
                                 metrics.TallySigChecks(1);
                                 if (bytesHashed) {
                                     metrics.TallyHashOp(bytesHashed, true);
@@ -1495,7 +1500,11 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
                                 CSHA256()
                                     .Write(vchMessage.data(), vchMessage.size())
                                     .Finalize(sigHash.data());
-                                fSuccess = checker.VerifySignature(vchSig, CPubKey(vchPubKey), sigHash);
+                                {
+                                    // A failed check is final under NULLFAIL: it may be deferred.
+                                    KTH_SIGCHECK_DEFER_SCOPE((flags & SCRIPT_VERIFY_NULLFAIL) != 0);
+                                    fSuccess = checker.VerifySignature(vchSig, CPubKey(vchPubKey), sigHash);
+                                }
                                 metrics.TallySigChecks(1);
                                 metrics.TallyHashOp(vchMessage.size(), false);
 
@@ -1626,9 +1635,15 @@ bool EvalScriptImpl(StackT &stack, const CScript &initialScript, uint32_t flags,
                                         return false;
                                     }
 
-                                    // Check signature
+                                    // Check signature (Schnorr multisig: every check must
+                                    // pass, so it may be deferred)
                                     size_t bytesHashed{};
-                                    if (!checker.CheckSig(vchSig, vchPubKey, scriptCode, flags, &bytesHashed)) {
+                                    bool sigOk;
+                                    {
+                                        KTH_SIGCHECK_DEFER_SCOPE(true);
+                                        sigOk = checker.CheckSig(vchSig, vchPubKey, scriptCode, flags, &bytesHashed);
+                                    }
+                                    if (!sigOk) {
                                         // This can fail if the signature is empty,
                                         // which also is a NULLFAIL error as the
                                         // bitfield should have been null in this

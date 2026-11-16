@@ -16,7 +16,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
@@ -39,10 +38,11 @@
 // Bitcoin Core optimized SHA256D64 for merkle tree computation
 #include <crypto/sha256.h>
 
+#include <kth/domain/chain/detail/gpu_merkle.hpp>
+
 namespace kth::domain::chain {
 
 using namespace kth::domain::machine;
-using namespace boost::adaptors;
 
 #if defined(KTH_CURRENCY_LTC)
 //Litecoin mainnet genesis block
@@ -442,6 +442,12 @@ hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) cons
 
     hash_list hashes(txids.begin(), txids.end());
 
+    // A large tree goes to the GPU when there is one, every level on the device.
+    bool equal_siblings = false;
+    if (auto const root = detail::gpu_merkle_root(hashes, equal_siblings)) {
+        return *root;
+    }
+
     // Temporary buffers for batched SHA256D64 processing
     // SHA256D64 uses SIMD: 2-way on ARM, 4-way on SSE4.1, 8-way on AVX2
     std::vector<uint8_t> batch_input;
@@ -614,7 +620,22 @@ bool block::has_forbidden_coinbase_shape() const {
 
     // The cheap integer fields first.
     auto const& cb = transactions_.front();
-    return cb.version() == 1 && cb.locktime() == 0 && cb.total_output_value() >= 25 * satoshi_per_bitcoin;
+    return cb.version() == 1 && cb.locktime() == 0 && cb.is_coinbase()
+        && cb.inputs().front().sequence() == max_uint32
+        && cb.total_output_value() >= 25 * satoshi_per_bitcoin;
+}
+
+bool block::has_forbidden_coinbase_shape(config::network network, size_t height) const {
+    if (! has_forbidden_coinbase_shape()) {
+        return false;
+    }
+    // Mainnet defers the broad rule until the second reachable collision.
+    // The earlier collision is covered by one exact transaction identifier.
+    if (network != config::network::mainnet || height >= 3'708'179) {
+        return true;
+    }
+    constexpr auto first_collision = "3aa03753fc238b38f4db9e5889362f3a6f0900d602baa8c9a7e789cb13ca1462"_hash;
+    return height == 1'983'702 && transactions_.front().hash() == first_collision;
 }
 
 bool block::is_valid_coinbase_script(size_t height) const {

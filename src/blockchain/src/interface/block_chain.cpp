@@ -1169,6 +1169,26 @@ database::barrier_outcome block_chain::utxo_sync(utxo_write_window const& window
     return utxoz_db_.with_write(window, [](auto& db) { return db.sync(); });
 }
 
+std::expected<database::pending_barrier, database::barrier_outcome>
+block_chain::utxo_begin_sync(utxo_write_window const& window) {
+    return utxoz_db_.with_write(window, [](auto& db) { return db.begin_sync(); });
+}
+
+database::barrier_outcome block_chain::utxo_finish_sync(database::pending_barrier&& pending) {
+    auto lease = utxo_gate_.read();
+    if ( ! lease) {
+        // Latched already, by whatever got there first. The barrier was not
+        // made, and that is the answer whoever asked for it needs.
+        return database::barrier_outcome::failed;
+    }
+
+    auto const outcome = std::move(pending).finish();
+    if (outcome != database::barrier_outcome::crossed) {
+        utxo_gate_.latch_observed();
+    }
+    return outcome;
+}
+
 database::durability_level block_chain::durability() const {
     return database::node_durability_level();
 }

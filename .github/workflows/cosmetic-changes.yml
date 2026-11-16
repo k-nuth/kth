@@ -126,7 +126,7 @@ jobs:
       - name: 👍 Auto-approve cosmetic changes
         if: contains(fromJSON('["dependabot[bot]", "github-actions[bot]"]'), github.actor) ||
             github.actor == github.repository_owner
-        uses: juliangruber/approve-pull-request-action@v2
+        uses: juliangruber/approve-pull-request-action@68fcc9a5a73b5641cadf757cf99d73720dcb05d0  # v2.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ github.event.pull_request.number }}

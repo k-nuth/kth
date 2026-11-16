@@ -41,14 +41,17 @@ namespace kth::node::rpc {
 inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
 
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
-// cache and the P2P node. Passed by reference; owned by the server for the
-// connection's lifetime.
+// cache, the P2P node and when the node started. Passed by reference; owned by
+// the server for the connection's lifetime.
 struct method_context {
     blockchain::block_chain& chain;
     mining::job_store& jobs;
     // Null when the server runs without one (tests); the network methods then
     // report it as unavailable.
     p2p_node const* network = nullptr;
+    // When the node started, for uptime. The server passes the node's own
+    // start; a context built without one (tests) counts from its creation.
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     // Requested when the server stops. A handler that waits on the chain, a
     // long-polled getblocktemplate, ends its wait on it, so the server's drain
     // of its connections never waits on a client.

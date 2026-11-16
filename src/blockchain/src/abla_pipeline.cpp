@@ -70,7 +70,8 @@ std::optional<state> advance_abla_state(
 std::expected<std::vector<state>, code> abla_states_for_batch(
     block_chain const& chain, settings const& settings, domain::config::network network,
     uint32_t start_height, std::span<uint64_t const> sizes,
-    header_index::index_t last_idx) {
+    header_index::index_t last_idx,
+    database::header_abla_record const* unpublished_parent) {
     std::vector<state> out;
     if (sizes.empty()) {
         return out;
@@ -83,7 +84,24 @@ std::expected<std::vector<state>, code> abla_states_for_batch(
     }
 
     std::optional<state> parent;
-    if (start_height > 0) {
+    if (start_height > 0 && unpublished_parent != nullptr) {
+        // The caller derived this record itself and is about to publish it. A
+        // record for any other height is a caller that lost track of which
+        // batch it is on, and a state taken from it would be a made-up
+        // consensus input under every block here.
+        if (unpublished_parent->height != start_height - 1) {
+            spdlog::error("[abla] The parent state offered is for height {}, not {}",
+                unpublished_parent->height, start_height - 1);
+            return std::unexpected(error::operation_failed);
+        }
+        auto const parsed = abla_state_from_record(settings, unpublished_parent->block_size,
+            unpublished_parent->control_block_size, unpublished_parent->elastic_buffer_size,
+            schedule->block_interval(start_height - 1));
+        if ( ! parsed) {
+            return std::unexpected(parsed.error());
+        }
+        parent = *parsed;
+    } else if (start_height > 0) {
         auto const stored = chain.get_header_and_abla_state(start_height - 1);
         if (stored) {
             auto const ancestor = chain.headers().get_ancestor(last_idx, int32_t(start_height - 1));

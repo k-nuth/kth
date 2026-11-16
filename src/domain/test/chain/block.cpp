@@ -792,3 +792,75 @@ TEST_CASE("block checks read the transaction identifiers they are given", "[chai
     auto const backward = make_block({block.transactions().front(), later, spender});
     CHECK( ! backward.is_forward_reference(backward.to_hashes()));
 }
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("coinbase shape requires all four historical fields", "[coinbase_shape_schedule]") {
+    constexpr uint64_t threshold = 25 * satoshi_per_bitcoin;
+    for (auto const version : {1u, 2u}) {
+        for (auto const locktime : {0u, 1u}) {
+            for (auto const value : {threshold - 1, threshold, threshold + 1}) {
+                for (auto const sequence : {0u, 1u, 0xfffffffeu, max_uint32}) {
+                    CAPTURE(version, locktime, value, sequence);
+                    chain::transaction cb{version, locktime,
+                        {chain::input{chain::output_point{null_hash, chain::point::null_index}, chain::script{}, sequence}},
+                        {chain::output{value, chain::script{}, std::nullopt}}};
+                    auto const candidate = make_block({cb});
+                    auto const forbidden = version == 1 && locktime == 0 && value >= threshold && sequence == max_uint32;
+                    CHECK(candidate.has_forbidden_coinbase_shape() == forbidden);
+                }
+            }
+        }
+    }
+}
+#endif
+
+#if defined(KTH_CURRENCY_BCH)
+TEST_CASE("mainnet coinbase collision protection uses the exact TXID and height boundaries",
+          "[coinbase_shape_schedule]") {
+    // Mainnet block 164384: retained bytes, not a mocked transaction identifier.
+    auto const raw =
+        "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0803d6441e014b0136"
+        "ffffffff078374661e000000001976a914f27b35cd5c2b18e326f1e3fcad8f9fa2184112c188ac21a11811000000001976a9"
+        "142530550534e1cc699b057b5e8220b47a472106c588acbfb64500000000001976a91447cdb6c6b736771d2e6f426652950f"
+        "aed88f66d688ac40823d00000000001976a9146ce5a0ba4be98813d630355c07d19a04173a14f988aca844d47c0200000019"
+        "76a914a046c6fbfa3cafcf8b80464a487304e3808a361c88ac1c778d0c000000001976a914a324583efbfee0e49094767001"
+        "2976bf8cf7700c88acb935f73b010000001976a914c02052ef85d5c7144c6bcc32d047897840efbf2d88ac00000000"_base16;
+
+    byte_reader reader(raw);
+    auto const historical = chain::transaction::from_data(reader);
+    REQUIRE(historical);
+    REQUIRE(historical->hash() == "3aa03753fc238b38f4db9e5889362f3a6f0900d602baa8c9a7e789cb13ca1462"_hash);
+    auto const candidate = make_block({*historical});
+    REQUIRE(candidate.is_valid_coinbase_script(1'983'702));
+    REQUIRE(candidate.has_forbidden_coinbase_shape());
+    for (auto const height : {1'983'701u, 1'983'702u, 1'983'703u, 3'708'178u, 3'708'179u, 3'708'180u}) {
+        CAPTURE(height);
+        CHECK(candidate.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, height) ==
+            (height == 1'983'702 || height >= 3'708'179));
+    }
+    // A different transaction with the same shape is allowed at the first
+    // collision height; the ban there is a single TXID, not a broad pattern.
+    auto outputs = historical->outputs();
+    outputs.front().set_value(outputs.front().value() - 1);
+    chain::transaction different{historical->version(), historical->locktime(), historical->inputs(), outputs};
+    REQUIRE(different.hash() != historical->hash());
+    auto const other = make_block({different});
+    REQUIRE(other.has_forbidden_coinbase_shape());
+    CHECK_FALSE(other.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, 1'983'702));
+    CHECK_FALSE(other.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, 3'708'178));
+    CHECK(other.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, 3'708'179));
+    for (auto const net : {kth::domain::config::network::testnet, kth::domain::config::network::testnet4, kth::domain::config::network::scalenet,
+                          kth::domain::config::network::chipnet, kth::domain::config::network::tempnet, kth::domain::config::network::regtest}) {
+        CAPTURE(int(net));
+        CHECK(candidate.has_forbidden_coinbase_shape(net, 1));
+        CHECK(other.has_forbidden_coinbase_shape(net, 1));
+    }
+    auto inputs = historical->inputs();
+    inputs.front().set_sequence(0xfffffffe);
+    auto const escaped = make_block({chain::transaction{1, 0, inputs, historical->outputs()}});
+    CHECK_FALSE(escaped.has_forbidden_coinbase_shape());
+    CHECK_FALSE(escaped.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, 3'708'179));
+    CHECK_FALSE(escaped.has_forbidden_coinbase_shape(kth::domain::config::network::regtest, 1));
+    CHECK_FALSE(chain::block{}.has_forbidden_coinbase_shape(kth::domain::config::network::mainnet, 3'708'179));
+}
+#endif

@@ -77,6 +77,21 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": ["download_if_possible", "optimized", "download_or_fail"],
         "currency": ['BCH', 'BTC', 'LTC'],
         "mempool_backend": ['cfm', 'parlay'],
+        # Signature verification in block validation: libsecp256k1 inline, one
+        # signature at a time (default), or deferred checks verified in
+        # lane-parallel batches by src/secp256k1-turbo (AVX-512 IFMA where the
+        # CPU has it, libsecp256k1 elsewhere).
+        "signature_verification": ['secp256k1', 'secp256k1_turbo'],
+        # GPU backends of src/secp256k1-turbo (used for large batches when a
+        # device is present): none (default), cuda (needs nvcc; CUDACXX or
+        # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
+        # whose toolchain is found).
+        "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
+        # How SHA-256 picks its implementation: runtime (CPU detection when the
+        # library is loaded), compile_time (fixed by the instructions of the
+        # target) or auto: compile_time when the package is built for the CPU
+        # of this machine (march_strategy=optimized), runtime otherwise.
+        "sha256_dispatch": ["auto", "runtime", "compile_time"],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -114,6 +129,9 @@ class KthRecipe(KnuthConanFileV2):
         "march_strategy": "download_if_possible",
         "currency": "BCH",
         "mempool_backend": "cfm",
+        "signature_verification": "secp256k1",
+        "secp256k1_gpu": "none",
+        "sha256_dispatch": "auto",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -170,15 +188,22 @@ class KthRecipe(KnuthConanFileV2):
     def requirements(self):
         if self.options.with_websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
+        # Pin our recipe; UTXO-Z asks for the same revision.
+        self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
+                      transitive_headers=True, transitive_libs=True)
+        if self.options.with_icu:
+            self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/1.0.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/2.1.0", transitive_headers=True, transitive_libs=True)
 
-        # GMP is required for BigInt support in the native interpreter.
-        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        # GMP is required for BigInt support in the native interpreter. Pin our
+        # recipe: for WebAssembly it builds 64-bit limbs, where the Conan Center
+        # one builds 32-bit limbs.
+        self.requires("gmp/6.3.0#eea0ccd8d7c5f60191b024d168cde1aa",
+                      transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
             self.requires("openssl/4.1.0", transitive_headers=True, transitive_libs=True)
@@ -192,9 +217,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-        if self.settings.os != "Emscripten":
-            self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
+        # Unicode conversion on every platform; also accelerates native Base64.
+        self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
@@ -319,6 +343,11 @@ class KthRecipe(KnuthConanFileV2):
         # standalone deps-build path where this conanfile isn't the
         # consumer.)
         self.options["boost/*"].without_cobalt = True
+        self.options["boost/*"].without_locale = True
+        if self.options.with_icu:
+            # Embed normalization data: no ICU_DATA environment or sidecar files.
+            self.options["icu/*"].data_packaging = "static"
+            self.options["icu/*"].with_icuio = False
 
         self.options["spdlog/*"].header_only = True
 
@@ -361,6 +390,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
         tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
+        tc.variables["KTH_SHA256_DISPATCH"] = self._sha256_dispatch()
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
@@ -383,6 +413,8 @@ class KthRecipe(KnuthConanFileV2):
 
         tc.variables["CURRENCY"] = self.options.currency
         tc.variables["KTH_MEMPOOL_BACKEND"] = self.options.mempool_backend
+        tc.variables["KTH_SIGNATURE_VERIFICATION"] = self.options.signature_verification
+        tc.variables["KTH_SECP256K1_TURBO_GPU"] = self.options.secp256k1_gpu
 
         # Header index capacity based on compilation year
         header_capacity = _calculate_header_capacity(datetime.now().year, str(self.options.currency))
@@ -411,6 +443,36 @@ class KthRecipe(KnuthConanFileV2):
         cmake = CMake(self)
         cmake.install()
 
+    def _sha256_dispatch(self):
+        """A package built for the CPU of this machine can fix the SHA-256
+        implementation: the instructions it would detect are the ones it was
+        compiled for. A package built for a reference microarchitecture runs on
+        CPUs that have more than it assumes, so it detects them."""
+        dispatch = str(self.options.sha256_dispatch)
+        if dispatch != "auto":
+            return dispatch
+        # The microarchitecture options exist for x86-64 only.
+        optimized = str(self.options.get_safe("march_strategy")) == "optimized"
+        return "compile_time" if optimized else "runtime"
+
+    def _secp256k1_turbo_gpu_manifest(self):
+        """The GPU runtimes src/secp256k1-turbo was built with, and where its
+        CUDA runtime library was found. Empty when the package has no record,
+        which is a build with no GPU backend."""
+        backends, cuda_libdir = [], ""
+        if not self.package_folder:
+            return backends, cuda_libdir
+        manifest = os.path.join(self.package_folder, "share", "kth", "secp256k1-turbo-gpu.txt")
+        if os.path.isfile(manifest):
+            with open(manifest) as f:
+                for line in f:
+                    key, _, value = line.strip().partition("=")
+                    if key == "backends":
+                        backends = [b for b in value.split(",") if b]
+                    elif key == "cuda_libdir":
+                        cuda_libdir = value
+        return backends, cuda_libdir
+
     def package_info(self):
         # Set the main CMake file name
         self.cpp_info.set_property("cmake_file_name", "kth")
@@ -420,6 +482,8 @@ class KthRecipe(KnuthConanFileV2):
 
         # Define mempool-backend macro based on option (cfm | parlay)
         mempool_backend_define = f"KTH_MEMPOOL_BACKEND_{str(self.options.mempool_backend).upper()}"
+        sigverify_turbo = str(self.options.signature_verification) == "secp256k1_turbo"
+        sigverify_defines = ["KTH_SIGVERIFY_TURBO_BATCH"] if sigverify_turbo else []
 
         # KTH_WITH_RPC describes the JSON-RPC implementation only; each backend has its
         # own macro, so two never share a guard. Neither for
@@ -466,6 +530,37 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["secp256k1"].names["cmake_find_package"] = "secp256k1"
         self.cpp_info.components["secp256k1"].names["cmake_find_package_multi"] = "secp256k1"
 
+        # Lane-parallel (SIMD) batch signature verification. Part of the package
+        # only when the node was built to use it: nothing else links it, so a
+        # build of the node's own targets does not produce it, and a component
+        # declared for a library that was not installed would send every
+        # consumer looking for a file that is not there.
+        if sigverify_turbo:
+            self.cpp_info.components["secp256k1_turbo"].libs = ["secp256k1-turbo"]
+            self.cpp_info.components["secp256k1_turbo"].names["cmake_find_package"] = "secp256k1-turbo"
+            self.cpp_info.components["secp256k1_turbo"].names["cmake_find_package_multi"] = "secp256k1-turbo"
+            self.cpp_info.components["secp256k1_turbo"].requires = ["secp256k1"]
+            # Which GPU runtimes the library was built with is decided by its
+            # CMake, from the toolchains it found, and recorded next to it. Read
+            # here instead of worked out again: an "auto" build that found nvcc on
+            # PATH links the CUDA backend whether or not this process has
+            # CUDAToolkit_ROOT set, and its consumers need the runtime either way.
+            gpu_backends, cuda_libdir = self._secp256k1_turbo_gpu_manifest()
+            if "metal" in gpu_backends:
+                self.cpp_info.components["secp256k1_turbo"].frameworks = ["Metal", "Foundation"]
+            if "cuda" in gpu_backends:
+                # The static CUDA runtime the backend was linked against. A
+                # consumer whose toolkit lives elsewhere says so with
+                # CUDAToolkit_ROOT; otherwise it is where the build found it.
+                cuda_root = os.environ.get("CUDAToolkit_ROOT")
+                if cuda_root:
+                    self.cpp_info.components["secp256k1_turbo"].libdirs.append(os.path.join(cuda_root, "lib64"))
+                    self.cpp_info.components["secp256k1_turbo"].libdirs.append(os.path.join(cuda_root, "lib"))
+                elif cuda_libdir:
+                    self.cpp_info.components["secp256k1_turbo"].libdirs.append(cuda_libdir)
+                self.cpp_info.components["secp256k1_turbo"].libs.append("cudart_static")
+                self.cpp_info.components["secp256k1_turbo"].system_libs.extend(["dl", "pthread", "rt"])
+
         # Core infrastructure component
         self.cpp_info.components["infrastructure"].libs = ["infrastructure"]
         self.cpp_info.components["infrastructure"].names["cmake_find_package"] = "infrastructure"
@@ -489,16 +584,19 @@ class KthRecipe(KnuthConanFileV2):
                 'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
+        if self.options.with_icu:
+            infrastructure_defines.append("WITH_ICU")
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
             infrastructure_defines.append("KTH_WITH_QRENCODE")
         if self.options.with_jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
-        self.cpp_info.components["infrastructure"].defines = infrastructure_defines
+        self.cpp_info.components["infrastructure"].defines = infrastructure_defines + sigverify_defines
         # Infrastructure directly uses GMP for big_number, independently of consensus.
         self.cpp_info.components["infrastructure"].requires = [
             "secp256k1",
+            *(["secp256k1_turbo"] if sigverify_turbo else []),
             "gmp::gmp",
             "boost::boost",
             "cli11::cli11",
@@ -506,9 +604,9 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
-        if self.settings.os != "Emscripten":
-            self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+        if self.options.with_icu:
+            self.cpp_info.components["infrastructure"].requires.append("icu::icu-uc")
+        self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
         if self.options.with_png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
@@ -526,7 +624,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].libs = ["domain"]
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
-        self.cpp_info.components["domain"].defines = [currency_define] + static_defines
+        self.cpp_info.components["domain"].defines = [currency_define] + static_defines + sigverify_defines
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
             "infrastructure",
@@ -538,10 +636,11 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["consensus"].libs = ["consensus"]
             self.cpp_info.components["consensus"].names["cmake_find_package"] = "consensus"
             self.cpp_info.components["consensus"].names["cmake_find_package_multi"] = "consensus"
-            self.cpp_info.components["consensus"].defines = [currency_define] + static_defines
+            self.cpp_info.components["consensus"].defines = [currency_define] + static_defines + sigverify_defines
             # Consensus has its own direct dependencies: boost, openssl, secp256k1 (internal component), gmp
             self.cpp_info.components["consensus"].requires = [
                 "secp256k1",
+                *(["secp256k1_turbo"] if sigverify_turbo else []),
                 "boost::boost",
                 "openssl::openssl",
                 "gmp::gmp"
@@ -559,7 +658,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].libs = ["blockchain"]
         self.cpp_info.components["blockchain"].names["cmake_find_package"] = "blockchain"
         self.cpp_info.components["blockchain"].names["cmake_find_package_multi"] = "blockchain"
-        self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines
+        self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines + sigverify_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
         if self.options.consensus:
@@ -586,7 +685,7 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].libs = ["node"]
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
-        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines
+        self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines + sigverify_defines
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict
@@ -639,6 +738,8 @@ class KthRecipe(KnuthConanFileV2):
         # Main target that includes all core components (equivalent to the old behavior)
         # This provides a convenient way to link against all of kth at once
         main_requires = ["infrastructure", "domain", "database", "blockchain", "node", "secp256k1"]
+        if sigverify_turbo:
+            main_requires.append("secp256k1_turbo")
         if self.options.consensus:
             main_requires.append("consensus")
         if self.settings.os != "Emscripten" or self.options.browser_node:

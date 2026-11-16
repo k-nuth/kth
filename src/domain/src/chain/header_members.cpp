@@ -193,7 +193,7 @@ code header::check(hash_digest const& hash, bool retarget) const {
 }
 
 code header::accept(chain_state const& state, hash_digest const& hash) const {
-    if (bits_ != state.work_required()) {
+    if (state.work_required() == 0 || bits_ != state.work_required()) {
         return error::incorrect_proof_of_work;
     }
 

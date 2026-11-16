@@ -6,7 +6,7 @@ versioning, component release dates could differ.
 
 ## Contents
 
-- **1.x:** [1.6.1](#version-161) · [1.6.0](#version-160) · [1.5.2](#version-152) · [1.5.1](#version-151) · [1.5.0](#version-150) · [1.4.0](#version-140) · [1.3.0](#version-130) · [1.2.0](#version-120) · [1.1.0](#version-110) · [1.0.0](#version-100)
+- **1.x:** [1.7.0](#version-170) · [1.6.1](#version-161) · [1.6.0](#version-160) · [1.5.2](#version-152) · [1.5.1](#version-151) · [1.5.0](#version-150) · [1.4.0](#version-140) · [1.3.0](#version-130) · [1.2.0](#version-120) · [1.1.0](#version-110) · [1.0.0](#version-100)
 - **0.80–0.89:** [0.85.0](#version-0850) · [0.84.0](#version-0840) · [0.83.0](#version-0830) · [0.82.0](#version-0820) · [0.81.1](#version-0811) · [0.81.0](#version-0810) · [0.80.1](#version-0801) · [0.80.0](#version-0800)
 - **0.70–0.79:** [0.79.0](#version-0790) · [0.78.0](#version-0780) · [0.77.0](#version-0770) · [0.76.0](#version-0760) · [0.75.0](#version-0750) · [0.74.0](#version-0740) · [0.73.0](#version-0730) · [0.72.0](#version-0720) · [0.71.0](#version-0710) · [0.70.0](#version-0700)
 - **0.60–0.69:** [0.68.1](#version-0681) · [0.68.0](#version-0680)
@@ -19,6 +19,38 @@ versioning, component release dates could differ.
 - [Versioning history: 0.59.0–0.67.0](#versioning-history-note-v0590---v0670)
 
 <!-- release-notes-index:end -->
+
+## version 1.7.0
+
+**Published:** [2026-11-13](https://github.com/k-nuth/kth/releases/tag/v1.7.0)
+
+### What's Changed
+* ci: reuse RPC dependencies and validate the production package without a full rebuild by @fpelliccioni in https://github.com/k-nuth/kth/pull/933
+* docs: index and date release notes with the Bitprim history by @fpelliccioni in https://github.com/k-nuth/kth/pull/935
+* fix: validate the current C API README build and reject cosmetic CMake changes by @fpelliccioni in https://github.com/k-nuth/kth/pull/936
+* sync: compute each transaction identifier once per block during initial sync by @fpelliccioni in https://github.com/k-nuth/kth/pull/937
+* sync: parse and check the blocks of a batch in parallel by @fpelliccioni in https://github.com/k-nuth/kth/pull/938
+* sync: stop rebuilding the UTXO delta tables while a batch is applied by @fpelliccioni in https://github.com/k-nuth/kth/pull/939
+* fix: enforce BCH transaction versions and contextual token rules by @fpelliccioni in https://github.com/k-nuth/kth/pull/940
+* build: take UTXO-Z 1.1.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/942
+* Exempt coinbase timelocks after Faster Blocks activation by @fpelliccioni in https://github.com/k-nuth/kth/pull/859
+* Defer mainnet coinbase shape checks to the collision heights by @fpelliccioni in https://github.com/k-nuth/kth/pull/943
+* Keep ASERT anchor ticks and interval fixed by @fpelliccioni in https://github.com/k-nuth/kth/pull/944
+* node: advertise the connected height after advances and rewinds by @CyberAshven in https://github.com/k-nuth/kth/pull/814
+* secp256k1-turbo: lane-parallel batch signature verification (AVX-512 IFMA) by @fpelliccioni in https://github.com/k-nuth/kth/pull/825
+* secp256k1: algebraic batch verification for BCH Schnorr signatures by @fpelliccioni in https://github.com/k-nuth/kth/pull/826
+* node: signature_verification switch with deferred batch sigchecks by @fpelliccioni in https://github.com/k-nuth/kth/pull/827
+* secp256k1-turbo: GPU batch verification (CUDA and Metal) by @fpelliccioni in https://github.com/k-nuth/kth/pull/829
+* database: take the UTXO store's barrier in its two halves by @fpelliccioni in https://github.com/k-nuth/kth/pull/947
+* sync: judge the next batch while the UTXO barrier of the last one completes by @fpelliccioni in https://github.com/k-nuth/kth/pull/948
+* build: use libsecp256k1's 32-bit arithmetic in WebAssembly by @fpelliccioni in https://github.com/k-nuth/kth/pull/953
+* build: package secp256k1-turbo only when the node is built to use it by @fpelliccioni in https://github.com/k-nuth/kth/pull/955
+* build!: take UTXO-Z 2.0.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/956
+* network: reconnect configured peers after their sessions end by @fpelliccioni in https://github.com/k-nuth/kth/pull/950
+* release: 1.7.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/957
+
+
+
 
 ## version 1.6.1
 

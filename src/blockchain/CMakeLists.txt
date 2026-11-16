@@ -343,6 +343,7 @@ if (ENABLE_TEST)
         test/batch_activation_boundary.cpp
         test/batch_structure.cpp
         test/batch_rejection_attribution.cpp
+        test/batch_contextual_consensus.cpp
         test/local_block_submission.cpp
         test/faster_blocks_batch.cpp
         test/faster_blocks_abla.cpp

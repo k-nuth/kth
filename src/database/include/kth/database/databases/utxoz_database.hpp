@@ -123,6 +123,40 @@ concept utxo_delete_range = std::ranges::range<T> && requires(std::ranges::range
 // Converts between Knuth types and UTXO-Z types.
 // =============================================================================
 
+/// The second half of the UTXO store's durability barrier, owed since
+/// utxoz_database::begin_sync().
+///
+/// The barrier comes in two halves because they need different things. The
+/// first flushes what deletions wrote through the store's file cache and has to
+/// be excluded like a mutation, lookups included. The second is the rest of it,
+/// and most of it: the active containers, the files and the directory. It
+/// shares nothing with a lookup, so it may run while lookups do; nothing that
+/// mutates the store may run until it has returned.
+///
+/// Move-only, and finish() consumes it. Dropping one without finishing makes
+/// nothing durable: the barrier was simply not made. The destructor does not
+/// finish it, because it could not report that it had failed.
+struct KD_API [[nodiscard]] pending_barrier {
+    pending_barrier(pending_barrier&&) noexcept = default;
+    pending_barrier& operator=(pending_barrier&&) noexcept = default;
+    pending_barrier(pending_barrier const&) = delete;
+    pending_barrier& operator=(pending_barrier const&) = delete;
+
+    /// Makes the rest of the barrier. `crossed` means everything written before
+    /// begin_sync() was called is on stable storage. Never `unsupported`: a
+    /// platform with no barrier says so from begin_sync() and hands back
+    /// nothing to finish.
+    [[nodiscard]]
+    barrier_outcome finish() &&;
+
+private:
+    friend struct utxoz_database;
+    explicit pending_barrier(utxoz::pending_sync&& pending) noexcept
+        : pending_(std::move(pending)) {}
+
+    utxoz::pending_sync pending_;
+};
+
 struct KD_API utxoz_database {
     utxoz_database() = default;
     ~utxoz_database();
@@ -468,6 +502,15 @@ struct KD_API utxoz_database {
     /// platform that has none.
     [[nodiscard]]
     barrier_outcome sync();
+
+    /// The first half of the same barrier, for a caller that wants its lookups
+    /// back before the second. Needs the exclusion a mutation needs.
+    ///
+    /// The error is the outcome sync() would have reported: `unsupported` where
+    /// the platform has no barrier, `failed` otherwise. See pending_barrier for
+    /// what running the second half requires.
+    [[nodiscard]]
+    std::expected<pending_barrier, barrier_outcome> begin_sync();
 
     /// Print statistics to log.
     ///

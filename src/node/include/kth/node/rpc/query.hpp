@@ -162,10 +162,12 @@ struct block_location {
 
 // The verbose getblock object. `with_transactions` (verbosity 2) lists each
 // transaction as verbose getrawtransaction's fields without the location;
-// otherwise (verbosity 1) by txid.
+// otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
+// scriptPubKey of those transactions carries its byteCodePattern object.
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
-                                 domain::config::network net, domain::script_flags_t flags);
+                                 domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns = false);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.

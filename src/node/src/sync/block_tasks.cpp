@@ -36,6 +36,7 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
 
 #include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/utility/task_group.hpp>
@@ -281,7 +282,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     } guard{active_peers, addr, chunks_downloaded, download_times_ms, send_times_ms, network_times_us, deserialize_times_us};
 
     // Track current chunk for cleanup on exception
-    std::optional<uint32_t> current_chunk_id;
+    std::optional<chunk_claim> current_claim;
 
     // Set when the fast validation channel has been closed: the one way out of
     // the loop below that neither the peer nor the coordinator announces.
@@ -329,8 +330,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
             continue;
         }
 
-        uint32_t chunk_id = *maybe_chunk;
-        current_chunk_id = chunk_id;  // Track for exception cleanup
+        auto const claim = *maybe_chunk;
+        uint32_t chunk_id = claim.chunk_id;
+        current_claim = claim;  // Track for exception cleanup
         auto [chunk_start, chunk_end] = coordinator->chunk_range(chunk_id);
 
         spdlog::debug("[block_download] Peer {} claiming chunk {} (blocks {}-{})",
@@ -357,7 +359,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
 
         if (blocks.empty()) {
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;
         }
 
@@ -368,7 +370,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (coordinator->generation() != request_generation) {
             spdlog::info("[block_download] Chain switched while building chunk {} — releasing it",
                 chunk_id);
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;
         }
 
@@ -384,7 +386,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 addr, chunk_id, download_ms, result.error().message(),
                 peer->stopped(), coordinator->is_stopped());
             // Report failure - slot reset to FREE for retry by another peer
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             break;
         }
 
@@ -393,12 +395,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (result->size() != expected_count) {
             spdlog::warn("[block_download] Peer {} returned {} blocks for chunk {} (expected {}), failing chunk",
                 addr, result->size(), chunk_id, expected_count);
-            coordinator->chunk_failed(chunk_id);
+            coordinator->chunk_failed(claim);
             continue;  // Try another chunk instead of disconnecting
         }
 
         spdlog::debug("[block_download] Peer {} downloaded {} blocks for chunk {} in {}ms",
             addr, result->size(), chunk_id, download_ms);
+
+        // The peer has answered. What is left is the hand-over, whose wait is
+        // set by validation and storage: the stall check must not take that for
+        // a slow peer and give the chunk to another one to download again.
+        coordinator->chunk_downloaded(claim);
         download_times_ms.push_back(download_ms);
 
         // Accumulate network and deserialize times from individual blocks
@@ -440,7 +447,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             if (outcome != chunk_handover::delivered) {
                 spdlog::info("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
                     addr, chunk_id, to_string(outcome));
-                coordinator->chunk_failed(chunk_id);
+                coordinator->chunk_failed(claim);
                 send_error = true;
                 if (outcome == chunk_handover::channel_closed) {
                     // Fast validation is gone, which only shutdown does. Nothing
@@ -461,7 +468,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if (peer->stopped() || coordinator->is_stopped()) {
                     spdlog::debug("[block_download] Peer {} stopping before send (block {})",
                         addr, height);
-                    coordinator->chunk_failed(chunk_id);
+                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -496,7 +503,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 if (!sent) {
                     spdlog::error("[block_download] Could not hand block {} to the supervisor ({}) - consumer may be stuck!",
                         height, send_ec ? send_ec.message() : "no room for 1s");
-                    coordinator->chunk_failed(chunk_id);
+                    coordinator->chunk_failed(claim);
                     send_error = true;
                     break;
                 }
@@ -520,8 +527,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
         send_times_ms.push_back(send_ms);
 
         // Report success only after all blocks sent
-        coordinator->chunk_completed(chunk_id);
-        current_chunk_id.reset();  // Clear - chunk successfully handed off
+        coordinator->chunk_completed(claim);
+        current_claim.reset();  // Clear - chunk successfully handed off
         ++chunks_downloaded;
 
         // Report performance to peer_provider (via supervisor). Best effort:
@@ -542,18 +549,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
     } catch (::asio::system_error const& e) {
         // Asio system errors (e.g., operation_aborted during shutdown) are expected
         spdlog::debug("[block_download] Peer {} asio error: {} ({})", addr, e.what(), e.code().value());
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     } catch (std::exception const& e) {
         spdlog::error("[block_download] Peer {} exception: {}", addr, e.what());
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     } catch (...) {
         spdlog::error("[block_download] Peer {} unknown exception", addr);
-        if (current_chunk_id) {
-            coordinator->chunk_failed(*current_chunk_id);
+        if (current_claim) {
+            coordinator->chunk_failed(*current_claim);
         }
     }
 
@@ -1652,25 +1659,26 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 .submission = chunk_submission,
                 .local_result = chunk_local
             };
-            if (chunk_local) {
-                // A local body is owed a definitive outcome, so the handoff to
-                // storage is a suspended send, not a bounded retry. This task is
-                // not a barrier participant, so suspending here holds no switch.
-                auto [send_ec] = co_await storage->async_send(std::error_code{},
-                    std::move(forward), ::asio::as_tuple(::asio::use_awaitable));
-                if (send_ec) {
-                    // Storage is closed: the shutdown. The outcome is still owed.
+            // The handoff to storage is a suspended send: a full channel means
+            // storage is behind, and the chunk waits for the slot its consumer
+            // frees. Meanwhile this task stops receiving, its input fills and
+            // the peers hold their chunks, so the delay reaches the download
+            // instead of dropping a validated chunk. This task is not a barrier
+            // participant, so suspending here holds no switch.
+            auto [send_ec] = co_await storage->async_send(std::error_code{},
+                std::move(forward), ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                // Storage is closed: the shutdown. A local body is still owed
+                // its outcome.
+                if (chunk_local) {
                     (void)chunk_local->try_send(chunk_validated{
                         .start_height = chunk_start,
                         .block_count = uint32_t(chunk_block_count),
                         .result = error::service_stopped,
                         .source_peer = nullptr,
                         .submission = chunk_submission});
-                    spdlog::debug("[fast_validation] Storage closed; local body not handed over");
-                    break;
                 }
-            } else if ( ! co_await try_send_with_retry(*storage, std::move(forward), 20, std::chrono::milliseconds(10))) {
-                spdlog::error("[fast_validation] Storage channel full after retries!");
+                spdlog::debug("[fast_validation] Storage closed; chunk at {} not handed over", chunk_start);
                 break;
             }
         } else {
@@ -2241,6 +2249,112 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // pool thread to run the serial phase and orchestrate is enough.
     ::asio::thread_pool validation_pool(1);
 
+    // Parse a batch and judge it. Runs on the validation pool, in the batch's
+    // own turn or ahead of it; the two must not differ, so both run this.
+    //
+    // `parent` is the ABLA record of the block before `first` when this task
+    // has derived it and not yet published it — a batch judged ahead of its
+    // turn — and empty when the stored one is the one to read.
+    auto const judge_batch = [&chain, network](std::vector<data_chunk> const& raw,
+            uint32_t first, uint32_t last,
+            std::vector<kth::block_const_ptr>& blocks, std::vector<hash_list>& txids,
+            bool& parse_failed, blockchain::batch_rejection& rejection,
+            std::optional<database::header_abla_record> const& parent) -> code {
+        // The blocks are parsed in parallel, each on its own.
+        auto parsed = blockchain::parse_block_batch(raw);
+        if ( ! parsed) {
+            if (parsed.error().block) {
+                spdlog::critical("[utxo_build] Failed to parse block for validation at height {}",
+                    first + *parsed.error().block);
+            } else {
+                spdlog::critical("[utxo_build] Failed to parse blocks {}-{} for validation",
+                    first, last);
+            }
+            parse_failed = true;
+            return error::operation_failed;
+        }
+        blocks = std::move(parsed->blocks);
+        txids = std::move(parsed->txids);
+        if (blocks.empty()) {
+            return error::success;
+        }
+        return blockchain::validate_block_batch(
+            chain, chain.chain_settings(), network, blocks, txids, first, rejection,
+            parent ? &*parent : nullptr);
+    };
+
+    // A batch judged AHEAD of its turn.
+    //
+    // Once a batch's mutations are applied and its window has ended, the set
+    // already holds everything the next batch's validation reads, while this
+    // task still owes the rest of that batch: the second half of the UTXO
+    // store's barrier, then the publication. Validation only reads — the UTXO
+    // set under leases and the header index — and the second half of the
+    // barrier admits readers, so the two run side by side instead of one after
+    // the other.
+    //
+    // Ownership. The judgement belongs to the job until it is sent and to this
+    // task from then on; nothing is shared while it is being built. The job
+    // borrows only `chain`, which outlives the pool it runs on: the pool is a
+    // local of this coroutine and joins when its frame is destroyed. One job is
+    // outstanding at most, so the channel's single slot never refuses it.
+    //
+    // What it never does: write. A verdict reached ahead is acted on in the
+    // batch's own turn, exactly as if it had been reached there — including the
+    // rejection path — and one that a chain switch overtook is dropped unread.
+    struct judged_batch {
+        std::vector<data_chunk> raw;
+        std::vector<kth::block_const_ptr> blocks;
+        std::vector<hash_list> txids;
+        blockchain::batch_rejection rejection;
+        code verdict;
+        bool fetch_failed{false};
+        bool parse_failed{false};
+        std::exception_ptr thrown;
+    };
+    using judgement_channel =
+        ::asio::experimental::concurrent_channel<void(std::error_code, std::shared_ptr<judged_batch>)>;
+    struct batch_ahead {
+        uint32_t start;
+        uint32_t end;
+        std::shared_ptr<judgement_channel> judgement;
+    };
+    std::optional<batch_ahead> ahead;
+
+    auto const judge_ahead = [&chain, &validation_pool, judge_batch](uint32_t first, uint32_t last,
+            std::optional<database::header_abla_record> parent) {
+        auto channel = std::make_shared<judgement_channel>(validation_pool.get_executor(), 1);
+        ::asio::post(validation_pool.get_executor(), [&chain, judge_batch, first, last, parent, channel]() {
+            auto judged = std::make_shared<judged_batch>();
+            try {
+                if (auto raw = chain.fetch_blocks_raw(first, last); raw) {
+                    judged->raw = std::move(*raw);
+                    judged->verdict = judge_batch(judged->raw, first, last, judged->blocks,
+                        judged->txids, judged->parse_failed, judged->rejection, parent);
+                } else {
+                    judged->fetch_failed = true;
+                }
+            } catch (...) {
+                // Delivered, not swallowed and not left to end the pool's
+                // thread: the batch's own turn rethrows it where the same
+                // exception would have surfaced.
+                judged->thrown = std::current_exception();
+            }
+            channel->try_send(std::error_code{}, std::move(judged));
+        });
+        return batch_ahead{first, last, std::move(channel)};
+    };
+
+    // Waits for a judgement ahead and drops it. For when the chain is about to
+    // move under it: the job reads the UTXO set, so it has to be finished, not
+    // merely forgotten, before this task says it is touching nothing.
+    auto const drop_ahead = [&ahead]() -> ::asio::awaitable<void> {
+        if (ahead) {
+            (void) co_await ahead->judgement->async_receive(::asio::as_tuple(::asio::use_awaitable));
+            ahead.reset();
+        }
+    };
+
     // The batch delta, kept across batches rather than built anew: an emptied
     // table keeps its capacity, so after the first batches the merges stop
     // rebuilding it as it grows and stop freeing the old one. Its entries are
@@ -2258,6 +2372,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // barrier between batches — never mid-batch, so the UTXO set is always at
         // a block boundary, which is what disconnect expects.
         if (chain.reorg_pause_requested()) {
+            co_await drop_ahead();
             chain.enter_reorg_barrier();
             while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
                 ::asio::steady_timer timer(executor);
@@ -2284,13 +2399,27 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             ? current_contiguous - 1 - utxo_built_height
             : 0;
 
+        // A judgement ahead names the batch after the one this task last built.
+        // Anything else means the cursor moved without the chain switching, which
+        // nothing does; were it to happen the verdict would be about other
+        // blocks, so it is dropped and the batch is chosen afresh.
+        if (ahead && ahead->start != utxo_built_height + 1) {
+            co_await drop_ahead();
+        }
+
         // Batch length by sync regime (see utxo_batch_len): a full batch_size
         // window during IBD for throughput; once caught up to the tip, drain
         // whatever is available down to a single block so the trailing remainder
         // and each newly mined block are validated promptly. is_stale() keys off
         // the top block's timestamp (a domain property), staying within the module
         // boundary.
-        uint32_t const batch_len = utxo_batch_len(available, batch_size, chain.is_stale());
+        //
+        // A batch already being judged is the batch: its range was chosen by
+        // this same rule when it was started, and choosing again could name a
+        // different one and waste the work.
+        uint32_t const batch_len = ahead
+            ? ahead->end - ahead->start + 1
+            : utxo_batch_len(available, batch_size, chain.is_stale());
 
         if (batch_len == 0) {
             // Still in IBD and short of a full batch — wait and poll.
@@ -2302,11 +2431,34 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Process one batch
         uint32_t const batch_start = utxo_built_height + 1;
-        uint32_t const batch_end = utxo_batch_end(batch_start, batch_start + batch_len - 1,
-            checkpoint_height, validated_batch_blocks);
+        uint32_t const batch_end = ahead
+            ? ahead->end
+            : utxo_batch_end(batch_start, batch_start + batch_len - 1,
+                checkpoint_height, validated_batch_blocks);
+
+        // The judgement started ahead, if there is one. Collected before
+        // anything else is done with this batch; a fetch that failed there is
+        // retried here, in the ordinary way.
+        std::shared_ptr<judged_batch> judged;
+        if (ahead) {
+            auto [receive_ec, received] = co_await ahead->judgement->async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            ahead.reset();
+            if (receive_ec) {
+                co_return;
+            }
+            if (received->thrown) {
+                std::rethrow_exception(received->thrown);
+            }
+            if ( ! received->fetch_failed) {
+                judged = std::move(received);
+            }
+        }
 
         // Read raw blocks from flat files
-        auto raw_result = chain.fetch_blocks_raw(batch_start, batch_end);
+        auto raw_result = judged
+            ? std::expected<std::vector<data_chunk>, database::result_code>{std::move(judged->raw)}
+            : chain.fetch_blocks_raw(batch_start, batch_end);
         if ( ! raw_result) {
             spdlog::error("[utxo_build] Failed to fetch blocks {}-{}", batch_start, batch_end);
             // Wait and retry — blocks might not be fully written yet
@@ -2344,30 +2496,21 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             // after the awaited validation below has completed.
             blockchain::batch_rejection rejection;
 
-            auto const vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
-                [&]() -> ::asio::awaitable<code> {
-                    // The blocks are parsed in parallel, each on its own.
-                    auto parsed = blockchain::parse_block_batch(*raw_result);
-                    if ( ! parsed) {
-                        if (parsed.error().block) {
-                            spdlog::critical("[utxo_build] Failed to parse block for validation at height {}",
-                                batch_start + *parsed.error().block);
-                        } else {
-                            spdlog::critical("[utxo_build] Failed to parse blocks {}-{} for validation",
-                                batch_start, batch_end);
-                        }
-                        parse_failed = true;
-                        co_return error::operation_failed;
-                    }
-                    validated_blocks = std::move(parsed->blocks);
-                    validated_txids = std::move(parsed->txids);
-                    if (validated_blocks.empty()) {
-                        co_return error::success;
-                    }
-                    co_return blockchain::validate_block_batch(
-                        chain, chain.chain_settings(), network, validated_blocks, validated_txids,
-                        batch_start, rejection);
-                }, ::asio::use_awaitable);
+            code vc;
+            if (judged) {
+                validated_blocks = std::move(judged->blocks);
+                validated_txids = std::move(judged->txids);
+                parse_failed = judged->parse_failed;
+                rejection = judged->rejection;
+                vc = judged->verdict;
+            } else {
+                vc = co_await ::asio::co_spawn(validation_pool.get_executor(),
+                    [&]() -> ::asio::awaitable<code> {
+                        co_return judge_batch(*raw_result, batch_start, batch_end,
+                            validated_blocks, validated_txids, parse_failed, rejection,
+                            std::nullopt);
+                    }, ::asio::use_awaitable);
+            }
 
             if (vc) {
                 if (parse_failed) {
@@ -2701,12 +2844,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // between the inserts and the deletions, where the set holds outputs
         // these blocks spent and the transition record does not protect a reader
         // that never consults it.
-        // Steps 4 to 9 ONLY. The window dies with this scope, before step 10:
+        // Steps 4 to 8 and the first half of 9 ONLY. The window dies with this
+        // scope, before the second half of the barrier and before step 10:
         // the organizer takes validation_mutex_ and then a UTXO read lease inside
         // accept(), so a connect still holding the window when mempool_remove_for_block
         // takes that same mutex would be acquiring the two in the opposite order —
-        // the AB-BA deadlock. Nothing below step 9 needs the capability, and the
-        // fsyncs of steps 10 and 11 have no business excluding readers.
+        // the AB-BA deadlock. Nothing past the first half of step 9 needs the
+        // capability, and neither the rest of the barrier nor the fsyncs of
+        // steps 10 and 11 have any business excluding readers.
         //
         // The window's whole body is an immediately-invoked lambda so that a
         // fatal condition can be REPORTED rather than acted on: it returns a
@@ -2717,8 +2862,12 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // held, with every reader shut out for the duration.
         //
         // Nothing about the sane path changes: inserts, undo, deletions, the
-        // flush, utxo_sync and complete() run in the same order, under the same
-        // window, and a batch that succeeds returns nullopt.
+        // flush, the first half of the barrier and complete() run in the same
+        // order, under the same window, and a batch that succeeds returns nullopt.
+        // What the window leaves owed: the second half of the UTXO store's
+        // barrier. Empty where the platform has none.
+        std::optional<database::pending_barrier> barrier;
+
         auto const fatal = [&]() -> std::optional<window_fatal> {
             auto window = chain.begin_utxo_write();
             if ( ! window) {
@@ -2909,42 +3058,47 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     "the undo records of a connected batch could not be made durable"};
             }
 
-            // Step 9. UTXO-Z's own barrier. `close()` does not run it, so without
-            // this the set's mutations are the one part of the transition still in
-            // the page cache when the record is cleared.
+            // Step 9, first half. UTXO-Z's own barrier, which `close()` does not
+            // run: without it the set's mutations are the one part of the
+            // transition still in the page cache when the record is cleared.
+            //
+            // Only the half that needs this window is taken under it — the flush
+            // of what the deletions wrote through the store's file cache. The
+            // rest is most of the barrier and shares nothing with a lookup, so
+            // it runs below, once the window has ended and readers are back.
             //
             // `unsupported` is not a failure and not a guarantee either: it is the
             // documented answer where the platform has no barrier at all, and the
             // node's own durability level already says so. `failed` is fatal on
             // every platform — a level describes what a platform CAN promise, and it
             // never turns a barrier that was attempted and refused into a success.
-            switch (chain.utxo_sync(*window)) {
-                case database::barrier_outcome::crossed:
-                    break;
-                case database::barrier_outcome::unsupported:
-                    if (chain.durability() != database::durability_level::none) {
-                        return window_fatal{
-                            fmt::format("[utxo_build] The UTXO store reports no durability barrier "
-                                "while this node claims '{}'; the two disagree about the same "
-                                "machine", database::to_string(chain.durability())),
-                            "the UTXO store and the node disagree about what this platform can promise"};
-                    }
-                    spdlog::warn("[utxo_build] This platform exposes no durability barrier; batch "
-                        "{}-{} is published without one", batch_start, batch_end);
-                    break;
-                case database::barrier_outcome::failed:
+            if (auto owed = chain.utxo_begin_sync(*window); owed) {
+                barrier.emplace(std::move(*owed));
+            } else if (owed.error() == database::barrier_outcome::unsupported) {
+                if (chain.durability() != database::durability_level::none) {
                     return window_fatal{
-                        fmt::format("[utxo_build] The UTXO store's durability barrier failed after "
-                            "batch {}-{} (operation {:#018x}); what it applied is not known to be "
-                            "on disk", batch_start, batch_end, operation_id),
-                        "the UTXO set of a connected batch could not be made durable"};
+                        fmt::format("[utxo_build] The UTXO store reports no durability barrier "
+                            "while this node claims '{}'; the two disagree about the same "
+                            "machine", database::to_string(chain.durability())),
+                        "the UTXO store and the node disagree about what this platform can promise"};
+                }
+                spdlog::warn("[utxo_build] This platform exposes no durability barrier; batch "
+                    "{}-{} is published without one", batch_start, batch_end);
+            } else {
+                return window_fatal{
+                    fmt::format("[utxo_build] The UTXO store's durability barrier failed after "
+                        "batch {}-{} (operation {:#018x}); what it applied is not known to be "
+                        "on disk", batch_start, batch_end, operation_id),
+                    "the UTXO set of a connected batch could not be made durable"};
             }
 
-            // The safe boundary for a connect batch, and it is `utxo_sync` that
-            // sets it: the LMDB record and the UTXO-Z mutations are two stores
-            // that have to agree on disk, and until the barrier above returns
-            // they may not. Everything applied is now durable, so releasing the
-            // window from here latches nothing.
+            // The safe boundary for releasing the window: every mutation of this
+            // batch has been applied and the set stands at a block boundary, so a
+            // reader admitted from here sees a set that is whole. It is NOT yet
+            // durable. That is still owed, by the second half of the barrier
+            // below, and nothing is published until it has been paid: the
+            // transition record stays in place, and a second half that fails
+            // latches the gate itself.
             //
             // Deliberately not earlier. Every `co_return` above leaves without
             // reaching this line, which is how the eight exits inside this
@@ -2971,6 +3125,48 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         if (fatal) {
             spdlog::critical("{}", fatal->log);
             on_fatal(fatal->reason);
+            co_return;
+        }
+
+        // The next batch's judgement, started now so that it runs beside the
+        // rest of this one. Only where there is something to judge: blocks
+        // stored and contiguous past this batch, above the checkpoint, and no
+        // chain switch waiting — a switch needs this task parked, and work
+        // started here would only have to be waited out and thrown away.
+        if (uint32_t const next_start = batch_end + 1;
+                next_start > checkpoint_height && ! chain.reorg_pause_requested()) {
+            uint32_t const contiguous = contiguous_height.load(std::memory_order_acquire);
+            uint32_t const stored = contiguous > next_start ? contiguous - next_start : 0;
+            if (uint32_t const next_len = utxo_batch_len(stored, batch_size, chain.is_stale());
+                    next_len != 0) {
+                // The state this batch leaves, which the next one's limits
+                // start from. Publication writes it below; the judgement
+                // starts before that, so it is handed over rather than read.
+                std::optional<database::header_abla_record> tip_state;
+#if defined(KTH_CURRENCY_BCH)
+                if ( ! abla_records.empty()) {
+                    tip_state = abla_records.back();
+                }
+#endif
+                ahead = judge_ahead(next_start, utxo_batch_end(next_start,
+                    next_start + next_len - 1, checkpoint_height, validated_batch_blocks),
+                    tip_state);
+            }
+        }
+
+        // Step 9, second half: the active containers, the files and the
+        // directory. Readers are admitted while it runs; no window can open
+        // until it has returned, because it holds a read lease throughout.
+        //
+        // Nothing is published before this line. The transition record is still
+        // in place, so a node that stops here finds, at its next start, a
+        // transition that did not finish — which is what happened.
+        if (barrier && chain.utxo_finish_sync(std::move(*barrier))
+                != database::barrier_outcome::crossed) {
+            spdlog::critical("[utxo_build] The UTXO store's durability barrier failed after "
+                "batch {}-{} (operation {:#018x}); what it applied is not known to be "
+                "on disk", batch_start, batch_end, operation_id);
+            on_fatal("the UTXO set of a connected batch could not be made durable");
             co_return;
         }
 

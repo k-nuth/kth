@@ -428,7 +428,7 @@ code validate_header::accept_full(domain::chain::header const& header,
     // This is equivalent to header_basis::accept()
 
     // 1. Difficulty check
-    if (header.bits() != state.work_required()) {
+    if (state.work_required() == 0 || header.bits() != state.work_required()) {
         spdlog::debug("[validate_header] accept_full: incorrect PoW at height {}: "
             "header bits={:#x}, required={:#x}",
             height, header.bits(), state.work_required());
@@ -474,7 +474,7 @@ code validate_header::accept_header(
     domain::chain::chain_state const& state) {
 
     // 1. Difficulty check
-    if (header.bits() != state.work_required()) {
+    if (state.work_required() == 0 || header.bits() != state.work_required()) {
         return error::incorrect_proof_of_work;
     }
 

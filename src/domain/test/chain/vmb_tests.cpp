@@ -4,6 +4,10 @@
 
 #include "vmb_tests.hpp"
 
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+#include <secp256k1_turbo/deferred.hpp>
+#endif
+
 namespace kth::test {
 void run_vmb_test(vmb_test_case const& test) {
     using namespace kth::domain;
@@ -70,6 +74,23 @@ void run_vmb_test(vmb_test_case const& test) {
         auto const& prevout_script = utxos[idx].script();
         auto const value = utxos[idx].value();
         ec = verify(tx, idx, test.flags, input_script, prevout_script, value);
+
+#if defined(KTH_SIGVERIFY_TURBO_BATCH)
+        // Deferred signature checks must give the same verdict as inline
+        // verification on every vector: script result with the checks deferred,
+        // and then the batch, together equal the inline result.
+        {
+            secp256k1_turbo::deferred::begin();
+            auto const ec_deferred = verify(tx, idx, test.flags, input_script, prevout_script, value);
+            auto const batch = secp256k1_turbo::deferred::end();
+            bool const deferred_ok = ec_deferred == error::success && batch.invalid == 0;
+            CHECK_MESSAGE(deferred_ok == (ec == error::success),
+                "VMB " + test.ident + ": deferred verdict differs from inline (inline=" +
+                std::to_string(static_cast<int>(ec.value())) + " deferred=" +
+                std::to_string(static_cast<int>(ec_deferred.value())) + " batch_invalid=" +
+                std::to_string(batch.invalid) + "/" + std::to_string(batch.total) + ") desc: " + test.description);
+        }
+#endif
     }
 
     if (test.expect_pass) {

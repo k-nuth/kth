@@ -634,3 +634,105 @@ TEST_CASE("debug_step drives OP_BEGIN / OP_UNTIL loop with bch_loops enabled",
     REQUIRE(snap.loop_stack.empty());
     REQUIRE(snap.control_stack.empty());
 }
+
+// ---------------------------------------------------------------------------
+// Copies of a program
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A signed pay-to-public-key-hash spend (ECDSA, SIGHASH_ALL | FORKID) of a
+// 100,000 satoshi output.
+constexpr uint64_t spent_value = 100'000;
+
+chain::transaction signed_spend() {
+    auto const raw = to_chunk(
+        "02000000018cec0a9c965cc5c93f63ea38f469659a3e3ebee772737624baf97a87c9b2ea35000000006a47304402202f913835d9c5fbeae6"
+        "b69c8ab0a05d32d5dd6ba77ac2ba9abb2d87f17868db65022066f29e215359848708f02243d26e35ea742ecde460ebac8fac44b2b3d74caf"
+        "78412103c7d44bc89def5ccfb5378751b2700195c0529a5724f9c2d6779a7b3897b6f7dbfeffffff01b8820100000000001976a914c07757"
+        "038f99fd28450c386118bbc40d47e5171588ac00000000"_base16);
+    byte_reader reader(raw);
+    auto tx = chain::transaction::from_data(reader, true);
+    REQUIRE(tx.has_value());
+    return std::move(*tx);
+}
+
+chain::script spent_locking_script() {
+    return chain::script(to_chunk("76a91472de09798affed79229f7c32bbe21c87bda875e588ac"_base16), false);
+}
+
+script_flags_t spend_flags() {
+    return script_flags::bip16_rule | script_flags::bip65_rule | script_flags::bip66_rule
+        | to_flags(upgrade::bch_descartes);
+}
+
+// Step to the end taking every step on a copy and dropping the snapshot it
+// came from, which is what a caller that keeps a history of snapshots, or
+// reaches the debugger through the C API, does.
+debug_snapshot step_copies_to_the_end(program const& start) {
+    auto current = std::make_unique<debug_snapshot>(interpreter::debug_begin(start));
+    while ( ! current->done) {
+        debug_snapshot const& input = *current;
+        auto next = std::make_unique<debug_snapshot>(interpreter::debug_step(input));
+        current = std::move(next);
+    }
+    return std::move(*current);
+}
+
+} // namespace
+
+TEST_CASE("a copied program keeps its code separator position in its own operations",
+          "[program][copy]") {
+    auto const tx = signed_spend();
+    auto const locking = spent_locking_script();
+    program const original(locking, tx, 0, spend_flags(), spent_value);
+
+    program const copy(original);
+    CHECK(copy.jump() == copy.begin());
+    CHECK(original.jump() == original.begin());
+
+    program assigned(locking);
+    assigned = original;
+    CHECK(assigned.jump() == assigned.begin());
+}
+
+TEST_CASE("a copied program keeps a code separator position past the start",
+          "[program][copy]") {
+    // OP_1 OP_CODESEPARATOR OP_1: once it has run, the position is the
+    // operation after the separator, not the start of the script.
+    chain::script const separated(to_chunk("51ab51"_base16), false);
+    program const start(separated);
+    auto const finished = step_copies_to_the_end(start);
+    REQUIRE(finished.last);
+    REQUIRE(finished.prog.jump() == finished.prog.begin() + 2);
+
+    program const copy(finished.prog);
+    CHECK(copy.jump() == copy.begin() + 2);
+
+    program assigned(separated);
+    assigned = finished.prog;
+    CHECK(assigned.jump() == assigned.begin() + 2);
+}
+
+TEST_CASE("a signed spend verifies when every debug step is taken on a copy",
+          "[interpreter][debug][copy]") {
+    auto const tx = signed_spend();
+    auto const locking = spent_locking_script();
+    auto const flags = spend_flags();
+
+    // The same spend, run to the end without stepping: it is valid.
+    program reference_unlocking(tx.inputs()[0].script(), tx, 0, flags, spent_value);
+    REQUIRE(reference_unlocking.evaluate());
+    program reference_locking(locking, reference_unlocking);
+    REQUIRE(reference_locking.evaluate());
+    REQUIRE(reference_locking.stack_result(true));
+
+    program const unlocking(tx.inputs()[0].script(), tx, 0, flags, spent_value);
+    auto const unlocked = step_copies_to_the_end(unlocking);
+    REQUIRE(unlocked.last);
+
+    program const locked_start(locking, unlocked.prog);
+    auto const locked = step_copies_to_the_end(locked_start);
+    CHECK(locked.last);
+    CHECK(locked.prog.stack_result(true));
+}

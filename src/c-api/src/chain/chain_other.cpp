@@ -7,7 +7,6 @@
 #include <latch>
 #include <memory>
 
-// #include <boost/thread/latch.hpp>
 
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>

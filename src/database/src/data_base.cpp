@@ -13,7 +13,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <boost/range/adaptor/reversed.hpp>
 
 #include <kth/database/define.hpp>
 #include <kth/database/settings.hpp>
@@ -30,7 +29,6 @@ namespace kth::database {
 using namespace kth::domain::chain;
 using namespace kth::config;
 using namespace kth::domain::wallet;
-using namespace boost::adaptors;
 using namespace std::filesystem;
 
 #define NAME "data_base"

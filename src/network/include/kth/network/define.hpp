@@ -29,8 +29,6 @@
 // Include boost only here, so placeholders exclusion works.
 #include <kth/infrastructure/utility/asio_helper.hpp>
 
-#include <boost/circular_buffer.hpp>
-#include <boost/iostreams/stream.hpp>
 #if !defined(__EMSCRIPTEN__)
 #include <boost/thread.hpp>
 #endif

@@ -12,7 +12,6 @@
 #include <tuple>
 
 #include <boost/interprocess/mapped_region.hpp>
-#include <boost/range/adaptor/reversed.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
