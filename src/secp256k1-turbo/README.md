@@ -192,6 +192,59 @@ and verify batches of 4,096 twice (the device must be deterministic). On
 Metal the functions are forced inline: left as calls, the compiler produced
 non-deterministic results for the long squaring chains.
 
+## Hashing on the GPU: merkle trees
+
+The GPU runtime also hashes: `secp256k1_turbo/gpu_sha256.hpp` computes double
+SHA-256 over 64-byte inputs, which is the node of a merkle tree, on the same
+device, with the same buffers and contexts as the signature kernels and the
+SHA-256 compression the Schnorr challenge already uses there. It lives here
+because the device, its initialization and its packaging are this library's;
+it does not depend on the signature code.
+
+- `merkle_root(root, hashes, count, &mutated)` uploads the hashes once, hashes
+  every level on the device (one launch per level, two buffers that swap
+  roles) and downloads the 32-byte root. The last hash of an odd level is
+  paired with itself. `mutated` reports whether two equal hashes were paired as
+  siblings at any level, which the node rejects.
+- `sha256d64(out, in, count)` is one level on its own: `count` inputs of 64
+  bytes, `count` hashes back.
+
+Both return false, having written nothing, when there is no GPU runtime in the
+build, no device, or the device failed; the caller hashes on the CPU. Which
+implementation SHA-256 uses is otherwise fixed when the library is compiled or
+loaded; whether there is a device is only known when the node runs, so this
+choice is made per call.
+
+A launch has a fixed cost, so the device is for large trees. `min_batch()` is
+the number of hashes from which the node sends a tree to it. The default
+depends on the device, because the fixed cost does: 2,048 on CUDA and 32,768
+on Metal. `KTH_SECP256K1_TURBO_GPU_SHA256_MIN_BATCH` changes it, and `off`
+keeps every tree on the CPU. In the node, `block` and `light_block` ask before hashing the
+tree of a block (`domain/chain/detail/gpu_merkle.hpp`), when it is built with
+`signature_verification=secp256k1_turbo` and a GPU runtime.
+
+Merkle root, end to end (copy, upload, every level, download of the root),
+`kth_domain_bench_merkle`:
+
+| hashes | Zen 5, one core (SHA-NI) | RTX 5070 Ti (CUDA 13.2) | Apple M6, one core (ARM SHA2) | Apple M6 (Metal) |
+|---:|---:|---:|---:|---:|
+| 1,000 | 0.060 ms | 0.052 ms | 0.042 ms | 0.95 ms |
+| 4,000 | 0.24 ms | 0.064 ms | 0.17 ms | 0.84 ms |
+| 16,000 | 0.97 ms | 0.097 ms | 0.70 ms | 0.63 ms |
+| 32,000 | 1.95 ms | 0.134 ms | 1.36 ms | 0.50 ms |
+| 64,000 | 3.89 ms | 0.203 ms | 2.72 ms | 0.80 ms |
+| 250,000 | 17.3 ms | 0.54 ms | 10.7 ms | 1.01 ms |
+| 1,000,000 | 72.3 ms | 2.05 ms | 42.8 ms | 3.22 ms |
+
+The CPU columns are the node's batched SHA256D64 on one core. Blocks with
+fewer transactions than the threshold are hashed on the CPU exactly as before;
+most blocks of the chain so far are that small.
+
+The tests check the device code compiled for the host against SHA-256 on every
+machine (single hashes, trees of 1 to 4,097 hashes, equal siblings at the
+leaves and two levels up), and the device against the host where there is one,
+up to a tree of 300,001 hashes.
+
 ## Tests and benchmark
 
 `kth_secp256k1_turbo_test` (Catch2) checks the field and scalar arithmetic
