@@ -168,7 +168,7 @@ for mode in args.modes:
             raise RuntimeError('node did not report successful orderly shutdown')
         if mode in ('rpc-partial-http', 'rpc-full-admission'):
             marker = f'closing listener and {len(connections)} connections'.encode()
-            if marker not in output or b'all connections joined' not in output:
+            if marker not in output or b'all connections and reader work joined' not in output:
                 raise RuntimeError('shutdown did not observe and join every held connection')
         if mode in ('rpc-off', 'rpc-cli-off') and b'JSON-RPC server listening' in output:
             raise RuntimeError('RPC was enabled in a disabled control')
