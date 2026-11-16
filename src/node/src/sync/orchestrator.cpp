@@ -37,6 +37,7 @@
 #include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/thread_pool.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
@@ -1204,7 +1205,23 @@ static
     });
 
     // 7d. Incremental UTXO build task (reads from disk as contiguous blocks become available)
-    all_tasks.spawn("utxo_build_task", utxo_build_task(
+    //
+    // On a thread of its own, not on this group's executor. Applying a batch is
+    // synchronous from the transition record to the durability barrier: the
+    // store's sync, the mutations, the undo files and the fsyncs do not
+    // suspend. On the network pool every one of them is a thread that reads no
+    // socket for as long as the disk takes. The stage talks to the rest through
+    // its channels, which do not care which thread is at the other end.
+#if defined(KTH_BROWSER_NODE)
+    // One Worker and no threads: the stage stays where the group runs.
+    auto const utxo_executor = executor;
+#else
+    // Joined by its destructor, which runs after all_tasks.join() and so finds
+    // the thread idle.
+    ::asio::thread_pool utxo_stage(1);
+    auto const utxo_executor = utxo_stage.get_executor();
+#endif
+    all_tasks.spawn_on(utxo_executor, "utxo_build_task", utxo_build_task(
         chain,
         *contiguous_height,
         initial_block_height + 1,
