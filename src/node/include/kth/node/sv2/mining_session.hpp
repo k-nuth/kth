@@ -33,7 +33,7 @@ struct mining_session {
     };
 
     mining_session(uint64_t connection_salt, domain::chain::script payout,
-        std::shared_ptr<uint64_t> pool_allocations = {});
+        std::shared_ptr<uint64_t> pool_allocations = {}, data_chunk coinbase_tag = {});
 
     [[nodiscard]]
     result process(message_header const& header, byte_span payload);

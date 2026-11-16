@@ -609,7 +609,8 @@ template_provider::template_provider(sv2_settings const& settings,
             } else {
                 if ( ! decided && payout_ && mining_setup(input.header, input.payload)) {
                     miner.emplace(connection_salt, *payout_,
-                        settings_.jd.enabled ? pool_allocations_ : std::shared_ptr<uint64_t>{});
+                        settings_.jd.enabled ? pool_allocations_ : std::shared_ptr<uint64_t>{},
+                        data_chunk(settings_.coinbase_tag.begin(), settings_.coinbase_tag.end()));
                     // The answer to this setup starts the wait for a first channel.
                     channel_deadline.expires_after(
                         std::chrono::seconds(settings_.mining.open_channel_timeout_seconds));

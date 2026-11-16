@@ -138,7 +138,8 @@ jd_client::jd_client(sv2_settings const& settings, ::asio::any_io_executor execu
         settings.jd.mode == "full-template")
     , declaration_session_(jd_peer::declaration, jds_host_, jds_port_,
         settings.jd.user_identity, settings.jd.mode == "full-template")
-    , jobs_(settings.jd.user_identity, settings.jd.mode == "full-template")
+    , jobs_(settings.jd.user_identity, settings.jd.mode == "full-template",
+        data_chunk(settings.coinbase_tag.begin(), settings.coinbase_tag.end()))
     , chain_(chain)
     , response_timeout_(settings.jd.response_timeout_seconds)
     , declaration_wake_(owner_)

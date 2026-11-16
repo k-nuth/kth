@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -269,6 +270,51 @@ TEST_CASE("Mining targets track nominal hashes at all finite scales", "[sv2 mini
         REQUIRE(engine.update(1, invalid, maximum_target()).protocol_error);
     }
     REQUIRE(engine.update(0, 1, maximum_target()).unknown);
+}
+
+TEST_CASE("Mining coinbase carries the configured tag right after the height", "[sv2 mining]") {
+    std::string_view const text = "/CyberAshven Knuth/";
+    data_chunk const tag(text.begin(), text.end());
+    work_engine engine(0x1234, {}, tag);
+    auto const channel = engine.open(request(1, channel_kind::extended));
+    auto const tmpl = mining_template();
+    auto const jobs = engine.on_template(tmpl, outputs(tmpl.coinbase_value));
+    REQUIRE(jobs.size() == 1);
+    data_chunk const extra(channel.extranonce_size, 0x24);
+    auto const tx = coinbase(jobs.front(), channel, extra);
+    auto const& script = tx.inputs().front().script().bytes();
+    REQUIRE(script.size() <= coinbase_script_limit);
+    REQUIRE(tx.serialized_size(true) >= 100);
+    // One BIP34 byte for height 1, then the tag, then the four generation bytes.
+    REQUIRE(script.front() == 0x51);
+    REQUIRE(script.size() >= 5 + tag.size());
+    REQUIRE(std::equal(tag.begin(), tag.end(), script.begin() + 1));
+    auto const raw = to_data_chunk(tx, true);
+    auto const& prefix = jobs.front().coinbase_tx_prefix;
+    REQUIRE(std::equal(channel.extranonce_prefix.begin(), channel.extranonce_prefix.end(),
+        raw.begin() + static_cast<std::ptrdiff_t>(prefix.size())));
+
+    // The bytes a payout request commits to carry the same tag at the same place.
+    auto const payout_prefix = payout_coinbase_prefix(1, 7, 12, 8, tag);
+    REQUIRE(payout_prefix);
+    REQUIRE(payout_prefix->size() >= 5 + tag.size());
+    REQUIRE(payout_prefix->front() == 0x51);
+    REQUIRE(std::equal(tag.begin(), tag.end(), payout_prefix->begin() + 1));
+    REQUIRE(payout_coinbase_prefix(1, 7, 12, 8) != payout_prefix);
+
+    // A tag one byte past the limit builds no work and stops the node at startup.
+    data_chunk const long_tag(max_coinbase_tag_size + 1, 'x');
+    REQUIRE_FALSE(payout_coinbase_prefix(1, 7, 12, 8, long_tag));
+    work_engine refused(0x1234, {}, long_tag);
+    (void)refused.open(request(1, channel_kind::extended));
+    REQUIRE(refused.on_template(tmpl, outputs(tmpl.coinbase_value)).empty());
+    data_chunk const longest(max_coinbase_tag_size, 'x');
+    REQUIRE(payout_coinbase_prefix(1, 7, 12, 8, longest));
+    node::sv2_settings settings;
+    settings.coinbase_tag = std::string(max_coinbase_tag_size + 1, 'x');
+    REQUIRE_FALSE(mining_startup_reason(settings, domain::config::network::regtest).empty());
+    settings.coinbase_tag = std::string(max_coinbase_tag_size, 'x');
+    REQUIRE(mining_startup_reason(settings, domain::config::network::regtest).empty());
 }
 
 TEST_CASE("Mining coinbase preserves the supplied payout split and merkle path", "[sv2 mining]") {

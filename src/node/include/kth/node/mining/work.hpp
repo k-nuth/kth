@@ -58,6 +58,9 @@ inline constexpr size_t max_remembered_shares = 1024;
 inline constexpr size_t max_remembered_requests = 1024;
 inline constexpr size_t extranonce_prefix_size = 12;
 inline constexpr size_t coinbase_script_limit = 100;
+// Longest sv2.coinbase_tag. With the largest BIP34 push, the generation and a
+// 32-byte extranonce it leaves the scriptSig within coinbase_script_limit.
+inline constexpr size_t max_coinbase_tag_size = 40;
 
 // Four allocation bytes distinguish channels and renewals across connections;
 // four rollable bytes leave miners 2^32 coinbases and fit an eight-byte grant.
@@ -210,23 +213,26 @@ struct pool_binding {
 [[nodiscard]]
 std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs, uint32_t generation,
-    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size);
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
+    data_chunk const& coinbase_tag = {});
 
 // ScriptSig bytes before the extranonce for a payout request. BIP34, the
-// generation, and enough padding that the smallest one-output coinbase is 100
-// bytes. The same bytes are declared after the outputs come back.
+// coinbase tag, the generation, and enough padding that the smallest
+// one-output coinbase is 100 bytes. The same bytes are declared after the
+// outputs come back.
 [[nodiscard]]
 std::optional<data_chunk> payout_coinbase_prefix(size_t height, uint32_t generation,
-    size_t extranonce_prefix_size, uint16_t extranonce_size);
+    size_t extranonce_prefix_size, uint16_t extranonce_size,
+    data_chunk const& coinbase_tag = {});
 
 // Outputs may split the coinbase value. `script_prefix` must be the value
-// `payout_coinbase_prefix` returns for this height, generation and extranonce.
+// `payout_coinbase_prefix` returns for this height, generation, extranonce and tag.
 [[nodiscard]]
 std::optional<declared_work> make_payout_work(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs, uint32_t generation,
     data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
     data_chunk const& script_prefix, uint32_t version, uint32_t input_sequence,
-    uint32_t locktime);
+    uint32_t locktime, data_chunk const& coinbase_tag = {});
 
 struct update_result {
     bool protocol_error = false;
@@ -269,8 +275,9 @@ public:
     // connections that would otherwise reuse channel ids.
     // A shared allocation counter enables JD's fixed downstream reserve. Its
     // users must run on the same strand, as the listener's connections do.
+    // `coinbase_tag` goes into every coinbase built here (sv2.coinbase_tag).
     explicit work_engine(uint64_t connection_salt,
-        std::shared_ptr<uint64_t> pool_allocations = {});
+        std::shared_ptr<uint64_t> pool_allocations = {}, data_chunk coinbase_tag = {});
 
     [[nodiscard]] opened_channel open(open_request const& request);
     [[nodiscard]] update_result update(uint32_t channel_id, float nominal_hash_rate,
@@ -395,6 +402,7 @@ private:
 
     uint64_t const salt_;
     std::shared_ptr<uint64_t> pool_allocations_;
+    data_chunk coinbase_tag_;
     pool_state pool_;
     uint32_t next_channel_ = 1;
     uint32_t next_job_ = 1;

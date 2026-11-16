@@ -345,6 +345,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Lifetime in seconds of certificates signed at startup (default 2592000).");
     app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
         "Deadline in seconds for the complete Noise handshake (default 10).");
+    app.add_option("--sv2.coinbase_tag", cfg.sv2.coinbase_tag,
+        "Text written into the coinbase of every block this node builds for miners (at most 40 bytes; default none).");
     app.add_option("--sv2.mining.enabled", cfg.sv2.mining.enabled,
         "Accept Mining Protocol clients on the Stratum V2 listener.");
     app.add_option("--sv2.mining.address", cfg.sv2.mining.address,

@@ -124,9 +124,10 @@ struct coinbase_parts {
 // supplied outputs, locktime 0. There is no segwit marker and no witness
 // commitment to strip (sv2-spec 5.3.16 assumes a Bitcoin coinbase).
 std::optional<coinbase_parts> split_coinbase(size_t height, uint32_t job_id,
-    data_chunk const& extranonce_prefix, uint16_t extranonce_size,
-    domain::chain::output::list const& outputs) {
+    data_chunk const& coinbase_tag, data_chunk const& extranonce_prefix,
+    uint16_t extranonce_size, domain::chain::output::list const& outputs) {
     if (outputs.empty() || outputs.size() > max_coinbase_outputs) return std::nullopt;
+    if (coinbase_tag.size() > max_coinbase_tag_size) return std::nullopt;
     uint64_t output_bytes = 0;
     for (auto const& output : outputs) {
         output_bytes += output.serialized_size(true);
@@ -140,6 +141,9 @@ std::optional<coinbase_parts> split_coinbase(size_t height, uint32_t job_id,
     if (bip34.empty() || bip34.size() > bip34_reserve) return std::nullopt;
     // A replacement on the same tip must give the miner new hash space even
     // when its payout and channel extranonce have not changed.
+    // The tag follows the height, where pools and explorers expect a
+    // coinbase's text.
+    bip34.insert(bip34.end(), coinbase_tag.begin(), coinbase_tag.end());
     auto const generation = to_little_endian(job_id);
     bip34.insert(bip34.end(), generation.begin(), generation.end());
     // BCH required 100-byte transactions before CashTokens reduced the
@@ -223,9 +227,10 @@ share_outcome rejected_share(share_request const& share, std::string_view code) 
 // Padding is chosen for one minimal output so the prefix can be sent before
 // the pool's outputs exist. Larger outputs only make the transaction longer.
 std::optional<data_chunk> script_prefix_for(size_t height, uint32_t generation,
-    size_t extranonce_prefix_size, uint16_t extranonce_size) {
+    size_t extranonce_prefix_size, uint16_t extranonce_size, data_chunk const& coinbase_tag) {
     if (extranonce_size > 32 || extranonce_prefix_size > 32
-        || extranonce_prefix_size + size_t{extranonce_size} > 32) {
+        || extranonce_prefix_size + size_t{extranonce_size} > 32
+        || coinbase_tag.size() > max_coinbase_tag_size) {
         return std::nullopt;
     }
     if (height > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) return std::nullopt;
@@ -237,15 +242,16 @@ std::optional<data_chunk> script_prefix_for(size_t height, uint32_t generation,
     // 4 version + 1 input count + 36 outpoint + 1 script length + 4 sequence
     // + 1 output count + 9 minimal output + 4 locktime.
     constexpr size_t fixed_min = 4 + 1 + 36 + 1 + 4 + 1 + 9 + 4;
-    auto const unpadded = fixed_min + bip34.size() + job.size()
+    auto const unpadded = fixed_min + bip34.size() + job.size() + coinbase_tag.size()
         + extranonce_prefix_size + size_t{extranonce_size};
     size_t const pad = unpadded < 100 ? 100 - unpadded : 0;
-    auto const body = bip34.size() + job.size() + pad + extranonce_prefix_size
-        + size_t{extranonce_size};
+    auto const body = bip34.size() + job.size() + coinbase_tag.size() + pad
+        + extranonce_prefix_size + size_t{extranonce_size};
     if (body > coinbase_script_limit || body >= 253) return std::nullopt;
     data_chunk prefix;
-    prefix.reserve(bip34.size() + job.size() + pad);
+    prefix.reserve(bip34.size() + job.size() + coinbase_tag.size() + pad);
     prefix.insert(prefix.end(), bip34.begin(), bip34.end());
+    prefix.insert(prefix.end(), coinbase_tag.begin(), coinbase_tag.end());
     prefix.insert(prefix.end(), job.begin(), job.end());
     prefix.insert(prefix.end(), pad, uint8_t{0});
     return prefix;
@@ -312,7 +318,8 @@ bool within_template(blockchain::mining_template const& tmpl, size_t coinbase_si
 
 std::optional<declared_work> make_declared_work(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs, uint32_t generation,
-    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size) {
+    data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
+    data_chunk const& coinbase_tag) {
     auto const target = domain::chain::compact::from_compact(tmpl.bits);
     // Coinbase prefix and suffix are B0_64K. The transaction list is not:
     // this builder sends the merkle path. DeclareMiningJob's SEQ0_64K txid
@@ -329,7 +336,7 @@ std::optional<declared_work> make_declared_work(blockchain::mining_template cons
     for (auto const& tx : tmpl.selection.txs) {
         if ( ! tx) return std::nullopt;
     }
-    auto parts = split_coinbase(tmpl.height, generation, upstream_prefix,
+    auto parts = split_coinbase(tmpl.height, generation, coinbase_tag, upstream_prefix,
         upstream_extranonce_size, outputs);
     if ( ! parts || ! within_template(tmpl, parts->size)) return std::nullopt;
 
@@ -353,15 +360,16 @@ std::optional<declared_work> make_declared_work(blockchain::mining_template cons
 }
 
 std::optional<data_chunk> payout_coinbase_prefix(size_t height, uint32_t generation,
-    size_t extranonce_prefix_size, uint16_t extranonce_size) {
-    return script_prefix_for(height, generation, extranonce_prefix_size, extranonce_size);
+    size_t extranonce_prefix_size, uint16_t extranonce_size, data_chunk const& coinbase_tag) {
+    return script_prefix_for(height, generation, extranonce_prefix_size, extranonce_size,
+        coinbase_tag);
 }
 
 std::optional<declared_work> make_payout_work(blockchain::mining_template const& tmpl,
     domain::chain::output::list const& outputs, uint32_t generation,
     data_chunk const& upstream_prefix, uint16_t upstream_extranonce_size,
     data_chunk const& script_prefix, uint32_t version, uint32_t input_sequence,
-    uint32_t locktime) {
+    uint32_t locktime, data_chunk const& coinbase_tag) {
     auto const target = domain::chain::compact::from_compact(tmpl.bits);
     if ( ! target || target->big() == 0 || tmpl.current_time < tmpl.min_time
         || upstream_extranonce_size < jd_min_extranonce_size || upstream_extranonce_size > 32
@@ -375,7 +383,7 @@ std::optional<declared_work> make_payout_work(blockchain::mining_template const&
         if ( ! tx) return std::nullopt;
     }
     auto const expected = script_prefix_for(tmpl.height, generation, upstream_prefix.size(),
-        upstream_extranonce_size);
+        upstream_extranonce_size, coinbase_tag);
     if ( ! expected || *expected != script_prefix) return std::nullopt;
     auto parts = assemble_fixed_coinbase(script_prefix, upstream_prefix, upstream_extranonce_size,
         outputs, version, input_sequence, locktime);
@@ -406,6 +414,9 @@ std::optional<declared_work> make_payout_work(blockchain::mining_template const&
 }
 
 std::string mining_startup_reason(sv2_settings const& settings, domain::config::network network) {
+    if (settings.coinbase_tag.size() > max_coinbase_tag_size) {
+        return "sv2.coinbase_tag is longer than 40 bytes";
+    }
     if ( ! settings.mining.enabled) return {};
     if ( ! settings.enabled) return "sv2.mining.enabled requires sv2.enabled";
     if (settings.mining.address.empty()) return "sv2.mining.enabled requires sv2.mining.address";
@@ -472,9 +483,11 @@ std::optional<payout> payout_from_address(std::string_view address,
 #endif
 }
 
-work_engine::work_engine(uint64_t connection_salt, std::shared_ptr<uint64_t> pool_allocations)
+work_engine::work_engine(uint64_t connection_salt, std::shared_ptr<uint64_t> pool_allocations,
+    data_chunk coinbase_tag)
     : salt_(connection_salt)
     , pool_allocations_(std::move(pool_allocations))
+    , coinbase_tag_(std::move(coinbase_tag))
 {}
 
 hash_digest work_engine::choose_target(float hashrate, hash_digest const& max_target) const {
@@ -714,7 +727,7 @@ std::optional<work_job> work_engine::build(channel& slot,
             slot.extranonce_size, paid, pool_.coinbase_version,
             pool_.coinbase_input_sequence, pool_.coinbase_locktime);
     } else {
-        parts = split_coinbase(tmpl.height, generation, slot.extranonce_prefix,
+        parts = split_coinbase(tmpl.height, generation, coinbase_tag_, slot.extranonce_prefix,
             slot.extranonce_size, paid);
     }
     if ( ! parts) {

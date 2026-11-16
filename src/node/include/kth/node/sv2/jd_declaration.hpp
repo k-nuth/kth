@@ -37,7 +37,8 @@ struct jd_declaration {
         std::string error;
     };
 
-    jd_declaration(std::string identity, bool full_template);
+    // `coinbase_tag` goes into every coinbase declared (sv2.coinbase_tag).
+    jd_declaration(std::string identity, bool full_template, data_chunk coinbase_tag = {});
 
     [[nodiscard]] result start(blockchain::mining_template value,
         open_extended_mining_channel_success const& channel);
@@ -86,6 +87,7 @@ private:
 
     std::string identity_;
     bool full_template_;
+    data_chunk coinbase_tag_;
     bool has_template_ = false;
     bool payout_outputs_ = false;
     bool restart_ = false;

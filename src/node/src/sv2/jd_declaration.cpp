@@ -152,9 +152,10 @@ std::optional<domain::chain::output::list> payout_outputs(byte_span bytes, uint6
 
 } // namespace
 
-jd_declaration::jd_declaration(std::string identity, bool full_template)
+jd_declaration::jd_declaration(std::string identity, bool full_template, data_chunk coinbase_tag)
     : identity_(std::move(identity))
     , full_template_(full_template)
+    , coinbase_tag_(std::move(coinbase_tag))
 {}
 
 bool jd_declaration::pending() const {
@@ -348,7 +349,7 @@ jd_declaration::result jd_declaration::request_payout(data_chunk token, size_t r
         return fail("template height does not fit the payout request");
     }
     auto prefix = mining::payout_coinbase_prefix(template_.height, request_id_,
-        channel_.extranonce_prefix.size(), channel_.extranonce_size);
+        channel_.extranonce_prefix.size(), channel_.extranonce_size, coinbase_tag_);
     if ( ! prefix) return fail("coinbase prefix does not fit the payout request");
     token_ = std::move(token);
     reservation_ = reservation;
@@ -450,7 +451,7 @@ jd_declaration::result jd_declaration::accept_payout(request_payout_outputs_succ
     if ( ! outputs) return fail("invalid payout outputs");
     work_ = mining::make_payout_work(template_, *outputs, request_id_,
         channel_.extranonce_prefix, channel_.extranonce_size, script_prefix_,
-        version, sequence, locktime);
+        version, sequence, locktime, coinbase_tag_);
     if ( ! work_) return fail("payout coinbase or template exceeds mining limits");
     work_->upstream_channel_id = channel_.channel_id;
     work_->upstream_target = channel_.target;
@@ -533,7 +534,7 @@ jd_declaration::result jd_declaration::process(jd_peer peer,
         auto const outputs = pool_outputs(allocation->coinbase_tx_outputs, template_.coinbase_value);
         if ( ! outputs) return fail("invalid pool coinbase outputs");
         work_ = mining::make_declared_work(template_, *outputs, request_id_,
-            channel_.extranonce_prefix, channel_.extranonce_size);
+            channel_.extranonce_prefix, channel_.extranonce_size, coinbase_tag_);
         if ( ! work_) return fail("declared coinbase or template exceeds mining limits");
         work_->upstream_channel_id = channel_.channel_id;
         work_->upstream_target = channel_.target;

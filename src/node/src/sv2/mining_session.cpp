@@ -64,8 +64,8 @@ void append_frame(data_chunk& bytes, Message const& message) {
 } // namespace
 
 mining_session::mining_session(uint64_t connection_salt, domain::chain::script payout,
-    std::shared_ptr<uint64_t> pool_allocations)
-    : engine_(connection_salt, std::move(pool_allocations))
+    std::shared_ptr<uint64_t> pool_allocations, data_chunk coinbase_tag)
+    : engine_(connection_salt, std::move(pool_allocations), std::move(coinbase_tag))
     , payout_(std::move(payout))
 {}
 

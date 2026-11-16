@@ -74,6 +74,10 @@ struct KND_API sv2_settings {
     std::string authority_public_key;
     uint32_t certificate_validity_seconds;
     uint32_t handshake_timeout_seconds;
+    // Written into the coinbase of every job this node builds, solo or
+    // declared to a pool, right after the BIP34 height.
+    // Empty writes nothing. At most mining::max_coinbase_tag_size bytes.
+    std::string coinbase_tag;
     mining_settings mining;
     jd_settings jd;
 };
