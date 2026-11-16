@@ -31,28 +31,54 @@ constexpr std::string_view script_d_hex = "a914444444444444444444444444444444444
 constexpr std::string_view script_return_hex = "6a04deadbeef";
 constexpr std::string_view script_wallet_hex = "a914777777777777777777777777777777777777777787";
 
+// Three of them are transaction leaves, one for each transaction: the
+// coinbase's at index 2, the third transaction's at 3 and the second's at 9.
 constexpr std::string_view leaf_hex[] = {
     "11633077d74aa1a6958c6f1162c9e935c628c6b004d167165f0a4cccd020eecb010000000000000000",
     "11633077d74aa1a6958c6f1162c9e935c628c6b004d167165f0a4cccd020eecb020000000000000001",
+    "2408f309be44080bfa3bb2af14c6725ed1f8f4e46f1af24b4be3488061398758000000000000000004",
+    "29793475c422842053b828ed76beb29702bcd1aefffa403ae6c3762f04921716020000000000000004",
     "46402f61b3239cd80b93294e10b552d66a31b79c8fe7fdd92a832d00f832e82e010000000100000001",
     "46402f61b3239cd80b93294e10b552d66a31b79c8fe7fdd92a832d00f832e82e020000000000000000",
     "5c1b924542fecd099a9568826bce5018476b3c2a29944c9c7ff6e47f80d21d24010000000000000002",
     "5c1b924542fecd099a9568826bce5018476b3c2a29944c9c7ff6e47f80d21d24010000000000000003",
     "5c1b924542fecd099a9568826bce5018476b3c2a29944c9c7ff6e47f80d21d24020000000000000003",
+    "6b1601808de128a10737cdea9a192ad5e5e47d37cf06349b37aa57f968f2e39f010000000000000004",
     "e2f6c234985456932db846b2bf1a2fed2cb98b5b0f246f30711ea6148a76860e000000000000000000",
     "e2f6c234985456932db846b2bf1a2fed2cb98b5b0f246f30711ea6148a76860e010000000000000001",
     "e2f6c234985456932db846b2bf1a2fed2cb98b5b0f246f30711ea6148a76860e010000000100000000",
 };
 
-constexpr std::string_view root_of_ten = "f66125233da123c29e93f9510c96557d5edfc071225ea7796c86e6deba8c23fd";
-constexpr std::string_view filter_bytes_hex = "0499ff80bec18387496fab00";
+constexpr std::string_view root_of_leaves = "b0b1eb8ae0f0a27876a014e84906f626d6b77028c8197763cb4f6c13b5041d3d";
+constexpr std::string_view filter_bytes_hex = "07cebf94a6e9031661043903d7cd355e4ee520";
 constexpr std::string_view served_hex =
-    "f66125233da123c29e93f9510c96557d5edfc071225ea7796c86e6deba8c23fd0499ff80bec18387496fab00";
-constexpr std::string_view filter_hash_hex = "4ddf591081b2cf7e4ed907dd61b4626d45aa34a1d6c34ef3d475e97b4fc1745f";
-constexpr std::string_view header_zero_hex = "a92dc54cdf66fdf505a4c7acdb432becbc5f2756fb3ba0bc0fa74694888f6829";
-constexpr std::string_view header_counting_hex = "1a234486b2eec2c3c45e871a2ccb3f12ad9e8a0755fc1a42e6dffbebd5f09f26";
+    "b0b1eb8ae0f0a27876a014e84906f626d6b77028c8197763cb4f6c13b5041d3d07cebf94a6e9031661043903d7cd355e4ee520";
+constexpr std::string_view filter_hash_hex = "efda295187e26a5cc26e977352d97d8b74e1a59bcd82f3396521ffd9ab9b5444";
+constexpr std::string_view header_zero_hex = "31bf06e3a313b4a69ae63d7065c4f261dbe76f498d62c1fa5f1c40e50c976af4";
+constexpr std::string_view header_counting_hex = "3b5c87c739ea1dca7f2c253c9b2ad3b1fc09644eb2f0e833482e93a091e9ac13";
 constexpr std::string_view key_a_hex = "e2f6c234985456932db846b2bf1a2fed2cb98b5b0f246f30711ea6148a76860e";
 constexpr std::string_view key_c_hex = "5c1b924542fecd099a9568826bce5018476b3c2a29944c9c7ff6e47f80d21d24";
+
+// The hash of each transaction of the test block, in the order the hash
+// function writes it, and the key of its transaction leaf.
+constexpr std::string_view txid_hex[] = {
+    "3d3eaa7cae56fc7823601f845a53018ae8febbe77f0a6ffcdbac2794638c60eb",
+    "bdbfe452ac34ce73c03efb1865a78bafa4b10cc55ded3a24f386e23001c2a8b0",
+    "d5d1622cfc9d6c9fd27dfa7c3255a15f4ba58adb1907310f26da4a8fe7f14d59",
+};
+constexpr std::string_view txid_key_hex[] = {
+    "2408f309be44080bfa3bb2af14c6725ed1f8f4e46f1af24b4be3488061398758",
+    "6b1601808de128a10737cdea9a192ad5e5e47d37cf06349b37aa57f968f2e39f",
+    "29793475c422842053b828ed76beb29702bcd1aefffa403ae6c3762f04921716",
+};
+
+// The hash of the genesis block's coinbase as it is stored (displayed
+// 4a5e1e4b...a33b), and the transaction key, category key and script key of
+// those 32 bytes.
+constexpr std::string_view genesis_txid_hex = "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a";
+constexpr std::string_view genesis_txid_key_hex = "025ed1aacae75dea93415773bb9a23b3942e03ef36aebc59acb67406902d03ce";
+constexpr std::string_view genesis_category_key_hex = "14b1e7df36fc97e5ded3b7fabcbcc38dbdec513c5f96e4d4bf42107d26699935";
+constexpr std::string_view genesis_script_key_hex = "337e2a4de220e4518f2a8a4bd8bc2c82b0b92cea3bb2ab9fceda68e1738e0b34";
 
 struct fixture {
     chain::block block;
@@ -100,6 +126,12 @@ chain::golomb_key filter_key(hash_digest const& hash) {
     return key;
 }
 
+hash_digest hash_from_hex(std::string_view hex) {
+    auto const decoded = decode_base16<hash_size>(hex);
+    REQUIRE(decoded);
+    return *decoded;
+}
+
 fixture script_filter_fixture() {
     auto const coinbase = chain::transaction{
         1,
@@ -144,7 +176,7 @@ fixture script_filter_fixture() {
 
 // Start Test Suite: script filter builder tests
 
-TEST_CASE("script leaves of the test block are the ten known leaves", "[script filter builder]") {
+TEST_CASE("script leaves of the test block are the thirteen known leaves", "[script filter builder]") {
     auto const sample = script_filter_fixture();
     auto const leaves = chain::script_leaves(sample.block, sample.spent);
     REQUIRE(leaves);
@@ -155,6 +187,92 @@ TEST_CASE("script leaves of the test block are the ten known leaves", "[script f
 
     require_hex(chain::script_key(script_from_hex(script_a_hex).bytes()), key_a_hex);
     require_hex(chain::category_key(category_c()), key_c_hex);
+}
+
+TEST_CASE("transaction key is the SHA-256 of 0x02 and the stored hash, apart from the other keys of those bytes", "[script filter builder]") {
+    auto const txid = hash_from_hex(genesis_txid_hex);
+    require_hex(chain::transaction_key(txid), genesis_txid_key_hex);
+    require_hex(chain::category_key(txid), genesis_category_key_hex);
+    require_hex(chain::script_key(txid), genesis_script_key_hex);
+
+    // The display order is the stored hash reversed, and is another key.
+    auto reversed = txid;
+    std::ranges::reverse(reversed);
+    REQUIRE(chain::transaction_key(reversed) != chain::transaction_key(txid));
+}
+
+TEST_CASE("every transaction of the test block has one transaction leaf, the coinbase included", "[script filter builder]") {
+    auto const sample = script_filter_fixture();
+    auto const leaves = chain::script_leaves(sample.block, sample.spent);
+    REQUIRE(leaves);
+
+    auto const& transactions = sample.block.transactions();
+    REQUIRE(transactions.size() == std::size(txid_hex));
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        INFO("transaction " << i);
+        auto const txid = transactions[i].hash();
+        require_hex(txid, txid_hex[i]);
+        require_hex(chain::transaction_key(txid), txid_key_hex[i]);
+
+        auto const position = static_cast<uint32_t>(i);
+        auto const count = std::ranges::count_if(*leaves, [&](chain::script_leaf const& leaf) {
+            return leaf.kind == chain::script_leaf_kind::transaction && leaf.tx_index == position;
+        });
+        REQUIRE(count == 1);
+        chain::script_leaf const wanted{chain::transaction_key(txid), position, 0, chain::script_leaf_kind::transaction};
+        REQUIRE(std::ranges::find(*leaves, wanted) != leaves->end());
+    }
+    auto const transaction_leaves = std::ranges::count_if(*leaves, [](chain::script_leaf const& leaf) {
+        return leaf.kind == chain::script_leaf_kind::transaction;
+    });
+    REQUIRE(transaction_leaves == static_cast<std::ptrdiff_t>(transactions.size()));
+}
+
+TEST_CASE("the full key of a transaction selects its one leaf and the range proof of that leaf holds", "[script filter builder]") {
+    auto const sample = script_filter_fixture();
+    auto const leaves = chain::script_leaves(sample.block, sample.spent);
+    REQUIRE(leaves);
+    std::span<chain::script_leaf const> const all = *leaves;
+    auto const root = chain::script_leaves_root(all);
+    auto const count = static_cast<uint32_t>(all.size());
+
+    // Where each transaction's leaf sits in tree order.
+    constexpr size_t places[] = {2, 9, 3};
+    auto const& transactions = sample.block.transactions();
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        INFO("transaction " << i);
+        auto const key = chain::transaction_key(transactions[i].hash());
+        auto const run = chain::script_leaves_with_prefix(all, key, 256);
+        REQUIRE(run);
+        REQUIRE(run->first == places[i]);
+        REQUIRE(run->end == run->first + 1);
+        auto const& found = all[run->first];
+        REQUIRE(found.kind == chain::script_leaf_kind::transaction);
+        REQUIRE(found.tx_index == static_cast<uint32_t>(i));
+        REQUIRE(found.index == 0u);
+
+        // The run with the leaf before and the leaf after it rebuilds the root,
+        // and shows the block has no other leaf with that key.
+        auto const* before = &all[run->first - 1];
+        auto const* after = &all[run->end];
+        auto const hashes = chain::script_range_hashes(all, run->first - 1, run->end + 1);
+        REQUIRE(hashes);
+        REQUIRE(chain::check_script_range(root, count, static_cast<uint32_t>(run->first),
+            all.subspan(run->first, 1), before, after, *hashes, key, 256));
+
+        // The same proof does not hold for another transaction's key.
+        auto const other = chain::transaction_key(transactions[(i + 1) % transactions.size()].hash());
+        REQUIRE( ! chain::check_script_range(root, count, static_cast<uint32_t>(run->first),
+            all.subspan(run->first, 1), before, after, *hashes, other, 256));
+    }
+
+    // The proof of the coinbase's leaf, as the range in the known vectors.
+    auto const coinbase = chain::script_range_hashes(all, 1, 4);
+    REQUIRE(coinbase);
+    REQUIRE(coinbase->size() == 3u);
+    require_hex((*coinbase)[0], "9d1f540224023621706bc5c9a4cb19c21abb295d62aebaa75137bbcb44dadfb5");
+    require_hex((*coinbase)[1], "d86f36e990d6b2c6dea6f0e7111c6271963b6a566f70e961a2dc675ab60b1e94");
+    require_hex((*coinbase)[2], "e9639e41195ffb0b1f64cdcf9f9f0c318bdcdaa7da3a9b37e2292a5e3d932b7c");
 }
 
 TEST_CASE("roots of the test block leaf prefixes match the known roots", "[script filter builder]") {
@@ -170,9 +288,10 @@ TEST_CASE("roots of the test block leaf prefixes match the known roots", "[scrip
         {0, "0000000000000000000000000000000000000000000000000000000000000000"},
         {1, "9d1f540224023621706bc5c9a4cb19c21abb295d62aebaa75137bbcb44dadfb5"},
         {2, "e5c9cff033bb91a3f42a868728b860c8a4eb1e6047d483b7b3a066f694f2180e"},
-        {3, "bbf4f9772400cd1355cfd4c39fb37e5f03a63e2452b1ca97deba45d475771dc2"},
-        {5, "378bce73f320bd2b71796e5731f6e91d71e42ecf0513d1912f0e9439fb52a2b9"},
-        {10, root_of_ten},
+        {3, "907cad6618a8f3ede71fa62a7169f055a19ebb073270e1693231429c719be61d"},
+        {5, "bbc9efc7bb3eb741dc7ca721578860c688eeb07cdb49ceea332467f70cb2f9a3"},
+        {10, "69f2a3d4cdb63540fd67dead5141b47277a37aef1e2636c52e8ef56f25522dfb"},
+        {13, root_of_leaves},
     };
     for (auto const& item : roots) {
         auto const prefix = std::span<chain::script_leaf const>{leaves->data(), item.count};
@@ -181,25 +300,29 @@ TEST_CASE("roots of the test block leaf prefixes match the known roots", "[scrip
 
     auto const filter = chain::build_script_filter(sample.block, sample.spent);
     REQUIRE(filter);
-    require_hex(filter->root, root_of_ten);
+    require_hex(filter->root, root_of_leaves);
     REQUIRE(filter->root == chain::script_leaves_root(*leaves));
 }
 
-TEST_CASE("the test block filter matches its four keys and nothing else", "[script filter builder]") {
+TEST_CASE("the test block filter matches its seven keys and nothing else", "[script filter builder]") {
     auto const sample = script_filter_fixture();
     auto const filter = chain::build_script_filter(sample.block, sample.spent);
     REQUIRE(filter);
     auto const leaves = chain::script_leaves(sample.block, sample.spent);
     REQUIRE(leaves);
     REQUIRE(filter->root == chain::script_leaves_root(*leaves));
-    REQUIRE(filter->set.size() == 4u);
+    REQUIRE(filter->set.size() == 7u);
 
     auto const key = filter_key(sample.block.hash());
+    auto const& transactions = sample.block.transactions();
     hash_digest const members[] = {
         chain::script_key(script_from_hex(script_a_hex).bytes()),
         chain::script_key(script_from_hex(script_b_hex).bytes()),
         chain::category_key(category_c()),
         chain::script_key(script_from_hex(script_d_hex).bytes()),
+        chain::transaction_key(transactions[0].hash()),
+        chain::transaction_key(transactions[1].hash()),
+        chain::transaction_key(transactions[2].hash()),
     };
     for (auto const& member : members) {
         REQUIRE(filter->set.match(key, member));
@@ -217,6 +340,17 @@ TEST_CASE("the test block filter matches its four keys and nothing else", "[scri
     REQUIRE( ! filter->set.match(key, empty));
     REQUIRE( ! filter->set.match(key, outpoint));
     REQUIRE( ! filter->set.match(key, raw_a));
+
+    // A transaction's hash is in the filter only under its tag: not bare, not
+    // as a category, not reversed, and not the hash of a transaction the block
+    // only spends from.
+    auto const coinbase_hash = transactions[0].hash();
+    auto reversed = coinbase_hash;
+    std::ranges::reverse(reversed);
+    REQUIRE( ! filter->set.match(key, coinbase_hash));
+    REQUIRE( ! filter->set.match(key, chain::category_key(coinbase_hash)));
+    REQUIRE( ! filter->set.match(key, chain::transaction_key(reversed)));
+    REQUIRE( ! filter->set.match(key, chain::transaction_key(prev.hash())));
 }
 
 TEST_CASE("a block that only spends a script still matches that script", "[script filter builder]") {
@@ -338,6 +472,11 @@ TEST_CASE("the script filter of the test block's loose transactions matches thei
         REQUIRE(filter->match(key, item));
     }
 
+    // Each loose transaction has its key, as it has in a block.
+    for (auto const& tx : txs) {
+        REQUIRE(filter->match(key, chain::transaction_key(tx.hash())));
+    }
+
     uint8_t const other_script[] = {0x51, 0x52};
     REQUIRE( ! filter->match(key, chain::script_key(byte_span{other_script})));
 
@@ -357,10 +496,12 @@ TEST_CASE("the script filter of the test block's loose transactions matches thei
         0,
         chain::input::list{make_input(leading_byte(0x07), 0, chain::script{})},
         chain::output::list{make_output(0, script_from_hex("6a"))}};
+    // A transaction with no script leaf and no category leaf still has its own key.
     chain::output::list const burned{make_output(0, chain::script{})};
-    auto const empty = chain::build_tx_script_filter(hash, std::span<chain::transaction const>{&burn, 1}, burned);
-    REQUIRE(empty);
-    REQUIRE(empty->size() == 0u);
+    auto const only_hash = chain::build_tx_script_filter(hash, std::span<chain::transaction const>{&burn, 1}, burned);
+    REQUIRE(only_hash);
+    REQUIRE(only_hash->size() == 1u);
+    REQUIRE(only_hash->match(key, chain::transaction_key(burn.hash())));
 }
 
 TEST_CASE("served bytes of the test block are the known root followed by the known filter", "[script filter builder]") {
@@ -369,5 +510,5 @@ TEST_CASE("served bytes of the test block are the known root followed by the kno
     REQUIRE(filter);
     require_hex(chain::to_data(*filter), served_hex);
     require_hex(filter->set.to_data(), filter_bytes_hex);
-    require_hex(filter->root, root_of_ten);
+    require_hex(filter->root, root_of_leaves);
 }

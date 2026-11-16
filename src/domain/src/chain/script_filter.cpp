@@ -129,7 +129,7 @@ std::array<uint8_t, script_leaf_size> to_data(script_leaf const& leaf) {
 }
 
 std::expected<script_leaf, script_range_error> parse_script_leaf(byte_span data) {
-    if (data.size() != script_leaf_size || data[kind_offset] > static_cast<uint8_t>(script_leaf_kind::spent_category)) {
+    if (data.size() != script_leaf_size || data[kind_offset] > static_cast<uint8_t>(script_leaf_kind::transaction)) {
         return std::unexpected(script_range_error::leaf);
     }
 

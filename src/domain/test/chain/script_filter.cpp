@@ -182,9 +182,19 @@ TEST_CASE("script filter leaves parse serialize and stay in tree order", "[scrip
     REQUIRE(bytes->size() == chain::script_leaf_size);
     REQUIRE(chain::parse_script_leaf(std::span<uint8_t const>(bytes->data(), 40)) == std::unexpected(chain::script_range_error::leaf));
 
-    auto bad_kind = *bytes;
-    bad_kind[40] = 4;
-    REQUIRE(chain::parse_script_leaf(bad_kind) == std::unexpected(chain::script_range_error::leaf));
+    // Kind 4 is the leaf of a transaction. Every kind above it is refused.
+    auto transaction_kind = *bytes;
+    transaction_kind[40] = 4;
+    auto const transaction_leaf = chain::parse_script_leaf(transaction_kind);
+    REQUIRE(transaction_leaf);
+    REQUIRE(transaction_leaf->kind == chain::script_leaf_kind::transaction);
+    REQUIRE(std::ranges::equal(chain::to_data(*transaction_leaf), transaction_kind));
+
+    for (uint8_t const kind : {uint8_t{5}, uint8_t{0x80}, uint8_t{0xff}}) {
+        auto bad_kind = *bytes;
+        bad_kind[40] = kind;
+        REQUIRE(chain::parse_script_leaf(bad_kind) == std::unexpected(chain::script_range_error::leaf));
+    }
 }
 
 TEST_CASE("script filter leaf roots match the published roots", "[script filter]") {
