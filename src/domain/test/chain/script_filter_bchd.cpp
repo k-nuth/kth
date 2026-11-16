@@ -19,10 +19,13 @@ namespace {
 
 // Blocks of a simnet chain made on a bchd node, each with the scripts of the
 // outputs it spends, in input order, the filter header of its parent, and the
-// script filter and filter header that node serves for it (`getcfilter` and
-// `getcfilterheader` with filter type 1). A node of another implementation
-// that rebuilds the same bytes from the same block serves the same light
-// wallets.
+// script filter and filter header the Go implementation of filter type 1 for
+// bchd builds for it, transaction leaves included. A node of another
+// implementation that rebuilds the same bytes from the same block serves the
+// same light wallets.
+//
+// Block 125 is not among them, so the filter header before block 126 is a
+// given input; each later one chains from the header of the block before.
 //
 // The blocks: the genesis block; a payment to three scripts, a script hash and
 // a data carrier, with change; an output created and spent in the same block;
@@ -137,9 +140,29 @@ hash_digest hash_from_hex(std::string_view hex) {
     return hash;
 }
 
+// The block of the vector at `height`, and the outputs it spends.
+struct node_block {
+    chain::block block;
+    std::vector<chain::output> spent;
+};
+
+node_block node_block_at(uint32_t height) {
+    auto const found = std::ranges::find(node_vectors(), height, &node_vector::height);
+    REQUIRE(found != node_vectors().end());
+    auto const raw = from_hex(found->block_hex);
+    byte_reader reader(raw);
+    auto block = chain::block::from_data(reader);
+    REQUIRE(block);
+    std::vector<chain::output> spent;
+    for (auto const script_hex : found->spent_script_hex) {
+        spent.push_back(chain::output{0, chain::script{from_hex(script_hex), false}, chain::token_data_opt{}});
+    }
+    return {std::move(*block), std::move(spent)};
+}
+
 } // namespace
 
-TEST_CASE("script filter of blocks from another node is the filter and header that node serves", "[script filter builder]") {
+TEST_CASE("script filter of blocks from another node's chain is the filter and header the Go implementation builds", "[script filter builder]") {
     REQUIRE(node_vectors().size() == 5);
 
     for (auto const& vector : node_vectors()) {
@@ -164,7 +187,7 @@ TEST_CASE("script filter of blocks from another node is the filter and header th
     }
 }
 
-TEST_CASE("script filter served by another node parses and matches the scripts its block spends and its transactions", "[script filter builder]") {
+TEST_CASE("script filter of another node's chain parses and matches the scripts its block spends and its transactions", "[script filter builder]") {
     for (auto const& vector : node_vectors()) {
         CAPTURE(vector.height);
 
@@ -196,4 +219,89 @@ TEST_CASE("script filter served by another node parses and matches the scripts i
             0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0x88, 0xac};
         REQUIRE( ! parsed->set.match(key, chain::script_key(absent)));
     }
+}
+
+TEST_CASE("a whole txid key in a block of another node's chain gives the run and edge hashes the Go implementation gives", "[script filter builder]") {
+    auto const sample = node_block_at(127);
+    auto const leaves = chain::script_leaves(sample.block, sample.spent);
+    REQUIRE(leaves);
+    std::span<chain::script_leaf const> const all = *leaves;
+    REQUIRE(all.size() == 9u);
+    auto const root = chain::script_leaves_root(all);
+    REQUIRE(encode_base16(root) == "0203471b91863237e77edce7baf8aece3399215b146501a2d5da70a0cc338191");
+
+    // The key, the first leaf of the run, how many leaves it has, and the edge
+    // hashes of the run with the leaf before and the leaf after it.
+    struct txid_range {
+        std::string_view key;
+        size_t first;
+        size_t count;
+        std::vector<std::string_view> hashes;
+    };
+    std::vector<txid_range> const ranges{
+        {"003fb0bb55849986a01b708caf5f7096cb333b2db4c652142d266e9af0ef39d8", 0, 1, {
+            "fc7106ec8a756b1c6d302c0ad0d80d9386902883f246bb14b22eb831e8e24b55",
+            "57e6982497f1437070b821d7af36a7a965865c6f11e749efc55c4871893623f0",
+            "f7ac8e989fe8a5b97ac6a4ae695e6218ffa066b89b1a0cc7b77a0b214200d204"}},
+        {"2c85f8a20f23fef92f6c796431dfed75e32ec742046f561594cecff21ac84ee3", 1, 1, {
+            "70cc85d12c594282065f0bd3d401fbbc52ba2fe5f89f85c0c3910bd82c1a7237",
+            "57e6982497f1437070b821d7af36a7a965865c6f11e749efc55c4871893623f0",
+            "f7ac8e989fe8a5b97ac6a4ae695e6218ffa066b89b1a0cc7b77a0b214200d204"}},
+        {"a625efaa008d78b7008537a5ffe4a50b269f2233227d76f2f0b10328cc5975f8", 5, 1, {
+            "3276e211a8051a12e287fa3f5887fae9c23ed0e5680d888b0281bd34d123e8a1",
+            "7027d50c343da427699d99a1e39bc51ded643a37463ff6e5ccfe435367bf1556",
+            "f7ac8e989fe8a5b97ac6a4ae695e6218ffa066b89b1a0cc7b77a0b214200d204"}},
+        // A transaction of block 128: no leaf, and the neighbours show it.
+        {"ed57fe6068f159d30f2371fa2d30bf341db9118396650c28e94e7a8721ce4257", 6, 0, {
+            "6319d35dfb691c1b7b845ee21606fc12f427dd1810913b50b9b03109528ddc88",
+            "3276e211a8051a12e287fa3f5887fae9c23ed0e5680d888b0281bd34d123e8a1",
+            "7027d50c343da427699d99a1e39bc51ded643a37463ff6e5ccfe435367bf1556",
+            "f7ac8e989fe8a5b97ac6a4ae695e6218ffa066b89b1a0cc7b77a0b214200d204"}},
+    };
+
+    auto const& transactions = sample.block.transactions();
+    REQUIRE(transactions.size() == 3);
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        REQUIRE(chain::transaction_key(transactions[i].hash()) == hash_from_hex(ranges[i].key));
+    }
+    REQUIRE(chain::transaction_key(node_block_at(128).block.transactions()[1].hash()) == hash_from_hex(ranges[3].key));
+
+    for (size_t r = 0; r < ranges.size(); ++r) {
+        auto const& item = ranges[r];
+        CAPTURE(item.key);
+        auto const key = hash_from_hex(item.key);
+        auto const run = chain::script_leaves_with_prefix(all, key, 256);
+        REQUIRE(run);
+        REQUIRE(run->first == item.first);
+        REQUIRE(run->end - run->first == item.count);
+        if (item.count == 1) {
+            chain::script_leaf const wanted{key, static_cast<uint32_t>(r), 0, chain::script_leaf_kind::transaction};
+            REQUIRE(all[run->first] == wanted);
+        }
+
+        auto const lo = run->first == 0 ? run->first : run->first - 1;
+        auto const hi = run->end == all.size() ? run->end : run->end + 1;
+        auto const hashes = chain::script_range_hashes(all, lo, hi);
+        REQUIRE(hashes);
+        REQUIRE(hashes->size() == item.hashes.size());
+        for (size_t i = 0; i < item.hashes.size(); ++i) {
+            REQUIRE(encode_base16((*hashes)[i]) == std::string{item.hashes[i]});
+        }
+        auto const* before = run->first == 0 ? nullptr : &all[run->first - 1];
+        auto const* after = run->end == all.size() ? nullptr : &all[run->end];
+        REQUIRE(chain::check_script_range(root, static_cast<uint32_t>(all.size()), static_cast<uint32_t>(run->first),
+            all.subspan(run->first, item.count), before, after, *hashes, key, 256));
+    }
+}
+
+TEST_CASE("loose transactions of a block of another node's chain make the filter the Go implementation builds", "[script filter builder]") {
+    // The two transactions after the coinbase of block 127, keyed by the zero
+    // hash: the second spends an output of the first.
+    auto const sample = node_block_at(127);
+    auto const& transactions = sample.block.transactions();
+    auto const loose = std::span<chain::transaction const>{transactions.data() + 1, transactions.size() - 1};
+    auto const filter = chain::build_tx_script_filter(null_hash, loose, sample.spent);
+    REQUIRE(filter);
+    REQUIRE(filter->size() == 6u);
+    REQUIRE(encode_base16(filter->to_data()) == "0627b5e1afe36a5690382e78663605ce");
 }
