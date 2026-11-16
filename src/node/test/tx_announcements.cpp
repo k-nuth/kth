@@ -173,7 +173,7 @@ TEST_CASE("tx announcement schedule: a peer with a bloom filter is announced wha
           "[tx announcement]") {
     tx_announcement_schedule schedule(false, 0);
     network::tx_inventory inventory;
-    auto filter = domain::chain::bloom_filter::sized(10, 0.000001, 0, domain::chain::bloom_filter::update_none);
+    auto filter = *domain::chain::bloom_filter::sized(10, 0.000001, 0, domain::chain::bloom_filter::update_none);
     filter.insert(txid(2));
     filter.insert(txid(4));
     inventory.load_filter(filter);

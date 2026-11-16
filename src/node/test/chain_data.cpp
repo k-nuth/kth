@@ -354,7 +354,7 @@ TEST_CASE("getdata for a filtered block sends the proof and the matched transact
     }
     SECTION("with a filter: a merkleblock for each block held, and what it matched") {
         loopback_peer peer;
-        auto filter = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+        auto filter = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
         filter.insert(coinbase);
         peer.session->tx_inventory().load_filter(filter);
         CHECK(serve(peer, node::handlers::chain_data::handle_get_data(c.fixture.chain(), *peer.session, *request)) ==

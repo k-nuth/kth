@@ -154,11 +154,11 @@ TEST_CASE("a peer wants every transaction until it loads a filter, and then thos
     network::tx_inventory inventory;
     CHECK(inventory.wants(coinbase));
 
-    auto empty = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+    auto empty = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
     inventory.load_filter(empty);
     CHECK_FALSE(inventory.wants(coinbase));
 
-    auto watching = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+    auto watching = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
     watching.insert(coinbase.hash());
     inventory.load_filter(watching);
     CHECK(inventory.wants(coinbase));
@@ -183,7 +183,7 @@ TEST_CASE("a filtered block proves its matched transactions and names them", "[b
     CHECK(everything == bloom_filter{});
 
     // Nothing matches: the merkle root alone, and no transaction.
-    auto nothing = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+    auto nothing = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
     auto const unmatched = node::detail::filter_block(block, nothing);
     CHECK(unmatched.matched.empty());
     CHECK(unmatched.proof.header() == block.header());
@@ -192,7 +192,7 @@ TEST_CASE("a filtered block proves its matched transactions and names them", "[b
     CHECK(unmatched.proof.flags() == data_chunk{0x00});
 
     // The coinbase matches by its hash.
-    auto watching = bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+    auto watching = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
     watching.insert(txid);
     auto const matched = node::detail::filter_block(block, watching);
     CHECK(matched.matched == std::vector<size_t>{0});

@@ -11,15 +11,11 @@
 #include <kth/domain/chain/point.hpp>
 #include <kth/domain/chain/transaction.hpp>
 #include <kth/domain/define.hpp>
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
 namespace kth::domain::chain {
-
-// MurmurHash3, the 32-bit variant for x86: the hash of the peer bloom filter.
-[[nodiscard]]
-KD_API
-uint32_t murmur_hash3(uint32_t seed, byte_span data);
 
 // The filter a light wallet loads into a peer with `filterload` (BIP37): a
 // bit field, a number of hash functions, a tweak the wallet picks, and flags
@@ -27,8 +23,7 @@ uint32_t murmur_hash3(uint32_t seed, byte_span data);
 //
 // It lives for one connection and is the wallet's own, so a node keeps
 // nothing for it.
-class KD_API bloom_filter {
-public:
+struct KD_API bloom_filter {
     // The largest filter a peer may load, in bytes, and the most hash
     // functions it may ask for.
     static constexpr size_t max_size = 36000;
@@ -48,9 +43,10 @@ public:
     bloom_filter(data_chunk bits, uint32_t hash_functions, uint32_t tweak, uint8_t flags);
 
     // An empty filter sized for a number of elements at a false positive
-    // rate, as wallets size theirs.
+    // rate, as wallets size theirs. illegal_value unless the rate is above
+    // zero and below one.
     [[nodiscard]]
-    static bloom_filter sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags);
+    static expect<bloom_filter> sized(size_t elements, double false_positive_rate, uint32_t tweak, uint8_t flags);
 
     // Whether a peer may load it.
     [[nodiscard]] bool within_limits() const;
@@ -83,7 +79,7 @@ public:
     friend bool operator==(bloom_filter const&, bloom_filter const&) = default;
 
 private:
-    [[nodiscard]] uint32_t bit_of(uint32_t function, byte_span data) const;
+    [[nodiscard]] size_t bit_of(uint32_t function, byte_span data) const;
 
     data_chunk bits_;
     uint32_t hash_functions_ = 0;
