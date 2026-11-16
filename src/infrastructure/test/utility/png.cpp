@@ -3,6 +3,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#ifdef KTH_WITH_PNG
+#include <png.h>
+#endif
 
 #include <kth/infrastructure.hpp>
 
@@ -114,39 +117,75 @@ TEST_CASE("png size one success", "[png tests]") {
         0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
     };
 
-    data_chunk out;
     constexpr uint32_t size = 1;
 
-    auto const result = png::write_png(raw_input_data, size, out);
+    auto const result = png::write(raw_input_data, size);
 
     REQUIRE(result);
+    auto const& out = *result;
     REQUIRE(out.size() == sizeof(expected_data));
     REQUIRE(std::memcmp(out.data(), expected_data, sizeof(expected_data)) == 0);
 }
 
 
-TEST_CASE("png rejects invalid input without modifying output", "[png tests]") {
-    data_chunk out{0xaa};
-    auto const original = out;
+TEST_CASE("png returns explicit errors for invalid input", "[png tests]") {
     data_chunk const one_pixel{3, 0, 0, 0, 1, 0, 0, 0, 1};
     data_chunk const zero_width{3, 0, 0, 0, 0, 0, 0, 0};
-    REQUIRE_FALSE(png::write_png(one_pixel, 0, out));
-    REQUIRE_FALSE(png::write_png(zero_width, 1, out));
-    REQUIRE_FALSE(png::write_png(byte_span{one_pixel}.first(8), 1, out));
-    REQUIRE_FALSE(png::write_png(one_pixel, 0xffffffffu, 72, 0xffffffffu,
-        39, png::get_default_foreground(), png::get_default_background(), out));
-    REQUIRE(out == original);
+    REQUIRE(png::write(one_pixel, 0) == std::unexpected(png_errc::invalid_scale));
+    REQUIRE(png::write(zero_width) == std::unexpected(png_errc::invalid_data));
+    REQUIRE(png::write(byte_span{one_pixel}.first(8)) == std::unexpected(png_errc::invalid_data));
+    REQUIRE(png::write(one_pixel, png::options{.scale = 0xffffffffu, .margin = 0xffffffffu})
+        == std::unexpected(png_errc::dimensions_out_of_range));
+    REQUIRE(png::write(one_pixel, png::options{.dots_per_inch = 0xffffffffu, .inches_per_meter = 2})
+        == std::unexpected(png_errc::invalid_resolution));
+    REQUIRE(png::write(one_pixel, png::options{.dots_per_inch = PNG_UINT_31_MAX, .inches_per_meter = 1}));
+    REQUIRE(png::write(one_pixel, png::options{.dots_per_inch = PNG_UINT_31_MAX + 1u, .inches_per_meter = 1})
+        == std::unexpected(png_errc::invalid_resolution));
 }
 
-TEST_CASE("png appends encoded bytes to a byte buffer", "[png tests]") {
-    data_chunk const one_pixel{3, 0, 0, 0, 1, 0, 0, 0, 1};
-    data_chunk plain;
-    REQUIRE(png::write_png(one_pixel, 1, plain));
-    data_chunk appended{0xaa, 0xbb};
-    REQUIRE(png::write_png(one_pixel, 1, appended));
-    REQUIRE(appended[0] == 0xaa);
-    REQUIRE(appended[1] == 0xbb);
-    REQUIRE(data_chunk(appended.begin() + 2, appended.end()) == plain);
+TEST_CASE("png preserves scaled pixels, margins, colors and transparency", "[png tests]") {
+    for (uint32_t width : {1u, 3u, 8u, 9u, 21u}) {
+        for (uint32_t scale : {1u, 2u, 7u, 8u, 9u, 16u}) {
+            for (uint32_t margin : {0u, 1u, 2u}) {
+                data_chunk input{3, 0, 0, 0, static_cast<uint8_t>(width), 0, 0, 0};
+                for (size_t i = 0; i < size_t{width} * width; ++i)
+                    input.push_back(static_cast<uint8_t>((i * 17 + i / width) % 3 == 0));
+                png::options const settings{.scale = scale, .margin = margin,
+                    .foreground = {17, 39, 81, 123}, .background = {225, 211, 199, 0}};
+                auto const result = png::write(input, settings);
+                REQUIRE(result);
+                struct decoded_image {
+                    png_image image{};
+                    ~decoded_image() { png_image_free(&image); }
+                } decoded;
+                auto& image = decoded.image;
+                image.version = PNG_IMAGE_VERSION;
+                REQUIRE(png_image_begin_read_from_memory(&image, result->data(), result->size()));
+                auto const expanded = (width + 2 * margin) * scale;
+                REQUIRE(image.width == expanded);
+                REQUIRE(image.height == expanded);
+                image.format = PNG_FORMAT_RGBA;
+                data_chunk pixels(PNG_IMAGE_SIZE(image));
+                REQUIRE(png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr));
+                data_chunk expected_pixels(pixels.size());
+                for (size_t y = 0; y < expanded; ++y) {
+                    for (size_t x = 0; x < expanded; ++x) {
+                        auto const px = x / scale;
+                        auto const py = y / scale;
+                        bool const inside = px >= margin && py >= margin && px < margin + width && py < margin + width;
+                        bool const black = inside && input[8 + (py - margin) * width + px - margin] != 0;
+                        auto const expected = black ? settings.foreground : settings.background;
+                        auto const offset = (y * expanded + x) * 4;
+                        expected_pixels[offset] = expected.red;
+                        expected_pixels[offset + 1] = expected.green;
+                        expected_pixels[offset + 2] = expected.blue;
+                        expected_pixels[offset + 3] = expected.alpha;
+                    }
+                }
+                REQUIRE(pixels == expected_pixels);
+            }
+        }
+    }
 }
 
 #endif // KTH_WITH_PNG

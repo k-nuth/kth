@@ -10,7 +10,6 @@
 #include <streambuf>
 
 // #include <kth/infrastructure/math/limits.hpp>
-#include <kth/infrastructure/utility/limits.hpp>
 
 #ifdef _MSC_VER
 #include <windows.h>
@@ -33,17 +32,16 @@ namespace kth {
 // This is the factory method to privately instantiate a singleton class.
 void console_streambuf::initialize(size_t size) {
 #ifdef _MSC_VER
-    // Set the console to operate in UTF-8 for this process.
-    if (SetConsoleCP(CP_UTF8) == FALSE) {
-        throw std::ios_base::failure("Failed to set console to utf8.");
-    }
-
+    auto const input = GetStdHandle(STD_INPUT_HANDLE);
     DWORD console_mode;
-    if (GetConsoleMode(get_input_handle(), &console_mode) != FALSE) {
-        // Hack for faulty std::wcin translation of non-ASCII keyboard input.
-        static console_streambuf buffer(*std::wcin.rdbuf(), size);
-        std::wcin.rdbuf(&buffer);
-    }
+    // A service, redirected pipe or CI process need not have a console.
+    if (input == INVALID_HANDLE_VALUE || input == nullptr ||
+        GetConsoleMode(input, &console_mode) == FALSE)
+        return;
+    if (SetConsoleCP(CP_UTF8) == FALSE)
+        throw std::ios_base::failure("Failed to set console to utf8.");
+    static console_streambuf buffer(*std::wcin.rdbuf(), size);
+    std::wcin.rdbuf(&buffer);
 #endif
 }
 
