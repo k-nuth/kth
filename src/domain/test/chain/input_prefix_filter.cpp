@@ -374,8 +374,8 @@ TEST_CASE("a filter that is not the one encoding of a set is refused", "[input p
     }
 
     // A run of one-bits is refused once it passes the largest value, before
-    // its end: 65,544 of them with k = 0.
-    data_chunk run{0x01, 0x00};
+    // its end: 65,544 of them with k = 0, the parameter of 65,536 values.
+    data_chunk run{0xfe, 0x00, 0x00, 0x01, 0x00, 0x00};
     run.insert(run.end(), 8193, 0xff);
     auto const long_run = chain::parse_input_prefix_filter(run);
     REQUIRE( ! long_run);
