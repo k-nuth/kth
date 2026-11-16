@@ -101,6 +101,7 @@ program::program(script const& script, program const& x)
       script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
+      sighash_cache_(x.sighash_cache_),
       flags_(x.flags_),
       value_(x.value_),
 #if ! defined(KTH_CURRENCY_BCH)
@@ -119,6 +120,7 @@ program::program(script const& script, program&& x, bool /*unused*/)
       script_ops_(std::make_shared<operation::list const>(chain::operations(script))),
       transaction_(x.transaction_),
       input_index_(x.input_index_),
+      sighash_cache_(x.sighash_cache_),
       flags_(x.flags_),
       value_(x.value_),
 #if ! defined(KTH_CURRENCY_BCH)

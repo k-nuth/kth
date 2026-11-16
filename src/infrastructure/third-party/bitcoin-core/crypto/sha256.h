@@ -41,13 +41,16 @@ enum UseImplementation : uint8_t {
 }
 
 /** Autodetect the best available SHA256 implementation.
- *  Returns the name of the implementation.
+ *  Returns the name of the implementation. With compile-time dispatch the
+ *  implementation is fixed by the build: this returns its name and the
+ *  restriction is ignored.
  */
 std::string SHA256AutoDetect(sha256_implementation::UseImplementation use_implementation = sha256_implementation::USE_ALL);
 
-/** Name of the implementation in use. The best one available is selected when
- *  the library is loaded; SHA256AutoDetect() only needs to be called to
- *  restrict the choice.
+/** Name of the implementation in use. With runtime dispatch the best one
+ *  available is selected when the library is loaded, and SHA256AutoDetect()
+ *  only needs to be called to restrict the choice. With compile-time dispatch
+ *  it is the one the build was made for.
  */
 std::string SHA256Implementation();
 

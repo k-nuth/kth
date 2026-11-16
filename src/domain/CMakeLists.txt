@@ -165,6 +165,7 @@ endif()
 set(kth_sources_just_legacy
         ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
+        src/chain/bloom_filter.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
         src/chain/compact_filter.cpp
@@ -184,12 +185,15 @@ set(kth_sources_just_legacy
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
+        src/chain/partial_merkle_tree.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_iterator.cpp
+        src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
         src/chain/script_filter.cpp
         src/chain/script_filter_builder.cpp
+        src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
         src/chain/utxo.cpp
@@ -363,8 +367,11 @@ set(kth_headers
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
     include/kth/domain/chain/input_point.hpp
+    include/kth/domain/chain/detail/gpu_merkle.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
+    include/kth/domain/chain/bloom_filter.hpp
+    include/kth/domain/chain/partial_merkle_tree.hpp
     include/kth/domain/chain/block_ticks.hpp
     include/kth/domain/chain/faster_blocks.hpp
     include/kth/domain/chain/output.hpp
@@ -382,9 +389,11 @@ set(kth_headers
     include/kth/domain/chain/compact_filter.hpp
     include/kth/domain/chain/golomb_set.hpp
     include/kth/domain/chain/input.hpp
+    include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
     include/kth/domain/chain/script_filter.hpp
     include/kth/domain/chain/script_filter_builder.hpp
+    include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
     include/kth/domain/chain/point_value.hpp
@@ -572,6 +581,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/imported_vectors.cpp
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
+        test/chain/bloom_filter.cpp
+        test/chain/partial_merkle_tree.cpp
         test/chain/block_ticks.cpp
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
@@ -593,6 +604,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/point_value.cpp
         test/chain/points_value.cpp
         test/chain/satoshi_words.cpp
+        test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
         test/chain/script_filter.cpp
         test/chain/script_filter_builder.cpp
@@ -725,7 +737,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
 
+  # Signature hashes of a transaction: the shared hashes computed per input
+  # against kept for the transaction.
+  add_executable(kth_domain_bench_sighash bench/sighash/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_sighash PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_sighash PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_sighash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
