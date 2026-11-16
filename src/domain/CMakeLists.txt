@@ -170,6 +170,7 @@ set(kth_sources_just_legacy
         src/chain/chain_state.cpp
         src/chain/compact_filter.cpp
         src/chain/golomb_set.cpp
+        src/chain/input_prefix_filter.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
         # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
@@ -409,6 +410,7 @@ set(kth_headers
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/compact_filter.hpp
     include/kth/domain/chain/golomb_set.hpp
+    include/kth/domain/chain/input_prefix_filter.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
@@ -610,6 +612,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/chain_state.cpp
         test/chain/compact_filter.cpp
         test/chain/golomb_set.cpp
+        test/chain/input_prefix_filter.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/history.cpp
