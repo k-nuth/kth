@@ -699,6 +699,15 @@ TEST_CASE("script filters are served with their headers from the first block whe
         REQUIRE(filter);
         REQUIRE(*filter);
         CHECK(**filter == served_script_filter(sc, h));
+        // It holds the key of every transaction of the block, the coinbase included.
+        auto const served = domain::chain::parse_script_filter(**filter);
+        REQUIRE(served);
+        auto const& block = h == 0 ? domain::chain::block::genesis_regtest() : sc.blocks[h - 1];
+        domain::chain::golomb_key key{};
+        std::copy_n(block.hash().begin(), key.size(), key.begin());
+        for (auto const& tx : block.transactions()) {
+            CHECK(served->set.match(key, domain::chain::transaction_key(tx.hash())));
+        }
         // And it is not the regular filter of the same block.
         auto const regular = run_on_own_context(service.filter_of(block_hash_at(sc, h)));
         REQUIRE(regular);
@@ -775,7 +784,8 @@ TEST_CASE("a cfrange and a cfproof of the spending block check against the root 
     CHECK(all->block_hash == block);
     CHECK(all->first_index == 0);
     REQUIRE(all->leaf_count == all->leaves.size());
-    REQUIRE(all->leaves.size() >= 3);   // the coinbase output, the spend's output and the output it spends
+    // The coinbase output, the spend's output, the output it spends, and each transaction.
+    REQUIRE(all->leaves.size() >= 5);
     CHECK( ! all->before);
     CHECK( ! all->after);
     CHECK(all->hashes.empty());
@@ -804,6 +814,42 @@ TEST_CASE("a cfrange and a cfproof of the spending block check against the root 
     CHECK(none->leaves.empty());
     CHECK(none->leaf_count == all->leaf_count);
     CHECK(checked(*none, root, other_key, 256));
+
+    // The key of each transaction of the block, the coinbase included, whole:
+    // the one leaf of that transaction, and its proof is the transaction
+    // itself, folded to the block's header, with no other transaction.
+    auto const& transactions = spending_block.transactions();
+    REQUIRE(transactions.size() >= 2);
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        CAPTURE(i);
+        auto const key = domain::chain::transaction_key(transactions[i].hash());
+        auto const found = run_on_own_context(service.range(range_request(block, key, 256)));
+        REQUIRE(found);
+        REQUIRE(found->leaves.size() == 1);
+        auto const& leaf = found->leaves.front();
+        CHECK(leaf == domain::chain::script_leaf{key, uint32_t(i), 0, domain::chain::script_leaf_kind::transaction});
+        CHECK(checked(*found, root, key, 256));
+
+        auto const tx_proof = run_on_own_context(service.proof({script_type, block, found->first_index}));
+        REQUIRE(tx_proof);
+        CHECK(tx_proof->leaf == leaf);
+        CHECK( ! tx_proof->origin);
+        CHECK(tx_proof->transaction == transactions[i]);
+        CHECK(domain::chain::transaction_key(tx_proof->transaction.hash()) == tx_proof->leaf.key);
+        CHECK(domain::chain::block::merkle_branch_root(tx_proof->transaction.hash(), tx_proof->leaf.tx_index,
+            tx_proof->transaction_branch) == spending_block.header().merkle());
+        auto const leaf_root = domain::chain::script_range_root(tx_proof->leaf_count, tx_proof->leaf_index,
+            std::span<domain::chain::script_leaf const>(&tx_proof->leaf, 1), tx_proof->leaf_branch);
+        REQUIRE(leaf_root);
+        CHECK(*leaf_root == root);
+    }
+    // The hash of a transaction the block only spends from is not one of its
+    // transactions: no leaf has its key.
+    auto const spent_from = domain::chain::transaction_key(created_block.transactions().front().hash());
+    auto const not_here = run_on_own_context(service.range(range_request(block, spent_from, 256)));
+    REQUIRE(not_here);
+    CHECK(not_here->leaves.empty());
+    CHECK(checked(*not_here, root, spent_from, 256));
 
     // What is not answered: a prefix with a bit past its length, the regular
     // filter, which has no entry tree, and a block the node does not know.

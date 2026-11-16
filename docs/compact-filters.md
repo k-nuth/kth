@@ -40,17 +40,21 @@ filter header of the block before; before the first block it is all zeros.
 
 The script filter of a block (filter type 1) holds what a wallet watches for:
 the locking script of every output the block creates and of every output it
-spends, and the token category of each of them that carries tokens. A wallet
-matches its own scripts against it, received and spent alike, and a token
-wallet matches a category. A script that is empty or starts with `OP_RETURN` is
-left out.
+spends, the token category of each of them that carries tokens, and the hash
+of every transaction of the block, the coinbase included. A wallet matches its
+own scripts against it, received and spent alike, a token wallet matches a
+category, and a wallet that has only a transaction's hash finds the block that
+confirmed it. A script that is empty or starts with `OP_RETURN` is left out.
 
-Each of those is an entry: a 32-byte key (the SHA-256 of the script, or of
-`0x01` and the category), the index of the transaction, the index of the input
-or output, and which of the four it is. The entries are sorted, and the filter
-is served with the root of a Merkle tree over them in front of the Golomb-coded
-set of their keys. The filter hash covers both, so the filter headers commit to
-the entries of every block.
+Each of those is an entry: a 32-byte key (the SHA-256 of the script, of `0x01`
+and the category, or of `0x02` and the transaction hash in the order it is
+stored, as in an outpoint), the index of the transaction, the index of the
+input or output (0 for a transaction), and which of the five it is. A category
+is the hash of the transaction that created it, so the two tags keep the key
+of a category apart from the key of that transaction. The entries are sorted,
+and the filter is served with the root of a Merkle tree over them in front of
+the Golomb-coded set of their keys. The filter hash covers both, so the filter
+headers commit to the entries of every block.
 
 That root lets a wallet settle a disagreement between two nodes without
 downloading the block:
