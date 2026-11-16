@@ -146,9 +146,19 @@ struct transaction_location {
 // and for a transaction read from a block its `blockhash`, `confirmations`,
 // `time`, `blocktime` and `in_active_chain`. A block off the connected chain
 // gives `confirmations` 0, no times and `in_active_chain` false.
+//
+// `prevouts`, when it holds the output each input spends, in the order of the
+// inputs (verbosity 2), gives each input that output's `value`, `scriptPubKey`
+// and `tokenData` between its `scriptSig` and its `sequence`, and the
+// transaction its `fee`, in BCH, between its outputs and its `hex`. Otherwise,
+// and for a coinbase, none of them is there. With `patterns`, every script
+// carries its byteCodePattern object, and an input that spends a
+// pay-to-script-hash output its `redeemScript`, when that output is known.
 std::string render_transaction_verbose(domain::chain::transaction const& tx,
                                        domain::config::network net, domain::script_flags_t flags,
-                                       std::optional<transaction_location> const& location);
+                                       std::optional<transaction_location> const& location,
+                                       std::span<domain::chain::output const> prevouts = {},
+                                       bool patterns = false);
 
 // What getblock reports about a block beyond the block itself.
 struct block_location {

@@ -1785,9 +1785,8 @@ TEST_CASE("block reads validate identity, bounds, errors and request parameters"
         auto const raw = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + ",false," + quoted(trunk[0].hash()) + ",1]");
         INFO(raw);
         CHECK(raw.find(R"("code":-32602)") != std::string::npos);
-        // Verbosity 2 is not implemented and 3 does not exist: neither is
-        // answered as verbosity 1.
-        for (auto const* verbosity : {"2", "3"}) {
+        // Verbosity 3 and -1 do not exist: neither is answered as another.
+        for (auto const* verbosity : {"3", "-1"}) {
             auto const rejected = request("getrawtransaction", "[" + quoted(trunk[0].transactions().front().hash()) + "," + verbosity + "," + quoted(trunk[0].hash()) + "]");
             INFO(rejected);
             CHECK(rejected.find(R"("code":-32602)") != std::string::npos);
@@ -1859,6 +1858,154 @@ TEST_CASE("getblock and getrawtransaction dispatch answer verbosely", "[rpc disp
         quoted(trunk[2].hash()) + R"(,"confirmations":3,"confirmations_ticks":1800,"time":)" +
         std::to_string(trunk[2].header().timestamp()) + R"(,"blocktime":)" +
         std::to_string(trunk[2].header().timestamp()) + R"(,"in_active_chain":true})"));
+}
+
+TEST_CASE("getrawtransaction dispatch gives a mempool transaction its spent outputs and fee at verbosity 2",
+          "[rpc dispatch][byte code pattern]") {
+    test::chain_fixture fixture("rpc_raw_tx_prevouts");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five connected blocks: their coinbases are in the UTXO set.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 5u);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getrawtransaction","params":)" + params + R"(,"id":15})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+    auto const has = [](std::string const& text, std::string const& fragment) {
+        return text.find(fragment) != std::string::npos;
+    };
+    auto const count = [](std::string const& text, std::string_view what) {
+        size_t n = 0;
+        for (auto at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+    auto const pool = [&](domain::chain::input::list ins, domain::chain::output::list outs, uint64_t fee) {
+        auto const pooled = std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{2u, 0u, std::move(ins), std::move(outs)});
+        REQUIRE(fixture.chain().mempool_ref().add(blockchain::mempool_entry{
+            pooled, fee, uint32_t(pooled->serialized_size(true)), 1u, 0u}));
+        return pooled;
+    };
+
+    // A parent that spends block 1's coinbase output and pays 10 BCH to a
+    // script hash, and a child that spends that output, pushing the redeem
+    // script, and block 2's coinbase output. Neither is validated here.
+    auto const& redeem = test::miner_script().bytes();
+    domain::chain::script const pays_script_hash{
+        domain::chain::script::to_pay_script_hash_pattern(bitcoin_short_hash(redeem))};
+    data_chunk unlock{uint8_t(redeem.size())};
+    unlock.insert(unlock.end(), redeem.begin(), redeem.end());
+
+    domain::chain::input::list parent_ins;
+    parent_ins.emplace_back(domain::chain::output_point{trunk[0].transactions().front().hash(), 0},
+        domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list parent_outs;
+    parent_outs.emplace_back(1'000'000'000u, pays_script_hash, domain::chain::token_data_opt{});
+    parent_outs.emplace_back(3'999'990'000u, test::miner_script(), domain::chain::token_data_opt{});
+    auto const parent = pool(std::move(parent_ins), std::move(parent_outs), 10'000u);
+
+    domain::chain::input::list child_ins;
+    child_ins.emplace_back(domain::chain::output_point{parent->hash(), 0},
+        domain::chain::script{unlock, false}, 0xffffffffu);
+    child_ins.emplace_back(domain::chain::output_point{trunk[1].transactions().front().hash(), 0},
+        domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list child_outs;
+    child_outs.emplace_back(5'999'000'000u, test::miner_script(), domain::chain::token_data_opt{});
+    auto const child = pool(std::move(child_ins), std::move(child_outs), 1'000'000u);
+    auto const txid = quoted(child->hash());
+
+    // The parent's output, from the mempool, and block 2's coinbase output,
+    // from the UTXO set, each in its input after the scriptSig: 60 BCH in,
+    // 59.99 out.
+    auto const full = request("[" + txid + ",2]");
+    CHECK(has(full, R"("hex":")" + encode_base16(unlock) + R"("},"value":10,"scriptPubKey":{"asm":")"));
+    CHECK(has(full, R"(","type":"scripthash","address":"bchreg:p)"));
+    CHECK(has(full, R"("hex":""},"value":50,"scriptPubKey":{"asm":")"));
+    CHECK(has(full, R"(","type":"pubkeyhash","address":"bchreg:q)"));
+    CHECK(has(full, R"(}],"fee":0.01,"hex":")" + node::rpc::transaction_to_hex(*child) + R"("})"));
+    CHECK(count(full, R"("scriptPubKey":)") == 3);
+    CHECK(count(full, R"("byteCodePattern":)") == 0);
+    CHECK_FALSE(has(full, R"("prevout":)"));
+    CHECK(request("[" + txid + ",2,\"\"]") == full);
+    CHECK(request("[" + txid + ",2,null,false]") == full);
+
+    // The parent's own input: block 1's coinbase output.
+    auto const parent_full = request("[" + quoted(parent->hash()) + ",2]");
+    CHECK(has(parent_full, R"("hex":""},"value":50,"scriptPubKey":{"asm":")"));
+    CHECK(has(parent_full, R"(}],"fee":0.0001,"hex":")"));
+
+    // With patterns: every script's, the spent outputs' included, and the
+    // redeem script the child's first input pushes for the script hash it spends.
+    auto const patterns = request("[" + txid + ",2,\"\",true]");
+    CHECK(count(patterns, R"("byteCodePattern":)") == 6);
+    CHECK(count(patterns, R"("redeemScript":)") == 1);
+    CHECK(has(patterns, R"("redeemScript":{"asm":")"));
+    CHECK(has(patterns, R"(","hex":")" + encode_base16(redeem) + R"(","byteCodePattern":{"fingerprint":")"));
+    CHECK(has(patterns, R"("p2shType":"p2sh20"}}},"value":10,"scriptPubKey":{"asm":")"));
+    CHECK(has(patterns, R"(","pattern":"a95187","patternAsm":")"));
+    CHECK(has(patterns, R"(}],"fee":0.01,"hex":")"));
+
+    // Verbosity 1: the patterns of its own scripts, and nothing of what it spends.
+    auto const decoded = request("[" + txid + ",1,\"\",true]");
+    CHECK(count(decoded, R"("byteCodePattern":)") == 3);
+    CHECK_FALSE(has(decoded, R"("redeemScript":)"));
+    CHECK(count(decoded, R"("scriptPubKey":)") == 1);
+    CHECK_FALSE(has(decoded, R"("fee":)"));
+    auto const plain = request("[" + txid + ",true]");
+    CHECK(count(plain, R"("byteCodePattern":)") == 0);
+    CHECK(count(plain, R"("scriptPubKey":)") == 1);
+    CHECK(request("[" + txid + ",1,\"\",false]") == plain);
+
+    // An input whose output is in neither the mempool nor the UTXO set, beside
+    // one that is found: the call still answers, without spent outputs or fee.
+    domain::chain::input::list stray_ins;
+    stray_ins.emplace_back(domain::chain::output_point{trunk[2].hash(), 0}, domain::chain::script{}, 0xffffffffu);
+    stray_ins.emplace_back(domain::chain::output_point{trunk[2].transactions().front().hash(), 0},
+        domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list stray_outs;
+    stray_outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    auto const stray = pool(std::move(stray_ins), std::move(stray_outs), 0u);
+    auto const unknown = request("[" + quoted(stray->hash()) + ",2]");
+    CHECK(has(unknown, R"("error":null)"));
+    CHECK(has(unknown, R"("hex":")" + node::rpc::transaction_to_hex(*stray) + R"("})"));
+    CHECK(count(unknown, R"("scriptPubKey":)") == 1);
+    CHECK_FALSE(has(unknown, R"("fee":)"));
+
+    // A verbosity that does not exist, a patterns that is not a boolean, and a
+    // fifth argument are refused.
+    CHECK(request("[" + txid + ",3]") ==
+        node::rpc::build_error("15", -32602, "verbose must be 0, 1, 2 or a boolean"));
+    CHECK(request("[" + txid + ",-1]") ==
+        node::rpc::build_error("15", -32602, "verbose must be 0, 1, 2 or a boolean"));
+    CHECK(request("[" + txid + ",2,\"\",1]") ==
+        node::rpc::build_error("15", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + txid + ",2,\"\",\"true\"]") ==
+        node::rpc::build_error("15", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + txid + ",2,\"\",true,1]") ==
+        node::rpc::build_error("15", -32602,
+            "getrawtransaction requires [txid, verbose=false, blockhash, patterns=false]"));
 }
 
 #if defined(KTH_CURRENCY_BCH)

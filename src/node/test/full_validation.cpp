@@ -10,6 +10,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <unistd.h>
@@ -19,12 +20,16 @@
 #include <asio/use_future.hpp>
 #include <utxoz/utils.hpp>
 
+#include <fmt/format.h>
+
 #include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/database/block_undo.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
+#include <kth/infrastructure/formats/bitcoin.hpp>
 #include <kth/node.hpp>
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/dispatch.hpp>
+#include <kth/node/rpc/query.hpp>
 
 #include "sync_harness.hpp"
 
@@ -504,6 +509,24 @@ std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int
     return run_on_own_context(dispatcher.handle(context, body));
 }
 
+// The JSON-RPC reply to getrawtransaction with `params`.
+std::string get_raw_transaction_reply(chain_fixture& fixture, std::string const& params) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"getrawtransaction","params":)" + params + R"(,"id":8})";
+    return run_on_own_context(dispatcher.handle(context, body));
+}
+
+size_t count_of(std::string const& text, std::string_view what) {
+    size_t n = 0;
+    for (auto at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) {
+        ++n;
+    }
+    return n;
+}
+
 } // namespace
 
 TEST_CASE("the outputs a block spends are read from its undo record, and getblock reports the fee",
@@ -617,3 +640,99 @@ TEST_CASE("getblock fails when the undo record does not cover what the block's t
     CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
 }
 #endif
+
+TEST_CASE("getrawtransaction gives a confirmed spend at verbosity 2 the output it spends, from the undo record",
+          "[node][full_validation][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_raw_tx_prevouts", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto const& chain = fixture.chain();
+
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const& coinbase = spending.transactions()[0];
+    auto const& spend = spending.transactions()[1];
+    auto const& funding = sc.blocks.front().transactions().front().outputs()[0];
+    auto const block = '"' + encode_hash(spending.hash()) + '"';
+    auto const ask = [&](domain::chain::transaction const& tx, std::string const& rest) {
+        return get_raw_transaction_reply(fixture, "[\"" + encode_hash(tx.hash()) + "\"," + rest + "]");
+    };
+    // The spend's one input: its scriptSig ends with the hex of what it pushes.
+    auto const script_sig_end = R"("hex":")" + encode_base16(spend.inputs()[0].script().bytes()) + R"("})";
+
+    // The spend of block 1's coinbase output: worth what that output holds, in
+    // the input after its scriptSig, and the fee, 1,000 satoshis, between the
+    // outputs and the hex.
+    auto const decoded = ask(spend, "2," + block);
+    CHECK(decoded.find(script_sig_end + R"(,"value":)" + satoshi_to_bitcoin(funding.value()) +
+        R"(,"scriptPubKey":{"asm":")") != std::string::npos);
+    CHECK(decoded.find(R"(","hex":")" + encode_base16(funding.script().bytes()) +
+        R"(","type":"pubkeyhash","address":"bchreg:q)") != std::string::npos);
+    CHECK(decoded.find(R"(}],"fee":0.00001,"hex":")") != std::string::npos);
+    CHECK(count_of(decoded, R"("scriptPubKey":)") == 2);
+    CHECK(count_of(decoded, R"("byteCodePattern":)") == 0);
+
+    // With patterns: the scriptSig's, the spent script's and the output's. A
+    // spend of a key hash has no redeem script.
+    auto const patterns = ask(spend, "2," + block + ",true");
+    CHECK(count_of(patterns, R"("byteCodePattern":)") == 3);
+    CHECK(count_of(patterns, R"("redeemScript":)") == 0);
+    CHECK(patterns.find(R"(}],"fee":0.00001,"hex":")") != std::string::npos);
+
+    // Verbosity 1 gives neither the spent output nor the fee.
+    auto const one = ask(spend, "1," + block);
+    CHECK(one.find(script_sig_end + R"(,"sequence":)") != std::string::npos);
+    CHECK(one.find(R"("fee":)") == std::string::npos);
+
+    // The coinbase spends nothing: neither at verbosity 2.
+    auto const generated = ask(coinbase, "2," + block);
+    CHECK(generated.find(R"("vin":[{"coinbase":")" + encode_base16(coinbase.inputs()[0].script().bytes()) +
+        R"(","sequence":)") != std::string::npos);
+    CHECK(generated.find(R"("fee":)") == std::string::npos);
+
+    // A record that cannot be read is an error, not a missing record. The
+    // coinbase, which needs none, and verbosity 1 still answer.
+    auto const idx = chain.headers().find(spending.hash());
+    REQUIRE(idx != blockchain::header_index::null_index);
+    auto const path = chain.data_dir() / "blocks" /
+        fmt::format("rev{:05}.dat", chain.headers().get_file_number(idx));
+    auto const at = std::streamoff(chain.headers().get_undo_pos(idx));
+    {
+        std::fstream file(path, std::ios::in | std::ios::out | std::ios::binary);
+        REQUIRE(file.is_open());
+        char byte = 0;
+        file.seekg(at);
+        REQUIRE(file.read(&byte, 1).good());
+        byte = char(byte ^ 0x01);
+        file.seekp(at);
+        REQUIRE(file.write(&byte, 1).good());
+    }
+    CHECK(ask(spend, "2," + block).find(R"("code":-32603)") != std::string::npos);
+    CHECK(ask(coinbase, "2," + block) == generated);
+    CHECK(ask(spend, "1," + block) == one);
+}
+
+TEST_CASE("getrawtransaction at verbosity 2 answers without spent outputs for a block connected without an undo record",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_raw_tx_prevouts_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+
+    // Below the anchor the node wrote no record of what the block spent: the
+    // spend is decoded, and the spent output and the fee are left out.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const& spend = spending.transactions()[1];
+    auto const decoded = get_raw_transaction_reply(fixture, "[\"" + encode_hash(spend.hash()) + "\",2,\"" +
+        encode_hash(spending.hash()) + "\",true]");
+    CHECK(decoded.find(R"("error":null)") != std::string::npos);
+    CHECK(decoded.find(R"("hex":")" + node::rpc::transaction_to_hex(spend) + R"(","blockhash":)") !=
+        std::string::npos);
+    CHECK(count_of(decoded, R"("scriptPubKey":)") == 1);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+    // The patterns of its own scripts are still there.
+    CHECK(count_of(decoded, R"("byteCodePattern":)") == 2);
+}
