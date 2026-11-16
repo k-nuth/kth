@@ -14,6 +14,10 @@ on:
       - master
       - version1   # v1.0 integration branch (PR #151); stacked PRs land here first
       - v0.x       # v0.x maintenance branch
+  # The nightly run: master's tip with everything a pull request and a push to
+  # master leave out (sanitizers, the second package variant). 03:00 UTC.
+  schedule:
+    - cron: '0 3 * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -59,7 +63,7 @@ jobs:
 
   check:
     name: 🔐 Permissions
-    if: github.event_name == 'push' || 
+    if: github.event_name != 'pull_request' ||
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
        !startsWith(github.head_ref, 'hotfix/') &&
@@ -85,7 +89,7 @@ jobs:
 
   setup:
     name: 🔧 Setup
-    if: github.event_name == 'push' || 
+    if: github.event_name != 'pull_request' ||
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
        !startsWith(github.head_ref, 'hotfix/') &&
@@ -142,7 +146,7 @@ jobs:
             echo "**Upload:** ✅ Packages will be uploaded to Conan registry" >> $GITHUB_STEP_SUMMARY
           else
             echo "**Type:** 🔨 Development Build & Test" >> $GITHUB_STEP_SUMMARY
-            echo "**Sanitizers:** ${{ github.event_name == 'pull_request' && '⏭️ Run after merge' || '✅ Enabled on this push' }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Sanitizers:** ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/master')) && '✅ Enabled on this run' || '⏭️ Nightly, and on release branches and tags' }}" >> $GITHUB_STEP_SUMMARY
             echo "**Upload:** ⏭️ Packages will not be uploaded" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -150,7 +154,7 @@ jobs:
           echo "### 🎯 Build Matrix" >> $GITHUB_STEP_SUMMARY
           echo "- 🐧 Linux x86_64 GCC 16 — Build & Test" >> $GITHUB_STEP_SUMMARY
           echo "- 🍎 macOS arm64 Apple Clang 21 — Build & Test" >> $GITHUB_STEP_SUMMARY
-          echo "- 🧹 Linux x86_64 GCC 16 — ASan+UBSan on pushes" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧹 Linux x86_64 GCC 16 — ASan+UBSan nightly and on release branches and tags" >> $GITHUB_STEP_SUMMARY
           echo "- 🌐 WebAssembly Emscripten 5 — separate build workflow" >> $GITHUB_STEP_SUMMARY
 
   # build-base-docker-image:
@@ -183,7 +187,7 @@ jobs:
   #       run: docker push ${{ env.name }}:${{ steps.version.outputs.version }}
 
   generate-matrix:
-    if: github.event_name == 'push' || 
+    if: github.event_name != 'pull_request' ||
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
        !startsWith(github.head_ref, 'hotfix/') &&
@@ -302,35 +306,30 @@ jobs:
       enable-ubsan: false
       enable-tsan: false
       skip-tests: false
+      validate-alternate-package: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
     secrets:
       conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
       conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
 
-  # Sanitizers only run on push (master / release / hotfix /
-  # dev-publish / tags), NOT on `pull_request`. Rationale:
+  # Sanitizers run nightly on master's tip, on release / hotfix / dev-publish
+  # pushes and tags, and on a manual run. They do not run on `pull_request` nor
+  # on each push to master:
   #
-  # - Under sanitizers the ~500k VMB script vectors execute with
-  #   shadow memory + red zones + UBSan instrumentation, pushing this
-  #   job to 60–80 min. That was the whole wall-clock cost of every
-  #   PR — the advisory hack from PR #396 kept it from blocking
-  #   merges but didn't reduce the actual wall-clock (workflow still
-  #   waited for it to complete).
-  # - Master is a fast-forward-only branch; every merge lands here
-  #   and this job runs against the exact merge commit before any
-  #   release tag. So any UB introduced by a PR is caught here
-  #   before it can ship, just one merge later than under the
-  #   PR-time model.
-  # - PRs still get the full non-sanitizer Linux + macOS
-  #   `(Build & Test)` matrix as required checks; functional
-  #   coverage is unchanged.
+  # - Under sanitizers the ~500k VMB script vectors execute with shadow memory,
+  #   red zones and UBSan instrumentation: about an hour and a half per run.
+  # - On a pull request that was the whole wall-clock cost. On master it ran
+  #   once per merge, and on a day with several merges most of those runs were
+  #   superseded before they finished.
+  # - The nightly run covers the same commits one day later at most, and
+  #   nothing is released without it: a release branch or tag runs it on every
+  #   push.
+  # - PRs still get the full non-sanitizer Linux + macOS `(Build & Test)`
+  #   matrix as required checks.
   #
-  # Effect: PR wall-clock drops from ~80 min to ~30 min. The
-  # `advisory` input on the reusable workflow (added by PR #396)
-  # stays in place — no callers reference it now, but the plumbing
-  # is cheap and lets us re-enable an advisory sanitizer run later
-  # without another workflow surgery.
+  # The `advisory` input on the reusable workflow stays in place; no caller
+  # uses it now.
   build-with-container-sanitizers-push:
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
     needs: [setup, generate-matrix, build-deps-with-container]
     strategy:
       fail-fast: false
@@ -360,6 +359,10 @@ jobs:
     # Wait for the macOS deps build to populate the conan remote. Hosted
     # macOS runners are slow (~30 min) when forced to rebuild deps from
     # source — gating on the deps job pays for itself many times over.
+    #
+    # Not part of the nightly run: every push to master already builds and
+    # tests this platform, and hosted macOS runners are the scarce ones.
+    if: github.event_name != 'schedule'
     needs: [setup, generate-matrix, build-deps-without-container]
     strategy:
       fail-fast: false
@@ -379,6 +382,7 @@ jobs:
       enable-ubsan: false # Disabled due to secp256k1 inline assembly conflicts
       enable-tsan: false  # Disabled due to secp256k1 inline assembly conflicts
       skip-tests: false
+      validate-alternate-package: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
     secrets:
       conan_remote_username: ${{ secrets.CONAN_LOGIN_USERNAME }}
       conan_remote_password: ${{ secrets.CONAN_3_PASSWORD }}
@@ -438,7 +442,7 @@ jobs:
 
   static-checks:
     name: 🔍 Static analysis
-    if: github.event_name == 'push' || 
+    if: github.event_name != 'pull_request' ||
       (github.event_name == 'pull_request' && 
        !startsWith(github.head_ref, 'release/') && 
        !startsWith(github.head_ref, 'hotfix/') &&

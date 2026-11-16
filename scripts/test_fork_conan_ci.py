@@ -37,7 +37,8 @@ class ForkConanCI(unittest.TestCase):
             steps = [step for job in data["jobs"].values() for step in job.get("steps", [])]
             login = next(s for s in steps if "conan remote login" in s.get("run", ""))
             builds = [s for s in steps if any(command in s.get("run", "") for command in
-                      ("conan graph build-order", "conan install --requires", "conan create"))]
+                      ("conan graph build-order", "conan install --requires",
+                       "conan install conanfile.py", "conan create"))]
             self.assertTrue(builds, name)
             for event_name, head, trusted in (("pull_request", "contributor/kth", False),
                                              ("pull_request", "k-nuth/kth", True),
@@ -60,8 +61,13 @@ class ForkConanCI(unittest.TestCase):
     def run_dependency_loop(self, block, allowed):
         # Execute the actual workflow loop with a recording Conan CLI. A missing
         # gate must attempt upload and fail the external-PR control.
-        loop = block[block.index("while IFS="):]
+        # The consumer graph is installed before the upload loop. Include that
+        # real command so the control still proves an external PR builds, while
+        # preserving the version override and header-only options on that graph.
+        install = block[:block.index("python3 <<")]
+        loop = install + block[block.index("while IFS="):]
         loop = loop.replace("${{ env.CONAN_REMOTE }}", "kth")
+        loop = loop.replace("${{ needs.setup.outputs.build-version }}", "ci-fixture")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "deps_list.txt").write_text("ci-fixture/1.0|host\nemsdk/6.0.13|build\nninja/1.13.1|build\n")
@@ -75,7 +81,11 @@ class ForkConanCI(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = (root / "calls").read_text().splitlines()
-            self.assertEqual(sum(c.startswith("install ") for c in calls), 3)
+            installs = [c for c in calls if c.startswith("install ")]
+            self.assertEqual(len(installs), 1)
+            self.assertTrue(installs[0].startswith("install conanfile.py "))
+            self.assertIn("--lockfile=build/conan.lock", installs[0])
+            self.assertIn("-pr:h ./ci_utils/conan/profiles/ems6", installs[0])
             self.assertEqual(sum(c.startswith("upload ") for c in calls), int(allowed))
 
 
