@@ -310,6 +310,27 @@ code validate_block_batch(
     // Full intra-batch created-output index. Under BCH CTOR a tx may spend the
     // output of any other tx in the batch created at its own height or earlier.
     // -----------------------------------------------------------------------
+    // How many of each the batch has is known from its transactions: every
+    // output is indexed, every input is checked for a double spend, and every
+    // non-coinbase transaction is one verification task. Sized once, the
+    // tables are not rehashed while they are filled.
+    {
+        size_t transaction_count = 0;
+        size_t input_count = 0;
+        size_t output_count = 0;
+        for (auto const& block : blocks) {
+            auto const& txs = block->transactions();
+            transaction_count += txs.size();
+            for (auto const& tx : txs) {
+                input_count += tx.inputs().size();
+                output_count += tx.outputs().size();
+            }
+        }
+        created.reserve(output_count);
+        spent.reserve(input_count);
+        tasks.reserve(transaction_count);
+    }
+
     for (size_t i = 0; i < blocks.size(); ++i) {
         auto const height = start_height + i;
         auto const& txs = blocks[i]->transactions();
@@ -436,9 +457,11 @@ code validate_block_batch(
                 // and resolved after the loop. Nothing is queued inside the
                 // store, so no other component can consume these and none of
                 // theirs can arrive here.
-                auto const utxo = chain.get_utxo(op, height);
+                auto utxo = chain.get_utxo(op, height);
                 if (utxo) {
-                    db_resolved.insert({key, db_prevout{utxo->output, utxo->height, utxo->coinbase}});
+                    // The answer is this call's own: its output is moved into
+                    // the table, not copied.
+                    db_resolved.insert({key, db_prevout{std::move(utxo->output), utxo->height, utxo->coinbase}});
                     continue;
                 }
                 if (utxo.error() != database::result_code::not_resolved) {
@@ -575,6 +598,12 @@ code validate_block_batch(
                 bv_outpoint const key{op.hash(), op.index()};
 
                 output const* out = nullptr;
+                // Set when the prevout came from the store: this batch owns
+                // that copy and this input is its only reader (a second input
+                // spending the same outpoint was refused as a double spend), so
+                // it is moved into the input instead of copied. An output
+                // created by a block of the batch belongs to that block.
+                output* owned = nullptr;
                 size_t prevout_height = 0;
                 bool prevout_coinbase = false;
 
@@ -585,6 +614,7 @@ code validate_block_batch(
                     prevout_coinbase = it->second.coinbase;
                 } else if (auto const it2 = db_resolved.find(key); it2 != db_resolved.end()) {
                     out = &it2->second.out;
+                    owned = &it2->second.out;
                     prevout_height = it2->second.height;
                     prevout_coinbase = it2->second.coinbase;
                 } else {
@@ -612,7 +642,13 @@ code validate_block_batch(
                     return refuse(i, error::coinbase_maturity);
                 }
 
-                op.validation.cache = *out;
+                auto const prevout_value = out->value();
+                if (owned != nullptr) {
+                    op.validation.cache = std::move(*owned);
+                } else {
+                    op.validation.cache = *out;
+                }
+                out = nullptr;      // the stored one was moved from
                 op.validation.coinbase = prevout_coinbase;
                 op.validation.height = prevout_height;
                 op.validation.median_time_past = 0;
@@ -642,7 +678,7 @@ code validate_block_batch(
                 op.validation.spent = false;
                 op.validation.confirmed = true;
 
-                in_value += out->value();
+                in_value += prevout_value;
             }
 
 #if defined(KTH_CURRENCY_BCH)

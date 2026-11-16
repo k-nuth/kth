@@ -87,6 +87,11 @@ class KthRecipe(KnuthConanFileV2):
         # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
         # whose toolchain is found).
         "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
+        # How SHA-256 picks its implementation: runtime (CPU detection when the
+        # library is loaded), compile_time (fixed by the instructions of the
+        # target) or auto: compile_time when the package is built for the CPU
+        # of this machine (march_strategy=optimized), runtime otherwise.
+        "sha256_dispatch": ["auto", "runtime", "compile_time"],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -126,6 +131,7 @@ class KthRecipe(KnuthConanFileV2):
         "mempool_backend": "cfm",
         "signature_verification": "secp256k1",
         "secp256k1_gpu": "none",
+        "sha256_dispatch": "auto",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
@@ -182,15 +188,22 @@ class KthRecipe(KnuthConanFileV2):
     def requirements(self):
         if self.options.with_websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
+        # Pin our recipe; UTXO-Z asks for the same revision.
+        self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
+                      transitive_headers=True, transitive_libs=True)
+        if self.options.with_icu:
+            self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/2.0.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/2.1.0", transitive_headers=True, transitive_libs=True)
 
-        # GMP is required for BigInt support in the native interpreter.
-        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        # GMP is required for BigInt support in the native interpreter. Pin our
+        # recipe: for WebAssembly it builds 64-bit limbs, where the Conan Center
+        # one builds 32-bit limbs.
+        self.requires("gmp/6.3.0#eea0ccd8d7c5f60191b024d168cde1aa",
+                      transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
             self.requires("openssl/4.1.0", transitive_headers=True, transitive_libs=True)
@@ -204,9 +217,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-        if self.settings.os != "Emscripten":
-            self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
+        # Unicode conversion on every platform; also accelerates native Base64.
+        self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
@@ -331,6 +343,11 @@ class KthRecipe(KnuthConanFileV2):
         # standalone deps-build path where this conanfile isn't the
         # consumer.)
         self.options["boost/*"].without_cobalt = True
+        self.options["boost/*"].without_locale = True
+        if self.options.with_icu:
+            # Embed normalization data: no ICU_DATA environment or sidecar files.
+            self.options["icu/*"].data_packaging = "static"
+            self.options["icu/*"].with_icuio = False
 
         self.options["spdlog/*"].header_only = True
 
@@ -373,6 +390,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
         tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
+        tc.variables["KTH_SHA256_DISPATCH"] = self._sha256_dispatch()
         tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
         tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
         tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
@@ -424,6 +442,18 @@ class KthRecipe(KnuthConanFileV2):
     def package(self):
         cmake = CMake(self)
         cmake.install()
+
+    def _sha256_dispatch(self):
+        """A package built for the CPU of this machine can fix the SHA-256
+        implementation: the instructions it would detect are the ones it was
+        compiled for. A package built for a reference microarchitecture runs on
+        CPUs that have more than it assumes, so it detects them."""
+        dispatch = str(self.options.sha256_dispatch)
+        if dispatch != "auto":
+            return dispatch
+        # The microarchitecture options exist for x86-64 only.
+        optimized = str(self.options.get_safe("march_strategy")) == "optimized"
+        return "compile_time" if optimized else "runtime"
 
     def _secp256k1_turbo_gpu_manifest(self):
         """The GPU runtimes src/secp256k1-turbo was built with, and where its
@@ -554,6 +584,8 @@ class KthRecipe(KnuthConanFileV2):
                 'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
+        if self.options.with_icu:
+            infrastructure_defines.append("WITH_ICU")
         if self.options.with_png:
             infrastructure_defines.append("KTH_WITH_PNG")
         if self.options.with_qrencode:
@@ -572,9 +604,9 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
-        if self.settings.os != "Emscripten":
-            self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+        if self.options.with_icu:
+            self.cpp_info.components["infrastructure"].requires.append("icu::icu-uc")
+        self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
         if self.options.with_png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
