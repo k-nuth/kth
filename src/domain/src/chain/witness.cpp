@@ -13,7 +13,6 @@
 #include <string>
 #include <utility>
 
-#include <boost/algorithm/string.hpp>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/domain/machine/operation.hpp>
@@ -25,6 +24,7 @@
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/collection.hpp>
 #include <kth/infrastructure/utility/data.hpp>
+#include <kth/infrastructure/utility/string.hpp>
 namespace kth::domain::chain {
 
 using namespace kth::domain::machine;
@@ -129,7 +129,7 @@ std::string witness::to_string() const {
     };
 
     std::for_each(stack_.begin(), stack_.end(), serialize);
-    return boost::trim_copy(text);
+    return std::string{trim_view(text)};
 }
 
 // Iteration.

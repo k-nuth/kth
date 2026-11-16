@@ -49,6 +49,14 @@ on:
         required: false
         type: boolean
         default: true
+      validate-alternate-package:
+        description: >-
+          Also build, package and test the other `consensus` variant, which is
+          a distinct ABI and so a second full build. Off for pull requests and
+          pushes to master; on for the nightly run and for releases.
+        required: false
+        type: boolean
+        default: false
     secrets:
       conan_remote_username:
         required: true
@@ -456,6 +464,8 @@ jobs:
 
       - name: 📦 Validate installed package consumers
         if: ${{ !inputs.upload && !inputs.enable-asan && !inputs.enable-ubsan && !inputs.enable-tsan }}
+        env:
+          KTH_VALIDATE_ALTERNATE_PACKAGE: ${{ inputs.validate-alternate-package && '1' || '0' }}
         run: |
           python3 "${GITHUB_WORKSPACE}/.github/scripts/validate-package.py" --version "${{ inputs.build-version }}" --profile general-ci-cd
 

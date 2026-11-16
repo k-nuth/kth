@@ -6,6 +6,7 @@
 #define KTH_DOMAIN_MACHINE_OPERATION_IPP
 
 #include <cstdint>
+#include <utility>
 
 #include <kth/domain/machine/opcode.hpp>
 #include <kth/infrastructure/constants.hpp>
@@ -124,6 +125,13 @@ opcode operation::code() const {
 inline
 data_chunk const& operation::data() const {
     return data_;
+}
+
+inline
+data_chunk operation::take_data() && noexcept {
+    auto data = std::move(data_);
+    reset();
+    return data;
 }
 
 // Utilities.

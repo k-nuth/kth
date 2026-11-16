@@ -983,6 +983,10 @@ bool is_witness_program(data_chunk const& bytes) {
 }
 
 std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
+    return verify_with_sigchecks(tx, input_index, flags, input_script, prevout_script, value, nullptr);
+}
+
+std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value, sighash_cache* shared) {
     using machine::program;
     code ec;
 
@@ -994,6 +998,9 @@ std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t in
     }
 
     program input(input_script, tx, input_index, flags, value);
+    // The programs made from this one (the prevout's, the redeem script's)
+    // take it along.
+    input.set_sighash_cache(shared);
     if ((ec = input.evaluate().error)) {
         return {ec, 0};
     }
@@ -1066,13 +1073,17 @@ std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t in
 }
 
 std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags) {
+    return verify_with_sigchecks(tx, input, flags, nullptr);
+}
+
+std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags, sighash_cache* shared) {
     if (input >= tx.inputs().size()) {
         return {error::operation_failed, 0};
     }
 
     auto const& in = tx.inputs()[input];
     auto const& prevout = in.previous_output().validation.cache;
-    return verify_with_sigchecks(tx, input, flags, in.script(), prevout.script(), prevout.value());
+    return verify_with_sigchecks(tx, input, flags, in.script(), prevout.script(), prevout.value(), shared);
 }
 
 code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value) {
