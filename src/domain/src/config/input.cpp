@@ -30,9 +30,14 @@ expect<input> input::parse_from(std::string_view text) {
         return std::unexpected(error::illegal_value);
     }
 
-    auto const sequence = (tokens.size() == 3)
-        ? deserialize<uint32_t>(tokens[2], true)
-        : max_input_sequence;
+    uint32_t sequence = max_input_sequence;
+    if (tokens.size() == 3) {
+        auto const parsed = parse_integer<uint32_t>(tokens[2]);
+        if ( ! parsed) {
+            return std::unexpected(error::illegal_value);
+        }
+        sequence = *parsed;
+    }
 
     return input{
         chain::input{

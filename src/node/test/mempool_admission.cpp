@@ -1261,6 +1261,24 @@ TEST_CASE("a peer's getdata is served the pooled transactions it was announced, 
         CHECK(read.sent == hash_list{pooled->hash()});
         CHECK(read.not_found == hash_list{unknown});
     }
+    SECTION("listed in its answer to mempool: served from the pool") {
+        // As the peer's service records an answer to the peer's `mempool`,
+        // with the pool as it was when the last admission was the pooled one.
+        auto const entry = chain.get_mempool_transaction(pooled->hash());
+        REQUIRE(entry);
+        peer.session->tx_inventory().mempool_answered(entry->entry_id);
+        auto const read = ask();
+        CHECK(read.sent == hash_list{pooled->hash()});
+        CHECK(read.not_found == hash_list{unknown});
+    }
+    SECTION("admitted after its answer to mempool: not given away") {
+        auto const entry = chain.get_mempool_transaction(pooled->hash());
+        REQUIRE(entry);
+        peer.session->tx_inventory().mempool_answered(entry->entry_id - 1);
+        auto const read = ask();
+        CHECK(read.sent.empty());
+        CHECK(read.not_found == hash_list{pooled->hash(), unknown});
+    }
     peer.session->stop();
     ioc.restart();
     ioc.run_for(100ms);
@@ -1410,4 +1428,25 @@ TEST_CASE("the relay reads the connected tip, its blocks by height and their par
     // The genesis has none, nor does a block the chain does not hold.
     CHECK_FALSE(parent(genesis));
     CHECK_FALSE(parent(hash_digest{0x42}));
+}
+
+// What a peer's `mempool` is answered with: everything pooled, in admission
+// order, with the last admission at the time.
+TEST_CASE("the mempool's snapshot holds everything pooled, in admission order",
+          "[mempool][admission][bip35]") {
+    admission_chain built("mempool_snapshot", trunk_len);
+    auto& chain = built.chain();
+    auto const first = std::make_shared<domain::message::transaction>(built.matured_spend(1000));
+    // Its child, spending what it pays to the same key.
+    auto const second = std::make_shared<domain::message::transaction>(test::spend_p2pkh(*first, 0,
+        first->outputs()[0].value() - 1000, chain.chain_settings().enabled_flags()));
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(first); }) == error::success);
+    REQUIRE(run_on_chain(chain, [&] { return chain.submit_transaction(second); }) == error::success);
+
+    auto snapshot = ::asio::co_spawn(chain.executor(), chain.mempool_snapshot(), ::asio::use_future).get();
+    REQUIRE(snapshot.entries.size() == 2u);
+    CHECK(snapshot.entries[0].tx->hash() == first->hash());
+    CHECK(snapshot.entries[1].tx->hash() == second->hash());
+    CHECK(snapshot.entries[0].entry_id < snapshot.entries[1].entry_id);
+    CHECK(snapshot.last == snapshot.entries[1].entry_id);
 }

@@ -21,7 +21,7 @@ option(WITH_CONSOLE "Compile console application." OFF)
 option(GLOBAL_BUILD "" ON)
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_QRENCODE)
@@ -85,10 +85,6 @@ endif()
 
 if (${CURRENCY} STREQUAL "LTC")
   find_package(OpenSSL REQUIRED)
-endif()
-
-if (WITH_ICU)
-  find_package(ICU REQUIRED)
 endif()
 
 find_package(tiny-aes-c REQUIRED)
@@ -169,6 +165,7 @@ endif()
 set(kth_sources_just_legacy
         ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
+        src/chain/bloom_filter.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
@@ -186,10 +183,13 @@ set(kth_sources_just_legacy
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
+        src/chain/partial_merkle_tree.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_iterator.cpp
+        src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
+        src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
         src/chain/utxo.cpp
@@ -363,8 +363,11 @@ set(kth_headers
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
     include/kth/domain/chain/input_point.hpp
+    include/kth/domain/chain/detail/gpu_merkle.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
+    include/kth/domain/chain/bloom_filter.hpp
+    include/kth/domain/chain/partial_merkle_tree.hpp
     include/kth/domain/chain/block_ticks.hpp
     include/kth/domain/chain/faster_blocks.hpp
     include/kth/domain/chain/output.hpp
@@ -380,7 +383,9 @@ set(kth_headers
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
+    include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
+    include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
     include/kth/domain/chain/point_value.hpp
@@ -462,10 +467,6 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
-if (WITH_ICU)
-  target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${ICU_INCLUDE_DIR})
-endif()
-
 if (${CURRENCY} STREQUAL "LTC")
   target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif()
@@ -481,10 +482,6 @@ if (${CURRENCY} STREQUAL "LTC")
   target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
-endif()
-
 target_link_libraries(${PROJECT_NAME} PUBLIC infrastructure::infrastructure)
 target_link_libraries(${PROJECT_NAME} PUBLIC tiny-aes-c::tiny-aes-c)
 if(KTH_WITH_JEMALLOC)
@@ -493,7 +490,7 @@ endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
-else()
+elseif(NOT KTH_BROWSER_NODE)
   target_compile_options(${PROJECT_NAME} PUBLIC "-pthread")
   target_link_options(${PROJECT_NAME} PUBLIC "-pthread")
   set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -576,6 +573,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/imported_vectors.cpp
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
+        test/chain/bloom_filter.cpp
+        test/chain/partial_merkle_tree.cpp
         test/chain/block_ticks.cpp
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
@@ -587,6 +586,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/light_block.cpp
         test/chain/output.cpp
         test/chain/output_point.cpp
+        test/config_integer.cpp
         test/chain/point.cpp
         test/from_data_noexcept.cpp
         test/to_data_noexcept.cpp
@@ -594,6 +594,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/point_value.cpp
         test/chain/points_value.cpp
         test/chain/satoshi_words.cpp
+        test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
         test/chain/transaction.cpp
         test/main.cpp
@@ -718,7 +719,20 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_to_data PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_to_data PRIVATE nanobench::nanobench)
 
+  # Script debugger benchmarks: a debug step against a plain operation.
+  add_executable(kth_domain_bench_debugger bench/debugger/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
+
+  # Signature hashes of a transaction: the shared hashes computed per input
+  # against kept for the transaction.
+  add_executable(kth_domain_bench_sighash bench/sighash/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_sighash PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_sighash PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_sighash "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")
 endif()

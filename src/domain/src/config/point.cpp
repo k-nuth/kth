@@ -35,9 +35,14 @@ expect<point> point::parse_from(std::string_view text) {
         return std::unexpected(kth::error::illegal_value);
     }
 
+    auto const index = parse_integer<uint32_t>(tokens[1]);
+    if ( ! index) {
+        return std::unexpected(error::illegal_value);
+    }
+
     return point{chain::output_point{
         digest_res->value(),
-        deserialize<uint32_t>(tokens[1], true),
+        *index,
     }};
 }
 

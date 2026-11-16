@@ -86,11 +86,18 @@ std::optional<domain::chain::abla::state> advance_abla_state(
 /// from 600 to 60 where the branch does. Fails when the record cannot be read:
 /// a read that failed is not an absent state. `settings` are the rules the batch
 /// is judged by (the caller's, which validate_block_batch already takes).
+///
+/// `unpublished_parent` is for the one caller that has S_{start-1} and knows the
+/// store does not yet: the connect task judging a batch while the one before it
+/// is applied and not yet published. It is the record that publication will
+/// write, read through the same conversion a stored row goes through, and it
+/// has to be for height start-1. Null everywhere else, which is the stored row.
 [[nodiscard]] KB_API
 std::expected<std::vector<domain::chain::abla::state>, code> abla_states_for_batch(
     block_chain const& chain, settings const& settings, domain::config::network network,
     uint32_t start_height, std::span<uint64_t const> sizes,
-    header_index::index_t last_idx);
+    header_index::index_t last_idx,
+    database::header_abla_record const* unpublished_parent = nullptr);
 
 /// The records to persist for `states` (heights start_height ...).
 [[nodiscard]] KB_API

@@ -191,6 +191,31 @@ code run_unattributed(char const* name, chain_spec const& sp) {
     return validate_block_batch(fixture.chain(), s, domain::config::network::regtest, blocks, 1);
 }
 
+// The same batch, given each block's identifiers; `txids` may alter them.
+template <typename Alter>
+verdict run_with_txids(char const* name, chain_spec const& sp, Alter&& alter) {
+    chain_fixture fixture(name);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    settings s(domain::config::network::regtest);
+    s.retarget = false;
+    auto const blocks = build_chain(sp, s.enabled_flags());
+
+    domain::message::header::list headers;
+    for (auto const& blk : blocks) headers.push_back(blk->header());
+    REQUIRE(fixture.organizer().add_headers(headers).headers_added == blocks.size());
+
+    std::vector<hash_list> txids;
+    for (auto const& blk : blocks) txids.push_back(blk->to_hashes());
+    alter(txids);
+
+    verdict out{error::success, {}};
+    out.result = validate_block_batch(fixture.chain(), s, domain::config::network::regtest,
+        blocks, txids, 1, out.rejection);
+    return out;
+}
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -341,6 +366,89 @@ TEST_CASE("batch rejection: the sigchecks limiter names the block over its limit
     // The old forms still answer the same codes.
     CHECK(enforce_sigcheck_limits(over_block, block_limits, tx_limits) == error::block_sigchecks_limit);
     CHECK(enforce_sigcheck_limits(over_tx, block_limits, uint64_t{5}) == error::transaction_sigchecks_limit);
+}
+
+
+TEST_CASE("batch rejection: given identifiers, the verdict is the one computed ones give",
+          "[batch_rejection]") {
+    auto const keep = [](std::vector<hash_list>&) {};
+    chain_spec valid;
+    auto const v = run_with_txids("attr_txids_valid", valid, keep);
+    CHECK(v.result == error::success);
+    CHECK_FALSE(v.rejection.block.has_value());
+
+    chain_spec overclaim;
+    overclaim.overclaim_at = 4;
+    auto const o = run_with_txids("attr_txids_overclaim", overclaim, keep);
+    REQUIRE(o.result == error::coinbase_value_limit);
+    REQUIRE(o.rejection.block.has_value());
+    CHECK(*o.rejection.block == 3u);
+}
+
+TEST_CASE("batch rejection: identifiers that are not the block's are judged as given",
+          "[batch_rejection][serial]") {
+    // The merkle root is checked against the identifiers passed in: an altered
+    // one is a mismatch of the block it belongs to, not a recomputation.
+    chain_spec valid;
+    auto const v = run_with_txids("attr_txids_altered", valid, [](std::vector<hash_list>& t) {
+        t[2][0][0] ^= 0x01;
+    });
+    REQUIRE(v.result == error::merkle_mismatch);
+    REQUIRE(v.rejection.block.has_value());
+    CHECK(*v.rejection.block == 2u);
+}
+
+TEST_CASE("batch rejection: identifiers that do not match the batch are refused unattributed",
+          "[batch_rejection]") {
+    chain_spec valid;
+    auto const fewer_blocks = run_with_txids("attr_txids_short", valid, [](std::vector<hash_list>& t) {
+        t.pop_back();
+    });
+    CHECK(fewer_blocks.result == error::operation_failed);
+    CHECK_FALSE(fewer_blocks.rejection.block.has_value());
+
+    auto const extra_tx = run_with_txids("attr_txids_extra", valid, [](std::vector<hash_list>& t) {
+        t[1].push_back(null_hash);
+    });
+    CHECK(extra_tx.result == error::operation_failed);
+    CHECK_FALSE(extra_tx.rejection.block.has_value());
+}
+
+TEST_CASE("batch rejection: body defects in several blocks name the lowest, whatever the thread order",
+          "[batch_rejection]") {
+    // The bodies are checked in parallel. Two blocks with a body defect: the
+    // refusal names the lower, as a check in height order does.
+    chain_spec valid;
+    valid.len = 12;
+    auto const both = run_with_txids("attr_body_two", valid, [](std::vector<hash_list>& t) {
+        t[9][0][0] ^= 0x01;
+        t[4][0][0] ^= 0x01;
+    });
+    REQUIRE(both.result == error::merkle_mismatch);
+    REQUIRE(both.rejection.block.has_value());
+    CHECK(*both.rejection.block == 4u);
+}
+
+TEST_CASE("batch rejection: a body defect is refused before a lower block's structural one",
+          "[batch_rejection]") {
+    // Every body is checked before any block's height-dependent rules, so a
+    // body defect above a wrong coinbase height is the one reported: computing
+    // the bodies in parallel keeps that order.
+    chain_spec spec;
+    spec.len = 8;
+    spec.wrong_height_at = 2;
+    auto const v = run_with_txids("attr_body_before_structure", spec, [](std::vector<hash_list>& t) {
+        t[6][0][0] ^= 0x01;
+    });
+    REQUIRE(v.result == error::merkle_mismatch);
+    REQUIRE(v.rejection.block.has_value());
+    CHECK(*v.rejection.block == 6u);
+
+    auto const keep = [](std::vector<hash_list>&) {};
+    auto const alone = run_with_txids("attr_structure_alone", spec, keep);
+    REQUIRE(alone.result == error::coinbase_height_mismatch);
+    REQUIRE(alone.rejection.block.has_value());
+    CHECK(*alone.rejection.block == 1u);
 }
 
 #endif // KTH_CURRENCY_BCH

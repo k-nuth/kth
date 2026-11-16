@@ -362,25 +362,14 @@ std::expected<void, result_code> utxoz_database::compact_utxo() {
     return {};
 }
 
-barrier_outcome utxoz_database::sync() {
-    if ( ! is_open()) {
-        // Not `unsupported`: the platform's barrier may exist and simply have
-        // nothing to run against here. A caller told "this platform has none"
-        // would stop asking; one told the barrier failed stops instead, which
-        // is the right answer when a guarantee was wanted from a database this
-        // object has let go of.
-        spdlog::error("[utxoz_database] sync() on a closed database; no guarantee was obtained");
-        return barrier_outcome::failed;
-    }
+namespace {
 
-    auto const synced = db_->sync();
-    if (synced) {
-        return barrier_outcome::crossed;
-    }
-
+// What a refused half of the barrier means to the caller, and what the operator
+// is told. Shared by both halves: each can fail in every one of these ways.
+barrier_outcome report_barrier_failure(utxoz::error_code error) {
     // These are three different facts about the machine, and collapsing them
     // into "sync failed" would send an operator looking in the wrong place.
-    switch (synced.error()) {
+    switch (error) {
         case utxoz::error_code::sync_unsupported:
             spdlog::warn("[utxoz_database] This platform exposes no durability "
                 "barrier ({}); nothing was promised",
@@ -410,9 +399,47 @@ barrier_outcome utxoz_database::sync() {
             return barrier_outcome::failed;
         default:
             spdlog::error("[utxoz_database] sync() failed: {}",
-                utxoz_error_name(synced.error()));
+                utxoz_error_name(error));
             return barrier_outcome::failed;
     }
+}
+
+} // namespace
+
+barrier_outcome utxoz_database::sync() {
+    // The two halves taken back to back. Nothing runs between them here, so the
+    // guarantee is the one a single barrier gives.
+    auto pending = begin_sync();
+    if ( ! pending) {
+        return pending.error();
+    }
+    return std::move(*pending).finish();
+}
+
+std::expected<pending_barrier, barrier_outcome> utxoz_database::begin_sync() {
+    if ( ! is_open()) {
+        // Not `unsupported`: the platform's barrier may exist and simply have
+        // nothing to run against here. A caller told "this platform has none"
+        // would stop asking; one told the barrier failed stops instead, which
+        // is the right answer when a guarantee was wanted from a database this
+        // object has let go of.
+        spdlog::error("[utxoz_database] sync() on a closed database; no guarantee was obtained");
+        return std::unexpected(barrier_outcome::failed);
+    }
+
+    auto pending = db_->begin_sync();
+    if ( ! pending) {
+        return std::unexpected(report_barrier_failure(pending.error()));
+    }
+    return pending_barrier{std::move(*pending)};
+}
+
+barrier_outcome pending_barrier::finish() && {
+    auto const finished = std::move(pending_).finish();
+    if (finished) {
+        return barrier_outcome::crossed;
+    }
+    return report_barrier_failure(finished.error());
 }
 
 result_code utxoz_database::clear() {

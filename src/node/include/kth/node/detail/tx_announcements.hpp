@@ -73,7 +73,17 @@ struct tx_announcement_sources {
     std::function<::asio::awaitable<admitted_batch>(uint64_t after, size_t limit)> admitted_after;
     /// What one announcement carries at most (max_announcements).
     std::function<size_t()> limit;
+    /// Everything pooled, with the last admission's id: a peer's answer to
+    /// `mempool` (BIP35). When empty, no request is answered.
+    std::function<::asio::awaitable<admitted_batch>()> pool = {};
 };
+
+/// A peer's `mempool` answered as BCHN does (SendMessages, BIP35): every
+/// pooled transaction not below the peer's fee filter goes to `out` and is
+/// recorded as known to it, without the bound of an announcement. What was
+/// pooled may be served to it from then on.
+void take_mempool(admitted_batch const& pool, network::tx_inventory& inventory,
+                  std::vector<hash_digest>& out);
 
 /// One peer's announcements, owned by that peer's service.
 class tx_announcement_schedule {
@@ -108,6 +118,12 @@ public:
     /// An announcement was made. While more is owed (past what one carries),
     /// the next is due at `now + delay`; otherwise none is.
     void on_announced(time_point now, clock::duration delay);
+
+    /// The peer's `mempool` was answered with the pool as it was at admission
+    /// `last`: nothing admitted up to it is owed any more, whether it was listed
+    /// or filtered out (BCHN erases those from setInventoryTxToSend). What was
+    /// admitted after it still is, and stays due as it was.
+    void skip_to(uint64_t last);
 
     [[nodiscard]]
     bool inbound() const { return inbound_; }

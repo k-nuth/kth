@@ -73,28 +73,24 @@ expect<output> output::from_data(byte_reader& reader, bool wire) {
     if ( ! script_size_exp) {
         return std::unexpected(script_size_exp.error());
     }
-    auto script_size = *script_size_exp;
-
-    // Minimum token prefix: 0xef (1) + category_id (32) + bitfield (1) = 34 bytes.
-    static constexpr size_t min_token_prefix_size = 1 + 32 + 1;
-    token_data_opt token_data = std::nullopt;
-    auto const has_token_data = script_size >= min_token_prefix_size && [&] {
-        auto const token_prefix_byte = reader.peek_byte();
-        return token_prefix_byte && *token_prefix_byte == chain::encoding::PREFIX_BYTE;
-    }();
-    if (has_token_data) {
-        reader.unsafe_skip_byte(); // skip prefix byte (safe: peek_byte succeeded above)
-        auto token = token::encoding::from_data(reader);
-        if ( ! token) {
-            return std::unexpected(token.error());
-        }
-        token_data.emplace(std::move(*token));
-
-        script_size -= token::encoding::serialized_size(token_data);
-        script_size -= 1; // prefix byte
+    auto encoded = reader.read_bytes(*script_size_exp);
+    if ( ! encoded) {
+        return std::unexpected(encoded.error());
     }
-
-    auto script = script::from_data_with_size(reader, script_size);
+    byte_reader script_reader(*encoded);
+    token_data_opt token_data = std::nullopt;
+    if ( ! encoded->empty() && encoded->front() == chain::encoding::PREFIX_BYTE) {
+        // Token decoding is bounded by this output, not the rest of the tx.
+        // Malformed prefixes remain raw locking bytecode: they were permitted
+        // outputs before Descartes and are rejected contextually after it.
+        auto token_reader = script_reader;
+        token_reader.unsafe_skip_byte();
+        if (auto token = token::encoding::from_data(token_reader)) {
+            token_data.emplace(std::move(*token));
+            script_reader = token_reader;
+        }
+    }
+    auto script = script::from_data_with_size(script_reader, script_reader.remaining_size());
     if ( ! script) {
         return std::unexpected(script.error());
     }

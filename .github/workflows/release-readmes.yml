@@ -1,0 +1,44 @@
+name: Release README controls
+
+on:
+  pull_request:
+    paths:
+      - scripts/update_readme_versions.sh
+      - scripts/test_update_readme_versions.py
+      - scripts/release.sh
+      - scripts/post-release.sh
+      - scripts/update_release_notes_index.py
+      - scripts/test_release_notes_index.py
+      - docs/release-notes/release-notes.md
+      - src/*/README.md
+      - .github/workflows/release-readmes.yml
+  push:
+    branches: [master]
+    paths:
+      - scripts/update_readme_versions.sh
+      - scripts/test_update_readme_versions.py
+      - scripts/release.sh
+      - scripts/post-release.sh
+      - scripts/update_release_notes_index.py
+      - scripts/test_release_notes_index.py
+      - docs/release-notes/release-notes.md
+      - src/*/README.md
+      - .github/workflows/release-readmes.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readmes:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - run: bash -n scripts/update_readme_versions.sh scripts/post-release.sh
+      - run: python3 -m unittest discover -s scripts -p test_update_readme_versions.py -v
+      - run: python3 -m unittest discover -s scripts -p test_release_notes_index.py -v

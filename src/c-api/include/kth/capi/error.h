@@ -311,13 +311,13 @@ typedef enum kth_error_code {
     kth_ec_address_invalid_hash_length,
     kth_ec_address_unsupported_hash_size,
     kth_ec_address_invalid_script,
-
     // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
     // Appended last so no existing code is renumbered.
     kth_ec_coinbase_shape,
-    // C-API boundary errors retain their reserved ABI values.
-    kth_ec_out_of_memory = 10000,
-    kth_ec_unhandled_exception = 10001,
+
+    // C-API boundary errors
+    kth_ec_out_of_memory = 10000,  // Allocation failed inside the C-API
+    kth_ec_unhandled_exception = 10001,  // A C++ exception reached the C boundary
 } kth_error_code_t;
 
 #ifdef __cplusplus

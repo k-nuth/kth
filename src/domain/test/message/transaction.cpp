@@ -4,7 +4,6 @@
 
 #include <test_helpers.hpp>
 
-#include <kth/infrastructure/utility/ostream_writer.hpp>
 
 using namespace kth;
 using namespace kd;

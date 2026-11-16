@@ -5,6 +5,10 @@
 #ifndef KTH_NETWORK_PEER_SESSION_HPP
 #define KTH_NETWORK_PEER_SESSION_HPP
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
+#if defined(KTH_BROWSER_NODE)
+#include <kth/network/browser_stream.hpp>
+#endif
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -12,6 +16,10 @@
 #include <expected>
 #include <memory>
 #include <string>
+#include <variant>
+#if defined(KTH_WITH_WEBSOCKET)
+#include <kth/network/websocket_transport.hpp>
+#endif
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -64,7 +72,11 @@ public:
     using ptr = std::shared_ptr<peer_session>;
     using executor_type = ::asio::any_io_executor;
     using strand_type = ::asio::strand<executor_type>;
+#if defined(KTH_BROWSER_NODE)
+    using socket_type = browser_stream;
+#else
     using socket_type = ::asio::ip::tcp::socket;
+#endif
 
     // Outbound messages, serialized and ready to write. Two queues with one
     // writer: control traffic (pings, pongs, requests, announcements) and
@@ -157,6 +169,15 @@ public:
     /// Send raw bytes to the peer as control traffic.
     ::asio::awaitable<code> send_raw(data_chunk data);
 
+    /// Bounded admission for task-owned responders. False requires explicit
+    /// session closure or protocol debt handling; never silently drop a reply.
+    bool try_send_raw(data_chunk data) {
+        return !stopped() && outbound_.try_send(std::move(data));
+    }
+
+    bool is_websocket() const;
+
+
     // -------------------------------------------------------------------------
     // Served requests
     // -------------------------------------------------------------------------
@@ -221,6 +242,16 @@ public:
     [[nodiscard]]
     admission_channel& admissions();
 
+    /// The peer asked for the mempool (BIP35) and may be answered. Holds
+    /// one: requests coalesce until the service answers. Closed by stop().
+    using mempool_request_channel = select_channel<std::monostate>;
+
+    /// From the read loop, never waiting.
+    void request_mempool();
+
+    [[nodiscard]]
+    mempool_request_channel& mempool_requests();
+
     /// What the peer knows and filters (tx_inventory). Only on this session's
     /// strand: its read loop and its service.
     [[nodiscard]]
@@ -244,6 +275,8 @@ public:
     // -------------------------------------------------------------------------
     // These methods read/write directly to the socket without using channels.
     // Use ONLY before calling run() - after run() starts, use send() and messages().
+    // TCP only: WebSocket has an owned codec pump under run(); use the normal
+    // channel-based handshake concurrently with run() for that transport.
 
     /// Read a message directly from the socket (bypasses inbound channel)
     /// Use this for handshake before run() is started. The reads are
@@ -256,15 +289,13 @@ public:
     /// Use this for handshake before run() is started
     template <typename Message>
     ::asio::awaitable<code> send_direct(Message const& message) {
+        if (is_websocket()) co_return error::not_implemented;
         if (stopped()) {
             co_return error::channel_stopped;
         }
 
         auto data = domain::message::serialize(version_.load(), message, protocol_magic_);
-        auto [ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto [ec, bytes_written] = co_await write_exact(::asio::buffer(data));
 
         if (ec) {
             co_return error::boost_to_error_code(ec);
@@ -485,9 +516,17 @@ private:
     // Data members
     // -------------------------------------------------------------------------
 
+    ::asio::awaitable<std::pair<std::error_code, size_t>> write_exact(::asio::const_buffer buffer);
+#if defined(KTH_WITH_WEBSOCKET)
+    friend awaitable_expected<peer_session::ptr> async_accept_websocket(socket_type, settings const&, websocket_server_options);
+#endif
+
     // Socket and strand (all I/O serialized through strand)
     socket_type socket_;
     strand_type strand_;
+#if defined(KTH_WITH_WEBSOCKET)
+    std::unique_ptr<websocket_transport> websocket_;
+#endif
 
     /// Queue `data` on `channel`, waiting while it is full.
     ::asio::awaitable<code> enqueue(outbound_channel& channel, data_chunk data);
@@ -500,6 +539,7 @@ private:
     tip_channel tip_announcements_;
     fee_filter_channel fee_filter_changes_;
     admission_channel admissions_;
+    mempool_request_channel mempool_requests_;
     network::tx_inventory tx_inventory_;
 
     // Response channels for request/response patterns
@@ -508,8 +548,8 @@ private:
     response_channel addr_responses_;
 
     // Timers
-    ::asio::steady_timer inactivity_timer_;
-    ::asio::steady_timer expiration_timer_;
+    ::kth::steady_timer inactivity_timer_;
+    ::kth::steady_timer expiration_timer_;
     std::atomic<bool> activity_signaled_{false};
 
     // State
@@ -572,6 +612,11 @@ private:
 // =============================================================================
 // Connection helpers - replace connector/acceptor classes
 // =============================================================================
+
+#if defined(KTH_WITH_WEBSOCKET)
+[[nodiscard]] awaitable_expected<peer_session::ptr> async_accept_websocket(
+    peer_session::socket_type socket, settings const& settings, websocket_server_options options);
+#endif
 
 /// Connect to a peer by hostname and port
 /// Resolves DNS and connects with timeout

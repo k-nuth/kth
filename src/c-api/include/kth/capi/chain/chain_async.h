@@ -14,6 +14,11 @@
 extern "C" {
 #endif
 
+// Async boundary contract: chain and ctx must remain valid for the operation.
+// Handlers must be non-null and must not throw. Startup failure may complete
+// inline. Allocation and other C++ failures report out_of_memory and
+// unhandled_exception with zero/null outputs, respectively.
+
 KTH_EXPORT
 void kth_chain_async_last_height(kth_chain_t chain, void* ctx, kth_last_height_fetch_handler_t handler);
 

@@ -33,10 +33,10 @@ inline constexpr kth::domain::config::network network_to_cpp(kth_network_t x) no
             return kth::domain::config::network::testnet4;
         case kth_network_scalenet:
             return kth::domain::config::network::scalenet;
-        case kth_network_tempnet:
-            return kth::domain::config::network::tempnet;
         case kth_network_chipnet:
             return kth::domain::config::network::chipnet;
+        case kth_network_tempnet:
+            return kth::domain::config::network::tempnet;
 #endif
         default:
         case kth_network_mainnet:
@@ -55,10 +55,10 @@ inline constexpr kth_network_t network_to_c(kth::domain::config::network x) noex
             return kth_network_testnet4;
         case kth::domain::config::network::scalenet:
             return kth_network_scalenet;
-        case kth::domain::config::network::tempnet:
-            return kth_network_tempnet;
         case kth::domain::config::network::chipnet:
             return kth_network_chipnet;
+        case kth::domain::config::network::tempnet:
+            return kth_network_tempnet;
 #endif
         default:
         case kth::domain::config::network::mainnet:
@@ -88,6 +88,9 @@ static_assert(network_to_cpp(kth_network_scalenet) == kth::domain::config::netwo
 static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::config::network>>(kth::domain::config::network::chipnet), +kth_network_chipnet));
 static_assert(network_to_c(kth::domain::config::network::chipnet) == kth_network_chipnet);
 static_assert(network_to_cpp(kth_network_chipnet) == kth::domain::config::network::chipnet);
+static_assert(std::cmp_equal(+static_cast<std::underlying_type_t<kth::domain::config::network>>(kth::domain::config::network::tempnet), +kth_network_tempnet));
+static_assert(network_to_c(kth::domain::config::network::tempnet) == kth_network_tempnet);
+static_assert(network_to_cpp(kth_network_tempnet) == kth::domain::config::network::tempnet);
 #endif
 
 // Segregated witness is not available when building for BCH.

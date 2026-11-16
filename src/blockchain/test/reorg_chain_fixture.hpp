@@ -40,6 +40,15 @@ struct chain_fixture {
         chain_settings_.notify_limit_hours = notify_limit_hours;
     }
 
+    // The same chain on caller-supplied settings, for a test whose subject is
+    // how the node behaves under a given configuration (for instance one that
+    // came out of the option parser). Regtest still decides the network.
+    chain_fixture(char const* tag, blockchain::settings settings)
+        : chain_fixture(tag)
+    {
+        chain_settings_ = std::move(settings);
+    }
+
     explicit chain_fixture(char const* tag,
                            domain::config::network network = domain::config::network::regtest)
         : dir_(make_dir(tag))
@@ -115,6 +124,15 @@ struct chain_fixture {
     [[nodiscard]] bool restart() {
         organizer_.reset();
         chain_.reset();
+        return start();
+    }
+
+    // A restart on different settings: the same data directory opened under another
+    // configuration, which is what changing a mode between runs does.
+    [[nodiscard]] bool restart_with(blockchain::settings settings) {
+        organizer_.reset();
+        chain_.reset();
+        chain_settings_ = std::move(settings);
         return start();
     }
 

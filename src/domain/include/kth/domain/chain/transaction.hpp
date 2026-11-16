@@ -242,6 +242,19 @@ struct KD_API transaction {
     [[nodiscard]]
     size_t min_tx_size(script_flags_t flags) const;
 
+#if defined(KTH_CURRENCY_BCH)
+    /// CashTokens contextual rules, shared by mempool and block validation.
+    /// Every non-null prevout cache must be populated before calling this.
+    /// Coinbase transactions need no prevouts and cannot create tokens.
+    [[nodiscard]]
+    code validate_tokens(script_flags_t flags) const;
+
+    /// Reject parsed token prevouts created before their network's Descartes
+    /// activation. Requires populated prevouts, like validate_tokens().
+    [[nodiscard]]
+    code validate_token_birth(script_flags_t flags, config::network network) const;
+#endif
+
     /// Contextual validation — requires flags, height, etc. Prevout cache must be populated.
     /// Call after check() passes and prevout cache is filled.
     [[nodiscard]]
@@ -293,10 +306,6 @@ private:
     [[nodiscard]]
     bool all_inputs_final() const;
 
-#if defined(KTH_CURRENCY_BCH)
-    [[nodiscard]]
-    code validate_tokens(script_flags_t flags) const;
-#endif
 
     uint32_t version_{0};
     uint32_t locktime_{0};
@@ -308,6 +317,14 @@ private:
 // The count is meaningful on success; errors return zero.
 KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value);
 KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags);
+
+/// The same, for a caller that verifies several inputs of `tx`: `shared` keeps
+/// the hashes of the whole transaction that every signature hash uses, so they
+/// are computed once for the transaction instead of once per signature. Null
+/// is the functions above.
+/// \pre `shared`, when not null, was created for `tx`.
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t value, sighash_cache* shared);
+KD_API std::pair<code, size_t> verify_with_sigchecks(transaction const& tx, uint32_t input, script_flags_t flags, sighash_cache* shared);
 
 code verify(transaction const& tx, uint32_t input_index, script_flags_t flags, script const& input_script, script const& prevout_script, uint64_t /*value*/);
 code verify(transaction const& tx, uint32_t input, script_flags_t flags);

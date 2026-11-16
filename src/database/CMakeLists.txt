@@ -120,6 +120,7 @@ set(kth_sources_just_kth
     ${kth_sources_just_kth}
     src/data_base.cpp
     src/settings.cpp
+    src/in_place_directory.cpp
     src/store.cpp
 
     src/databases/header_abla_entry.cpp
@@ -171,6 +172,7 @@ set(kth_headers
   include/kth/database/databases/utxoz_database.hpp
   include/kth/database/databases/header_database.ipp
   include/kth/database/settings.hpp
+  include/kth/database/in_place_directory.hpp
   # include/kth/database/unspent_outputs.hpp
   # include/kth/database/unspent_transaction.hpp
   include/kth/database.hpp

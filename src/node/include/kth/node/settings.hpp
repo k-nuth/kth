@@ -15,9 +15,9 @@
 
 namespace kth::node {
 
-/// JSON-RPC server settings. Always present so config parsing is uniform; the
-/// server itself is only compiled when KTH_WITH_RPC is defined and only started
-/// when `enabled` is true.
+/// RPC server settings, shared by whichever backend the build selected (JSON-RPC
+/// when KTH_WITH_RPC is defined, gRPC when KTH_WITH_GRPC is). Always present so
+/// config parsing is uniform; the server is only started when `enabled` is true.
 struct KND_API rpc_settings {
     rpc_settings();
 

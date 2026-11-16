@@ -2,12 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/peer_session.hpp>
 
 #include <asio/cancel_after.hpp>
 #include <asio/cancel_at.hpp>
 #include <asio/experimental/channel_select.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <string_view>
@@ -65,13 +67,27 @@ std::string summarize_user_agent(std::string const& user_agent) {
 }
 
 // Helper to extract authority from socket
-infrastructure::config::authority extract_authority(::asio::ip::tcp::socket const& socket) {
+infrastructure::config::authority extract_authority(peer_session::socket_type const& socket) {
+#if defined(KTH_BROWSER_NODE)
+    return infrastructure::config::authority::any();
+#else
     boost_code ec;
     auto const endpoint = socket.remote_endpoint(ec);
     if (ec) {
         return infrastructure::config::authority::any();
     }
     return infrastructure::config::authority(endpoint);
+#endif
+}
+
+size_t maximum_payload(settings const& settings) {
+    auto const protocol = heading::maximum_payload_size(settings.protocol_maximum,
+        settings.identifier, settings.inbound_port == 48333);
+#if defined(KTH_BROWSER_NODE)
+    return std::min(protocol, settings.browser_maximum_payload);
+#else
+    return protocol;
+#endif
 }
 
 } // anonymous namespace
@@ -85,21 +101,23 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , strand_(socket_.get_executor())
     , outbound_(outbound_capacity)
     , data_outbound_(data_outbound_capacity)
+#if defined(KTH_BROWSER_NODE)
+    , inbound_(8)
+#else
     , inbound_(100)            // Buffer up to 100 inbound messages
+#endif
     , served_requests_(served_requests_capacity)
     , tip_announcements_(1)
     , fee_filter_changes_(1)
     , admissions_(1)
+    , mempool_requests_(1)
     , block_responses_(20)  // Response channels for request/response patterns
     , addr_responses_(10)
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(extract_authority(socket_))
     , protocol_magic_(settings.identifier)
-    , maximum_payload_(heading::maximum_payload_size(
-          settings.protocol_maximum,
-          settings.identifier,
-          settings.inbound_port == 48333))
+    , maximum_payload_(maximum_payload(settings))
     , validate_checksum_(settings.validate_checksum)
     , inactivity_timeout_(std::chrono::minutes(settings.channel_inactivity_minutes))
     , expiration_timeout_(std::chrono::minutes(settings.channel_expiration_minutes))
@@ -128,6 +146,7 @@ peer_session::~peer_session() {
     tip_announcements_.close();
     fee_filter_changes_.close();
     admissions_.close();
+    mempool_requests_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -145,7 +164,6 @@ peer_session::~peer_session() {
         co_return error::channel_stopped;
     }
 
-    stopped_ = false;
     spdlog::debug("[peer_session] run() - about to start loops for [{}]", authority());
 
     // 2026-01-28: Fix for ASAN heap-use-after-free in cancellation_signal::emit()
@@ -165,15 +183,21 @@ peer_session::~peer_session() {
     // all operations (including cancellation) run on the strand.
 
     try {
-        // Run all loops concurrently on the strand - when any completes/fails, all stop
-        // Using co_spawn with use_awaitable ensures all operations run on the strand,
-        // which serializes the || operator's cancellation mechanism.
-        co_await (
-            ::asio::co_spawn(strand_, read_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, write_loop(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, inactivity_timer(), ::asio::use_awaitable) ||
-            ::asio::co_spawn(strand_, expiration_timer(), ::asio::use_awaitable)
-        );
+        // Completion and cancellation machinery belongs to the same strand as
+        // the I/O. Binding only the children leaves the outer selection on the
+        // caller's potentially multithreaded executor.
+        auto loops = [this]() -> ::asio::awaitable<void> {
+            if (stopped()) co_return;
+#if defined(KTH_WITH_WEBSOCKET)
+            if (websocket_) {
+                co_await (websocket_->run() || read_loop() || write_loop() ||
+                    inactivity_timer() || expiration_timer());
+                co_return;
+            }
+#endif
+            co_await (read_loop() || write_loop() || inactivity_timer() || expiration_timer());
+        };
+        co_await ::asio::co_spawn(strand_, loops(), ::asio::use_awaitable);
     } catch (std::exception const& e) {
         spdlog::debug("[peer_session] Exception in run loop [{}]: {}", authority(), e.what());
     }
@@ -213,7 +237,6 @@ void peer_session::stop(code const& ec) {
     spdlog::debug("[peer_session] Stopping session [{}]: {}", auth_str, ec_msg);
     spdlog::debug("[peer_session] stop() checkpoint 5: canceling timers");
 
-    // Cancel timers first - this is safe from any thread
     // The timers are waited on by run()'s loops, on the strand, and a timer is
     // not safe to cancel from another thread while it is being waited on —
     // stop() is called from any thread. So their cancellation goes to the
@@ -225,21 +248,26 @@ void peer_session::stop(code const& ec) {
         ::asio::post(strand_, [self] {
             self->inactivity_timer_.cancel();
             self->expiration_timer_.cancel();
+#if defined(KTH_WITH_WEBSOCKET)
+            if (self->websocket_) self->websocket_->stop();
+#endif
+            // Socket cancellation is also an owner operation. The associated
+            // executor does not make direct calls from another thread safe.
+            boost_code ignored;
+            self->socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignored);
+            self->socket_.cancel(ignored);
         });
     }
     spdlog::debug("[peer_session] stop() checkpoint 6-7: timer cancellation posted to the strand");
 
-    // Cancel pending socket operations - this causes read_loop to exit with an error.
-    // The || operator will then cancel write_loop and other awaitables.
-    // IMPORTANT: Use cancel() instead of close()! close() is not thread-safe when
-    // there are pending async operations - it can corrupt internal epoll_reactor state.
-    // The socket will be properly closed when peer_session is destroyed.
-    spdlog::debug("[peer_session] stop() checkpoint 8: canceling socket");
-    boost_code ignore;
-    socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignore);
-    spdlog::debug("[peer_session] stop() checkpoint 9: socket shutdown");
-    socket_.cancel(ignore);
-    spdlog::debug("[peer_session] stop() checkpoint 10: socket canceled");
+    // A stack-owned direct-I/O peer or the destructor has no shared owner to
+    // post. Those callers must already have joined their operations; there is
+    // no borrowed pointer queued past destruction.
+    if (weak_from_this().expired()) {
+        boost_code ignored;
+        socket_.shutdown(::asio::ip::tcp::socket::shutdown_both, ignored);
+        socket_.cancel(ignored);
+    }
 
     // 2026-01-29: Close ALL channels to unblock any coroutines waiting on them.
     //
@@ -270,6 +298,7 @@ void peer_session::stop(code const& ec) {
     tip_announcements_.close();
     fee_filter_changes_.close();
     admissions_.close();
+    mempool_requests_.close();
     block_responses_.close();
     addr_responses_.close();
 
@@ -370,6 +399,14 @@ void peer_session::announce_admissions(tx_admissions const& admissions) {
 
 peer_session::admission_channel& peer_session::admissions() {
     return admissions_;
+}
+
+void peer_session::request_mempool() {
+    (void)mempool_requests_.try_send(std::monostate{});
+}
+
+peer_session::mempool_request_channel& peer_session::mempool_requests() {
+    return mempool_requests_;
 }
 
 peer_session::inbound_channel& peer_session::messages() {
@@ -668,10 +705,7 @@ void peer_session::set_prefers_headers(bool value) {
             ? std::move(*selected.value<0>()) : std::move(*selected.value<1>());
 
         // Write to socket
-        auto [write_ec, bytes_written] = co_await ::asio::async_write(
-            socket_,
-            ::asio::buffer(data),
-            ::asio::as_tuple(::asio::use_awaitable));
+        auto [write_ec, bytes_written] = co_await write_exact(::asio::buffer(data));
 
         // Track bytes sent (before clearing data)
         bytes_sent_.fetch_add(bytes_written, std::memory_order_relaxed);
@@ -739,6 +773,29 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
     // operation with its own cancellation, not a race against a timer).
     bool const timed = deadline != std::chrono::steady_clock::time_point::max();
     auto read = [&](auto buffer) -> ::asio::awaitable<std::error_code> {
+#if defined(KTH_WITH_WEBSOCKET)
+        // Its messages arrive decoded by the transport run() pumps; only the
+        // run loop reads them, untimed (direct, timed reads are refused).
+        if (websocket_) co_return (co_await websocket_->read_exact(buffer)).first;
+#endif
+#if defined(KTH_BROWSER_NODE)
+        // asio::cancel_at arms an asio timer, which nothing in the browser
+        // runtime wakes: the read races the runtime's own timer instead.
+        if (timed) {
+            using namespace ::asio::experimental::awaitable_operators;
+            ::kth::steady_timer timer(co_await ::asio::this_coro::executor);
+            timer.expires_at(deadline);
+            auto raced = co_await (
+                ::asio::async_read(socket_, buffer, ::asio::as_tuple(::asio::use_awaitable)) ||
+                timer.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+            if (raced.index() == 1) {
+                co_return make_error_code(error::channel_timeout);
+            }
+            auto [ec, n] = std::get<0>(raced);
+            (void)n;
+            co_return ec;
+        }
+#else
         if (timed) {
             auto [ec, n] = co_await ::asio::async_read(socket_, buffer,
                 ::asio::cancel_at(deadline, ::asio::as_tuple(::asio::use_awaitable)));
@@ -748,6 +805,7 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
             }
             co_return ec;
         }
+#endif
         auto [ec, n] = co_await ::asio::async_read(socket_, buffer, ::asio::as_tuple(::asio::use_awaitable));
         (void)n;
         co_return ec;
@@ -783,6 +841,13 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
         co_return std::unexpected(error::bad_stream);
     }
 
+    // Unknown/unnegotiated discovery frames never allocate a generic BCH-size payload.
+    if ((head.command() == "sendwsaddr" && head.payload_size() != 1) ||
+        (head.command() == "getwsaddr" && head.payload_size() != 10) ||
+        (head.command() == "wsaddr" && head.payload_size() > 16384)) {
+        co_return std::unexpected(error::bad_stream);
+    }
+
     // Read payload
     data_chunk payload(head.payload_size());
 
@@ -815,7 +880,41 @@ awaitable_expected<raw_message> peer_session::read_message(std::chrono::steady_c
 // Direct I/O (for handshake before run() starts)
 // =============================================================================
 
+bool peer_session::is_websocket() const {
+#if defined(KTH_WITH_WEBSOCKET)
+    return bool(websocket_);
+#else
+    return false;
+#endif
+}
+
+::asio::awaitable<std::pair<std::error_code, size_t>> peer_session::write_exact(::asio::const_buffer buffer) {
+#if defined(KTH_WITH_WEBSOCKET)
+    if (websocket_) co_return co_await websocket_->write_exact(buffer);
+#endif
+    auto [ec, count] = co_await ::asio::async_write(socket_, buffer, ::asio::as_tuple(::asio::use_awaitable));
+    co_return std::pair{ec, count};
+}
+
+#if defined(KTH_WITH_WEBSOCKET)
+awaitable_expected<peer_session::ptr> async_accept_websocket(
+    peer_session::socket_type socket, settings const& settings, websocket_server_options options) {
+    auto peer = std::make_shared<peer_session>(std::move(socket), settings, true);
+    peer->websocket_ = std::make_unique<websocket_transport>(peer->socket_);
+    auto ec = co_await ::asio::co_spawn(peer->strand_, peer->websocket_->accept(options), ::asio::use_awaitable);
+    if (ec) co_return std::unexpected(error::boost_to_error_code(ec));
+    // Scores and bans apply to the client, not to the proxy it came through.
+    if (auto client = peer->websocket_->forwarded_client()) {
+        peer->authority_ = infrastructure::config::authority(*client, peer->authority_.port());
+    }
+    co_return peer;
+}
+#endif
+
 awaitable_expected<raw_message> peer_session::read_message_direct(std::chrono::steady_clock::time_point deadline) {
+    // WebSocket peers have their codec pumped by run(): they handshake over the
+    // channels, concurrently with it, never with direct reads.
+    if (is_websocket()) co_return std::unexpected(error::not_implemented);
     // The timed reads (asio::cancel_at) must complete on a strand, and the
     // caller may be running on the pool, so run them on the session's strand.
     co_return co_await ::asio::co_spawn(strand_,
@@ -844,6 +943,18 @@ awaitable_expected<peer_session::ptr> async_connect(
 {
     using namespace ::asio::experimental::awaitable_operators;
 
+#if defined(KTH_BROWSER_NODE)
+    if (settings.browser_bridge_url.empty()) co_return std::unexpected(error::operation_failed);
+    peer_session::socket_type socket(executor);
+    kth::steady_timer timer(executor, timeout);
+    auto result = co_await (
+        socket.async_connect(settings.browser_bridge_url, ::asio::as_tuple(::asio::use_awaitable)) ||
+        timer.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+    if (result.index() == 1) co_return std::unexpected(error::channel_timeout);
+    auto [ec] = std::get<0>(result);
+    if (ec) co_return std::unexpected(error::boost_to_error_code(ec));
+    co_return std::make_shared<peer_session>(std::move(socket), settings, false);
+#else
     // Try to parse hostname as IP address first (skip DNS for IPs)
     std::error_code ip_parse_ec;
     auto ip_address = ::asio::ip::make_address(hostname, ip_parse_ec);
@@ -860,7 +971,7 @@ awaitable_expected<peer_session::ptr> async_connect(
         auto resolver = std::make_shared<::asio::ip::tcp::resolver>(executor);
 
         // DNS resolution timeout (5 seconds should be plenty for DNS)
-        auto dns_timer = std::make_shared<::asio::steady_timer>(executor);
+        auto dns_timer = std::make_shared<::kth::steady_timer>(executor);
         dns_timer->expires_after(std::chrono::seconds(5));
 
         auto start_time = std::chrono::steady_clock::now();
@@ -970,6 +1081,7 @@ awaitable_expected<peer_session::ptr> async_connect(
     }
 
     co_return session;
+#endif
 }
 
 awaitable_expected<peer_session::ptr> async_connect(
@@ -990,6 +1102,9 @@ awaitable_expected<peer_session::ptr> async_accept(
     ::asio::ip::tcp::acceptor& acceptor,
     settings const& settings)
 {
+#if defined(KTH_BROWSER_NODE)
+    co_return std::unexpected(error::operation_failed);
+#else
     auto [ec, socket] = co_await acceptor.async_accept(
         ::asio::as_tuple(::asio::use_awaitable));
 
@@ -1021,12 +1136,16 @@ awaitable_expected<peer_session::ptr> async_accept(
     }
 
     co_return session;
+#endif
 }
 
 awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
     ::asio::any_io_executor executor,
     uint16_t port)
 {
+#if defined(KTH_BROWSER_NODE)
+    co_return std::unexpected(error::operation_failed);
+#else
     try {
         ::asio::ip::tcp::acceptor acceptor(executor);
 
@@ -1045,6 +1164,7 @@ awaitable_expected<::asio::ip::tcp::acceptor> async_listen(
         spdlog::error("[async_listen] Failed to listen on port {}: {}", port, e.what());
         co_return std::unexpected(error::boost_to_error_code(e.code()));
     }
+#endif
 }
 
 } // namespace kth::network

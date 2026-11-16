@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -100,6 +101,16 @@ struct KD_API program {
     /// the intended shape, NOT `program(script, make_program(), true)`.
     program(chain::script const& script, program&& x, bool move);
 
+    /// The hashes of the whole transaction that its signature hashes share,
+    /// kept by whoever verifies its inputs (null: each signature hash computes
+    /// its own). Programs created from this one use the same.
+    /// \pre `shared`, when not null, is of this program's transaction and
+    /// outlives every program that uses it.
+    void set_sighash_cache(chain::sighash_cache* shared) { sighash_cache_ = shared; }
+
+    [[nodiscard]]
+    chain::sighash_cache* sighash_cache() const { return sighash_cache_; }
+
     [[nodiscard]]
     metrics& get_metrics();
 
@@ -155,6 +166,12 @@ struct KD_API program {
 
     [[nodiscard]]
     op_iterator end() const;
+
+    /// The parsed operations of the active script: what `begin()` and
+    /// `end()` delimit. Parsed once, when the program or the frame is
+    /// created; `get_script().operations()` parses the script again.
+    [[nodiscard]]
+    operation::list const& operations() const;
 
     /// Active script override for OP_INVOKE (OP_ACTIVEBYTECODE support).
     [[nodiscard]]
@@ -326,9 +343,14 @@ private:
     // Parsed-operations cache for the outermost script (frame 0).
     // Same rationale as `active_frame::ops`: domain `script` is cache-
     // free, so the interpreter parses once at program construction.
-    operation::list script_ops_;
+    //
+    // Shared and never modified: copies of a program, which is what a
+    // debugger keeps one of per step, refer to the same list instead of
+    // each holding a copy as long as the script.
+    std::shared_ptr<operation::list const> script_ops_;
     chain::transaction const* transaction_{nullptr};
     uint32_t input_index_{0};
+    chain::sighash_cache* sighash_cache_{nullptr};
     script_flags_t flags_{0};
     uint64_t value_{0};
 
@@ -346,10 +368,13 @@ private:
     // `script` type is intentionally cache-free (PR refactor: caller
     // owns the cache), so `program` parses each script once on push
     // and iterates the resulting list.
+    //
+    // `jump` is an offset into `ops`, not an iterator, so it does not
+    // depend on which program object it is read from.
     struct active_frame {
         chain::script const* script;
-        operation::list ops;
-        op_iterator jump;
+        std::shared_ptr<operation::list const> ops;
+        size_t jump;
     };
     std::vector<active_frame> active_frames_;
 
@@ -359,7 +384,9 @@ private:
 
     size_t negative_count_{0};
     size_t operation_count_{0};
-    op_iterator jump_;
+    // Offset into `script_ops_` of the operation after the last
+    // OP_CODESEPARATOR of the outermost frame (see `active_frame::jump`).
+    size_t jump_{0};
     data_stack primary_;
     data_stack alternate_;
     bool_stack condition_;

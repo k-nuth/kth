@@ -8,16 +8,18 @@
 // #include <kth/infrastructure.hpp>
 #include <cstring>
 #include <kth/infrastructure/log/source.hpp>
+#include <kth/database/in_place_directory.hpp>
 #include <spdlog/spdlog.h>
 
 namespace kth::database {
 
 template <typename Clock>
-internal_database_basis<Clock>::internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode)
+internal_database_basis<Clock>::internal_database_basis(path const& db_dir, db_mode_type mode, uint32_t reorg_pool_limit, uint64_t db_max_size, bool safe_mode, bool nocow)
     : db_dir_(db_dir)
     , db_mode_(mode)
     , db_max_size_(db_max_size)
     , safe_mode_(safe_mode)
+    , nocow_(nocow)
 {
     // reorg_pool_limit is still parsed (settings.reorg_pool_limit / --db.reorg_pool_limit)
     // and threaded through by callers, but the LMDB reorg pool it bounded was removed,
@@ -44,6 +46,17 @@ bool internal_database_basis<Clock>::create() {
 
         spdlog::error("[database] Failed to create directory {} with error, '{}'.", db_dir_.string(), ec.message());
         return false;
+    }
+
+    // Still empty: LMDB rewrites its pages in place, so on btrfs it is
+    // created NOCOW. A refusal is reported and the store is created anyway.
+    if (nocow_) {
+        auto const prepared = prepare_in_place_directory(db_dir_);
+        if (prepared) {
+            spdlog::info("[database] {}: {}", db_dir_.string(), in_place_directory_name(*prepared));
+        } else {
+            spdlog::warn("[database] {}: could not set NOCOW ({})", db_dir_.string(), prepared.error().message());
+        }
     }
 
     auto ret = open_internal();
