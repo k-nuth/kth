@@ -4,172 +4,167 @@
 
 #include <kth/infrastructure/utility/png.hpp>
 
+#include <algorithm>
 #include <cstddef>
-#include <cstdint>
+#include <csetjmp>
+#include <cstring>
+#include <limits>
+#include <new>
 #include <stdexcept>
-
-#include <kth/infrastructure/constants.hpp>
+#include <utility>
+#include <png.h>
 #include <kth/infrastructure/utility/byte_reader.hpp>
-#include <kth/infrastructure/utility/color.hpp>
 
 namespace kth {
+namespace {
 
-bool png::write_png(byte_span data, uint32_t size, data_chunk& out) {
-    return png::write_png(data, size, dots_per_inch, margin, inches_per_meter,
-        get_default_foreground(), get_default_background(), out);
-}
-
-extern "C" void sink_write(png_structp png_ptr, png_bytep data, png_size_t length) {
-    static_assert(sizeof(length) <= sizeof(size_t), "png_size_t too large");
-    auto const size = size_t(length);
-    auto& out = *static_cast<data_chunk*>(png_get_io_ptr(png_ptr));
-    out.insert(out.end(), data, data + size);
-}
-
-extern "C" void error_callback(png_structp png_ptr, png_const_charp error_message) {
-    throw std::runtime_error(error_message);
-}
-
-bool png::write_png(byte_span input, uint32_t size, uint32_t dots_per_inch,
-    uint32_t margin, uint32_t inches_per_meter, color const& foreground,
-    color const& background, data_chunk& out)
-{
-    if (size == 0) {
-        return false;
+struct encoder {
+    png_structp png = nullptr;
+    png_infop info = nullptr;
+    data_chunk output;
+    data_chunk row;
+    png_errc error = png_errc::encoding_failed;
+    ~encoder() {
+        if (png) {
+            png_destroy_write_struct(&png, &info);
+        }
     }
+};
 
-    byte_reader reader(input);
-
-    auto const version = reader.read_little_endian<uint32_t>();
-    if ( ! version) {
-        return false;
-    }
-
-    auto const width_exp = reader.read_little_endian<uint32_t>();
-    if ( ! width_exp) {
-        return false;
-    }
-    auto const width = *width_exp;
-
-    if (width == 0 || kth::max_size_t / width < width) {
-        return false;
-    }
-
-    auto const area = size_t{width} * width;
-    auto const data = reader.read_bytes(area);
-    if ( ! data) {
-        return false;
-    }
-
-    // libpng limits dimensions to 31 bits. Compute in 64 bits before narrowing.
-    auto const unscaled_width = uint64_t{width} + uint64_t{margin} * 2;
-    if (unscaled_width > PNG_UINT_31_MAX / size) {
-        return false;
-    }
-
-    auto const expanded_width = unscaled_width * size;
-
-    struct resources {
-        png_structp png = nullptr;
-        png_infop info = nullptr;
-        ~resources() { if (png) png_destroy_write_struct(&png, &info); }
-    } owned;
-    data_chunk encoded;
+// These private callbacks implement libpng's C ABI and calling convention.
+// No C++ exception crosses the C library; allocation errors are caught here.
+extern "C" {
+static void PNGCBAPI write_bytes(png_structp png, png_bytep bytes, png_size_t count) {
+    auto& state = *static_cast<encoder*>(png_get_io_ptr(png));
+    bool failed = false;
     try {
-        static constexpr int32_t bit_depth = 1;
-        static constexpr int32_t bits_per_byte = 8;
-        static constexpr uint8_t margin_value = 0xff;
+        state.output.insert(state.output.end(), bytes, bytes + count);
+    } catch (std::bad_alloc const&) {
+        state.error = png_errc::allocation_failed;
+        failed = true;
+    } catch (std::length_error const&) {
+        state.error = png_errc::dimensions_out_of_range;
+        failed = true;
+    }
+    // Exit the catch handler before jumping back into the encoding helper.
+    if (failed) {
+        ::png_error(png, "PNG output allocation failed");
+    }
+}
 
-        auto const margin_size = uint64_t{margin} * size;
-        auto const realwidth = static_cast<uint32_t>(expanded_width);
-        auto const row_size = (realwidth + 7) / bits_per_byte;
+static void PNGCBAPI fail(png_structp png, png_const_charp) {
+    png_longjmp(png, 1);
+}
+}
 
-        data_chunk row;
-        row.reserve(row_size);
+// Clear a contiguous black run with at most two partial-byte masks. Scaling
+// no longer visits every expanded pixel individually.
+void black_run(data_chunk& row, size_t start, size_t count) noexcept {
+    auto* out = row.data() + start / 8;
+    auto const offset = start % 8;
+    if (offset != 0) {
+        auto const bits = std::min(count, 8 - offset);
+        *out++ &= static_cast<uint8_t>(~(((1u << bits) - 1u) << (8 - offset - bits)));
+        count -= bits;
+    }
+    std::memset(out, 0, count / 8);
+    out += count / 8;
+    auto const tail = count % 8;
+    if (tail != 0) {
+        *out &= static_cast<uint8_t>(0xffu >> tail);
+    }
+}
 
-        auto png_ptr = owned.png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, error_callback, nullptr);
-        if (png_ptr == nullptr) {
-            return false;
-        }
-
-        auto info_ptr = owned.info = png_create_info_struct(png_ptr);
-        if (info_ptr == nullptr) {
-            return false;
-        }
-
-        png_color palette[2];
-        palette[0].red = foreground.red;
-        palette[0].green = foreground.green;
-        palette[0].blue = foreground.blue;
-        palette[1].red = background.red;
-        palette[1].green = background.green;
-        palette[1].blue = background.blue;
-
-        png_byte alpha_values[2];
-        alpha_values[0] = foreground.alpha;
-        alpha_values[1] = background.alpha;
-
-        png_set_PLTE(png_ptr, info_ptr, palette, 2);
-        png_set_tRNS(png_ptr, info_ptr, alpha_values, 2, nullptr);
-
-        png_set_write_fn(png_ptr, &encoded, sink_write, nullptr);
-
-        png_set_IHDR(png_ptr, info_ptr, realwidth, realwidth, bit_depth,
-            PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
-            PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-
-        png_set_pHYs(png_ptr, info_ptr, dots_per_inch * inches_per_meter,
-            dots_per_inch * inches_per_meter, PNG_RESOLUTION_METER);
-
-        png_write_info(png_ptr, info_ptr);
-
-        // write top margin
-        row.assign(row_size, margin_value);
-        for (auto y = 0u; y < margin_size; ++y) {
-            png_write_row(png_ptr, row.data());
-        }
-
-        // write data
-        uint8_t* row_ptr = nullptr;
-        auto data_ptr = data->data();
-        for (auto y = 0u; y < width; ++y) {
-            // TODO: unguarded overflow conditions.
-            auto bit = bits_per_byte - 1;
-            row.assign(row_size, margin_value);
-            row_ptr = row.data();
-            row_ptr += margin_size / bits_per_byte;
-            bit = (bits_per_byte - 1) - (margin_size % bits_per_byte);
-
-            for (auto x = 0u; x < width; ++x) {
-                for (auto xx = 0u; xx < size; ++xx) {
-                    *row_ptr ^= (*data_ptr & 1) << bit;
-                    --bit;
-                    if (bit < 0) {
-                        ++row_ptr;
-                        bit = bits_per_byte - 1;
-                    }
-                }
-                ++data_ptr;
-            }
-
-            for (auto yy = 0u; yy < size; ++yy) {
-                png_write_row(png_ptr, row.data());
-            }
-        }
-
-        // write bottom margin
-        row.assign(row_size, margin_value);
-        for (auto y = 0u; y < margin_size; ++y) {
-            png_write_row(png_ptr, row.data());
-        }
-
-        png_write_end(png_ptr, info_ptr);
-        out.insert(out.end(), encoded.begin(), encoded.end());
-    } catch (std::runtime_error const&) {
+// The setjmp frame contains only trivial locals. All owning objects live in
+// the caller, so libpng's longjmp never skips a C++ object's destruction.
+bool encode(encoder& state, byte_span pixels, uint32_t width, uint32_t expanded,
+            png::options const& settings, png_uint_32 resolution) noexcept {
+    if (setjmp(png_jmpbuf(state.png)) != 0)
+        return false;
+    state.info = png_create_info_struct(state.png);
+    if ( ! state.info) {
+        state.error = png_errc::allocation_failed;
         return false;
     }
-
+    png_color palette[2]{{settings.foreground.red, settings.foreground.green, settings.foreground.blue},
+                         {settings.background.red, settings.background.green, settings.background.blue}};
+    png_byte alpha[2]{settings.foreground.alpha, settings.background.alpha};
+    png_set_PLTE(state.png, state.info, palette, 2);
+    png_set_tRNS(state.png, state.info, alpha, 2, nullptr);
+    png_set_write_fn(state.png, &state, write_bytes, nullptr);
+    png_set_IHDR(state.png, state.info, expanded, expanded, 1, PNG_COLOR_TYPE_PALETTE,
+                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_set_pHYs(state.png, state.info, resolution, resolution, PNG_RESOLUTION_METER);
+    png_write_info(state.png, state.info);
+    size_t const margin = size_t{settings.margin} * settings.scale;
+    for (size_t y = 0; y < margin; ++y) {
+        png_write_row(state.png, state.row.data());
+    }
+    for (size_t y = 0; y < width; ++y) {
+        std::fill(state.row.begin(), state.row.end(), uint8_t{0xff});
+        if (settings.scale == 1) {
+            for (size_t x = 0; x < width; ++x) {
+                auto const bit = margin + x;
+                state.row[bit / 8] &= static_cast<uint8_t>(~((pixels[y * width + x] & 1u) << (7 - bit % 8)));
+            }
+        } else {
+            for (size_t x = 0; x < width; ++x)
+                if ((pixels[y * width + x] & 1) != 0)
+                    black_run(state.row, margin + x * settings.scale, settings.scale);
+        }
+        for (uint32_t repeat = 0; repeat < settings.scale; ++repeat)
+            png_write_row(state.png, state.row.data());
+    }
+    std::fill(state.row.begin(), state.row.end(), uint8_t{0xff});
+    for (size_t y = 0; y < margin; ++y) {
+        png_write_row(state.png, state.row.data());
+    }
+    png_write_end(state.png, state.info);
     return true;
+}
+
+} // namespace
+
+std::expected<data_chunk, png_errc> png::write(byte_span input, uint32_t scale) {
+    return write(input, options{.scale = scale});
+}
+
+std::expected<data_chunk, png_errc> png::write(byte_span input, options const& settings) {
+    if (settings.scale == 0)
+        return std::unexpected(png_errc::invalid_scale);
+    byte_reader reader(input);
+    auto const version = reader.read_little_endian<uint32_t>();
+    auto const parsed_width = reader.read_little_endian<uint32_t>();
+    if ( ! version || !parsed_width || *parsed_width == 0)
+        return std::unexpected(png_errc::invalid_data);
+    auto const width = *parsed_width;
+    if (width > std::numeric_limits<size_t>::max() / width)
+        return std::unexpected(png_errc::dimensions_out_of_range);
+    auto const pixels = reader.read_bytes(size_t{width} * width);
+    if ( ! pixels)
+        return std::unexpected(png_errc::invalid_data);
+    auto const unscaled = uint64_t{width} + uint64_t{settings.margin} * 2;
+    if (unscaled > PNG_UINT_31_MAX / settings.scale)
+        return std::unexpected(png_errc::dimensions_out_of_range);
+    auto const expanded = static_cast<uint32_t>(unscaled * settings.scale);
+    auto const resolution = uint64_t{settings.dots_per_inch} * settings.inches_per_meter;
+    if (resolution > PNG_UINT_31_MAX)
+        return std::unexpected(png_errc::invalid_resolution);
+    try {
+        encoder state;
+        state.row.assign((size_t{expanded} + 7) / 8, 0xff);
+        state.output.reserve(256);
+        state.png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, fail, nullptr);
+        if ( ! state.png)
+            return std::unexpected(png_errc::allocation_failed);
+        if ( ! encode(state, *pixels, width, expanded, settings, static_cast<png_uint_32>(resolution)))
+            return std::unexpected(state.error);
+        return std::move(state.output);
+    } catch (std::bad_alloc const&) {
+        return std::unexpected(png_errc::allocation_failed);
+    } catch (std::length_error const&) {
+        return std::unexpected(png_errc::dimensions_out_of_range);
+    }
 }
 
 } // namespace kth

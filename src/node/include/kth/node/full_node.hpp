@@ -38,6 +38,7 @@
 //
 // =============================================================================
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -236,6 +237,9 @@ private:
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
     node::sv2_settings sv2_settings_;
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    // When this node was built, which uptime counts from: the node starts
+    // here, before the database is opened and the network comes up.
+    std::chrono::steady_clock::time_point const started_ = std::chrono::steady_clock::now();
     std::unique_ptr<rpc::server> rpc_server_;
 #endif
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)

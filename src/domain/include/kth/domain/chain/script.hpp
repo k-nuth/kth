@@ -10,12 +10,14 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <vector>
 
 #include <expected>
 
+#include <kth/domain/chain/sighash_cache.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
@@ -85,6 +87,7 @@ struct KD_API script {
 
     void from_operations(operation::list const& ops);
     void from_operations(operation::list&& ops);
+    [[nodiscard]] static expect<script> parse_from(std::string_view mnemonic);
     bool from_string(std::string const& mnemonic);
 
     /// A script object is valid if the byte count matches the prefix.
@@ -132,7 +135,8 @@ struct KD_API script {
 #if ! defined(KTH_CURRENCY_BCH)
                                         script_version version = script_version::unversioned,
 #endif // ! KTH_CURRENCY_BCH
-                                        uint64_t value = max_uint64);
+                                        uint64_t value = max_uint64,
+                                        sighash_cache* shared = nullptr);
 
     static
     std::pair<bool, size_t> check_signature(ec_signature const& signature,
@@ -145,7 +149,8 @@ struct KD_API script {
 #if ! defined(KTH_CURRENCY_BCH)
                             script_version version = script_version::unversioned,
 #endif // ! KTH_CURRENCY_BCH
-                            uint64_t value = max_uint64);
+                            uint64_t value = max_uint64,
+                            sighash_cache* shared = nullptr);
 
     static
     std::expected<endorsement, std::error_code> create_endorsement(
@@ -329,7 +334,8 @@ private:
         script const& script_code,
         uint64_t value,
         uint8_t sighash_type,
-        script_flags_t active_flags);
+        script_flags_t active_flags,
+        sighash_cache* shared);
 
     data_chunk bytes_;
     bool valid_{false};

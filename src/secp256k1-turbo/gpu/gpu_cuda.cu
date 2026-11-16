@@ -39,6 +39,19 @@ __global__ void field_test_kernel(gpu_field_test_in const* __restrict__ in, gpu_
     if (i < n) gpu_field_test_one(in + i, out + i);
 }
 
+__global__ void sha256d64_kernel(u32 const* __restrict__ in, u32* __restrict__ out, u32 n) {
+    u32 const i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) gpu_sha256d_pair(in + 16 * i, in + 16 * i + 8, out + 8 * i);
+}
+
+// One level of a merkle tree: n hashes in, (n + 1) / 2 out. Several threads can
+// find two equal siblings at once, so the flag is set with an atomic operation.
+__global__ void merkle_level_kernel(u32 const* __restrict__ in, u32* __restrict__ out, u32* mutated, u32 n) {
+    u32 const i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= (n + 1) / 2) return;
+    if (gpu_merkle_node(in, n, i, out)) atomicOr(mutated, 1u);
+}
+
 // A batch goes to the device in chunks: the first is small, so the device
 // starts early; each next one is as large as all before it, up to
 // max_chunk, so a large batch takes few launches. Returns the end of the
@@ -65,6 +78,14 @@ struct context {
     gpu_raw_input* h_in = nullptr;  // pinned
     unsigned char* h_out = nullptr; // pinned
     std::size_t capacity = 0;
+    // Hashing: two device buffers of hashes that take turns as input and
+    // output, the word the merkle kernel reports equal siblings in, and a
+    // pinned staging buffer.
+    u32* d_hash_a = nullptr;
+    u32* d_hash_b = nullptr;
+    u32* d_hash_flag = nullptr;
+    unsigned char* h_hash = nullptr;   // pinned
+    std::size_t hash_capacity = 0;     // bytes of d_hash_a and h_hash; d_hash_b holds half
     bool busy = false;
 };
 
@@ -94,6 +115,23 @@ bool reserve(context& c, std::size_t n) {
     if (cudaHostAlloc(&c.h_in, cap * sizeof(gpu_raw_input), cudaHostAllocDefault) != cudaSuccess) return false;
     if (cudaHostAlloc(&c.h_out, cap, cudaHostAllocDefault) != cudaSuccess) return false;
     c.capacity = cap;
+    return true;
+}
+
+bool reserve_hashes(context& c, std::size_t bytes) {
+    if (bytes <= c.hash_capacity) return true;
+    std::size_t cap = c.hash_capacity ? c.hash_capacity : 65536;
+    while (cap < bytes) cap *= 2;
+    if (c.d_hash_a) cudaFree(c.d_hash_a);
+    if (c.d_hash_b) cudaFree(c.d_hash_b);
+    if (c.h_hash) cudaFreeHost(c.h_hash);
+    c.d_hash_a = nullptr; c.d_hash_b = nullptr; c.h_hash = nullptr;
+    c.hash_capacity = 0;
+    if (c.d_hash_flag == nullptr && cudaMalloc(&c.d_hash_flag, sizeof(u32)) != cudaSuccess) return false;
+    if (cudaMalloc(&c.d_hash_a, cap) != cudaSuccess) return false;
+    if (cudaMalloc(&c.d_hash_b, cap / 2) != cudaSuccess) return false;
+    if (cudaHostAlloc(&c.h_hash, cap, cudaHostAllocDefault) != cudaSuccess) return false;
+    c.hash_capacity = cap;
     return true;
 }
 
@@ -187,6 +225,68 @@ bool cuda_field_test(gpu_field_test_in const* in, std::size_t n, gpu_field_test_
     }
     if (d_in) cudaFree(d_in);
     if (d_out) cudaFree(d_out);
+    return ok;
+}
+
+bool cuda_sha256d64(std::uint8_t const* in, std::size_t n, std::uint8_t* out) {
+    state& s = get_state();
+    if (!s.ok || n > max_hashes) return false;
+    if (n == 0) return true;
+    context& c = acquire(s);
+    cudaStream_t const stream = c.streams[0];
+    bool ok = reserve_hashes(c, 64 * n);
+    if (ok) {
+        std::memcpy(c.h_hash, in, 64 * n);
+        ok = cudaMemcpyAsync(c.d_hash_a, c.h_hash, 64 * n, cudaMemcpyHostToDevice, stream) == cudaSuccess;
+    }
+    if (ok) {
+        u32 const blocks = static_cast<u32>((n + block_size - 1) / block_size);
+        sha256d64_kernel<<<blocks, block_size, 0, stream>>>(c.d_hash_a, c.d_hash_b, static_cast<u32>(n));
+        ok = cudaGetLastError() == cudaSuccess &&
+             cudaMemcpyAsync(c.h_hash, c.d_hash_b, 32 * n, cudaMemcpyDeviceToHost, stream) == cudaSuccess;
+    }
+    if (cudaStreamSynchronize(stream) != cudaSuccess) ok = false;
+    if (ok) std::memcpy(out, c.h_hash, 32 * n);
+    release(s, c);
+    return ok;
+}
+
+bool cuda_merkle_root(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated) {
+    state& s = get_state();
+    if (!s.ok || n == 0 || n > max_hashes) return false;
+    context& c = acquire(s);
+    cudaStream_t const stream = c.streams[0];
+    bool ok = reserve_hashes(c, 32 * n);
+    if (ok) {
+        std::memcpy(c.h_hash, hashes, 32 * n);
+        ok = cudaMemcpyAsync(c.d_hash_a, c.h_hash, 32 * n, cudaMemcpyHostToDevice, stream) == cudaSuccess &&
+             cudaMemsetAsync(c.d_hash_flag, 0, sizeof(u32), stream) == cudaSuccess;
+    }
+    // Every level is one launch on the same stream; the two buffers swap
+    // roles from one level to the next. Only the root comes back.
+    u32* level = c.d_hash_a;
+    u32* above = c.d_hash_b;
+    for (std::size_t count = n; ok && count > 1; count = (count + 1) / 2) {
+        std::size_t const nodes = (count + 1) / 2;
+        u32 const blocks = static_cast<u32>((nodes + block_size - 1) / block_size);
+        merkle_level_kernel<<<blocks, block_size, 0, stream>>>(level, above, c.d_hash_flag, static_cast<u32>(count));
+        ok = cudaGetLastError() == cudaSuccess;
+        u32* const next = above;
+        above = level;
+        level = next;
+    }
+    if (ok) {
+        ok = cudaMemcpyAsync(c.h_hash, level, 32, cudaMemcpyDeviceToHost, stream) == cudaSuccess &&
+             cudaMemcpyAsync(c.h_hash + 32, c.d_hash_flag, sizeof(u32), cudaMemcpyDeviceToHost, stream) == cudaSuccess;
+    }
+    if (cudaStreamSynchronize(stream) != cudaSuccess) ok = false;
+    if (ok) {
+        std::memcpy(root, c.h_hash, 32);
+        u32 flag = 0;
+        std::memcpy(&flag, c.h_hash + 32, sizeof(flag));
+        if (mutated != nullptr) *mutated = flag != 0;
+    }
+    release(s, c);
     return ok;
 }
 
