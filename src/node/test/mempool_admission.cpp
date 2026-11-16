@@ -9,6 +9,7 @@
 #include <expected>
 #include <functional>
 #include <future>
+#include <optional>
 #include <stop_token>
 #include <thread>
 #include <utility>
@@ -21,6 +22,11 @@
 #include <asio/bind_cancellation_slot.hpp>
 #include <asio/cancellation_signal.hpp>
 #include <kth/blockchain/populate/populate_base.hpp>
+#include <kth/blockchain/detail/block_chain_internal.hpp>
+#if defined(KTH_WITH_RPC)
+#include <kth/node/mining/job_store.hpp>
+#include <kth/node/rpc/dispatch.hpp>
+#endif
 
 #include <kth/blockchain/pools/mempool.hpp>
 
@@ -87,7 +93,8 @@ struct admission_chain {
     std::vector<domain::chain::block> trunk;
 
     explicit admission_chain(char const* tag, uint32_t trunk_len, bool require_standard = true, size_t policy_size = 1'000'000,
-                             std::function<void(blockchain::settings&)> const& configure = {})
+                             std::function<void(blockchain::settings&)> const& configure = {},
+                             std::function<void(blockchain::block_chain&)> const& before_start = {})
         : fixture(tag)
     {
         REQUIRE(fixture.created());
@@ -98,7 +105,7 @@ struct admission_chain {
         if (configure) {
             configure(fixture.settings());
         }
-        REQUIRE(fixture.start());
+        REQUIRE(fixture.start({}, before_start));
 
         auto const genesis = domain::chain::block::genesis_regtest();
         auto const base_time = uint32_t(zulu_time()) - (trunk_len + 30) * block_spacing;
@@ -466,6 +473,46 @@ TEST_CASE("testing acceptance neither admits nor announces", "[mempool][admissio
     CHECK(chain.mempool_ref().contains(tx->hash()));
     chain.unsubscribe_transaction(channel);
 }
+
+#if defined(KTH_WITH_RPC)
+// Observe the real fee reader while dispatching the RPC on a separate caller
+// thread. A synchronous read executes on that caller; the async chain API must
+// run it on a chain worker instead. No lock is exposed or held by this control.
+TEST_CASE("testing acceptance reads the rolling fee outside the RPC caller thread",
+          "[mempool][admission][rpc_executor]") {
+    ::asio::io_context caller;
+    auto observer = std::make_shared<blockchain::detail::mempool_fee_read_observer>(caller.get_executor());
+    admission_chain built("test_accept_caller_executor", trunk_len, true, 1'000'000, {},
+        [&](blockchain::block_chain& chain) {
+            blockchain::detail::block_chain_internal::observe_mempool_fee_reads(chain, observer);
+        });
+    auto& chain = built.chain();
+    // Discard any startup observation; only the following request is measured.
+    (void)observer->reads.try_receive([](std::error_code, std::thread::id) {});
+    auto const tx = std::make_shared<domain::message::transaction>(built.matured_spend(fee));
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{chain, jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"testmempoolaccept","params":[[")"
+        + encode_base16(to_data_chunk(*tx, true)) + R"("]],"id":44})";
+    auto result = ::asio::co_spawn(caller, dispatcher.handle(context, body), ::asio::use_future);
+    caller.run();
+    auto const reply = result.get();
+    CHECK(reply.find(R"("error":null)") != std::string::npos);
+    CHECK(reply.find(R"("allowed":true)") != std::string::npos);
+    CHECK(chain.mempool_ref().size() == 0);
+
+    std::optional<std::thread::id> reader;
+    REQUIRE(observer->reads.try_receive([&](std::error_code ec, std::thread::id id) {
+        CHECK_FALSE(ec);
+        reader = id;
+    }));
+    REQUIRE(reader);
+    CHECK(*reader != std::this_thread::get_id());
+}
+
+#endif // KTH_WITH_RPC
 
 TEST_CASE("testing acceptance applies the pool's first-seen rule", "[mempool][admission]") {
     admission_chain built("test_accept_first_seen", trunk_len);

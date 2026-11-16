@@ -4,6 +4,7 @@
 
 #include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/detail/block_chain_internal.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
@@ -2501,6 +2502,9 @@ size_t block_chain::trim_mempool(uint64_t limit) {
 }
 
 uint64_t block_chain::mempool_minimum_fee_per_kb() {
+    if (mempool_fee_read_observer_) {
+        (void)mempool_fee_read_observer_->reads.try_send(std::error_code{}, std::this_thread::get_id());
+    }
     validation_low_priority_lock const lock(validation_mutex_);
     return mempool_limit_.minimum_fee_per_kb(settings_.mempool_limit_bytes(), unix_now());
 }
