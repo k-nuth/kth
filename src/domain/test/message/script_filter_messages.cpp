@@ -271,9 +271,17 @@ TEST_CASE("cfrange refuses what does not fit its tree", "[script filters][messag
     many.insert(many.begin() + 42, {0xff, 0xff});
     REQUIRE( ! from_data_chunk<message::compact_filter_range>(many, wire_version));
     // A leaf of a kind the tree does not have: the kind is the last byte of
-    // the first leaf, at offset 42 + 40.
+    // the first leaf, at offset 42 + 40. Kind 4, a transaction's leaf, is one
+    // it has.
+    auto transaction = raw;
+    transaction[82] = 4;
+    auto const with_transaction = from_data_chunk<message::compact_filter_range>(transaction, wire_version);
+    REQUIRE(with_transaction);
+    REQUIRE(with_transaction->leaves[0].kind == kind::transaction);
     auto strange = raw;
-    strange[82] = 4;
+    strange[82] = 5;
+    REQUIRE( ! from_data_chunk<message::compact_filter_range>(strange, wire_version));
+    strange[82] = 0xff;
     REQUIRE( ! from_data_chunk<message::compact_filter_range>(strange, wire_version));
 }
 
@@ -315,6 +323,45 @@ TEST_CASE("cfproof of a created output is the leaf, its branch and its transacti
     REQUIRE( ! parsed->origin);
     REQUIRE(to_data_chunk(*parsed, wire_version) == raw);
     check_boundaries(*parsed);
+}
+
+TEST_CASE("cfproof of a transaction's leaf is the leaf, its branch and that transaction", "[script filters][message]") {
+    // The proof of the created output above with the leaf of its transaction
+    // instead: index 0 at offset 41 + 36, kind 4 at 41 + 40.
+    auto raw = bytes(
+        "01b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf040000000200000033343536373839"
+        "3a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152010000000000000004024142434445464748494a4b4c4d"
+        "4e4f505152535455565758595a5b5c5d5e5f6048494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f6061626364"
+        "656667020000000105040706010003020d0c0f0e09080b0a15141716111013121d1c1f1e19181b1a05000000025105ff"
+        "ffffff02ed030000000000001976a91405060708090a0b0c0d0e0f10111213141516171888acd5070000000000001976"
+        "a914060708090a0b0c0d0e0f1011121314151617181988ac0f000000016162636465666768696a6b6c6d6e6f70717273"
+        "7475767778797a7b7c7d7e7f80");
+    REQUIRE(raw[77] == 0);
+    REQUIRE(raw[81] == 4);
+    auto const parsed = from_data_chunk<message::compact_filter_proof>(raw, wire_version);
+    REQUIRE(parsed);
+    REQUIRE(parsed->leaf == leaf(0x33, 1, 0, kind::transaction));
+    REQUIRE(parsed->leaf_branch == hashes(2, 0x41));
+    REQUIRE(parsed->transaction == parsed_transaction(
+        "020000000105040706010003020d0c0f0e09080b0a15141716111013121d1c1f1e19181b1a05000000025105ffffffff"
+        "02ed030000000000001976a91405060708090a0b0c0d0e0f10111213141516171888acd5070000000000001976a91406"
+        "0708090a0b0c0d0e0f1011121314151617181988ac0f000000"));
+    REQUIRE(parsed->transaction_branch == hashes(1, 0x61));
+    REQUIRE( ! parsed->origin);
+    REQUIRE(to_data_chunk(*parsed, wire_version) == raw);
+    check_boundaries(*parsed);
+
+    // The leaf names the transaction itself, not an output it spends, so a
+    // proof with an origin is not written.
+    auto with_origin = *parsed;
+    with_origin.origin = message::compact_filter_proof_origin{};
+    data_chunk buffer(with_origin.serialized_size(wire_version) + 64);
+    byte_writer writer(buffer);
+    REQUIRE( ! with_origin.to_data(writer, wire_version));
+
+    // A kind above 4 is refused.
+    raw[81] = 5;
+    REQUIRE( ! from_data_chunk<message::compact_filter_proof>(raw, wire_version));
 }
 
 TEST_CASE("cfproof of a spent output adds the transaction that created it", "[script filters][message]") {
@@ -439,5 +486,8 @@ TEST_CASE("cfproof refuses a leaf outside its tree and an origin that does not m
     // is the last byte of the leaf, at offset 41 + 40.
     auto relabelled = to_data_chunk(*spent, wire_version);
     relabelled[81] = 0;
+    REQUIRE( ! from_data_chunk<message::compact_filter_proof>(relabelled, wire_version));
+    // And as the leaf of a transaction.
+    relabelled[81] = 4;
     REQUIRE( ! from_data_chunk<message::compact_filter_proof>(relabelled, wire_version));
 }
