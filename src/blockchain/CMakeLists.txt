@@ -50,22 +50,7 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Mempool backing map: cfm (boost::concurrent_flat_map) | parlay (ParlayHash).
-# Selects the mempool's concurrent hashmap implementation at compile time so the
-# two can be A/B measured on a running node.
-set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
-
-if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
-  add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
-elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
-  add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
-  # Vendored, header-only; SYSTEM so its deprecation warnings stay out of KTH.
-  include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/parlayhash/include)
-else()
-  message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
-endif()
-
-message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthParlayHash.cmake)
 
 # Header index capacity (number of headers for static array allocation)
 # Default: one-minute tempnet through 2030, with its 600-second history (aligned to 2^16)
@@ -294,6 +279,9 @@ endif()
 # endif(WITH_CONSENSUS)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC database::database)
+if(KTH_MEMPOOL_BACKEND STREQUAL "parlay")
+  target_link_libraries(${PROJECT_NAME} PUBLIC ParlayHash::parlay)
+endif()
 
 if (WITH_CONSENSUS)
   target_compile_definitions(${PROJECT_NAME} PUBLIC -DWITH_CONSENSUS)
