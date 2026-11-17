@@ -2,7 +2,7 @@
 
 With `node.display = log`, the console shows operator-facing `info` messages,
 plus all warnings, errors and critical failures. The debug log records `debug`
-and higher. `--verbose` includes `trace` in both outputs, as before.
+and higher. `log.verbose = true` (or `--log.verbose=true`) includes `trace` in both outputs.
 
 ## Console policy
 
@@ -39,7 +39,7 @@ header-download progress remain visible.
 
 UTXO-Z 2.1.1 emits the statistics, sizing and height-range reports requested at
 shutdown at `debug` level, including their headings and rotation-cause details.
-The debug file retains these reports; the normal console omits them. `--verbose`
+The debug file retains these reports; the normal console omits them. `--log.verbose=true`
 also shows them on the console. UTXO-Z's operational messages, warnings and
 errors keep their existing levels.
 
