@@ -13,6 +13,7 @@
 #include <span>
 #include <vector>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
@@ -103,8 +104,22 @@ KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block,
 // =============================================================================
 
 struct utxo_raw_value {
-    std::vector<uint8_t> data;      // serialized in format above
-    uint32_t height;                // also passed separately to UTXO-Z insert()
+    // Held in place up to this many bytes. A delta carries one of these per
+    // output, millions in a batch, and nearly all of them are a pay-to-key-hash
+    // or pay-to-script-hash output: 34 or 32 bytes of wire output and 9 of
+    // metadata. In place, creating and dropping one does not go to the
+    // allocator; a longer value is allocated as before.
+    static constexpr size_t inline_bytes = 48;
+    using bytes = boost::container::small_vector<uint8_t, inline_bytes>;
+
+    bytes data;                     // serialized in format above
+    uint32_t height{0};             // also passed separately to UTXO-Z insert()
+
+    utxo_raw_value() = default;
+    utxo_raw_value(bytes value, uint32_t at)
+        : data(std::move(value)), height(at) {}
+    utxo_raw_value(std::span<uint8_t const> value, uint32_t at)
+        : data(value.begin(), value.end()), height(at) {}
 };
 
 // =============================================================================
@@ -388,7 +403,7 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
 
     for (auto const& key : block_delta.authorized_replacements) {
         if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
-            undo.spent.push_back({key, it->second.data, it->second.height});
+            undo.spent.push_back({key, {it->second.data.begin(), it->second.data.end()}, it->second.height});
             continue;
         }
         auto stored = source.find_utxo_raw(key, height);
@@ -440,7 +455,7 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
         // Parent created earlier in this same batch: it lives only in the
         // in-flight delta, UTXO-Z has not seen it yet.
         if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
-            undo.spent.push_back({key, it->second.data, it->second.height});
+            undo.spent.push_back({key, {it->second.data.begin(), it->second.data.end()}, it->second.height});
             continue;
         }
 
