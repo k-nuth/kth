@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/prune.hpp>
 #include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
@@ -255,6 +256,16 @@ bool block_chain::start(uint32_t disk_magic) {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
     // Reference mode find resolution requires block_store and header_index.
     // block_store_ is not yet initialized here — we wire it below after initialization.
+#endif
+
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // In reference mode a UTXO entry names the block file its output is in.
+    // Removing block files would leave entries pointing at nothing.
+    if (prune_keep_blocks_ != 0) {
+        spdlog::error("[blockchain] db.prune_keep_blocks cannot be used with the UTXO reference "
+            "mode: its entries point into the block files that pruning removes");
+        return false;
+    }
 #endif
 
     // Initialize flat file block storage
@@ -565,7 +576,12 @@ bool block_chain::start(uint32_t disk_magic) {
             // Undo is captured from the first height that is validated, which is
             // the trusted height + 1, not the anchor + 1: in full-validation mode
             // it starts at height 1.
-            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
+            //
+            // A pruning node has removed the files below its prune height, undo
+            // included, so its range starts above that.
+            auto const first = static_cast<int32_t>(first_height_with_undo(
+                static_cast<uint32_t>(settings_.trusted_checkpoint_height()), *built,
+                prune_keep_blocks_));
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||
@@ -1125,6 +1141,33 @@ bool block_chain::insert(block_const_ptr block, size_t height) {
     (void)block;
     (void)height;
     return false;
+}
+
+std::expected<size_t, database::result_code> block_chain::prune_block_files(uint32_t built_height) {
+    // How far the built height moves between passes. A pass reads the whole
+    // header index, and a block file holds far more blocks than this.
+    constexpr uint32_t pass_interval = 64;
+
+    if (prune_keep_blocks_ == 0 || ! block_store_) {
+        return 0;
+    }
+    if (pruned_at_height_ != 0 && built_height < pruned_at_height_ + pass_interval) {
+        return 0;
+    }
+    pruned_at_height_ = built_height;
+
+    auto const pruned = blockchain::prune_block_files(header_index_, *block_store_,
+        built_height, prune_keep_blocks_);
+    if ( ! pruned) {
+        return std::unexpected(pruned.error());
+    }
+    if (pruned->files_removed != 0) {
+        spdlog::info("[blockchain] Pruned {} block file(s) holding {} block(s) below height {}; "
+            "the block files now start at blk{:05d}.dat",
+            pruned->files_removed, pruned->blocks_forgotten,
+            prune_height(built_height, prune_keep_blocks_) + 1, pruned->first_file);
+    }
+    return pruned->files_removed;
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {

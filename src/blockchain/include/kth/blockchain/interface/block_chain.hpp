@@ -305,6 +305,17 @@ struct KB_API block_chain {
     [[nodiscard]]
     std::expected<uint32_t, database::result_code> get_utxo_built_height() const;
 
+    /// Remove the block files a pruning node no longer keeps, given the height
+    /// the UTXO set was just built to. Does nothing on a node that keeps every
+    /// block (`db.prune_keep_blocks` zero), and looks again only after the
+    /// built height has moved on a little, so calling it per batch is cheap.
+    ///
+    /// For the task that applies blocks to the UTXO set, after it has made
+    /// `built_height` durable: see `prune_block_files` in prune.hpp.
+    /// @return How many block files were removed.
+    [[nodiscard]]
+    std::expected<size_t, database::result_code> prune_block_files(uint32_t built_height);
+
     [[nodiscard]]
     database::result_code set_utxo_built_height(uint32_t height);
 
@@ -1268,6 +1279,9 @@ private:
     bool const in_place_nocow_;
     // db.prune_keep_blocks: zero on a node that keeps every block.
     uint32_t const prune_keep_blocks_;
+    // The built height of the last pruning pass. Touched only by the task that
+    // calls prune_block_files.
+    uint32_t pruned_at_height_{0};
 
     /// The published state on its own. Private: a caller that wants the state
     /// wants the tip and the generation that go with it, and reading them apart
