@@ -138,7 +138,8 @@ using download_worker_launcher = std::function<void(
     block_download_task_output_channel& output,  // Single output: blocks + task_ended
     uint64_t task_id,            // this instance, so a late report cannot retire a newer one (#652)
     uint64_t coordinator_epoch,  // the range it belongs to; NOT index_.generation()
-    fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
+    fast_validation_input_channel* fast_val = nullptr,  // chunk-based fast validation (nullptr = old path)
+    std::chrono::seconds batch_timeout = std::chrono::seconds{60}  // time a peer has to deliver one chunk
 );
 
 // =============================================================================

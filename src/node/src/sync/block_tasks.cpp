@@ -195,7 +195,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_download_task_output_channel& output,
     uint64_t task_id,
     uint64_t coordinator_epoch,
-    fast_validation_input_channel* fast_val
+    fast_validation_input_channel* fast_val,
+    std::chrono::seconds batch_timeout
 ) {
     auto const addr = peer->authority_with_agent();
     auto const peer_nonce = peer->nonce();
@@ -377,7 +378,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // Download from peer - measure time
         auto download_start = std::chrono::steady_clock::now();
         auto result = co_await network::request_blocks_batch<network::sync_mode::fast>(
-            *peer, blocks, 60s);
+            *peer, blocks, batch_timeout);
         auto download_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - download_start).count();
 
@@ -394,6 +395,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 // Closing the session frees the slot for another peer.
                 spdlog::debug("[block_download] Peer {} sent no block of chunk {}; closing the session",
                     addr, chunk_id);
+                peer->stop(error::peer_throttling);
+            } else if (result.error() == error::channel_timeout) {
+                // Part of the chunk arrived, but not all of it in time. This
+                // task ends here, and the session it leaves behind would keep
+                // an outbound slot with nothing downloading through it, the
+                // same as a peer that sent nothing.
+                spdlog::debug("[block_download] Peer {} did not finish chunk {} in time; closing the session",
+                    addr, chunk_id);
+                // Stopped with the same reason: the session's own inactivity
+                // timer already uses channel_timeout, and the retry accounting
+                // must tell this close from that one.
                 peer->stop(error::peer_throttling);
             }
             break;
