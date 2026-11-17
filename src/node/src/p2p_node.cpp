@@ -1697,14 +1697,8 @@ void p2p_node::wake_status_task() noexcept {
             size_t skipped_pending = 0;
             size_t skipped_cooldown = 0;
 
-            // Cooldown duration for failed connections (30 seconds)
-            constexpr auto failed_cooldown = 30s;
             auto const now_steady = std::chrono::steady_clock::now();
-
-            // Clean up expired cooldown entries periodically
-            failed_connections_.erase_if([&](auto const& entry) {
-                return entry.second <= now_steady;
-            });
+            outbound_retry_.forget_expired(now_steady);
 
             // Fetch addresses, filtering out duplicates and already-connected IPs
             for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped(); ++attempts) {
@@ -1717,14 +1711,8 @@ void p2p_node::wake_status_task() noexcept {
                 auto const authority = infrastructure::config::authority(addr);
                 auto const ip = authority.asio_ip();
 
-                // Skip if in cooldown from recent failure
-                bool in_cooldown = false;
-                failed_connections_.cvisit(ip, [&](auto const& entry) {
-                    if (entry.second > now_steady) {
-                        in_cooldown = true;
-                    }
-                });
-                if (in_cooldown) {
+                // Skip an address that is being left alone (see outbound_retry).
+                if (outbound_retry_.cooling(ip, now_steady)) {
                     ++skipped_cooldown;
                     continue;
                 }
@@ -1786,7 +1774,7 @@ void p2p_node::wake_status_task() noexcept {
                     pending_connections_.insert(ip);
 
                     auto task_name = fmt::format("conn_{}:{}", authority, conn_task_counter_.fetch_add(1));
-                    connection_tasks.spawn(task_name, [this, addr, ip, failed_cooldown]() -> ::asio::awaitable<void> {
+                    connection_tasks.spawn(task_name, [this, addr, ip]() -> ::asio::awaitable<void> {
                         auto const authority = infrastructure::config::authority(addr);
                         spdlog::trace("[p2p_node] Attempting connection to {}", authority);
 
@@ -1805,14 +1793,14 @@ void p2p_node::wake_status_task() noexcept {
                             spdlog::trace("[p2p_node] Connection failed to {}: {}",
                                 authority, result.error().message());
                             // Add to cooldown to prevent rapid reconnection
-                            failed_connections_.insert_or_assign(ip,
-                                std::chrono::steady_clock::now() + failed_cooldown);
+                            outbound_retry_.connect_failed(ip, std::chrono::steady_clock::now());
                             if (peer_db_.remove_address(addr)) {
                                 spdlog::trace("[p2p_node] Removed failed address {} from database", authority);
                             }
                         } else {
-                            // Connection succeeded - remove from cooldown if present
-                            failed_connections_.erase(ip);
+                            // What the session then does is what decides
+                            // whether this address is dialled again soon; that
+                            // is recorded where the session ends.
                             spdlog::debug("[p2p_node] Connected to {}", authority);
                         }
                     });
@@ -2054,16 +2042,17 @@ void p2p_node::wake_status_task() noexcept {
                 // session lifecycle into IP-wide misbehavior points. Actual
                 // malformed/invalid protocol data keeps its existing scoring.
                 auto const connection_duration = outcome.connected_for;
-                constexpr auto min_connection_duration = 5s;
-                if (direction == peer_direction::outbound &&
-                    connection_duration < min_connection_duration) {
-                    constexpr auto quick_disconnect_cooldown = 30s;
-                    failed_connections_.insert_or_assign(
-                        peer->authority().asio_ip(),
-                        std::chrono::steady_clock::now() + quick_disconnect_cooldown);
-                    spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms), cooling down retries",
-                        peer->authority(),
-                        std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
+                if (direction == peer_direction::outbound) {
+                    auto const ip = peer->authority().asio_ip();
+                    outbound_retry_.session_ended(ip, connection_duration,
+                        std::chrono::steady_clock::now());
+                    if (auto const in_a_row = outbound_retry_.short_sessions(ip); in_a_row != 0) {
+                        spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms, {} in a row), "
+                            "cooling down retries for {}s",
+                            peer->authority(),
+                            std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count(),
+                            in_a_row, detail::outbound_retry::cooldown_after(in_a_row).count());
+                    }
                 }
 
                 // Notify sync layer of peer disconnection (CSP pattern)
