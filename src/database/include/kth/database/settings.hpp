@@ -29,6 +29,15 @@ struct KD_API settings {
     /// On btrfs, create the stores rewritten in place (UTXO-Z, LMDB) NOCOW.
     bool nocow;
     uint32_t cache_capacity;
+
+    /// The fewest blocks a pruning node keeps: what a node that announces
+    /// itself as limited has to be able to serve (BIP159), and well above the
+    /// deepest reorganization the node follows.
+    static constexpr uint32_t minimum_prune_keep_blocks = 288;
+
+    /// How many blocks below the tip keep their block and undo data. Older
+    /// block files are removed. Zero keeps every block.
+    uint32_t prune_keep_blocks;
 };
 
 } // namespace kth::database

@@ -120,6 +120,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , in_place_nocow_(database_settings.nocow)
+    , prune_keep_blocks_(database_settings.prune_keep_blocks)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -261,7 +262,12 @@ bool block_chain::start(uint32_t disk_magic) {
     auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
     auto magic = to_little_endian(disk_magic);
     block_store_ = std::make_unique<database::block_store>(blocks_path, magic);
-    if ( ! block_store_->initialize()) {
+    // A pruning node's block files start above zero once it has removed some.
+    // Any other node treats a missing first file as a lost one.
+    auto const numbering = prune_keep_blocks_ != 0
+        ? database::block_store::numbering::pruned
+        : database::block_store::numbering::complete;
+    if ( ! block_store_->initialize(numbering)) {
         spdlog::error("[blockchain] Failed to initialize block store at {}", blocks_path.string());
         return false;
     }

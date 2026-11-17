@@ -146,7 +146,7 @@ block_store::block_store(std::filesystem::path blocks_dir, magic_t magic)
     file_info_.resize(1);  // Start with at least one file info entry
 }
 
-bool block_store::initialize() {
+bool block_store::initialize(numbering expected) {
 
     // FIRST, and before any path that can return. Both cursors are unavailable
     // until a walk earns them, and that has to hold for a re-initialize as much
@@ -159,6 +159,7 @@ bool block_store::initialize() {
     // on the one path that precedes reading anything.
     block_extents_adopted_ = false;
     undo_extents_adopted_ = false;
+    undo_leftovers_removed_ = false;
 
     // Create directory if it doesn't exist
     std::error_code ec;
@@ -169,63 +170,15 @@ bool block_store::initialize() {
         return false;
     }
 
-    // Scan existing files and restore their sizes
-    int file_num = 0;
-    while (true) {
-        flat_file_pos pos{file_num, 0};
-        auto path = block_files_.file_name(pos);
-        // With an error_code: the throwing overload turns an unreadable directory
-        // into an exception out of initialize(), where every other failure here
-        // is a `return false`. An error is not "the file is not there" either —
-        // it is not knowing, which is a refusal.
-        std::error_code exists_ec;
-        auto const present = std::filesystem::exists(path, exists_ec);
-        if (exists_ec) {
-            spdlog::critical("block_store::initialize: {} could not be examined ({}); refusing "
-                "to open on a directory this process cannot read",
-                path.string(), exists_ec.message());
-            return false;
-        }
-        if ( ! present) {
-            break;
-        }
-
-        // Get actual file size to know where to continue writing
-        std::error_code size_ec;
-        auto file_size = std::filesystem::file_size(path, size_ec);
-        if (size_ec) {
-            spdlog::warn("block_store::initialize: Failed to get size of {}: {}",
-                        path.string(), size_ec.message());
-            file_size = 0;
-        }
-
-        // Ensure file_info_ has space for this file
-        if (file_info_.size() <= static_cast<size_t>(file_num)) {
-            file_info_.resize(file_num + 1);
-        }
-        // The size is NOT recorded here. It would be stale by the time anything
-        // asked, and it must never become a write cursor: a file is preallocated
-        // in whole chunks, so it is almost always larger than what was written
-        // into it, and appending at it is exactly the defect this replaces
-        // (#668). What initialize() establishes is only WHICH files exist; each
-        // walk measures the one it is reading.
-        (void)file_size;
-
-        ++file_num;
-    }
-
-    // The numbering stopped at `file_num`. That is the end only if nothing is
-    // numbered above it: a blk file missing BETWEEN two that exist is a file that
-    // was lost, and stopping there would report a clean read of a chain with a
-    // piece cut out — every block in the files beyond would simply be invisible,
-    // with a cursor handed out over what was left.
+    // Which block files exist, from the listing. The lowest and the highest
+    // number bound the range; every number between them has to be there.
+    int32_t lowest = -1;
+    int32_t highest = -1;
     {
         // Driven with the non-throwing increment, and refusing when the listing
-        // cannot be read. The previous shape had two holes: `list_ec` was set
-        // only by the constructor, so a failure left `highest` at -1 and the gap
-        // check below was skipped while initialize() returned success; and the
-        // range-for's `operator++` throws, so an error during iteration escaped
-        // this function instead of returning false.
+        // cannot be read: a failure must not read as an empty directory, and an
+        // error during iteration must not escape as an exception where every
+        // other failure here is a `return false`.
         std::error_code list_ec;
         std::filesystem::directory_iterator it(blocks_dir_, list_ec);
         if (list_ec) {
@@ -235,7 +188,6 @@ bool block_store::initialize() {
             return false;
         }
 
-        int32_t highest = -1;
         std::filesystem::directory_iterator const done;
         for (; it != done; it.increment(list_ec)) {
             if (list_ec) {
@@ -254,10 +206,47 @@ bool block_store::initialize() {
             if (digits.find_first_not_of("0123456789") != std::string::npos) {
                 continue;
             }
-            highest = std::max(highest, static_cast<int32_t>(std::stol(digits)));
+            auto const number = static_cast<int32_t>(std::stol(digits));
+            lowest = lowest < 0 ? number : std::min(lowest, number);
+            highest = std::max(highest, number);
         }
+    }
 
-        if (highest >= file_num) {
+    first_block_file_ = 0;
+    last_block_file_ = 0;
+
+    if (highest < 0) {
+        spdlog::debug("block_store: initialized with no existing files");
+        return true;
+    }
+
+    // Files missing below the lowest one are what pruning leaves behind, and
+    // only a store that was told to expect it accepts them. Anywhere else a
+    // missing blk00000.dat is a lost file: every block in it would simply be
+    // invisible, with a cursor handed out over what was left.
+    if (lowest > 0 && expected != numbering::pruned) {
+        spdlog::critical("block_store::initialize: blk{:05d}.dat is missing while "
+            "blk{:05d}.dat exists. A gap in the numbering is a lost file, not the end of "
+            "the chain; refusing to open rather than reporting a clean read of what is left",
+            0, lowest);
+        return false;
+    }
+
+    // A file missing BETWEEN two that exist is a lost file under either
+    // numbering: pruning removes from the lowest number up and never leaves one.
+    for (int32_t file_num = lowest; file_num <= highest; ++file_num) {
+        auto const path = block_files_.file_name(flat_file_pos{file_num, 0});
+        // With an error_code: an error is not "the file is not there", it is
+        // not knowing, which is a refusal.
+        std::error_code exists_ec;
+        auto const present = std::filesystem::exists(path, exists_ec);
+        if (exists_ec) {
+            spdlog::critical("block_store::initialize: {} could not be examined ({}); refusing "
+                "to open on a directory this process cannot read",
+                path.string(), exists_ec.message());
+            return false;
+        }
+        if ( ! present) {
             spdlog::critical("block_store::initialize: blk{:05d}.dat is missing while "
                 "blk{:05d}.dat exists. A gap in the numbering is a lost file, not the end of "
                 "the chain; refusing to open rather than reporting a clean read of what is left",
@@ -266,13 +255,17 @@ bool block_store::initialize() {
         }
     }
 
-    if (file_num > 0) {
-        last_block_file_ = file_num - 1;
-        spdlog::debug("block_store: discovered {} block files; write cursors stay unavailable "
-                    "until both scans complete", file_num);
-    } else {
-        spdlog::debug("block_store: initialized with no existing files");
+    // What initialize() establishes is only WHICH files exist. Their sizes are
+    // not recorded here: a file is preallocated in whole chunks, so its size is
+    // almost always larger than what was written into it, and it must never
+    // become a write cursor (#668). Each walk measures the file it is reading.
+    if (file_info_.size() <= static_cast<size_t>(highest)) {
+        file_info_.resize(static_cast<size_t>(highest) + 1);
     }
+    first_block_file_ = lowest;
+    last_block_file_ = highest;
+    spdlog::debug("block_store: discovered block files {} to {}; write cursors stay unavailable "
+                "until both scans complete", lowest, highest);
 
     return true;
 }
@@ -720,7 +713,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
         return result;
     };
 
-    for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
+    for (int32_t file_num = first_block_file_; file_num <= last_block_file_; ++file_num) {
         auto path = undo_files_.file_name(flat_file_pos{file_num, 0});
 
         FILE* file = open_native(path, "rb");
@@ -924,7 +917,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
     // follows. Reporting only the first would make the second unreachable.
     auto last_status = block_scan_status::clean_eof;
 
-    for (int32_t file_num = 0; file_num <= last_block_file_; ++file_num) {
+    for (int32_t file_num = first_block_file_; file_num <= last_block_file_; ++file_num) {
         auto path = block_files_.file_name(flat_file_pos{file_num, 0});
 
         // A file that is not there was never written: its extent is zero and
@@ -1199,7 +1192,9 @@ block_store::flush_undo(std::span<int32_t const> file_numbers) {
     files.erase(std::unique(files.begin(), files.end()), files.end());
 
     for (auto const file : files) {
-        if (file < 0 || size_t(file) >= file_info_.size()) {
+        // Below the first file as well, as in find_undo_pos: flushing opens the
+        // file for writing, which would bring back a rev file that was removed.
+        if (file < first_block_file_ || size_t(file) >= file_info_.size()) {
             return std::unexpected(undo_flush_error{result_code::other, file});
         }
 
@@ -1229,6 +1224,58 @@ directory_barrier block_store::directory_durability() const {
 #else
     return directory_barrier::available;
 #endif
+}
+
+std::expected<size_t, result_code> block_store::remove_files_below(int32_t file_number) {
+    if (file_number > last_block_file_) {
+        spdlog::error("block_store::remove_files_below: file {} is above the last block file {}; "
+            "the file being written is never removed", file_number, last_block_file_);
+        return std::unexpected(result_code::prune_error);
+    }
+
+    size_t removed = 0;
+    while (first_block_file_ < file_number) {
+        auto const file_num = first_block_file_;
+        flat_file_pos const pos{file_num, 0};
+        // The block file first, then its undo: see the declaration.
+        for (auto const& path : {block_files_.file_name(pos), undo_files_.file_name(pos)}) {
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+            if (ec) {
+                spdlog::error("block_store::remove_files_below: {} could not be removed ({})",
+                    path.string(), ec.message());
+                return std::unexpected(result_code::prune_error);
+            }
+        }
+        file_info_[file_num] = block_file_info{};
+        ++first_block_file_;
+        ++removed;
+    }
+
+    // A rev file whose block file went in an earlier, interrupted removal. It
+    // can only predate this store, since a removal here takes both files, so
+    // it is looked for once: on the first call, whether or not that call had
+    // a block file of its own to remove.
+    //
+    // A file that is not there is the ordinary case and no error. One that is
+    // there and cannot be removed is reported, and the search is left to be
+    // done again by a later call: marking it done would leave the file until
+    // the store is opened again.
+    if ( ! undo_leftovers_removed_) {
+        for (int32_t file_num = 0; file_num < first_block_file_; ++file_num) {
+            auto const path = undo_files_.file_name(flat_file_pos{file_num, 0});
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+            if (ec) {
+                spdlog::error("block_store::remove_files_below: {} could not be removed ({})",
+                    path.string(), ec.message());
+                return std::unexpected(result_code::prune_error);
+            }
+        }
+        undo_leftovers_removed_ = true;
+    }
+
+    return removed;
 }
 
 uint64_t block_store::calculate_disk_usage() const {
@@ -1318,7 +1365,9 @@ flat_file_pos block_store::find_undo_pos(int32_t file_num, uint32_t add_size) {
         return {};
     }
 
-    if (file_num < 0 || static_cast<size_t>(file_num) >= file_info_.size()) {
+    // Below the first file as well: its block file was removed, and writing
+    // here would bring a rev file back for blocks the store no longer holds.
+    if (file_num < first_block_file_ || static_cast<size_t>(file_num) >= file_info_.size()) {
         return {};
     }
 
