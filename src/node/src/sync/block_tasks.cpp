@@ -387,6 +387,15 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 peer->stopped(), coordinator->is_stopped());
             // Report failure - slot reset to FREE for retry by another peer
             coordinator->chunk_failed(claim);
+            if (result.error() == error::peer_throttling) {
+                // Not one block in the whole time: this peer is not serving
+                // blocks. Left connected it would keep its outbound slot until
+                // the inactivity timer, with nothing downloading through it.
+                // Closing the session frees the slot for another peer.
+                spdlog::debug("[block_download] Peer {} sent no block of chunk {}; closing the session",
+                    addr, chunk_id);
+                peer->stop(error::peer_throttling);
+            }
             break;
         }
 

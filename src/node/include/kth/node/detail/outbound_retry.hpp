@@ -20,8 +20,8 @@ namespace kth::node::detail {
 // When an address may be dialled again.
 //
 // An address that could not be reached waits a fixed time. One that was
-// reached and whose session then ended at once waits longer each time that
-// happens in a row: a peer that drops this node as soon as it is asked for
+// reached and whose session then ended at once, or was closed because the
+// peer served nothing, waits longer each time that happens in a row: a peer that drops this node as soon as it is asked for
 // something keeps doing so, and dialling it again every half minute spends an
 // outbound slot on a handshake that leads nowhere.
 //
@@ -68,6 +68,12 @@ struct outbound_retry {
             entries_.erase(ip);
             return;
         }
+        session_unproductive(ip, now);
+    }
+
+    // An outbound session with the address was of no use, however long it
+    // lasted: counted as a short one.
+    void session_unproductive(address const& ip, clock::time_point now) {
         entries_.insert_or_visit({ip, entry{now + base_cooldown, 1}}, [&](auto& existing) {
             ++existing.second.short_sessions;
             existing.second.until = now + cooldown_after(existing.second.short_sessions);
