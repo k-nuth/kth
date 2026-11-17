@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include <kth/domain/chain/golomb_match.hpp>
 #include <kth/domain/chain/golomb_set.hpp>
 
 using namespace kth;
@@ -185,4 +186,69 @@ TEST_CASE("reversing the items does not change the serialized set", "[golomb set
     REQUIRE(built_reversed);
     REQUIRE(built_forward->to_data() == built_reversed->to_data());
     require_hex(built_reversed->to_data(), hex_n50);
+}
+
+TEST_CASE("match each finds every member in one pass and agrees with match", "[golomb set]") {
+    auto const items = sha256_bytes(50);
+    auto const built = chain::golomb_set::build(filter_key, items);
+    REQUIRE(built);
+    auto const wire = built->to_data();
+
+    // Members at every fifth position, among items that are not members.
+    std::vector<data_chunk> asked;
+    std::vector<size_t> members;
+    for (uint32_t i = 0; i < 40; ++i) {
+        if (i % 5 == 0) {
+            members.push_back(asked.size());
+            asked.push_back(items[i]);
+        }
+        uint8_t const bytes[] = {uint8_t(i), 0xee};
+        asked.push_back(to_chunk(sha256_hash(bytes)));
+    }
+    std::vector<byte_span> spans(asked.begin(), asked.end());
+    auto const found = chain::golomb_match_each(filter_key, wire, spans);
+    REQUIRE(found);
+    for (size_t i = 0; i < asked.size(); ++i) {
+        bool const listed = std::ranges::find(*found, i) != found->end();
+        REQUIRE(listed == built->match(filter_key, asked[i]));
+    }
+    for (auto const position : members) {
+        REQUIRE(std::ranges::find(*found, position) != found->end());
+    }
+    REQUIRE(std::ranges::is_sorted(*found));
+
+    // An item asked twice is found at both positions.
+    std::vector<byte_span> twice{byte_span(items[3]), byte_span(items[3])};
+    auto const both = chain::golomb_match_each(filter_key, wire, twice);
+    REQUIRE(both);
+    REQUIRE(*both == std::vector<size_t>{0, 1});
+}
+
+TEST_CASE("match each of an empty set, no items, and a damaged stream", "[golomb set]") {
+    auto const items = sha256_bytes(50);
+    std::vector<byte_span> spans(items.begin(), items.end());
+
+    auto const empty = chain::golomb_match_each(filter_key, *decode_base16(hex_n0), spans);
+    REQUIRE(empty);
+    REQUIRE(empty->empty());
+
+    auto const wire = *decode_base16(hex_n50);
+    auto const none = chain::golomb_match_each(filter_key, wire, std::span<byte_span const>{});
+    REQUIRE(none);
+    REQUIRE(none->empty());
+
+    // The count promises 50 values, the stream holds a few.
+    auto const cut = chain::golomb_match_each(filter_key, byte_span(wire.data(), 4), spans);
+    REQUIRE( ! cut);
+    REQUIRE(cut.error() == chain::golomb_set_error::truncated);
+
+    auto const no_count = chain::golomb_match_each(filter_key, byte_span{}, spans);
+    REQUIRE( ! no_count);
+    REQUIRE(no_count.error() == chain::golomb_set_error::truncated);
+
+    // A count past a uint32.
+    auto const huge = *decode_base16("ff0000000001000000");
+    auto const refused = chain::golomb_match_each(filter_key, huge, spans);
+    REQUIRE( ! refused);
+    REQUIRE(refused.error() == chain::golomb_set_error::too_many_items);
 }

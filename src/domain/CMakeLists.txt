@@ -409,6 +409,7 @@ set(kth_headers
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/compact_filter.hpp
+    include/kth/domain/chain/golomb_match.hpp
     include/kth/domain/chain/golomb_set.hpp
     include/kth/domain/chain/input_prefix_filter.hpp
     include/kth/domain/chain/input.hpp

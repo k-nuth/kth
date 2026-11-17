@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <kth/domain/chain/golomb_set.hpp>
+#include <kth/domain/chain/golomb_match.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -282,6 +283,54 @@ bool golomb_set::match_any(golomb_key const& key, std::span<data_chunk const> it
         }
     }
     return false;
+}
+
+std::expected<std::vector<size_t>, golomb_set_error>
+golomb_match_each(golomb_key const& key, byte_span serialized, std::span<byte_span const> items) {
+    byte_reader reader(serialized);
+    auto const count = reader.read_variable_little_endian();
+    if ( ! count) {
+        return std::unexpected(golomb_set_error::truncated);
+    }
+    if (*count > std::numeric_limits<uint32_t>::max()) {
+        return std::unexpected(golomb_set_error::too_many_items);
+    }
+
+    std::vector<size_t> found;
+    auto const n = static_cast<uint32_t>(*count);
+    if (n == 0 || items.empty()) {
+        return found;
+    }
+
+    // Each item reduced as match() reduces it, then all of them sorted, so one
+    // walk of the set's values in increasing order meets every one.
+    auto const modulus = uint64_t{n} * golomb_set_m;
+    std::vector<std::pair<uint64_t, size_t>> terms;
+    terms.reserve(items.size());
+    for (size_t i = 0; i < items.size(); ++i) {
+        terms.emplace_back(multiply_high(hash_item(key, items[i]), modulus), i);
+    }
+    std::sort(terms.begin(), terms.end());
+
+    bit_reader bits(serialized.subspan(reader.position()));
+    uint64_t value = 0;
+    size_t next = 0;
+    for (uint32_t i = 0; i < n && next < terms.size(); ++i) {
+        auto const delta = read_difference(bits);
+        if ( ! delta) {
+            return std::unexpected(golomb_set_error::truncated);
+        }
+        value += *delta;
+        while (next < terms.size() && terms[next].first < value) {
+            ++next;
+        }
+        while (next < terms.size() && terms[next].first == value) {
+            found.push_back(terms[next].second);
+            ++next;
+        }
+    }
+    std::sort(found.begin(), found.end());
+    return found;
 }
 
 } // namespace kth::domain::chain
