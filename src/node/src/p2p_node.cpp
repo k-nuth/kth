@@ -178,7 +178,7 @@ p2p_node::~p2p_node() {
 }
 
 ::asio::awaitable<code> p2p_node::run() {
-    spdlog::info("[p2p_node] run() STARTING");
+    spdlog::debug("[p2p_node] run() STARTING");
 
     if (stopped()) {
         spdlog::debug("[p2p_node] run() - already stopped");
@@ -254,7 +254,7 @@ p2p_node::~p2p_node() {
     spdlog::debug("[p2p_node] All tasks spawned, waiting on join...");
     // Wait for all tasks to complete (i.e., until stop() is called)
     co_await network_tasks.join();
-    spdlog::info("[p2p_node] run() ENDED - all tasks completed");
+    spdlog::debug("[p2p_node] run() ENDED - all tasks completed");
 
     co_return error::success;
 }
@@ -1168,7 +1168,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 
         // Early exit if we have enough addresses
         if (auto const [avail, _] = peer_db_.count_by_status(); avail >= settings_.host_pool_capacity / 4) {
-            spdlog::info("[p2p_node] Collected sufficient addresses, stopping seeding early");
+            spdlog::debug("[p2p_node] Collected sufficient addresses, stopping seeding early");
             break;
         }
 
@@ -1284,7 +1284,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
                                 reader, peer->negotiated_version());
                             if (addrv2_result) {
                                 addresses = addrv2_result->to_network_addresses();
-                                spdlog::info("[p2p_node] Seed {}:{} sent ADDRV2: {} entries, {} IPv4/IPv6",
+                                spdlog::debug("[p2p_node] Seed {}:{} sent ADDRV2: {} entries, {} IPv4/IPv6",
                                     seed_host, seed_port,
                                     addrv2_result->addresses().size(), addresses.size());
                             }
@@ -1294,7 +1294,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
                                 reader, peer->negotiated_version());
                             if (addr_result) {
                                 addresses = std::move(addr_result->addresses());
-                                spdlog::info("[p2p_node] Seed {}:{} sent ADDR (legacy): {} entries",
+                                spdlog::debug("[p2p_node] Seed {}:{} sent ADDR (legacy): {} entries",
                                     seed_host, seed_port, addresses.size());
                             }
                         } else {
@@ -1321,7 +1321,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
                     }
                 }
 
-                spdlog::info("[p2p_node] Seed {}:{} provided {} total addresses",
+                spdlog::debug("[p2p_node] Seed {}:{} provided {} total addresses",
                     seed_host, seed_port, total_addresses);
 
                 peer->stop();
@@ -1613,7 +1613,7 @@ void p2p_node::wake_status_task() noexcept {
         co_await ::asio::post(executor, ::asio::use_awaitable);
     }
 
-    spdlog::info("[p2p_node] maintain_outbound_connections started, target: {} peers", settings_.outbound_connections);
+    spdlog::debug("[p2p_node] maintain_outbound_connections started, target: {} peers", settings_.outbound_connections);
 
     // Maximum number of parallel connection attempts
     // Should match or exceed outbound_connections target for faster peer acquisition
@@ -1666,7 +1666,7 @@ void p2p_node::wake_status_task() noexcept {
             auto const [hosts, banned] = peer_db_.count_by_status();
             auto const pending = pending_connections_.size();
             probe_status_task(status_probe_point::reported);
-            spdlog::info("[p2p_node:status] Peers: {}/{} outbound (target), {} inbound, pending: {}, hosts: {}, banned: {}",
+            spdlog::debug("[p2p_node:status] Peers: {}/{} outbound (target), {} inbound, pending: {}, hosts: {}, banned: {}",
                 current.outbound, target, current.inbound, pending, hosts, banned);
         }
     }, ::asio::detached);
@@ -1987,7 +1987,7 @@ void p2p_node::wake_status_task() noexcept {
                         }
 
                         // Notify sync layer of new peer (CSP pattern)
-                        spdlog::info("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
+                        spdlog::debug("[p2p_node:peer_event] CONNECTED: {} (nonce={})",
                             peer->authority(), peer->nonce());
                         peer_notification_channel_->try_send(
                             peer_notification{peer, peer_event_type::connected});
@@ -2067,7 +2067,7 @@ void p2p_node::wake_status_task() noexcept {
                 }
 
                 // Notify sync layer of peer disconnection (CSP pattern)
-                spdlog::info("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
+                spdlog::debug("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
                     peer->authority(), peer->nonce());
                 peer_notification_channel_->try_send(
                     peer_notification{peer, peer_event_type::disconnected});
@@ -2112,13 +2112,13 @@ void p2p_node::wake_status_task() noexcept {
     }
 
     // Log peers that are still "active" (their task hasn't completed)
-    spdlog::info("[p2p_node] Waiting for peer_tasks.join() - if this hangs, check which peer task didn't complete");
+    spdlog::debug("[p2p_node] Waiting for peer_tasks.join() - if this hangs, check which peer task didn't complete");
 
     // CRITICAL: Wait for all peer tasks to complete
     // This is the structured concurrency guarantee - no orphaned tasks!
     co_await peer_tasks.join();
 
-    spdlog::info("[p2p_node] peer_supervisor finished - all peer tasks completed");
+    spdlog::debug("[p2p_node] peer_supervisor finished - all peer tasks completed");
 }
 
 uint64_t p2p_node::generate_nonce() {

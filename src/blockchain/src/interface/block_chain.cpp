@@ -608,7 +608,7 @@ bool block_chain::start(uint32_t disk_magic) {
             db.set_header_index(&header_index_);
         });
     }
-    spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
+    spdlog::debug("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
     return true;

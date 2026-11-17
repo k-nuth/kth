@@ -240,7 +240,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 for (auto t : sorted_dl) sum += t;
                 double avg_ms = static_cast<double>(sum) / n;
 
-                spdlog::info("[download] Peer {} stats (n={}): "
+                spdlog::debug("[download] Peer {} stats (n={}): "
                     "download min={}ms avg={:.0f}ms median={}ms max={}ms",
                     addr, n, min_ms, avg_ms, median_ms, max_ms);
             }
@@ -256,7 +256,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 double total_ms = net_avg_ms + deser_avg_ms;
                 double net_pct = total_ms > 0 ? (net_avg_ms / total_ms) * 100.0 : 0;
 
-                spdlog::info("[download] Peer {} timing: net={:.1f}ms ({:.0f}%) deser={:.1f}ms ({:.0f}%)",
+                spdlog::debug("[download] Peer {} timing: net={:.1f}ms ({:.0f}%) deser={:.1f}ms ({:.0f}%)",
                     addr, net_avg_ms, net_pct, deser_avg_ms, 100.0 - net_pct);
             }
 
@@ -271,7 +271,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     uint64_t sum = 0;
                     for (auto t : sorted_send) sum += t;
                     double avg_ms = static_cast<double>(sum) / n;
-                    spdlog::info("[download] Peer {} channel send: avg={:.0f}ms median={}ms max={}ms",
+                    spdlog::debug("[download] Peer {} channel send: avg={:.0f}ms median={}ms max={}ms",
                         addr, avg_ms, median_ms, max_ms);
                 }
             }
@@ -309,7 +309,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     try {
 
     // Log initial state
-    spdlog::info("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, thread_id={})",
+    spdlog::debug("[block_download] Peer {} entering main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, thread_id={})",
         addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete(),
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
@@ -319,7 +319,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (!maybe_chunk) {
             // No more chunks or all slots busy - wait and retry
             if (coordinator->is_complete() || coordinator->is_stopped()) {
-                spdlog::info("[block_download] Peer {} exiting: sync complete or stopped (complete={}, stopped={})",
+                spdlog::debug("[block_download] Peer {} exiting: sync complete or stopped (complete={}, stopped={})",
                     addr, coordinator->is_complete(), coordinator->is_stopped());
                 break;
             }
@@ -368,7 +368,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // chunk be re-claimed against the new chain rather than downloading a
         // set that was never a chain.
         if (coordinator->generation() != request_generation) {
-            spdlog::info("[block_download] Chain switched while building chunk {} — releasing it",
+            spdlog::debug("[block_download] Chain switched while building chunk {} — releasing it",
                 chunk_id);
             coordinator->chunk_failed(claim);
             continue;
@@ -382,7 +382,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             std::chrono::steady_clock::now() - download_start).count();
 
         if (!result) {
-            spdlog::info("[block_download] Peer {} FAILED chunk {} after {}ms: {} (peer_stopped={}, coord_stopped={})",
+            spdlog::debug("[block_download] Peer {} FAILED chunk {} after {}ms: {} (peer_stopped={}, coord_stopped={})",
                 addr, chunk_id, download_ms, result.error().message(),
                 peer->stopped(), coordinator->is_stopped());
             // Report failure - slot reset to FREE for retry by another peer
@@ -445,7 +445,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 *fast_sender, *coordinator, request_generation, chunk_id, addr);
 
             if (outcome != chunk_handover::delivered) {
-                spdlog::info("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
+                spdlog::debug("[block_download] Peer {} gave up chunk {} ({}); it will be claimed again",
                     addr, chunk_id, to_string(outcome));
                 coordinator->chunk_failed(claim);
                 send_error = true;
@@ -543,7 +543,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
     // Log why we exited the while loop
-    spdlog::info("[block_download] Peer {} exited main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, chunks={})",
+    spdlog::debug("[block_download] Peer {} exited main loop (peer_stopped={}, coord_stopped={}, coord_complete={}, chunks={})",
         addr, peer->stopped(), coordinator->is_stopped(), coordinator->is_complete(), chunks_downloaded);
 
     } catch (::asio::system_error const& e) {
@@ -590,7 +590,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         (void)report_selected;
     }
 
-    spdlog::info("[block_download:shutdown] Peer {} task exiting cleanly (downloaded {} chunks)", addr, chunks_downloaded);
+    spdlog::debug("[block_download:shutdown] Peer {} task exiting cleanly (downloaded {} chunks)", addr, chunks_downloaded);
 }
 
 // =============================================================================
@@ -606,7 +606,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
 ) {
     auto executor = co_await ::asio::this_coro::executor;
 
-    spdlog::info("[block_supervisor] Task started (thread_id={})",
+    spdlog::debug("[block_supervisor] Task started (thread_id={})",
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
     task_group tasks("block_supervisor_tasks", executor);
@@ -749,7 +749,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             auto bytes_delta = bytes_downloaded - last_bytes_downloaded;
             auto blk_rate = elapsed_ms > 0 ? (blocks_delta * 1000 / elapsed_ms) : 0;
             double mb_rate = elapsed_ms > 0 ? (double(bytes_delta) / 1024.0 / 1024.0) / (double(elapsed_ms) / 1000.0) : 0.0;
-            spdlog::info("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
+            spdlog::debug("[block_supervisor] Stats: {} blocks ({} blk/s, {:.1f} MB/s), {} peers downloading",
                 blocks_forwarded, blk_rate, mb_rate, ownership.worker_count());
             last_stats_time = now;
             last_blocks_forwarded = blocks_forwarded;
@@ -774,13 +774,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         g_active_download_peers.store(
             static_cast<uint32_t>(ownership.worker_count()), std::memory_order_relaxed);
-        spdlog::info("[block_supervisor:task_ended] nonce={} task={} epoch={}, remaining downloading={}",
+        spdlog::debug("[block_supervisor:task_ended] nonce={} task={} epoch={}, remaining downloading={}",
             ended.peer_nonce, ended.task_id, ended.coordinator_epoch,
             ownership.worker_count());
 
         if (handoff) {
             if (spawn_known(*handoff)) {
-                spdlog::info("[block_supervisor:task_ended] peer {} handed to the current range "
+                spdlog::debug("[block_supervisor:task_ended] peer {} handed to the current range "
                     "(epoch {})", *handoff, ownership.epoch());
             } else {
                 // A refusal here is the state this whole change is about: the
@@ -793,7 +793,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     };
 
     auto on_range_request = [&](block_range_request const& request) {
-        spdlog::info("[block_supervisor] New range request: {} to {} ({} blocks)",
+        spdlog::debug("[block_supervisor] New range request: {} to {} ({} blocks)",
             request.start_height, request.end_height,
             request.end_height - request.start_height + 1);
 
@@ -826,7 +826,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 ++started;
             }
         }
-        spdlog::info("[block_supervisor] Range {}-{} (epoch {}): started {} of {} known peers, "
+        spdlog::debug("[block_supervisor] Range {}-{} (epoch {}): started {} of {} known peers, "
             "{} still finishing the previous range",
             request.start_height, request.end_height, ownership.epoch(),
             started, to_start.size(),
@@ -848,7 +848,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
         ownership.set_known(nonces);
 
-        spdlog::info("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
+        spdlog::debug("[block_supervisor:peers_updated] received {} peers, {} known, {} downloading "
             "(coordinator={})", peers_msg.peers.size(), known_peers.size(),
             ownership.worker_count(), coordinator ? "yes" : "no");
 
@@ -863,7 +863,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         for (auto const nonce : nonces) {
             if (spawn_known(nonce)) ++spawned;
         }
-        spdlog::info("[block_supervisor:peers_updated] result: spawned={}, already_running={}",
+        spdlog::debug("[block_supervisor:peers_updated] result: spawned={}, already_running={}",
             spawned, ownership.worker_count() - spawned);
     };
 
@@ -904,7 +904,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     constexpr size_t tick_case = 1;
     constexpr size_t task_case = 2;
 
-    spdlog::info("[block_supervisor] Entering main event loop");
+    spdlog::debug("[block_supervisor] Entering main event loop");
     uint64_t events_processed = 0;
     while (true) {
         events.case_at<tick_case>().time = next_tick;
@@ -915,7 +915,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // stop. Anything else cannot happen without a stop token or a
             // deadline, and is reported rather than looped on.
             if (ec == ::asio::error::eof && index == input_case) {
-                spdlog::info("[block_supervisor] Input channel closed");
+                spdlog::debug("[block_supervisor] Input channel closed");
             } else {
                 spdlog::error("[block_supervisor] Selection failed ({}, case {}); stopping",
                     ec.message(), index);
@@ -968,9 +968,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
         auto& msg = *events.value<input_case>();
 
         if (std::holds_alternative<stop_request>(msg)) {
-            spdlog::info("[block_supervisor] Stop signal received");
+            spdlog::debug("[block_supervisor] Stop signal received");
             if (coordinator) {
-                spdlog::info("[block_supervisor] Stopping coordinator...");
+                spdlog::debug("[block_supervisor] Stopping coordinator...");
                 coordinator->stop();
             }
             break;
@@ -989,7 +989,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
     // Stop coordinator FIRST to signal all tasks to exit: their chunk claims
     // return nothing and their selections armed with its token are aborted.
-    spdlog::info("[block_supervisor:shutdown] Step 1/3: Stopping coordinator...");
+    spdlog::debug("[block_supervisor:shutdown] Step 1/3: Stopping coordinator...");
     if (coordinator) {
         coordinator->stop();
     }
@@ -998,21 +998,21 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // task_ended send completes with broken_pipe and exits. Nobody receives
     // from it any more; what it still buffers is dropped with it.
     // NOTE: Don't close `output` - it's owned by sync_orchestrator, peer_provider closes it
-    spdlog::info("[block_supervisor:shutdown] Step 2/3: Closing the workers' output...");
+    spdlog::debug("[block_supervisor:shutdown] Step 2/3: Closing the workers' output...");
     task_output.close();
 
     // NOW wait for all download tasks to finish
     auto const active = tasks.active_count();
-    spdlog::info("[block_supervisor:shutdown] Step 3/3: Waiting for {} tasks to complete...", active);
+    spdlog::debug("[block_supervisor:shutdown] Step 3/3: Waiting for {} tasks to complete...", active);
     co_await tasks.join();
-    spdlog::info("[block_supervisor:shutdown] All tasks completed");
+    spdlog::debug("[block_supervisor:shutdown] All tasks completed");
 
     // NOW it's safe to destroy the coordinator. The selector is destroyed with
     // this frame, after its last wait, as its contract requires.
-    spdlog::info("[block_supervisor] Destroying coordinator...");
+    spdlog::debug("[block_supervisor] Destroying coordinator...");
     coordinator.reset();
 
-    spdlog::info("[block_supervisor] Task ended cleanly");
+    spdlog::debug("[block_supervisor] Task ended cleanly");
 }
 
 
@@ -1027,9 +1027,9 @@ std::atomic<uint32_t> g_active_download_peers{0};
     uint32_t start_height,
     uint32_t checkpoint_height
 ) {
-    spdlog::info("[block_validation] Task started at height {}, checkpoint at {}",
+    spdlog::debug("[block_validation] Task started at height {}, checkpoint at {}",
         start_height, checkpoint_height);
-    spdlog::info("[block_validation] Entering main receive loop, waiting for blocks...");
+    spdlog::debug("[block_validation] Entering main receive loop, waiting for blocks...");
 
     // OWNED state - not shared with anyone
     uint32_t next_height = start_height;
@@ -1126,7 +1126,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
         // Log first few blocks received
         if (total_received <= 10 || total_received % 1000 == 0) {
-            spdlog::info("[block_validation] Received block {} (total received: {}, pending: {})",
+            spdlog::debug("[block_validation] Received block {} (total received: {}, pending: {})",
                 downloaded.height, total_received, pending.size());
         }
 
@@ -1379,7 +1379,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 }
                 double stddev_us = std::sqrt(variance / n);
 
-                spdlog::info("[validation] organize() stats (n={}): "
+                spdlog::debug("[validation] organize() stats (n={}): "
                     "min={:.1f}ms avg={:.1f}ms median={:.1f}ms p95={:.1f}ms p99={:.1f}ms max={:.1f}ms stddev={:.1f}ms",
                     n,
                     min_us / 1000.0, avg_us / 1000.0, median_us / 1000.0,
@@ -1410,19 +1410,19 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     double push_per_byte_ns = fast_total_bytes > 0
                         ? static_cast<double>(total_push_us) * 1000.0 / fast_total_bytes : 0.0;
 
-                    spdlog::info("[validation] height {} fast mode avg: merkle={:.3f}ms ({:.2f}us/tx) push={:.3f}ms ({:.2f}ns/byte)",
+                    spdlog::debug("[validation] height {} fast mode avg: merkle={:.3f}ms ({:.2f}us/tx) push={:.3f}ms ({:.2f}ns/byte)",
                         current_height, merkle_avg_ms, merkle_per_tx_us, push_avg_ms, push_per_byte_ns);
 
                     // Block statistics (for baseline measurements)
                     auto blocks_in_window = fast_merkle_times.size();
                     double avg_txs_per_block = blocks_in_window > 0 ? static_cast<double>(fast_total_txs) / blocks_in_window : 0;
                     double avg_bytes_per_block = blocks_in_window > 0 ? static_cast<double>(fast_total_bytes) / blocks_in_window : 0;
-                    spdlog::info("[block_stats] window: {} blocks, {} txs ({:.1f} txs/blk), {:.2f} MB ({:.0f} bytes/blk)",
+                    spdlog::debug("[block_stats] window: {} blocks, {} txs ({:.1f} txs/blk), {:.2f} MB ({:.0f} bytes/blk)",
                         blocks_in_window, fast_total_txs, avg_txs_per_block,
                         fast_total_bytes / 1'000'000.0, avg_bytes_per_block);
                 } else if (!deser_times.empty()) {
                     // Full validation mode
-                    spdlog::info("[validation] phases avg: "
+                    spdlog::debug("[validation] phases avg: "
                         "deser={:.2f}ms check={:.2f}ms populate={:.2f}ms accept={:.2f}ms "
                         "connect={:.2f}ms notify={:.2f}ms push={:.2f}ms",
                         avg_vec(deser_times), avg_vec(check_times), avg_vec(pop_times),
@@ -1449,7 +1449,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     double write_throughput_mb_s = write_time_ns > 0
                         ? (write_bytes / 1'000'000.0) / (write_time_ns / 1'000'000'000.0) : 0.0;
 
-                    spdlog::info("[block_storage] alloc: n={} avg={:.1f}ms total={:.1f}MB | "
+                    spdlog::debug("[block_storage] alloc: n={} avg={:.1f}ms total={:.1f}MB | "
                         "write: n={} avg={:.2f}ms {:.1f}MB/s | open: n={} avg={:.1f}us",
                         alloc_calls, alloc_avg_ms, alloc_bytes / 1'000'000.0,
                         write_calls, write_avg_ms, write_throughput_mb_s,
@@ -1478,7 +1478,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     double total_time_ms = (static_cast<double>(total_wait) + static_cast<double>(total_organize)) / 1000.0;
                     double wait_pct = total_time_ms > 0 ? (static_cast<double>(total_wait) / 1000.0 / total_time_ms) * 100.0 : 0;
 
-                    spdlog::info("[validation] channel_wait: avg={:.2f}ms/blk ({:.0f}% of time waiting for blocks)",
+                    spdlog::debug("[validation] channel_wait: avg={:.2f}ms/blk ({:.0f}% of time waiting for blocks)",
                         avg_wait_ms, wait_pct);
                 }
 
@@ -1491,7 +1491,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     double deser_avg_ms = static_cast<double>(total_deser) / block_deserialize_times_us.size() / 1000.0;
                     double net_avg_ms = static_cast<double>(total_net) / block_network_times_us.size() / 1000.0;
 
-                    spdlog::info("[download_timing] block deser={:.3f}ms/blk net_wait={:.3f}ms/blk (n={})",
+                    spdlog::debug("[download_timing] block deser={:.3f}ms/blk net_wait={:.3f}ms/blk (n={})",
                         deser_avg_ms, net_avg_ms, block_deserialize_times_us.size());
                 }
 
@@ -1509,7 +1509,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     double dl_pct = total_pipeline_ms > 0 ? (dl_to_sup_avg_ms / total_pipeline_ms) * 100.0 : 0;
                     double ch_pct = total_pipeline_ms > 0 ? (sup_to_val_avg_ms / total_pipeline_ms) * 100.0 : 0;
 
-                    spdlog::info("[pipeline_latency] download_task={:.3f}ms ({:.0f}%) channels={:.3f}ms ({:.0f}%) total={:.3f}ms/blk",
+                    spdlog::debug("[pipeline_latency] download_task={:.3f}ms ({:.0f}%) channels={:.3f}ms ({:.0f}%) total={:.3f}ms/blk",
                         dl_to_sup_avg_ms, dl_pct, sup_to_val_avg_ms, ch_pct, total_pipeline_ms);
                 }
 
@@ -1536,7 +1536,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
     // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
-    spdlog::info("[block_validation] Task ended, validated {} blocks", validated_count);
+    spdlog::debug("[block_validation] Task ended, validated {} blocks", validated_count);
 }
 
 // =============================================================================
@@ -1549,7 +1549,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     chunk_validated_channel& output,
     block_storage_input_channel* storage
 ) {
-    spdlog::info("[fast_validation] Task started (storage={})", storage ? "yes" : "no");
+    spdlog::debug("[fast_validation] Task started (storage={})", storage ? "yes" : "no");
 
     uint64_t chunks_validated = 0;
     uint64_t blocks_validated = 0;
@@ -1572,7 +1572,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     };
 
     auto initial_rss = get_rss_mb();
-    spdlog::info("[fast_validation] Initial RSS: {:.0f} MB", initial_rss);
+    spdlog::debug("[fast_validation] Initial RSS: {:.0f} MB", initial_rss);
 
     // The one consumer of the fast path. A task-owned selector with a single
     // receive case: each wait takes the oldest chunk, or ends with eof once the
@@ -1639,7 +1639,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             auto current_rss = get_rss_mb();
             auto live_blocks = domain::chain::light_block::live_instances.load(std::memory_order_relaxed);
 
-            spdlog::info("[sync] Stats: {} blocks at height {} ({} blk/s, {:.1f} MB/s), {} peers downloading, RSS: {:.0f} MB, live_blocks: {}",
+            spdlog::debug("[sync] Stats: {} blocks at height {} ({} blk/s, {:.1f} MB/s), {} peers downloading, RSS: {:.0f} MB, live_blocks: {}",
                 blocks_validated, chunk_start + chunk_block_count - 1,
                 blk_rate, mb_rate, peers, current_rss, live_blocks);
 
@@ -1707,7 +1707,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     }
 
     auto final_rss = get_rss_mb();
-    spdlog::info("[fast_validation] Task ended, validated {} chunks ({} blocks), RSS: {:.0f} MB (delta: +{:.0f})",
+    spdlog::debug("[fast_validation] Task ended, validated {} chunks ({} blocks), RSS: {:.0f} MB (delta: +{:.0f})",
         chunks_validated, blocks_validated, final_rss, final_rss - initial_rss);
 }
 
@@ -1731,7 +1731,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
     blockchain::header_organizer&,
     std::atomic<uint32_t>* contiguous_out
 ) {
-    spdlog::info("[block_storage] Task started at height {}", start_height);
+    spdlog::debug("[block_storage] Task started at height {}", start_height);
 
     // A chain switch rewrites the have_data flags this task publishes, so
     // storage participates in the reorg barrier. Stored does not mean validated.
@@ -1783,7 +1783,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         if (contiguous_out) {
             contiguous_height = contiguous_out->load(std::memory_order_acquire);
             max_stored_height = contiguous_height > 0 ? contiguous_height - 1 : 0;
-            spdlog::info("[block_storage] Resuming after reorg at contiguous height {}",
+            spdlog::debug("[block_storage] Resuming after reorg at contiguous height {}",
                 contiguous_height);
         }
     };
@@ -1838,7 +1838,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // in flight, or buffered behind the reorg barrier, is recognisable
         // afterwards instead of being applied to the new chain.
         if (chunk_generation != chain.chain_generation()) {
-            spdlog::info("[block_storage] Dropping chunk at {} from generation {} (chain is at {}) "
+            spdlog::debug("[block_storage] Dropping chunk at {} from generation {} (chain is at {}) "
                 "— downloaded for a branch that has since been abandoned",
                 chunk_start, chunk_generation, chain.chain_generation());
             chunk.blocks.clear();
@@ -1935,7 +1935,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 std::chrono::steady_clock::now() - task_start).count();
             double rate = elapsed > 0 ? static_cast<double>(blocks_stored) / elapsed : 0;
             auto current_rss = get_rss_mb();
-            spdlog::info("[block_storage] {} chunks ({} blocks) stored, {:.0f} blk/s, contiguous [{}..{}], max {}, last_store {}us, RSS: {:.0f} MB (+{:.0f})",
+            spdlog::debug("[block_storage] {} chunks ({} blocks) stored, {:.0f} blk/s, contiguous [{}..{}], max {}, last_store {}us, RSS: {:.0f} MB (+{:.0f})",
                 chunks_stored, blocks_stored, rate,
                 start_height, contiguous_height > 0 ? contiguous_height - 1 : 0, max_stored_height,
                 store_us, current_rss, current_rss - initial_rss);
@@ -1990,7 +1990,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             }
         }
 
-        spdlog::info("[block_storage:fragmentation] {} chunks: {:.1f}% in-order on disk, {} inversions ({:.1f}% backward seeks needed for sequential read)",
+        spdlog::debug("[block_storage:fragmentation] {} chunks: {:.1f}% in-order on disk, {} inversions ({:.1f}% backward seeks needed for sequential read)",
             n, order_pct, inversions, 100.0 * static_cast<double>(inversions) / (n - 1));
     }
 
@@ -2003,7 +2003,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         uint32_t first_gap = 0;
         bool found_gap = false;
 
-        spdlog::info("[block_storage:header_index_dump] Dumping {} entries...", total);
+        spdlog::debug("[block_storage:header_index_dump] Dumping {} entries...", total);
 
         for (uint32_t idx = 0; idx < total; ++idx) {
             auto const block_pos = hdr.get_block_pos(idx);
@@ -2025,7 +2025,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // Print every block (height, hash_prefix, file, pos, status flags)
             // Use debug level to avoid flooding — the full dump goes to log file
             auto const hash = hdr.get_hash(idx);
-            spdlog::info("[header_index] h={} hash={:08x}… file={} pos={} status={:#04x}{}",
+            spdlog::debug("[header_index] h={} hash={:08x}… file={} pos={} status={:#04x}{}",
                 idx,
                 // First 4 bytes of hash as hex prefix
                 (uint32_t(hash[0]) << 24) | (uint32_t(hash[1]) << 16) |
@@ -2034,7 +2034,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 has_data ? " [DATA]" : "");
         }
 
-        spdlog::info("[block_storage:header_index_dump] Summary: {} total, {} have_data, {} missing_data, contiguous [{}..{}]{}",
+        spdlog::debug("[block_storage:header_index_dump] Summary: {} total, {} have_data, {} missing_data, contiguous [{}..{}]{}",
             total, have_data_count, missing_data_count,
             start_height, contiguous_height > 0 ? contiguous_height - 1 : 0,
             found_gap ? fmt::format(", first_gap at height {}", first_gap) : "");
@@ -2045,7 +2045,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         std::chrono::steady_clock::now() - task_start).count();
     auto elapsed_min = total_elapsed / 60;
     auto elapsed_sec = total_elapsed % 60;
-    spdlog::info("[block_storage] Task ended, stored {} chunks ({} blocks), contiguous [{}..{}], max {}, wall time {}m{}s, RSS: {:.0f} MB (delta: +{:.0f})",
+    spdlog::debug("[block_storage] Task ended, stored {} chunks ({} blocks), contiguous [{}..{}], max {}, wall time {}m{}s, RSS: {:.0f} MB (delta: +{:.0f})",
         chunks_stored, blocks_stored,
         start_height, contiguous_height > 0 ? contiguous_height - 1 : 0,
         max_stored_height, elapsed_min, elapsed_sec,
@@ -2167,7 +2167,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     block_rejection_channel* rejections,
     block_rejection_ack_channel* rejection_ack
 ) {
-    spdlog::info("[utxo_build] Task started at height {}", start_height);
+    spdlog::debug("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
     constexpr auto poll_interval = std::chrono::milliseconds(500);
@@ -2218,6 +2218,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     if (saved_opt) {
         spdlog::info("[utxo_build] Resuming from height {}", utxo_built_height);
     }
+
+    // Progress belongs to this task, which publishes the connected UTXO tip.
+    // Download and storage throughput remain in the debug file.
+    auto last_progress_time = std::chrono::steady_clock::now();
+    auto last_progress_height = utxo_built_height;
 
     // This task writes the UTXO set, so a chain switch must wait for it. The guard
     // retires it on every exit path — the batch loop has several co_returns.
@@ -2543,7 +2548,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     // closed channel is the shutdown.
                     if ( ! rejections->try_send(std::error_code{}, block_rejected{
                             .height = failed_height, .hash = failed_hash, .reason = vc})) {
-                        spdlog::info("[utxo_build] The rejection channel is closed; ending");
+                        spdlog::debug("[utxo_build] The rejection channel is closed; ending");
                         co_return;
                     }
 
@@ -2585,7 +2590,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     batch_start, batch_end, vc.message());
                 co_return;
             }
-            spdlog::info("[utxo_build] Full validation OK for {}-{}", batch_start, batch_end);
+            spdlog::debug("[utxo_build] Full validation OK for {}-{}", batch_start, batch_end);
         }
 
         // Step 1a. The headers this batch will need, made durable BEFORE anything
@@ -2894,7 +2899,7 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 chain, *window, delta, batch_end);
 
             if (applied.erased > 0 || applied.absent > 0) {
-                spdlog::info("[utxo_build] BIP30 replacement at batch {}: withdrew {} "
+                spdlog::debug("[utxo_build] BIP30 replacement at batch {}: withdrew {} "
                     "entry(ies), {} had none to withdraw",
                     batch_start, applied.erased, applied.absent);
             }
@@ -3283,14 +3288,34 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             }
         }
 
-        spdlog::info("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
+        spdlog::debug("[utxo_build] UTXO built to height {}/{}", utxo_built_height, current_contiguous - 1);
+        auto const now = std::chrono::steady_clock::now();
+        if (now - last_progress_time >= std::chrono::seconds(5)) {
+            auto const elapsed = std::chrono::duration<double>(now - last_progress_time).count();
+            auto const advanced = utxo_built_height > last_progress_height
+                ? utxo_built_height - last_progress_height : 0;
+            auto const rate = advanced / elapsed;
+            auto const heights = chain.get_last_heights();
+            auto const target = heights ? std::max(heights->header, utxo_built_height)
+                                        : utxo_built_height;
+            auto const percent = target > 0 ? 100.0 * utxo_built_height / target : 100.0;
+            if (heights && rate > 0) {
+                spdlog::info("[sync] Connected {}/{} ({:.1f}%, {:.1f} blk/s, ETA: {:.0f}s)",
+                    utxo_built_height, target, percent, rate, (target - utxo_built_height) / rate);
+            } else {
+                spdlog::info("[sync] Connected height {} ({:.1f} blk/s, ETA unavailable)",
+                    utxo_built_height, rate);
+            }
+            last_progress_time = now;
+            last_progress_height = utxo_built_height;
+        }
     }
 
 
     // Compaction is maintenance, not a durability barrier. Rewriting the whole
     // UTXO set here makes even an idle node take minutes to stop. The batch sync
     // barriers above and the normal database close still persist owned state.
-    spdlog::info("[utxo_build] Closing without a full UTXO compaction");
+    spdlog::debug("[utxo_build] Closing without a full UTXO compaction");
     // Reports, and a latched store simply has none to give. Each says so rather
     // than returning silently, which is what the old void signatures did.
     for (auto const& [name, report] : std::initializer_list<
