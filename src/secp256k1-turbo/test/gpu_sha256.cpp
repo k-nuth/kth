@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -135,6 +136,75 @@ TEST_CASE("gpu merkle root on the host reports equal siblings at any level", "[g
     }
 }
 
+namespace {
+
+// Messages laid out in one buffer the way transactions are in a block: one
+// after another, with a few bytes that belong to none of them in between, so
+// they start at every alignment. `order` then lists them shuffled.
+struct message_set {
+    std::vector<std::uint8_t> data;
+    std::vector<std::uint64_t> offsets;
+    std::vector<std::uint32_t> sizes;
+};
+
+message_set make_messages(std::vector<std::uint32_t> const& lengths, std::uint64_t seed) {
+    message_set set;
+    std::size_t total = 0;
+    for (std::size_t i = 0; i < lengths.size(); ++i) total += lengths[i] + (i % 4);
+    set.data = random_bytes(total + 3, seed);
+    std::size_t at = 0;
+    for (std::size_t i = 0; i < lengths.size(); ++i) {
+        at += i % 4;                 // a gap, and a start at every alignment
+        set.offsets.push_back(at);
+        set.sizes.push_back(lengths[i]);
+        at += lengths[i];
+    }
+    // Not in the order they lie in: the last third first.
+    std::size_t const third = lengths.size() / 3;
+    std::rotate(set.offsets.begin(), set.offsets.end() - std::ptrdiff_t(third), set.offsets.end());
+    std::rotate(set.sizes.begin(), set.sizes.end() - std::ptrdiff_t(third), set.sizes.end());
+    return set;
+}
+
+// Every length across the boundaries that matter: where the padding needs a
+// second block (56), a whole block (64), and the same in the next blocks.
+std::vector<std::uint32_t> every_length_to(std::uint32_t last) {
+    std::vector<std::uint32_t> lengths;
+    for (std::uint32_t n = 0; n <= last; ++n) lengths.push_back(n);
+    return lengths;
+}
+
+} // namespace
+
+TEST_CASE("gpu double SHA-256 of messages on the host matches SHA-256 twice", "[gpu][sha256]") {
+    auto lengths = every_length_to(300);
+    for (std::uint32_t const longer : {1000u, 4095u, 4096u, 4097u, 65536u, 100001u}) lengths.push_back(longer);
+    auto const set = make_messages(lengths, 21);
+    std::vector<std::uint8_t> out(32 * set.sizes.size(), 0xEE);
+    gpu::sha256d_messages_host(set.data.data(), set.data.size(), set.offsets.data(), set.sizes.data(),
+                               set.sizes.size(), out.data());
+    for (std::size_t i = 0; i < set.sizes.size(); ++i) {
+        auto const expected = double_sha256(set.data.data() + set.offsets[i], set.sizes[i]);
+        INFO("message of " << set.sizes[i] << " bytes at " << set.offsets[i]);
+        REQUIRE(std::memcmp(&out[32 * i], expected.data(), 32) == 0);
+    }
+}
+
+TEST_CASE("gpu double SHA-256 of messages on the host: none, and one at the very end", "[gpu][sha256]") {
+    std::vector<std::uint8_t> out(32, 0xEE);
+    gpu::sha256d_messages_host(nullptr, 0, nullptr, nullptr, 0, out.data());
+    REQUIRE(out[0] == 0xEE);
+
+    // A message that ends on the last byte of the buffer, at an odd start:
+    // nothing past the buffer may be needed.
+    auto const data = random_bytes(131, 5);
+    std::uint64_t const offset = 3;
+    std::uint32_t const size = 128;
+    gpu::sha256d_messages_host(data.data(), data.size(), &offset, &size, 1, out.data());
+    auto const expected = double_sha256(data.data() + 3, 128);
+    REQUIRE(std::memcmp(out.data(), expected.data(), 32) == 0);
+}
+
 TEST_CASE("gpu hashing reports that it did nothing when there is no device", "[gpu][sha256]") {
     if (gpu_sha256::available()) { WARN("a device is present: skipped"); return; }
     auto const in = random_bytes(64 * 4, 3);
@@ -162,6 +232,37 @@ TEST_CASE("gpu hashing threshold: zero and off keep callers on the CPU", "[gpu][
     CHECK_FALSE(gpu_sha256::worth_it(99));
     CHECK(gpu_sha256::worth_it(100) == gpu_sha256::available());
     gpu_sha256::set_min_batch(before);
+}
+
+TEST_CASE("gpu device hashing of messages matches the host", "[gpu][sha256][device]") {
+    if ( ! gpu_sha256::available()) { WARN("no device: skipped"); return; }
+
+    // Short messages only, long ones among them, and very many.
+    std::vector<std::vector<std::uint32_t>> cases;
+    cases.push_back(every_length_to(300));
+    cases.push_back({0, 1, 55, 56, 63, 64, 65, 100001, 7, 250000, 3});
+    std::vector<std::uint32_t> many(20000);
+    for (std::size_t i = 0; i < many.size(); ++i) many[i] = std::uint32_t(60 + (i * 7919) % 900);
+    cases.push_back(std::move(many));
+
+    std::uint64_t seed = 31;
+    for (auto const& lengths : cases) {
+        auto const set = make_messages(lengths, seed++);
+        std::size_t const n = set.sizes.size();
+        std::vector<std::uint8_t> expected(32 * n), out(32 * n, 0xEE);
+        gpu::sha256d_messages_host(set.data.data(), set.data.size(), set.offsets.data(), set.sizes.data(),
+                                   n, expected.data());
+        std::vector<std::uint8_t const*> pointers(n);
+        for (std::size_t i = 0; i < n; ++i) pointers[i] = set.data.data() + set.offsets[i];
+        if ( ! gpu_sha256::sha256d_messages(out.data(), pointers.data(), set.sizes.data(), n)) {
+            // A device without this kernel yet: nothing was written.
+            WARN("the device does not hash messages: skipped");
+            REQUIRE(out[0] == 0xEE);
+            return;
+        }
+        INFO("messages: " << n);
+        REQUIRE(out == expected);
+    }
 }
 
 TEST_CASE("gpu device hashing matches the host", "[gpu][sha256][device]") {
