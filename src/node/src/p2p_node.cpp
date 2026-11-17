@@ -393,7 +393,9 @@ void p2p_node::ban_peer(
     ban_reason reason)
 {
     if (peer) {
-        peer_db_.ban(peer->authority(), duration, reason);
+        if (peer->has_numeric_authority()) {
+            peer_db_.ban(peer->authority(), duration, reason);
+        }
         peer->stop(error::channel_stopped);
     }
 }
@@ -419,10 +421,24 @@ bool p2p_node::report_misbehavior(
     int score,
     std::string_view reason)
 {
-    if (!peer) {
+    if ( ! peer) {
         return false;
     }
-    bool banned = report_misbehavior(peer->authority(), score, reason);
+    if ( ! reason.empty()) {
+        spdlog::debug("[p2p_node] Misbehavior from [{}]: {} (score +{})",
+            peer->destination(), reason, score);
+    }
+    // A peer reached through the proxy by hostname has no numeric address, so it
+    // gets no record: two of them would share the unspecified address's. A report
+    // that would ban a numeric peer on its own disconnects it instead.
+    if ( ! peer->has_numeric_authority()) {
+        if (score < peer_session::misbehavior_ban_threshold) {
+            return false;
+        }
+        peer->stop();
+        return true;
+    }
+    bool banned = peer_db_.add_misbehavior(peer->authority(), score);
     if (banned) {
         // Disconnect the peer when they get banned
         peer->stop();
@@ -449,10 +465,10 @@ void p2p_node::record_peer_performance(
     uint32_t blocks,
     uint32_t time_ms)
 {
-    if (!peer) {
+    if ( ! peer || ! peer->has_numeric_authority()) {
         return;
     }
-    record_peer_performance(peer->authority(), blocks, time_ms);
+    peer_db_.record_block_download(peer->authority(), blocks, time_ms);
 }
 
 void p2p_node::record_peer_performance(
@@ -801,17 +817,18 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
     }
 
     auto peer = *result;
-    auto const ip = peer->authority().asio_ip();
-
     // Check if already connected to this IP
-    if (co_await manager_.exists_by_ip(ip)) {
-        spdlog::debug("[p2p_node] Already connected to IP {}, skipping", ip.to_string());
+    bool const duplicate = peer->has_numeric_authority()
+        ? co_await manager_.exists_by_ip(peer->authority().asio_ip())
+        : co_await manager_.exists_by_destination(peer->destination());
+    if (duplicate) {
+        spdlog::debug("[p2p_node] Already connected to {}, skipping", peer->destination());
         peer->stop();
         co_return std::unexpected(error::address_in_use);
     }
 
     // Check if banned before proceeding
-    if (peer_db_.is_banned(peer->authority())) {
+    if (peer->has_numeric_authority() && peer_db_.is_banned(peer->authority())) {
         spdlog::debug("[p2p_node] Rejecting connection to banned peer {}:{}", host, port);
         peer->stop();
         co_return std::unexpected(error::address_blocked);
@@ -1973,7 +1990,7 @@ void p2p_node::wake_status_task() noexcept {
                         admitted_at = std::chrono::steady_clock::now();
 
                         // Update peer_database with version info from handshake
-                        if (auto ver = peer->peer_version(); ver) {
+                        if (auto ver = peer->peer_version(); ver && peer->has_numeric_authority()) {
                             auto [record, result] = peer_db_.get_or_create(peer->authority());
                             using enum get_result;
                             if (result != created_not_stored) {
@@ -2055,14 +2072,17 @@ void p2p_node::wake_status_task() noexcept {
                 // malformed/invalid protocol data keeps its existing scoring.
                 auto const connection_duration = outcome.connected_for;
                 constexpr auto min_connection_duration = 5s;
+                // The cooldown is kept by address, and a destination reached
+                // through the proxy by hostname has none.
                 if (direction == peer_direction::outbound &&
-                    connection_duration < min_connection_duration) {
+                    connection_duration < min_connection_duration &&
+                    peer->has_numeric_authority()) {
                     constexpr auto quick_disconnect_cooldown = 30s;
                     failed_connections_.insert_or_assign(
                         peer->authority().asio_ip(),
                         std::chrono::steady_clock::now() + quick_disconnect_cooldown);
                     spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms), cooling down retries",
-                        peer->authority(),
+                        peer->destination(),
                         std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count());
                 }
 
