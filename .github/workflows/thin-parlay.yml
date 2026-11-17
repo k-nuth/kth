@@ -1,0 +1,53 @@
+name: Thin Parlay adapters
+on:
+  pull_request:
+    paths: &paths
+      - experiments/thin-parlay/**
+      - .github/workflows/thin-parlay.yml
+  push:
+    branches: [master]
+    paths: *paths
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: thin-parlay-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  thin-adapters:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            sanitizer: thread
+          - os: ubuntu-24.04
+            sanitizer: address,undefined
+          - os: macos-26
+            sanitizer: address,undefined
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: fpelliccioni/parlayhash
+          ref: 45278dd50c7ac72a8412af718ab74c478e80df27
+          path: build/parlayhash-policies
+          persist-credentials: false
+      - name: Select Clang on Linux
+        if: runner.os == 'Linux'
+        run: |
+          echo 'CC=clang-18' >> "$GITHUB_ENV"
+          echo 'CXX=clang++-18' >> "$GITHUB_ENV"
+      - name: Configure TSan address space
+        if: matrix.sanitizer == 'thread'
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - run: >-
+          cmake -S experiments/thin-parlay -B build/thin-adapters
+          -DPARLAYHASH_SOURCE_DIR=${{ github.workspace }}/build/parlayhash-policies
+          -DSANITIZER=${{ matrix.sanitizer }}
+      - run: cmake --build build/thin-adapters --parallel 4
+      - run: ctest --test-dir build/thin-adapters --output-on-failure
