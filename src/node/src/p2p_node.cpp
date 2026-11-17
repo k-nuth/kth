@@ -1141,13 +1141,19 @@ select_channel<peer_notification>& p2p_node::peer_events() {
     auto seeds_completed = std::make_shared<std::atomic<size_t>>(0);
     auto const total_seeds = seeds_copy.size();
 
+    // Requested when seeding has the addresses it wants. Each seed task ends
+    // its session on it, so the join below does not wait for the seeds that
+    // have not answered yet.
+    std::stop_source enough;
+
     // Launch all seed connections in parallel
     for (auto const& seed : seeds_copy) {
         if (stopped()) break;
 
         auto task_name = fmt::format("seed_{}:{}:{}", seed.host(), seed.port(), seed_task_counter_.fetch_add(1));
-        seed_tasks.spawn(task_name, [this, host = seed.host(), port = seed.port(), seeds_completed]() -> ::asio::awaitable<void> {
-            co_await connect_to_seed(host, port, seeds_completed);
+        seed_tasks.spawn(task_name, [this, host = seed.host(), port = seed.port(), seeds_completed,
+                enough_token = enough.get_token()]() -> ::asio::awaitable<void> {
+            co_await connect_to_seed(host, port, seeds_completed, enough_token);
         });
     }
 
@@ -1169,6 +1175,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         // Early exit if we have enough addresses
         if (auto const [avail, _] = peer_db_.count_by_status(); avail >= settings_.host_pool_capacity / 4) {
             spdlog::debug("[p2p_node] Collected sufficient addresses, stopping seeding early");
+            enough.request_stop();
             break;
         }
 
@@ -1187,7 +1194,8 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 ::asio::awaitable<void> p2p_node::connect_to_seed(
     std::string seed_host,
     uint16_t seed_port,
-    std::shared_ptr<std::atomic<size_t>> seeds_completed)
+    std::shared_ptr<std::atomic<size_t>> seeds_completed,
+    std::stop_token enough)
 {
     spdlog::debug("[p2p_node] connect_to_seed: starting for {}:{}", seed_host, seed_port);
 
@@ -1211,6 +1219,12 @@ select_channel<peer_notification>& p2p_node::peer_events() {
 
         spdlog::debug("[p2p_node] connect_to_seed: connected to {}:{}", seed_host, seed_port);
         auto peer = *result;
+
+        // Seeding already has what it wanted, or gets it while this session
+        // is open: stopping the session closes its channels, which ends the
+        // handshake or the wait for addresses below. Constructed after a
+        // request, the callback runs at once.
+        std::stop_callback const end_session_when_enough(enough, [peer] { peer->stop(); });
 
         // Run the seeding protocol using structured concurrency:
         // peer->run() && seeding_protocol()
