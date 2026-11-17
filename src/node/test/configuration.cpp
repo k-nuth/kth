@@ -50,6 +50,83 @@ private:
 
 } // namespace
 
+#if ! defined(__EMSCRIPTEN__)
+TEST_CASE("outbound proxy settings retain defaults and explicit command line values", "[configuration tests][parser][socks5]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.proxy.empty());
+    CHECK(defaults.configured.network.proxy_randomize);
+
+    node::parser parser(domain::config::network::mainnet);
+    char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "[::1]:9050",
+        "--net.proxy_randomize", "false"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(7, argv, error));
+    CHECK(parser.configured.network.proxy == "[::1]:9050");
+    CHECK_FALSE(parser.configured.network.proxy_randomize);
+}
+
+TEST_CASE("outbound proxy settings load from dotted config keys and reject invalid booleans", "[configuration tests][parser][socks5]") {
+    config_file file("proxy", "net.proxy=127.0.0.1:9050\nnet.proxy_randomize=false");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    CHECK(parser.configured.network.proxy == "127.0.0.1:9050");
+    CHECK_FALSE(parser.configured.network.proxy_randomize);
+
+    node::parser invalid(domain::config::network::regtest);
+    char const* argv[]{"kth", "--net.proxy_randomize", "sometimes"};
+    CHECK_FALSE(invalid.parse(3, argv, error));
+}
+
+TEST_CASE("I2P settings retain defaults and command line values", "[configuration tests][parser][i2p]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.i2psam.empty());
+    CHECK(defaults.configured.network.i2p_accept_incoming);
+    CHECK(defaults.configured.network.i2p_private_key_file.empty());
+    node::parser parser(domain::config::network::mainnet);
+    auto const peer = std::string(52, 'a') + ".b32.i2p:0";
+    char const* argv[]{"kth", "--network", "regtest", "--net.i2psam", "[::1]:7656",
+        "--net.i2p_accept_incoming", "false", "--net.i2p_private_key_file", "private/i2p_key",
+        "--net.peer", peer.c_str()};
+    std::ostringstream error;
+    REQUIRE(parser.parse(11, argv, error));
+    CHECK(parser.configured.network.i2psam == "[::1]:7656");
+    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
+    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
+    REQUIRE(parser.configured.network.peers.size() == 1);
+    CHECK(parser.configured.network.peers.front().port() == 0);
+}
+
+TEST_CASE("I2P settings load config keys and reject invalid values", "[configuration tests][parser][i2p]") {
+    config_file file("i2p", "net.i2psam=127.0.0.1:7656\nnet.i2p_accept_incoming=false\nnet.i2p_private_key_file=private/i2p_key");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    CHECK(parser.configured.network.i2psam == "127.0.0.1:7656");
+    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
+    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
+    node::parser invalid(domain::config::network::regtest);
+    char const* argv[]{"kth", "--net.i2p_accept_incoming", "sometimes"};
+    CHECK_FALSE(invalid.parse(3, argv, error));
+    node::parser bad_peer(domain::config::network::regtest);
+    char const* bad[]{"kth", "--net.peer", "bad.b32.i2p"};
+    CHECK_FALSE(bad_peer.parse(3, bad, error));
+    for (auto const& bridge : {std::string("sam.invalid:7656"), std::string("127.0.0.1:0"),
+        std::string(52, 'a') + ".b32.i2p:7656"}) {
+        node::parser bad_sam(domain::config::network::regtest);
+        char const* values[]{"kth", "--net.i2psam", bridge.c_str()};
+        CHECK_FALSE(bad_sam.parse(3, values, error));
+    }
+    config_file bad_file("bad_i2p", "net.i2psam=bridge.invalid:7656");
+    node::parser bad_config(domain::config::network::regtest);
+    CHECK_FALSE(bad_config.parse_from_file(bad_file.path(), error));
+    node::parser off(domain::config::network::regtest);
+    char const* empty[]{"kth", "--net.i2psam", ""};
+    REQUIRE(off.parse(3, empty, error));
+    CHECK(off.configured.network.i2psam.empty());
+}
+#endif
+
 namespace {
 
 #if !defined(KTH_CURRENCY_BCH)

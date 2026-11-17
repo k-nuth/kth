@@ -488,6 +488,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/node.cpp
           test/configured_peers.cpp
           test/p2p_node.cpp
+          test/i2p.cpp
           test/p2p_connection_close.cpp
           test/p2p_status_timer.cpp
           test/sync_decisions.cpp

@@ -12,6 +12,8 @@
 #include <stdexcept>
 
 #include <kth/network/peer_database.hpp>
+#include <kth/domain/message/address.hpp>
+#include <kth/domain/message/addrv2.hpp>
 
 using namespace kth;
 using namespace kth::network;
@@ -681,4 +683,175 @@ TEST_CASE("peer_database capacity invariant", "[peer_database]") {
         CHECK(res_after == get_result::created);
         CHECK(db.size() == 3);
     }
+}
+
+TEST_CASE("peer_database retains overlay addrv2 addresses across persistence", "[peer_database][addrv2][i2p]") {
+    using namespace domain::message;
+    auto const timestamp = uint32_t(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    data_chunk bytes(32, 0x42);
+    auto const i2p = addrv2_entry::create(timestamp, 1, bip155_network::i2p, bytes, 0);
+    auto const onion = addrv2_entry::create(timestamp, 1, bip155_network::torv3, bytes, 8333);
+    REQUIRE(i2p);
+    REQUIRE(onion);
+    auto const i2p_address = i2p->to_network_address();
+    auto const onion_address = onion->to_network_address();
+    REQUIRE(i2p_address);
+    REQUIRE(onion_address);
+    auto const i2p_auth = infrastructure::config::authority(*i2p_address);
+    auto const onion_auth = infrastructure::config::authority(*onion_address);
+    temp_file_guard guard;
+    {
+        peer_database db(guard.path);
+        CHECK(db.store_address(*i2p_address));
+        CHECK(db.store_address(*onion_address));
+        auto updated = *i2p_address;
+        updated.set_services(5);
+        updated.set_timestamp(timestamp + 1);
+        CHECK( ! db.store_address(updated));
+        REQUIRE(db.save());
+    }
+    {
+        // An old IP-only record still loads alongside the overlay records.
+        std::ofstream file(guard.path, std::ios::app);
+        REQUIRE(file.is_open());
+        file << "{\"address\":\"8.8.8.8:8333\",\"services\":1}\n";
+        file << "{\"endpoint\":\"9.9.9.9:0\"}\n";
+    }
+    peer_database db(guard.path);
+    REQUIRE(db.load());
+    CHECK(db.size() == 3);
+    CHECK(db.exists(auth("8.8.8.8:8333")));
+    CHECK( ! db.exists(auth("9.9.9.9:0")));
+    auto const restored_i2p = db.get(i2p_auth);
+    auto const restored_onion = db.get(onion_auth);
+    REQUIRE(restored_i2p);
+    REQUIRE(restored_onion);
+    CHECK(restored_i2p->services == 5);
+    CHECK(restored_onion->services == 1);
+    CHECK(restored_i2p->last_active == std::chrono::system_clock::time_point(std::chrono::seconds(timestamp + 1)));
+    auto const sent_i2p = addrv2_entry::from_network_address(restored_i2p->authority.to_network_address());
+    auto const sent_onion = addrv2_entry::from_network_address(restored_onion->authority.to_network_address());
+    CHECK(sent_i2p.network() == bip155_network::i2p);
+    CHECK(sent_i2p.addr() == bytes);
+    CHECK(sent_i2p.port() == 0);
+    CHECK(sent_onion.network() == bip155_network::torv3);
+    CHECK(sent_onion.addr() == bytes);
+    CHECK(sent_onion.port() == 8333);
+    auto const legacy = address::create({restored_i2p->authority.to_network_address(),
+        restored_onion->authority.to_network_address(), auth("8.8.8.8:8333").to_network_address()});
+    REQUIRE(legacy);
+    REQUIRE(legacy->addresses().size() == 1);
+    CHECK( ! legacy->addresses().front().is_overlay());
+}
+
+TEST_CASE("peer_database overlay reputation and bans use the network address", "[peer_database][i2p]") {
+    using namespace domain::message;
+    auto const i2p = addrv2_entry::create(0, 1, bip155_network::i2p, data_chunk(32, 1), 0);
+    auto const other = addrv2_entry::create(0, 1, bip155_network::i2p, data_chunk(32, 2), 0);
+    auto const onion = addrv2_entry::create(0, 1, bip155_network::torv3, data_chunk(32, 1), 8333);
+    REQUIRE(i2p);
+    REQUIRE(other);
+    REQUIRE(onion);
+    auto const i2p_auth = infrastructure::config::authority(*i2p->to_network_address());
+    auto const other_auth = infrastructure::config::authority(*other->to_network_address());
+    auto const onion_auth = infrastructure::config::authority(*onion->to_network_address());
+    auto const other_onion_port = infrastructure::config::authority::parse_from(onion_auth.to_hostname(), 18333);
+    REQUIRE(other_onion_port);
+    temp_file_guard guard;
+    {
+        peer_database db(guard.path);
+        CHECK( ! db.add_misbehavior(i2p_auth, 25));
+        CHECK(db.add_misbehavior(i2p_auth, 75));
+        CHECK(db.is_banned(i2p_auth));
+        CHECK( ! db.store_address(*i2p->to_network_address()));
+        CHECK( ! db.is_banned(other_auth));
+        CHECK( ! db.is_banned(onion_auth));
+        CHECK( ! db.is_banned(::asio::ip::make_address("0.0.0.0")));
+        db.ban(other_auth, std::chrono::hours(1));
+        CHECK(db.is_banned(other_auth));
+        db.ban(onion_auth, std::chrono::hours(1));
+        CHECK(db.is_banned(*other_onion_port));
+        REQUIRE(db.save());
+    }
+    peer_database db(guard.path);
+    REQUIRE(db.load());
+    CHECK(db.is_banned(i2p_auth));
+    REQUIRE(db.get(i2p_auth));
+    CHECK(db.get(i2p_auth)->reputation_score == 100);
+    CHECK(db.unban(i2p_auth));
+    CHECK( ! db.unban(i2p_auth));
+    CHECK( ! db.is_banned(i2p_auth));
+    CHECK(db.is_banned(other_auth));
+    CHECK(db.is_banned(onion_auth));
+    db.record_block_download(i2p_auth, 2, 1200);
+    CHECK(db.get_peer_speed(i2p_auth) == 600.0);
+    CHECK(db.is_slow_peer(i2p_auth, 500.0, 1));
+    CHECK(db.get_peer_speed(other_auth) == 0.0);
+    CHECK(db.remove(i2p_auth));
+    CHECK( ! db.exists(i2p_auth));
+    CHECK(db.exists(other_auth));
+    CHECK( ! db.unban(i2p_auth));
+
+    peer_database unwritable(guard.directory / "missing" / "peers.dat");
+    unwritable.ban(i2p_auth, std::chrono::hours(1));
+    CHECK(unwritable.unban(i2p_auth));
+    CHECK( ! unwritable.is_banned(i2p_auth));
+}
+
+TEST_CASE("peer_database filters unreachable overlays before selecting peers", "[peer_database][i2p]") {
+    using namespace domain::message;
+    auto const i2p = addrv2_entry::create(0, 1, bip155_network::i2p, data_chunk(32, 1), 0);
+    auto const onion = addrv2_entry::create(0, 1, bip155_network::torv3, data_chunk(32, 1), 8333);
+    REQUIRE(i2p);
+    REQUIRE(onion);
+    auto const i2p_address = *i2p->to_network_address();
+    auto const onion_address = *onion->to_network_address();
+    auto const i2p_auth = infrastructure::config::authority(i2p_address);
+    peer_database db;
+    REQUIRE(db.store_address(i2p_address));
+    REQUIRE(db.store_address(onion_address));
+    auto const i2p_only = [](infrastructure::config::authority const& address) { return address.is_i2p(); };
+    auto const none = [](infrastructure::config::authority const&) { return false; };
+    auto const connectable = db.get_connectable(1, i2p_only);
+    REQUIRE(connectable.size() == 1);
+    CHECK(connectable.front() == i2p_auth);
+    domain::message::network_address selected;
+    CHECK(db.fetch_address(selected, i2p_only) == error::success);
+    CHECK(infrastructure::config::authority(selected) == i2p_auth);
+    CHECK(db.get_connectable(1, none).empty());
+    CHECK(db.fetch_address(selected, none) == error::not_found);
+    CHECK(db.size() == 2);
+
+    auto bad_ip = auth("8.8.8.8:0").to_network_address();
+    bad_ip.set_services(1);
+    CHECK( ! db.store_address(bad_ip));
+    auto bad_onion = onion_address;
+    bad_onion.set_port(0);
+    CHECK( ! db.store_address(bad_onion));
+    peer_database invalid;
+    (void)invalid.get_or_create(infrastructure::config::authority(bad_ip));
+    (void)invalid.get_or_create(infrastructure::config::authority(bad_onion));
+    CHECK(invalid.get_connectable(100).empty());
+    CHECK(invalid.fetch_address(selected) == error::not_found);
+    CHECK(db.remove_address(i2p_address));
+    CHECK(db.get_connectable(1, i2p_only).empty());
+    auto future_i2p = i2p_address;
+    future_i2p.set_port(8333);
+    CHECK( ! db.store_address(future_i2p));
+    (void)db.get_or_create(infrastructure::config::authority(future_i2p));
+    CHECK(db.get_connectable(1, i2p_only).empty());
+    CHECK(db.fetch_address(selected, i2p_only) == error::not_found);
+}
+
+TEST_CASE("peer_database keeps IPv4 mapped normalization with overlay keys", "[peer_database][i2p]") {
+    auto const v4 = auth("8.8.8.8:8333");
+    auto const mapped = auth("[::ffff:8.8.8.8]:18333");
+    peer_database db;
+    (void)db.get_or_create(v4);
+    CHECK(db.get(mapped).has_value());
+    CHECK(db.exists(mapped));
+    db.ban(mapped, std::chrono::hours(1));
+    CHECK(db.is_banned(v4));
+    CHECK(db.size() == 1);
 }
