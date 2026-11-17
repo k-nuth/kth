@@ -198,6 +198,7 @@ set(kth_sources_just_legacy
         src/math/elliptic_curve.cpp
         src/math/hash.cpp
         src/math/hash_batch.cpp
+        src/math/hash_dispatch.cpp
         src/math/secp256k1_initializer.cpp
         src/math/secp256k1_initializer.hpp
         src/math/sip_hash.cpp
@@ -716,6 +717,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/math/elliptic_curve.cpp
     test/math/hash.cpp
     test/math/hash_batch.cpp
+    test/math/hash_dispatch.cpp
     test/math/murmur_hash.cpp
     test/math/uint256.cpp
 
