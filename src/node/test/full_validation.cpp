@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <span>
@@ -23,8 +24,11 @@
 #include <kth/database/block_undo.hpp>
 #include <kth/database/databases/utxo_entry.hpp>
 #include <kth/node.hpp>
+
+#if defined(KTH_WITH_RPC)
 #include <kth/node/mining/job_store.hpp>
 #include <kth/node/rpc/dispatch.hpp>
+#endif
 
 #include "sync_harness.hpp"
 
@@ -493,7 +497,9 @@ void connect_on(chain_fixture& fixture, scenario const& sc) {
     run_connect_tasks(fixture, sc.blocks, 1);
 }
 
-// The JSON-RPC reply to getblock <hash> <verbosity>.
+#if defined(KTH_WITH_RPC)
+// The JSON-RPC reply to getblock <hash> <verbosity>. Only in builds with the
+// JSON-RPC server: without it the node has no getblock to ask.
 std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int verbosity) {
     node::mining::job_store jobs(1, 60);
     node::rpc::method_context context{fixture.chain(), jobs};
@@ -503,6 +509,7 @@ std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int
         + std::to_string(verbosity) + R"(],"id":7})";
     return run_on_own_context(dispatcher.handle(context, body));
 }
+#endif
 
 } // namespace
 
@@ -538,6 +545,7 @@ TEST_CASE("the outputs a block spends are read from its undo record, and getbloc
     REQUIRE( ! missing);
     CHECK(missing.error() == error::not_found);
 
+#if defined(KTH_WITH_RPC)
     // getblock with the transactions decoded gives the spend its fee, 1,000
     // satoshis, after its outputs. The coinbase has none, and neither has the
     // list of txids.
@@ -548,7 +556,64 @@ TEST_CASE("the outputs a block spends are read from its undo record, and getbloc
     CHECK(decoded.find(R"("fee":)", at + 4) == std::string::npos);
     CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("fee":)") == std::string::npos);
     CHECK(get_block_reply(fixture, plain.hash(), 2).find(R"("fee":)") == std::string::npos);
+#endif
 }
+
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+TEST_CASE("an undo entry whose position holds another transaction is refused",
+          "[node][full_validation][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_spent_outputs_ref", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto& chain = fixture.chain();
+
+    // The record the node wrote names block 1's coinbase in its key and points
+    // at where that transaction starts in the block files. Keep the key and
+    // point the entry the same distance into block 2 instead: at block 2's
+    // coinbase, which parses and has an output 0, but is not the transaction
+    // the key names.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const prev_hash = spending.header().previous_block_hash();
+    auto const& headers = chain.headers();
+    auto const idx = headers.find(spending.hash());
+    REQUIRE(idx != blockchain::header_index::null_index);
+    auto record = chain.read_block_undo(idx, prev_hash);
+    REQUIRE(record);
+    REQUIRE(record->spent.size() == 1);
+    auto& value = record->spent.front().value;
+    REQUIRE(value.size() == 8);
+    uint32_t file_number = 0;
+    uint32_t offset = 0;
+    std::memcpy(&file_number, value.data(), 4);
+    std::memcpy(&offset, value.data() + 4, 4);
+    auto const first = headers.get_block_pos(headers.find(sc.blocks[0].hash()));
+    auto const second = headers.get_block_pos(headers.find(sc.blocks[1].hash()));
+    REQUIRE(first.file == int32_t(file_number));
+    REQUIRE(second.file == first.file);
+    REQUIRE(offset > first.pos);
+    REQUIRE(sc.blocks[1].transactions().front().hash() != sc.blocks[0].transactions().front().hash());
+    uint32_t const moved = second.pos + (offset - first.pos);
+    std::memcpy(value.data() + 4, &moved, 4);
+    REQUIRE(chain.store_block_undo(idx, *record, prev_hash));
+
+    auto const block = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(block);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), block->first));
+    REQUIRE( ! spent);
+    CHECK(spent.error() == error::operation_failed);
+
+#if defined(KTH_WITH_RPC)
+    // getblock does not report a fee from the wrong transaction: it fails.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") == std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+#endif
+}
+#endif
 
 TEST_CASE("a block connected without an undo record is decoded without fees",
           "[node][full_validation][optimized][spent_outputs]") {
@@ -566,11 +631,13 @@ TEST_CASE("a block connected without an undo record is decoded without fees",
     REQUIRE( ! spent);
     CHECK(spent.error() == error::not_found);
 
+#if defined(KTH_WITH_RPC)
     // getblock still decodes both transactions; the fee field is left out.
     auto const decoded = get_block_reply(fixture, spending.hash(), 2);
     CHECK(decoded.find(R"("error":null)") != std::string::npos);
     CHECK(decoded.find(encode_hash(spending.transactions()[1].hash())) != std::string::npos);
     CHECK(decoded.find(R"("fee":)") == std::string::npos);
+#endif
 }
 
 #if ! defined(KTH_UTXOZ_REFERENCE_MODE)
@@ -607,6 +674,7 @@ TEST_CASE("getblock fails when the undo record does not cover what the block's t
     REQUIRE(spent->outputs.size() == 1);
     CHECK(spent->outputs.front().value() == 1);
 
+#if defined(KTH_WITH_RPC)
     // It is not left out as a missing record is: the request fails.
     auto const decoded = get_block_reply(fixture, spending.hash(), 2);
     CHECK(decoded.find(R"("error":null)") == std::string::npos);
@@ -615,5 +683,6 @@ TEST_CASE("getblock fails when the undo record does not cover what the block's t
     CHECK(decoded.find(R"("fee":)") == std::string::npos);
     // The txids need no fees.
     CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
+#endif
 }
 #endif

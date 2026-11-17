@@ -22,6 +22,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -3006,13 +3007,24 @@ block_chain::fetch_block(hash_digest const& hash) const {
 
 namespace {
 
+// The transactions that created the outputs of one block's undo record, in
+// reference mode: each is read, parsed and hashed once, so a block that spends
+// several outputs of one transaction reads it once. Keyed by where the
+// transaction starts in the block files. The bytes kept are bounded: past the
+// bound the kept transactions are dropped and the reads start over.
+struct funding_transactions {
+    static constexpr size_t max_bytes = 8 * 1024 * 1024;
+    std::unordered_map<uint64_t, std::pair<domain::chain::transaction, hash_digest>> by_position;
+    size_t bytes = 0;
+};
+
 // The output an undo entry stands for.
 std::expected<domain::chain::output, result_code>
-read_undo_output(block_store const& store, spent_output const& entry) {
+read_undo_output(block_store const& store, spent_output const& entry, funding_transactions& funding) {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
     // The entry is {file_number(4 LE), tx_offset(4 LE)}: where the transaction
-    // that created the output starts in the block files. The index of the
-    // output is the last four bytes of the key.
+    // that created the output starts in the block files. The hash and the index
+    // of the output are in the key.
     if (entry.value.size() != 8) {
         return std::unexpected(result_code::other);
     }
@@ -3021,21 +3033,40 @@ read_undo_output(block_store const& store, spent_output const& entry) {
     std::memcpy(&file_number, entry.value.data(), 4);
     std::memcpy(&offset, entry.value.data() + 4, 4);
 
-    auto const raw = store.read_tx_raw(flat_file_pos{int32_t(file_number), offset});
-    if ( ! raw) {
-        return std::unexpected(raw.error());
+    auto const position = (uint64_t(file_number) << 32) | offset;
+    auto found = funding.by_position.find(position);
+    if (found == funding.by_position.end()) {
+        auto const raw = store.read_tx_raw(flat_file_pos{int32_t(file_number), offset});
+        if ( ! raw) {
+            return std::unexpected(raw.error());
+        }
+        auto tx = kth::from_data_chunk<domain::chain::transaction>(*raw, true);
+        if ( ! tx) {
+            return std::unexpected(result_code::other);
+        }
+        if (funding.bytes + raw->size() > funding_transactions::max_bytes) {
+            funding.by_position.clear();
+            funding.bytes = 0;
+        }
+        funding.bytes += raw->size();
+        auto const tx_hash = tx->hash();
+        found = funding.by_position.emplace(position, std::pair{std::move(*tx), tx_hash}).first;
     }
-    auto tx = kth::from_data_chunk<domain::chain::transaction>(*raw, true);
-    if ( ! tx) {
+    auto const& [tx, tx_hash] = found->second;
+
+    // The block files are read by position alone: the transaction there must
+    // be the one the key names, or its output is not the one that was spent.
+    auto const point = utxoz_database::key_to_point(entry.key);
+    if (tx_hash != point.hash()) {
         return std::unexpected(result_code::other);
     }
-    auto const index = utxoz_database::key_to_point(entry.key).index();
-    if (index >= tx->outputs().size()) {
+    if (point.index() >= tx.outputs().size()) {
         return std::unexpected(result_code::other);
     }
-    return tx->outputs()[index];
+    return tx.outputs()[point.index()];
 #else
     (void)store;
+    (void)funding;
     return output_of_stored_entry(entry.value);
 #endif
 }
@@ -3073,9 +3104,10 @@ block_chain::fetch_spent_outputs(hash_digest const& hash, block_const_ptr block)
                     encode_hash(hash), undo_pos.to_string());
                 co_return kth::fail(error::operation_failed);
             }
+            funding_transactions funding;
             auto spent = spent_outputs_with_heights(*block, height, *record,
-                [this](spent_output const& entry) {
-                    return read_undo_output(*block_store_, entry);
+                [this, &funding](spent_output const& entry) {
+                    return read_undo_output(*block_store_, entry, funding);
                 });
             if ( ! spent) {
                 spdlog::error("[blockchain] the undo record of block {} does not give the outputs "
