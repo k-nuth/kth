@@ -200,16 +200,21 @@ using download_worker_launcher = std::function<void(
     chunk_validated_channel& output,
     uint32_t start_height,
     blockchain::header_organizer& organizer,  // advance finalization as blocks validate
-    std::atomic<uint32_t>* contiguous_out = nullptr  // publish contiguous height for utxo_build_task
+    std::atomic<uint32_t>* contiguous_out = nullptr,  // publish contiguous height for utxo_build_task
+    utxo_build_wake_channel* utxo_wake = nullptr      // rung after each publication
 );
 
 // =============================================================================
 // Incremental UTXO Build Task
 // =============================================================================
 //
-// Independent task that monitors contiguous_height and builds the UTXO set
-// incrementally by reading blocks from flat files (disk).
-// Runs in parallel with block_storage_task — zero coupling, zero buffering.
+// Independent task that builds the UTXO set incrementally, up to
+// contiguous_height, by reading blocks from flat files (disk).
+// Runs in parallel with block_storage_task — zero buffering.
+//
+// With nothing to build it waits on `wake` and holds no timer. Whoever changes
+// what it decides by rings that channel (see utxo_build_wake_channel); closing
+// it ends the task.
 //
 // =============================================================================
 
@@ -220,6 +225,7 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
@@ -229,6 +235,7 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,  // node-owned stop signal (e.g. network.stopped())
@@ -251,6 +258,7 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
