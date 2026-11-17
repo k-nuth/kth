@@ -35,10 +35,12 @@ comes from the task publishing the connected UTXO state, rather than the faster
 pipeline stages ahead of it. Existing legacy block-validation progress and
 header-download progress remain visible.
 
-## Remaining dependency output
+## UTXO-Z reports
 
-UTXO-Z currently emits its own informational messages, including the statistics,
-sizing and height-range reports requested at shutdown. Those still reach the
-console. Changing the dependency's report levels needs a separate UTXO-Z change;
-this patch neither suppresses those reports nor filters messages by their text.
+UTXO-Z 2.1.1 emits the statistics, sizing and height-range reports requested at
+shutdown at `debug` level, including their headings and rotation-cause details.
+The debug file retains these reports; the normal console omits them. `--verbose`
+also shows them on the console. UTXO-Z's operational messages, warnings and
+errors keep their existing levels.
+
 The console/file sink thresholds, file format and configuration are unchanged.
