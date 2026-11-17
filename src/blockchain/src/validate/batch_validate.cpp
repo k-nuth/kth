@@ -782,12 +782,12 @@ code validate_block_batch(
                 secp256k1_turbo::set_host_threads(1);
                 auto const gpu = secp256k1_turbo::best_backend(std::numeric_limits<size_t>::max());
                 if (gpu != secp256k1_turbo::best_backend()) {
-                    spdlog::info("[batch_validate] deferred signature checks: {} (batches of {}+ on {}: {})",
+                    spdlog::debug("[batch_validate] deferred signature checks: {} (batches of {}+ on {}: {})",
                         secp256k1_turbo::backend_name(secp256k1_turbo::best_backend()),
                         secp256k1_turbo::gpu_min_batch(),
                         secp256k1_turbo::backend_name(gpu), secp256k1_turbo::device_name(gpu));
                 } else {
-                    spdlog::info("[batch_validate] deferred signature checks: {}",
+                    spdlog::debug("[batch_validate] deferred signature checks: {}",
                         secp256k1_turbo::backend_name(secp256k1_turbo::best_backend()));
                 }
             });

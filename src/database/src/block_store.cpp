@@ -267,10 +267,10 @@ bool block_store::initialize() {
 
     if (file_num > 0) {
         last_block_file_ = file_num - 1;
-        spdlog::info("block_store: discovered {} block files; write cursors stay unavailable "
+        spdlog::debug("block_store: discovered {} block files; write cursors stay unavailable "
                     "until both scans complete", file_num);
     } else {
-        spdlog::info("block_store: initialized with no existing files");
+        spdlog::debug("block_store: initialized with no existing files");
     }
 
     return true;
@@ -1235,7 +1235,7 @@ flat_file_pos block_store::find_block_pos(uint32_t add_size, uint32_t height, ui
 
     // Update file info
     if (static_cast<int32_t>(file_num) != last_block_file_) {
-        spdlog::info("Leaving block file {}: {}", last_block_file_,
+        spdlog::debug("Leaving block file {}: {}", last_block_file_,
                     file_info_[last_block_file_].to_string());
         // Flush old file
         flat_file_pos old_pos{last_block_file_, file_info_[last_block_file_].size};

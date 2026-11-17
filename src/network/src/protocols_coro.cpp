@@ -517,7 +517,7 @@ awaitable_expected<domain::message::address> request_addresses(
     auto const& command = raw.heading.command();
     byte_reader reader(raw.payload);
 
-    spdlog::info("[protocol] Received address response from [{}]: command='{}', payload_size={}",
+    spdlog::debug("[protocol] Received address response from [{}]: command='{}', payload_size={}",
         peer.authority(), command, raw.payload.size());
 
     // Handle both addr (legacy) and addrv2 (BIP155) formats
