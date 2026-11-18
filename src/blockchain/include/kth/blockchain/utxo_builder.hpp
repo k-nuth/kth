@@ -95,6 +95,24 @@ struct utxo_compact_block {
 KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block,
     std::span<hash_digest const> txids = {});
 
+// Which block of a run could not be parsed, and why.
+struct utxo_parse_failure {
+    size_t block;
+    code error;
+};
+
+// parse_utxo_block for a run of blocks: one result per block, in order, each
+// the same as parsing that block alone. What differs is that the identifiers
+// of every transaction of the run are hashed in a single batch, which is what
+// lets them be hashed several in step however small each block is.
+//
+// txids[i], when present and not empty, are the identifiers already known for
+// raw_blocks[i]; the run may be longer than txids.
+[[nodiscard]]
+KB_API std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_blocks(
+    std::span<byte_span const> raw_blocks,
+    std::span<std::span<hash_digest const> const> txids = {});
+
 // =============================================================================
 // Pre-serialized UTXO value for zero-copy insertion into UTXO-Z.
 // =============================================================================
