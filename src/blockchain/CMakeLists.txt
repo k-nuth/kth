@@ -342,6 +342,7 @@ if (ENABLE_TEST)
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
         test/undo_scan.cpp
+        test/block_store_read_within.cpp
         test/utxo_transition_record.cpp
         test/undo_barriers.cpp
         test/bip30_duplicate_coinbase.cpp
