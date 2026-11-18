@@ -132,6 +132,39 @@ bool persist_active_headers(
 
 namespace {
 
+// Holds the reorg pause for a scope. Lifting it is tied to the scope: a pause
+// left on stops every registered writer for the rest of the run, and there are
+// several ways out of a switch (an abort, a throw).
+//
+// The UTXO builder is told of both changes. It may be waiting with nothing to
+// build, and a flag raised or lowered does not resume a task that is suspended.
+struct reorg_pause_scope {
+    reorg_pause_scope(blockchain::block_chain& chain, utxo_build_wake_channel* utxo_wake)
+        : chain_(chain), utxo_wake_(utxo_wake)
+    {
+        chain_.request_reorg_pause(true);
+        ring();
+    }
+
+    ~reorg_pause_scope() {
+        chain_.request_reorg_pause(false);
+        ring();
+    }
+
+    reorg_pause_scope(reorg_pause_scope const&) = delete;
+    reorg_pause_scope& operator=(reorg_pause_scope const&) = delete;
+
+private:
+    void ring() const {
+        if (utxo_wake_ != nullptr) {
+            (void)utxo_wake_->try_send(std::error_code{});
+        }
+    }
+
+    blockchain::block_chain& chain_;
+    utxo_build_wake_channel* utxo_wake_;
+};
+
 // Everything between closing entry and reopening it.
 //
 // Split out so the whole of it sits inside one try in the caller: from
@@ -315,7 +348,7 @@ namespace {
     std::function<bool()> abort,
     header_persister persist) {
     co_return co_await execute_reorg(chain, organizer, branch_head, fork_height,
-        std::move(abort), std::move(persist), reorg_pipeline{nullptr, nullptr});
+        std::move(abort), std::move(persist), reorg_pipeline{nullptr, nullptr, nullptr});
 }
 
 ::asio::awaitable<reorg_outcome> execute_reorg(
@@ -336,16 +369,8 @@ namespace {
     auto executor = co_await ::asio::this_coro::executor;
 
     // Quiesce the writers: the switch rewrites the UTXO set and the validated
-    // height, so it must run alone. Lifting the pause is tied to the scope: a
-    // pause left on stops every registered writer for the rest of the run, and
-    // there are several ways out of here (an abort, a throw from the switch).
-    struct pause_scope {
-        blockchain::block_chain& chain;
-        explicit pause_scope(blockchain::block_chain& c) : chain(c) { chain.request_reorg_pause(true); }
-        ~pause_scope() { chain.request_reorg_pause(false); }
-        pause_scope(pause_scope const&) = delete;
-        pause_scope& operator=(pause_scope const&) = delete;
-    } const pause(chain);
+    // height, so it must run alone.
+    reorg_pause_scope const pause(chain, pipeline.utxo_wake);
 
     if (pipeline.storage_input) {
         // The scope already owns pause if constructing or dispatching the wake
@@ -407,7 +432,7 @@ namespace {
         auto outcome = co_await switch_publish_and_reopen(
             chain, organizer, branch_head, fork_height, persist);
         if (pipeline.contiguous_height && outcome.result.validated_tip) {
-            // Before pause_scope can release the writers: a storage or UTXO
+            // Before the pause scope can release the writers: a storage or UTXO
             // task resuming on the new branch must never see the old cursor.
             pipeline.contiguous_height->store(*outcome.result.validated_tip + 1,
                 std::memory_order_release);
@@ -442,13 +467,7 @@ namespace {
     // header table and the storage cursor are rewritten here, and a writer
     // mid-unit must finish before they are. The builder that reported this is
     // already parked, waiting for the answer.
-    struct pause_scope {
-        blockchain::block_chain& chain;
-        explicit pause_scope(blockchain::block_chain& c) : chain(c) { chain.request_reorg_pause(true); }
-        ~pause_scope() { chain.request_reorg_pause(false); }
-        pause_scope(pause_scope const&) = delete;
-        pause_scope& operator=(pause_scope const&) = delete;
-    } const pause(chain);
+    reorg_pause_scope const pause(chain, pipeline.utxo_wake);
 
     if (pipeline.storage_input) {
         (void)pipeline.storage_input->try_send(std::error_code{}, storage_reorg_wake{});

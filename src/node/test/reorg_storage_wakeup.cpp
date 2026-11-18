@@ -100,7 +100,7 @@ TEST_CASE("a reorganization wakes storage and resets its cursor before resuming"
         try {
             outcome = co_await execute_reorg(chain, fixture.organizer(),
                 candidate.reorg_branch_head, 1, [&] { return deadline_fired; },
-                real_persister(chain), reorg_pipeline{&input, &contiguous});
+                real_persister(chain), reorg_pipeline{&input, &contiguous, nullptr});
             switch_finished = true;
             cursor_after_switch = contiguous.load();
             if (outcome.result.ok) {
@@ -161,6 +161,109 @@ TEST_CASE("a reorganization wakes storage and resets its cursor before resuming"
     CHECK(acknowledgments.front().start_height == 2);
     CHECK(acknowledgments.front().block_count == 1);
     CHECK(acknowledgments.front().result == error::success);
+}
+
+
+// The builder parks only once it has read the pause, and leaves the barrier
+// only once it has read that the pause is gone. Nothing here rings it but the
+// switch: one that stopped ringing on the way in would wait out the deadline
+// for a builder that never parks, and one that stopped ringing on the way out
+// would leave it parked.
+TEST_CASE("a reorganization rings an idle UTXO build into the barrier and out of it",
+          "[reorg][storage_wakeup][utxo][wake]") {
+    chain_fixture fixture("reorg_idle_utxo_build");
+    REQUIRE(fixture.created());
+    fixture.settings().max_reorg_depth = -1;
+    fixture.settings().max_checkpoint_height = 0;
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const base = uint32_t(zulu_time()) - 30 * block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(mine_block(previous, h, base + h * block_spacing, 0, {}, 0));
+        previous = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+    REQUIRE(chain.chain_view()->connected_tip_height == 5);
+
+    std::vector<domain::chain::block> fork;
+    previous = trunk[0].hash();
+    for (uint32_t h = 2; h <= 10; ++h) {
+        fork.push_back(mine_block(previous, h, base + h * block_spacing + 30, 2, {}, 0));
+        previous = fork.back().hash();
+    }
+    auto const candidate = fixture.organizer().add_headers(headers_of(fork));
+    REQUIRE(candidate.reorg_candidate);
+    REQUIRE(candidate.reorg_fork_height == 1);
+
+    ::asio::io_context ctx;
+    // No storage task runs here: the endpoint is only what the switch borrows
+    // to publish the cursor, so the builder has nothing to build afterwards.
+    block_storage_input_channel input(ctx.get_executor(), 1);
+    std::atomic<uint32_t> contiguous{6};        // everything stored is built
+    utxo_build_wake_channel wake(ctx.get_executor(), 1);
+    bool stop = false;
+    std::vector<std::string> fatals;
+    auto builder = ::asio::co_spawn(ctx,
+        utxo_build_task(chain, contiguous, wake, 1, domain::config::network::regtest,
+            [&] { return stop; },
+            [&fatals](std::string const& reason) { fatals.push_back(reason); }),
+        ::asio::use_future);
+    // Until the builder is waiting with nothing to build.
+    ctx.poll();
+    REQUIRE(chain.reorg_barrier_state() == std::make_pair(size_t{0}, size_t{1}));
+
+    bool deadline_fired = false;
+    ::asio::steady_timer deadline(ctx);
+    deadline.expires_after(std::chrono::seconds(5));
+    deadline.async_wait([&](std::error_code ec) {
+        if (ec) return;
+        deadline_fired = true;
+    });
+    reorg_outcome outcome;
+    auto coordinator = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        try {
+            outcome = co_await execute_reorg(chain, fixture.organizer(),
+                candidate.reorg_branch_head, 1, [&] { return deadline_fired; },
+                real_persister(chain), reorg_pipeline{&input, &contiguous, &wake});
+        } catch (...) {
+            deadline.cancel();
+            throw;
+        }
+        deadline.cancel();
+    }, ::asio::use_future);
+    // The builder's wait on its channel holds the context, so this cannot run
+    // it dry: step until the switch returns, which the deadline bounds, and
+    // then let what is already ready run. That is the builder reading the ring
+    // the switch left on its way out.
+    while (coordinator.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        ctx.run_one();
+    }
+    ctx.poll();
+    coordinator.get();
+
+    CHECK_FALSE(deadline_fired);
+    CHECK_FALSE(outcome.fatal);
+    CHECK(outcome.result.ok);
+    CHECK(outcome.result.validated_tip == std::optional<uint32_t>{1});
+    CHECK_FALSE(chain.reorg_pause_requested());
+    CHECK(contiguous.load() == 2);
+    // Out of the barrier, and still running.
+    CHECK(chain.reorg_barrier_state() == std::make_pair(size_t{0}, size_t{1}));
+    CHECK(builder.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+
+    stop = true;
+    wake.cancel();
+    wake.close();
+    ctx.restart();
+    ctx.poll();
+    REQUIRE(builder.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    builder.get();
+    CHECK(chain.reorg_barrier_state() == std::make_pair(size_t{0}, size_t{0}));
+    CHECK(fatals.empty());
 }
 
 
@@ -253,7 +356,7 @@ TEST_CASE("an aborted pause preserves a received chunk on the unchanged branch",
             // Abort before mutation: pause ends, but the generation does not
             // change. Dropping the received chunk here would lose real work.
             aborted = co_await execute_reorg(chain, fixture.organizer(), idx, 2,
-                [] { return true; }, real_persister(chain), reorg_pipeline{&input, &contiguous});
+                [] { return true; }, real_persister(chain), reorg_pipeline{&input, &contiguous, nullptr});
             auto received = co_await output.async_receive(::asio::as_tuple(::asio::use_awaitable));
             if ( ! std::get<0>(received)) {
                 ack = std::move(std::get<1>(received));

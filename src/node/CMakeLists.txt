@@ -456,6 +456,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/bip30_integration.cpp
           test/header_durability.cpp
           test/utxo_batch_atomicity.cpp
+          test/utxo_build_wake.cpp
           test/validated_finality.cpp
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp

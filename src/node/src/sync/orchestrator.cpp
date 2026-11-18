@@ -653,6 +653,13 @@ static
     block_rejection_channel utxo_rejections(executor, 1);
     block_rejection_ack_channel rejection_ack(executor, 1);
 
+    // The builder waits on this with nothing to build (messages.hpp). The stop
+    // request rings it here; the other changes ring it where they are made.
+    utxo_build_wake_channel utxo_wake(executor, 1);
+    std::stop_callback const wake_utxo_on_stop(network.stop_token(), [&utxo_wake] {
+        (void)utxo_wake.try_send(std::error_code{});
+    });
+
     // =========================================================================
     // TASKS - All independent, communicate only via channels
     // =========================================================================
@@ -977,6 +984,8 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
+        utxo_wake.cancel();
+        utxo_wake.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1183,7 +1192,8 @@ static
         stored_chunks,
         initial_stored_height + 1,
         organizer,
-        contiguous_height.get()
+        contiguous_height.get(),
+        &utxo_wake
     ));
 
     // The bridge is not a reorg participant. It can wait for coordinator room
@@ -1224,6 +1234,7 @@ static
     all_tasks.spawn_on(utxo_executor, "utxo_build_task", utxo_build_task(
         chain,
         *contiguous_height,
+        utxo_wake,
         initial_block_height + 1,
         network_type,
         [&network]() { return network.stopped(); },
@@ -2182,7 +2193,7 @@ static
                         [&network] { return network.stopped(); },
                         [&chain](domain::chain::header::list const& headers, size_t start_height) {
                             return chain.replace_headers_from(headers, start_height);
-                        }, reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                        }, reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                     if (reorg.fatal) {
                         // The chain moved but its persisted description did not.
@@ -2337,6 +2348,10 @@ static
                 // and the batch that eventually reaches them has its own barrier
                 // that does fail.
                 if (headers_synced_to > prev_headers_synced) {
+                    // The builder leaves a remainder shorter than one batch
+                    // unbuilt while the header tip is stale, and a newer tip is
+                    // what ends that.
+                    (void)utxo_wake.try_send(std::error_code{});
                     if ( ! ensure_headers_persisted(chain, organizer.index(),
                                                     headers_synced_to)) {
                         spdlog::warn("[header_persist] Could not persist headers through {}; "
@@ -2571,7 +2586,7 @@ static
                 auto const outcome = co_await execute_body_rejection(
                     chain, organizer, rejected->height, rejected->hash,
                     network.stop_token(), truncate_active,
-                    reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                    reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                 if (outcome.fatal) {
                     (void)rejection_ack.try_send(std::error_code{});
@@ -2762,6 +2777,8 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
+        utxo_wake.cancel();
+        utxo_wake.close();
         coordinator_events.cancel();
         coordinator_events.close();
         spdlog::debug("[sync_coordinator] Task ended");

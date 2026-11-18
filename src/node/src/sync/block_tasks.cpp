@@ -1750,7 +1750,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     chunk_validated_channel& output,
     uint32_t start_height,
     blockchain::header_organizer&,
-    std::atomic<uint32_t>* contiguous_out
+    std::atomic<uint32_t>* contiguous_out,
+    utxo_build_wake_channel* utxo_wake
 ) {
     spdlog::debug("[block_storage] Task started at height {}", start_height);
 
@@ -1921,6 +1922,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // Publish contiguous height for utxo_build_task
             if (contiguous_out) {
                 contiguous_out->store(contiguous_height, std::memory_order_release);
+            }
+            // After the height: the builder reads it when this wakes it.
+            if (utxo_wake) {
+                (void)utxo_wake->try_send(std::error_code{});
             }
 
         } else {
@@ -2155,31 +2160,34 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal
 ) {
-    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+    co_await utxo_build_task(chain, contiguous_height, wake, start_height, network,
         std::move(should_stop), std::move(on_fatal), nullptr);
 }
 
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress
 ) {
-    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+    co_await utxo_build_task(chain, contiguous_height, wake, start_height, network,
         std::move(should_stop), std::move(on_fatal), progress, nullptr, nullptr);
 }
 
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
@@ -2191,7 +2199,6 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     spdlog::debug("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
-    constexpr auto poll_interval = std::chrono::milliseconds(500);
 
     // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
     // every block runs FULL validation. It is the highest checkpoint in the
@@ -2399,13 +2406,33 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // a block boundary, which is what disconnect expects.
         if (chain.reorg_pause_requested()) {
             co_await drop_ahead();
-            chain.enter_reorg_barrier();
-            while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
-                ::asio::steady_timer timer(executor);
-                timer.expires_after(poll_interval);
-                co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            // Woken when the pause is lifted, and by the stop request. A
+            // closed channel is the shutdown, and ends the task.
+            bool wake_closed = false;
+            {
+                // Parked for as long as the wait lasts, however it ends: a
+                // bare pair around the await would leave the parked count one
+                // too high on a cancellation or an exception. Same scope as
+                // the storage task's.
+                struct parked_scope {
+                    blockchain::block_chain& chain;
+                    explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+                    ~parked_scope() { chain.leave_reorg_barrier(); }
+                    parked_scope(parked_scope const&) = delete;
+                    parked_scope& operator=(parked_scope const&) = delete;
+                } const parked(chain);
+                while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
+                    auto const [wake_ec] = co_await wake.async_receive(
+                        ::asio::as_tuple(::asio::use_awaitable));
+                    if (wake_ec) {
+                        wake_closed = true;
+                        break;
+                    }
+                }
             }
-            chain.leave_reorg_barrier();
+            if (wake_closed) {
+                break;
+            }
 
             // The switch rewound the built height and re-pointed the active chain,
             // so re-read the height and rebuild the MTP window from the new chain.
@@ -2448,10 +2475,17 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             : utxo_batch_len(available, batch_size, chain.is_stale());
 
         if (batch_len == 0) {
-            // Still in IBD and short of a full batch — wait and poll.
-            ::asio::steady_timer timer(executor);
-            timer.expires_after(poll_interval);
-            co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            // Nothing to build: no block stored past the built height, or, still
+            // in IBD, fewer than a full batch. Everything read above to decide
+            // that — the height, the pause, the header tip, the stop request —
+            // rings `wake` when it changes. A ring sent since those reads is
+            // held by the channel, so the receive returns at once and they are
+            // read again.
+            auto const [wake_ec] = co_await wake.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (wake_ec) {
+                break;      // shutdown: the owner closed the channel
+            }
             continue;
         }
 
