@@ -108,27 +108,42 @@ TEST_CASE("fork_join_for calls every index once and joins before returning", "[p
         CHECK(c == 1);
     }
 
-    // A call that throws is reported, not propagated.
-    CHECK_FALSE(fork_join_for(count, [](size_t i) {
+    // A call that throws is reported, not propagated, and the others run.
+    std::vector<int> around(count, 0);
+    CHECK_FALSE(fork_join_for(count, [&](size_t i) {
         if (i == 1) {
             throw std::runtime_error("one call failed");
         }
+        ++around[i];
     }));
+    for (size_t i = 0; i < count; ++i) {
+        CHECK(around[i] == (i == 1 ? 0 : 1));
+    }
 }
 
 namespace {
 
-// Counts the threads that ever ran a call. Thread ids cannot tell, since the id
-// of a joined thread is given to the next one. The mark is a plain bool and not
-// an object with a constructor: some compilers build every such thread-local of
-// a file as soon as a thread touches any one of them, which would count threads
-// that ran nothing.
+// Counts the threads that ran a call since the count was last started. Thread
+// ids cannot tell, since the id of a joined thread is given to the next one.
+// The scheduler's threads live as long as the process, so a mark that was only
+// ever set would leave them out of every count after the first: each thread
+// remembers which count it was last part of. The mark is a plain number and
+// not an object with a constructor: some compilers build every such
+// thread-local of a file as soon as a thread touches any one of them, which
+// would count threads that ran nothing.
 std::atomic<size_t> threads_seen{0};
-thread_local bool counted_this_thread = false;
+std::atomic<size_t> counting{0};
+thread_local size_t counted_in = 0;
+
+void start_counting_threads() {
+    counting.fetch_add(1, std::memory_order_relaxed);
+    threads_seen.store(0, std::memory_order_relaxed);
+}
 
 void count_this_thread() {
-    if ( ! counted_this_thread) {
-        counted_this_thread = true;
+    auto const now = counting.load(std::memory_order_relaxed);
+    if (counted_in != now) {
+        counted_in = now;
         threads_seen.fetch_add(1, std::memory_order_relaxed);
     }
 }
@@ -139,7 +154,7 @@ TEST_CASE("fork_join_for runs on the same threads call after call", "[parse_bloc
     size_t const workers = fork_join_workers(1'000);
     size_t const count = workers * 4;
     size_t const calls = 50;
-    threads_seen.store(0);
+    start_counting_threads();
     for (size_t call = 0; call < calls; ++call) {
         REQUIRE(fork_join_for(count, [](size_t) {
             count_this_thread();
@@ -150,6 +165,46 @@ TEST_CASE("fork_join_for runs on the same threads call after call", "[parse_bloc
     // started and joined by every call would make this workers - 1 per call.
     CHECK(threads_seen.load() <= workers);
 }
+
+#if ! defined(KTH_BROWSER_NODE)
+TEST_CASE("fork_join_for serves every calling thread from the same threads", "[parse_block_batch]") {
+    // Several threads fork at once, as the stages of the node do. Each is
+    // served by the threads the process shares: a caller that got threads of
+    // its own would make this a multiple of the workers.
+    size_t const workers = fork_join_workers(1'000);
+    size_t const callers = 4;
+    start_counting_threads();
+    std::vector<std::vector<int>> calls(callers, std::vector<int>(workers * 4, 0));
+    std::vector<char> finished(callers, 0);
+    {
+        std::vector<std::jthread> threads;
+        for (size_t c = 0; c < callers; ++c) {
+            threads.emplace_back([&, c] {
+                for (int round = 0; round < 10; ++round) {
+                    finished[c] = fork_join_for(calls[c].size(), [&, c](size_t i) {
+                        count_this_thread();
+                        ++calls[c][i];
+                        std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    }) ? 1 : 0;
+                }
+            });
+        }
+    }
+    for (size_t c = 0; c < callers; ++c) {
+        CHECK(finished[c] == 1);
+        for (auto const n : calls[c]) {
+            CHECK(n == 10);
+        }
+    }
+    if (workers > 1) {
+        CHECK(threads_seen.load() <= workers);
+    } else {
+        // One hardware thread: nothing is shared out, and each caller runs its
+        // own calls.
+        CHECK(threads_seen.load() <= callers);
+    }
+}
+#endif
 
 TEST_CASE("fork_join_for finishes when the calls themselves fork", "[parse_block_batch]") {
     // Every outer call forks again, so the workers are all taken while the

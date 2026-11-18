@@ -52,6 +52,10 @@ message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthParlayHash.cmake)
 
+if(NOT KTH_BROWSER_NODE)
+  find_package(Parlay 2.4.0 CONFIG REQUIRED)
+endif()
+
 # Header index capacity (number of headers for static array allocation)
 # Default: one-minute tempnet through 2030, with its 600-second history (aligned to 2^16)
 if(NOT DEFINED KTH_HEADER_INDEX_CAPACITY)
@@ -280,6 +284,11 @@ endif()
 # endif(WITH_CONSENSUS)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC database::database)
+# The scheduler fork_join_for runs on. Before ParlayHash, which carries a copy
+# of these headers of its own: the ones found first are the ones used.
+if(NOT KTH_BROWSER_NODE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC Parlay::parlay)
+endif()
 if(KTH_MEMPOOL_BACKEND STREQUAL "parlay")
   target_link_libraries(${PROJECT_NAME} PUBLIC ParlayHash::parlay)
 endif()
