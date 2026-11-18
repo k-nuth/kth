@@ -17,7 +17,7 @@ chain/payload dependencies make domain, startup, coroutine, copy and conversion
 failures deterministic; they do not validate a database, consensus or the full
 node's shutdown integration.
 
-181 scenarios cover the 17 one-shot operations and three subscriptions:
+186 scenarios cover the 17 one-shot operations and three subscriptions:
 
 - Success and domain errors retain their existing data/status behavior.
 - Coroutine exceptions, synchronous startup exceptions and input/output copies
@@ -32,6 +32,9 @@ node's shutdown integration.
   suspended readers, handle shutdown before their receiver starts and report an
   exception after earlier successful events. Registration cleanup precedes the
   terminal error callback.
+- Internal tip wake-ups produce no C block callback, while incoming-only,
+  replaced-only and allocated-empty block lists retain their ordinary delivery.
+  A later terminal error still cleans up the registration before its callback.
 - A handler returning zero receives no further callback and may release its
   context immediately. The chain must remain alive through subscription cleanup.
 
