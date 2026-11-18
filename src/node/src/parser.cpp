@@ -238,9 +238,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "On btrfs, create the UTXO and LMDB stores without copy-on-write (default true).");
     app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
     app.add_option("--db.prune_keep_blocks", cfg.database.prune_keep_blocks,
-        "How many blocks below the tip a pruning node keeps the block and undo data of. "
-        "0 keeps every block (default); otherwise at least 288. Accepted and checked, but "
-        "not acted on yet: no block file is removed.")
+        "Keep the block and undo data of this many blocks below the tip and remove older "
+        "block files. 0 keeps every block (default); otherwise at least 288.")
         ->check(CLI::Validator([](std::string& text) -> std::string {
             uint32_t value = 0;
             auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);

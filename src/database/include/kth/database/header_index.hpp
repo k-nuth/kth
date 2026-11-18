@@ -235,6 +235,9 @@ struct KD_API header_index {
     /// Add status flags to a header (OR with existing).
     void add_status(index_t idx, header_status flags);
 
+    /// Clear status flags of a header, leaving the others as they are.
+    void remove_status(index_t idx, header_status flags);
+
     /// Check if header has specific status flags.
     [[nodiscard]]
     bool has_status(index_t idx, header_status flags) const;

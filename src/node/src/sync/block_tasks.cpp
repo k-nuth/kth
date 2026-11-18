@@ -3323,6 +3323,14 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
             co_return;
         }
 
+        // The built height is durable, so a pruning node can let go of the
+        // block files that fell out of its window. Not fatal: a file that could
+        // not be removed costs disk and is tried again on a later batch.
+        if (auto const pruned = chain.prune_block_files(utxo_built_height); ! pruned) {
+            spdlog::warn("[utxo_build] Old block files could not be removed at height {} ({})",
+                utxo_built_height, database::result_code_name(pruned.error()));
+        }
+
         // These blocks are connected now — the delta is applied, the undo records
         // are written and the marker has moved — so what they confirmed leaves the
         // mempool, along with anything pooled that conflicts with them.

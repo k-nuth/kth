@@ -190,6 +190,7 @@ set(kth_sources_just_legacy
   src/validate/validate_transaction.cpp
   src/settings.cpp
   src/finalization.cpp
+  src/prune.cpp
   src/parking.cpp
   src/utxo_builder.cpp
         src/utxo_deletion_sweep.cpp
@@ -344,6 +345,7 @@ if (ENABLE_TEST)
         test/undo_scan.cpp
         test/block_store_read_within.cpp
         test/block_store_prune.cpp
+        test/prune.cpp
         test/utxo_transition_record.cpp
         test/undo_barriers.cpp
         test/bip30_duplicate_coinbase.cpp
