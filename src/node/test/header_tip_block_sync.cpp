@@ -10,13 +10,16 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -27,9 +30,11 @@
 #include <asio/executor_work_guard.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
+#include <asio/post.hpp>
 #include <asio/read.hpp>
 #include <asio/use_future.hpp>
 
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
@@ -118,6 +123,57 @@ struct captured_log {
         return n;
     }
 };
+
+// Keeps the threads that wrote a line carrying `needle`.
+struct writer_threads final : spdlog::sinks::base_sink<std::mutex> {
+    explicit writer_threads(std::string needle) : needle_(std::move(needle)) {}
+
+    [[nodiscard]] std::set<std::thread::id> seen() {
+        std::lock_guard const lock(mutex_);
+        return threads_;
+    }
+
+    // Drop what was seen so far, so that only what writes from here on counts.
+    void forget() {
+        std::lock_guard const lock(mutex_);
+        threads_.clear();
+    }
+
+protected:
+    void sink_it_(spdlog::details::log_msg const& msg) override {
+        if (std::string_view(msg.payload.data(), msg.payload.size()).find(needle_) != std::string_view::npos) {
+            threads_.insert(std::this_thread::get_id());
+        }
+    }
+
+    void flush_() override {}
+
+private:
+    std::string needle_;
+    std::set<std::thread::id> threads_;
+};
+
+// Every thread of the pool, each caught once: no handler returns before all of
+// them have started, so no thread can take two.
+std::set<std::thread::id> threads_of(threadpool& pool) {
+    auto const expected = pool.size();
+    std::mutex mutex;
+    std::condition_variable all_in;
+    std::set<std::thread::id> threads;
+    std::vector<std::future<void>> handlers;
+    for (size_t i = 0; i < expected; ++i) {
+        handlers.push_back(::asio::post(pool.get_executor(), std::packaged_task<void()>([&] {
+            std::unique_lock lock(mutex);
+            threads.insert(std::this_thread::get_id());
+            all_in.notify_all();
+            all_in.wait(lock, [&] { return threads.size() == expected; });
+        })));
+    }
+    for (auto& handler : handlers) {
+        handler.get();
+    }
+    return threads;
+}
 
 network::settings node_settings(std::string const& tag) {
     network::settings settings;
@@ -562,6 +618,55 @@ TEST_CASE("integrated: confirming the tip opens the first block range, exactly o
 
     // A peer at the same tip is not accused of anything.
     CHECK(log.count("Peer error") == 0u);
+}
+
+// The UTXO stage applies a batch and makes it durable without suspending: the
+// transition record, the store's sync, the mutations, the undo files and the
+// durability barrier are all synchronous calls. On a thread of the network pool
+// each of them is a thread that reads no socket for as long as the disk takes.
+TEST_CASE("integrated: the UTXO stage runs on none of the network threads",
+          "[header_tip][integration]") {
+    captured_log log;
+    auto const utxo_stage = std::make_shared<writer_threads>("[utxo_build]");
+    log.installed->sinks().push_back(utxo_stage);
+
+    chain_fixture fixture{"utxo_stage_thread"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 5, 2);
+
+    // Staging the fixture runs a UTXO build of its own, which logs the same
+    // lines from its own thread. Neither is the node's: what it started and
+    // where it wrote are left out, so only the node's stage is observed.
+    auto const started_by_fixture = log.count("[utxo_build] Task started");
+    utxo_stage->forget();
+
+    auto const peer_config = node_settings("utxo_stage_thread_peer");
+    wire_peer peer(peer_config, 9001, 5);
+
+    bool started = false;
+    bool stopped_cleanly = false;
+    std::set<std::thread::id> network_threads;
+    {
+        node_run run(fixture, "utxo_stage_thread");
+        run.connect(peer.session);
+        started = wait_until([&] {
+            return log.count("[utxo_build] Task started") > started_by_fixture;
+        }, quick);
+        network_threads = threads_of(run.network.thread_pool());
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("utxo_stage_thread");
+
+    CHECK(stopped_cleanly);
+    REQUIRE(started);
+    REQUIRE_FALSE(network_threads.empty());
+
+    auto const stage_threads = utxo_stage->seen();
+    REQUIRE_FALSE(stage_threads.empty());
+    for (auto const& thread : stage_threads) {
+        CHECK_FALSE(network_threads.contains(thread));
+    }
 }
 
 TEST_CASE("integrated: a new header after the tip is confirmed opens its body range",
