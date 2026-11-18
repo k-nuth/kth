@@ -4,6 +4,7 @@
 
 #include <kth/node/parser.hpp>
 
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -236,6 +237,21 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--db.nocow",            cfg.database.nocow,
         "On btrfs, create the UTXO and LMDB stores without copy-on-write (default true).");
     app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
+    app.add_option("--db.prune_keep_blocks", cfg.database.prune_keep_blocks,
+        "How many blocks below the tip a pruning node keeps the block and undo data of. "
+        "0 keeps every block (default); otherwise at least 288. Accepted and checked, but "
+        "not acted on yet: no block file is removed.")
+        ->check(CLI::Validator([](std::string& text) -> std::string {
+            uint32_t value = 0;
+            auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (ec != std::errc{} || end != text.data() + text.size()) {
+                return "not a number of blocks";
+            }
+            if (value != 0 && value < kth::database::settings::minimum_prune_keep_blocks) {
+                return "a pruning node keeps at least 288 blocks";
+            }
+            return {};
+        }, "0 or >= 288"));
 
     // [chain]
     app.add_option("--chain.cores",                cfg.chain.cores);

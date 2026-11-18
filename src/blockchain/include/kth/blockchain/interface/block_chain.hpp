@@ -1266,6 +1266,8 @@ private:
     database::data_base database_;
     // db.nocow: the UTXO-Z directory is created NOCOW on btrfs.
     bool const in_place_nocow_;
+    // db.prune_keep_blocks: zero on a node that keeps every block.
+    uint32_t const prune_keep_blocks_;
 
     /// The published state on its own. Private: a caller that wants the state
     /// wants the tip and the generation that go with it, and reading them apart

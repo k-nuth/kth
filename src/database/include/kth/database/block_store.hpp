@@ -52,11 +52,21 @@ struct KD_API block_store {
     // Initialization
     // =========================================================================
 
+    /// Whether the files may start above number zero.
+    enum class numbering {
+        /// Every file from zero up to the last one has to be there.
+        complete,
+        /// The lowest files may be gone, because pruning removes them. The
+        /// files that remain still have to be numbered without a gap.
+        pruned,
+    };
+
     /// Initialize the block store.
-    /// Scans existing files and restores file_info state.
+    /// Finds which files exist. A file missing between two that exist is a
+    /// lost file and is refused under either numbering.
     /// @return True on success.
     [[nodiscard]]
-    bool initialize();
+    bool initialize(numbering expected = numbering::complete);
 
     // =========================================================================
     // Write Operations
@@ -348,6 +358,28 @@ struct KD_API block_store {
     [[nodiscard]]
     directory_barrier directory_durability() const;
 
+    /// Remove the block and undo files numbered below `file_number`.
+    ///
+    /// Files go from the lowest number up, so what remains is numbered without
+    /// a gap however far a removal gets. Each blk file goes before its rev file:
+    /// stopped between the two, the store is left with a rev file below its
+    /// first block file, which no walk reads and the first removal a store is
+    /// asked for takes, even one that finds no block file to remove.
+    ///
+    /// The file being written is never removed: `file_number` above the last
+    /// block file is refused. The caller is the one that knows nothing reads or
+    /// writes below `file_number` any more, undo included; like the appends,
+    /// this is not synchronised with other calls into the store.
+    ///
+    /// @return How many block files were removed.
+    [[nodiscard]]
+    std::expected<size_t, result_code> remove_files_below(int32_t file_number);
+
+    /// The lowest numbered block file the store holds. Zero unless files were
+    /// removed.
+    [[nodiscard]]
+    int32_t first_file() const { return first_block_file_; }
+
     /// Calculate total disk usage.
     /// @return Total bytes used by block and undo files.
     [[nodiscard]]
@@ -391,6 +423,14 @@ private:
     std::vector<block_file_info> file_info_;
 
     int32_t last_block_file_{0};
+
+    /// Files below this number were removed. Set by `initialize()` and by
+    /// `remove_files_below`.
+    int32_t first_block_file_{0};
+
+    /// Whether this store has already looked for undo files below its first
+    /// block file. Cleared by `initialize()`.
+    bool undo_leftovers_removed_{false};
 
     /// Set only by a walk that finished cleanly on every file, and cleared by
     /// `initialize()`. Both are required before a position is issued.
