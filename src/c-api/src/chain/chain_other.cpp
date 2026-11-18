@@ -111,6 +111,8 @@ void kth_chain_subscribe_blockchain(kth_node_t exec, kth_chain_t chain, void* ct
                 auto result = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
                 auto& [ec, fork_height, incoming, replaced_blocks] = result;
                 if (ec) co_return kth::to_c_err(kth::error::service_stopped);
+                // A tip wake-up carries no block event for C subscribers.
+                if (!incoming && !replaced_blocks) continue;
                 if (bc.is_stale()) continue;
                 auto incoming_owned = copy_blocks(incoming);
                 auto replaced_owned = copy_blocks(replaced_blocks);

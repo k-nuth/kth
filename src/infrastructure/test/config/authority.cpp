@@ -13,6 +13,56 @@ using namespace kth;
 using namespace kth::infrastructure;
 using namespace kth::infrastructure::config;
 
+TEST_CASE("authority parses and preserves I2P identities", "[authority][i2p]") {
+    std::string const name = std::string(52, 'a') + ".b32.i2p";
+    auto const address = authority::parse_from(name + ":0");
+    REQUIRE(address);
+    REQUIRE(address->is_i2p());
+    REQUIRE(address->is_overlay());
+    REQUIRE( ! address->is_tor_v3());
+    REQUIRE(address->port() == 0);
+    REQUIRE(address->to_hostname() == name);
+    REQUIRE(address->to_string() == name);
+    REQUIRE(address->to_network_address().is_routable());
+    REQUIRE(authority(address->to_network_address()) == *address);
+    auto const other_port = authority::parse_from(name, 1234);
+    REQUIRE(other_port);
+    REQUIRE(other_port->to_string() == name + ":1234");
+    REQUIRE( ! other_port->to_network_address().is_routable());
+}
+
+TEST_CASE("authority rejects malformed I2P encodings and ports", "[authority][i2p]") {
+    std::string const name = std::string(52, 'a') + ".b32.i2p";
+    for (auto const& value : {
+            std::string(51, 'a') + ".b32.i2p", std::string(53, 'a') + ".b32.i2p",
+            "A" + name.substr(1), "0" + name.substr(1),
+            std::string(51, 'a') + "b.b32.i2p", name + ":", name + ":65536",
+            name + ":1x", name + ":-1", name + ":1:2"}) {
+        INFO(value);
+        REQUIRE( ! authority::parse_from(value));
+    }
+}
+
+TEST_CASE("authority validates Tor v3 checksum and version", "[authority][onion]") {
+    std::string const name = "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion";
+    auto const address = authority::parse_from(name, 8333);
+    REQUIRE(address);
+    REQUIRE(address->is_tor_v3());
+    REQUIRE( ! address->is_i2p());
+    REQUIRE(address->to_hostname() == name);
+    REQUIRE(address->to_network_address().is_routable());
+    REQUIRE(authority(address->to_network_address()) == *address);
+    REQUIRE( ! authority::parse_from(name.substr(1), 8333));
+    REQUIRE( ! authority::parse_from("0" + name.substr(1), 8333));
+    REQUIRE( ! authority::parse_from("e" + name.substr(1), 8333));
+    auto wrong_version = name;
+    wrong_version[55] = 'e';
+    REQUIRE( ! authority::parse_from(wrong_version, 8333));
+    auto const zero_port = authority::parse_from(name, 0);
+    REQUIRE(zero_port);
+    REQUIRE( ! zero_port->to_network_address().is_routable());
+}
+
 // tools.ietf.org/html/rfc4291#section-2.2
 #define KI_AUTHORITY_IPV4_ADDRESS                        "1.2.240.1"
 #define KI_AUTHORITY_IPV6_UNSPECIFIED_ADDRESS            "::"

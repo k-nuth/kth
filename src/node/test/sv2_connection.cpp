@@ -75,3 +75,35 @@ TEST_CASE("sv2 SetupConnection.Success from_data rejects a short buffer", "[sv2 
     data_chunk const short_buffer{0x02, 0x00, 0x0d};  // needs 6
     REQUIRE_FALSE(from_data_chunk<setup_connection_success>(short_buffer).has_value());
 }
+
+TEST_CASE("sv2 ChannelEndpointChanged round-trips and matches the wire layout", "[sv2 connection]") {
+    channel_endpoint_changed const msg{0x0a0b0c0du};
+
+    auto const bytes = to_data_chunk(msg);
+    REQUIRE(bytes == data_chunk{0x0d, 0x0c, 0x0b, 0x0a});  // U32 LE
+
+    auto const parsed = from_data_chunk<channel_endpoint_changed>(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->channel_id == msg.channel_id);
+    REQUIRE(channel_endpoint_changed::message_type == 0x03);
+    REQUIRE(channel_endpoint_changed::channel_message);
+    REQUIRE_FALSE(from_data_chunk<channel_endpoint_changed>(data_chunk{0x0d, 0x0c, 0x0b}).has_value());
+}
+
+TEST_CASE("sv2 Reconnect round-trips and matches the wire layout", "[sv2 connection]") {
+    reconnect const msg{"pool.test", 0x0d0cu};
+
+    auto const bytes = to_data_chunk(msg);
+    REQUIRE(bytes == data_chunk{9, 'p', 'o', 'o', 'l', '.', 't', 'e', 's', 't', 0x0c, 0x0d});  // STR0_255, U16 LE
+
+    auto const parsed = from_data_chunk<reconnect>(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->new_host == msg.new_host);
+    REQUIRE(parsed->new_port == msg.new_port);
+    REQUIRE(reconnect::message_type == 0x04);
+
+    // Both fields empty: the present host and port.
+    REQUIRE(to_data_chunk(reconnect{}) == data_chunk{0x00, 0x00, 0x00});
+    REQUIRE_FALSE(from_data_chunk<reconnect>(data_chunk{0x00, 0x01}).has_value());
+    REQUIRE_FALSE(from_data_chunk<reconnect>(data_chunk{0x05, 'p', 'o'}).has_value());
+}

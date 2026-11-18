@@ -24,7 +24,7 @@ struct KD_API address {
 
     address() = default;
 
-    /// Fails with error::invalid_address_count over max_address entries.
+    /// Fails over max_address entries; omits overlays, which require addrv2.
     static
     expect<address> create(infrastructure::message::network_address::list addresses);
 

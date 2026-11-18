@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chrono>
+#include <exception>
 #include <optional>
 #include <set>
 #include <string>
@@ -114,6 +115,101 @@ TEST_CASE("peer_manager construction unlimited", "[peer_manager]") {
     peer_manager manager(ctx.get_executor(), 0);  // Unlimited
 
     REQUIRE(!manager.stopped());
+}
+
+TEST_CASE("peer_manager keys proxied peers by destination", "[peer_manager][socks5]") {
+    ::asio::io_context ctx;
+    peer_manager manager(ctx.get_executor());
+    auto const settings = make_test_settings_pm();
+    auto make = [&](std::string const& host) {
+        return std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+            infrastructure::config::endpoint(host, 8333));
+    };
+    auto first = make("First.Example.");
+    auto second = make("second.example");
+    auto duplicate = make("first.example");
+    CHECK( ! first->has_numeric_authority());
+    CHECK(first->destination().host() == "first.example");
+    CHECK(first->authority_with_agent() == "first.example:8333");
+    auto numeric = make("[2001:DB8::1]");
+    CHECK(numeric->has_numeric_authority());
+    CHECK(numeric->authority().to_hostname() == "[2001:db8::1]");
+
+    std::vector<code> admissions;
+    std::vector<bool> found;
+    bool done = false;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        admissions.push_back(co_await manager.add(first));
+        admissions.push_back(co_await manager.add(second));
+        admissions.push_back(co_await manager.add(duplicate));
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        found.push_back(co_await manager.exists_by_destination(
+            infrastructure::config::endpoint("missing.example", 8333)));
+        found.push_back(co_await manager.exists_by_authority(infrastructure::config::authority::any()));
+        found.push_back(co_await manager.exists_by_ip(::asio::ip::address_v6::any()));
+        co_await manager.remove(first);
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        manager.stop_all();
+        found.push_back(co_await manager.exists_by_destination(second->destination()));
+        done = true;
+    }, ::asio::detached);
+    run_until_pm(ctx, [&] { return done; });
+    REQUIRE(done);
+    REQUIRE(admissions.size() == 3);
+    CHECK(admissions[0] == error::success);
+    CHECK(admissions[1] == error::success);
+    CHECK(admissions[2] == error::address_in_use);
+    CHECK(found == std::vector<bool>{true, false, false, false, false, false});
+    kth::test::drain_context(ctx);
+    CHECK(manager.count_snapshot() == 0);
+}
+
+TEST_CASE("peer_manager distinguishes overlays and refuses duplicate overlay addresses", "[peer_manager][i2p][onion]") {
+    ::asio::io_context ctx;
+    peer_manager manager(ctx.get_executor());
+    auto const settings = make_test_settings_pm();
+    auto make = [&](infrastructure::message::address_network network, uint8_t value, uint16_t port, uint64_t nonce) {
+        infrastructure::message::overlay_address bytes{};
+        bytes[0] = value;
+        infrastructure::config::authority const address(
+            infrastructure::message::network_address(0, 0, network, bytes, port));
+        auto peer = std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, true,
+            infrastructure::config::endpoint(address));
+        peer->set_nonce(nonce);
+        return peer;
+    };
+    auto i2p = make(infrastructure::message::address_network::i2p, 1, 0, 1);
+    auto other_i2p = make(infrastructure::message::address_network::i2p, 2, 0, 2);
+    auto onion = make(infrastructure::message::address_network::torv3, 1, 8333, 3);
+    auto duplicate = make(infrastructure::message::address_network::i2p, 1, 0, 4);
+    auto other_port = make(infrastructure::message::address_network::torv3, 1, 18333, 5);
+    REQUIRE(i2p->has_peer_address());
+    REQUIRE( ! i2p->has_numeric_authority());
+    CHECK(i2p->destination() != onion->destination());
+    std::vector<code> admissions;
+    std::vector<bool> found;
+    std::exception_ptr exception;
+    bool done = false;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        for (auto const& peer : {i2p, other_i2p, onion, duplicate, other_port}) {
+            admissions.push_back(co_await manager.add(peer));
+        }
+        found.push_back(co_await manager.exists_by_authority(i2p->authority()));
+        found.push_back(co_await manager.exists_by_destination(other_port->destination()));
+        found.push_back(co_await manager.exists_by_ip(::asio::ip::address_v6::any()));
+        co_await manager.remove(i2p);
+        found.push_back(co_await manager.exists_by_destination(i2p->destination()));
+        found.push_back(co_await manager.exists_by_destination(other_i2p->destination()));
+        manager.stop_all();
+    }, [&](std::exception_ptr e) { exception = e; done = true; });
+    run_until_pm(ctx, [&] { return done; });
+    REQUIRE(done);
+    REQUIRE( ! exception);
+    REQUIRE(admissions == std::vector<code>{error::success, error::success, error::success,
+        error::address_in_use, error::address_in_use});
+    CHECK(found == std::vector<bool>{true, true, false, false, true});
+    kth::test::drain_context(ctx);
+    CHECK(manager.count_snapshot() == 0);
 }
 
 // =============================================================================

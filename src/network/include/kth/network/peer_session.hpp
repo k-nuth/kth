@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #if defined(KTH_WITH_WEBSOCKET)
@@ -37,6 +38,8 @@
 #include <asio/use_awaitable.hpp>
 
 namespace kth::network {
+
+class sam_session;
 
 using kth::awaitable_expected;
 
@@ -111,7 +114,9 @@ public:
     /// @param socket The connected socket
     /// @param settings Network settings
     /// @param inbound True if this is an inbound connection (we accepted it)
-    peer_session(socket_type socket, settings const& settings, bool inbound = false);
+    /// @param destination Requested SOCKS destination, when the socket reaches a proxy
+    peer_session(socket_type socket, settings const& settings, bool inbound = false,
+        std::optional<infrastructure::config::endpoint> destination = std::nullopt);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -338,9 +343,21 @@ public:
     // Properties
     // -------------------------------------------------------------------------
 
-    /// Get the authority (address:port) of the remote peer
+    /// Tagged peer identity; unspecified for an ordinary proxy-resolved hostname.
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
+
+    /// The requested destination; a proxy's socket address is never a peer identity.
+    [[nodiscard]]
+    infrastructure::config::endpoint const& destination() const;
+
+    /// Whether the identity can have a peer database and ban record.
+    [[nodiscard]]
+    bool has_peer_address() const;
+
+    /// Whether the peer identity is an IP address.
+    [[nodiscard]]
+    bool has_numeric_authority() const;
 
     /// Get formatted string with authority and user agent (for logging)
     /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
@@ -559,6 +576,8 @@ private:
     /// channel still hands out what it already holds.
     void drain_response_channels();
     infrastructure::config::authority authority_;
+    infrastructure::config::endpoint destination_;
+    bool const has_numeric_authority_;
 
     // Protocol settings
     uint32_t const protocol_magic_;
@@ -632,7 +651,8 @@ awaitable_expected<peer_session::ptr> async_connect(
     std::string const& hostname,
     uint16_t port,
     settings const& settings,
-    std::chrono::seconds timeout);
+    std::chrono::seconds timeout,
+    sam_session* sam = nullptr);
 
 /// Connect to a peer by authority (address:port)
 [[nodiscard]]
@@ -640,7 +660,8 @@ awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
-    std::chrono::seconds timeout);
+    std::chrono::seconds timeout,
+    sam_session* sam = nullptr);
 
 /// Accept a single incoming connection
 /// @param acceptor An already-listening TCP acceptor
