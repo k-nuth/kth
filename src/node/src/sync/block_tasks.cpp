@@ -2769,22 +2769,31 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         };
         std::vector<pending_undo_entry> pending_undo;
 
+        // The whole batch is parsed first, so that the transactions of all of
+        // its blocks are hashed together. A block validation parsed has its
+        // identifiers already.
+        std::vector<byte_span> batch_blocks;
+        batch_blocks.reserve(raw_result->size());
+        for (auto const& raw : *raw_result) {
+            batch_blocks.emplace_back(raw.data(), raw.size());
+        }
+        std::vector<std::span<hash_digest const>> batch_txids;
+        batch_txids.reserve(validated_txids.size());
+        for (auto const& ids : validated_txids) {
+            batch_txids.emplace_back(ids);
+        }
+        auto parsed_blocks = blockchain::parse_utxo_blocks(batch_blocks, batch_txids);
+        if ( ! parsed_blocks) {
+            spdlog::critical("[utxo_build] Failed to parse block at height {}",
+                batch_start + parsed_blocks.error().block);
+            on_fatal("a stored block could not be parsed");
+            co_return;
+        }
+
         for (uint32_t i = 0; i < raw_result->size(); ++i) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
-
-            // A block validation parsed has its identifiers already.
-            std::span<hash_digest const> known_txids;
-            if (i < validated_txids.size()) {
-                known_txids = validated_txids[i];
-            }
-            auto parsed = blockchain::parse_utxo_block(
-                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()}, known_txids);
-            if ( ! parsed) {
-                spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
-                on_fatal("a stored block could not be parsed");
-                co_return;
-            }
+            auto const* parsed = &(*parsed_blocks)[i];
 
             auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
             if (idx == blockchain::header_index::null_index) {
