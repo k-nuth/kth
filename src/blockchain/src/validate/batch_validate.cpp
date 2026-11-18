@@ -9,7 +9,6 @@
 #include <cstring>
 #include <limits>
 #include <optional>
-#include <thread>
 #include <vector>
 
 #include <boost/unordered/unordered_flat_map.hpp>
@@ -727,12 +726,9 @@ code validate_block_batch(
         return error::success;
     }
 
-#if defined(KTH_BROWSER_NODE)
-    unsigned hw = 1; // The Worker owns validation; no hidden native thread creation.
-#else
-    unsigned hw = std::thread::hardware_concurrency();
-#endif
-    size_t const workers = std::max<size_t>(1, std::min<size_t>(hw ? hw : 1, tasks.size()));
+    // One in the browser node: the Worker owns validation and no native thread
+    // is created behind it.
+    size_t const workers = fork_join_workers(tasks.size());
 
     // One verdict per task, written only by the worker that ran it and read
     // only after the join. Which task the batch is refused for is decided by a
@@ -862,17 +858,11 @@ code validate_block_batch(
       }
     };
 
-    std::vector<std::thread> pool;
-    pool.reserve(workers - 1);
-    for (size_t w = 1; w < workers; ++w) {
-        pool.emplace_back(run_bucket, w);
-    }
-    run_bucket(0);
-    for (auto& th : pool) {
-        th.join();
-    }
+    // One call per bucket, each from start to end on one thread: the deferred
+    // signature collection of a bucket belongs to the thread that runs it.
+    bool const buckets_ran = fork_join_for(workers, run_bucket);
 
-    if (threw.load(std::memory_order_acquire)) {
+    if ( ! buckets_ran || threw.load(std::memory_order_acquire)) {
         // Not a verdict on any block: a worker did not finish judging.
         return fault(error::operation_failed);
     }

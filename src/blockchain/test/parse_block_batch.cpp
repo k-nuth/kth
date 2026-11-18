@@ -4,8 +4,11 @@
 
 #include <test_helpers.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include <kth/blockchain/validate/batch_validate.hpp>
@@ -112,3 +115,62 @@ TEST_CASE("fork_join_for calls every index once and joins before returning", "[p
         }
     }));
 }
+
+namespace {
+
+// Counts the threads that ever ran a call. Thread ids cannot tell, since the id
+// of a joined thread is given to the next one. The mark is a plain bool and not
+// an object with a constructor: some compilers build every such thread-local of
+// a file as soon as a thread touches any one of them, which would count threads
+// that ran nothing.
+std::atomic<size_t> threads_seen{0};
+thread_local bool counted_this_thread = false;
+
+void count_this_thread() {
+    if ( ! counted_this_thread) {
+        counted_this_thread = true;
+        threads_seen.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+} // namespace
+
+TEST_CASE("fork_join_for runs on the same threads call after call", "[parse_block_batch]") {
+    size_t const workers = fork_join_workers(1'000);
+    size_t const count = workers * 4;
+    size_t const calls = 50;
+    threads_seen.store(0);
+    for (size_t call = 0; call < calls; ++call) {
+        REQUIRE(fork_join_for(count, [](size_t) {
+            count_this_thread();
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }));
+    }
+    // The calling thread and the workers, whatever the number of calls. A thread
+    // started and joined by every call would make this workers - 1 per call.
+    CHECK(threads_seen.load() <= workers);
+}
+
+TEST_CASE("fork_join_for finishes when the calls themselves fork", "[parse_block_batch]") {
+    // Every outer call forks again, so the workers are all taken while the
+    // inner calls ask for them: the caller of each inner call does the work
+    // itself rather than wait for a worker that is waiting too.
+    size_t const outer = fork_join_workers(1'000) * 2;
+    size_t const inner = 64;
+    std::vector<std::vector<int>> calls(outer, std::vector<int>(inner, 0));
+    // Read on this thread after the join: the assertions are not to be made
+    // from the threads of the group.
+    std::atomic<bool> inner_finished{true};
+    REQUIRE(fork_join_for(outer, [&](size_t o) {
+        if ( ! fork_join_for(inner, [&, o](size_t i) { ++calls[o][i]; })) {
+            inner_finished.store(false, std::memory_order_relaxed);
+        }
+    }));
+    CHECK(inner_finished.load());
+    for (auto const& row : calls) {
+        for (auto const c : row) {
+            CHECK(c == 1);
+        }
+    }
+}
+
