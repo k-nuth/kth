@@ -171,12 +171,25 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # Mining helpers shared by the JSON-RPC server and other template consumers.
     src/mining/job_store.cpp
     src/mining/block_submit.cpp
+    src/mining/work.cpp
 
-    # Stratum V2 template provider.
+    # Stratum V2 Template Distribution and Mining Protocol server.
     src/sv2/framing.cpp
     src/sv2/primitives.cpp
     src/sv2/messages.cpp
     src/sv2/connection.cpp
+    src/sv2/noise.cpp
+    src/sv2/noise_credentials.cpp
+    src/sv2/template_provider.cpp
+    src/sv2/mining_messages.cpp
+    src/sv2/mining_session.cpp
+    src/sv2/jd_settings.cpp
+    src/sv2/jd_failover.cpp
+    src/sv2/jd_connection.cpp
+    src/sv2/jd_session.cpp
+    src/sv2/jd_messages.cpp
+    src/sv2/jd_declaration.cpp
+    src/sv2/jd_client.cpp
   )
 endif()
 
@@ -308,12 +321,25 @@ set(kth_headers
   # Mining helpers shared by the JSON-RPC server and other template consumers.
   include/kth/node/mining/job_store.hpp
   include/kth/node/mining/block_submit.hpp
+  include/kth/node/mining/work.hpp
 
   # Stratum V2 template provider.
   include/kth/node/sv2/framing.hpp
   include/kth/node/sv2/primitives.hpp
   include/kth/node/sv2/messages.hpp
   include/kth/node/sv2/connection.hpp
+  include/kth/node/sv2/noise.hpp
+  include/kth/node/sv2/noise_credentials.hpp
+  include/kth/node/sv2/template_provider.hpp
+  include/kth/node/sv2/mining_messages.hpp
+  include/kth/node/sv2/mining_session.hpp
+  include/kth/node/sv2/jd_settings.hpp
+  include/kth/node/sv2/jd_failover.hpp
+  include/kth/node/sv2/jd_connection.hpp
+  include/kth/node/sv2/jd_session.hpp
+  include/kth/node/sv2/jd_messages.hpp
+  include/kth/node/sv2/jd_declaration.hpp
+  include/kth/node/sv2/jd_client.hpp
 
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
@@ -497,6 +523,20 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/sv2_primitives.cpp
           test/sv2_messages.cpp
           test/sv2_connection.cpp
+          test/sv2_noise.cpp
+          test/sv2_noise_credentials.cpp
+          test/sv2_template_provider.cpp
+          test/sv2_mining.cpp
+          test/sv2_mining_session.cpp
+          test/sv2_mining_work.cpp
+          test/sv2_jd_settings.cpp
+          test/sv2_jd_failover.cpp
+          test/sv2_jd_connection.cpp
+          test/sv2_jd_session.cpp
+          test/sv2_jd_messages.cpp
+          test/sv2_jd_work.cpp
+          test/sv2_jd_declaration.cpp
+          test/sv2_jd_client.cpp
           test/settings.cpp)
 
   # JSON-RPC unit tests build only when the server is compiled in.
