@@ -102,6 +102,107 @@ TEST_CASE("returning to a previously connected branch survives a second restart"
     CHECK(*count == 19);
 }
 
+TEST_CASE("a block replayed into a later block file can be disconnected after a restart",
+          "[reorg][cycle][replayed_undo]") {
+    // The index keeps an undo record's offset only and takes its file from the
+    // block, whose position the block walk sets to the last copy it reads. When
+    // the replay stores a block in a later blk file, its new undo record is in
+    // the matching rev file, and that is the one the restart has to adopt: the
+    // earlier record, read at its offset in the later rev file, is not there,
+    // and the block could no longer be disconnected.
+    test::chain_fixture fixture("replayed_undo_later_file");
+    REQUIRE(fixture.created());
+    fixture.settings().max_reorg_depth = -1;
+    REQUIRE(fixture.start());
+    constexpr uint32_t fork_height = 12;
+    auto const base = uint32_t(zulu_time()) - 60 * block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto previous = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= fork_height; ++h) {
+        trunk.push_back(test::mine_block(previous, h, base + h * block_spacing, 0, {}, 0));
+        previous = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(headers_of(trunk)).headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    connect_bodies(fixture, trunk, 1);
+
+    auto const make_branch = [&](uint32_t count, uint32_t salt) {
+        std::vector<domain::chain::block> blocks;
+        auto parent = trunk.back().hash();
+        for (uint32_t n = 1; n <= count; ++n) {
+            auto const h = fork_height + n;
+            blocks.push_back(test::mine_block(parent, h, base + h * block_spacing, salt, {}, 0));
+            parent = blocks.back().hash();
+        }
+        return blocks;
+    };
+    auto const a = make_branch(7, 1);
+    std::vector<domain::chain::block> const a_first{a.front()};
+    auto const b = make_branch(3, 2);
+    // Rewinding A's seven blocks is a deep reorganization, which needs more than
+    // twice their work.
+    auto const c = make_branch(15, 3);
+    REQUIRE(fixture.organizer().add_headers(headers_of(a_first)).headers_added == 1);
+    persist_headers(fixture, a_first, fork_height + 1);
+    connect_bodies(fixture, a_first, fork_height + 1);
+
+    auto const adopt = [&](std::vector<domain::chain::block> const& branch) {
+        auto const added = fixture.organizer().add_headers(headers_of(branch));
+        REQUIRE(added.reorg_candidate);
+        auto& chain = fixture.chain();
+        ::asio::io_context io;
+        auto switched = ::asio::co_spawn(io,
+            execute_reorg(chain, fixture.organizer(), chain.headers().find(branch.back().hash()),
+                fork_height, [] { return false; }, real_persister(chain)), ::asio::use_future);
+        io.run();
+        auto const outcome = switched.get();
+        REQUIRE_FALSE(outcome.fatal);
+        REQUIRE(outcome.result.ok);
+        connect_bodies(fixture, branch, fork_height + 1);
+        REQUIRE(chain.chain_view()->tip_hash == branch.back().hash());
+    };
+    auto const file_of = [&](domain::chain::block const& blk) {
+        auto const& headers = fixture.chain().headers();
+        return headers.get_block_pos(headers.find(blk.hash())).file;
+    };
+
+    adopt(b);
+    REQUIRE(file_of(a.front()) == 0);
+
+    // Down, a new blk file appears, as it does when blk00000.dat fills up: the
+    // replay below stores A in blk00001.dat and writes its undo to rev00001.dat.
+    // A1's first undo record stays where it was, in rev00000.dat.
+    fixture.close();
+    auto const blocks_dir = fixture.dir() / "blocks";
+    REQUIRE(std::filesystem::exists(blocks_dir / "blk00000.dat"));
+    REQUIRE_FALSE(std::filesystem::exists(blocks_dir / "blk00001.dat"));
+    {
+        FILE* next = std::fopen((blocks_dir / "blk00001.dat").string().c_str(), "wb");
+        REQUIRE(next != nullptr);
+        std::fclose(next);
+    }
+    REQUIRE(fixture.start());
+
+    adopt(a);
+    REQUIRE(file_of(a.front()) == 1);
+    REQUIRE(fixture.restart());
+    REQUIRE(file_of(a.front()) == 1);
+
+    // Disconnecting A reads every A block's undo record, A1's among them.
+    adopt(c);
+    auto const height = fork_height + uint32_t(c.size());
+    auto const heights = fixture.chain().get_last_heights();
+    REQUIRE(heights);
+    CHECK(heights->block == height);
+    CHECK(utxo_present(fixture.chain(), c.back().transactions().front().hash(), 0, height));
+    for (auto const& blk : a) {
+        CHECK_FALSE(utxo_present(fixture.chain(), blk.transactions().front().hash(), 0, height));
+    }
+    auto const count = fixture.chain().utxo_count();
+    REQUIRE(count);
+    CHECK(*count == height);
+}
+
 // =============================================================================
 // The reorganization, end to end
 // =============================================================================
