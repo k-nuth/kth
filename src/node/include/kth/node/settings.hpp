@@ -38,6 +38,50 @@ struct KND_API rpc_settings {
     uint32_t gbt_store_time;
 };
 
+/// Stratum V2 listener settings. The listener is disabled by default.
+/// `mining` is the Mining Protocol on that same listener, also off by default.
+struct KND_API sv2_settings {
+    struct mining_settings {
+        mining_settings();
+
+        bool enabled;
+        std::string address;
+        uint32_t open_channel_timeout_seconds;
+    };
+
+    struct jd_settings {
+        jd_settings();
+
+        bool enabled;
+        std::string mining_address;
+        std::string mining_authority_public_key;
+        std::string jds_address;
+        std::string jds_authority_public_key;
+        std::string user_identity;
+        std::string mode;
+        uint32_t response_timeout_seconds;
+    };
+
+    sv2_settings();
+
+    bool enabled;
+    std::string bind;
+    uint16_t port;
+    bool noise;
+    std::string static_key_file;
+    std::string authority_key_file;
+    std::string certificate_file;
+    std::string authority_public_key;
+    uint32_t certificate_validity_seconds;
+    uint32_t handshake_timeout_seconds;
+    // Written into the coinbase of every job this node builds, solo or
+    // declared to a pool, right after the BIP34 height.
+    // Empty writes nothing. At most mining::max_coinbase_tag_size bytes.
+    std::string coinbase_tag;
+    mining_settings mining;
+    jd_settings jd;
+};
+
 /// Common database configuration settings, properties not thread safe.
 struct KND_API settings {
     settings();
