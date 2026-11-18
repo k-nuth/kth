@@ -160,7 +160,7 @@ namespace {
 inline constexpr size_t utxo_raw_prefix_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t); // height + mtp + coinbase
 
 [[nodiscard]]
-std::vector<uint8_t> serialize_utxo_raw_value(
+utxo_raw_value::bytes serialize_utxo_raw_value(
     std::span<uint8_t const> raw_output,
     uint32_t height,
     uint32_t median_time_past,
@@ -172,7 +172,8 @@ std::vector<uint8_t> serialize_utxo_raw_value(
     // the value as an output and fail with "not found" for every full-mode UTXO
     // lookup.
     size_t const total = raw_output.size() + utxo_raw_prefix_size;
-    std::vector<uint8_t> result(total);
+    // Every byte is written below, so none is zeroed first.
+    utxo_raw_value::bytes result(total, boost::container::default_init);
     auto* p = result.data();
 
     // raw output bytes (value + varint + script)
@@ -316,7 +317,7 @@ expect<utxo_raw_delta> process_compact_block_utxos(
             static_cast<uint32_t>(file_number),
             block_data_pos + out.tx_start
         };
-        std::vector<uint8_t> value(8);
+        utxo_raw_value::bytes value(8, boost::container::default_init);
         std::memcpy(value.data(), &ref, 8);
 #else
         auto value = serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase);
