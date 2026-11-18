@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -486,6 +487,8 @@ struct remote_peer {
     uint32_t version;
     std::atomic<size_t> getdata_count{0};
     std::atomic<size_t> blocks_sent{0};
+    // How many blocks of each getdata are answered; the rest are never sent.
+    size_t blocks_per_request{std::numeric_limits<size_t>::max()};
 
     remote_peer(::asio::ip::tcp::socket sock, std::vector<domain::chain::block> const& chain_blocks,
                 uint32_t protocol_magic, uint32_t protocol_version)
@@ -515,7 +518,10 @@ struct remote_peer {
             auto request = domain::message::get_data::from_data(reader, version);
             if ( ! request) co_return;
             ++getdata_count;
+            size_t answered = 0;
             for (auto const& inv : request->inventories()) {
+                if (answered == blocks_per_request) break;
+                ++answered;
                 auto const it = std::ranges::find_if(blocks,
                     [&](auto const& b) { return b.hash() == inv.hash(); });
                 if (it == blocks.end()) continue;
@@ -598,9 +604,9 @@ struct fast_path_fixture {
         serve.spawn(ctx, remote->serve());
     }
 
-    void start_worker() {
+    void start_worker(std::chrono::seconds batch_timeout = 60s) {
         worker.spawn(ctx, block_download_task(session, coordinator, active_peers, task_output,
-            /*task_id*/ 11, /*epoch*/ 1, &fast_val));
+            /*task_id*/ 11, /*epoch*/ 1, &fast_val, batch_timeout));
     }
 
     // The worker has delivered chunk 0 (buffered, capacity 1) and is suspended
@@ -641,6 +647,30 @@ struct fast_path_fixture {
 };
 
 } // namespace
+
+TEST_CASE("select: a worker closes the session of a peer that delivers part of a chunk and no more",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "a worker with a peer that delivers part of a chunk");
+    fast_path_fixture f;
+    f.remote->blocks_per_request = 1;   // one block of the two in each chunk
+    f.start_worker(1s);
+
+    REQUIRE(run_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
+
+    // The worker is gone, so nothing would download through this session
+    // again: it must not be left holding its slot.
+    CHECK(f.remote->blocks_sent.load() == 1u);
+    CHECK(f.session->stopped());
+    CHECK(f.session->stop_reason() == error::peer_throttling);
+
+    // The chunk went back to be claimed by another peer.
+    auto const progress = f.coordinator->get_progress();
+    CHECK(progress.chunks_completed == 0u);
+    CHECK(progress.chunks_in_progress == 0u);
+
+    f.finish();
+}
 
 TEST_CASE("select: a worker on a full fast channel holds one chunk, keeps the reader live, and is resumed by the receive",
           "[node][select_sync][fast_path]") {
