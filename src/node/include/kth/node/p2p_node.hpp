@@ -569,7 +569,8 @@ private:
     ::asio::awaitable<void> connect_to_seed(
         std::string seed_host,
         uint16_t seed_port,
-        std::shared_ptr<std::atomic<size_t>> seeds_completed);
+        std::shared_ptr<std::atomic<size_t>> seeds_completed,
+        std::stop_token enough);
 
     uint64_t generate_nonce();
 
