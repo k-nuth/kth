@@ -191,6 +191,7 @@ set(kth_sources_just_legacy
   src/settings.cpp
   src/finalization.cpp
   src/parking.cpp
+  src/spent_outputs.cpp
   src/utxo_builder.cpp
         src/utxo_deletion_sweep.cpp
 )
@@ -216,6 +217,7 @@ set(kth_headers
   include/kth/blockchain/interface/block_chain.hpp
   include/kth/blockchain/define.hpp
   include/kth/blockchain/header_index.hpp
+  include/kth/blockchain/spent_outputs.hpp
   include/kth/blockchain/abla_pipeline.hpp
   include/kth/blockchain/chain_progress.hpp
   include/kth/blockchain/tick_schedule.hpp
@@ -305,6 +307,7 @@ if (ENABLE_TEST)
         test/parse_block_batch.cpp
         test/header_abla_persistence.cpp
         test/header_index.cpp
+        test/spent_outputs.cpp
         test/header_organizer.cpp
         test/header_organizer_failed.cpp
         test/block_entry.cpp
