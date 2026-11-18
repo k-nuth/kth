@@ -323,6 +323,28 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the Stratum V2 Template Provider.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Template Provider binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Template Provider (default 8442).");
+    app.add_option("--sv2.noise", cfg.sv2.noise,
+        "Require the Noise handshake and encrypted transport (default true).");
+    app.add_option("--sv2.static_key_file", cfg.sv2.static_key_file,
+        "Provider's 32-byte static secret key file (generated if absent).");
+    app.add_option("--sv2.authority_key_file", cfg.sv2.authority_key_file,
+        "Certificate authority's 32-byte secret key file (generated if absent).");
+    app.add_option("--sv2.certificate_file", cfg.sv2.certificate_file,
+        "Offline-signed 74-byte certificate file (empty signs at startup).");
+    app.add_option("--sv2.authority_public_key", cfg.sv2.authority_public_key,
+        "Base58Check authority public key (required with an offline certificate).");
+    app.add_option("--sv2.certificate_validity_seconds", cfg.sv2.certificate_validity_seconds,
+        "Lifetime in seconds of certificates signed at startup (default 2592000).");
+    app.add_option("--sv2.handshake_timeout_seconds", cfg.sv2.handshake_timeout_seconds,
+        "Deadline in seconds for the complete Noise handshake (default 10).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
