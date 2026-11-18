@@ -69,6 +69,19 @@ TEST_CASE("outbound retry: a session that lasted clears the count", "[node][outb
     CHECK_FALSE(retry.cooling(peer, t0 + 330s));
 }
 
+TEST_CASE("outbound retry: an unproductive session counts as a short one however long it lasted",
+          "[node][outbound_retry]") {
+    outbound_retry retry;
+    retry.session_unproductive(peer, t0);
+    CHECK(retry.short_sessions(peer) == 1);
+    CHECK(retry.cooling(peer, t0 + 29s));
+
+    retry.session_unproductive(peer, t0 + 40s);
+    CHECK(retry.short_sessions(peer) == 2);
+    CHECK(retry.cooling(peer, t0 + 40s + 59s));
+    CHECK_FALSE(retry.cooling(peer, t0 + 40s + 60s));
+}
+
 TEST_CASE("outbound retry: a failed dial waits the base time and keeps the count",
           "[node][outbound_retry]") {
     outbound_retry retry;

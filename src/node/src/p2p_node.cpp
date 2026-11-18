@@ -1711,8 +1711,9 @@ void p2p_node::wake_status_task() noexcept {
                 auto const authority = infrastructure::config::authority(addr);
                 auto const ip = authority.asio_ip();
 
-                // Skip an address that is being left alone (see outbound_retry).
-                if (outbound_retry_.cooling(ip, now_steady)) {
+                // Skip an address that is being left alone (see outbound_retry),
+                // before asking the manager about it.
+                if (outbound_retry_.cooling(ip, std::chrono::steady_clock::now())) {
                     ++skipped_cooldown;
                     continue;
                 }
@@ -1726,6 +1727,14 @@ void p2p_node::wake_status_task() noexcept {
                 // Skip if already connected to this IP
                 if (co_await manager_.exists_by_ip(ip)) {
                     ++skipped_connected;
+                    continue;
+                }
+
+                // Asked again after the suspension above, with the time read
+                // again: a session of this address may have ended while this
+                // waited, and its cooldown is recorded before it is removed.
+                if (outbound_retry_.cooling(ip, std::chrono::steady_clock::now())) {
+                    ++skipped_cooldown;
                     continue;
                 }
 
@@ -2035,25 +2044,41 @@ void p2p_node::wake_status_task() noexcept {
                 outcome.connected_for = std::max(
                     transport_ended_at.value_or(*admitted_at) - *admitted_at,
                     std::chrono::steady_clock::duration::zero());
-                co_await manager_.remove(peer);
                 // A short connection is not evidence of a protocol offence:
                 // a browser may close a tab, or a transport/proxy may restart.
                 // Keep an outbound retry cooldown, but never turn normal
                 // session lifecycle into IP-wide misbehavior points. Actual
                 // malformed/invalid protocol data keeps its existing scoring.
                 auto const connection_duration = outcome.connected_for;
+                // The record lives in a container, which can fail to grow. That
+                // must not keep the session in the manager: the address is then
+                // simply not left alone, and the teardown below goes on.
                 if (direction == peer_direction::outbound) {
-                    auto const ip = peer->authority().asio_ip();
-                    outbound_retry_.session_ended(ip, connection_duration,
-                        std::chrono::steady_clock::now());
-                    if (auto const in_a_row = outbound_retry_.short_sessions(ip); in_a_row != 0) {
-                        spdlog::debug("[p2p_node] Short outbound connection to {} ({}ms, {} in a row), "
-                            "cooling down retries for {}s",
-                            peer->authority(),
-                            std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count(),
-                            in_a_row, detail::outbound_retry::cooldown_after(in_a_row).count());
+                    try {
+                        auto const ip = peer->authority().asio_ip();
+                        if (peer->stop_reason() == error::peer_throttling) {
+                            // Closed by the download for serving no blocks.
+                            outbound_retry_.session_unproductive(ip, std::chrono::steady_clock::now());
+                        } else {
+                            outbound_retry_.session_ended(ip, connection_duration,
+                                std::chrono::steady_clock::now());
+                        }
+                        if (auto const in_a_row = outbound_retry_.short_sessions(ip); in_a_row != 0) {
+                            spdlog::debug("[p2p_node] Short or unproductive outbound connection to {} ({}ms, {} in a row), "
+                                "cooling down retries for {}s",
+                                peer->authority(),
+                                std::chrono::duration_cast<std::chrono::milliseconds>(connection_duration).count(),
+                                in_a_row, detail::outbound_retry::cooldown_after(in_a_row).count());
+                        }
+                    } catch (std::exception const& e) {
+                        spdlog::warn("[p2p_node] Could not record the retry cooldown of {}: {}",
+                            peer->authority(), e.what());
                     }
                 }
+                // Removed only now, with the cooldown already recorded: once the
+                // session is gone from the manager the outbound loop may pick
+                // its address again, and must find it cooling.
+                co_await manager_.remove(peer);
 
                 // Notify sync layer of peer disconnection (CSP pattern)
                 spdlog::debug("[p2p_node:peer_event] DISCONNECTED: {} (nonce={})",
