@@ -27,8 +27,7 @@ namespace kth::node::detail {
 //
 // Nothing here is an offence. No score is touched and no address is banned;
 // the address is only left alone for a while.
-class outbound_retry {
-public:
+struct outbound_retry {
     using clock = std::chrono::steady_clock;
     using address = ::asio::ip::address;
 
