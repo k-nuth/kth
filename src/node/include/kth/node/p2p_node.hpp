@@ -30,6 +30,7 @@
 #include <kth/network/protocols_coro.hpp>
 #include <kth/network/settings.hpp>
 
+#include <kth/node/detail/outbound_retry.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 
 #include <asio/awaitable.hpp>
@@ -586,13 +587,9 @@ private:
     // Prevents multiple simultaneous connection attempts to the same IP
     boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
 
-    // Track recently failed connection IPs with cooldown timestamp
-    // Prevents rapid reconnection to failing peers
-    boost::concurrent_flat_map<
-        ::asio::ip::address,
-        std::chrono::steady_clock::time_point,
-        salted_ip_hasher
-    > failed_connections_;
+    // Addresses left alone for a while: the ones that could not be reached,
+    // and the ones whose sessions keep ending at once.
+    detail::outbound_retry outbound_retry_;
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
