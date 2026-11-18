@@ -149,6 +149,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     # Wallet support: answers from the node's own chain, or from peers.
     src/wallet/filter_store.cpp
+    src/wallet/scan.cpp
     src/detail/local_admission_tasks.cpp
     src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
@@ -312,6 +313,7 @@ set(kth_headers
 
   # Wallet support.
   include/kth/node/wallet/filter_store.hpp
+  include/kth/node/wallet/scan.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
   include/kth/node/mining/job_store.hpp
