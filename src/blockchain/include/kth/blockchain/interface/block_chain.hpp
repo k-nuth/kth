@@ -1021,6 +1021,17 @@ struct KB_API block_chain {
     [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
     fetch_blocks_raw(uint32_t from, uint32_t to) const;
 
+    // fetch_blocks_raw for as many of the blocks from `from` as fit in
+    // `max_bytes`, never past `to` and never fewer than one: the caller reads
+    // how many came back. Lets a batch be sized by what it holds rather than
+    // by a count of blocks, which says little when a block is anything from
+    // two hundred bytes to tens of megabytes. Every height of the range has
+    // to be stored, whether or not it ends up read: the range is the caller's
+    // statement of what is there. key_not_found when one is not, and when
+    // `from` is above `to`.
+    [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
+    fetch_blocks_raw_within(uint32_t from, uint32_t to, uint64_t max_bytes) const;
+
     [[nodiscard]] awaitable_expected<std::pair<header_ptr, size_t>>
     fetch_block_header(size_t height) const;
 

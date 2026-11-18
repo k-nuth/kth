@@ -3046,6 +3046,46 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
     return std::move(*result);
 }
 
+std::expected<std::vector<data_chunk>, database::result_code>
+block_chain::fetch_blocks_raw_within(uint32_t from, uint32_t to, uint64_t max_bytes) const {
+    // A range that ends before it starts holds no block, and the count below
+    // would wrap.
+    if (from > to) {
+        return std::unexpected(database::result_code::key_not_found);
+    }
+
+    // Read blocks from flat files using positions stored in header_index
+    // NOTE: During IBD, blocks are stored sequentially, so index == height
+    std::vector<database::flat_file_pos> positions;
+    positions.reserve(to - from + 1);
+
+    for (uint32_t h = from; h <= to; ++h) {
+        // Resolve through the active chain — the index also holds side branches,
+        // numbered in arrival order, so an entry's index is not its height.
+        auto const idx = header_index_.active_at(static_cast<int32_t>(h));
+
+        if (idx == header_index::null_index) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: Height {} is not on the active chain", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: No block data for height {}", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+        positions.push_back(pos);
+    }
+
+    // Read all blocks from flat files
+    auto result = block_store_->read_blocks_raw_within(positions, max_bytes);
+    if (!result) {
+        return std::unexpected(database::result_code::other);
+    }
+
+    return std::move(*result);
+}
+
 awaitable_expected<std::pair<header_ptr, size_t>>
 block_chain::fetch_block_header(size_t height) const {
     if (stopped()) {

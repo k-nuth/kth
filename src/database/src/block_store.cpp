@@ -5,6 +5,7 @@
 #include <kth/database/block_store.hpp>
 
 #include <limits>
+#include <memory>
 
 #include <algorithm>
 #include <cstdio>
@@ -550,6 +551,54 @@ block_store::read_block_size(flat_file_pos const& pos) const {
 
     std::fclose(file);
     return block_size;
+}
+
+std::expected<std::vector<data_chunk>, result_code>
+block_store::read_blocks_raw_within(std::vector<flat_file_pos> const& positions, uint64_t max_bytes) const {
+    // One handle for each run of positions in the same file: a batch names
+    // thousands of blocks, nearly all of them in a file or two.
+    struct file_closer {
+        void operator()(FILE* file) const { std::fclose(file); }
+    };
+    std::unique_ptr<FILE, file_closer> file;
+    int32_t open_file = -1;
+
+    size_t count = 0;
+    uint64_t total = 0;
+    for (auto const& pos : positions) {
+        if (pos.is_null()) {
+            return std::unexpected(result_code::key_not_found);
+        }
+        if ( ! file || pos.file != open_file) {
+            file.reset(block_files_.open(pos, true));
+            if ( ! file) {
+                return std::unexpected(result_code::other);
+            }
+            open_file = pos.file;
+        }
+
+        // The size follows the magic, in the header that precedes the block.
+        constexpr long magic_size = 4;
+        auto const size_at = long(pos.pos) - long(block_header_size) + magic_size;
+        uint32_t block_size;
+        if (std::fseek(file.get(), size_at, SEEK_SET) != 0
+            || std::fread(&block_size, sizeof(block_size), 1, file.get()) != 1) {
+            return std::unexpected(result_code::other);
+        }
+
+        total += block_size;
+        if (count != 0 && total > max_bytes) {
+            break;
+        }
+        ++count;
+        // Nothing after a block that used the limit up can fit, so the
+        // positions after it are not looked at: one of them that cannot be
+        // read is not this call's to report.
+        if (total >= max_bytes) {
+            break;
+        }
+    }
+    return read_blocks_raw({positions.begin(), positions.begin() + count});
 }
 
 std::expected<std::vector<data_chunk>, result_code>

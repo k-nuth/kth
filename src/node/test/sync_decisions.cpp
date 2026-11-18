@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <set>
 
@@ -93,6 +94,46 @@ TEST_CASE("utxo_batch_len: at the tip a short window is drained down to one bloc
     CHECK(utxo_batch_len(44, batch_size, /*stale*/ false) == 44u);
     CHECK(utxo_batch_len(1,  batch_size, /*stale*/ false) == 1u);
     CHECK(utxo_batch_len(999, batch_size, /*stale*/ false) == 999u);
+}
+
+// =============================================================================
+// utxo_fast_batch_reach — how far a batch below the checkpoint may reach
+// =============================================================================
+
+TEST_CASE("utxo_fast_batch_reach: below the checkpoint a batch reaches what is stored", "[sync]") {
+    // 1,000 chosen, 7,500 stored: all of them, since the limit is 20,000.
+    CHECK(utxo_fast_batch_reach(1, 1000, 7500, 900000, 20000) == 7500u);
+    CHECK(utxo_fast_batch_reach(300001, 301000, 7500, 900000, 20000) == 307500u);
+}
+
+TEST_CASE("utxo_fast_batch_reach: never more blocks than the limit", "[sync]") {
+    CHECK(utxo_fast_batch_reach(1, 1000, 700000, 900000, 20000) == 20000u);
+    CHECK(utxo_fast_batch_reach(300001, 301000, 700000, 900000, 20000) == 320000u);
+}
+
+TEST_CASE("utxo_fast_batch_reach: never past the checkpoint", "[sync]") {
+    CHECK(utxo_fast_batch_reach(899001, 900000, 50000, 900000, 20000) == 900000u);
+    CHECK(utxo_fast_batch_reach(895001, 896000, 50000, 900000, 20000) == 900000u);
+}
+
+TEST_CASE("utxo_fast_batch_reach: a batch is never shortened", "[sync]") {
+    // A limit under the batch already chosen does not cut it, and with nothing
+    // counted as stored the batch is left alone.
+    CHECK(utxo_fast_batch_reach(1, 1000, 1000, 900000, 500) == 1000u);
+    CHECK(utxo_fast_batch_reach(1, 44, 44, 900000, 20000) == 44u);
+    CHECK(utxo_fast_batch_reach(1, 1000, 0, 900000, 20000) == 1000u);
+    CHECK(utxo_fast_batch_reach(1, 1000, 5000, 900000, 0) == 1000u);
+}
+
+TEST_CASE("utxo_fast_batch_reach: a batch above the checkpoint is left as it came", "[sync]") {
+    CHECK(utxo_fast_batch_reach(900001, 900500, 50000, 900000, 20000) == 900500u);
+    // Full validation: the checkpoint grants nothing, so no batch is below it.
+    CHECK(utxo_fast_batch_reach(1, 500, 50000, 0, 20000) == 500u);
+}
+
+TEST_CASE("utxo_fast_batch_reach: heights near the top of the range do not wrap", "[sync]") {
+    auto const top = std::numeric_limits<uint32_t>::max();
+    CHECK(utxo_fast_batch_reach(top - 10, top - 5, 20000, top, 20000) == top);
 }
 
 // =============================================================================

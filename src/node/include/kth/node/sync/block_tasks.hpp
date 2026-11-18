@@ -41,6 +41,18 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
 [[nodiscard]]
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale);
 
+/// How far a batch chosen as `batch_start`..`batch_end` may reach when it is at
+/// or below the checkpoint: as far as the `available` stored blocks allow, up
+/// to `max_blocks`, and never past the checkpoint. Such a batch is then cut by
+/// the bytes it holds, when its blocks are read. A batch above the checkpoint
+/// is returned as it came: those are sized by the validation settings.
+///
+/// `max_blocks` limits only how far the batch is extended. It never shortens
+/// the batch that came in: 1..1000 with a `max_blocks` of 500 stays 1..1000.
+[[nodiscard]]
+uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_t available,
+    uint32_t checkpoint_height, uint32_t max_blocks);
+
 /// Last height of the batch that starts at `batch_start` and could reach
 /// `batch_end`. It never crosses `checkpoint_height` (the trusted height): the
 /// blocks at or below it are their own batch. Above it, the batch holds at most

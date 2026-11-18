@@ -146,6 +146,16 @@ struct KD_API block_store {
     std::expected<std::vector<data_chunk>, result_code>
     read_blocks_raw(std::vector<flat_file_pos> const& positions) const;
 
+    /// read_blocks_raw for the longest run of `positions`, from the first,
+    /// whose blocks add up to no more than `max_bytes`. The first block is
+    /// read whatever its size, so a result is empty only when `positions` is.
+    /// The positions after the block that uses the limit up are not looked
+    /// at, so one of them that cannot be read is not an error here.
+    /// @return The blocks read, in the order of `positions`, or error.
+    [[nodiscard]]
+    std::expected<std::vector<data_chunk>, result_code>
+    read_blocks_raw_within(std::vector<flat_file_pos> const& positions, uint64_t max_bytes) const;
+
     /// Read a block's undo record. `block_hash` is the block the caller believes
     /// owns the record, and the record must agree — a wrong position would
     /// otherwise return some other block's undo, and the checksum cannot catch

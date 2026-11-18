@@ -2153,6 +2153,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     return 0;
 }
 
+uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_t available,
+        uint32_t checkpoint_height, uint32_t max_blocks) {
+    if (batch_end > checkpoint_height || available == 0 || max_blocks == 0) {
+        return batch_end;
+    }
+    auto const furthest = uint64_t{batch_start} + std::min(available, max_blocks) - 1;
+    return std::max(batch_end, uint32_t(std::min<uint64_t>(furthest, checkpoint_height)));
+}
+
 // =============================================================================
 // Incremental UTXO Build Task
 // =============================================================================
@@ -2199,6 +2208,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     spdlog::debug("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
+    // The most a batch at or below the checkpoint holds: blocks, and bytes of
+    // them. The bytes bound what one batch keeps in memory at once.
+    constexpr uint32_t fast_batch_blocks = 20'000;
+    constexpr uint64_t fast_batch_bytes = uint64_t{1} << 30;
 
     // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
     // every block runs FULL validation. It is the highest checkpoint in the
@@ -2491,10 +2504,23 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 
         // Process one batch
         uint32_t const batch_start = utxo_built_height + 1;
-        uint32_t const batch_end = ahead
+        uint32_t batch_end = ahead
             ? ahead->end
             : utxo_batch_end(batch_start, batch_start + batch_len - 1,
                 checkpoint_height, validated_batch_blocks);
+
+        // At or below the checkpoint a batch is sized by what it holds, not by
+        // a count of blocks. Every batch ends in the stores' durability
+        // barrier, which costs the same after a thousand blocks of two hundred
+        // bytes as after a thousand full ones, so a batch of small blocks
+        // spends most of its time there. The batch reaches as far as the
+        // blocks stored allow, up to fast_batch_blocks, and the read below
+        // cuts it at fast_batch_bytes.
+        bool const sized_by_bytes = ! ahead && batch_end <= checkpoint_height;
+        if (sized_by_bytes) {
+            batch_end = utxo_fast_batch_reach(batch_start, batch_end, available,
+                checkpoint_height, fast_batch_blocks);
+        }
 
         // The judgement started ahead, if there is one. Collected before
         // anything else is done with this batch; a fetch that failed there is
@@ -2518,7 +2544,12 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // Read raw blocks from flat files
         auto raw_result = judged
             ? std::expected<std::vector<data_chunk>, database::result_code>{std::move(judged->raw)}
-            : chain.fetch_blocks_raw(batch_start, batch_end);
+            : sized_by_bytes
+                ? chain.fetch_blocks_raw_within(batch_start, batch_end, fast_batch_bytes)
+                : chain.fetch_blocks_raw(batch_start, batch_end);
+        if (raw_result && sized_by_bytes && ! raw_result->empty()) {
+            batch_end = batch_start + uint32_t(raw_result->size()) - 1;
+        }
         if ( ! raw_result) {
             spdlog::error("[utxo_build] Failed to fetch blocks {}-{}", batch_start, batch_end);
             // Wait and retry — blocks might not be fully written yet
