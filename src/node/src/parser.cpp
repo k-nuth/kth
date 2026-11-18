@@ -270,6 +270,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
 #endif
 
     // [node]
+    app.add_option("--node.compact_filters",       cfg.chain.compact_filters,
+        "Serve compact block filters to light wallets: getcfilters, getcfheaders and getcfcheckpt (default false).");
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
