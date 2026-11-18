@@ -146,6 +146,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
     src/detail/compact_filters.cpp
+
+    # Wallet support: answers from the node's own chain, or from peers.
+    src/wallet/filter_store.cpp
     src/detail/local_admission_tasks.cpp
     src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
@@ -307,6 +310,9 @@ set(kth_headers
   include/kth/node/detail/compact_filters.hpp
   include/kth/node/parser.hpp
 
+  # Wallet support.
+  include/kth/node/wallet/filter_store.hpp
+
   # Mining helpers shared by the JSON-RPC server and other template consumers.
   include/kth/node/mining/job_store.hpp
   include/kth/node/mining/block_submit.hpp
@@ -465,6 +471,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/block_reads.cpp
           test/chain_data.cpp
           test/compact_filters.cpp
+          test/wallet.cpp
           test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
