@@ -153,6 +153,46 @@ struct status {
     std::vector<std::string> refused;
 };
 
+/// How a node without the full chain reaches its peers.
+struct peer_settings {
+    domain::config::network network = domain::config::network::mainnet;
+    /// A folder per network is made in it for the headers and filters.
+    std::filesystem::path directory;
+    /// host:port; a missing port takes the network's default.
+    std::vector<std::string> peers;
+    /// Long-lived connections for headers, filters and relay.
+    size_t service_peers = 2;
+    /// Blocks downloaded at once.
+    size_t parallel_downloads = 4;
+    /// Each block over a connection of its own (on by default: the peers
+    /// that serve headers and filters do not see which blocks follow them).
+    bool isolate_downloads = true;
+    /// Other blocks downloaded with each block a wallet needs: the same ones
+    /// for that block every time, after a restart too (derived from a seed
+    /// kept in the store), so sessions cannot be intersected.
+    size_t decoy_blocks = 3;
+    /// Every block of a scanned range, so which are fetched says nothing.
+    bool download_all_blocks = false;
+    /// Threads that match filters; 0 for one per core.
+    size_t scan_threads = 0;
+    /// Also sync input prefix filters (filter type 2) and check blocks
+    /// against them. RPA does not use them: an RPA lookup downloads every
+    /// block of its range, so which blocks it downloads names no prefix.
+    bool input_prefix_filters = false;
+    /// The first height whose filters are synced: no wallet watched here
+    /// received anything before it.
+    uint32_t birthday = 0;
+    /// Headers the index holds; 0 for the network's default.
+    size_t header_capacity = 0;
+    std::chrono::seconds request_timeout{60};
+    size_t block_cache_bytes = size_t(64) << 20;
+    size_t mempool_bytes = size_t(256) << 20;
+    /// Every message sent to a peer, appended as "<command> <payload hex>"
+    /// lines, for audits. Empty: none.
+    std::filesystem::path sent_log;
+    std::string user_agent;
+};
+
 /// How a full node answers its wallet from its own chain. A target is read
 /// by parsing the stored blocks from its birthday on.
 struct chain_settings {
@@ -170,6 +210,12 @@ public:
     [[nodiscard]]
     static std::unique_ptr<service> from_chain(blockchain::block_chain& chain, domain::config::network network,
         chain_settings settings = {});
+
+    /// Answers from peers. operation_failed without peers or with an
+    /// unreadable peer address; file_system when the folder or a store cannot
+    /// be opened.
+    [[nodiscard]]
+    static std::expected<std::unique_ptr<service>, std::error_code> from_peers(peer_settings settings);
 
     ~service();
     service(service const&) = delete;

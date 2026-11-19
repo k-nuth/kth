@@ -152,6 +152,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/wallet/chain_source.cpp
     src/wallet/filter_store.cpp
     src/wallet/history.cpp
+    src/wallet/peer_blocks.cpp
+    src/wallet/peer_filters.cpp
+    src/wallet/peer_links.cpp
+    src/wallet/peer_mempool.cpp
+    src/wallet/peer_source.cpp
     src/wallet/scan.cpp
     src/wallet/service.cpp
     src/detail/local_admission_tasks.cpp
@@ -483,6 +488,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/compact_filters.cpp
           test/wallet.cpp
           test/wallet_chain.cpp
+          test/wallet_service.cpp
           test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
