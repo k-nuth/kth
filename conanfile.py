@@ -186,6 +186,11 @@ class KthRecipe(KnuthConanFileV2):
             check_min_cppstd(self, "23")
 
     def requirements(self):
+        # The scheduler the batch validation forks on. Not in the browser
+        # node, whose Worker runs validation and creates no threads.
+        if not self.options.browser_node:
+            self.requires("parlaylib/2.4.0#74d1aa86472eef841b57e8ad41311342",
+                          transitive_headers=True, transitive_libs=True)
         if self.options.mempool_backend == "parlay":
             self.requires("parlayhash/0.3.0#c3cf1ad464bf64787163eb1a6e59c285",
                           transitive_headers=True, transitive_libs=True)
@@ -664,6 +669,8 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines + sigverify_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
+        if not self.options.browser_node:
+            blockchain_requires.append("parlaylib::parlaylib")
         if self.options.mempool_backend == "parlay":
             blockchain_requires.append("parlayhash::parlayhash")
         if self.options.consensus:
