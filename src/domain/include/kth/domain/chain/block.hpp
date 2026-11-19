@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <istream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <span>
 #include <vector>
@@ -172,10 +173,14 @@ struct KD_API block {
 
     // The root that a transaction hash at `index` and its branch fold to: at
     // each level the hash is the left child where the index is even and the
-    // right one where it is odd, and the index is halved.
+    // right one where it is odd, and the index is halved. None where a right
+    // child would be paired with itself: only a left node is ever paired with
+    // itself (the last of an odd level), so such a step claims a position
+    // past the last transaction, which folds to the same root as the real one
+    // (CVE-2012-2459; as checkTxMerkleBranch in gcash/neutrino#52).
     [[nodiscard]]
     static
-    hash_digest merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch);
+    std::optional<hash_digest> merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch);
 
     [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;

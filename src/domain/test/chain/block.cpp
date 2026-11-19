@@ -440,6 +440,26 @@ TEST_CASE("block transaction merkle branch last transaction of an odd level is i
     REQUIRE(branch[0] == txids[2]);
 }
 
+TEST_CASE("block transaction merkle branch claiming a position past the last transaction is refused", "[block generate merkle root]") {
+    // Three transactions: the last is paired with itself, so its branch folds
+    // to the root from index 3 too, a transaction that is not there.
+    auto const block = make_block_of(3);
+    auto const txids = block.to_hashes();
+    auto const root = block.generate_merkle_root();
+    auto const branch = block.transaction_merkle_branch(2);
+    REQUIRE(chain::block::merkle_branch_root(txids[2], 2, branch) == root);
+    REQUIRE(chain::block::merkle_branch_root(txids[2], 3, branch) != std::optional<hash_digest>(root));
+    // Higher up as well: in five transactions the last pair is (4, 4), and
+    // its parent is paired with itself again one level up.
+    auto const five = make_block_of(5);
+    auto const five_txids = five.to_hashes();
+    auto const five_branch = five.transaction_merkle_branch(4);
+    REQUIRE(chain::block::merkle_branch_root(five_txids[4], 4, five_branch) == five.generate_merkle_root());
+    for (size_t index : {5u, 6u, 7u}) {
+        REQUIRE(chain::block::merkle_branch_root(five_txids[4], index, five_branch) != std::optional<hash_digest>(five.generate_merkle_root()));
+    }
+}
+
 TEST_CASE("block transaction merkle branch at another index folds to another root", "[block generate merkle root]") {
     auto const block = make_block_of(4);
     auto const txids = block.to_hashes();

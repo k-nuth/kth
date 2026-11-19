@@ -538,11 +538,12 @@ hash_list block::transaction_merkle_branch(size_t index, std::span<hash_digest c
     return branch;
 }
 
-hash_digest block::merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch) {
+std::optional<hash_digest> block::merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch) {
     auto hash = transaction_hash;
     std::array<uint8_t, 2 * hash_size> pair;
 
     for (auto const& sibling : branch) {
+        if (index % 2 != 0 && sibling == hash) return std::nullopt;
         auto const& left = index % 2 == 0 ? hash : sibling;
         auto const& right = index % 2 == 0 ? sibling : hash;
         std::copy(left.begin(), left.end(), pair.begin());
