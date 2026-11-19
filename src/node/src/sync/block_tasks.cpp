@@ -2418,6 +2418,10 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
     // rebuilding it as it grows and stop freeing the old one. Its entries are
     // released as soon as each batch is applied; only the capacity carries over.
     blockchain::utxo_raw_delta delta;
+    // Where each batch of transactions is hashed, and what that has been
+    // measured to cost. This task is the only one that hashes whole batches,
+    // so the model is its own.
+    hash_dispatch::dispatcher hashing;
 
     // The height the coordinator last said nothing will be stored above until
     // it is built. While the chain is behind a batch waits to be full, because
@@ -2831,7 +2835,7 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         for (auto const& ids : validated_txids) {
             batch_txids.emplace_back(ids);
         }
-        auto parsed_blocks = blockchain::parse_utxo_blocks(batch_blocks, batch_txids);
+        auto parsed_blocks = blockchain::parse_utxo_blocks(batch_blocks, batch_txids, &hashing);
         if ( ! parsed_blocks) {
             spdlog::critical("[utxo_build] Failed to parse block at height {}",
                 batch_start + parsed_blocks.error().block);

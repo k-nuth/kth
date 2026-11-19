@@ -115,23 +115,33 @@ enum class policy {
     cpu_only,
 };
 
-// out[i] = bitcoin_hash(messages[i]), each part of the batch hashed where the
-// model says it is fastest. This is what bitcoin_hash_batch calls.
-KI_API void hash(std::span<byte_span const> messages, std::span<hash_digest> out);
+// What KTH_HASH_DISPATCH asks for: "cpu" keeps every batch on the processor.
+[[nodiscard]] KI_API policy policy_from_environment();
 
-// The model in use, and replacing it: a node that kept the model of its last
-// run puts it back with set_model before hashing, and takes it with model()
-// when it stops.
-[[nodiscard]] KI_API cost_model model();
-KI_API void set_model(cost_model const& model);
+// The model of one task that hashes batches, and the decision made with it.
+//
+// It belongs to that task: nothing in it is shared, so two tasks that hash
+// each keep their own, and each learns from the batches it hashed. A node that
+// kept the model of its last run puts it back with set_model before hashing,
+// and reads `model` when it stops.
+struct dispatcher {
+    cost_model model{};
+    // Whether `model` holds a measurement of this machine. Until it does, the
+    // first batch large enough for a launch calibrates.
+    bool measured{false};
+    policy how{policy_from_environment()};
 
-// Measure this machine now, replacing the model. Takes a fraction of a second.
-// It runs by itself before the first batch large enough for a launch when no
-// model was given; a caller only needs it to measure again.
-KI_API void calibrate();
+    // out[i] = bitcoin_hash(messages[i]), each part of the batch hashed where
+    // the model says it is fastest, and the model corrected by what it took.
+    KI_API void hash(std::span<byte_span const> messages, std::span<hash_digest> out);
 
-[[nodiscard]] KI_API policy current_policy();
-KI_API void set_policy(policy value);
+    // Take a model measured before, on this machine or in another run.
+    KI_API void set_model(cost_model const& value);
+
+    // Measure this machine now, replacing the model. Takes a fraction of a
+    // second.
+    KI_API void calibrate();
+};
 
 } // namespace kth::hash_dispatch
 

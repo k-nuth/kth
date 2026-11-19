@@ -34,6 +34,7 @@
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/math/hash_dispatch.hpp>
 
 // Fast hasher for outpoints during IBD.
 // Since txid is already SHA256 (uniformly distributed), we just grab the
@@ -108,10 +109,15 @@ struct utxo_parse_failure {
 //
 // txids[i], when present and not empty, are the identifiers already known for
 // raw_blocks[i]; the run may be longer than txids.
+//
+// `hashing`, when given, decides where the batch is hashed (processor or
+// device) and learns from it; it belongs to the caller and is used only during
+// the call. Without it the batch is hashed on the processor.
 [[nodiscard]]
 KB_API std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_blocks(
     std::span<byte_span const> raw_blocks,
-    std::span<std::span<hash_digest const> const> txids = {});
+    std::span<std::span<hash_digest const> const> txids = {},
+    hash_dispatch::dispatcher* hashing = nullptr);
 
 // =============================================================================
 // Pre-serialized UTXO value for zero-copy insertion into UTXO-Z.
