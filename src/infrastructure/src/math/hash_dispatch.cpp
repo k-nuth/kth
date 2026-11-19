@@ -6,13 +6,12 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <bit>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
+#include <string_view>
 #include <vector>
 
 #include <fmt/format.h>
@@ -21,7 +20,7 @@
 #include <secp256k1_turbo/gpu_sha256.hpp>
 #endif
 
-#include "hash_batch_backends.hpp"
+#include <kth/infrastructure/math/hash_batch.hpp>
 
 namespace kth::hash_dispatch {
 
@@ -32,13 +31,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 void hash_on_cpu(std::span<byte_span const> messages, std::span<hash_digest> out) {
-#if defined(ENABLE_X86_SHANI)
-    if (detail::sha256d_batch_x86_shani_usable()) {
-        detail::sha256d_batch_x86_shani(messages, out);
-        return;
-    }
-#endif
-    detail::sha256d_batch_one_by_one(messages, out);
+    bitcoin_hash_batch(messages, out);
 }
 
 bool gpu_present() {
@@ -85,38 +78,6 @@ double correction(double predicted_ns, double measured_ns) {
     }
     auto const ratio = std::clamp(measured_ns / predicted_ns, 1.0 / largest_ratio, largest_ratio);
     return 1.0 + learning_rate * (ratio - 1.0);
-}
-
-// ---------------------------------------------------------------------------
-// The model in use
-// ---------------------------------------------------------------------------
-//
-// One model for the process, read by every thread that hashes a batch and
-// corrected after each. It is a set of measurements, not a way for tasks to
-// hand each other work, and it is held for the time it takes to copy it.
-
-struct shared_state {
-    std::mutex mutex;
-    cost_model model;
-    bool measured = false;
-    policy how = policy::automatic;
-    std::once_flag environment_read;
-};
-
-shared_state& state() {
-    static shared_state s;
-    return s;
-}
-
-void read_environment(shared_state& s) {
-    std::call_once(s.environment_read, [&s] {
-        // KTH_HASH_DISPATCH=cpu keeps every batch on the processor.
-        if (char const* value = std::getenv("KTH_HASH_DISPATCH"); value != nullptr) {
-            if (std::string_view(value) == "cpu") {
-                s.how = policy::cpu_only;
-            }
-        }
-    });
 }
 
 // Synthetic messages for the calibration: `count` of `size` bytes each, from
@@ -342,88 +303,51 @@ cost_model observe_gpu(cost_model model, uint64_t bytes, uint64_t longest, doubl
 }
 
 // ---------------------------------------------------------------------------
-// The controller
+// The dispatcher
 // ---------------------------------------------------------------------------
 
-cost_model model() {
-    auto& s = state();
-    std::lock_guard const lock(s.mutex);
-    return s.model;
+policy policy_from_environment() {
+    // KTH_HASH_DISPATCH=cpu keeps every batch on the processor.
+    if (char const* value = std::getenv("KTH_HASH_DISPATCH"); value != nullptr) {
+        if (std::string_view(value) == "cpu") {
+            return policy::cpu_only;
+        }
+    }
+    return policy::automatic;
 }
 
-void set_model(cost_model const& value) {
-    auto& s = state();
-    std::lock_guard const lock(s.mutex);
-    s.model = value;
+void dispatcher::set_model(cost_model const& value) {
+    model = value;
     // A model from another run says what the device cost then; whether there
     // is one now is asked now.
-    s.model.gpu = value.gpu && gpu_present();
-    s.measured = true;
+    model.gpu = value.gpu && gpu_present();
+    measured = true;
 }
 
-void calibrate() {
-    auto const measured = measure();
-    auto& s = state();
-    std::lock_guard const lock(s.mutex);
-    s.model = measured;
-    s.measured = true;
+void dispatcher::calibrate() {
+    model = measure();
+    measured = true;
 }
 
-policy current_policy() {
-    auto& s = state();
-    read_environment(s);
-    std::lock_guard const lock(s.mutex);
-    return s.how;
-}
-
-void set_policy(policy value) {
-    auto& s = state();
-    read_environment(s);
-    std::lock_guard const lock(s.mutex);
-    s.how = value;
-}
-
-void hash(std::span<byte_span const> messages, std::span<hash_digest> out) {
-    auto& s = state();
-    read_environment(s);
-
+void dispatcher::hash(std::span<byte_span const> messages, std::span<hash_digest> out) {
     // Small batches never leave the processor, so they need no model: neither
     // a calibration nor a correction is worth more than hashing them.
-    if (messages.size() < minimum_gpu_messages) {
-        hash_on_cpu(messages, out);
-        return;
-    }
-
-    cost_model current;
-    bool automatic = false;
-    bool measured = false;
-    {
-        std::lock_guard const lock(s.mutex);
-        automatic = s.how == policy::automatic;
-        measured = s.measured;
-        current = s.model;
-    }
-    if ( ! automatic || ! gpu_present()) {
+    if (messages.size() < minimum_gpu_messages || how != policy::automatic || ! gpu_present()) {
         hash_on_cpu(messages, out);
         return;
     }
     if ( ! measured) {
-        // The first batch large enough to matter measures the machine. Other
-        // threads arriving meanwhile measure too; the last one to finish is
-        // the model kept, and all of them are measurements of this machine.
+        // The first batch large enough to matter measures the machine.
         calibrate();
-        current = model();
     }
 
-    auto const split = choose(current, messages);
+    auto const split = choose(model, messages);
     if (split.gpu_messages == 0) {
         uint64_t bytes = 0;
         for (auto const& message : messages) bytes += message.size();
         auto const start = std::chrono::steady_clock::now();
         hash_on_cpu(messages, out);
-        auto const took = elapsed_ns(start);
-        std::lock_guard const lock(s.mutex);
-        s.model = observe_cpu(s.model, messages.size(), bytes, took);
+        model = observe_cpu(model, messages.size(), bytes, elapsed_ns(start));
         return;
     }
 
@@ -480,11 +404,10 @@ void hash(std::span<byte_span const> messages, std::span<hash_digest> out) {
         }
     }
 
-    std::lock_guard const lock(s.mutex);
-    s.model = observe_gpu(s.model, split.gpu_bytes, split.gpu_longest, gpu_took);
+    model = observe_gpu(model, split.gpu_bytes, split.gpu_longest, gpu_took);
     // A handful of long messages says little about the processor.
     if (cpu_messages.size() >= minimum_gpu_messages) {
-        s.model = observe_cpu(s.model, cpu_messages.size(), cpu_bytes, cpu_took);
+        model = observe_cpu(model, cpu_messages.size(), cpu_bytes, cpu_took);
     }
 }
 

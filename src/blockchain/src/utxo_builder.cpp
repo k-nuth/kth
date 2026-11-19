@@ -183,7 +183,8 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_
 
 std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_blocks(
         std::span<byte_span const> raw_blocks,
-        std::span<std::span<hash_digest const> const> txids) {
+        std::span<std::span<hash_digest const> const> txids,
+        hash_dispatch::dispatcher* hashing) {
     auto const known = [&](size_t i) {
         return i < txids.size() ? txids[i] : std::span<hash_digest const>{};
     };
@@ -211,7 +212,11 @@ std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_bl
                 transactions.push_back(raw_blocks[i].subspan(tx.start, tx.size));
             }
         }
-        bitcoin_hash_batch(transactions, hashed);
+        if (hashing != nullptr) {
+            hashing->hash(transactions, hashed);
+        } else {
+            bitcoin_hash_batch(transactions, hashed);
+        }
     }
 
     std::vector<utxo_compact_block> result;

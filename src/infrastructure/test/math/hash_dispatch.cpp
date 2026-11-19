@@ -210,9 +210,10 @@ TEST_CASE("hash dispatch: hashing through the controller gives the same hashes",
     messages.emplace_back(bytes.data() + 5, 0);
     messages.emplace_back(bytes.data() + 17, 100'001);
 
+    dispatcher owned;
     for (int round = 0; round < 3; ++round) {
         std::vector<hash_digest> out(messages.size(), hash_digest{0x33});
-        hash(messages, out);
+        owned.hash(messages, out);
         for (size_t i = 0; i < messages.size(); ++i) {
             INFO("round " << round << ", message " << i << " of " << messages[i].size() << " bytes");
             REQUIRE(out[i] == bitcoin_hash(messages[i]));
@@ -220,12 +221,30 @@ TEST_CASE("hash dispatch: hashing through the controller gives the same hashes",
     }
 
     // And with the device ruled out.
-    auto const before = current_policy();
-    set_policy(policy::cpu_only);
+    dispatcher processor_only;
+    processor_only.how = policy::cpu_only;
     std::vector<hash_digest> out(messages.size());
-    hash(messages, out);
+    processor_only.hash(messages, out);
     for (size_t i = 0; i < messages.size(); ++i) {
         REQUIRE(out[i] == bitcoin_hash(messages[i]));
     }
-    set_policy(before);
+    CHECK_FALSE(processor_only.measured);
+}
+
+TEST_CASE("hash dispatch: each dispatcher keeps the model it learned", "[hash_dispatch]") {
+    // Two tasks that hash share nothing: what one learns from its batches
+    // leaves the other's model as it was.
+    std::vector<uint8_t> bytes(4096, 0x21);
+    std::vector<byte_span> messages;
+    for (size_t i = 0; i < 2 * minimum_gpu_messages; ++i) messages.emplace_back(bytes.data(), 300 + i);
+    std::vector<hash_digest> out(messages.size());
+
+    dispatcher first;
+    dispatcher second;
+    second.set_model(sample_model());
+    auto const kept = second.model;
+
+    first.hash(messages, out);
+    CHECK(second.model == kept);
+    CHECK(second.measured);
 }

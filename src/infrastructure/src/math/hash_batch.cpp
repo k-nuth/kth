@@ -4,8 +4,6 @@
 
 #include <kth/infrastructure/math/hash_batch.hpp>
 
-#include <kth/infrastructure/math/hash_dispatch.hpp>
-
 #include "hash_batch_backends.hpp"
 
 #if defined(ENABLE_X86_SHANI) && (defined(__x86_64__) || defined(__i386__)) \
@@ -48,9 +46,13 @@ bool sha256d_batch_x86_shani_usable() {
 } // namespace detail
 
 void bitcoin_hash_batch(std::span<byte_span const> messages, std::span<hash_digest> out) {
-    // Where each part of the batch is hashed is decided per batch, from what
-    // hashing costs on this machine.
-    hash_dispatch::hash(messages, out);
+#if defined(ENABLE_X86_SHANI)
+    if (detail::sha256d_batch_x86_shani_usable()) {
+        detail::sha256d_batch_x86_shani(messages, out);
+        return;
+    }
+#endif
+    detail::sha256d_batch_one_by_one(messages, out);
 }
 
 std::string_view bitcoin_hash_batch_implementation() {
