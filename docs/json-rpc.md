@@ -97,7 +97,7 @@ counterpart.
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
+| `getblock` (verbosity 2: each transaction after the coinbase has its `fee`, in BCH, when the node has the block's undo record; a block connected at or below the checkpoint without `chain.full_validation` has none, and the field is left out) | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) + `fetch_spent_outputs(hash, block)` (the block's undo record) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
@@ -257,12 +257,14 @@ too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+transaction with its `decoderawtransaction` fields and `hex`, and each one
+after the coinbase with its `fee`, in BCH, when the node has the undo record of
+the block. With `patterns`
 true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
 object: the script with each run of data pushes replaced by its count
 (`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
 pushed data in order (`data`), and `error` for a script that ends in the middle
-of a push. `fee` per transaction and `ablastate` are not reported.
+of a push. `ablastate` is not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
 mempool transaction. Confirmed transactions are not indexed by txid (#491), so
