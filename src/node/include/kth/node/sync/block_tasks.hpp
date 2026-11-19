@@ -55,12 +55,18 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
 
 /// Last height of the batch that starts at `batch_start` and could reach
 /// `batch_end`. It never crosses `checkpoint_height` (the trusted height): the
-/// blocks at or below it are their own batch. Above it, the batch holds at most
-/// `validated_blocks` blocks, whose parsed bodies and undo data stay in memory
-/// until the batch is applied.
+/// blocks at or below it are their own batch.
 [[nodiscard]]
-uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
-                        uint32_t validated_blocks);
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height);
+
+/// How far a batch above the checkpoint that starts at `batch_start` may
+/// reach: as far as the `available` stored blocks allow and never more than
+/// `max_blocks` of them, with one block at the least. Such a batch is then cut
+/// by the bytes it holds when its blocks are read; its parsed bodies and undo
+/// data stay in memory until it is applied, and those follow the bytes.
+[[nodiscard]]
+uint32_t utxo_validated_batch_reach(uint32_t batch_start, uint32_t available, uint32_t max_blocks);
+
 
 /// How far the store holds bodies above the connected tip: the highest height H
 /// such that every block in (connected, H] on the active chain has its data on

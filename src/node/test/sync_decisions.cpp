@@ -140,24 +140,28 @@ TEST_CASE("utxo_fast_batch_reach: heights near the top of the range do not wrap"
 // utxo_batch_end — where a batch stops
 // =============================================================================
 
-TEST_CASE("utxo_batch_end: a validated batch holds at most the configured blocks", "[sync]") {
-    // Above the trusted height (checkpoint 0: full validation).
-    CHECK(utxo_batch_end(1, 1000, 0, 500) == 500u);
-    CHECK(utxo_batch_end(438041, 439040, 0, 500) == 438540u);
-    CHECK(utxo_batch_end(438041, 439040, 0, 100) == 438140u);
-    CHECK(utxo_batch_end(438041, 439040, 0, 1000) == 439040u);
-    // A shorter window is not lengthened.
-    CHECK(utxo_batch_end(438041, 438060, 0, 500) == 438060u);
-    // Zero is treated as one block, never as an empty batch.
-    CHECK(utxo_batch_end(438041, 439040, 0, 0) == 438041u);
+TEST_CASE("utxo_validated_batch_reach: a validated batch reaches what is stored, up to the limit", "[sync]") {
+    // The bytes cut it when it is read; the count is only a limit.
+    CHECK(utxo_validated_batch_reach(1, 7500, 20000) == 7500u);
+    CHECK(utxo_validated_batch_reach(438041, 7500, 20000) == 445540u);
+    CHECK(utxo_validated_batch_reach(438041, 700000, 20000) == 458040u);
+    CHECK(utxo_validated_batch_reach(438041, 1000, 100) == 438140u);
+    // One block at the least, whatever it is asked.
+    CHECK(utxo_validated_batch_reach(438041, 0, 500) == 438041u);
+    CHECK(utxo_validated_batch_reach(438041, 1000, 0) == 438041u);
+    // And never past the last height there can be.
+    CHECK(utxo_validated_batch_reach(4294967290u, 1000, 20000) == 4294967295u);
 }
 
 TEST_CASE("utxo_batch_end: a batch never crosses the trusted height", "[sync]") {
-    // Below the checkpoint the cap does not apply: those blocks hold no undo.
-    CHECK(utxo_batch_end(1, 1000, 951146, 100) == 1000u);
-    CHECK(utxo_batch_end(950501, 951500, 951146, 100) == 951146u);
-    // The first batch above it is capped again.
-    CHECK(utxo_batch_end(951147, 952146, 951146, 100) == 951246u);
+    // Wholly below it, and wholly above it: as it came.
+    CHECK(utxo_batch_end(1, 1000, 951146) == 1000u);
+    CHECK(utxo_batch_end(951147, 952146, 951146) == 952146u);
+    // Across it: the blocks at or below it are their own batch.
+    CHECK(utxo_batch_end(950501, 951500, 951146) == 951146u);
+    CHECK(utxo_batch_end(951146, 951500, 951146) == 951146u);
+    // With no trusted height nothing is cut.
+    CHECK(utxo_batch_end(1, 1000, 0) == 1000u);
 }
 
 TEST_CASE("utxo_batch_len: nothing available -> wait, regardless of regime", "[sync]") {

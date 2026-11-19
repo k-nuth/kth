@@ -14,6 +14,7 @@
 #include <cstring>
 #include <deque>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -2120,8 +2121,7 @@ struct window_fatal {
     std::string reason;   ///< What on_fatal is told, verbatim as before.
 };
 
-uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
-                        uint32_t validated_blocks) {
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height) {
     // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
     // the below-checkpoint remainder is built (merkle-only) as its own batch
     // and the UTXO delta of those blocks is applied first. The next batch then
@@ -2133,14 +2133,17 @@ uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t check
     if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
         return checkpoint_height;
     }
+    return batch_end;
+}
+
+uint32_t utxo_validated_batch_reach(uint32_t batch_start, uint32_t available, uint32_t max_blocks) {
     // Above the checkpoint every block's undo data is captured and can only be
     // written after the batch's delta is applied, so the whole batch is held in
-    // memory first: a full block can spend tens of thousands of outputs.
-    auto const cap = std::max(validated_blocks, uint32_t{1});
-    if (batch_start > checkpoint_height && batch_end - batch_start + 1 > cap) {
-        return batch_start + cap - 1;
-    }
-    return batch_end;
+    // memory first. What that takes follows the bytes of the blocks, and the
+    // read cuts the batch by them; the count is only a limit on top.
+    auto const blocks = std::max(std::min(available, std::max(max_blocks, uint32_t{1})), uint32_t{1});
+    return uint32_t(std::min<uint64_t>(uint64_t{batch_start} + blocks - 1,
+        std::numeric_limits<uint32_t>::max()));
 }
 
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
@@ -2222,7 +2225,10 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
     uint32_t const checkpoint_height =
         static_cast<uint32_t>(chain_cfg.trusted_checkpoint_height());
     // Validated batches never exceed the window this task reads at once.
-    uint32_t const validated_batch_blocks = std::min(chain_cfg.validation_batch_blocks, batch_size);
+    // Above the checkpoint a batch is closed by the bytes of its blocks, which
+    // is what the memory it holds follows, and by a count only as a limit.
+    uint32_t const validated_batch_blocks = std::max(chain_cfg.validation_batch_blocks, uint32_t{1});
+    uint64_t const validated_batch_bytes = std::max(chain_cfg.validation_batch_bytes, uint64_t{1});
     spdlog::info("[utxo_build] Validation mode: {}; checkpoint anchor height {}; "
         "script/signature/UTXO validation starts at height {}",
         chain_cfg.full_validation ? "FULL" : "optimized",
@@ -2368,15 +2374,20 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
     };
     std::optional<batch_ahead> ahead;
 
-    auto const judge_ahead = [&chain, &validation_pool, judge_batch](uint32_t first, uint32_t last,
-            std::optional<database::header_abla_record> parent) {
+    // `last` is as far as the batch may reach. Where it ends is decided by
+    // the bytes read, as in the batch's own turn: it is the blocks in `raw`.
+    auto const judge_ahead = [&chain, &validation_pool, judge_batch, validated_batch_bytes](
+            uint32_t first, uint32_t last, std::optional<database::header_abla_record> parent) {
         auto channel = std::make_shared<judgement_channel>(validation_pool.get_executor(), 1);
-        ::asio::post(validation_pool.get_executor(), [&chain, judge_batch, first, last, parent, channel]() {
+        ::asio::post(validation_pool.get_executor(),
+                [&chain, judge_batch, validated_batch_bytes, first, last, parent, channel]() {
             auto judged = std::make_shared<judged_batch>();
             try {
-                if (auto raw = chain.fetch_blocks_raw(first, last); raw) {
+                if (auto raw = chain.fetch_blocks_raw_within(first, last, validated_batch_bytes);
+                        raw && ! raw->empty()) {
                     judged->raw = std::move(*raw);
-                    judged->verdict = judge_batch(judged->raw, first, last, judged->blocks,
+                    judged->verdict = judge_batch(judged->raw, first,
+                        first + uint32_t(judged->raw.size()) - 1, judged->blocks,
                         judged->txids, judged->parse_failed, judged->rejection, parent);
                 } else {
                     judged->fetch_failed = true;
@@ -2532,8 +2543,7 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         uint32_t const batch_start = utxo_built_height + 1;
         uint32_t batch_end = ahead
             ? ahead->end
-            : utxo_batch_end(batch_start, batch_start + batch_len - 1,
-                checkpoint_height, validated_batch_blocks);
+            : utxo_batch_end(batch_start, batch_start + batch_len - 1, checkpoint_height);
 
         // At or below the checkpoint a batch is sized by what it holds, not by
         // a count of blocks. Every batch ends in the stores' durability
@@ -2546,6 +2556,17 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         if (sized_by_bytes) {
             batch_end = utxo_fast_batch_reach(batch_start, batch_end, available,
                 checkpoint_height, fast_batch_blocks);
+        }
+
+        // Above it the same holds, and more: every batch also waits for the
+        // undo files and the transition record to be durable. What bounds the
+        // batch there is the memory its parsed blocks and undo data take,
+        // which follows their bytes. The batch reaches as far as the blocks
+        // stored allow, up to validated_batch_blocks, and the read below (or
+        // the one that judged it ahead) cuts it at validated_batch_bytes.
+        bool const validated_by_bytes = batch_start > checkpoint_height;
+        if (validated_by_bytes && ! ahead) {
+            batch_end = utxo_validated_batch_reach(batch_start, available, validated_batch_blocks);
         }
 
         // The judgement started ahead, if there is one. Collected before
@@ -2572,8 +2593,10 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
             ? std::expected<std::vector<data_chunk>, database::result_code>{std::move(judged->raw)}
             : sized_by_bytes
                 ? chain.fetch_blocks_raw_within(batch_start, batch_end, fast_batch_bytes)
-                : chain.fetch_blocks_raw(batch_start, batch_end);
-        if (raw_result && sized_by_bytes && ! raw_result->empty()) {
+                : validated_by_bytes
+                    ? chain.fetch_blocks_raw_within(batch_start, batch_end, validated_batch_bytes)
+                    : chain.fetch_blocks_raw(batch_start, batch_end);
+        if (raw_result && (sized_by_bytes || validated_by_bytes) && ! raw_result->empty()) {
             batch_end = batch_start + uint32_t(raw_result->size()) - 1;
         }
         if ( ! raw_result) {
@@ -3279,8 +3302,8 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
                     tip_state = abla_records.back();
                 }
 #endif
-                ahead = judge_ahead(next_start, utxo_batch_end(next_start,
-                    next_start + next_len - 1, checkpoint_height, validated_batch_blocks),
+                ahead = judge_ahead(next_start,
+                    utxo_validated_batch_reach(next_start, stored, validated_batch_blocks),
                     tip_state);
             }
         }
