@@ -2203,7 +2203,8 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress,
     block_rejection_channel* rejections,
-    block_rejection_ack_channel* rejection_ack
+    block_rejection_ack_channel* rejection_ack,
+    utxo_build_remainder_channel* remainder
 ) {
     spdlog::debug("[utxo_build] Task started at height {}", start_height);
 
@@ -2407,6 +2408,26 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
     // released as soon as each batch is applied; only the capacity carries over.
     blockchain::utxo_raw_delta delta;
 
+    // The height the coordinator last said nothing will be stored above until
+    // it is built. While the chain is behind a batch waits to be full, because
+    // more blocks are on their way; below this height none are, and waiting
+    // for them would hold the download that waits for this task.
+    uint32_t build_through = 0;
+    auto const waits_for_a_full_batch = [&chain, &build_through](uint32_t built) {
+        return built >= build_through && chain.is_stale();
+    };
+    // The last height told is the one that counts: the coordinator's cursor
+    // moves back when the chain switches or a block is refused, and blocks
+    // above the lower height are on their way again.
+    auto const hear_the_coordinator = [remainder, &build_through] {
+        if (remainder == nullptr) {
+            return;
+        }
+        while (remainder->try_receive([&build_through](std::error_code ec, uint32_t height) {
+            if ( ! ec) build_through = height;
+        })) {}
+    };
+
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
     // coroutines exited). Looping on chain.stopped() alone therefore deadlocks
@@ -2458,6 +2479,11 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
             continue;
         }
 
+        // What the coordinator has said since the last pass. Read before the
+        // stored height: it rings after sending, and a height sent later than
+        // this read wakes the wait below.
+        hear_the_coordinator();
+
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
 
         // Blocks stored and contiguous ahead of what we've built.
@@ -2485,7 +2511,7 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         // different one and waste the work.
         uint32_t const batch_len = ahead
             ? ahead->end - ahead->start + 1
-            : utxo_batch_len(available, batch_size, chain.is_stale());
+            : utxo_batch_len(available, batch_size, waits_for_a_full_batch(utxo_built_height));
 
         if (batch_len == 0) {
             // Nothing to build: no block stored past the built height, or, still
@@ -3235,9 +3261,14 @@ uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_
         // started here would only have to be waited out and thrown away.
         if (uint32_t const next_start = batch_end + 1;
                 next_start > checkpoint_height && ! chain.reorg_pause_requested()) {
+            // Heard again first: what is decided here is whether the blocks
+            // stored past this batch are a batch, which the coordinator may
+            // have spoken about while this one was being applied.
+            hear_the_coordinator();
             uint32_t const contiguous = contiguous_height.load(std::memory_order_acquire);
             uint32_t const stored = contiguous > next_start ? contiguous - next_start : 0;
-            if (uint32_t const next_len = utxo_batch_len(stored, batch_size, chain.is_stale());
+            if (uint32_t const next_len = utxo_batch_len(stored, batch_size,
+                        waits_for_a_full_batch(batch_end));
                     next_len != 0) {
                 // The state this batch leaves, which the next one's limits
                 // start from. Publication writes it below; the judgement

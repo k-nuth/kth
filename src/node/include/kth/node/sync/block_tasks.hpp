@@ -277,7 +277,12 @@ using download_worker_launcher = std::function<void(
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress,
     block_rejection_channel* rejections,
-    block_rejection_ack_channel* rejection_ack
+    block_rejection_ack_channel* rejection_ack,
+    // Heights the coordinator says nothing will be stored above until they are
+    // built (see utxo_build_remainder_channel). Up to the latest of them a
+    // batch is whatever is stored, however short and however far behind the
+    // chain is. Null: a short batch is built only once the chain is current.
+    utxo_build_remainder_channel* remainder = nullptr
 );
 
 } // namespace kth::node::sync
