@@ -244,10 +244,12 @@ void describe(dsproof_info& info, mempool_copy const& pool) {
 // service
 // ============================================================================
 
+#if ! defined(KTH_BROWSER_NODE)
 std::unique_ptr<service> service::from_chain(blockchain::block_chain& chain, domain::config::network network,
         chain_settings settings) {
     return std::unique_ptr<service>(new service(detail::make_chain_impl(chain, network, settings)));
 }
+#endif
 
 service::service(std::unique_ptr<impl> state) : impl_(std::move(state)) {}
 

@@ -26,6 +26,7 @@ namespace {
 constexpr size_t requested_limit = 100'000;
 constexpr size_t requested_dsproof_limit = 10'000;
 
+#if ! defined(KTH_BROWSER_NODE)
 // host:port, [v6]:port or host alone.
 std::pair<std::string, uint16_t> split_endpoint(std::string const& endpoint, uint16_t fallback) {
     auto host = endpoint;
@@ -50,6 +51,7 @@ std::pair<std::string, uint16_t> split_endpoint(std::string const& endpoint, uin
     }
     return {host, port};
 }
+#endif
 
 } // namespace
 
@@ -171,8 +173,15 @@ uint64_t peer_impl::next_nonce() {
 
 ::asio::awaitable<std::shared_ptr<peer_link>> peer_impl::connect(std::string endpoint, bool isolated) {
     auto executor = co_await ::asio::this_coro::executor;
+#if defined(KTH_BROWSER_NODE)
+    // A ws:// or wss:// bridge that relays the peer's byte stream.
+    auto bridged = transport;
+    bridged.browser_bridge_url = endpoint;
+    auto connected = co_await network::async_connect(executor, "ws-peer", 8333, bridged, connect_timeout);
+#else
     auto const [host, port] = split_endpoint(endpoint, transport.inbound_port);
     auto connected = co_await network::async_connect(executor, host, port, transport, connect_timeout);
+#endif
     if ( ! connected) co_return nullptr;
     auto session = *connected;
     auto config = network::make_handshake_config(transport, header_tip(), next_nonce());

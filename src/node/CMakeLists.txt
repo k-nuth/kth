@@ -201,9 +201,22 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 # A browser node compiles what an ordinary WebAssembly node does, plus the
-# headers-only client and the network layer it runs on.
+# headers-only client, wallet support answered from peers (it stores no
+# blocks), and the network layer they run on.
 if(KTH_BROWSER_NODE)
-  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
+  list(APPEND kth_sources_just_legacy
+    src/header_sync.cpp
+    src/wallet/blocks.cpp
+    src/wallet/filter_store.cpp
+    src/wallet/history.cpp
+    src/wallet/peer_blocks.cpp
+    src/wallet/peer_filters.cpp
+    src/wallet/peer_links.cpp
+    src/wallet/peer_mempool.cpp
+    src/wallet/peer_source.cpp
+    src/wallet/scan.cpp
+    src/wallet/service.cpp
+  )
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
@@ -372,7 +385,10 @@ set(kth_headers
 )
 
 if(KTH_BROWSER_NODE)
-  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+  list(APPEND kth_headers
+    include/kth/node/header_sync.hpp
+    include/kth/node/detail/worker_runtime.hpp
+  )
 endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
