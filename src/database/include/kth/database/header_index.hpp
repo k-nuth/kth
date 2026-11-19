@@ -448,7 +448,10 @@ private:
     // never pairs one location's file with another's offset: 0 = no data,
     // otherwise (file + 1) << 32 | position.
     std::unique_ptr<std::atomic<uint64_t>[]> block_positions_;
-    std::vector<uint32_t> undo_positions_; // Position in rev*.dat
+    // Position in rev*.dat; 0 = no undo record. Published like the block
+    // location: the record is written first and its position stored after, so
+    // a reader on another thread sees no record or a whole one.
+    std::unique_ptr<std::atomic<uint32_t>[]> undo_positions_;
 
     // Wall-clock reception time (unix seconds) per header; 0 = loaded from store
     // at startup (immediately finalizable). Used by finalization's time rule.
