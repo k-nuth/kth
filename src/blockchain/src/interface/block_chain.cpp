@@ -125,6 +125,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings)
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
+    , view_broadcaster_(priority_pool_.get_executor())
     , utxoz_db_(utxo_gate_)
 {
     spdlog::debug("[blockchain] block_chain constructor completed successfully");
@@ -190,6 +191,7 @@ bool block_chain::start(uint32_t disk_magic) {
     template_rebuild_gate_.reset();
     KTH_CONTRACT(template_rebuild_gate_.try_send(std::error_code{}));
     stopped_ = false;
+    view_broadcaster_.start();
 
     if ( ! database_.open()) {
         spdlog::error("[blockchain] Failed to open database.");
@@ -629,6 +631,8 @@ bool block_chain::stop() {
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
+
+    view_broadcaster_.stop();
 
     validation_mutex_.lock_high_priority();
     auto result = transaction_organizer_.stop() && block_organizer_.stop();
@@ -2341,6 +2345,7 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
 
     // One swap. A reader holds the previous triple or this one.
     chain_view_.store(boost::shared_ptr<published_chain_view const>(std::move(built)));
+    view_broadcaster_.publish(connected_tip_height);
     return error::success;
 }
 
@@ -2681,6 +2686,14 @@ void block_chain::unsubscribe_transaction(transaction_channel_ptr const& channel
 
 void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
     transaction_organizer_.unsubscribe_ds_proof(channel);
+}
+
+block_chain::view_channel_ptr block_chain::subscribe_chain_view() {
+    return view_broadcaster_.subscribe();
+}
+
+void block_chain::unsubscribe_chain_view(view_channel_ptr const& channel) {
+    view_broadcaster_.unsubscribe(channel);
 }
 
 // =============================================================================
@@ -3447,6 +3460,14 @@ block_chain::fetch_ds_proof(hash_digest const& hash) const {
         co_return std::unexpected(error::service_stopped);
     }
     co_return co_await transaction_organizer_.fetch_ds_proof(hash);
+}
+
+awaitable_expected<std::vector<double_spend_proof_const_ptr>>
+block_chain::fetch_ds_proofs() const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+    co_return co_await transaction_organizer_.fetch_ds_proofs();
 }
 
 // =============================================================================

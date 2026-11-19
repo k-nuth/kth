@@ -918,6 +918,16 @@ struct KB_API block_chain {
     void unsubscribe_transaction(transaction_channel_ptr const& channel);
     void unsubscribe_ds_proof(ds_proof_channel_ptr const& channel);
 
+    /// Each published chain view (a connected block, a reorganization, a
+    /// start), as the height of its connected tip. A subscriber that falls
+    /// behind misses views, never the latest: chain_view() holds it.
+    using view_broadcaster = broadcaster<size_t>;
+    using view_channel_ptr = view_broadcaster::channel_ptr;
+
+    [[nodiscard]]
+    view_channel_ptr subscribe_chain_view();
+    void unsubscribe_chain_view(view_channel_ptr const& channel);
+
     // =========================================================================
     // VALIDATION
     // =========================================================================
@@ -1088,6 +1098,11 @@ struct KB_API block_chain {
     // Server queries
     [[nodiscard]] awaitable_expected<double_spend_proof_const_ptr>
     fetch_ds_proof(hash_digest const& hash) const;
+
+    // Every double-spend proof the node holds, for a wallet of the node's own
+    // to list the mempool transactions they are about.
+    [[nodiscard]] awaitable_expected<std::vector<double_spend_proof_const_ptr>>
+    fetch_ds_proofs() const;
 
     // =========================================================================
     // MEMPOOL / TRANSACTION POOL
@@ -1350,6 +1365,7 @@ private:
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
+    view_broadcaster view_broadcaster_;
     header_index header_index_;
 
     // Flat file block storage (for fast sequential I/O during IBD)
