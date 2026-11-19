@@ -5,6 +5,7 @@
 #include <kth/domain/chain/block.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cfenv>
 #include <cmath>
 #include <cstddef>
@@ -485,6 +486,72 @@ hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) cons
     }
 
     return hashes.front();
+}
+
+hash_list block::transaction_merkle_branch(size_t index) const {
+    return transaction_merkle_branch(index, to_hashes());
+}
+
+hash_list block::transaction_merkle_branch(size_t index, std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
+    hash_list branch;
+    if (index >= txids.size()) {
+        return branch;
+    }
+
+    hash_list hashes(txids.begin(), txids.end());
+
+    // The levels are hashed as generate_merkle_root hashes them, and the
+    // sibling of the node on the path of the transaction is taken at each one.
+    std::vector<uint8_t> batch_input;
+    std::vector<uint8_t> batch_output;
+
+    while (hashes.size() > 1) {
+        if (hashes.size() % 2 != 0) {
+            hashes.push_back(hashes.back());
+        }
+
+        branch.push_back(hashes[index ^ size_t(1)]);
+        index /= 2;
+
+        size_t const num_pairs = hashes.size() / 2;
+        batch_input.resize(num_pairs * 64);
+        batch_output.resize(num_pairs * 32);
+
+        for (size_t i = 0; i < num_pairs; ++i) {
+            std::copy(hashes[i * 2].begin(), hashes[i * 2].end(),
+                      batch_input.begin() + i * 64);
+            std::copy(hashes[i * 2 + 1].begin(), hashes[i * 2 + 1].end(),
+                      batch_input.begin() + i * 64 + 32);
+        }
+
+        SHA256D64(batch_output.data(), batch_input.data(), num_pairs);
+
+        hashes.resize(num_pairs);
+        for (size_t i = 0; i < num_pairs; ++i) {
+            std::copy(batch_output.begin() + i * 32,
+                      batch_output.begin() + (i + 1) * 32,
+                      hashes[i].begin());
+        }
+    }
+
+    return branch;
+}
+
+hash_digest block::merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch) {
+    auto hash = transaction_hash;
+    std::array<uint8_t, 2 * hash_size> pair;
+
+    for (auto const& sibling : branch) {
+        auto const& left = index % 2 == 0 ? hash : sibling;
+        auto const& right = index % 2 == 0 ? sibling : hash;
+        std::copy(left.begin(), left.end(), pair.begin());
+        std::copy(right.begin(), right.end(), pair.begin() + hash_size);
+        hash = bitcoin_hash(pair);
+        index /= 2;
+    }
+
+    return hash;
 }
 
 size_t block::non_coinbase_input_count() const {
