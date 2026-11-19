@@ -5,16 +5,32 @@
 #include <test_helpers.hpp>
 
 #include <algorithm>
+#include <expected>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include <unistd.h>
 
+#include <asio/co_spawn.hpp>
+#include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
+#include <utxoz/utils.hpp>
+
 #include <kth/blockchain/validate/batch_validate.hpp>
+#include <kth/database/block_undo.hpp>
+#include <kth/database/databases/utxo_entry.hpp>
+#include <kth/domain/chain/input_prefix_filter.hpp>
+#include <kth/domain/chain/script_filter.hpp>
+#include <kth/domain/chain/script_filter_builder.hpp>
 #include <kth/node.hpp>
+#include <kth/node/detail/compact_filters.hpp>
+#include <kth/node/mining/job_store.hpp>
+#include <kth/node/rpc/dispatch.hpp>
 
 #include "sync_harness.hpp"
 
@@ -538,3 +554,699 @@ TEST_CASE("full mode checks header work version and time below a retained anchor
     CHECK(added.error == expected);
     CHECK(added.headers_added == 0);
 }
+
+// -----------------------------------------------------------------------------
+// The outputs a block spends, and the fee getblock reports from them
+// -----------------------------------------------------------------------------
+
+namespace {
+
+template <typename Awaitable>
+auto run_on_own_context(Awaitable&& operation) {
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, std::forward<Awaitable>(operation), ::asio::use_future);
+    io.run();
+    return result.get();
+}
+
+// Headers into the index, then the node's connect path over the bodies, on a
+// fixture the caller keeps to read the chain afterwards.
+void connect_on(chain_fixture& fixture, scenario const& sc) {
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    REQUIRE( ! fixture.organizer().add_headers(headers_of(sc.blocks)).error);
+    persist_headers(fixture, sc.blocks, 1);
+    run_connect_tasks(fixture, sc.blocks, 1);
+}
+
+// The JSON-RPC reply to getblock <hash> <verbosity>.
+std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int verbosity) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"getblock","params":[")" + encode_hash(hash) + R"(",)"
+        + std::to_string(verbosity) + R"(],"id":7})";
+    return run_on_own_context(dispatcher.handle(context, body));
+}
+
+} // namespace
+
+TEST_CASE("the outputs a block spends are read from its undo record, and getblock reports the fee",
+          "[node][full_validation][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_spent_outputs", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto const& chain = fixture.chain();
+
+    // The one spend of the chain: block 1's coinbase output, created at height 1.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const stored = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(stored);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), stored->first));
+    REQUIRE(spent);
+    REQUIRE(spent->outputs.size() == 1);
+    CHECK(spent->outputs.front() == sc.blocks.front().transactions().front().outputs()[0]);
+    CHECK(spent->heights == std::vector<uint32_t>{1});
+
+    // A block of one transaction spends nothing, and no block is no outputs.
+    auto const& plain = sc.blocks[4];
+    auto const plain_stored = run_on_own_context(chain.fetch_block(plain.hash()));
+    REQUIRE(plain_stored);
+    auto const none = run_on_own_context(chain.fetch_spent_outputs(plain.hash(), plain_stored->first));
+    REQUIRE(none);
+    CHECK(none->outputs.empty());
+    auto const missing = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), nullptr));
+    REQUIRE( ! missing);
+    CHECK(missing.error() == error::not_found);
+
+    // getblock with the transactions decoded gives the spend its fee, 1,000
+    // satoshis, after its outputs. The coinbase has none, and neither has the
+    // list of txids.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    auto const at = decoded.find(R"(}],"fee":0.00001,"hex":")");
+    REQUIRE(at != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == at + 3);
+    CHECK(decoded.find(R"("fee":)", at + 4) == std::string::npos);
+    CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("fee":)") == std::string::npos);
+    CHECK(get_block_reply(fixture, plain.hash(), 2).find(R"("fee":)") == std::string::npos);
+}
+
+TEST_CASE("a block connected without an undo record is decoded without fees",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_spent_outputs_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto const& chain = fixture.chain();
+
+    // Below the anchor the node wrote no record of what the block spent.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const stored = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(stored);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), stored->first));
+    REQUIRE( ! spent);
+    CHECK(spent.error() == error::not_found);
+
+    // getblock still decodes both transactions; the fee field is left out.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") != std::string::npos);
+    CHECK(decoded.find(encode_hash(spending.transactions()[1].hash())) != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+}
+
+// -----------------------------------------------------------------------------
+// Script filters served to light wallets: filters, filter headers, ranges, proofs
+// -----------------------------------------------------------------------------
+//
+// The script filter of a block lists the scripts of the outputs the block
+// spends. The node keeps those already, in the undo record it writes when it
+// connects a block, so the filter is built from the two stored records and
+// nothing is stored for it.
+
+namespace {
+
+// The filter the builder gives for the block at `h` and the outputs it spends.
+// The one spend of the chain is of the coinbase output of block 1.
+domain::chain::script_filter expected_filter(scenario const& sc, uint32_t h) {
+    std::vector<domain::chain::output> spent;
+    if (h == spend_height) {
+        spent.push_back(sc.blocks.front().transactions().front().outputs()[0]);
+    }
+    auto const& block = sc.blocks[h - 1];
+    auto filter = domain::chain::build_script_filter(block, spent);
+    REQUIRE(filter);
+    return std::move(*filter);
+}
+
+using node::detail::compact_filter_service;
+
+constexpr size_t filter_interval = 4;
+constexpr auto script_type = domain::message::script_compact_filter;
+constexpr auto regular_type = domain::message::regular_compact_filter;
+
+// The files a service keeps its filter header records in, removed with it.
+struct filter_files {
+    std::filesystem::path regular;
+    std::filesystem::path script;
+    std::filesystem::path input_prefix;
+
+    explicit filter_files(std::string const& tag)
+        : regular(std::filesystem::temp_directory_path() / ("kth_" + tag + "_regular_checkpoints"))
+        , script(std::filesystem::temp_directory_path() / ("kth_" + tag + "_script_checkpoints"))
+        , input_prefix(std::filesystem::temp_directory_path() / ("kth_" + tag + "_input_prefix_checkpoints"))
+    {
+        std::filesystem::remove(regular);
+        std::filesystem::remove(script);
+        std::filesystem::remove(input_prefix);
+    }
+
+    ~filter_files() {
+        std::error_code ignored;
+        std::filesystem::remove(regular, ignored);
+        std::filesystem::remove(script, ignored);
+        std::filesystem::remove(input_prefix, ignored);
+    }
+};
+
+// The script filter of a block of the scenario as it is served: the root of
+// its entry tree, then the set.
+data_chunk served_script_filter(scenario const& sc, uint32_t h) {
+    if (h == 0) {
+        auto const filter = domain::chain::build_script_filter(domain::chain::block::genesis_regtest(), {});
+        REQUIRE(filter);
+        return domain::chain::to_data(*filter);
+    }
+    return domain::chain::to_data(expected_filter(sc, h));
+}
+
+// The definition, spelled out: all zeros before the first block.
+hash_digest script_filter_header_at(scenario const& sc, uint32_t height) {
+    hash_digest header = null_hash;
+    for (uint32_t h = 0; h <= height; ++h) {
+        header = bitcoin_hash(splice(bitcoin_hash(served_script_filter(sc, h)), header));
+    }
+    return header;
+}
+
+hash_digest block_hash_at(scenario const& sc, uint32_t h) {
+    return h == 0 ? domain::chain::block::genesis_regtest().hash() : sc.blocks[h - 1].hash();
+}
+
+domain::message::get_compact_filter_range range_request(hash_digest const& block, hash_digest const& prefix,
+                                                        uint16_t bits) {
+    return {script_type, block, bits, prefix};
+}
+
+// Checks a cfrange against the root in front of the block's filter, as a
+// wallet does.
+std::expected<void, domain::chain::script_range_error>
+checked(domain::message::compact_filter_range const& answer, hash_digest const& root, hash_digest const& prefix,
+        uint16_t bits) {
+    return domain::chain::check_script_range(root, answer.leaf_count, answer.first_index, answer.leaves,
+        answer.before ? &*answer.before : nullptr, answer.after ? &*answer.after : nullptr,
+        answer.hashes, prefix, bits);
+}
+
+} // namespace
+
+TEST_CASE("script filters are served with their headers from the first block when every block has its undo record",
+          "[node][full_validation][script_filters]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_filters_served", parser.configured.chain);
+    connect_on(fixture, sc);
+    filter_files const files("fv_filters_served");
+    compact_filter_service service(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+
+    // Until its file is named, only the regular filter is served.
+    CHECK(service.serves(regular_type));
+    CHECK( ! service.serves(script_type));
+    CHECK( ! run_on_own_context(service.filter_of(block_hash_at(sc, 1), script_type)));
+    service.serve_script_filters(files.script);
+    CHECK(service.serves(script_type));
+    CHECK( ! service.serves(2));
+    service.load();
+
+    // The filter of a block is the builder's, with the root in front, whether
+    // the block spends nothing or spends an output of another block.
+    for (uint32_t h : {0u, 1u, spend_height - 1, spend_height, trunk_len}) {
+        CAPTURE(h);
+        auto const filter = run_on_own_context(service.filter_of(block_hash_at(sc, h), script_type));
+        REQUIRE(filter);
+        REQUIRE(*filter);
+        CHECK(**filter == served_script_filter(sc, h));
+        // It holds the key of every transaction of the block, the coinbase included.
+        auto const served = domain::chain::parse_script_filter(**filter);
+        REQUIRE(served);
+        auto const& block = h == 0 ? domain::chain::block::genesis_regtest() : sc.blocks[h - 1];
+        domain::chain::golomb_key key{};
+        std::copy_n(block.hash().begin(), key.size(), key.begin());
+        for (auto const& tx : block.transactions()) {
+            CHECK(served->set.match(key, domain::chain::transaction_key(tx.hash())));
+        }
+        // And it is not the regular filter of the same block.
+        auto const regular = run_on_own_context(service.filter_of(block_hash_at(sc, h)));
+        REQUIRE(regular);
+        CHECK(**regular != **filter);
+    }
+    // The builder refuses the spending block without the output it spends, so
+    // its filter came from the undo record and not from the block alone.
+    CHECK( ! domain::chain::build_script_filter(sc.blocks[spend_height - 1], {}));
+
+    // One record for every `filter_interval` blocks, for each filter type, in
+    // a file of its own.
+    run_on_own_context(service.extend());
+    auto const records = service.checkpoints(script_type);
+    REQUIRE(records.size() == trunk_len / filter_interval);
+    REQUIRE(service.checkpoints(regular_type).size() == records.size());
+    CHECK(records.front().block == block_hash_at(sc, filter_interval));
+    CHECK(records.front().filter_header == script_filter_header_at(sc, filter_interval));
+    CHECK(records.front().filter_header != service.checkpoints(regular_type).front().filter_header);
+    CHECK(records.back().block == block_hash_at(sc, 108));
+    CHECK(records.back().filter_header == script_filter_header_at(sc, 108));
+    CHECK(std::filesystem::file_size(files.script) == records.size() * 64u);
+    CHECK(std::filesystem::file_size(files.regular) == records.size() * 64u);
+
+    // cfcheckpt and cfheaders for the script filter, across the spending block.
+    auto const checkpoint = service.checkpoint({script_type, block_hash_at(sc, trunk_len)});
+    REQUIRE(checkpoint);
+    CHECK(checkpoint->filter_type == script_type);
+    REQUIRE(checkpoint->filter_headers.size() == records.size());
+    CHECK(checkpoint->filter_headers[24] == script_filter_header_at(sc, 100));
+
+    auto const headers = run_on_own_context(service.headers({script_type, spend_height,
+        block_hash_at(sc, spend_height + 1)}));
+    REQUIRE(headers);
+    CHECK(headers->filter_type == script_type);
+    CHECK(headers->previous_filter_header == script_filter_header_at(sc, spend_height - 1));
+    REQUIRE(headers->filter_hashes.size() == 2);
+    CHECK(headers->filter_hashes[0] == bitcoin_hash(served_script_filter(sc, spend_height)));
+    CHECK(headers->filter_hashes[1] == bitcoin_hash(served_script_filter(sc, spend_height + 1)));
+
+    // Another run of the node reads both files.
+    compact_filter_service reopened(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+    reopened.serve_script_filters(files.script);
+    reopened.load();
+    CHECK(reopened.checkpoints(script_type) == records);
+    CHECK(reopened.checkpoints(regular_type) == service.checkpoints(regular_type));
+}
+
+TEST_CASE("a cfrange and a cfproof of the spending block check against the root in front of its filter",
+          "[node][full_validation][script_filters]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_filters_tree", parser.configured.chain);
+    connect_on(fixture, sc);
+    filter_files const files("fv_filters_tree");
+    compact_filter_service service(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+    service.serve_script_filters(files.script);
+
+    auto const& spending_block = sc.blocks[spend_height - 1];
+    auto const& created_block = sc.blocks.front();
+    auto const block = spending_block.hash();
+    auto const root = expected_filter(sc, spend_height).root;
+    auto const& spent_output = created_block.transactions().front().outputs()[0];
+    auto const spent_key = domain::chain::script_key(spent_output.script().bytes());
+
+    // Every leaf: no bits of prefix, no neighbour, no hash.
+    auto const all = run_on_own_context(service.range(range_request(block, null_hash, 0)));
+    REQUIRE(all);
+    CHECK(all->filter_type == script_type);
+    CHECK(all->block_hash == block);
+    CHECK(all->first_index == 0);
+    REQUIRE(all->leaf_count == all->leaves.size());
+    // The coinbase output, the spend's output, the output it spends, and each transaction.
+    REQUIRE(all->leaves.size() >= 5);
+    CHECK( ! all->before);
+    CHECK( ! all->after);
+    CHECK(all->hashes.empty());
+    CHECK(checked(*all, root, null_hash, 0));
+    CHECK(std::ranges::is_sorted(all->leaves));
+    CHECK(domain::chain::script_leaves_root(all->leaves) == root);
+
+    // The key of the script the block spends, whole: its leaves and nothing else.
+    auto const exact = run_on_own_context(service.range(range_request(block, spent_key, 256)));
+    REQUIRE(exact);
+    REQUIRE( ! exact->leaves.empty());
+    for (auto const& leaf : exact->leaves) CHECK(leaf.key == spent_key);
+    CHECK(std::ranges::any_of(exact->leaves, [](auto const& leaf) {
+        return leaf.kind == domain::chain::script_leaf_kind::spent;
+    }));
+    CHECK(checked(*exact, root, spent_key, 256));
+    // The same answer does not pass for another root, or for another prefix.
+    CHECK( ! checked(*exact, null_hash, spent_key, 256));
+    hash_digest other_key = spent_key;
+    other_key[0] ^= 0x80;
+    CHECK( ! checked(*exact, root, other_key, 256));
+
+    // A key the block does not have: no leaf, and the neighbours show the gap.
+    auto const none = run_on_own_context(service.range(range_request(block, other_key, 256)));
+    REQUIRE(none);
+    CHECK(none->leaves.empty());
+    CHECK(none->leaf_count == all->leaf_count);
+    CHECK(checked(*none, root, other_key, 256));
+
+    // The key of each transaction of the block, the coinbase included, whole:
+    // the one leaf of that transaction, and its proof is the transaction
+    // itself, folded to the block's header, with no other transaction.
+    auto const& transactions = spending_block.transactions();
+    REQUIRE(transactions.size() >= 2);
+    for (size_t i = 0; i < transactions.size(); ++i) {
+        CAPTURE(i);
+        auto const key = domain::chain::transaction_key(transactions[i].hash());
+        auto const found = run_on_own_context(service.range(range_request(block, key, 256)));
+        REQUIRE(found);
+        REQUIRE(found->leaves.size() == 1);
+        auto const& leaf = found->leaves.front();
+        CHECK(leaf == domain::chain::script_leaf{key, uint32_t(i), 0, domain::chain::script_leaf_kind::transaction});
+        CHECK(checked(*found, root, key, 256));
+
+        auto const tx_proof = run_on_own_context(service.proof({script_type, block, found->first_index}));
+        REQUIRE(tx_proof);
+        CHECK(tx_proof->leaf == leaf);
+        CHECK( ! tx_proof->origin);
+        CHECK(tx_proof->transaction == transactions[i]);
+        CHECK(domain::chain::transaction_key(tx_proof->transaction.hash()) == tx_proof->leaf.key);
+        CHECK(domain::chain::block::merkle_branch_root(tx_proof->transaction.hash(), tx_proof->leaf.tx_index,
+            tx_proof->transaction_branch) == spending_block.header().merkle());
+        auto const leaf_root = domain::chain::script_range_root(tx_proof->leaf_count, tx_proof->leaf_index,
+            std::span<domain::chain::script_leaf const>(&tx_proof->leaf, 1), tx_proof->leaf_branch);
+        REQUIRE(leaf_root);
+        CHECK(*leaf_root == root);
+    }
+    // The hash of a transaction the block only spends from is not one of its
+    // transactions: no leaf has its key.
+    auto const spent_from = domain::chain::transaction_key(created_block.transactions().front().hash());
+    auto const not_here = run_on_own_context(service.range(range_request(block, spent_from, 256)));
+    REQUIRE(not_here);
+    CHECK(not_here->leaves.empty());
+    CHECK(checked(*not_here, root, spent_from, 256));
+
+    // What is not answered: a prefix with a bit past its length, the regular
+    // filter, which has no entry tree, and a block the node does not know.
+    hash_digest loose{};
+    loose[1] = 0x01;
+    CHECK( ! run_on_own_context(service.range(range_request(block, loose, 8))));
+    auto regular = range_request(block, null_hash, 0);
+    regular.filter_type = regular_type;
+    CHECK( ! run_on_own_context(service.range(regular)));
+    hash_digest unknown{};
+    unknown[0] = 0x42;
+    CHECK( ! run_on_own_context(service.range(range_request(unknown, null_hash, 0))));
+
+    // The proof of the spent output's leaf: the leaf folds to the root, its
+    // transaction to this block's header, and the transaction that created
+    // the output to the header of the block it is in.
+    auto const spent_at = std::ranges::find_if(all->leaves, [](auto const& leaf) {
+        return leaf.kind == domain::chain::script_leaf_kind::spent;
+    });
+    REQUIRE(spent_at != all->leaves.end());
+    auto const spent_index = uint32_t(spent_at - all->leaves.begin());
+    auto const proof = run_on_own_context(service.proof({script_type, block, spent_index}));
+    REQUIRE(proof);
+    CHECK(proof->leaf_count == all->leaf_count);
+    CHECK(proof->leaf_index == spent_index);
+    CHECK(proof->leaf == *spent_at);
+    CHECK(proof->leaf.key == spent_key);
+    auto const rebuilt = domain::chain::script_range_root(proof->leaf_count, proof->leaf_index,
+        std::span<domain::chain::script_leaf const>(&proof->leaf, 1), proof->leaf_branch);
+    REQUIRE(rebuilt);
+    CHECK(*rebuilt == root);
+    REQUIRE(proof->leaf.tx_index == 1);
+    CHECK(proof->transaction == spending_block.transactions()[1]);
+    CHECK(domain::chain::block::merkle_branch_root(proof->transaction.hash(), proof->leaf.tx_index,
+        proof->transaction_branch) == spending_block.header().merkle());
+    REQUIRE(proof->origin);
+    CHECK(proof->origin->block_hash == created_block.hash());
+    CHECK(proof->origin->transaction_index == 0);
+    CHECK(proof->origin->transaction == created_block.transactions().front());
+    CHECK(proof->origin->transaction_branch.empty());
+    CHECK(domain::chain::block::merkle_branch_root(proof->origin->transaction.hash(),
+        proof->origin->transaction_index, proof->origin->transaction_branch) == created_block.header().merkle());
+    // The output the input names pays to the script the leaf's key is of.
+    auto const& point = proof->transaction.inputs()[proof->leaf.index].previous_output();
+    CHECK(point.hash() == proof->origin->transaction.hash());
+    CHECK(domain::chain::script_key(proof->origin->transaction.outputs()[point.index()].script().bytes())
+        == proof->leaf.key);
+    // It goes on the wire and comes back whole.
+    auto const raw = to_data_chunk(*proof, domain::message::version::level::maximum);
+    auto const again = from_data_chunk<domain::message::compact_filter_proof>(raw,
+        domain::message::version::level::maximum);
+    REQUIRE(again);
+    CHECK(*again == *proof);
+
+    // The proof of a created output's leaf carries no other transaction.
+    auto const created_at = std::ranges::find_if(all->leaves, [](auto const& leaf) {
+        return leaf.kind == domain::chain::script_leaf_kind::output && leaf.tx_index == 0;
+    });
+    REQUIRE(created_at != all->leaves.end());
+    auto const created_index = uint32_t(created_at - all->leaves.begin());
+    auto const created = run_on_own_context(service.proof({script_type, block, created_index}));
+    REQUIRE(created);
+    CHECK( ! created->origin);
+    CHECK(created->transaction == spending_block.transactions().front());
+    CHECK(domain::chain::block::merkle_branch_root(created->transaction.hash(), 0, created->transaction_branch)
+        == spending_block.header().merkle());
+    auto const created_root = domain::chain::script_range_root(created->leaf_count, created->leaf_index,
+        std::span<domain::chain::script_leaf const>(&created->leaf, 1), created->leaf_branch);
+    REQUIRE(created_root);
+    CHECK(*created_root == root);
+
+    // A leaf past the last one, and the regular filter, are not answered.
+    CHECK( ! run_on_own_context(service.proof({script_type, block, all->leaf_count})));
+    CHECK( ! run_on_own_context(service.proof({regular_type, block, 0})));
+    CHECK( ! run_on_own_context(service.proof({script_type, unknown, 0})));
+
+    // The first block has an entry tree too, and spends nothing.
+    auto const first = run_on_own_context(service.range(range_request(block_hash_at(sc, 0), null_hash, 0)));
+    REQUIRE(first);
+    CHECK(first->leaf_count == first->leaves.size());
+}
+
+TEST_CASE("script filter headers stop at the first block connected without the outputs it spends",
+          "[node][full_validation][optimized][script_filters]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_filters_served_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    filter_files const files("fv_filters_served_opt");
+    compact_filter_service service(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+    service.serve_script_filters(files.script);
+    service.load();
+
+    // The spending block is below the anchor and has no undo record. Every
+    // block before it spends nothing, so the records reach height 100 and no
+    // further; the regular filter needs the blocks alone and reaches the tip.
+    run_on_own_context(service.extend());
+    auto const records = service.checkpoints(script_type);
+    REQUIRE(records.size() == (spend_height - 1) / filter_interval);
+    CHECK(records.back().block == block_hash_at(sc, 100));
+    CHECK(records.back().filter_header == script_filter_header_at(sc, 100));
+    CHECK(service.checkpoints(regular_type).size() == trunk_len / filter_interval);
+    // A second pass has nothing to do for the script filter.
+    run_on_own_context(service.extend());
+    CHECK(service.checkpoints(script_type) == records);
+
+    // Below the spending block everything is answered.
+    auto const low = service.checkpoint({script_type, block_hash_at(sc, 100)});
+    REQUIRE(low);
+    CHECK(low->filter_headers.size() == records.size());
+    auto const before = run_on_own_context(service.headers({script_type, 97, block_hash_at(sc, 100)}));
+    REQUIRE(before);
+    CHECK(before->previous_filter_header == script_filter_header_at(sc, 96));
+
+    // At it and above it nothing is: no filter of the spending block, so no
+    // filter header from there on.
+    auto const spending = run_on_own_context(service.filter_of(block_hash_at(sc, spend_height), script_type));
+    REQUIRE( ! spending);
+    CHECK(spending.error() == error::not_found);
+    CHECK( ! service.checkpoint({script_type, block_hash_at(sc, trunk_len)}));
+    CHECK( ! run_on_own_context(service.headers({script_type, 100, block_hash_at(sc, spend_height)})));
+    CHECK( ! run_on_own_context(service.headers({script_type, anchor_height + 1,
+        block_hash_at(sc, anchor_height + 2)})));
+    CHECK( ! run_on_own_context(service.range(range_request(block_hash_at(sc, spend_height), null_hash, 0))));
+    CHECK( ! run_on_own_context(service.proof({script_type, block_hash_at(sc, spend_height), 0})));
+
+    // A block above the anchor was validated and has its filter, and a wallet
+    // that already trusts a filter header can still check it.
+    auto const above = run_on_own_context(service.filter_of(block_hash_at(sc, anchor_height + 1), script_type));
+    REQUIRE(above);
+    CHECK(**above == served_script_filter(sc, anchor_height + 1));
+
+    // The regular filter is served for every block all the same.
+    CHECK(service.checkpoint({regular_type, block_hash_at(sc, trunk_len)}));
+    CHECK(run_on_own_context(service.headers({regular_type, 100, block_hash_at(sc, spend_height)})));
+}
+
+// -----------------------------------------------------------------------------
+// Input prefix filters served to light wallets: built from the block alone
+// -----------------------------------------------------------------------------
+//
+// The input prefix filter of a block holds the first two bytes of the double
+// SHA-256 of the first 30 inputs of each transaction after the coinbase. It
+// needs nothing but the block, so it is served for every block the node
+// holds, those connected below a checkpoint without an undo record included.
+
+namespace {
+
+constexpr auto input_prefix_type = domain::message::input_prefix_compact_filter;
+
+// The input prefix filter of the block at `h` as it is served.
+data_chunk served_input_prefix_filter(scenario const& sc, uint32_t h) {
+    auto const& block = h == 0 ? domain::chain::block::genesis_regtest() : sc.blocks[h - 1];
+    return domain::chain::to_data(domain::chain::build_input_prefix_filter(block));
+}
+
+// The definition, spelled out: all zeros before the first block.
+hash_digest input_prefix_header_at(scenario const& sc, uint32_t height) {
+    hash_digest header = null_hash;
+    for (uint32_t h = 0; h <= height; ++h) {
+        header = bitcoin_hash(splice(bitcoin_hash(served_input_prefix_filter(sc, h)), header));
+    }
+    return header;
+}
+
+} // namespace
+
+TEST_CASE("input prefix filters are served for every block from the block alone, below a checkpoint too",
+          "[node][full_validation][optimized][input_prefix_filters]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_input_prefix_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    filter_files const files("fv_input_prefix_opt");
+    compact_filter_service service(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+
+    // Until its file is named the input prefix filter is not served, and its
+    // requests are not answered, as for any filter type the node does not serve.
+    auto const spending_hash = block_hash_at(sc, spend_height);
+    CHECK( ! service.serves(input_prefix_type));
+    auto const unserved = run_on_own_context(service.filter_of(spending_hash, input_prefix_type));
+    REQUIRE( ! unserved);
+    CHECK(unserved.error() == error::not_found);
+    CHECK( ! run_on_own_context(service.headers({input_prefix_type, 0, block_hash_at(sc, 3)})));
+    CHECK( ! service.checkpoint({input_prefix_type, block_hash_at(sc, 3)}));
+    CHECK(service.checkpoints(input_prefix_type).empty());
+
+    service.serve_script_filters(files.script);
+    service.serve_input_prefix_filters(files.input_prefix);
+    CHECK(service.serves(input_prefix_type));
+    CHECK( ! service.serves(3));
+    service.load();
+
+    // The spending block holds the chain's one input after a coinbase, and
+    // it is below the anchor, with no undo record: its input prefix filter is
+    // that input's value, while it has no script filter.
+    auto const& spending = sc.blocks[spend_height - 1];
+    REQUIRE(spending.transactions().size() == 2);
+    auto const value = domain::chain::input_prefix(spending.transactions()[1].inputs()[0]);
+    for (uint32_t h : {0u, 1u, spend_height - 1, spend_height, anchor_height, anchor_height + 1, trunk_len}) {
+        CAPTURE(h);
+        auto const filter = run_on_own_context(service.filter_of(block_hash_at(sc, h), input_prefix_type));
+        REQUIRE(filter);
+        REQUIRE(*filter);
+        CHECK(**filter == served_input_prefix_filter(sc, h));
+        auto const parsed = domain::chain::parse_input_prefix_filter(**filter);
+        REQUIRE(parsed);
+        CHECK(parsed->values == (h == spend_height ? std::vector<uint16_t>{value} : std::vector<uint16_t>{}));
+        // And it is not the regular filter of the same block.
+        auto const regular = run_on_own_context(service.filter_of(block_hash_at(sc, h)));
+        REQUIRE(regular);
+        CHECK(**regular != **filter);
+    }
+    auto const script = run_on_own_context(service.filter_of(spending_hash, script_type));
+    REQUIRE( ! script);
+    CHECK(script.error() == error::not_found);
+
+    // One record for every `filter_interval` blocks up to the tip, across the
+    // spending block, where the script filter's records stop.
+    run_on_own_context(service.extend());
+    auto const records = service.checkpoints(input_prefix_type);
+    REQUIRE(records.size() == trunk_len / filter_interval);
+    for (size_t i = 0; i < records.size(); ++i) {
+        auto const height = uint32_t((i + 1) * filter_interval);
+        CAPTURE(height);
+        CHECK(records[i].block == block_hash_at(sc, height));
+        CHECK(records[i].filter_header == input_prefix_header_at(sc, height));
+    }
+    CHECK(service.checkpoints(script_type).size() == (spend_height - 1) / filter_interval);
+    CHECK(std::filesystem::file_size(files.input_prefix) == records.size() * 64u);
+
+    // cfcheckpt and cfheaders across the spending block.
+    auto const checkpoint = service.checkpoint({input_prefix_type, block_hash_at(sc, trunk_len)});
+    REQUIRE(checkpoint);
+    CHECK(checkpoint->filter_type == input_prefix_type);
+    CHECK(checkpoint->stop_hash == block_hash_at(sc, trunk_len));
+    REQUIRE(checkpoint->filter_headers.size() == records.size());
+    CHECK(checkpoint->filter_headers[24] == input_prefix_header_at(sc, 100));
+    CHECK(checkpoint->filter_headers[25] == input_prefix_header_at(sc, 104));
+    CHECK(checkpoint->filter_headers[25] != service.checkpoints(regular_type)[25].filter_header);
+
+    auto const headers = run_on_own_context(service.headers({input_prefix_type, spend_height,
+        block_hash_at(sc, spend_height + 1)}));
+    REQUIRE(headers);
+    CHECK(headers->filter_type == input_prefix_type);
+    CHECK(headers->previous_filter_header == input_prefix_header_at(sc, spend_height - 1));
+    REQUIRE(headers->filter_hashes.size() == 2);
+    CHECK(headers->filter_hashes[0] == bitcoin_hash(served_input_prefix_filter(sc, spend_height)));
+    CHECK(headers->filter_hashes[1] == bitcoin_hash(served_input_prefix_filter(sc, spend_height + 1)));
+    CHECK(headers->filter_hashes[0] != headers->filter_hashes[1]);
+    // From a record: the block right after one, up to the tip.
+    auto const high = run_on_own_context(service.headers({input_prefix_type, 105, block_hash_at(sc, trunk_len)}));
+    REQUIRE(high);
+    CHECK(high->previous_filter_header == input_prefix_header_at(sc, 104));
+    CHECK(high->filter_hashes.size() == trunk_len - 104);
+
+    // It has no entry tree: a range or a proof for it is not answered.
+    CHECK( ! run_on_own_context(service.range({input_prefix_type, spending_hash, 0, null_hash})));
+    CHECK( ! run_on_own_context(service.proof({input_prefix_type, spending_hash, 0})));
+
+    // Another run of the node reads its file.
+    compact_filter_service reopened(fixture.chain(), domain::chain::block::genesis_regtest(), files.regular,
+        filter_interval);
+    reopened.serve_input_prefix_filters(files.input_prefix);
+    reopened.load();
+    CHECK(reopened.checkpoints(input_prefix_type) == records);
+    CHECK(reopened.checkpoint({input_prefix_type, block_hash_at(sc, trunk_len)}) == checkpoint);
+}
+
+#if ! defined(KTH_UTXOZ_REFERENCE_MODE)
+TEST_CASE("getblock fails when the undo record does not cover what the block's transactions pay",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_spent_outputs_short", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto& chain = fixture.chain();
+
+    // The spending block was connected without a record. Give it one that
+    // reads well and holds the output it spends with one satoshi in it: less
+    // than the transaction pays.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const& funding = sc.blocks.front().transactions().front();
+    auto short_output = funding.outputs()[0];
+    short_output.set_value(1);
+    auto const stored = database::utxo_entry{short_output, 1, 0, true}.to_data();
+
+    database::block_undo undo;
+    undo.spent.push_back(database::spent_output{
+        utxoz::make_outpoint(std::span<uint8_t const, hash_size>{funding.hash()}, 0),
+        std::vector<uint8_t>(stored.begin(), stored.end()), 1});
+    auto const idx = chain.headers().find(spending.hash());
+    REQUIRE(idx != blockchain::header_index::null_index);
+    REQUIRE(chain.store_block_undo(idx, undo, spending.header().previous_block_hash()));
+
+    // The record is read: the outputs come back, in the order of the inputs.
+    auto const block = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(block);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), block->first));
+    REQUIRE(spent);
+    REQUIRE(spent->outputs.size() == 1);
+    CHECK(spent->outputs.front().value() == 1);
+
+    // It is not left out as a missing record is: the request fails.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") == std::string::npos);
+    CHECK(decoded.find("the undo record of the block does not give the fees of its transactions")
+        != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+    // The txids need no fees.
+    CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
+}
+#endif

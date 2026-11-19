@@ -74,6 +74,10 @@ struct KB_API transaction_organizer {
     [[nodiscard]]
     awaitable_expected<double_spend_proof_const_ptr> fetch_ds_proof(hash_digest const& hash) const;
 
+    /// Every double-spend proof the node holds.
+    [[nodiscard]]
+    awaitable_expected<std::vector<double_spend_proof_const_ptr>> fetch_ds_proofs() const;
+
 protected:
     bool stopped() const;
     uint64_t price(transaction_const_ptr tx) const;
