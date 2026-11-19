@@ -70,6 +70,10 @@
 namespace kth::node {
 
 namespace detail { class compact_filter_service; }
+namespace wallet {
+class service;
+class electrum_server;
+} // namespace wallet
 
 /// Startup mode selection
 enum class start_modules {
@@ -218,6 +222,9 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
     ::asio::awaitable<void> run_compact_filters();
+    ::asio::awaitable<void> run_wallet();
+    void start_wallet();
+    void stop_wallet();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -241,6 +248,11 @@ private:
     kth::path script_filter_file_;
     kth::path input_prefix_filter_file_;
     std::unique_ptr<detail::compact_filter_service> compact_filters_;
+    // Wallet support answered from this node's own chain, behind its local
+    // Electrum listener, when node.wallet_electrum names one. Declared after
+    // chain_: destroyed first.
+    std::unique_ptr<wallet::service> wallet_;
+    std::unique_ptr<wallet::electrum_server> wallet_electrum_;
 #endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     // When this node was built, which uptime counts from: the node starts

@@ -22,6 +22,7 @@
 
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
+#include <kth/node/wallet/electrum.hpp>
 #endif
 
 #include <kth/infrastructure/config/authority.hpp>
@@ -306,6 +307,17 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.refresh_transactions",           cfg.node.refresh_transactions);
     app.add_option("--node.compact_blocks_high_bandwidth",  cfg.node.compact_blocks_high_bandwidth);
     app.add_option("--node.ds_proofs",                      cfg.node.ds_proofs_enabled);
+#if ! defined(__EMSCRIPTEN__)
+    app.add_option("--node.wallet_electrum",                cfg.node.wallet_electrum,
+        "LOOPBACK:PORT of a local Electrum listener answering this machine's wallets from this node's own "
+        "chain, for wallets that do not speak P2P (off by default). Only loopback addresses (127.0.0.0/8, "
+        "[::1]) are accepted: the node must not learn what other people's wallets watch.")
+        ->check(CLI::Validator([](std::string& value) -> std::string {
+            return node::wallet::electrum_bind_refusal(value).value_or(std::string{});
+        }, "LOOPBACK:PORT"));
+    app.add_option("--node.wallet_birthday",                cfg.node.wallet_birthday,
+        "The first height the node's own wallet support reads for a wallet that gives none (0: genesis).");
+#endif
     add_enum_option(app, "--node.display",
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");

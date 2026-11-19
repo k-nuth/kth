@@ -24,6 +24,11 @@
 #include <kth/node/user_agent.hpp>
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 
+#if ! defined(__EMSCRIPTEN__)
+#include <kth/node/wallet/electrum.hpp>
+#include <kth/node/wallet/service.hpp>
+#endif
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
@@ -114,6 +119,16 @@ full_node::~full_node() {
 #if ! defined(__EMSCRIPTEN__)
     if (!stopped()) {
         co_return error::operation_failed;
+    }
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
+    // The node's own wallet listener answers only wallets on this machine.
+    if ( ! node_settings_.wallet_electrum.empty()) {
+        if (auto const refusal = wallet::electrum_bind_refusal(node_settings_.wallet_electrum)) {
+            spdlog::error("[node] node.wallet_electrum is refused: {}", *refusal);
+            co_return error::operation_failed;
+        }
     }
 #endif
 
@@ -317,6 +332,7 @@ full_node::~full_node() {
     // This blocks until ALL tasks complete (i.e., until stop() is called).
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
+    start_wallet();
     auto core = [this]() -> ::asio::awaitable<void> {
         co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_filters());
 #if defined(KTH_WITH_RPC)
@@ -330,8 +346,11 @@ full_node::~full_node() {
 #if defined(KTH_WITH_CAPNPROTO_RPC)
         if (capnp_server_) capnp_server_->stop();
 #endif
+        stop_wallet();
     };
-    co_await (core() && run_rpc());
+    co_await (core() && run_rpc() && run_wallet());
+    wallet_electrum_.reset();
+    wallet_.reset();
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -340,6 +359,47 @@ full_node::~full_node() {
 
     co_return error::success;
 }
+
+#if ! defined(__EMSCRIPTEN__)
+// The node's own wallet support, answered from its own chain, behind a local
+// Electrum listener for wallets that do not speak P2P. Runs on its own
+// executor; nothing of it is reachable unless node.wallet_electrum names it.
+void full_node::start_wallet() {
+    auto const& bind = node_settings_.wallet_electrum;
+    if (bind.empty()) return;
+    auto const parsed = wallet::parse_electrum_bind(bind);
+    if ( ! parsed) return;
+    auto const& [address, port] = *parsed;
+    wallet::chain_settings settings;
+    settings.birthday = node_settings_.wallet_birthday;
+    wallet_ = wallet::service::from_chain(chain_, network_type_, settings);
+    wallet_electrum_ = std::make_unique<wallet::electrum_server>(*wallet_, network_type_);
+    auto const bound = wallet_electrum_->listen(address, port);
+    if ( ! bound) {
+        spdlog::error("[node] The wallet's Electrum listener cannot listen on {}", bind);
+        wallet_electrum_.reset();
+        wallet_.reset();
+        return;
+    }
+    spdlog::info("[node] Wallet support answered from this node's own chain; Electrum listener on {}:{}",
+        address, *bound);
+}
+
+// Until stop_wallet(): the wallet's own executor runs it, and the node waits
+// for it as for its other tasks.
+::asio::awaitable<void> full_node::run_wallet() {
+    if ( ! wallet_) co_return;
+    auto const executor = wallet_->executor();
+    (void)co_await (::asio::co_spawn(executor, wallet_->run(), ::asio::use_awaitable) &&
+                    ::asio::co_spawn(executor, wallet_electrum_->run(), ::asio::use_awaitable));
+}
+
+// Ends run_wallet(). Thread safe.
+void full_node::stop_wallet() {
+    if (wallet_electrum_) wallet_electrum_->stop();
+    if (wallet_) wallet_->stop();
+}
+#endif
 
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)

@@ -51,6 +51,18 @@ struct KND_API settings {
     bool compact_blocks_high_bandwidth;
     bool ds_proofs_enabled;
 
+    /// LOOPBACK:PORT of the local Electrum listener of the node's own wallet
+    /// support, for wallets on this machine that do not speak P2P; empty for
+    /// none (the default). Answers come from this node's own chain. Only a
+    /// loopback address (127.0.0.0/8, [::1]) is accepted: a node must not
+    /// learn what other people's wallets watch.
+    std::string wallet_electrum;
+
+    /// The first height the node's own wallet support reads for a wallet
+    /// that does not give one: no wallet it answers received anything
+    /// before it. 0 reads from genesis.
+    uint32_t wallet_birthday = 0;
+
     /// Display mode for console output (tui, log, daemon)
     display_mode display{display_mode::log};
 
