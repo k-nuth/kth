@@ -18,7 +18,38 @@
 
 namespace kth::node::wallet {
 
-// What a wallet looks for in a block.
+// What a whole block downloaded from a peer is checked against before a
+// wallet's history reads it, and what a wallet looks for in it.
+
+/// The block hashes to `expected` and its transactions to the Merkle root of
+/// its header, with no transaction repeated (the duplicate-transaction
+/// mutation). bad_stream otherwise; empty_block when it has no transaction.
+[[nodiscard]]
+KND_API
+std::error_code check_block(domain::chain::block const& blk, hash_digest const& expected);
+
+/// What checking a block against its script filter found.
+struct script_filter_check {
+    /// The filter holds the transaction key of every transaction: peers'
+    /// filters carry kind 4 leaves, so a transaction is found by txid alone.
+    bool transaction_keys;
+};
+
+/// The key of every output the block creates (its script, its token
+/// category) must be in its script filter: a filter that leaves one out was
+/// not built from this block. Spent outputs' scripts sit in older blocks and
+/// are not checked here. bad_stream when the filter does not fit the block.
+[[nodiscard]]
+KND_API
+std::expected<script_filter_check, std::error_code>
+check_script_filter(domain::chain::block const& blk, byte_span filter);
+
+/// The input prefix filter rebuilt from the block must equal the one served:
+/// it is built from the block alone, so any difference proves the serving
+/// peer lied. bad_stream otherwise.
+[[nodiscard]]
+KND_API
+std::error_code check_input_prefix_filter(domain::chain::block const& blk, byte_span filter);
 
 /// The positions of the inputs of `tx` a sender may grind for a reusable
 /// payment address (the first 30, none of a coinbase) whose prefix starts

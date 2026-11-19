@@ -53,6 +53,14 @@ hash_digest digest_of(uint32_t seed) {
     return sha256_hash(bytes);
 }
 
+chain::block block_of_hex(std::string_view hex) {
+    auto const raw = chunk_of(hex);
+    byte_reader reader(raw);
+    auto block = chain::block::from_data(reader);
+    REQUIRE(block);
+    return std::move(*block);
+}
+
 chain::script script_of(data_chunk bytes) {
     return chain::script(bytes, false);
 }
@@ -82,6 +90,12 @@ chain::transaction spending(std::vector<chain::point> const& previous, std::vect
         made.emplace_back(out.value, script_of(out.script), out.token);
     }
     return chain::transaction(2, 0, std::move(inputs), std::move(made));
+}
+
+chain::block block_with(hash_digest const& previous, chain::transaction::list txs) {
+    chain::block candidate(chain::header{0x20000000, previous, null_hash, 1700000000, 0x207fffff, 0}, txs);
+    auto const root = candidate.generate_merkle_root();
+    return chain::block(chain::header{0x20000000, previous, root, 1700000000, 0x207fffff, 0}, std::move(txs));
 }
 
 // A served script filter (root, then the set) holding `keys`, for `block`.
@@ -550,4 +564,80 @@ TEST_CASE("wallet mempool copy drops the oldest transactions when full", "[walle
     REQUIRE( ! pool.contains(first.hash()));
     pool.clear();
     REQUIRE(pool.size() == 0u);
+}
+
+// Block checks
+// ----------------------------------------------------------------------------
+
+TEST_CASE("wallet block check needs the requested hash, the Merkle root and distinct transactions", "[wallet]") {
+    auto const coinbase = coinbase_paying(p2pkh_a, 50, 1);
+    auto const spend = spending({chain::point(digest_of(1), 0)}, {{10, p2pkh_b}}, 2);
+    auto const good = block_with(digest_of(0), {coinbase, spend});
+    REQUIRE( ! wallet::check_block(good, good.hash()));
+    REQUIRE(wallet::check_block(good, digest_of(5)) == error::bad_stream);
+
+    // Transactions that are not the ones the header commits to.
+    chain::block swapped(good.header(), chain::transaction::list{coinbase, spending({chain::point(digest_of(1), 0)}, {{11, p2pkh_b}}, 2)});
+    REQUIRE(wallet::check_block(swapped, swapped.hash()) == error::merkle_mismatch);
+
+    // The duplicate-transaction mutation: the same root with the last one repeated.
+    auto const third = spending({chain::point(digest_of(7), 0)}, {{12, p2pkh_b}}, 3);
+    auto const odd = block_with(digest_of(0), {coinbase, spend, third});
+    chain::block mutated(odd.header(), chain::transaction::list{coinbase, spend, third, third});
+    REQUIRE(mutated.generate_merkle_root() == odd.header().merkle());
+    REQUIRE(wallet::check_block(mutated, mutated.hash()) == error::bad_stream);
+
+    chain::block empty(good.header(), chain::transaction::list{});
+    REQUIRE(wallet::check_block(empty, empty.hash()) == error::empty_block);
+}
+
+TEST_CASE("wallet block check against its script filter, with and without transaction keys", "[wallet]") {
+    // bchd simnet block 127 (txid-vectors.md), its filter with transaction
+    // keys, its filter from before them, and the filter of another block.
+    auto const block = block_of_hex("01000030faec54d16b2a5bdbc3371f5e1593a8166e95a55d0df4f8ee33b6d8281bee6d79816c95ada87beb3bac7be56331697aa815d04915e94c1d6570812f083e9669f791b0f66affff7f20000000000301000000010000000000000000000000000000000000000000000000000000000000000000ffffffff12017f086f88e3cf77f9ac8d062f626368642fffffffff01c621062a010000001976a914b2275cc60091cdde77bddb8c132f60494cb2ea6b88ac00000000010000000178618fd7cc15e6088f2b77cc5ac25dd92ad86619bbe91d693427a9cd965e8708000000006441dfea2c0f1c08e147bdf45182ca31e99745704f5caa7f348d3b9e55ff01a594141bf235e38ad141d4389033312c576917f0652c754bb452127a069a3dfab511d9412102be31cab636041636a1846f4358a241f608ca9d9f29177585280590f9d97e033fffffffff0300a3e1110000000017a91469d7ef8f42a25e8791bb37d5fb48456f102a3cb9870000000000000000176a157363726970742066696c74657220766563746f72734a462418010000001976a91438b726cdbeb1d7f311544519c3412a4ad67c26fb88ac0000000002000000013a90cdbcad008793ceca6cc7d7dd73c22e1d85dd0858760234cae2c1c79fdf2100000000020152ffffffff02f07be111000000001976a914040404040404040404040404040404040404040488ac0000000000000000176a157363726970742066696c74657220766563746f727300000000");
+    REQUIRE(encode_hash(block.hash()) == "0f5f466912edf56885b527866f8a3f12d8d620edef5ff3ebdf43ec00ab556868");
+    REQUIRE( ! wallet::check_block(block, block.hash()));
+
+    auto const with_keys = wallet::check_script_filter(block, chunk_of("0203471b91863237e77edce7baf8aece3399215b146501a2d5da70a0cc33819107e621fae1832906b2f0e54a00d93660c5896e"));
+    REQUIRE(with_keys);
+    REQUIRE(with_keys->transaction_keys);
+
+    auto const without = wallet::check_script_filter(block, chunk_of("96abbd5fe8f576296a2f50b3ebe8f03d61e2dba7968309a18d6ceab2be7861db04bbbb62037514a1956b1740"));
+    REQUIRE(without);
+    REQUIRE( ! without->transaction_keys);
+
+    // A filter that leaves out the block's outputs, and one too short to hold a set.
+    auto const foreign = wallet::check_script_filter(block, script_filter_of(block.hash(), {digest_of(1)}));
+    REQUIRE( ! foreign);
+    REQUIRE(foreign.error() == error::bad_stream);
+    REQUIRE(wallet::check_script_filter(block, data_chunk(32, 0)).error() == error::bad_stream);
+    REQUIRE(wallet::check_script_filter(block, chunk_of("0203471b91863237e77edce7baf8aece3399215b146501a2d5da70a0cc33819107")).error() == error::bad_stream);
+}
+
+TEST_CASE("wallet block check against its input prefix filter, and the inputs of a prefix", "[wallet]") {
+    // Block 2 of rpa-type2-vectors.md: one transaction after the coinbase,
+    // one input, value 9408.
+    auto const block = block_of_hex("00000020679d3aae7bad61757b5e1e3e225764d3a90a72d6f383e104953f82f36c7d5235382edb97970c0e4c882a3736d227780325ae84c0fdf065b1402c61a949e6ced658f35365ffff7f20000000000201000000010000000000000000000000000000000000000000000000000000000000000000ffffffff06010103727061ffffffff0100f2052a0100000001510000000002000000011111111111111111111111111111111111111111111111111111111111111111000000000151ffffffff01e803000000000000015100000000");
+    REQUIRE( ! wallet::check_input_prefix_filter(block, chunk_of("010f8a0400")));
+    REQUIRE(wallet::check_input_prefix_filter(block, chunk_of("00")) == error::bad_stream);
+    REQUIRE(wallet::check_input_prefix_filter(block, chunk_of("010f8a0401")) == error::bad_stream);
+
+    auto const& tx = block.transactions()[1];
+    REQUIRE(wallet::prefix_inputs(tx, 0x94, 8) == std::vector<uint32_t>{0});
+    REQUIRE(wallet::prefix_inputs(tx, 0x9408, 16) == std::vector<uint32_t>{0});
+    REQUIRE(wallet::prefix_inputs(tx, 0x9, 4) == std::vector<uint32_t>{0});
+    REQUIRE(wallet::prefix_inputs(tx, 0x0, 0) == std::vector<uint32_t>{0});
+    REQUIRE(wallet::prefix_inputs(tx, 0x95, 8).empty());
+    REQUIRE(wallet::prefix_inputs(tx, 0x9409, 16).empty());
+    REQUIRE(wallet::prefix_inputs(tx, 0x94, 17).empty());
+    REQUIRE(wallet::prefix_inputs(block.transactions()[0], 0x0, 0).empty());
+
+    // Only the first 30 inputs count.
+    std::vector<chain::point> previous;
+    for (uint32_t i = 0; i < 31; ++i) previous.emplace_back(digest_of(400 + i), i);
+    auto const wide = spending(previous, {{1, p2pkh_a}}, 7);
+    auto const last = chain::input_prefix(wide.inputs()[30]);
+    auto const matched = wallet::prefix_inputs(wide, last, 16);
+    REQUIRE(std::ranges::find(matched, 30u) == matched.end());
+    REQUIRE(wallet::prefix_inputs(wide, 0, 0).size() == 30u);
 }
