@@ -42,7 +42,7 @@ header_index::header_index(size_t capacity)
 
     // Block file location (initialized to "no data")
     block_positions_ = std::make_unique<std::atomic<uint64_t>[]>(capacity_);
-    undo_positions_.resize(capacity_, 0);
+    undo_positions_ = std::make_unique<std::atomic<uint32_t>[]>(capacity_);
 
     // Reception time (0 = loaded from store / not yet set)
     header_received_times_.resize(capacity_, 0);
@@ -295,7 +295,7 @@ header_entry header_index::get_entry(index_t idx) const {
         header_status(statuses_[idx]),
         int16_t(block_pos.file),
         block_pos.pos,
-        undo_positions_[idx]
+        get_undo_pos(idx)
     };
 }
 
@@ -397,7 +397,7 @@ flat_file_pos header_index::get_block_pos(index_t idx) const {
 }
 
 void header_index::set_undo_pos(index_t idx, uint32_t pos) {
-    undo_positions_[idx] = pos;
+    undo_positions_[idx].store(pos, std::memory_order_release);
 }
 
 // =============================================================================
@@ -517,7 +517,7 @@ uint32_t header_index::get_data_pos(index_t idx) const {
 }
 
 uint32_t header_index::get_undo_pos(index_t idx) const {
-    return undo_positions_[idx];
+    return undo_positions_[idx].load(std::memory_order_acquire);
 }
 
 bool header_index::has_block_data(index_t idx) const {
@@ -528,7 +528,7 @@ bool header_index::has_undo_data(index_t idx) const {
     // Undo data exists if file_number is valid and undo_pos is non-zero
     // (position 0 is valid for block data but not for undo, since undo
     // is written after the block is connected)
-    return has_block_data(idx) && undo_positions_[idx] > 0;
+    return has_block_data(idx) && get_undo_pos(idx) > 0;
 }
 
 // =============================================================================

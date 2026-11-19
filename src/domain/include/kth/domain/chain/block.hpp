@@ -157,6 +157,26 @@ struct KD_API block {
     [[nodiscard]]
     hash_digest generate_merkle_root(std::span<hash_digest const> txids) const;
 
+    // The Merkle branch of the transaction at `index`: the hash of its sibling
+    // at each level, from the transactions up to just below the root. A light
+    // client folds it with the hash of the transaction to the Merkle root of
+    // the header (merkle_branch_root). The last node of a level that has no
+    // partner is paired with itself, as generate_merkle_root pairs it, so its
+    // sibling is its own hash. A block of one transaction has an empty branch,
+    // and so has an index past the last transaction, which the caller checks.
+    [[nodiscard]]
+    hash_list transaction_merkle_branch(size_t index) const;
+
+    [[nodiscard]]
+    hash_list transaction_merkle_branch(size_t index, std::span<hash_digest const> txids) const;
+
+    // The root that a transaction hash at `index` and its branch fold to: at
+    // each level the hash is the left child where the index is even and the
+    // right one where it is odd, and the index is halved.
+    [[nodiscard]]
+    static
+    hash_digest merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch);
+
     [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;
 

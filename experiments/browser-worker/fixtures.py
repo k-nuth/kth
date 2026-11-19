@@ -111,9 +111,9 @@ def message(command, payload):
             struct.pack("<I", len(payload)) + dsha(payload)[:4] + payload)
 
 
-def version_payload(height, agent=b"/kth-ci-peer/"):
+def version_payload(height, agent=b"/kth-ci-peer/", services=1):
     address = struct.pack("<Q", 1) + bytes(10) + b"\xff\xff" + bytes([127, 0, 0, 1]) + struct.pack(">H", 18444)
-    return (struct.pack("<iQq", 70016, 1, GENESIS_TIME) + address + address +
+    return (struct.pack("<iQq", 70016, services, GENESIS_TIME) + address + address +
             struct.pack("<Q", 0x5EED) + varint(len(agent)) + agent + struct.pack("<i?", height, False))
 
 
@@ -580,6 +580,108 @@ async def bch_tx_disown(socket):
     await serve_content(session, CONTENT_BLOCKS[:21], disown=(LATE_TX,))
 
 
+# -----------------------------------------------------------------------------
+# A compact filter peer for wallet support. The wallet control mines its chain
+# and builds the blocks' script (type 1) and input prefix (type 2) filters with
+# the node's own builders, and uploads them first (bch_wallet_upload); this
+# peer then serves headers, filter checkpoints, filter headers, filters and
+# blocks from them, as a node with NODE_COMPACT_FILTERS does.
+# -----------------------------------------------------------------------------
+
+# The compact filters service bit as a BCH node announces it (version.hpp: node_compact_filters).
+NODE_COMPACT_FILTERS = 1 << 8
+WALLET_CHAIN = None
+
+
+class wallet_chain:
+    """Blocks by height with their filters and filter header chains."""
+
+    def __init__(self, blocks, filters):
+        self.blocks = blocks
+        self.headers = [block[:80] for block in blocks]
+        self.heights = {dsha(header): height for height, header in enumerate(self.headers)}
+        self.filters = filters
+        self.hashes = {}
+        self.chained = {}
+        for kind, served in filters.items():
+            previous = bytes(32)
+            self.hashes[kind] = []
+            self.chained[kind] = []
+            for filter_bytes in served:
+                filter_hash = dsha(filter_bytes)
+                previous = dsha(filter_hash + previous)
+                self.hashes[kind].append(filter_hash)
+                self.chained[kind].append(previous)
+
+
+@quiet
+async def bch_wallet_upload(socket):
+    # "KTHW", the number of heights, then per height from genesis: the block,
+    # its script filter and its input prefix filter, each after its length.
+    global WALLET_CHAIN
+    data = b""
+    while True:
+        data += await socket.recv()
+        if len(data) < 8:
+            continue
+        assert data[:4] == b"KTHW", data[:4]
+        count = struct.unpack_from("<I", data, 4)[0]
+        at, parts = 8, []
+        while len(parts) < 3 * count and at + 4 <= len(data):
+            length = struct.unpack_from("<I", data, at)[0]
+            if at + 4 + length > len(data):
+                break
+            parts.append(data[at + 4:at + 4 + length])
+            at += 4 + length
+        if len(parts) == 3 * count:
+            break
+    WALLET_CHAIN = wallet_chain(parts[0::3], {1: parts[1::3], 2: parts[2::3]})
+    await socket.send(b"ok")
+    await socket.wait_closed()
+
+
+@quiet
+async def bch_wallet(socket):
+    served = WALLET_CHAIN
+    assert served is not None, "the wallet control uploads its chain first"
+    session = bch_session(socket, served.headers)
+    command, _ = await session.receive()
+    assert command == "version", command
+    await session.send("version", version_payload(len(served.headers) - 1, b"/kth-ci-filters/",
+                                                  services=1 | NODE_COMPACT_FILTERS))
+    await session.send("verack")
+    while (await session.receive())[0] != "verack":
+        pass
+    while True:
+        command, payload = await session.receive()
+        if command == "ping":
+            await session.send("pong", payload)
+        elif command == "getheaders":
+            await session.send("headers", session.headers_after(payload))
+        elif command == "getcfcheckpt":
+            kind, stop = payload[0], served.heights[payload[1:33]]
+            chained = [served.chained[kind][height] for height in range(1000, stop + 1, 1000)]
+            await session.send("cfcheckpt", bytes([kind]) + payload[1:33] + varint(len(chained)) + b"".join(chained))
+        elif command == "getcfheaders":
+            kind, start = payload[0], struct.unpack_from("<I", payload, 1)[0]
+            stop = served.heights[payload[5:37]]
+            previous = served.chained[kind][start - 1] if start > 0 else bytes(32)
+            hashes = served.hashes[kind][start:stop + 1]
+            await session.send("cfheaders", bytes([kind]) + payload[5:37] + previous + varint(len(hashes)) + b"".join(hashes))
+        elif command == "getcfilters":
+            kind, start = payload[0], struct.unpack_from("<I", payload, 1)[0]
+            for height in range(start, served.heights[payload[5:37]] + 1):
+                filter_bytes = served.filters[kind][height]
+                await session.send("cfilter", bytes([kind]) + dsha(served.headers[height]) + varint(len(filter_bytes)) + filter_bytes)
+        elif command == "getdata":
+            count, at = read_varint(payload, 0)
+            for index in range(count):
+                kind = struct.unpack_from("<I", payload, at + 36 * index)[0]
+                wanted = payload[at + 36 * index + 4:at + 36 * index + 36]
+                if kind == 2 and wanted in served.heights:
+                    await session.send("block", served.blocks[served.heights[wanted]])
+
+
 LATE_TX = loose_tx(77)
 SILENT_TXS = tuple(loose_tx(index) for index in range(17))
 BIG_TX = loose_tx(99, outputs=30000)
@@ -607,7 +709,8 @@ async def main(scenario):
                 'bch_tx_silent': (18807, bch_tx_silent), 'bch_big_tx': (18808, bch_big_tx),
                 'bch_missing_block': (18809, bch_missing_block),
                 'bch_tx_late': (18811, bch_tx_late), 'bch_tx_disown': (18812, bch_tx_disown),
-                'bch_longer': (18785, bch_longer), 'bch_fork': (18786, bch_fork)}
+                'bch_longer': (18785, bch_longer), 'bch_fork': (18786, bch_fork),
+                'bch_wallet_upload': (18815, bch_wallet_upload), 'bch_wallet': (18816, bch_wallet)}
     selected = controls if scenario == 'all' else {scenario: controls[scenario]}
     async with AsyncExitStack() as stack:
         for port, handler in selected.values():
@@ -622,6 +725,6 @@ if __name__ == '__main__':
                                              'bch_discovery', 'bch_discovery_legacy', 'bch_flood', 'bch_short', 'bch_alternate',
                                              'bch_discovery_late', 'bch_slow', 'bch_discovery_close', 'bch_content', 'bch_bad_body',
                                              'bch_tx_silent', 'bch_big_tx', 'bch_missing_block',
-                                             'bch_tx_late', 'bch_tx_disown'],
+                                             'bch_tx_late', 'bch_tx_disown', 'bch_wallet_upload', 'bch_wallet'],
                         default='all', nargs='?')
     asyncio.run(main(parser.parse_args().scenario))

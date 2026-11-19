@@ -17,9 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # What a browser node compiles. The node and the C-API add theirs when a browser
-# node compiles them.
+# node compiles them: the node's wallet support does.
 SOURCES = ("src/infrastructure", "src/domain", "src/database", "src/blockchain",
-           "src/network")
+           "src/network", "src/node/src/wallet", "src/node/include/kth/node/wallet")
 PATTERN = re.compile(
     # A timer object; its nested types (::time_point, ::clock_type) are only types.
     r"(?<![\w:])(?:::)?asio::(?:steady_timer|system_timer|high_resolution_timer|basic_waitable_timer)\b(?!::)"

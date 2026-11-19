@@ -514,6 +514,12 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 
+# Wallet support in the node: answered from the node's own chain, or from peers.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  list(APPEND kth_sources src/node/wallet.cpp)
+  list(APPEND kth_headers include/kth/capi/node/wallet.h)
+endif()
+
 if(KTH_BROWSER_NODE)
   list(APPEND kth_sources src/node/header_sync.cpp)
   list(APPEND kth_headers include/kth/capi/node/header_sync.h)
@@ -614,6 +620,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/noexcept_contracts.cpp
         test/conversions.cpp
         test/network_context.cpp
+        test/node/wallet.cpp
         test/binary.cpp
         test/chain/header.cpp
         test/chain/point.cpp
