@@ -36,6 +36,15 @@ chain::block make_block(chain::transaction::list txs = {chain::transaction(1, 0,
         chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, std::move(txs));
 }
 
+// A block of `count` transactions that differ by their lock time.
+chain::block make_block_of(uint32_t count) {
+    chain::transaction::list txs;
+    for (uint32_t i = 0; i < count; ++i) {
+        txs.push_back(chain::transaction(1, i, {}, {}));
+    }
+    return make_block(std::move(txs));
+}
+
 } // anonymous namespace
 
 // Start Test Suite: chain block tests
@@ -384,6 +393,67 @@ TEST_CASE("block generate merkle root block with multiple transactions matches h
     auto const transactions = block100k.transactions();
     REQUIRE(all_valid(transactions));
     REQUIRE(header.merkle() == block100k.generate_merkle_root());
+}
+
+TEST_CASE("block transaction merkle branch of every transaction folds to the merkle root", "[block generate merkle root]") {
+    // One transaction, full levels, and levels whose last node is paired with
+    // itself at the bottom, in the middle and at more than one height.
+    for (uint32_t const count : {1u, 2u, 3u, 4u, 5u, 7u, 8u, 13u}) {
+        auto const block = make_block_of(count);
+        auto const txids = block.to_hashes();
+        auto const root = block.generate_merkle_root();
+
+        size_t levels = 0;
+        for (size_t width = count; width > 1; width = (width + 1) / 2) {
+            ++levels;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+            auto const branch = block.transaction_merkle_branch(index);
+            REQUIRE(branch.size() == levels);
+            REQUIRE(chain::block::merkle_branch_root(txids[index], index, branch) == root);
+            REQUIRE(block.transaction_merkle_branch(index, txids) == branch);
+        }
+    }
+}
+
+TEST_CASE("block transaction merkle branch of historic block folds to the header merkle root", "[block generate merkle root]") {
+    data_chunk const raw = block_100k_raw();
+    byte_reader reader(raw);
+    auto const result = chain::block::from_data(reader);
+    REQUIRE(result);
+    auto const& block100k = *result;
+    auto const txids = block100k.to_hashes();
+    REQUIRE(txids.size() > 1);
+
+    for (size_t index = 0; index < txids.size(); ++index) {
+        auto const branch = block100k.transaction_merkle_branch(index);
+        REQUIRE(chain::block::merkle_branch_root(txids[index], index, branch) == block100k.header().merkle());
+    }
+}
+
+TEST_CASE("block transaction merkle branch last transaction of an odd level is its own sibling", "[block generate merkle root]") {
+    auto const block = make_block_of(3);
+    auto const txids = block.to_hashes();
+    auto const branch = block.transaction_merkle_branch(2);
+    REQUIRE(branch.size() == 2);
+    REQUIRE(branch[0] == txids[2]);
+}
+
+TEST_CASE("block transaction merkle branch at another index folds to another root", "[block generate merkle root]") {
+    auto const block = make_block_of(4);
+    auto const txids = block.to_hashes();
+    auto const branch = block.transaction_merkle_branch(0);
+    REQUIRE(chain::block::merkle_branch_root(txids[0], 0, branch) == block.generate_merkle_root());
+    REQUIRE(chain::block::merkle_branch_root(txids[0], 1, branch) != block.generate_merkle_root());
+    REQUIRE(chain::block::merkle_branch_root(txids[1], 0, branch) != block.generate_merkle_root());
+}
+
+TEST_CASE("block transaction merkle branch index past the last transaction is empty", "[block generate merkle root]") {
+    auto const block = make_block_of(4);
+    REQUIRE(block.transaction_merkle_branch(4).empty());
+    REQUIRE(block.transaction_merkle_branch(1000).empty());
+    REQUIRE(make_block_of(1).transaction_merkle_branch(0).empty());
 }
 
 TEST_CASE("block header accessor always returns initialized value", "[block generate merkle root]") {

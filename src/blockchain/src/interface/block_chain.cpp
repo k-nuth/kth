@@ -127,6 +127,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
     , transaction_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings)
     , block_organizer_(validation_mutex_, priority_pool_.get_executor(), priority_pool_.size(), priority_pool_, *this, chain_settings, network, relay_transactions)
+    , view_broadcaster_(priority_pool_.get_executor())
     , utxoz_db_(utxo_gate_)
 {
     spdlog::debug("[blockchain] block_chain constructor completed successfully");
@@ -192,6 +193,7 @@ bool block_chain::start(uint32_t disk_magic) {
     template_rebuild_gate_.reset();
     KTH_CONTRACT(template_rebuild_gate_.try_send(std::error_code{}));
     stopped_ = false;
+    view_broadcaster_.start();
 
     if ( ! database_.open()) {
         spdlog::error("[blockchain] Failed to open database.");
@@ -651,6 +653,8 @@ bool block_chain::stop() {
     // concurrent_channel is the operation owner and supports thread-safe close.
     // Wake suspended rebuild requests before the chain executor stops.
     template_rebuild_gate_.close();
+
+    view_broadcaster_.stop();
 
     validation_mutex_.lock_high_priority();
     auto result = transaction_organizer_.stop() && block_organizer_.stop();
@@ -2390,6 +2394,7 @@ code block_chain::publish_chain_view(size_t connected_tip_height) {
 
     // One swap. A reader holds the previous triple or this one.
     chain_view_.store(boost::shared_ptr<published_chain_view const>(std::move(built)));
+    view_broadcaster_.publish(connected_tip_height);
     return error::success;
 }
 
@@ -2732,6 +2737,14 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
     transaction_organizer_.unsubscribe_ds_proof(channel);
 }
 
+block_chain::view_channel_ptr block_chain::subscribe_chain_view() {
+    return view_broadcaster_.subscribe();
+}
+
+void block_chain::unsubscribe_chain_view(view_channel_ptr const& channel) {
+    view_broadcaster_.unsubscribe(channel);
+}
+
 // =============================================================================
 // VALIDATION
 // =============================================================================
@@ -3051,6 +3064,89 @@ block_chain::fetch_block(hash_digest const& hash) const {
         co_return kth::fail(error::not_found);
     }
     co_return co_await read_stored_block(hash, size_t(header_index_.get_height(idx)), pos);
+}
+
+namespace {
+
+// The output an undo entry stands for.
+std::expected<domain::chain::output, result_code>
+read_undo_output(block_store const& store, spent_output const& entry) {
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // The entry is {file_number(4 LE), tx_offset(4 LE)}: where the transaction
+    // that created the output starts in the block files. The index of the
+    // output is the last four bytes of the key.
+    if (entry.value.size() != 8) {
+        return std::unexpected(result_code::other);
+    }
+    uint32_t file_number = 0;
+    uint32_t offset = 0;
+    std::memcpy(&file_number, entry.value.data(), 4);
+    std::memcpy(&offset, entry.value.data() + 4, 4);
+
+    auto const raw = store.read_tx_raw(flat_file_pos{int32_t(file_number), offset});
+    if ( ! raw) {
+        return std::unexpected(raw.error());
+    }
+    auto tx = kth::from_data_chunk<domain::chain::transaction>(*raw, true);
+    if ( ! tx) {
+        return std::unexpected(result_code::other);
+    }
+    auto const index = utxoz_database::key_to_point(entry.key).index();
+    if (index >= tx->outputs().size()) {
+        return std::unexpected(result_code::other);
+    }
+    return tx->outputs()[index];
+#else
+    (void)store;
+    return output_of_stored_entry(entry.value);
+#endif
+}
+
+} // namespace
+
+awaitable_expected<spent_output_list>
+block_chain::fetch_spent_outputs(hash_digest const& hash, block_const_ptr block) const {
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
+    }
+    if ( ! block) {
+        co_return kth::fail(error::not_found);
+    }
+    // A block of one transaction spends nothing, so it needs no record.
+    if (block->transactions().size() <= 1) {
+        co_return spent_output_list{};
+    }
+
+    auto const idx = header_index_.find(hash);
+    if (idx == header_index::null_index || ! header_index_.has_undo_data(idx)) {
+        co_return kth::fail(error::not_found);
+    }
+    // Everything the index says about the block is read here, before the read
+    // of the file runs on the pool.
+    auto const height = uint32_t(header_index_.get_height(idx));
+    flat_file_pos const undo_pos{header_index_.get_file_number(idx), header_index_.get_undo_pos(idx)};
+    auto const prev_hash = header_index_.get_prev_block_hash(idx);
+
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, block, hash, height, prev_hash, undo_pos]() -> awaitable_expected<spent_output_list> {
+            auto const record = block_store_->read_undo(undo_pos, hash, prev_hash);
+            if ( ! record) {
+                spdlog::error("[blockchain] cannot read the undo record of block {} at {}",
+                    encode_hash(hash), undo_pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+            auto spent = spent_outputs_with_heights(*block, height, *record,
+                [this](spent_output const& entry) {
+                    return read_undo_output(*block_store_, entry);
+                });
+            if ( ! spent) {
+                spdlog::error("[blockchain] the undo record of block {} does not give the outputs "
+                    "the block spends: {}", encode_hash(hash), result_code_name(spent.error()));
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::move(*spent);
+        },
+        ::asio::use_awaitable);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
@@ -3453,6 +3549,14 @@ block_chain::fetch_ds_proof(hash_digest const& hash) const {
         co_return std::unexpected(error::service_stopped);
     }
     co_return co_await transaction_organizer_.fetch_ds_proof(hash);
+}
+
+awaitable_expected<std::vector<double_spend_proof_const_ptr>>
+block_chain::fetch_ds_proofs() const {
+    if (stopped()) {
+        co_return std::unexpected(error::service_stopped);
+    }
+    co_return co_await transaction_organizer_.fetch_ds_proofs();
 }
 
 // =============================================================================

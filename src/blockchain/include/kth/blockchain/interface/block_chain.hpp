@@ -38,6 +38,7 @@
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/local_block_admission.hpp>
+#include <kth/blockchain/spent_outputs.hpp>
 #include <kth/blockchain/utxo_gate.hpp>
 #include <kth/blockchain/pools/block_organizer.hpp>
 #include <kth/blockchain/pools/branch.hpp>
@@ -928,6 +929,16 @@ struct KB_API block_chain {
     void unsubscribe_transaction(transaction_channel_ptr const& channel);
     void unsubscribe_ds_proof(ds_proof_channel_ptr const& channel);
 
+    /// Each published chain view (a connected block, a reorganization, a
+    /// start), as the height of its connected tip. A subscriber that falls
+    /// behind misses views, never the latest: chain_view() holds it.
+    using view_broadcaster = broadcaster<size_t>;
+    using view_channel_ptr = view_broadcaster::channel_ptr;
+
+    [[nodiscard]]
+    view_channel_ptr subscribe_chain_view();
+    void unsubscribe_chain_view(view_channel_ptr const& channel);
+
     // =========================================================================
     // VALIDATION
     // =========================================================================
@@ -1024,6 +1035,18 @@ struct KB_API block_chain {
     [[nodiscard]] awaitable_expected<std::pair<block_const_ptr, size_t>>
     fetch_block(hash_digest const& hash) const;
 
+    // The outputs `block`, the stored block `hash`, spends: one for each input
+    // of each transaction after the coinbase, in the order of the inputs, each
+    // with the height it was created at. They are read from the undo record
+    // written when the block was connected; nothing is stored for this.
+    //
+    // not_found when the node has no such record for a block that spends
+    // outputs: the blocks at or below the highest checkpoint are connected
+    // without one unless chain.full_validation is set. operation_failed when
+    // the record cannot be read or does not give the outputs the block spends.
+    [[nodiscard]] awaitable_expected<spent_output_list>
+    fetch_spent_outputs(hash_digest const& hash, block_const_ptr block) const;
+
     // Batch fetch: single LMDB transaction for multiple blocks (optimized for UTXO building)
     [[nodiscard]] std::expected<domain::chain::block::list, database::result_code>
     fetch_blocks(uint32_t from, uint32_t to) const;
@@ -1097,6 +1120,11 @@ struct KB_API block_chain {
     // Server queries
     [[nodiscard]] awaitable_expected<double_spend_proof_const_ptr>
     fetch_ds_proof(hash_digest const& hash) const;
+
+    // Every double-spend proof the node holds, for a wallet of the node's own
+    // to list the mempool transactions they are about.
+    [[nodiscard]] awaitable_expected<std::vector<double_spend_proof_const_ptr>>
+    fetch_ds_proofs() const;
 
     // =========================================================================
     // MEMPOOL / TRANSACTION POOL
@@ -1364,6 +1392,7 @@ private:
 
     transaction_organizer transaction_organizer_;
     block_organizer block_organizer_;
+    view_broadcaster view_broadcaster_;
     header_index header_index_;
 
     // Flat file block storage (for fast sequential I/O during IBD)
