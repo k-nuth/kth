@@ -23,6 +23,7 @@
 #include <kth/blockchain/parking.hpp>
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/settings.hpp>
+#include <kth/blockchain/spent_outputs.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/pools/block_entry.hpp>
