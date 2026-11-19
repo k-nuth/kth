@@ -447,6 +447,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/body_range_reopen.cpp
           test/body_range_genesis_checkpoint.cpp
           test/connected_tip_remainder.cpp
+          test/utxo_build_remainder.cpp
           test/resume_stored_bodies.cpp
           test/resume_stored_bodies_decision.cpp
           test/directory_probe.cpp
