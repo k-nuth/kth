@@ -456,8 +456,8 @@ TEST_CASE("parser config network rebuilds defaults and preserves command line pr
 }
 #endif
 
-TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[configuration tests][parser]") {
-    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 500u);
+TEST_CASE("validation_batch_blocks defaults to 20000 and accepts 1..20000", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 20000u);
     {
         std::ostringstream error;
         config_file file("batch_blocks", "chain.validation_batch_blocks=250");
@@ -465,10 +465,27 @@ TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[confi
         REQUIRE(parser.parse_from_file(file.path(), error));
         CHECK(parser.configured.chain.validation_batch_blocks == 250u);
     }
-    for (char const* refused : {"0", "1001"}) {
+    for (char const* refused : {"0", "20001"}) {
         std::ostringstream error;
         node::parser parser(domain::config::network::mainnet);
         char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_blocks", refused};
+        CHECK_FALSE(parser.parse(5, argv, error));
+    }
+}
+
+TEST_CASE("validation_batch_bytes defaults to 512 MiB and refuses zero", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_bytes == (uint64_t{512} << 20));
+    {
+        std::ostringstream error;
+        config_file file("batch_bytes", "chain.validation_batch_bytes=1048576");
+        node::parser parser(domain::config::network::mainnet);
+        REQUIRE(parser.parse_from_file(file.path(), error));
+        CHECK(parser.configured.chain.validation_batch_bytes == 1048576u);
+    }
+    {
+        std::ostringstream error;
+        node::parser parser(domain::config::network::mainnet);
+        char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_bytes", "0"};
         CHECK_FALSE(parser.parse(5, argv, error));
     }
 }

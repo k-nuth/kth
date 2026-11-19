@@ -321,6 +321,86 @@ TEST_CASE("full mode judges a batch ahead of its turn and still refuses it in it
     CHECK_FALSE(out.undo_spend);
 }
 
+TEST_CASE("full mode closes a batch by the bytes of its blocks",
+          "[node][full_validation]") {
+    // One byte closes a batch at its first block, so every block is a batch of
+    // its own however many the count would allow. The chain connects as it
+    // does in one batch.
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc),
+        "--chain.validation_batch_bytes=1"}, error));
+    REQUIRE(parser.configured.chain.validation_batch_blocks == 20000u);
+
+    auto const out = connect_under("fv_full_by_bytes", parser.configured.chain, sc);
+
+    CHECK(out.built == trunk_len);
+    CHECK(out.undo_first);
+    CHECK(out.undo_spend);
+    CHECK(out.undo_above);
+}
+
+TEST_CASE("full mode cut by bytes connects every block before an invalid one",
+          "[node][full_validation]") {
+    // What shows the cut. A rejected batch applies nothing, so with the count
+    // alone (20,000 blocks, more than this chain) the tampered spend at 101
+    // would take the hundred valid blocks before it down with it. Closed by
+    // bytes at every block, they are batches of their own and connect.
+    auto const sc = build_scenario(/*tampered*/ true, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc),
+        "--chain.validation_batch_bytes=1"}, error));
+
+    auto const out = connect_under("fv_full_bad_by_bytes", parser.configured.chain, sc);
+
+    CHECK(out.built == spend_height - 1);
+    CHECK(out.undo_first);
+    CHECK_FALSE(out.undo_spend);
+}
+
+TEST_CASE("full mode opens the next batch with the block that would pass the bytes",
+          "[node][full_validation]") {
+    // Where exactly a batch closes. The tampered spend is at 101, and a
+    // rejected batch applies nothing, so what connects says which batch 101
+    // fell in. With room for the hundred blocks before it and one byte short
+    // of room for it too, it opens the next batch and the hundred connect.
+    // With that one byte, it is in the first batch and nothing connects.
+    auto const sc = build_scenario(/*tampered*/ true, 0);
+    uint64_t through_the_spend = 0;
+    for (uint32_t h = 1; h <= spend_height; ++h) {
+        through_the_spend += sc.blocks[h - 1].serialized_size();
+    }
+
+    auto const built_with = [&](char const* tag, uint64_t bytes) {
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        auto const option = "--chain.validation_batch_bytes=" + std::to_string(bytes);
+        REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc), option}, error));
+        return connect_under(tag, parser.configured.chain, sc).built;
+    };
+
+    CHECK(built_with("fv_full_bytes_short", through_the_spend - 1) == spend_height - 1);
+    CHECK(built_with("fv_full_bytes_exact", through_the_spend) == 0u);
+}
+
+TEST_CASE("full mode with the count alone holds the whole chain in one batch",
+          "[node][full_validation]") {
+    // The control for the case above: the same tampered chain with the bytes
+    // left at their default, which this chain is far from reaching. One batch
+    // holds all of it, and the invalid block leaves nothing connected.
+    auto const sc = build_scenario(/*tampered*/ true, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    auto const out = connect_under("fv_full_bad_one_batch", parser.configured.chain, sc);
+
+    CHECK(out.built == 0u);
+    CHECK_FALSE(out.undo_first);
+}
+
 TEST_CASE("full mode still rejects a header that conflicts with the configured anchor",
           "[node][full_validation]") {
     auto const sc = build_scenario(false, 0);

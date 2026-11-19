@@ -262,8 +262,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);
     app.add_option("--chain.full_validation", cfg.chain.full_validation);
     app.add_option("--chain.validation_batch_blocks", cfg.chain.validation_batch_blocks,
-        "Fully validated blocks connected per batch, 1..1000 (default 500; about 1 GB of memory per 100).")
-        ->check(CLI::Range(1u, 1000u));
+        "The most fully validated blocks connected per batch, 1..20000 (default 20000).")
+        ->check(CLI::Range(1u, 20000u));
+    app.add_option("--chain.validation_batch_bytes", cfg.chain.validation_batch_bytes,
+        "The most bytes of blocks in a fully validated batch, its first block aside (default 512 MiB; about ten times that in memory at peak).")
+        ->check(CLI::Range(uint64_t{1}, uint64_t{1} << 40));
 
     // [fork]
     app.add_option("--fork.easy_blocks", cfg.chain.easy_blocks);
