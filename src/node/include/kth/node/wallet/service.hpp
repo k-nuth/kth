@@ -27,6 +27,7 @@
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/wallet/history.hpp>
+#include <kth/node/wallet/tokens.hpp>
 
 namespace kth::blockchain {
 struct block_chain;
@@ -294,6 +295,27 @@ public:
     /// What changed after the count `seen`: lets a follower skip the targets
     /// and transactions a change did not touch.
     ::asio::awaitable<touched_keys> touched(uint64_t seen);
+
+    // CashTokens and BCMR, with no index (tokens.hpp).
+
+    /// A token category rebuilt from its outputs: its genesis, its unspent
+    /// outputs, its supply and holders. The category is watched from then
+    /// on, so asking again reads only what is new.
+    ::asio::awaitable<std::expected<category_state, std::error_code>> category(hash_digest category);
+
+    /// What a target holds, per category, the mempool included.
+    ::asio::awaitable<std::expected<std::vector<token_holding>, std::error_code>> holdings(target watched);
+
+    /// An identity's authchain from `authbase` to its authhead (its
+    /// identity output followed spend by spend, into the mempool), whether
+    /// it is burned, and the authhead's BCMR publication. `extension`: a
+    /// registry's authchain extension (raw transactions from the authbase
+    /// on), checked link by link and used to skip the steps it holds;
+    /// bad_stream when it diverged from the chain. What was read is kept, and
+    /// the authhead's identity output is watched, so asking again reads only
+    /// what is new.
+    ::asio::awaitable<std::expected<identity, std::error_code>> resolve_identity(hash_digest authbase,
+        std::vector<domain::chain::transaction> extension = {});
 
     struct impl;
 

@@ -66,6 +66,8 @@ struct chain_impl final : service::impl {
     std::map<hash_digest, target_state> targets;
     mempool_copy pool;
     std::set<hash_digest> pooled;
+    // The identities followed (in memory: the node keeps no wallet files).
+    detail::identity_memory known_identities;
     // The block applied to the targets at each recent height.
     std::map<uint32_t, hash_digest> applied;
     // The generation of the chain view last followed.
@@ -537,6 +539,51 @@ struct chain_impl final : service::impl {
         if ( ! out.script().bytes().empty() && out.script().bytes().front() == 0x6a) return std::optional<utxo>{};
         return std::optional<utxo>{utxo{outpoint, out.value(), out.token_data(), out.script().bytes(), uint32_t(stored->height)}};
     }
+
+    // A watched target that owned the output saw its spend; an output the
+    // UTXO set holds has none confirmed; otherwise the node's own blocks
+    // are read forward from `from` until one spends it. Then the mempool.
+    ::asio::awaitable<std::expected<std::optional<transaction_info>, std::error_code>> spender_of(
+            point outpoint, data_chunk script, std::optional<uint32_t> from) override {
+        (void)script;
+        co_await refresh_pool();
+        if (from) {
+            std::optional<uint32_t> start = *from;
+            for (auto const& [key, state] : targets) {
+                for (auto const& entry : state.history()) {
+                    if (entry.height < *from) continue;
+                    if (std::ranges::any_of(entry.inputs, [&](spent const& in) { return in.prevout == outpoint; })) {
+                        start = entry.height;
+                        break;
+                    }
+                }
+            }
+            auto const unspent = utxo_of(outpoint);
+            if ( ! unspent || ! *unspent) {
+                std::optional<transaction_info> found;
+                auto const ec = co_await each_block(*start, tip(), false, [&](uint32_t height, block_ptr const& blk) {
+                    auto const& txs = blk->transactions();
+                    for (uint32_t at = 0; at < txs.size(); ++at) {
+                        auto const spending = std::ranges::any_of(txs[at].inputs(), [&](domain::chain::input const& in) {
+                            return in.previous_output().hash() == outpoint.hash() && in.previous_output().index() == outpoint.index();
+                        });
+                        if ( ! spending) continue;
+                        found = transaction_info{txs[at], confirmation{height, blk->hash(), at}};
+                        return true;
+                    }
+                    return false;
+                });
+                if (found) co_return found;
+                if (ec) co_return std::unexpected(ec);
+            }
+        }
+        if (auto const spender = pool.spender(outpoint)) {
+            if (auto const* entry = pool.find(*spender)) co_return std::optional<transaction_info>{transaction_info{entry->tx, std::nullopt}};
+        }
+        co_return std::optional<transaction_info>{};
+    }
+
+    detail::identity_memory& identities() override { return known_identities; }
 
     ::asio::awaitable<std::expected<std::optional<utxo>, std::error_code>> output(point outpoint) override {
         co_await refresh_pool();

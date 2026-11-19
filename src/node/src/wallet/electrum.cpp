@@ -255,6 +255,65 @@ std::string token_json(chain::token_data_t const& token) {
     return out.done();
 }
 
+std::string supply_json(token_supply const& supply) {
+    // Amounts as text, as token_data's: they reach 2^63 - 1.
+    return object().text("total", std::to_string(supply.total)).text("reserved", std::to_string(supply.reserved))
+        .text("circulating", std::to_string(supply.circulating)).done();
+}
+
+std::string unspent_json(utxo const& coin) {
+    object item;
+    item.text("tx_hash", encode_hash(coin.outpoint.hash())).number("tx_pos", coin.outpoint.index())
+        .number("height", coin.height.value_or(0)).number("value", int64_t(coin.value));
+    if (coin.token) item.raw("token_data", token_json(*coin.token));
+    return item.done();
+}
+
+std::string category_json(category_state const& found) {
+    object out;
+    out.text("category", encode_hash(found.category));
+    if (found.genesis) {
+        out.raw("genesis", object().text("tx_hash", encode_hash(*found.genesis))
+            .number("height", found.genesis_height.value_or(0)).done());
+    } else {
+        out.raw("genesis", "null");
+    }
+    out.raw("supply", supply_json(found.supply)).raw("mempool_supply", supply_json(found.mempool_supply));
+    out.number("holders", int64_t(found.holders)).number("nfts", int64_t(found.nfts));
+    std::vector<std::string> unspent;
+    for (auto const& coin : found.unspent) unspent.push_back(unspent_json(coin));
+    out.raw("unspent", array_of(unspent));
+    return out.done();
+}
+
+std::string publication_json(bcmr_publication const& found) {
+    std::vector<std::string> uris;
+    for (auto const& uri : found.uris) uris.push_back(json_text(uri));
+    // The hash as pushed: OP_SHA256 byte order, what sha256sum prints.
+    return object().number("tx_pos", found.output).text("hash", encode_base16(found.registry_hash))
+        .raw("uris", array_of(uris)).done();
+}
+
+std::string identity_json(identity const& found) {
+    object out;
+    out.text("authbase", encode_hash(found.authbase));
+    out.text("authhead", encode_hash(found.chain.empty() ? found.authbase : found.chain.back().txid));
+    out.flag("burned", found.burned);
+    std::vector<std::string> steps;
+    for (auto const& step : found.chain) {
+        auto const source = step.from == identity_step::source::chain ? "chain"
+            : step.from == identity_step::source::mempool ? "mempool" : "registry";
+        steps.push_back(object().text("tx_hash", encode_hash(step.txid)).number("height", step.height)
+            .text("source", source).done());
+    }
+    out.raw("chain", array_of(steps));
+    out.raw("publication", found.publication ? publication_json(*found.publication) : std::string("null"));
+    std::vector<std::string> ignored;
+    for (auto const& item : found.ignored) ignored.push_back(publication_json(item));
+    out.raw("ignored", array_of(ignored));
+    return out.done();
+}
+
 std::string header_json(uint32_t height, chain::header const& header) {
     return object().number("height", height).text("hex", encode_base16(header_bytes(header))).done();
 }
@@ -801,6 +860,50 @@ struct electrum_server::impl : std::enable_shared_from_this<electrum_server::imp
             auto const pending = co_await wallet.rpa_mempool(prefix->first, prefix->second);
             for (auto const& match : pending) items.push_back(history_item(match.txid, 0, std::nullopt));
             co_return array_of(items);
+        }
+        // kth's own methods, not Fulcrum's: CashTokens categories and BCMR
+        // identities, rebuilt from the chain with no index.
+        if (method == "kth.token.category") {
+            auto const id = txid_of(params, 0);
+            if ( ! id) co_return fail(invalid_params, "Invalid category");
+            auto const found = co_await wallet.category(*id);
+            if ( ! found) co_return fail(internal_error, found.error().message());
+            co_return category_json(*found);
+        }
+        if (method == "kth.token.holdings") {
+            if (params.empty() || params[0].what != param::kind::string) co_return fail(invalid_params, "Invalid scripthash or address");
+            auto const watched = target_of(params[0].text.size() == 64 ? "blockchain.scripthash.get_history" : "blockchain.address.get_history", params);
+            if ( ! watched) co_return fail(invalid_params, "Invalid scripthash or address");
+            auto const held = co_await wallet.holdings(*watched);
+            if ( ! held) co_return fail(internal_error, held.error().message());
+            std::vector<std::string> items;
+            for (auto const& one : *held) {
+                items.push_back(object().text("category", encode_hash(one.category)).text("amount", std::to_string(one.fungible))
+                    .number("nfts", int64_t(one.nfts)).done());
+            }
+            co_return array_of(items);
+        }
+        if (method == "kth.identity.resolve") {
+            // The authbase, then a registry's authchain extension, if any, as
+            // raw transactions from the authbase on.
+            auto const authbase = txid_of(params, 0);
+            if ( ! authbase) co_return fail(invalid_params, "Invalid authbase");
+            std::vector<chain::transaction> extension;
+            for (size_t at = 1; at < params.size(); ++at) {
+                if (params[at].what != param::kind::string) co_return fail(invalid_params, "Invalid authchain transaction");
+                auto const raw = decode_base16(params[at].text);
+                if ( ! raw) co_return fail(invalid_params, "Invalid authchain transaction");
+                byte_reader reader(*raw);
+                auto tx = chain::transaction::from_data(reader, true);
+                if ( ! tx || reader.remaining_size() != 0) co_return fail(invalid_params, "Invalid authchain transaction");
+                extension.push_back(std::move(*tx));
+            }
+            auto const found = co_await wallet.resolve_identity(*authbase, std::move(extension));
+            if ( ! found) {
+                if (found.error() == error::bad_stream) co_return fail(bad_request, "The registry's authchain diverged from the chain");
+                co_return fail(internal_error, found.error().message());
+            }
+            co_return identity_json(*found);
         }
         if (method == "daemon.passthrough") co_return fail(method_not_found, "Method disabled for this client");
         co_return fail(method_not_found, "Unknown method");

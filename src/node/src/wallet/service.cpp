@@ -373,6 +373,176 @@ service::header_branch(uint32_t height, uint32_t cp_height) {
     co_return co_await ::asio::co_spawn(impl_->executor(), impl_->changed(seen, deadline), ::asio::use_awaitable);
 }
 
+// ----------------------------------------------------------------------------
+// CashTokens and BCMR, from what either source answers
+
+namespace {
+
+// An authchain longer than this is not followed further.
+constexpr size_t identity_steps_limit = 100'000;
+
+identity_step step_of(transaction_info const& found) {
+    identity_step out;
+    out.txid = found.tx.hash();
+    if (found.confirmed) {
+        out.from = identity_step::source::chain;
+        out.height = found.confirmed->height;
+        out.block = found.confirmed->block;
+    } else {
+        out.from = identity_step::source::mempool;
+    }
+    return out;
+}
+
+bool spends(domain::chain::transaction const& tx, point const& outpoint) {
+    return std::ranges::any_of(tx.inputs(), [&](domain::chain::input const& in) {
+        return in.previous_output().hash() == outpoint.hash() && in.previous_output().index() == outpoint.index();
+    });
+}
+
+::asio::awaitable<std::expected<category_state, std::error_code>> category_of(service::impl& state, hash_digest id) {
+    auto const watched = target::of_category(id);
+    auto const history = co_await state.history(watched);
+    if ( ! history) co_return std::unexpected(history.error());
+    auto unspent = co_await state.unspent(watched, token_filter::include);
+    if ( ! unspent) co_return std::unexpected(unspent.error());
+    category_state out;
+    out.category = id;
+    std::ranges::stable_sort(*unspent, [](utxo const& a, utxo const& b) { return a.height.has_value() && ! b.height.has_value(); });
+    out.unspent = std::move(*unspent);
+    out.supply = supply_of(id, out.unspent, false);
+    out.mempool_supply = supply_of(id, out.unspent, true);
+    std::set<data_chunk> scripts;
+    for (auto const& coin : out.unspent) {
+        if ( ! coin.token || coin.token->id != id) continue;
+        scripts.insert(coin.script);
+        if (domain::chain::has_nft(*coin.token)) ++out.nfts;
+    }
+    out.holders = scripts.size();
+
+    // The genesis spends output 0 of the transaction whose hash is the
+    // category id; no output of the category comes before it, so it is the
+    // first transaction of the category's history when that reaches back.
+    point const base(id, 0);
+    if ( ! history->confirmed.empty()) {
+        auto const& first = history->confirmed.front();
+        auto const found = co_await state.transaction(first.txid, first.height);
+        if (found && spends(found->tx, base)) {
+            out.genesis = first.txid;
+            out.genesis_height = first.height;
+        }
+    } else {
+        for (auto const& pending : history->unconfirmed) {
+            auto const found = co_await state.transaction(pending.txid, std::nullopt);
+            if (found && spends(found->tx, base)) {
+                out.genesis = pending.txid;
+                break;
+            }
+        }
+    }
+    co_return out;
+}
+
+::asio::awaitable<std::expected<identity, std::error_code>> identity_of(service::impl& state, hash_digest authbase,
+        std::vector<domain::chain::transaction> extension) {
+    std::vector<identity_step> chain;
+    std::optional<domain::chain::transaction> head;
+    if ( ! extension.empty()) {
+        // Checked link by link; then the last one is looked up, and the walk
+        // goes on from where it is.
+        auto const txids = verify_authchain(authbase, extension);
+        if ( ! txids) co_return std::unexpected(txids.error());
+        auto const found = co_await state.transaction(txids->back(), std::nullopt);
+        if ( ! found) co_return std::unexpected(found.error() == error::not_found ? std::error_code(error::bad_stream) : found.error());
+        for (size_t at = 0; at + 1 < txids->size(); ++at) {
+            chain.push_back(identity_step{(*txids)[at], identity_step::source::registry, 0, null_hash});
+        }
+        chain.push_back(step_of(*found));
+        head = found->tx;
+    } else if (auto const known = state.identities().find(authbase)) {
+        // What was read before, while each block it was read in is still
+        // the chain's.
+        for (auto const& kept : *known) {
+            if (kept.from == identity_step::source::chain) {
+                auto const header = co_await state.header_at(kept.height);
+                if ( ! header || domain::chain::hash(*header) != kept.block) break;
+            }
+            chain.push_back(kept);
+        }
+        while ( ! chain.empty() && chain.back().from != identity_step::source::chain) chain.pop_back();
+    }
+    if (chain.empty()) {
+        auto const found = co_await state.transaction(authbase, std::nullopt);
+        if ( ! found) co_return std::unexpected(found.error());
+        chain.push_back(step_of(*found));
+        head = found->tx;
+    }
+
+    identity out;
+    out.authbase = authbase;
+    for (size_t steps = 0; steps < identity_steps_limit; ++steps) {
+        auto const& last = chain.back();
+        if ( ! head) {
+            auto const hint = last.from == identity_step::source::chain ? std::optional<uint32_t>(last.height) : std::nullopt;
+            auto const found = co_await state.transaction(last.txid, hint);
+            if ( ! found) co_return std::unexpected(found.error());
+            head = found->tx;
+        }
+        if (head->outputs().empty()) co_return std::unexpected(error::bad_stream);
+        auto const identity_script = head->outputs().front().script().bytes();
+        if (is_data_carrier(identity_script)) {
+            out.burned = true;
+            break;
+        }
+        auto const from = last.from == identity_step::source::chain ? std::optional<uint32_t>(last.height) : std::nullopt;
+        auto const next = co_await state.spender_of(point(last.txid, 0), identity_script, from);
+        if ( ! next) co_return std::unexpected(next.error());
+        if ( ! *next) break;
+        chain.push_back(step_of(**next));
+        head = (*next)->tx;
+    }
+    auto publications = bcmr_publications(*head);
+    if ( ! publications.empty()) {
+        out.publication = publications.front();
+        out.ignored.assign(publications.begin() + 1, publications.end());
+    }
+    out.chain = chain;
+    state.identities().keep(authbase, chain);
+
+    // The identity output is watched from the authhead on: its spend shows
+    // up as that script's history moves, and is read from there next time.
+    auto const& authhead = chain.back();
+    if ( ! out.burned && authhead.from == identity_step::source::chain) {
+        std::vector<target> identity_output{target::of_script(head->outputs().front().script().bytes())};
+        (void)co_await state.watch(std::move(identity_output), authhead.height);
+    }
+    co_return out;
+}
+
+} // namespace
+
+::asio::awaitable<std::expected<category_state, std::error_code>> service::category(hash_digest id) {
+    auto* state = impl_.get();
+    co_return co_await ::asio::co_spawn(impl_->executor(), [state, id]() -> ::asio::awaitable<std::expected<category_state, std::error_code>> {
+        co_return co_await category_of(*state, id);
+    }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<std::expected<std::vector<token_holding>, std::error_code>> service::holdings(target watched) {
+    auto const unspent = co_await this->unspent(std::move(watched), token_filter::include);
+    if ( ! unspent) co_return std::unexpected(unspent.error());
+    co_return holdings_of(*unspent);
+}
+
+::asio::awaitable<std::expected<identity, std::error_code>> service::resolve_identity(hash_digest authbase,
+        std::vector<domain::chain::transaction> extension) {
+    auto* state = impl_.get();
+    co_return co_await ::asio::co_spawn(impl_->executor(),
+        [state, authbase, extension = std::move(extension)]() mutable -> ::asio::awaitable<std::expected<identity, std::error_code>> {
+            co_return co_await identity_of(*state, authbase, std::move(extension));
+        }, ::asio::use_awaitable);
+}
+
 ::asio::awaitable<touched_keys> service::touched(uint64_t seen) {
     co_return co_await ::asio::co_spawn(impl_->executor(), impl_->touched(seen), ::asio::use_awaitable);
 }

@@ -537,6 +537,59 @@ peer_impl::header_branch(uint32_t height, uint32_t cp_height) {
     co_return co_await changes.wait(seen, deadline);
 }
 
+// A watched target that owned the output saw its spend; otherwise its
+// locking script's key (a spent output's leaf) in the script filters points
+// to the blocks that may spend it, read in height order with their decoys
+// until one does. Then the mempool.
+::asio::awaitable<std::expected<std::optional<transaction_info>, std::error_code>>
+peer_impl::spender_of(point outpoint, data_chunk script, std::optional<uint32_t> from) {
+    if (from) {
+        std::vector<uint32_t> heights;
+        for (auto const& [key, state] : targets) {
+            for (auto const& entry : state.history()) {
+                if (entry.height < *from) continue;
+                if (std::ranges::any_of(entry.inputs, [&](spent const& in) { return in.prevout == outpoint; })) {
+                    heights.push_back(entry.height);
+                    break;
+                }
+            }
+            if ( ! heights.empty()) break;
+        }
+        if (heights.empty() && scripts && scripts->tip()) {
+            auto const first = std::max(*from, scripts->first());
+            if (first <= *scripts->tip()) {
+                std::vector<scan_key> keys{scan_key{domain::chain::script_key(script), first}};
+                auto const hits = co_await scan_keys(std::move(keys), first, *scripts->tip());
+                if ( ! hits) co_return std::unexpected(hits.error());
+                for (auto const& [height, matched] : *hits) heights.push_back(height);
+            }
+        }
+        std::optional<transaction_info> found;
+        auto const ec = co_await each_covered(heights, [&](uint32_t height, block_ptr const& blk) -> std::error_code {
+            if (found) return {};
+            auto const& txs = blk->transactions();
+            for (uint32_t at = 0; at < txs.size(); ++at) {
+                auto const& inputs = txs[at].inputs();
+                auto const spending = std::ranges::any_of(inputs, [&](domain::chain::input const& in) {
+                    return in.previous_output().hash() == outpoint.hash() && in.previous_output().index() == outpoint.index();
+                });
+                if ( ! spending) continue;
+                found = transaction_info{txs[at], confirmation{height, blk->hash(), at}};
+                keep_located(located_tx{txs[at], *found->confirmed, blk->transaction_merkle_branch(at)});
+                // Found: the blocks after it are not read.
+                return std::make_error_code(std::errc::operation_canceled);
+            }
+            return {};
+        });
+        if (found) co_return found;
+        if (ec) co_return std::unexpected(ec);
+    }
+    if (auto const spender = pool.spender(outpoint)) {
+        if (auto const* entry = pool.find(*spender)) co_return std::optional<transaction_info>{transaction_info{entry->tx, std::nullopt}};
+    }
+    co_return std::optional<transaction_info>{};
+}
+
 ::asio::awaitable<touched_keys> peer_impl::touched(uint64_t seen) {
     co_return touched_keys{changes.count(), changes.touched_since(seen)};
 }
@@ -603,6 +656,7 @@ std::expected<std::unique_ptr<service>, std::error_code> service::from_peers(pee
         if ( ! prefixes) return std::unexpected(prefixes.error());
         state->prefixes.emplace(std::move(*prefixes));
     }
+    state->known_identities = detail::identity_memory(folder / "identities.dat");
     if ( ! state->settings.sent_log.empty()) {
         state->sent_log.open(state->settings.sent_log, std::ios::app);
         if ( ! state->sent_log) return std::unexpected(error::file_system);

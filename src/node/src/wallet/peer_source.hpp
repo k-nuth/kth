@@ -55,6 +55,7 @@
 #include <kth/node/wallet/detail/service_impl.hpp>
 #include <kth/node/wallet/filter_store.hpp>
 #include <kth/node/wallet/scan.hpp>
+#include <kth/node/wallet/tokens.hpp>
 
 namespace kth::node::wallet::detail {
 
@@ -211,6 +212,8 @@ struct peer_impl final : service::impl {
     uint64_t bytes_received = 0;
     uint64_t blocks_downloaded = 0;
     std::ofstream sent_log;
+    // The identities followed, kept beside the filters.
+    identity_memory known_identities;
 
     mutable std::mutex status_mutex;
     status snapshot;
@@ -439,6 +442,9 @@ struct peer_impl final : service::impl {
     ::asio::awaitable<std::expected<std::optional<utxo>, std::error_code>> output(domain::chain::point outpoint) override;
     ::asio::awaitable<uint64_t> changed(uint64_t seen, std::chrono::steady_clock::time_point deadline) override;
     ::asio::awaitable<touched_keys> touched(uint64_t seen) override;
+    ::asio::awaitable<std::expected<std::optional<transaction_info>, std::error_code>> spender_of(
+        domain::chain::point outpoint, data_chunk script, std::optional<uint32_t> from) override;
+    identity_memory& identities() override { return known_identities; }
     ::asio::awaitable<std::optional<domain::chain::header>> header_at(uint32_t height) override;
 };
 

@@ -23,6 +23,16 @@ and no separate server:
 The requests and the answers are the same either way: `kth::node::wallet::service`
 in C++, `kth/capi/node/wallet.h` in C.
 
+## CashTokens and BCMR
+
+With no index either: a token category's genesis, unspent outputs, supply
+(total, reserved, circulating), holders and NFTs are rebuilt from the blocks
+its category key matches, and a BCMR identity's authchain is followed one
+spend of its identity output at a time, to the authhead and its publication
+output. The node never fetches a registry: an app downloads it from the
+published URIs and checks the bytes against the published hash
+(`registry_matches`).
+
 ## The local Electrum listener
 
 For wallets that do not speak P2P, a full node can answer the Electrum
@@ -43,3 +53,8 @@ machines use P2P, where nothing they send names what they watch.
 `kth-wallet` runs the peer path with the same listener, also on a loopback
 address by default, for a wallet that has no full node of its own.
 
+Besides Fulcrum's methods the listener answers three of Knuth's own, under
+names no Fulcrum method uses: `kth.token.category` (a category id),
+`kth.token.holdings` (a script hash or an address: what it holds per
+category) and `kth.identity.resolve` (an authbase, then optionally a
+registry's authchain extension as raw transactions).
