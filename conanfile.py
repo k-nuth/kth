@@ -108,6 +108,9 @@ class KthRecipe(KnuthConanFileV2):
         "rpc": ["jsonrpc", "grpc", "capnproto", "none"],
         "wasm_simd": [True, False],
         "with_websocket": [True, False],
+        # Compact block filters for light wallets (Neutrino, BIP157/158). Not
+        # part of the consensus protocol, so off unless asked for.
+        "neutrino": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -154,6 +157,7 @@ class KthRecipe(KnuthConanFileV2):
         "rpc": "jsonrpc",
         "wasm_simd": True,
         "with_websocket": False,
+        "neutrino": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -408,6 +412,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
         tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.with_websocket)
+        tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -633,6 +638,8 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
         self.cpp_info.components["domain"].defines = [currency_define] + static_defines + sigverify_defines
+        if self.options.neutrino:
+            self.cpp_info.components["domain"].defines.append("KTH_WITH_NEUTRINO")
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
             "infrastructure",

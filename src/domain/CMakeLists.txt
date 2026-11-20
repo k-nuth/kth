@@ -168,8 +168,6 @@ set(kth_sources_just_legacy
         src/chain/bloom_filter.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
-        src/chain/compact_filter.cpp
-        src/chain/golomb_set.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
         # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
@@ -396,8 +394,6 @@ set(kth_headers
     include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
-    include/kth/domain/chain/compact_filter.hpp
-    include/kth/domain/chain/golomb_set.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
@@ -473,6 +469,17 @@ endif(ENABLE_POSITION_INDEPENDENT_CODE)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
+
+# Compact block filters for light wallets (Neutrino, BIP157/158). An optional
+# feature: built only when asked for (docs/optional-features.md).
+if (KTH_WITH_NEUTRINO)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_NEUTRINO)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/chain/compact_filter.cpp
+        src/chain/golomb_set.cpp
+        include/kth/domain/chain/compact_filter.hpp
+        include/kth/domain/chain/golomb_set.hpp)
+endif()
 
 
 if (NOT ENABLE_SHARED)
@@ -595,8 +602,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
         test/chain/chain_state.cpp
-        test/chain/compact_filter.cpp
-        test/chain/golomb_set.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/history.cpp
@@ -707,6 +712,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   include(CTest)
   kth_register_tests(kth_domain_test)
+
+  # The tests of an optional feature are an executable of their own, so that
+  # its workflow builds and runs them and nothing else.
+  if (KTH_WITH_NEUTRINO)
+    add_executable(kth_domain_neutrino_test
+        test/chain/compact_filter.cpp
+        test/chain/golomb_set.cpp)
+    target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)
+    kth_register_tests(kth_domain_neutrino_test)
+  endif()
 endif()
 
 # Benchmarks
