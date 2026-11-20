@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const memory_pool::command = "mempool";
-uint32_t const memory_pool::version_minimum = version::level::bip35;
-uint32_t const memory_pool::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

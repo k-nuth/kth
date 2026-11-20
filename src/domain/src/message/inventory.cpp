@@ -15,9 +15,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const inventory::command = "inv";
-uint32_t const inventory::version_minimum = version::level::minimum;
-uint32_t const inventory::version_maximum = version::level::maximum;
 
 inventory::inventory(inventory_vector::list inventories)
     : inventories_(std::move(inventories))

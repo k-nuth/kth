@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <istream>
 #include <string>
+#include <string_view>
 
 
 #include <kth/domain/constants.hpp>
@@ -78,8 +79,7 @@ struct KD_API heading {
     size_t satoshi_fixed_size();
 
     heading() = default;
-    heading(uint32_t magic, std::string const& command, uint32_t payload_size, uint32_t checksum);
-    heading(uint32_t magic, std::string&& command, uint32_t payload_size, uint32_t checksum);
+    heading(uint32_t magic, std::string_view command, uint32_t payload_size, uint32_t checksum);
 
     [[nodiscard]]
     friend bool operator==(heading const&, heading const&) = default;
@@ -94,8 +94,7 @@ struct KD_API heading {
     [[nodiscard]]
     std::string const& command() const;
 
-    void set_command(std::string const& value);
-    void set_command(std::string&& value);
+    void set_command(std::string_view value);
 
     [[nodiscard]]
     uint32_t payload_size() const;
