@@ -708,6 +708,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # its workflow builds and runs them and nothing else.
   if (KTH_WITH_NEUTRINO)
     add_executable(kth_domain_neutrino_test
+        test/chain/block_merkle_branch.cpp
         test/chain/compact_filter.cpp
         test/chain/golomb_set.cpp
         test/chain/script_filter.cpp

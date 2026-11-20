@@ -158,6 +158,7 @@ struct KD_API block {
     [[nodiscard]]
     hash_digest generate_merkle_root(std::span<hash_digest const> txids) const;
 
+#if defined(KTH_WITH_NEUTRINO)
     // The Merkle branch of the transaction at `index`: the hash of its sibling
     // at each level, from the transactions up to just below the root. A light
     // client folds it with the hash of the transaction to the Merkle root of
@@ -181,6 +182,7 @@ struct KD_API block {
     [[nodiscard]]
     static
     std::optional<hash_digest> merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch);
+#endif // KTH_WITH_NEUTRINO
 
     [[nodiscard]]
     size_t signature_operations(bool bip16, bool bip141) const;

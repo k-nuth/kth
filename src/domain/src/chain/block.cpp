@@ -488,6 +488,7 @@ hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) cons
     return hashes.front();
 }
 
+#if defined(KTH_WITH_NEUTRINO)
 hash_list block::transaction_merkle_branch(size_t index) const {
     return transaction_merkle_branch(index, to_hashes());
 }
@@ -554,6 +555,7 @@ std::optional<hash_digest> block::merkle_branch_root(hash_digest const& transact
 
     return hash;
 }
+#endif // KTH_WITH_NEUTRINO
 
 size_t block::non_coinbase_input_count() const {
     if (transactions_.empty()) {
