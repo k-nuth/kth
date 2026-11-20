@@ -275,7 +275,7 @@ TEST_CASE("a whole txid key in a block of another node's chain gives the run and
         REQUIRE(run->first == item.first);
         REQUIRE(run->end - run->first == item.count);
         if (item.count == 1) {
-            chain::script_leaf const wanted{key, static_cast<uint32_t>(r), 0, chain::script_leaf_kind::transaction};
+            chain::script_leaf const wanted{key, uint32_t(r), 0, chain::script_leaf_kind::transaction};
             REQUIRE(all[run->first] == wanted);
         }
 
@@ -289,7 +289,7 @@ TEST_CASE("a whole txid key in a block of another node's chain gives the run and
         }
         auto const* before = run->first == 0 ? nullptr : &all[run->first - 1];
         auto const* after = run->end == all.size() ? nullptr : &all[run->end];
-        REQUIRE(chain::check_script_range(root, static_cast<uint32_t>(all.size()), static_cast<uint32_t>(run->first),
+        REQUIRE(chain::check_script_range(root, uint32_t(all.size()), uint32_t(run->first),
             all.subspan(run->first, item.count), before, after, *hashes, key, 256));
     }
 }
