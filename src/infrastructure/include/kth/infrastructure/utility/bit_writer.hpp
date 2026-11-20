@@ -106,7 +106,7 @@ struct bit_writer {
         if (held_ == 0) {
             return;
         }
-        buffer_[position_++] = static_cast<uint8_t>(window_ << (8 - held_));
+        buffer_[position_++] = uint8_t(window_ << (8 - held_));
         held_ = 0;
     }
 
@@ -125,7 +125,7 @@ private:
         held_ += count;
         while (held_ >= 8) {
             held_ -= 8;
-            buffer_[position_++] = static_cast<uint8_t>(window_ >> held_);
+            buffer_[position_++] = uint8_t(window_ >> held_);
         }
     }
 

@@ -35,7 +35,7 @@ static_assert(
 #endif
 uint64_t multiply_high(uint64_t value, uint64_t modulus) noexcept {
     auto const product = static_cast<unsigned __int128>(value) * modulus;
-    return static_cast<uint64_t>(product >> 64);
+    return uint64_t(product >> 64);
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -98,7 +98,7 @@ golomb_set::build(golomb_key const& key, std::span<data_chunk const> items) {
     }
 
     golomb_set set;
-    set.n_ = static_cast<uint32_t>(distinct.size());
+    set.n_ = uint32_t(distinct.size());
     if (set.n_ == 0) {
         return set;
     }
@@ -146,7 +146,7 @@ golomb_set::from_data(byte_span data) {
         return std::unexpected(golomb_set_error::too_many_items);
     }
 
-    auto const n = static_cast<uint32_t>(*count);
+    auto const n = uint32_t(*count);
     auto const rest = data.subspan(reader.position());
     // Unread bits in the last byte are the writer's zero padding. N differences are enough.
     if ( ! contains_count(rest, n)) {
