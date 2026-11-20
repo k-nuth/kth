@@ -183,6 +183,7 @@ set(kth_sources_just_legacy
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
+        src/chain/merkle.cpp
         src/chain/partial_merkle_tree.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
@@ -367,6 +368,7 @@ set(kth_headers
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/bloom_filter.hpp
+    include/kth/domain/chain/merkle.hpp
     include/kth/domain/chain/partial_merkle_tree.hpp
     include/kth/domain/chain/block_ticks.hpp
     include/kth/domain/chain/faster_blocks.hpp
@@ -467,6 +469,10 @@ if (KTH_WITH_NEUTRINO)
         src/chain/golomb_set.cpp
         include/kth/domain/chain/compact_filter.hpp
         include/kth/domain/chain/golomb_set.hpp
+        src/chain/script_filter.cpp
+        src/chain/script_filter_builder.cpp
+        include/kth/domain/chain/script_filter.hpp
+        include/kth/domain/chain/script_filter_builder.hpp
         src/message/compact_filter.cpp
         src/message/compact_filter_checkpoint.cpp
         src/message/compact_filter_headers.cpp
@@ -597,6 +603,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
         test/chain/bloom_filter.cpp
+        test/chain/merkle.cpp
         test/chain/partial_merkle_tree.cpp
         test/chain/block_ticks.cpp
         test/chain/abla_ticks.cpp
@@ -716,8 +723,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # its workflow builds and runs them and nothing else.
   if (KTH_WITH_NEUTRINO)
     add_executable(kth_domain_neutrino_test
+        test/chain/block_merkle_branch.cpp
         test/chain/compact_filter.cpp
         test/chain/golomb_set.cpp
+        test/chain/script_filter.cpp
+        test/chain/script_filter_bchd.cpp
+        test/chain/script_filter_builder.cpp
         test/message/compact_filters.cpp)
     target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
