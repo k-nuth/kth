@@ -11,9 +11,6 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 namespace kth::domain::message {
 
-std::string const header::command = "headers";
-uint32_t const header::version_minimum = version::level::minimum;
-uint32_t const header::version_maximum = version::level::maximum;
 
 size_t header::satoshi_fixed_size(uint32_t version) {
     auto const canonical = (version == version::level::canonical);

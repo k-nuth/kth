@@ -350,7 +350,7 @@ struct wire_peer {
     }
 
     // What arrives from this peer, through the read loop's own entry point.
-    network::raw_message message(std::string const& command, data_chunk payload) const {
+    network::raw_message message(std::string_view command, data_chunk payload) const {
         network::raw_message raw;
         raw.heading = domain::message::heading(0xdab5bffa, command, uint32_t(payload.size()), 0);
         raw.payload = std::move(payload);
@@ -973,7 +973,7 @@ TEST_CASE("integrated: a header whose parent we lack is followed up, not scored"
 
 namespace {
 
-size_t count_command(std::vector<wire_peer::sent_message> const& sent, std::string const& command) {
+size_t count_command(std::vector<wire_peer::sent_message> const& sent, std::string_view command) {
     return size_t(std::count_if(sent.begin(), sent.end(),
         [&](auto const& message) { return message.command == command; }));
 }

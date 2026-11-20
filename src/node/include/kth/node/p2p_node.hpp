@@ -14,6 +14,7 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -115,19 +116,19 @@ public:
     ::asio::awaitable<bool> dispatch(peer_session& peer, raw_message const& msg);
 
     /// Register a raw handler for a specific command
-    void register_handler(std::string const& command, message_handler_fn handler);
+    void register_handler(std::string_view command, message_handler_fn handler);
 
     /// Register a typed handler for a specific message type
     /// The message type must have a static 'command' string member
     template <typename Message>
     void register_handler(typed_message_handler_fn<Message> handler) {
-        handlers_[Message::command] = make_handler<Message>(std::move(handler));
+        handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(std::move(handler)));
     }
 
     /// Register a typed handler from a function pointer
     template <typename Message>
     void register_handler(::asio::awaitable<message_result>(*handler)(peer_session&, Message const&)) {
-        handlers_[Message::command] = make_handler<Message>(handler);
+        handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(handler));
     }
 
     /// Register a default handler for unhandled messages
@@ -139,7 +140,7 @@ public:
     /// For requests whose answer waits on the peer's data queue.
     template <typename Message>
     void register_served_handler(typed_message_handler_fn<Message> handler) {
-        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+        served_handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(std::move(handler)));
     }
 
     /// Announces a tip to one peer. `last_announced` is what this peer's

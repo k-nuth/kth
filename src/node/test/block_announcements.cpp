@@ -287,7 +287,7 @@ TEST_CASE("announcements: announcing nothing rings no doorbell", "[announcements
 
 namespace {
 
-network::raw_message wire(std::string const& command, data_chunk payload) {
+network::raw_message wire(std::string_view command, data_chunk payload) {
     network::raw_message raw;
     raw.heading = domain::message::heading(0xdab5bffa, command, uint32_t(payload.size()), 0);
     raw.payload = std::move(payload);

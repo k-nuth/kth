@@ -11,9 +11,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const alert::command = "alert";
-uint32_t const alert::version_minimum = version::level::minimum;
-uint32_t const alert::version_maximum = version::level::maximum;
 
 alert::alert(data_chunk const& payload, data_chunk const& signature)
     : payload_(payload), signature_(signature) {
