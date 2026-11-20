@@ -91,7 +91,7 @@ counterpart.
 | `getbestblockhash` | `kth_chain_sync_block_hash` | `chain_view().tip_hash` |
 | `getblockhash` (connected blocks only: a stored header past the connected tip is out of range) | `kth_chain_sync_block_hash` | `chain_view()` + `headers()` (the connected tip's ancestor) |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
-| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` + `prune_keep_blocks()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
@@ -200,7 +200,12 @@ view, so they always describe the same tip.
   files grow in 128 MiB chunks). Only `blk`/`rev` files with numbered `.dat`
   names count, symlinked ones included. A file that cannot be read is skipped;
   it never turns the whole call into an error.
-- `pruned` is not reported.
+- `pruned` is `true` on a node that removes old block files
+  (`db.prune_keep_blocks` is not zero) and `false` on one that keeps every
+  block. A pruning node also reports `pruneheight`, the lowest height from which
+  it holds every block up to the connected tip. It keeps a number of blocks, not
+  a size on disk, so `automatic_pruning` and `prune_target_size` are not
+  reported.
 
 ## getchaintips
 

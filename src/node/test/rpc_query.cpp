@@ -36,7 +36,7 @@ TEST_CASE("render_blockchain_info serializes the getblockchaininfo fields", "[rp
         R"(","difficulty":1.0,"mediantime":1000,"verificationprogress":1.0,)"
         R"("initialblockdownload":false,)"
         R"("chainwork":"0000000000000000000000000000000000000000000000000000000000001234",)"
-        R"("size_on_disk":4096,"warnings":""})");
+        R"("size_on_disk":4096,"pruned":false,"warnings":""})");
 }
 
 TEST_CASE("render_blockchain_info reports a node still syncing", "[rpc query]") {
@@ -54,7 +54,64 @@ TEST_CASE("render_blockchain_info reports a node still syncing", "[rpc query]") 
                 .initial_block_download = true}) ==
         std::string(R"({"chain":"Regtest","blocks":25,"headers":100,"bestblockhash":")") + zeros +
         R"(","difficulty":2.5,"mediantime":7,"verificationprogress":0.25,)"
-        R"("initialblockdownload":true,"size_on_disk":0,"warnings":""})");
+        R"("initialblockdownload":true,"size_on_disk":0,"pruned":false,"warnings":""})");
+}
+
+TEST_CASE("render_blockchain_info reports pruning and the lowest block held", "[rpc query]") {
+    blockchain_info info{
+        .chain = "Regtest",
+        .blocks = 1000u,
+        .headers = 1000u,
+        .best_block_hash = null_hash,
+        .difficulty = 1.0,
+        .median_time = 7u,
+        .chain_work = std::nullopt,
+        .size_on_disk = 0u,
+        .initial_block_download = false};
+    info.pruned = true;
+    info.prune_height = 600u;
+    auto const text = render_blockchain_info(info);
+    REQUIRE(text.find(R"("size_on_disk":0,"pruned":true,"pruneheight":600,"warnings":"")") !=
+        std::string::npos);
+    // A pruning node whose tip the index cannot name gives no height rather
+    // than a made-up one.
+    info.prune_height = std::nullopt;
+    REQUIRE(render_blockchain_info(info).find(R"("size_on_disk":0,"pruned":true,"warnings":"")") !=
+        std::string::npos);
+}
+
+TEST_CASE("lowest_stored_height walks down while the parent's block is held", "[rpc query]") {
+    // Heights 0 to 9; blocks are given their data as each case needs.
+    blockchain::header_index index(64);
+    std::vector<blockchain::header_index::index_t> at;
+    hash_digest parent = null_hash;
+    for (uint32_t height = 0; height < 10; ++height) {
+        domain::chain::header const header{1, parent, null_hash, height * 600, 0x207fffff, height};
+        auto const added = index.add(domain::chain::hash(header), header);
+        REQUIRE(added.inserted);
+        at.push_back(added.index);
+        parent = index.get_hash(added.index);
+    }
+    auto const hold = [&](uint32_t from, uint32_t to) {
+        for (auto height = from; height <= to; ++height) {
+            index.set_block_pos(at[height], 0, 8 + height);
+        }
+    };
+
+    // Only the tip held: its own height, as for a node that just pruned all below.
+    hold(9, 9);
+    REQUIRE(lowest_stored_height(index, at[9]) == 9u);
+    // Heights 4 to 9 held: 4.
+    hold(4, 8);
+    REQUIRE(lowest_stored_height(index, at[9]) == 4u);
+    // A gap at 3 stops the walk even with 0 to 2 held.
+    hold(0, 2);
+    REQUIRE(lowest_stored_height(index, at[9]) == 4u);
+    REQUIRE(lowest_stored_height(index, at[2]) == 0u);
+    // Every block held: genesis.
+    hold(3, 3);
+    REQUIRE(lowest_stored_height(index, at[9]) == 0u);
+    REQUIRE(lowest_stored_height(index, at[0]) == 0u);
 }
 
 TEST_CASE("transaction_to_hex round-trips through the wire format", "[rpc query]") {

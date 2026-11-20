@@ -744,8 +744,44 @@ TEST_CASE("getblockchaininfo dispatch reports the connected tip from one view", 
     // Regtest genesis has proof 2, rendered as a padded 256-bit integer.
     REQUIRE(text == std::string(63, '0') + "2");
     REQUIRE(result["size_on_disk"].get_uint64().get(number) == simdjson::SUCCESS);
+    // The fixture keeps every block.
+    REQUIRE(result["pruned"].get_bool().get(flag) == simdjson::SUCCESS);
+    REQUIRE_FALSE(flag);
+    REQUIRE(raw.find("pruneheight") == std::string::npos);
     REQUIRE(result["warnings"].get_string().get(text) == simdjson::SUCCESS);
     REQUIRE(text.empty());
+}
+
+TEST_CASE("getblockchaininfo dispatch reports a pruning node and the lowest block it holds", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_blockchain_info_pruned");
+    REQUIRE(fixture.created());
+    fixture.db_settings().prune_keep_blocks = database::settings::minimum_prune_keep_blocks;
+    REQUIRE(fixture.start());
+    REQUIRE(fixture.chain().prune_keep_blocks() == database::settings::minimum_prune_keep_blocks);
+
+    // Three blocks connected, so far fewer than it keeps: nothing removed yet.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 3; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    // Every connected block is held from height 1 up; genesis too when its
+    // block is in the files.
+    auto const& index = fixture.chain().headers();
+    auto const genesis = index.find(domain::chain::block::genesis_regtest().hash());
+    REQUIRE(genesis != blockchain::header_index::null_index);
+    auto const lowest = index.has_block_data(genesis) ? 0 : 1;
+    auto const raw = blockchain_info(fixture.chain());
+    CAPTURE(raw);
+    REQUIRE(raw.find(fmt::format(R"("pruned":true,"pruneheight":{},"warnings")", lowest)) !=
+        std::string::npos);
 }
 
 TEST_CASE("getblockchaininfo dispatch leaves initial download once synchronized", "[rpc dispatch]") {

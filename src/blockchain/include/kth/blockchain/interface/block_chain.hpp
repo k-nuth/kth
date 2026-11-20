@@ -957,6 +957,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     std::filesystem::path data_dir() const;
 
+    /// How many blocks below the tip keep their block and undo data
+    /// (`db.prune_keep_blocks`): zero on a node that keeps every block.
+    [[nodiscard]]
+    uint32_t prune_keep_blocks() const;
+
     /// Access the header index (for headers-first sync).
     /// True only while the node is hydrating: from the start of block_chain::
     /// start until the header index has been materialised.

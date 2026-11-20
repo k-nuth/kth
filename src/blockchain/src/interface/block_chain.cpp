@@ -2833,6 +2833,10 @@ std::filesystem::path block_chain::data_dir() const {
     return database_.internal_db_dir.parent_path();
 }
 
+uint32_t block_chain::prune_keep_blocks() const {
+    return prune_keep_blocks_;
+}
+
 
 // =============================================================================
 // DATABASE READERS (Low-level, NOT thread safe)

@@ -657,7 +657,8 @@ get_network_hash_ps(method_context& ctx, request const& req) {
 }
 
 // getblockchaininfo -> chain, heights, best block hash, difficulty, median time
-// past, sync state, chain work, and the size of the block and undo files.
+// past, sync state, chain work, the size of the block and undo files, and
+// whether the node prunes them.
 // C-API counterpart: kth_chain_sync_mining_info (+ sync_block_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_blockchain_info(method_context& ctx, request const& /*req*/) {
@@ -676,6 +677,18 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 
     auto const chain_work = ctx.chain.headers().total_chain_work(view->tip_hash);
 
+    // A pruning node (db.prune_keep_blocks not zero) removes the block files
+    // below the blocks it keeps, and tells from which height it still holds
+    // every block up to the connected tip.
+    auto const pruned = ctx.chain.prune_keep_blocks() != 0;
+    std::optional<size_t> prune_height;
+    if (pruned) {
+        auto const& index = ctx.chain.headers();
+        auto const tip = index.find(view->tip_hash);
+        if (tip != blockchain::header_index::null_index) {
+            prune_height = lowest_stored_height(index, tip);
+        }
+    }
 
 #if defined(KTH_CURRENCY_BCH)
     auto const progress = progress_for(ctx.chain, view->tip_hash, view->connected_tip_height, view);
@@ -696,6 +709,8 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress
 #endif
+        , .pruned = pruned
+        , .prune_height = prune_height
     });
 }
 

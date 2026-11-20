@@ -54,11 +54,20 @@ struct blockchain_info {
     uint64_t size_on_disk;          // block and undo files
     bool initial_block_download;         // the node is not yet synchronized
     std::optional<chain_progress> progress = std::nullopt;
+    bool pruned = false;                 // old block files are removed
+    std::optional<size_t> prune_height = std::nullopt; // lowest_stored_height, when pruned
 };
 
 // Serialize the getblockchaininfo result object. verificationprogress is the
-// connected tip's share of the header chain, by height.
+// connected tip's share of the header chain, by height. `pruneheight` is there
+// only for a pruning node.
 std::string render_blockchain_info(blockchain_info const& info);
+
+// The lowest height from which `index` holds the data of every block up to
+// `tip`, walking down while the parent's data is there: a pruning node's
+// pruneheight. The tip's own height when its parent has none.
+size_t lowest_stored_height(blockchain::header_index const& index,
+                            blockchain::header_index::index_t tip);
 
 // A JSON array of display-order hashes (getrawmempool, getmempoolancestors,
 // getmempooldescendants).
