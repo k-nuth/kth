@@ -222,9 +222,6 @@ set(kth_sources_just_legacy
         src/message/block.cpp
         src/message/block_transactions.cpp
         src/message/compact_block.cpp
-        src/message/compact_filter.cpp
-        src/message/compact_filter_checkpoint.cpp
-        src/message/compact_filter_headers.cpp
         src/message/double_spend_proof.cpp
         src/message/fee_filter.cpp
         src/message/filter_add.cpp
@@ -233,9 +230,6 @@ set(kth_sources_just_legacy
         src/message/get_address.cpp
         src/message/get_block_transactions.cpp
 
-        src/message/get_compact_filter_checkpoint.cpp
-        src/message/get_compact_filter_headers.cpp
-        src/message/get_compact_filters.cpp
         src/message/get_data.cpp
         src/message/get_headers.cpp
         src/message/header.cpp
@@ -351,12 +345,6 @@ set(kth_headers
     include/kth/domain/message/transaction.hpp
     include/kth/domain/message/reject.hpp
     include/kth/domain/message/compact_block.hpp
-    include/kth/domain/message/compact_filter.hpp
-    include/kth/domain/message/compact_filter_checkpoint.hpp
-    include/kth/domain/message/compact_filter_headers.hpp
-    include/kth/domain/message/get_compact_filter_checkpoint.hpp
-    include/kth/domain/message/get_compact_filter_headers.hpp
-    include/kth/domain/message/get_compact_filters.hpp
     include/kth/domain/message/get_block_transactions.hpp
     include/kth/domain/message/alert.hpp
     include/kth/domain/message/filter_add.hpp
@@ -478,7 +466,19 @@ if (KTH_WITH_NEUTRINO)
         src/chain/compact_filter.cpp
         src/chain/golomb_set.cpp
         include/kth/domain/chain/compact_filter.hpp
-        include/kth/domain/chain/golomb_set.hpp)
+        include/kth/domain/chain/golomb_set.hpp
+        src/message/compact_filter.cpp
+        src/message/compact_filter_checkpoint.cpp
+        src/message/compact_filter_headers.cpp
+        src/message/get_compact_filter_checkpoint.cpp
+        src/message/get_compact_filter_headers.cpp
+        src/message/get_compact_filters.cpp
+        include/kth/domain/message/compact_filter.hpp
+        include/kth/domain/message/compact_filter_checkpoint.hpp
+        include/kth/domain/message/compact_filter_headers.hpp
+        include/kth/domain/message/get_compact_filter_checkpoint.hpp
+        include/kth/domain/message/get_compact_filter_headers.hpp
+        include/kth/domain/message/get_compact_filters.hpp)
 endif()
 
 
@@ -641,7 +641,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/message/block.cpp
         test/message/block_transactions.cpp
         test/message/compact_block.cpp
-        test/message/compact_filters.cpp
         test/message/double_spend_proof.cpp
         test/message/fee_filter.cpp
         test/message/filter_add.cpp
@@ -718,7 +717,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if (KTH_WITH_NEUTRINO)
     add_executable(kth_domain_neutrino_test
         test/chain/compact_filter.cpp
-        test/chain/golomb_set.cpp)
+        test/chain/golomb_set.cpp
+        test/message/compact_filters.cpp)
     target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)

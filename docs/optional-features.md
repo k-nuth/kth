@@ -23,7 +23,7 @@ pull requests add to it.
 
 | Option | Feature | Tests | Workflow |
 |---|---|---|---|
-| `neutrino` | Compact block filters for light wallets (Neutrino, BIP157/158): the Golomb-coded set and the regular filter of a block | `kth_domain_neutrino_test` | `neutrino.yml` |
+| `neutrino` | Compact block filters for light wallets (Neutrino, BIP157/158): the Golomb-coded set, the regular filter of a block and the six filter messages (`getcfilters`, `cfilter`, `getcfheaders`, `cfheaders`, `getcfcheckpt`, `cfcheckpt`) | `kth_domain_neutrino_test` | `neutrino.yml` |
 
 ## Building with a feature on
 

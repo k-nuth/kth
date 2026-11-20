@@ -5,6 +5,10 @@
 #ifndef KTH_DOMAIN_MESSAGE_COMPACT_FILTER_CHECKPOINT_HPP
 #define KTH_DOMAIN_MESSAGE_COMPACT_FILTER_CHECKPOINT_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>

@@ -27,6 +27,12 @@ on:
       - src/domain/src/chain/golomb_set.cpp
       - src/domain/test/chain/compact_filter.cpp
       - src/domain/test/chain/golomb_set.cpp
+      - src/domain/include/kth/domain/message/*compact_filter*.hpp
+      - src/domain/src/message/*compact_filter*.cpp
+      - src/domain/include/kth/domain/message/heading.hpp
+      - src/domain/include/kth/domain/message/messages.hpp
+      - src/domain/src/message/heading.cpp
+      - src/domain/test/message/compact_filters.cpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_reader.hpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_writer.hpp
       - conanfile.py

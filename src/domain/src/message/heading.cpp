@@ -100,9 +100,11 @@ message_type heading::type() const {
     if (command_ == block_transactions::command) return message_type::block_transactions;
     if (command_ == block::command) return message_type::block;
     if (command_ == compact_block::command) return message_type::compact_block;
+#if defined(KTH_WITH_NEUTRINO)
     if (command_ == compact_filter::command) return message_type::compact_filter;
     if (command_ == compact_filter_checkpoint::command) return message_type::compact_filter_checkpoint;
     if (command_ == compact_filter_headers::command) return message_type::compact_filter_headers;
+#endif
     if (command_ == double_spend_proof::command) return message_type::double_spend_proof;
     if (command_ == fee_filter::command) return message_type::fee_filter;
     if (command_ == filter_add::command) return message_type::filter_add;
@@ -111,9 +113,11 @@ message_type heading::type() const {
     if (command_ == get_address::command) return message_type::get_address;
     if (command_ == get_block_transactions::command) return message_type::get_block_transactions;
     if (command_ == get_blocks::command) return message_type::get_blocks;
+#if defined(KTH_WITH_NEUTRINO)
     if (command_ == get_compact_filter_checkpoint::command) return message_type::get_compact_filter_checkpoint;
     if (command_ == get_compact_filter_headers::command) return message_type::get_compact_filter_headers;
     if (command_ == get_compact_filters::command) return message_type::get_compact_filters;
+#endif
     if (command_ == get_data::command) return message_type::get_data;
     if (command_ == get_headers::command) return message_type::get_headers;
     if (command_ == headers::command) return message_type::headers;
