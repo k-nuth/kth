@@ -164,9 +164,9 @@ struct supervisor_fixture {
         REQUIRE(chain.start());
     }
 
-    void start() {
+    void start(std::chrono::milliseconds timeout_tick = std::chrono::seconds(10)) {
         ::asio::co_spawn(ctx,
-            block_download_supervisor(input, output, chain.organizer(), nullptr, launcher.make()),
+            block_download_supervisor(input, output, chain.organizer(), nullptr, launcher.make(), timeout_tick),
             ::asio::detached);
         running = true;
         pump();
@@ -182,6 +182,19 @@ struct supervisor_fixture {
     void send(block_download_input msg) {
         REQUIRE(input.try_send(std::move(msg)));
         pump();
+    }
+
+    void run_for(std::chrono::milliseconds duration) {
+        ctx.restart();
+        ctx.run_for(duration);
+    }
+
+    void wait_for_launches(size_t count) {
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (launcher.launches.size() < count && std::chrono::steady_clock::now() < deadline) {
+            run_for(std::chrono::milliseconds(10));
+        }
+        REQUIRE(launcher.launches.size() == count);
     }
 
     // Nothing may outlive a case in this binary. Checked rather than assumed:
@@ -357,10 +370,10 @@ TEST_CASE("5: a peer withdrawn before its old worker reports is not started agai
     CHECK(p2_after);         // still known: handed to the current range
 }
 
-TEST_CASE("6: a worker of the current range releases its slot without a restart",
+TEST_CASE("6: a worker of the current range releases its slot without an immediate restart",
           "[node][download_supervisor]") {
-    // No respawn loop: the message carries no reason, so completion, a stop and a
-    // failure are indistinguishable, and restarting on all of them would spin.
+    // An end report releases the slot. Recovery waits for the tick rather than
+    // restarting from the report, which could make a failing worker spin.
     watchdog guard(std::chrono::seconds(60), "a current-range report");
     supervisor_fixture f;
 
@@ -374,10 +387,118 @@ TEST_CASE("6: a worker of the current range releases its slot without a restart"
     f.pump();
     CHECK(f.launcher.launches.size() == 1u);   // released, not restarted
 
-    // The slot is free, so the next range picks the peer up — which is where a
-    // restart belongs.
+    // The slot is free, so a new range can still pick the peer up immediately.
     f.send(block_range_request{201, 300});
     CHECK(f.launcher.launches.size() == 2u);
+}
+
+TEST_CASE("the tick replaces workers only when an unfinished range has none left",
+          "[node][download_supervisor]") {
+    watchdog guard(std::chrono::seconds(60), "tick recovery of an unfinished range");
+    supervisor_fixture f;
+    auto const tick = std::chrono::milliseconds(100);
+    auto const p1 = make_idle_peer(f.ctx, 101);
+    auto const p2 = make_idle_peer(f.ctx, 102);
+    f.start(tick);
+    f.send(peers_updated{{p1, p2}});
+    f.send(block_range_request{100, 131});
+    REQUIRE(f.launcher.launches.size() == 2u);
+
+    auto const coordinator = f.launcher.launches[0].coordinator;
+    auto const epoch = f.launcher.launches[0].epoch;
+    auto const first_task = f.launcher.launches[0].task_id;
+    auto const second_task = f.launcher.launches[1].task_id;
+    REQUIRE(f.launcher.launches[1].coordinator == coordinator);
+    REQUIRE(f.launcher.launches[1].epoch == epoch);
+    auto const first_chunk = coordinator->claim_chunk();
+    auto const second_chunk = coordinator->claim_chunk();
+    REQUIRE(first_chunk);
+    REQUIRE(second_chunk);
+    REQUIRE(*first_chunk != *second_chunk);
+    REQUIRE(coordinator->get_progress().chunks_in_progress == 2u);
+
+    auto fail_chunks = [&] {
+        coordinator->chunk_failed(*first_chunk);
+        coordinator->chunk_failed(*second_chunk);
+        REQUIRE(coordinator->get_progress().chunks_in_progress == 0u);
+        REQUIRE_FALSE(coordinator->is_complete());
+    };
+    auto end_workers = [&] {
+        f.launcher.end(0);
+        f.launcher.end(1);
+        f.pump();
+    };
+    auto check_no_restart = [&] {
+        f.run_for(tick * 3);
+        CHECK_FALSE(f.ctx.stopped());
+        CHECK(f.launcher.launches.size() == 2u);
+    };
+
+    SECTION("failed chunks get workers for the same coordinator and epoch without another input") {
+        fail_chunks();
+        end_workers();
+        f.wait_for_launches(4);
+        CHECK_FALSE(f.ctx.stopped());
+
+        std::vector<uint64_t> replacements;
+        for (size_t i = 2; i < f.launcher.launches.size(); ++i) {
+            auto const& replacement = f.launcher.launches[i];
+            CHECK(replacement.coordinator == coordinator);
+            CHECK(replacement.epoch == epoch);
+            CHECK(replacement.task_id != first_task);
+            CHECK(replacement.task_id != second_task);
+            replacements.push_back(replacement.nonce);
+        }
+        std::ranges::sort(replacements);
+        auto const expected = std::vector<uint64_t>{p1->nonce(), p2->nonce()};
+        CHECK(replacements == expected);
+        CHECK(f.launcher.launches[2].task_id != f.launcher.launches[3].task_id);
+
+        // Further ticks leave the replacements alone while they still own slots.
+        f.run_for(tick * 3);
+        CHECK_FALSE(f.ctx.stopped());
+        CHECK(f.launcher.launches.size() == 4u);
+    }
+
+    SECTION("one live worker prevents refilling the other peer's slot") {
+        coordinator->chunk_failed(*first_chunk);
+        f.launcher.end(0);
+        f.pump();
+        check_no_restart();
+    }
+
+    SECTION("a completed range is not restarted") {
+        coordinator->chunk_completed(*first_chunk);
+        coordinator->chunk_completed(*second_chunk);
+        REQUIRE(coordinator->is_complete());
+        end_workers();
+        check_no_restart();
+    }
+
+    SECTION("a stopped range is not restarted") {
+        fail_chunks();
+        coordinator->stop();
+        REQUIRE(coordinator->is_stopped());
+        end_workers();
+        check_no_restart();
+    }
+
+    SECTION("peers withdrawn before their workers report are not restarted") {
+        fail_chunks();
+        f.send(peers_updated{{}});
+        end_workers();
+        check_no_restart();
+    }
+
+    SECTION("stopped peers still in the snapshot are not restarted") {
+        fail_chunks();
+        p1->stop();
+        p2->stop();
+        REQUIRE(p1->stopped());
+        REQUIRE(p2->stopped());
+        end_workers();
+        check_no_restart();
+    }
 }
 
 TEST_CASE("7: a report queued from inside the launch travels the real path",
