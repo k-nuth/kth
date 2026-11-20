@@ -4,6 +4,7 @@
 
 #include <kth/node/parser.hpp>
 
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -236,6 +237,20 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--db.nocow",            cfg.database.nocow,
         "On btrfs, create the UTXO and LMDB stores without copy-on-write (default true).");
     app.add_option("--db.cache_capacity",   cfg.database.cache_capacity);
+    app.add_option("--db.prune_keep_blocks", cfg.database.prune_keep_blocks,
+        "Keep the block and undo data of this many blocks below the tip and remove older "
+        "block files. 0 keeps every block (default); otherwise at least 288.")
+        ->check(CLI::Validator([](std::string& text) -> std::string {
+            uint32_t value = 0;
+            auto const [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (ec != std::errc{} || end != text.data() + text.size()) {
+                return "not a number of blocks";
+            }
+            if (value != 0 && value < kth::database::settings::minimum_prune_keep_blocks) {
+                return "a pruning node keeps at least 288 blocks";
+            }
+            return {};
+        }, "0 or >= 288"));
 
     // [chain]
     app.add_option("--chain.cores",                cfg.chain.cores);
@@ -247,8 +262,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--chain.fix_checkpoints", cfg.chain.fix_checkpoints);
     app.add_option("--chain.full_validation", cfg.chain.full_validation);
     app.add_option("--chain.validation_batch_blocks", cfg.chain.validation_batch_blocks,
-        "Fully validated blocks connected per batch, 1..1000 (default 500; about 1 GB of memory per 100).")
-        ->check(CLI::Range(1u, 1000u));
+        "The most fully validated blocks connected per batch, 1..20000 (default 20000).")
+        ->check(CLI::Range(1u, 20000u));
+    app.add_option("--chain.validation_batch_bytes", cfg.chain.validation_batch_bytes,
+        "The most bytes of blocks in a fully validated batch, its first block aside (default 512 MiB; about ten times that in memory at peak).")
+        ->check(CLI::Range(uint64_t{1}, uint64_t{1} << 40));
 
     // [fork]
     app.add_option("--fork.easy_blocks", cfg.chain.easy_blocks);

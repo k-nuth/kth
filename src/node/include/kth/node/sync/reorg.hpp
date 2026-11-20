@@ -138,9 +138,15 @@ using header_persister = std::function<code(domain::chain::header::list const&, 
 // The sync coordinator borrows these pipeline endpoints for the switch. The
 // cursor reset is published while the barrier still holds every writer parked;
 // only storage publishes it during normal operation.
+//
+// `utxo_wake` is the UTXO builder's wake channel. The builder may be waiting
+// with nothing to build, and it parks at the barrier only once it has read the
+// pause; it leaves the barrier only once it has read that the pause is gone.
+// Both changes ring it.
 struct reorg_pipeline {
     block_storage_input_channel* storage_input;
     std::atomic<uint32_t>* contiguous_height;
+    utxo_build_wake_channel* utxo_wake;
 };
 
 // A running storage participant must be told when pause is raised: checking a

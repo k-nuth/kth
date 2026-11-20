@@ -224,6 +224,21 @@ void peer_session::stop(code const& ec) {
 
     spdlog::debug("[peer_session] stop() checkpoint 1: entering, ec={}", ec.value());
 
+    // The reason is published before the flag, by every caller: whoever sees
+    // the session stopped then also sees what it was stopped with. The first
+    // reason offered is the one kept, whichever caller goes on to do the
+    // stopping below. A code that is not one of Knuth's would keep only its
+    // number, which means nothing without its category, so it is kept as
+    // unknown; a stop given no error, of whatever category, is an ordinary
+    // stop. The number is kept as a number, so one of Knuth's codes comes
+    // back exactly as it was given.
+    auto const ours = ec.category() == error::make_error_code(error::success).category();
+    int const reason = ! ec ? int(error::channel_stopped)
+        : ours ? ec.value() : int(error::unknown);
+    int running = error::success;
+    stop_reason_.compare_exchange_strong(running, reason,
+        std::memory_order_release, std::memory_order_relaxed);
+
     if (stopped_.exchange(true)) {
         spdlog::debug("[peer_session] stop() checkpoint 1b: already stopped, returning");
         return;  // Already stopped
@@ -327,6 +342,15 @@ void peer_session::drain_response_channels() {
 
 bool peer_session::stopped() const {
     return stopped_.load();
+}
+
+code peer_session::stop_reason() const {
+    // Not yet stopped is success, whatever a stop() in progress has offered.
+    if ( ! stopped()) {
+        return error::success;
+    }
+    return code{stop_reason_.load(std::memory_order_acquire),
+        error::make_error_code(error::success).category()};
 }
 
 // =============================================================================

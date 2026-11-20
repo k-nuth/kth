@@ -356,6 +356,10 @@ void header_index::add_status(index_t idx, header_status flags) {
     statuses_[idx] |= uint32_t(flags);
 }
 
+void header_index::remove_status(index_t idx, header_status flags) {
+    statuses_[idx] &= ~uint32_t(flags);
+}
+
 bool header_index::has_status(index_t idx, header_status flags) const {
     return (statuses_[idx] & uint32_t(flags)) == uint32_t(flags);
 }
