@@ -163,20 +163,22 @@ TEST_CASE("cfilter carries one block's filter bytes", "[compact filters][message
     check_boundaries(wide);
 }
 
-TEST_CASE("cfilter refuses a filter beyond the size limit before reading it", "[compact filters][message]") {
+TEST_CASE("cfilter takes the filter of a full block", "[compact filters][message]") {
+    // A 32 MB block of short distinct scripts has a filter of about 7 MB.
     auto const block = counting(0x80);
-    // The limit itself is taken.
-    message::compact_filter largest{0, block, data_chunk(message::max_compact_filter_size, 0x11)};
-    auto const largest_raw = to_data_chunk(largest, wire_version);
-    auto const parsed = from_data_chunk<message::compact_filter>(largest_raw, wire_version);
+    auto const filter_size = size_t(8) * 1024 * 1024;
+    message::compact_filter const large{0, block, data_chunk(filter_size, 0x11)};
+    auto const raw = to_data_chunk(large, wire_version);
+    auto const parsed = from_data_chunk<message::compact_filter>(raw, wire_version);
     REQUIRE(parsed);
-    REQUIRE(parsed->filter.size() == message::max_compact_filter_size);
+    REQUIRE(parsed->filter.size() == filter_size);
+}
 
-    // One byte more is refused on its length alone: the bytes are not there.
+TEST_CASE("cfilter refuses a length its payload does not hold", "[compact filters][message]") {
+    auto const block = counting(0x80);
+    // Four mebibytes and one byte are claimed, and none of them is there.
     auto const claim = bytes("00" + hex_of(block) + "fe" "01004000");
-    auto const refused = from_data_chunk<message::compact_filter>(claim, wire_version);
-    REQUIRE( ! refused);
-    REQUIRE(refused.error() == error::invalid_size);
+    REQUIRE( ! from_data_chunk<message::compact_filter>(claim, wire_version));
     // So is a length that would wrap a 32-bit size.
     auto const huge = bytes("00" + hex_of(block) + "ff" "ffffffffffffffff");
     REQUIRE( ! from_data_chunk<message::compact_filter>(huge, wire_version));

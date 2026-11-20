@@ -30,9 +30,6 @@ namespace kth::domain::message {
 // script that is not empty.
 inline constexpr uint8_t regular_compact_filter = 0;
 
-// The largest filter a `cfilter` may carry.
-inline constexpr size_t max_compact_filter_size = 4 * 1024 * 1024;
-
 // `cfilter`: the filter of one block, as its Golomb-coded set goes on the
 // wire (the item count, then the bit stream).
 struct KD_API compact_filter {
