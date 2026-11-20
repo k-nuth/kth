@@ -64,8 +64,15 @@ std::string render_blockchain_info(blockchain_info const& info);
 // getmempooldescendants).
 std::string render_hash_list(hash_list const& hashes);
 
-// getmempoolinfo / getmempoolentry result objects.
-std::string render_mempool_info(blockchain::mempool_totals const& totals);
+// The relay floor: `byte_fee_satoshis` per byte as satoshis per 1000 bytes,
+// rounded to whole satoshis.
+uint64_t relay_floor_per_kb(float byte_fee_satoshis);
+
+// getmempoolinfo / getmempoolentry result objects. getmempoolinfo's
+// mempoolminfee is the mempool's `minimum_fee_per_kb`, never below
+// `relay_floor_per_kb`, which is its minrelaytxfee; both in BCH per kB.
+std::string render_mempool_info(blockchain::mempool_totals const& totals,
+                                uint64_t minimum_fee_per_kb, uint64_t relay_floor);
 std::string render_mempool_entry(blockchain::mempool_entry_info const& entry,
                                  hash_list const& depends, hash_list const& spentby);
 

@@ -1305,11 +1305,17 @@ get_raw_mempool(method_context& ctx, request const& req) {
     co_return render_raw_mempool_verbose(listings);
 }
 
-// getmempoolinfo -> mempool size, byte total, and fee total.
+// getmempoolinfo -> mempool size, byte total and fee total, and in BCH per kB
+// the lowest fee rate the mempool accepts now (mempoolminfee) and the relay
+// floor (minrelaytxfee). The floor is the size part of the node's transaction
+// price, chain.byte_fee_satoshis per byte. The mempool asks more only once it
+// has been full, and mempoolminfee is never below the floor.
 // C-API counterpart: kth_chain_get_mempool_info.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_mempool_info(method_context& ctx, request const& /*req*/) {
-    co_return render_mempool_info(ctx.chain.get_mempool_info());
+    auto const minimum = co_await ctx.chain.mempool_minimum_fee();
+    co_return render_mempool_info(ctx.chain.get_mempool_info(), minimum,
+        relay_floor_per_kb(ctx.chain.chain_settings().byte_fee_satoshis));
 }
 
 // getmempoolentry <txid> -> the entry's fee/size/time plus depends/spentby.

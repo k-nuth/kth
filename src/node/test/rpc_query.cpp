@@ -79,8 +79,32 @@ TEST_CASE("render_hash_list serializes a JSON array of display hashes", "[rpc qu
 
 TEST_CASE("render_mempool_info serializes the getmempoolinfo fields", "[rpc query]") {
     blockchain::mempool_totals totals{/*size*/ 5u, /*bytes*/ 100u, /*total_fee*/ 200u};
-    REQUIRE(render_mempool_info(totals) ==
-        R"({"size":5,"bytes":100,"total_fee":200})");
+    // A pool that has not been full asks the relay floor.
+    REQUIRE(render_mempool_info(totals, 0u, 1000u) ==
+        R"({"size":5,"bytes":100,"total_fee":200,"mempoolminfee":0.00001,"minrelaytxfee":0.00001})");
+}
+
+TEST_CASE("render_mempool_info: mempoolminfee is the pool's minimum, never below the floor", "[rpc query]") {
+    blockchain::mempool_totals totals{/*size*/ 0u, /*bytes*/ 0u, /*total_fee*/ 0u};
+    // Raised after an eviction.
+    REQUIRE(render_mempool_info(totals, 5432u, 1000u) ==
+        R"({"size":0,"bytes":0,"total_fee":0,"mempoolminfee":0.00005432,"minrelaytxfee":0.00001})");
+    // Decayed below the floor: the floor.
+    REQUIRE(render_mempool_info(totals, 999u, 1000u) ==
+        R"({"size":0,"bytes":0,"total_fee":0,"mempoolminfee":0.00001,"minrelaytxfee":0.00001})");
+    // A node that asks no fee.
+    REQUIRE(render_mempool_info(totals, 0u, 0u) ==
+        R"({"size":0,"bytes":0,"total_fee":0,"mempoolminfee":0,"minrelaytxfee":0})");
+}
+
+TEST_CASE("relay_floor_per_kb rounds the price per byte to whole satoshis per kB", "[rpc query]") {
+    CHECK(relay_floor_per_kb(1.0f) == 1000u);
+    CHECK(relay_floor_per_kb(2.5f) == 2500u);
+    CHECK(relay_floor_per_kb(0.0f) == 0u);
+    CHECK(relay_floor_per_kb(0.0004f) == 0u);
+    CHECK(relay_floor_per_kb(0.0006f) == 1u);
+    // A negative price asks nothing.
+    CHECK(relay_floor_per_kb(-1.0f) == 0u);
 }
 
 TEST_CASE("render_mempool_entry serializes fields plus depends/spentby", "[rpc query]") {

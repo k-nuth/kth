@@ -107,7 +107,7 @@ counterpart.
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
 
 | `getrawmempool` (`verbose=true`: entries keyed by txid) | `kth_chain_get_mempool_txids` (+ `kth_chain_get_mempool_entry`) | `get_mempool_txids()` (+ `get_mempool_entry()`) |
-| `getmempoolinfo` | `kth_chain_get_mempool_info` | `get_mempool_info()` |
+| `getmempoolinfo` | `kth_chain_get_mempool_info` (+ `kth_blockchain_settings.byte_fee_satoshis`) | `get_mempool_info()` + `mempool_minimum_fee()` + `chain_settings().byte_fee_satoshis` |
 | `estimatefee` | `kth_blockchain_settings.byte_fee_satoshis` | `chain_settings().byte_fee_satoshis` |
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
@@ -254,6 +254,19 @@ an empty array is a `-32602` error.
 It reads the steady clock, so changing the system clock does not change the
 answer. The method takes no arguments: anything other than omitted params or an
 empty array is a `-32602` error.
+
+## getmempoolinfo
+
+`getmempoolinfo` returns the mempool's `size`, `bytes` and `total_fee`
+(satoshis), and in BCH per kB `mempoolminfee`, the lowest fee rate the mempool
+accepts now, and `minrelaytxfee`, the relay floor. The floor is the size part
+of the node's transaction price, `node.byte_fee_satoshis` per byte, rounded to
+whole satoshis per kB (`0.00001` with the default `1`). The mempool asks more
+only once it has been full: the rate it last evicted plus the increment,
+decaying as blocks come. `mempoolminfee` is never below the floor. Electrum
+servers such as Rostrum answer `blockchain.estimatefee` with it. `loaded`,
+`usage`, `maxmempool`, `permitbaremultisig` and `maxdatacarriersize` are not
+reported.
 
 ## Blocks and transactions
 

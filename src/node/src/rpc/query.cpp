@@ -75,8 +75,7 @@ std::string render_blockchain_info(blockchain_info const& info) {
 namespace {
 
 double fee_per_kb(float byte_fee_satoshis) {
-    auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
-    return double(std::max(per_kb, 0LL)) / double(kth::satoshi_per_bitcoin);
+    return double(relay_floor_per_kb(byte_fee_satoshis)) / double(kth::satoshi_per_bitcoin);
 }
 
 void write_hash_array(writer& w, hash_list const& hashes) {
@@ -95,12 +94,20 @@ std::string render_hash_list(hash_list const& hashes) {
     return w.str();
 }
 
-std::string render_mempool_info(blockchain::mempool_totals const& totals) {
+uint64_t relay_floor_per_kb(float byte_fee_satoshis) {
+    auto const per_kb = std::llround(double(byte_fee_satoshis) * double(1_KB));
+    return uint64_t(std::max(per_kb, 0LL));
+}
+
+std::string render_mempool_info(blockchain::mempool_totals const& totals,
+                                uint64_t minimum_fee_per_kb, uint64_t relay_floor) {
     writer w;
     w.begin_object();
     w.field("size", uint64_t(totals.size));
     w.field("bytes", uint64_t(totals.bytes));
     w.field("total_fee", uint64_t(totals.total_fee));
+    w.field_raw("mempoolminfee", satoshi_to_bitcoin(std::max(minimum_fee_per_kb, relay_floor)));
+    w.field_raw("minrelaytxfee", satoshi_to_bitcoin(relay_floor));
     w.end_object();
     return w.str();
 }
