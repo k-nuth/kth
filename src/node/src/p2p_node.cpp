@@ -9,6 +9,7 @@
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
+#include <kth/node/detail/bloom_filters.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/ws_discovery_task.hpp>
@@ -599,6 +600,11 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
             co_return;
         }
         if (selected.index == 3) {
+            // A peer whose version asked for no transactions is announced them
+            // from the admission after it loads or clears a filter (BIP37).
+            if ( ! announcing && tx_announcement_.last && peer.tx_inventory().relay_requested()) {
+                announcing.emplace(peer.is_inbound(), co_await tx_announcement_.last());
+            }
             if (announcing) {
                 auto const now = tx_announcement_schedule::clock::now();
                 announcing->on_admitted(*selected.value<3>(), now, announcement_delay());
@@ -1051,6 +1057,46 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
         }
         peer->tx_inventory().set_fee_filter(parsed->minimum_fee());
         spdlog::trace("[p2p_node] feefilter of {} from [{}]", parsed->minimum_fee(), peer->authority());
+        return true;
+    }
+    if (command == domain::message::filter_load::command || command == domain::message::filter_add::command
+        || command == domain::message::filter_clear::command) {
+        // BIP37 and BIP111, as BCHN takes them. Consumed: nothing else handles
+        // a filter message.
+        using service = domain::message::version::service;
+        if ((settings_.services & service::node_bloom) == 0) {
+            // Not offered: the service bit says so, and a peer that loads or
+            // extends a filter anyway is disconnected, and scored when it is
+            // new enough to read that bit. A `filterclear` still turns the
+            // peer's announcements on (BCHN).
+            if (command == domain::message::filter_clear::command) {
+                peer->tx_inventory().clear_filter();
+                return true;
+            }
+            if (peer->has_permission(network::permission_flags::noban)) {
+                return true;
+            }
+            spdlog::debug("[p2p_node] {} from [{}] with bloom filters not offered; disconnecting",
+                command, peer->authority());
+            if (peer->negotiated_version() >= domain::message::version::level::bip111) {
+                (void)report_misbehavior(peer, 100, "no-bloom-version");
+            }
+            peer->stop(error::channel_stopped);
+            return true;
+        }
+        auto const change = detail::apply_filter_message(peer->tx_inventory(), command, raw.payload,
+            peer->negotiated_version());
+        if (change == detail::filter_change::refused) {
+            spdlog::debug("[p2p_node] {} from [{}] breaks a bloom filter limit", command, peer->authority());
+            // The reasons other Bitcoin Cash nodes give.
+            auto const reason = command == domain::message::filter_add::command
+                ? "invalid-filteradd" : "oversized-bloom-filter";
+            if (report_misbehavior(peer, 100, reason)) {
+                peer->stop(error::channel_stopped);
+            }
+        } else if (change != detail::filter_change::none) {
+            spdlog::trace("[p2p_node] {} from [{}]", command, peer->authority());
+        }
         return true;
     }
     if (command == domain::message::memory_pool::command) {

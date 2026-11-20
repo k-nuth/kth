@@ -8,7 +8,10 @@
 
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/headers.hpp>
+#include <kth/domain/message/merkle_block.hpp>
+#include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/not_found.hpp>
+#include <kth/node/detail/bloom_filters.hpp>
 #include <kth/node/p2p_node.hpp>
 
 #include <spdlog/spdlog.h>
@@ -143,6 +146,34 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
                     co_return message_result::handled;
                 }
                 continue;
+            }
+            missing.push_back(item);
+            continue;
+        }
+        if (item.type() == type_id::filtered_block) {
+            // BIP37: the proof that the transactions matching the peer's
+            // filter are in the block, then those transactions. A peer that
+            // loaded no filter has the one that holds everything, and gets
+            // every transaction of the block (BCHN).
+            if (view && block_request_allowed(chain.headers(), view->tip_hash, item.hash())) {
+                auto const block = co_await chain.fetch_block(item.hash());
+                if (block) {
+                    // The filter as it is now: the peer may have replaced it
+                    // while the block was read.
+                    auto const answer = detail::filter_block(*block->first, peer.tx_inventory().filter());
+                    if (co_await peer.send_data(answer.proof)) {
+                        co_return message_result::handled;
+                    }
+                    auto const& transactions = block->first->transactions();
+                    for (auto const at : answer.matched) {
+                        domain::message::transaction const matched(transactions[at]);
+                        peer.tx_inventory().add_known(matched.hash());
+                        if (co_await peer.send_data(matched)) {
+                            co_return message_result::handled;
+                        }
+                    }
+                    continue;
+                }
             }
             missing.push_back(item);
             continue;
