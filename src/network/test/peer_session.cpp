@@ -8,6 +8,7 @@
 #include <thread>
 
 #include <test_helpers.hpp>
+#include <array>
 
 #include <kth/network.hpp>
 
@@ -2611,6 +2612,154 @@ static data_chunk make_malicious_block_payload_net() {
     p.push_back(0xCF);             // script_len = 0xFFFFFFFFFFFFFFCF
     p.insert(p.end(), 7, 0xFF);
     return p;
+}
+
+TEST_CASE("peer_session reports what it was stopped with", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    CHECK(session->stop_reason() == error::success);
+    session->stop(error::peer_throttling);
+    CHECK(session->stop_reason() == error::peer_throttling);
+
+    // The first stop is the one that took effect.
+    session->stop(error::channel_timeout);
+    CHECK(session->stop_reason() == error::peer_throttling);
+    ctx.poll();
+}
+
+TEST_CASE("peer_session stopped with no error reports an ordinary stop", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    session->stop(error::success);
+    REQUIRE(session->stopped());
+    CHECK(session->stop_reason() == error::channel_stopped);
+    ctx.poll();
+}
+
+TEST_CASE("peer_session stopped with an empty code reports an ordinary stop", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // No error, and not of Knuth's category either.
+    session->stop(code{});
+    REQUIRE(session->stopped());
+    CHECK(session->stop_reason() == error::channel_stopped);
+    ctx.poll();
+}
+
+TEST_CASE("peer_session stopped from several threads reports one reason to all", "[peer_session]") {
+    for (int round = 0; round < 200; ++round) {
+        ::asio::io_context ctx;
+        auto settings = make_test_settings();
+        auto [client, server] = make_connected_sockets(ctx);
+        auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+        // Each thread stops with its own reason and reads what the session
+        // reports once it is stopped: all must read the same, and never
+        // success.
+        std::array<code, 4> seen;
+        std::array<error::error_code_t, 4> const offered{error::peer_throttling,
+            error::channel_timeout, error::bad_stream, error::channel_stopped};
+        // One more thread stops nothing: it waits to see the session stopped
+        // and reads the reason at once, which must already be there.
+        code observed;
+        {
+            std::vector<std::jthread> threads;
+            threads.emplace_back([&] {
+                while ( ! session->stopped()) {
+                    std::this_thread::yield();
+                }
+                observed = session->stop_reason();
+            });
+            for (size_t i = 0; i < seen.size(); ++i) {
+                threads.emplace_back([&, i] {
+                    session->stop(offered[i]);
+                    seen[i] = session->stop_reason();
+                });
+            }
+        }
+        for (auto const& reason : seen) {
+            CHECK(reason != error::success);
+            CHECK(reason == seen[0]);
+        }
+        CHECK(observed == seen[0]);
+        ctx.poll();
+    }
+}
+
+TEST_CASE("peer_session reports a stop code of another category as unknown", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // Its number is that of a Knuth code, which is what must not be reported.
+    code const foreign = ::asio::error::eof;
+    REQUIRE(foreign.value() != 0);
+    session->stop(foreign);
+    CHECK(session->stop_reason() == error::unknown);
+    ctx.poll();
+}
+
+TEST_CASE("request_blocks_batch tells a peer that sent nothing from one that is slow",
+          "[integration]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // Nothing reads the socket and nothing answers: not one block arrives.
+    std::optional<code> outcome;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        std::vector<std::pair<uint32_t, hash_digest>> want{{1u, hash_digest{}}};
+        auto r = co_await request_blocks_batch<sync_mode::fast>(*session, want, 1s);
+        outcome = r ? code(error::success) : r.error();
+    }, ::asio::detached);
+
+    ctx.run_for(5s);
+    REQUIRE(outcome);
+    CHECK(*outcome == error::peer_throttling);
+    session->stop();
+    ctx.poll();
+}
+
+TEST_CASE("request_blocks_batch reports a peer that sent part of a batch as slow",
+          "[integration]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // Two blocks are asked for and one of them arrives.
+    namespace chain = kth::domain::chain;
+    chain::transaction const coinbase(1, 0,
+        {chain::input(chain::output_point(null_hash, chain::point::null_index),
+            chain::script(data_chunk{0x01, 0x01}, false), 0xffffffff)},
+        {chain::output(50, chain::script(data_chunk{0x51}, false), std::nullopt)});
+    chain::block const block(chain::header{1u, null_hash, null_hash, 0u, 0u, 0u}, {coinbase});
+    auto const sent = chain::hash(block.header());
+    REQUIRE(session->block_responses().try_send(raw_message{{}, kth::to_data_chunk(block)}));
+
+    std::optional<code> outcome;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        std::vector<std::pair<uint32_t, hash_digest>> want{{1u, sent}, {2u, hash_digest{0x02}}};
+        auto r = co_await request_blocks_batch<sync_mode::fast>(*session, want, 1s);
+        outcome = r ? code(error::success) : r.error();
+    }, ::asio::detached);
+
+    ctx.run_for(5s);
+    REQUIRE(outcome);
+    CHECK(*outcome == error::channel_timeout);
+    session->stop();
+    ctx.poll();
 }
 
 TEST_CASE("peer_session inbound block is rejected by request_blocks_batch without hanging",

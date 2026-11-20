@@ -100,6 +100,21 @@ void sha256d64_host(std::uint8_t const* in, std::size_t n, std::uint8_t* out) {
     }
 }
 
+void sha256d_messages_host(std::uint8_t const* data, std::size_t data_size, std::uint64_t const* offsets,
+                           std::uint32_t const* sizes, std::size_t n, std::uint8_t* out) {
+    // The kernel reads the bytes as words and may read one word past a
+    // message, so they are copied into words with that much room.
+    std::size_t const words = data_size / 4 + 2;
+    auto buffer = std::make_unique<u32[]>(words);
+    std::memset(buffer.get(), 0, words * sizeof(u32));
+    if (data_size != 0) std::memcpy(buffer.get(), data, data_size);
+    for (std::size_t i = 0; i < n; ++i) {
+        u32 digest[8];
+        gpu_sha256d_message(buffer.get(), offsets[i], sizes[i], digest);
+        std::memcpy(out + 32 * i, digest, 32);
+    }
+}
+
 void merkle_root_host(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated) {
     // The same levels and the same node function as the device kernels.
     auto level = std::make_unique<u32[]>(8 * n);

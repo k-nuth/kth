@@ -5,6 +5,7 @@
 #include <kth/domain/chain/compact_filter.hpp>
 
 #include <algorithm>
+#include <span>
 #include <vector>
 
 namespace kth::domain::chain {
@@ -38,19 +39,24 @@ build_regular_filter(block const& blk) {
     auto const& txs = blk.transactions();
 
     std::vector<data_chunk> items;
-    for (size_t i = 0; i < txs.size(); ++i) {
-        // The input of the coinbase names no output.
-        if (i != 0) {
-            for (auto const& input : txs[i].inputs()) {
-                items.push_back(outpoint_item(input.previous_output()));
-            }
-        }
-        for (auto const& output : txs[i].outputs()) {
+    auto const add_output_scripts = [&items](transaction const& tx) {
+        for (auto const& output : tx.outputs()) {
             auto const& script = output.script().bytes();
             if (script.empty()) {
                 continue;
             }
             items.emplace_back(script.begin(), script.end());
+        }
+    };
+
+    if ( ! txs.empty()) {
+        // The coinbase on its own: its input names no output.
+        add_output_scripts(txs.front());
+        for (auto const& tx : std::span{txs}.subspan(1)) {
+            for (auto const& input : tx.inputs()) {
+                items.push_back(outpoint_item(input.previous_output()));
+            }
+            add_output_scripts(tx);
         }
     }
 

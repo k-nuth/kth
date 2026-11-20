@@ -1066,6 +1066,72 @@ GPU_FN void gpu_sha256d_pair(const GPU_GLOBAL u32* left, const GPU_GLOBAL u32* r
     }
 }
 
+// The big-endian word at byte `at` of a buffer of bytes seen as 32-bit words
+// (little-endian words over the bytes, as a byte buffer reads on these
+// devices). `at` need not be a multiple of four, so the word may straddle two
+// of the buffer's words; the buffer has to be readable one word past it.
+GPU_FN u32 gpu_load_be32(const GPU_GLOBAL u32* data, u64 at) {
+    u64 const word = at >> 2;
+    u32 const shift = (u32)(at & 3) * 8;
+    u32 const lo = data[word];
+    u32 v = lo;
+    if (shift != 0) {
+        u32 const hi = data[word + 1];
+        v = (lo >> shift) | (hi << (32 - shift));
+    }
+    return GPU_BSWAP32(v);
+}
+
+// Double SHA-256 of a message of any length: `len` bytes starting at byte
+// `at` of `data`. The padding is done here, so the bytes come as they are,
+// one message after another, and the host lays nothing out per message.
+//
+// One thread hashes one message, block after block: the blocks of a message
+// chain, so they cannot be spread. A launch therefore lasts as long as its
+// longest message, and a caller with a few long messages among many short
+// ones does better hashing the long ones elsewhere.
+GPU_FN void gpu_sha256d_message(const GPU_GLOBAL u32* data, u64 at, u32 len, GPU_GLOBAL u32* out) {
+    u32 st[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
+    u32 w[16];
+    u32 const whole = len / 64;
+    for (u32 b = 0; b < whole; ++b) {
+        for (int k = 0; k < 16; ++k) w[k] = gpu_load_be32(data, at + (u64)b * 64 + (u64)k * 4);
+        sha256_compress(st, w);
+    }
+    // What is left, then the 0x80 byte, zeros, and the length in bits in the
+    // last two words; a second block when the length does not fit.
+    u64 const tail = at + (u64)whole * 64;
+    u32 const rest = len - whole * 64;
+    u32 const rest_words = rest / 4;
+    u32 const rest_bytes = rest & 3;
+    for (int k = 0; k < 16; ++k) w[k] = 0;
+    for (u32 k = 0; k < rest_words; ++k) w[k] = gpu_load_be32(data, tail + (u64)k * 4);
+    if (rest_bytes != 0) {
+        u32 const last = gpu_load_be32(data, tail + (u64)rest_words * 4);
+        w[rest_words] = (last & (0xFFFFFFFFu << (32 - 8 * rest_bytes))) | (0x80u << (24 - 8 * rest_bytes));
+    } else {
+        w[rest_words] = 0x80000000u;
+    }
+    if (rest >= 56) {
+        sha256_compress(st, w);
+        for (int k = 0; k < 16; ++k) w[k] = 0;
+    }
+    w[14] = len >> 29;
+    w[15] = len << 3;
+    sha256_compress(st, w);
+
+    for (int i = 0; i < 8; ++i) w[i] = st[i];
+    w[8] = 0x80000000u;
+    for (int i = 9; i < 15; ++i) w[i] = 0;
+    w[15] = 32 * 8;
+    u32 st2[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
+    sha256_compress(st2, w);
+    for (int i = 0; i < 8; ++i) {
+        u32 const d = st2[i];
+        out[i] = GPU_BSWAP32(d);
+    }
+}
+
 // Node i of the level above a merkle level of n hashes (there are (n + 1) / 2
 // of them). The last hash of an odd level is paired with itself, which is the
 // Bitcoin rule. Returns 1 when the node hashes two real siblings that are

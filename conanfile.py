@@ -186,6 +186,14 @@ class KthRecipe(KnuthConanFileV2):
             check_min_cppstd(self, "23")
 
     def requirements(self):
+        # The scheduler the batch validation forks on. Not in the browser
+        # node, whose Worker runs validation and creates no threads.
+        if not self.options.browser_node:
+            self.requires("parlaylib/2.4.0#74d1aa86472eef841b57e8ad41311342",
+                          transitive_headers=True, transitive_libs=True)
+        if self.options.mempool_backend == "parlay":
+            self.requires("parlayhash/0.3.0#c3cf1ad464bf64787163eb1a6e59c285",
+                          transitive_headers=True, transitive_libs=True)
         if self.options.with_websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
         # Pin our recipe; UTXO-Z asks for the same revision.
@@ -197,7 +205,7 @@ class KthRecipe(KnuthConanFileV2):
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/2.1.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/2.1.1", transitive_headers=True, transitive_libs=True)
 
         # GMP is required for BigInt support in the native interpreter. Pin our
         # recipe: for WebAssembly it builds 64-bit limbs, where the Conan Center
@@ -661,6 +669,10 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines + sigverify_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
+        if not self.options.browser_node:
+            blockchain_requires.append("parlaylib::parlaylib")
+        if self.options.mempool_backend == "parlay":
+            blockchain_requires.append("parlayhash::parlayhash")
         if self.options.consensus:
             blockchain_requires.append("consensus")
         self.cpp_info.components["blockchain"].requires = blockchain_requires

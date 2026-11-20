@@ -45,9 +45,13 @@ std::vector<std::string> run_build_and_collect_fatals(chain_fixture& fixture,
 
     ::asio::io_context ctx;
     std::atomic<uint32_t> contiguous{start_height};
+    // One wake already queued: a task with nothing to build wakes once, reads
+    // `should_stop` again, and from then on waits.
+    utxo_build_wake_channel wake(ctx.get_executor(), 1);
+    REQUIRE(wake.try_send(std::error_code{}));
 
     ::asio::co_spawn(ctx,
-        utxo_build_task(fixture.chain(), contiguous, start_height,
+        utxo_build_task(fixture.chain(), contiguous, wake, start_height,
             domain::config::network::regtest,
             std::move(should_stop),
             [&fatals](std::string const& reason) { fatals.push_back(reason); }),

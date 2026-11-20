@@ -15,12 +15,14 @@
 #if defined(KTH_ASIO_STANDALONE)
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
+#include <asio/post.hpp>
 #include <asio/as_tuple.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_awaitable.hpp>
 #else
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/as_tuple.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
@@ -72,6 +74,51 @@ TEST_CASE("task_group spawn single task join completes", "[task_group tests]") {
     REQUIRE(status == std::future_status::ready);
     pool.stop();
     pool.join();
+}
+
+TEST_CASE("task_group spawn_on runs the task on the executor given and join waits for it", "[task_group tests]") {
+    threadpool pool("test", 2);
+    threadpool own("own", 1);
+    auto executor = pool.get_executor();
+
+    // The one thread of `own`.
+    std::promise<std::thread::id> own_thread_promise;
+    ::asio::post(own.get_executor(), [&] { own_thread_promise.set_value(std::this_thread::get_id()); });
+    auto const own_thread = own_thread_promise.get_future().get();
+
+    std::promise<void> done;
+    auto future = done.get_future();
+    std::atomic<bool> ran_on_own{false};
+    std::atomic<bool> resumed_on_own{false};
+    std::atomic<bool> joined_after_task{false};
+
+    ::asio::co_spawn(executor, [&]() -> ::asio::awaitable<void> {
+        task_group group("test_group", executor);
+        std::atomic<bool> task_completed{false};
+
+        group.spawn_on(own.get_executor(), "own", [&]() -> ::asio::awaitable<void> {
+            ran_on_own = std::this_thread::get_id() == own_thread;
+            ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
+            timer.expires_after(50ms);
+            co_await timer.async_wait(::asio::use_awaitable);
+            // Still there after a suspension: the task's executor is `own`.
+            resumed_on_own = std::this_thread::get_id() == own_thread;
+            task_completed = true;
+        });
+
+        co_await group.join();
+        joined_after_task = task_completed.load();
+        done.set_value();
+    }, ::asio::detached);
+
+    REQUIRE(future.wait_for(5s) == std::future_status::ready);
+    CHECK(ran_on_own);
+    CHECK(resumed_on_own);
+    CHECK(joined_after_task);
+    pool.stop();
+    pool.join();
+    own.stop();
+    own.join();
 }
 
 TEST_CASE("task_group spawn multiple tasks join waits for all", "[task_group tests]") {
