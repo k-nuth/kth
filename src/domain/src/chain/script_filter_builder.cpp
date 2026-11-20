@@ -107,13 +107,14 @@ build_set(hash_digest const& hash, std::span<script_leaf const> leaves) {
     items.reserve(leaves.size());
     // The leaves are sorted by key first, so the occurrences of a key are
     // together: one item for each key, and none copied to be dropped later.
-    hash_digest const* previous = nullptr;
-    for (auto const& leaf : leaves) {
-        if (previous != nullptr && *previous == leaf.key) {
-            continue;
+    if ( ! leaves.empty()) {
+        items.push_back(to_chunk(leaves.front().key));
+        for (size_t i = 1; i < leaves.size(); ++i) {
+            if (leaves[i].key == leaves[i - 1].key) {
+                continue;
+            }
+            items.push_back(to_chunk(leaves[i].key));
         }
-        items.push_back(to_chunk(leaf.key));
-        previous = &leaf.key;
     }
     // The set reports one error for every failure to build.
     auto built = golomb_set::build(key_from_hash(hash), items);
