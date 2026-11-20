@@ -72,6 +72,25 @@ TEST_CASE("parse_request rejects missing method", "[rpc json]") {
     REQUIRE_FALSE(parse_request(R"({"id":1})").has_value());
 }
 
+TEST_CASE("parse_request keeps the id of a request it refuses", "[rpc json]") {
+    // No method, or one that is not a string: the error carries the id.
+    auto const missing = parse_request(R"({"id":7})");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().error.code == int(error_code::invalid_request));
+    CHECK(missing.error().id == "7");
+    auto const not_string = parse_request(R"({"method":5,"params":[],"id":"a"})");
+    REQUIRE_FALSE(not_string.has_value());
+    CHECK(not_string.error().id == R"("a")");
+    // The id may come before or after the method, and may be any JSON value.
+    auto const after = parse_request(R"({"params":[1],"method":null,"id":[1,{"x":2}]})");
+    REQUIRE_FALSE(after.has_value());
+    CHECK(after.error().id == R"([1,{"x":2}])");
+    // Without an id, or when the body is not an object, it is null.
+    CHECK(parse_request(R"({"params":[]})").error().id == "null");
+    CHECK(parse_request("7").error().id == "null");
+    CHECK(parse_request(R"(["id"])").error().id == "null");
+}
+
 TEST_CASE("is_batch looks at the first character after whitespace", "[rpc json]") {
     REQUIRE(is_batch("[]"));
     REQUIRE(is_batch(" \r\n\t[{\"method\":\"m\"}]"));

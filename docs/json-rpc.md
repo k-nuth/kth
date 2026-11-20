@@ -85,10 +85,11 @@ A body that is a JSON array of request objects is a batch. Every member runs, in
 order, and the reply is an array of their responses in the same order, each the
 one the member would get on its own: an error stays in its member's response,
 with its `id`, and the members after it still run. Clients such as Rostrum send
-batches and match the responses to their requests by `id`. A member that is not
-an object gets `-32600` `Invalid Request object` with a null `id`, an empty array
-gets an empty array, and a body that is not valid JSON gets a single `-32700`
-error, as a single request does.
+batches and match the responses to their requests by `id`. A member without a
+string `method` gets `-32600` with its own `id`, as a single request does, and a
+member that is not an object gets `-32600` `Invalid Request object` with a null
+`id`. An empty array gets an empty array, and a body that is not valid JSON
+gets a single `-32700` error, as a single request does.
 
 ```bash
 curl --user myuser:mypass -H 'content-type: application/json' \

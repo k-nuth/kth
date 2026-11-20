@@ -41,8 +41,9 @@ dispatcher::handle(method_context& ctx, std::string_view body) const {
         co_return co_await handle_request(ctx, body);
     }
     // A batch, as BCHN serves one: every member runs, in order, and each gets
-    // the response it would get alone, errors included. Clients such as
-    // Rostrum match the responses to their requests by id.
+    // the response it would get alone, errors included, with its id whenever
+    // that can be read. Clients such as Rostrum match the responses to their
+    // requests by id.
     auto const members = parse_batch(body);
     if ( ! members) {
         co_return build_error("null", members.error().code, members.error().message);
@@ -69,7 +70,7 @@ dispatcher::handle(method_context& ctx, std::string_view body) const {
 dispatcher::handle_request(method_context& ctx, std::string_view body) const {
     auto const req = parse_request(body);
     if ( ! req) {
-        co_return build_error("null", req.error().code, req.error().message);
+        co_return build_error(req.error().id, req.error().error.code, req.error().error.message);
     }
 
     auto const it = methods_.find(req->method);

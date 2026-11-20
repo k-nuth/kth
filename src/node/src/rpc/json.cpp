@@ -26,35 +26,36 @@ bool copy_raw(simdjson::ondemand::value value, std::string& out) {
 
 } // namespace
 
-std::expected<request, rpc_error> parse_request(std::string_view body) {
+std::expected<request, request_error> parse_request(std::string_view body) {
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(body);
 
     simdjson::ondemand::document doc;
     if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
-        return std::unexpected(make_error(error_code::parse_error, "Parse error"));
+        return std::unexpected(request_error{make_error(error_code::parse_error, "Parse error")});
+    }
+
+    // "id" is optional; echoed back verbatim. Absent => "null" (default). Read
+    // first, so an error from here on still carries it: a client that sent a
+    // batch matches each response to its request by id.
+    request req;
+    simdjson::ondemand::value id;
+    if (doc["id"].get(id) == simdjson::SUCCESS) {
+        copy_raw(id, req.id);
     }
 
     // "method" is mandatory and must be a string.
     std::string_view method;
     if (doc["method"].get_string().get(method) != simdjson::SUCCESS) {
-        return std::unexpected(
-            make_error(error_code::invalid_request, "Missing or invalid 'method'"));
+        return std::unexpected(request_error{
+            make_error(error_code::invalid_request, "Missing or invalid 'method'"), req.id});
     }
-
-    request req;
     req.method.assign(method);
 
     // "params" is optional (any JSON type) — kept as raw text for the handler.
     simdjson::ondemand::value params;
     if (doc["params"].get(params) == simdjson::SUCCESS) {
         copy_raw(params, req.params);
-    }
-
-    // "id" is optional; echoed back verbatim. Absent => "null" (default).
-    simdjson::ondemand::value id;
-    if (doc["id"].get(id) == simdjson::SUCCESS) {
-        copy_raw(id, req.id);
     }
 
     return req;

@@ -317,8 +317,17 @@ TEST_CASE("a batch gets each member's response, in order, errors included", "[rp
         // Neither a number nor a nested array is a request.
         node::rpc::build_error("null", -32600, "Invalid Request object") + "," +
         node::rpc::build_error("null", -32600, "Invalid Request object") + "," +
-        node::rpc::build_error("null", -32600, "Missing or invalid 'method'") + "," +
+        // No method: the member's own id is still echoed.
+        node::rpc::build_error("5", -32600, "Missing or invalid 'method'") + "," +
         node::rpc::build_success("6", genesis) + "]");
+
+    // A single request without a method gets its id back too, and a member
+    // without an id gets null.
+    REQUIRE(handle(R"({"id":"x","params":[]})") ==
+        node::rpc::build_error("\"x\"", -32600, "Missing or invalid 'method'"));
+    REQUIRE(handle(R"([{"method":7},{"id":8,"method":[]}])") == "[" +
+        node::rpc::build_error("null", -32600, "Missing or invalid 'method'") + "," +
+        node::rpc::build_error("8", -32600, "Missing or invalid 'method'") + "]");
 
     // An empty batch is answered with an empty array.
     REQUIRE(handle("[]") == "[]");

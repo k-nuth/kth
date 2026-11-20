@@ -26,9 +26,18 @@ struct request {
     std::string id = "null";    // raw JSON of "id"     ("null" when absent)
 };
 
-// Parse a JSON-RPC request body. On failure returns the rpc_error to report:
-// parse_error for malformed JSON, invalid_request when "method" is missing.
-std::expected<request, rpc_error> parse_request(std::string_view body);
+// Why a body is not a request: the rpc_error to report, and the raw JSON of its
+// "id" when that could be read ("null" otherwise), so the error response still
+// names the request it answers.
+struct request_error {
+    rpc_error error;
+    std::string id = "null";
+};
+
+// Parse a JSON-RPC request body. On failure returns what to report:
+// parse_error for malformed JSON, invalid_request when "method" is missing,
+// the latter with the request's id.
+std::expected<request, request_error> parse_request(std::string_view body);
 
 // Whether `body` is a batch: its first character after JSON whitespace opens
 // an array.
