@@ -135,6 +135,44 @@ hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_d
     return sha256_hash(sha256_hash(prev_hash, undo_data));
 }
 
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+// The size of a reference-mode entry's value: {file_number, tx_offset}.
+constexpr size_t reference_value_size = 8;
+
+// Whether two records of one block are the same undo written twice.
+//
+// In reference mode a spent output is stored as the position of the transaction
+// that created it, and replaying a branch stores the branch's blocks again, at
+// new positions. A block that spends from an earlier block of its own branch
+// then writes a second record that names the new copy: the same outputs,
+// created at the same heights, in the same order, with only the references
+// different. That is a replay. Anything else is two records disagreeing about
+// one block's undo.
+bool is_reference_replay(data_chunk const& earlier, data_chunk const& later) {
+    byte_reader earlier_reader(earlier);
+    byte_reader later_reader(later);
+    auto const first = block_undo::from_data(earlier_reader);
+    auto const second = block_undo::from_data(later_reader);
+    if ( ! first || ! second) return false;
+
+    // Bytes after the last entry belong to no entry, so they replay nothing.
+    if (earlier_reader.remaining_size() != 0 || later_reader.remaining_size() != 0) {
+        return false;
+    }
+    if (first->spent.size() != second->spent.size()) return false;
+
+    for (size_t i = 0; i < first->spent.size(); ++i) {
+        auto const& a = first->spent[i];
+        auto const& b = second->spent[i];
+        if (a.key != b.key || a.height != b.height) return false;
+        if (a.value.size() != reference_value_size || b.value.size() != reference_value_size) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 } // anonymous namespace
 
 block_store::block_store(std::filesystem::path blocks_dir, magic_t magic)
@@ -701,7 +739,40 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
     // own several records. Each is identified by its stored checksum: it is
     // seeded with the parent and covers the payload, so for one block equal
     // content means an equal checksum.
-    boost::unordered_flat_map<hash_digest, hash_digest> seen;
+    //
+    // The record kept is the LAST one, and where it is is remembered so a later
+    // record can take its place. The index stores only a record's offset and
+    // takes its file from the block, whose position the block walk sets to the
+    // last copy it reads. A replay writes its undo into the rev file of the copy
+    // it stored, and a block stored again lands in the same blk file or a later
+    // one, so the last record of a block is the one in the rev file the index
+    // will read. Keeping an earlier one would have it read from that file at
+    // another file's offset, and the block could not be disconnected.
+    struct kept_record {
+        hash_digest checksum;
+        int32_t file_number;
+        uint32_t position;              ///< Of the payload, as read_undo expects.
+        uint32_t size;                  ///< Of the payload.
+        std::optional<size_t> found_at; ///< In result.found, for a block the index holds.
+    };
+    boost::unordered_flat_map<hash_digest, kept_record> seen;
+
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+    // A payload read again, from whichever rev file holds it. Only when two
+    // records of one block disagree, so on the ordinary path a forgotten
+    // branch's payload is still not read.
+    auto const read_payload = [this](int32_t file_number, uint32_t position, uint32_t size)
+        -> std::optional<data_chunk> {
+        FILE* other = open_native(undo_files_.file_name(flat_file_pos{file_number, 0}), "rb");
+        if (other == nullptr) return std::nullopt;
+        data_chunk payload(size);
+        bool const read = std::fseek(other, static_cast<long>(position), SEEK_SET) == 0
+            && std::fread(payload.data(), 1, payload.size(), other) == payload.size();
+        std::fclose(other);
+        if ( ! read) return std::nullopt;
+        return payload;
+    };
+#endif
 
     auto fail = [&result](undo_scan_status status, int32_t file_num, uint32_t offset,
                           hash_digest const& hash) {
@@ -849,22 +920,56 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                 return fail(undo_scan_status::invalid_checksum, file_num, offset, block_hash);
             }
 
-            // Two records of one block with different checksums disagree about
-            // its undo, whether or not the index still holds the block.
-            auto const [existing, inserted] = seen.emplace(block_hash, stored_checksum);
-            if ( ! inserted && existing->second != stored_checksum) {
-                std::fclose(file);
-                return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+            // The position handed back is what read_undo expects: just past the
+            // header, since it seeks backwards from there.
+            auto const position = offset + static_cast<uint32_t>(undo_header_size);
+            auto const [existing, inserted] = seen.try_emplace(block_hash,
+                kept_record{stored_checksum, file_num, position, undo_size, std::nullopt});
+
+            if ( ! inserted) {
+                auto& kept = existing->second;
+
+                // Two records of one block with different checksums disagree
+                // about its undo, whether or not the index still holds the block.
+                if (kept.checksum != stored_checksum) {
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+                    // Except a replay in reference mode, which names new
+                    // positions for the same outputs: see is_reference_replay.
+                    // Decided from both payloads, a forgotten block's too, since
+                    // a replay is the only difference allowed.
+                    auto const earlier = read_payload(kept.file_number, kept.position, kept.size);
+                    auto const later = prev_hash
+                        ? std::optional<data_chunk>{undo_data}
+                        : read_payload(file_num, position, undo_size);
+                    if ( ! earlier || ! later) {
+                        std::fclose(file);
+                        return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+                    }
+                    if ( ! is_reference_replay(*earlier, *later)) {
+                        std::fclose(file);
+                        return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+                    }
+#else
+                    std::fclose(file);
+                    return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+#endif
+                }
+
+                // The later record takes the earlier one's place: see `seen`.
+                kept.checksum = stored_checksum;
+                kept.file_number = file_num;
+                kept.position = position;
+                kept.size = undo_size;
+                if (kept.found_at) {
+                    result.found[*kept.found_at] = {file_num, position, block_hash};
+                }
+            } else if (prev_hash) {
+                existing->second.found_at = result.found.size();
+                result.found.push_back({file_num, position, block_hash});
             }
 
             if ( ! prev_hash) {
                 ++result.unattributed;
-            } else if (inserted) {
-                // Keep the first occurrence; a replay wrote the same bytes. The
-                // position handed back is what read_undo expects: just past the
-                // header, since it seeks backwards from there.
-                result.found.push_back({file_num,
-                    offset + static_cast<uint32_t>(undo_header_size), block_hash});
             }
 
             offset += static_cast<uint32_t>(record_size);
