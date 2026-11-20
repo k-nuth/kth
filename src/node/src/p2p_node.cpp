@@ -729,8 +729,8 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
     (void)co_await peer.send(*inv);
 }
 
-void message_dispatcher::register_handler(std::string const& command, message_handler_fn handler) {
-    handlers_[command] = std::move(handler);
+void message_dispatcher::register_handler(std::string_view command, message_handler_fn handler) {
+    handlers_.insert_or_assign(std::string{command}, std::move(handler));
 }
 
 void message_dispatcher::set_default_handler(message_handler_fn handler) {
