@@ -9,10 +9,6 @@
 
 namespace kth::domain::message {
 
-std::string const compact_filter::command = "cfilter";
-uint32_t const compact_filter::version_minimum = version::level::minimum;
-uint32_t const compact_filter::version_maximum = version::level::maximum;
-
 expect<compact_filter> compact_filter::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());

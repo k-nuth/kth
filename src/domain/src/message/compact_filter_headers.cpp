@@ -11,10 +11,6 @@
 
 namespace kth::domain::message {
 
-std::string const compact_filter_headers::command = "cfheaders";
-uint32_t const compact_filter_headers::version_minimum = version::level::minimum;
-uint32_t const compact_filter_headers::version_maximum = version::level::maximum;
-
 expect<compact_filter_headers> compact_filter_headers::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());

@@ -11,10 +11,6 @@
 
 namespace kth::domain::message {
 
-std::string const compact_filter_checkpoint::command = "cfcheckpt";
-uint32_t const compact_filter_checkpoint::version_minimum = version::level::minimum;
-uint32_t const compact_filter_checkpoint::version_maximum = version::level::maximum;
-
 expect<compact_filter_checkpoint> compact_filter_checkpoint::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());
