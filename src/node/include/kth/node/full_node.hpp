@@ -69,6 +69,8 @@
 
 namespace kth::node {
 
+namespace detail { class compact_filter_service; }
+
 /// Startup mode selection
 enum class start_modules {
     all,
@@ -215,6 +217,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_compact_filters();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -231,6 +234,14 @@ private:
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+#if ! defined(__EMSCRIPTEN__)
+    // Set when node.compact_filters is on. Its handlers and its task hold a
+    // reference, and both end before the node does.
+    kth::path compact_filter_file_;
+    kth::path script_filter_file_;
+    kth::path input_prefix_filter_file_;
+    std::unique_ptr<detail::compact_filter_service> compact_filters_;
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     // When this node was built, which uptime counts from: the node starts
     // here, before the database is opened and the network comes up.

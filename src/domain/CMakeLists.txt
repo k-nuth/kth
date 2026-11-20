@@ -168,6 +168,9 @@ set(kth_sources_just_legacy
         src/chain/bloom_filter.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
+        src/chain/compact_filter.cpp
+        src/chain/golomb_set.cpp
+        src/chain/input_prefix_filter.cpp
         src/chain/compact.cpp
         # Header v1: standalone value type, two impls selected by
         # KTH_USE_HEADER_MEMBERS. Both TUs define the same qualified
@@ -189,6 +192,8 @@ set(kth_sources_just_legacy
         src/chain/point_iterator.cpp
         src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
+        src/chain/script_filter.cpp
+        src/chain/script_filter_builder.cpp
         src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
@@ -222,6 +227,11 @@ set(kth_sources_just_legacy
         src/message/block.cpp
         src/message/block_transactions.cpp
         src/message/compact_block.cpp
+        src/message/compact_filter.cpp
+        src/message/compact_filter_checkpoint.cpp
+        src/message/compact_filter_headers.cpp
+        src/message/compact_filter_proof.cpp
+        src/message/compact_filter_range.cpp
         src/message/double_spend_proof.cpp
         src/message/fee_filter.cpp
         src/message/filter_add.cpp
@@ -230,6 +240,11 @@ set(kth_sources_just_legacy
         src/message/get_address.cpp
         src/message/get_block_transactions.cpp
 
+        src/message/get_compact_filter_checkpoint.cpp
+        src/message/get_compact_filter_headers.cpp
+        src/message/get_compact_filter_proof.cpp
+        src/message/get_compact_filter_range.cpp
+        src/message/get_compact_filters.cpp
         src/message/get_data.cpp
         src/message/get_headers.cpp
         src/message/header.cpp
@@ -345,6 +360,17 @@ set(kth_headers
     include/kth/domain/message/transaction.hpp
     include/kth/domain/message/reject.hpp
     include/kth/domain/message/compact_block.hpp
+    include/kth/domain/message/compact_filter.hpp
+    include/kth/domain/message/compact_filter_checkpoint.hpp
+    include/kth/domain/message/compact_filter_headers.hpp
+    include/kth/domain/message/compact_filter_proof.hpp
+    include/kth/domain/message/compact_filter_range.hpp
+    include/kth/domain/message/compact_filter_tree.hpp
+    include/kth/domain/message/get_compact_filter_checkpoint.hpp
+    include/kth/domain/message/get_compact_filter_headers.hpp
+    include/kth/domain/message/get_compact_filter_proof.hpp
+    include/kth/domain/message/get_compact_filter_range.hpp
+    include/kth/domain/message/get_compact_filters.hpp
     include/kth/domain/message/get_block_transactions.hpp
     include/kth/domain/message/alert.hpp
     include/kth/domain/message/filter_add.hpp
@@ -382,9 +408,14 @@ set(kth_headers
     include/kth/domain/chain/header_members.hpp
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
+    include/kth/domain/chain/compact_filter.hpp
+    include/kth/domain/chain/golomb_set.hpp
+    include/kth/domain/chain/input_prefix_filter.hpp
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
+    include/kth/domain/chain/script_filter.hpp
+    include/kth/domain/chain/script_filter_builder.hpp
     include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
@@ -579,6 +610,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
         test/chain/chain_state.cpp
+        test/chain/compact_filter.cpp
+        test/chain/golomb_set.cpp
+        test/chain/input_prefix_filter.cpp
         test/chain/compact.cpp
         test/chain/header.cpp
         test/chain/history.cpp
@@ -596,6 +630,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/satoshi_words.cpp
         test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
+        test/chain/script_filter.cpp
+        test/chain/script_filter_builder.cpp
+        test/chain/script_filter_bchd.cpp
         test/chain/transaction.cpp
         test/main.cpp
 
@@ -618,6 +655,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/message/block.cpp
         test/message/block_transactions.cpp
         test/message/compact_block.cpp
+        test/message/compact_filters.cpp
+        test/message/script_filter_messages.cpp
         test/message/double_spend_proof.cpp
         test/message/fee_filter.cpp
         test/message/filter_add.cpp
