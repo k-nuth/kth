@@ -880,6 +880,18 @@ peer_manager& p2p_node::peers() {
     return manager_;
 }
 
+::asio::awaitable<size_t> p2p_node::queue_pings() const {
+    auto const peers = co_await manager_.all();
+    size_t asked = 0;
+    for (auto const& peer : peers) {
+        if ( ! peer->stopped()) {
+            peer->queue_ping();
+            ++asked;
+        }
+    }
+    co_return asked;
+}
+
 void p2p_node::announce_blocks(hash_list const& hashes) {
     if (hashes.empty()) {
         return;
@@ -1468,22 +1480,25 @@ select_channel<peer_notification>& p2p_node::peer_events() {
             break;
         }
 
-        if (!received) {
-            // Deadline - check if we need to send a ping
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_ping >= ping_interval) {
-                auto const nonce = generate_ping_nonce();
-                domain::message::ping ping_msg(nonce);
+        // A ping goes out at a deadline once the interval has passed, and on
+        // the first turn after the ping RPC asked for one, whatever woke it:
+        // a peer that keeps sending would otherwise hold that ping back.
+        auto const now = std::chrono::steady_clock::now();
+        auto const asked = peer->take_queued_ping();
+        if (asked || (!received && now - last_ping >= ping_interval)) {
+            auto const nonce = generate_ping_nonce();
+            domain::message::ping ping_msg(nonce);
 
-                auto ec = co_await peer->send(ping_msg);
-                if (ec != error::success) {
-                    spdlog::debug("[p2p_node] Failed to send ping to [{}]", peer->authority());
-                    break;
-                }
-                peer->record_ping_sent(nonce);
-                spdlog::trace("[p2p_node] Sent ping to [{}]", peer->authority());
-                last_ping = now;
+            auto ec = co_await peer->send(ping_msg);
+            if (ec != error::success) {
+                spdlog::debug("[p2p_node] Failed to send ping to [{}]", peer->authority());
+                break;
             }
+            peer->record_ping_sent(nonce);
+            spdlog::trace("[p2p_node] Sent {}ping to [{}]", asked ? "requested " : "", peer->authority());
+            last_ping = now;
+        }
+        if (!received) {
             continue;
         }
 

@@ -395,6 +395,14 @@ public:
     [[nodiscard]]
     peer_manager& peers();
 
+    /// Ask every connected peer for a ping out of its schedule, as the ping
+    /// RPC does. Each peer's read loop sends it on its next turn, which is at
+    /// most its check interval (five seconds) away, and the pong updates the
+    /// peer's ping latency.
+    /// @return How many peers were asked.
+    [[nodiscard]]
+    ::asio::awaitable<size_t> queue_pings() const;
+
     /// Get the channel that receives peer lifecycle events (CSP pattern)
     /// Use this to subscribe to peer connection/disconnection events.
     [[nodiscard]]

@@ -450,6 +450,15 @@ public:
     /// Record a pong received, returns true if nonce matches pending ping
     bool record_pong_received(uint64_t nonce);
 
+    /// Ask for a ping to this peer, out of its schedule (the ping RPC). Whoever
+    /// sends this peer its pings sends one on its next turn; several asks before
+    /// then send one ping.
+    void queue_ping();
+
+    /// Take what queue_ping() asked: true once, for every ask made before.
+    [[nodiscard]]
+    bool take_queued_ping();
+
     /// Get connection time
     [[nodiscard]]
     std::chrono::steady_clock::time_point connection_time() const;
@@ -606,6 +615,8 @@ private:
     // (see p2p_node::generate_ping_nonce). A nonce we receive may be anything.
     std::atomic<uint64_t> pending_ping_nonce_{0};
     std::atomic<int64_t> pending_ping_time_ns_{0};
+    // A ping asked for out of schedule, not taken yet (queue_ping).
+    std::atomic<bool> ping_queued_{false};
 
     // Misbehavior scoring (BCHN-style)
     std::atomic<int> misbehavior_score_{0};

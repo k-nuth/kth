@@ -337,3 +337,150 @@ TEST_CASE("p2p_node - inbound peers do not count toward the outbound target", "[
     CHECK(counts.inbound == 4);
     CHECK(counts.outbound == 1);
 }
+
+// =============================================================================
+// A ping asked for out of schedule (the ping RPC)
+// =============================================================================
+
+#include <exception>
+#include <optional>
+#include <stdexcept>
+#include <vector>
+
+#include <asio/as_tuple.hpp>
+#include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
+#include <asio/use_awaitable.hpp>
+#include <asio/use_future.hpp>
+
+#include <kth/infrastructure/utility/byte_reader.hpp>
+#include <kth/network/protocols_coro.hpp>
+#include <kth/node/detail/p2p_node_test_seam.hpp>
+
+#include "child_process_harness.hpp"
+
+namespace {
+
+void ping_checked(bool condition, char const* message) {
+    if ( ! condition) throw std::runtime_error(message);
+}
+
+// The node's next peer notification (its channel is a selection channel).
+::asio::awaitable<kth::node::peer_notification> next_peer_event(kth::node::p2p_node& target) {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(target.peer_events()))
+        .async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::use_awaitable));
+    auto& [ec, selected] = completion;
+    if (ec) throw std::runtime_error("peer notifications closed");
+    co_return std::move(*selected.value<0>());
+}
+
+// The nonce of the next ping `client` receives by `limit` from now; nothing
+// when none does.
+::asio::awaitable<std::optional<uint64_t>> next_ping(peer_session& client,
+    std::chrono::steady_clock::duration limit) {
+    auto const deadline = std::chrono::steady_clock::now() + limit;
+    while (true) {
+        auto received = co_await client.receive(deadline);
+        if ( ! received) co_return std::nullopt;
+        if (received->heading.command() != domain::message::ping::command) continue;
+        byte_reader reader(received->payload);
+        auto const parsed = domain::message::ping::from_data(reader, client.negotiated_version());
+        ping_checked(parsed.has_value(), "unreadable ping");
+        co_return parsed->nonce();
+    }
+}
+
+} // namespace
+
+TEST_CASE("p2p child: a ping asked for out of schedule goes out on the peer's next turn", "[.p2p-child]") {
+    using namespace kth::test;
+    using namespace ::asio::experimental::awaitable_operators;
+    watchdog guard(60s, "a ping asked for out of schedule");
+    auto const directory = claimed_dir("kth_queued_ping");
+    {
+    network::settings config(domain::config::network::regtest);
+    config.inbound_port = 0;
+    config.outbound_connections = 0;
+    config.host_pool_capacity = 64;
+    config.seeds.clear();
+    config.peers.clear();
+    config.threads = 1;
+    config.peers_file = (directory / "peers.dat").string();
+    config.hosts_file = (directory / "hosts.dat").string();
+    config.banlist_file = (directory / "bans.dat").string();
+    config.channel_handshake_seconds = 5;
+    // An hour: no ping on schedule can be one this test sees.
+    config.channel_heartbeat_minutes = 60;
+    config.user_agent = "/KTH-queued-ping-test:1/";
+    config.user_agent_blacklist.clear();
+    ::asio::io_context context;
+    node::p2p_node target(config);
+    std::exception_ptr failure;
+    size_t asked = 0;
+    std::optional<uint64_t> on_connect;
+    std::optional<uint64_t> unasked;
+    std::optional<uint64_t> requested;
+    auto outcome = ::asio::co_spawn(context, [&]() -> ::asio::awaitable<void> {
+        ping_checked(co_await target.start() == error::success, "node start failed");
+        co_await (
+            [&]() -> ::asio::awaitable<void> { co_await target.run(); }() &&
+            [&]() -> ::asio::awaitable<void> {
+                try {
+                    auto executor = co_await ::asio::this_coro::executor;
+                    ::asio::ip::tcp::acceptor listener(executor, {::asio::ip::address_v4::loopback(), 0});
+                    ::asio::ip::tcp::socket client_socket(executor);
+                    co_await client_socket.async_connect(listener.local_endpoint(), ::asio::use_awaitable);
+                    auto accepted = co_await listener.async_accept(::asio::use_awaitable);
+                    auto peer = std::make_shared<peer_session>(std::move(accepted), config, true);
+                    auto client = std::make_shared<peer_session>(std::move(client_socket), config, false);
+                    co_await kth::node::detail::p2p_node_test_seam::admit_peer(target, peer,
+                        node::peer_direction::inbound);
+                    auto handshake = co_await network::perform_handshake_direct(*client,
+                        network::make_handshake_config(config, 0, 0x3000));
+                    if ( ! handshake) throw std::runtime_error("fixture BCH handshake: " + handshake.error().message());
+                    ping_checked((co_await next_peer_event(target)).event == node::peer_event_type::connected,
+                        "missing connected notification");
+
+                    // The test's end reads what the node sends from here on.
+                    ::asio::co_spawn(executor, [client]() -> ::asio::awaitable<void> {
+                        (void)co_await client->run();
+                    }, ::asio::detached);
+
+                    // The ping a peer gets on connecting (unless the handshake
+                    // read it), then none on the hour's schedule...
+                    on_connect = co_await next_ping(*client, 5s);
+                    unasked = co_await next_ping(*client, 7s);
+                    // ...until one is asked for: it goes out on the read loop's
+                    // next turn, at most its five-second check interval away.
+                    asked = co_await target.queue_pings();
+                    requested = co_await next_ping(*client, 10s);
+                    client->stop();
+                } catch (...) { failure = std::current_exception(); }
+                target.stop();
+            }());
+    }, ::asio::use_future);
+    context.run();
+    target.stop();
+    target.join();
+    outcome.get();
+    if (failure) { std::rethrow_exception(failure); }
+    CHECK(asked == 1u);
+    CHECK_FALSE(unasked.has_value());
+    REQUIRE(requested.has_value());
+    // A ping of its own, with a nonce that is never zero (zero means none in flight).
+    CHECK(*requested != 0u);
+    if (on_connect) {
+        CHECK(*requested != *on_connect);
+    }
+    } // Destroy the node and peer database before removing their files.
+    std::error_code ignored;
+    std::filesystem::remove_all(directory, ignored);
+    announce_completion();
+}
+
+TEST_CASE("p2p_node - a ping asked for out of schedule reaches the connected peer", "[p2p_node]") {
+    kth::test::require_clean_child(kth::test::run_child(
+        "p2p child: a ping asked for out of schedule goes out on the peer's next turn"));
+}

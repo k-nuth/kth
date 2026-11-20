@@ -1058,6 +1058,66 @@ TEST_CASE("uptime dispatch counts whole seconds from the node's start", "[rpc di
     }
 }
 
+TEST_CASE("ping dispatch needs the P2P node", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_ping_no_network");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    // No P2P node in this context, as when the server runs without one.
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"ping","params":[],"id":44})"),
+        ::asio::use_future);
+    io.run();
+    REQUIRE(result.get() == node::rpc::build_error("44", -32603, "network unavailable"));
+}
+
+TEST_CASE("ping asks the P2P node's peers and rejects arguments", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_ping_node");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    network::settings settings;
+    settings.threads = 1;
+    settings.inbound_port = 0;
+    settings.outbound_connections = 0;
+    settings.hosts_file = fixture.dir() / "hosts.cache";
+    settings.banlist_file = fixture.dir() / "banlist.cache";
+    settings.peers_file = fixture.dir() / "peers.cache";
+    node::p2p_node network(settings);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs, &network};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    REQUIRE(dispatcher.has("ping"));
+    auto request = [&](std::string_view params) {
+        ::asio::io_context io;
+        auto const body = params.empty()
+            ? std::string(R"({"method":"ping","id":45})")
+            : std::string(R"({"method":"ping","params":)") + std::string(params) + R"(,"id":45})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // A node with no peers has none to ask: the answer is null all the same.
+    auto const none = node::rpc::build_success("45", "null");
+    CHECK(request("[]") == none);
+    CHECK(request("") == none);
+    CHECK(request("[ ]") == none);
+    // Null params are no arguments, as Rostrum's connection pool sends them.
+    CHECK(request("null") == none);
+    CHECK(request(" null ") == none);
+
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "1", "false", R"("x")", R"("null")"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("45", -32602, "ping takes no arguments"));
+    }
+}
+
 TEST_CASE("getrawmempool dispatch lists entries keyed by txid when verbose", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_raw_mempool_verbose");
     REQUIRE(fixture.created());

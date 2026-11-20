@@ -625,6 +625,14 @@ bool peer_session::record_pong_received(uint64_t nonce) {
     return true;
 }
 
+void peer_session::queue_ping() {
+    ping_queued_.store(true, std::memory_order_relaxed);
+}
+
+bool peer_session::take_queued_ping() {
+    return ping_queued_.exchange(false, std::memory_order_relaxed);
+}
+
 std::chrono::steady_clock::time_point peer_session::connection_time() const {
     return connection_time_;
 }

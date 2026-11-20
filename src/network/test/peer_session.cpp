@@ -169,6 +169,28 @@ TEST_CASE("peer_session ping tracker reserves zero for no ping in flight", "[pee
     REQUIRE( ! session->record_pong_received(0));
 }
 
+TEST_CASE("peer_session queued ping is taken once for every ask before it", "[peer_session]") {
+    ::asio::io_context ctx;
+    auto settings = make_test_settings();
+    auto [client, server] = make_connected_sockets(ctx);
+
+    auto session = std::make_shared<peer_session>(std::move(server), settings);
+
+    // Nothing asked: nothing to take.
+    REQUIRE( ! session->take_queued_ping());
+
+    session->queue_ping();
+    REQUIRE(session->take_queued_ping());
+    REQUIRE( ! session->take_queued_ping());
+
+    // Asks made before the ping goes out send one ping, not one each.
+    session->queue_ping();
+    session->queue_ping();
+    session->queue_ping();
+    REQUIRE(session->take_queued_ping());
+    REQUIRE( ! session->take_queued_ping());
+}
+
 TEST_CASE("peer_session nonce get set", "[peer_session]") {
     ::asio::io_context ctx;
     auto settings = make_test_settings();

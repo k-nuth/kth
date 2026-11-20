@@ -1251,6 +1251,26 @@ uptime(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// ping -> null, once every connected peer has been asked for a ping: the read
+// loop of each sends it on its next turn, and the pong updates the peer's ping
+// latency. Clients such as Rostrum call it to check that the node answers.
+// C-API counterpart: none (it asks the P2P node).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+ping_peers(method_context& ctx, request const& req) {
+    // Rostrum's connection pool sends it with "params":null.
+    if ( ! no_arguments(req.params)) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "ping takes no arguments"));
+    }
+    if (ctx.network == nullptr) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "network unavailable"));
+    }
+    // The P2P node outlives the server (full_node destroys the server first).
+    (void)co_await ctx.network->queue_pings();
+    co_return std::string("null");
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool [verbose=false] -> the txids currently in the mempool; with
@@ -1444,6 +1464,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
     d.add("uptime", uptime);
+    d.add("ping", ping_peers);
 
     // Help MUST be the last method registered: capture the completed catalog,
     // including its own name, before any request can be served.

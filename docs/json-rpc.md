@@ -96,6 +96,7 @@ counterpart.
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
+| `ping` | — (it asks the P2P node) | `p2p_node::queue_pings()` |
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
 | `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
@@ -255,6 +256,17 @@ call without arguments) are accepted, and anything else is a `-32602` error.
 It reads the steady clock, so changing the system clock does not change the
 answer. The method takes no arguments: omitted params, an empty array and null
 are accepted, and anything else is a `-32602` error.
+
+## ping
+
+`ping` asks every connected peer for a ping and returns `null`. Each peer's read
+loop sends the ping on its next turn, at most five seconds away, out of its
+schedule (`net.channel_heartbeat_minutes`), and the peer's pong updates its ping
+latency; asks made before the ping goes out send one ping. Clients such as
+Rostrum call it to check that the node answers. Without a P2P node it is
+`-32603` `network unavailable`. The method takes no arguments: omitted params, an
+empty array and null (as Rostrum sends it) are accepted, and anything else is a
+`-32602` error.
 
 ## Blocks and transactions
 
