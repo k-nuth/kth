@@ -47,12 +47,8 @@ size_t heading::satoshi_fixed_size() {
            sizeof(uint32_t);
 }
 
-heading::heading(uint32_t magic, std::string const& command, uint32_t payload_size, uint32_t checksum)
+heading::heading(uint32_t magic, std::string_view command, uint32_t payload_size, uint32_t checksum)
     : magic_(magic), command_(command), payload_size_(payload_size), checksum_(checksum) {
-}
-
-heading::heading(uint32_t magic, std::string&& command, uint32_t payload_size, uint32_t checksum)
-    : magic_(magic), command_(std::move(command)), payload_size_(payload_size), checksum_(checksum) {
 }
 
 // Deserialization.
@@ -76,7 +72,7 @@ expect<heading> heading::from_data(byte_reader& reader, uint32_t /*version*/) {
     if ( ! checksum) {
         return std::unexpected(checksum.error());
     }
-    return heading(*magic, std::move(*command), *payload_size, *checksum);
+    return heading(*magic, *command, *payload_size, *checksum);
 }
 
 // Serialization.
@@ -145,12 +141,8 @@ std::string const& heading::command() const {
     return command_;
 }
 
-void heading::set_command(std::string const& value) {
+void heading::set_command(std::string_view value) {
     command_ = value;
-}
-
-void heading::set_command(std::string&& value) {
-    command_ = std::move(value);
 }
 
 uint32_t heading::payload_size() const {

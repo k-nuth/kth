@@ -13,9 +13,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const merkle_block::command = "merkleblock";
-uint32_t const merkle_block::version_minimum = version::level::bip37;
-uint32_t const merkle_block::version_maximum = version::level::maximum;
 
 merkle_block::merkle_block(chain::header header, size_t total_transactions, hash_list hashes, data_chunk flags)
     : header_(header), total_transactions_(total_transactions), hashes_(std::move(hashes)), flags_(std::move(flags)) {

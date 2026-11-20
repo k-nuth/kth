@@ -99,15 +99,18 @@ class KthRecipe(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "with_examples": [True, False],
-        "with_icu": [True, False],
-        "with_png": [True, False],
-        "with_qrencode": [True, False],
-        "with_jemalloc": [True, False],
-        "with_stats": [True, False],
+        "examples": [True, False],
+        "icu": [True, False],
+        "png": [True, False],
+        "qrencode": [True, False],
+        "jemalloc": [True, False],
+        "stats": [True, False],
         "rpc": ["jsonrpc", "grpc", "capnproto", "none"],
         "wasm_simd": [True, False],
-        "with_websocket": [True, False],
+        "websocket": [True, False],
+        # Compact block filters for light wallets (Neutrino, BIP157/158). Not
+        # part of the consensus protocol, so off unless asked for.
+        "neutrino": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -138,10 +141,10 @@ class KthRecipe(KnuthConanFileV2):
         "db_readonly": False,
         "cmake_export_compile_commands": False,
 
-        "with_examples": False,
-        "with_icu": False,
-        "with_png": False,
-        "with_qrencode": False,
+        "examples": False,
+        "icu": False,
+        "png": False,
+        "qrencode": False,
         # WARNING: jemalloc causes crashes with LMDB (mdb_env_close/mdb_dbi_close segfaults).
         # LMDB uses mmap extensively which conflicts with jemalloc's memory management.
         # Potential solutions if jemalloc is needed:
@@ -149,11 +152,12 @@ class KthRecipe(KnuthConanFileV2):
         #   2. Use MDB_WRITEMAP flag in LMDB (writes directly to mmap, bypasses malloc)
         #   3. Compile LMDB separately without jemalloc linkage
         # For now, keep disabled until a proper solution is implemented.
-        "with_jemalloc": False,
-        "with_stats": False,
+        "jemalloc": False,
+        "stats": False,
         "rpc": "jsonrpc",
         "wasm_simd": True,
-        "with_websocket": False,
+        "websocket": False,
+        "neutrino": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -194,12 +198,12 @@ class KthRecipe(KnuthConanFileV2):
         if self.options.mempool_backend == "parlay":
             self.requires("parlayhash/0.3.0#c3cf1ad464bf64787163eb1a6e59c285",
                           transitive_headers=True, transitive_libs=True)
-        if self.options.with_websocket and self.settings.os != "Emscripten":
+        if self.options.websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
         # Pin our recipe; UTXO-Z asks for the same revision.
         self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
                       transitive_headers=True, transitive_libs=True)
-        if self.options.with_icu:
+        if self.options.icu:
             self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
@@ -260,13 +264,13 @@ class KthRecipe(KnuthConanFileV2):
             self.requires(CAPNPROTO_REF, transitive_headers=True, transitive_libs=True,
                           options={"with_openssl": False, "with_zlib": False})
 
-        if self.options.with_png:
+        if self.options.png:
             self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
             self.requires("jemalloc/5.4.0", transitive_headers=True, transitive_libs=True)
 
@@ -312,7 +316,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             self.options.tests = False
             self.options.rpc = "none"
-            self.options.with_websocket = False
+            self.options.websocket = False
             self.output.info("Tests and RPC disabled for Emscripten build")
 
     def configure(self):
@@ -352,7 +356,7 @@ class KthRecipe(KnuthConanFileV2):
         # consumer.)
         self.options["boost/*"].without_cobalt = True
         self.options["boost/*"].without_locale = True
-        if self.options.with_icu:
+        if self.options.icu:
             # Embed normalization data: no ICU_DATA environment or sidecar files.
             self.options["icu/*"].data_packaging = "static"
             self.options["icu/*"].with_icuio = False
@@ -397,17 +401,18 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
-        tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
+        tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.examples)
         tc.variables["KTH_SHA256_DISPATCH"] = self._sha256_dispatch()
-        tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
-        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
-        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
-        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
+        tc.variables["WITH_ICU"] = option_on_off(self.options.icu)
+        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.png)
+        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.qrencode)
+        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.jemalloc)
+        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.stats)
         tc.variables["KTH_RPC_BACKEND"] = str(self.options.rpc)
         if self.settings.os == "Emscripten":
             tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
-        tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.with_websocket)
+        tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.websocket)
+        tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -592,13 +597,13 @@ class KthRecipe(KnuthConanFileV2):
                 'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
-        if self.options.with_icu:
+        if self.options.icu:
             infrastructure_defines.append("WITH_ICU")
-        if self.options.with_png:
+        if self.options.png:
             infrastructure_defines.append("KTH_WITH_PNG")
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             infrastructure_defines.append("KTH_WITH_QRENCODE")
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines + sigverify_defines
         # Infrastructure directly uses GMP for big_number, independently of consensus.
@@ -612,19 +617,19 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        if self.options.with_icu:
+        if self.options.icu:
             self.cpp_info.components["infrastructure"].requires.append("icu::icu-uc")
         self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
-        if self.options.with_png:
+        if self.options.png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             self.cpp_info.components["infrastructure"].requires.append("libqrencode::libqrencode")
         # Add asio when using standalone mode
         if self.options.asio_standalone:
             self.cpp_info.components["infrastructure"].requires.append("asio::asio")
         # Add jemalloc when enabled
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             self.cpp_info.components["infrastructure"].requires.append("jemalloc::jemalloc")
 
 
@@ -633,6 +638,8 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
         self.cpp_info.components["domain"].defines = [currency_define] + static_defines + sigverify_defines
+        if self.options.neutrino:
+            self.cpp_info.components["domain"].defines.append("KTH_WITH_NEUTRINO")
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
             "infrastructure",
@@ -689,7 +696,7 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain and simdjson (for peer_database JSON parsing)
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
-            if self.options.with_websocket:
+            if self.options.websocket:
                 self.cpp_info.components["network"].defines.append("KTH_WITH_WEBSOCKET")
                 self.cpp_info.components["network"].requires.append("wslay::wslay")
         

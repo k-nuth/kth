@@ -5,6 +5,9 @@
 #ifndef KTH_DOMAIN_MESSAGE_double_spend_proof_HPP
 #define KTH_DOMAIN_MESSAGE_double_spend_proof_HPP
 
+#include <string_view>
+
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/chain/output_point.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/constants.hpp>
@@ -89,14 +92,9 @@ struct KD_API double_spend_proof {
 
     hash_digest hash() const;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "dsproof-beta";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
 private:
     chain::output_point out_point_;
