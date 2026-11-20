@@ -940,6 +940,11 @@ get_block_header(method_context& ctx, request const& req) {
     }
     auto const result = co_await ctx.chain.fetch_block_header(*hash);
     if ( ! result) {
+        // A header the node does not have is -5, as for getblock.
+        if (result.error() == error::not_found) {
+            co_return kth::fail(make_error(error_code::invalid_address_or_key,
+                "Block not found"));
+        }
         co_return kth::fail(from_code(result.error()));
     }
     if ( ! *verbose) {

@@ -388,6 +388,11 @@ TEST_CASE("getblockheader takes the height of a connected block for its hash", "
     }
     // The verbose argument is checked as for a hash.
     REQUIRE(request("[2,1]") == node::rpc::build_error("4", -32602, "verbose must be a boolean"));
+
+    // A hash the node does not have is -5, verbose or not.
+    auto const unknown = std::string("\"") + std::string(64, 'a') + '"';
+    REQUIRE(request("[" + unknown + "]") == node::rpc::build_error("4", -5, "Block not found"));
+    REQUIRE(request("[" + unknown + ",false]") == node::rpc::build_error("4", -5, "Block not found"));
 }
 
 TEST_CASE("getblockhash and getbestblockhash name only connected blocks", "[rpc dispatch]") {
