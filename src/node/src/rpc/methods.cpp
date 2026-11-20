@@ -81,23 +81,24 @@ bool is_block_file(std::string_view name) {
 
 // getblock and getrawtransaction arguments, as BCHN takes them: the hash, then
 // the verbosity as a boolean or a number (null keeps the default), then, for
-// getrawtransaction, the block to read the transaction from, and for getblock,
-// whether to add each script's byte code pattern. Types and arity are checked
-// before storage is touched.
+// getrawtransaction, the block to read the transaction from, and last whether
+// to add each script's byte code pattern. Types and arity are checked before
+// storage is touched.
 struct raw_read_arguments {
     hash_digest hash;
     std::optional<hash_digest> block_hash;
     // getblock: 0 hex, 1 fields and txids, 2 decoded transactions (default 1).
-    // getrawtransaction: 0 hex, otherwise decoded (default 0).
+    // getrawtransaction: 0 hex, 1 decoded, 2 decoded with the outputs it
+    // spends and its fee (default 0).
     uint64_t verbosity;
-    // getblock: the byteCodePattern objects (default false).
+    // The byteCodePattern objects (default false).
     bool patterns = false;
 };
 
 std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req, bool transaction) {
     auto const invalid = [&] {
         return kth::fail(make_error(error_code::invalid_params,
-            transaction ? "getrawtransaction requires [txid, verbose=false, blockhash]" :
+            transaction ? "getrawtransaction requires [txid, verbose=false, blockhash, patterns=false]" :
                           "getblock requires [blockhash, verbosity=1, patterns=false]"));
     };
     simdjson::ondemand::parser parser;
@@ -110,15 +111,17 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     }
     raw_read_arguments result{.hash = {}, .block_hash = std::nullopt,
         .verbosity = transaction ? 0u : 1u};
+    // getblock's third argument and getrawtransaction's fourth.
+    auto const patterns_at = transaction ? 3u : 2u;
     size_t count = 0;
     for (auto element : args) {
         simdjson::ondemand::value value;
         simdjson::ondemand::json_type type;
-        if (count >= 3u || element.get(value) != simdjson::SUCCESS ||
+        if (count > patterns_at || element.get(value) != simdjson::SUCCESS ||
             value.type().get(type) != simdjson::SUCCESS) {
             return invalid();
         }
-        if ( ! transaction && count == 2) {
+        if (count == patterns_at) {
             if (type == simdjson::ondemand::json_type::boolean) {
                 if (value.get_bool().get(result.patterns) != simdjson::SUCCESS) {
                     return invalid();
@@ -160,12 +163,10 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
             result.verbosity = verbose ? 1u : 0u;
         } else if (type == simdjson::ondemand::json_type::number) {
             int64_t verbosity;
-            // getrawtransaction's verbosity 2 (fees and prevouts) is not
-            // implemented, so it is rejected instead of answered as 1.
             if (value.get_int64().get(verbosity) != simdjson::SUCCESS || verbosity < 0 ||
-                    verbosity > (transaction ? 1 : 2)) {
+                    verbosity > 2) {
                 return kth::fail(make_error(error_code::invalid_params, transaction ?
-                    "verbose must be 0, 1 or a boolean" :
+                    "verbose must be 0, 1, 2 or a boolean" :
                     "verbosity must be 0, 1, 2 or a boolean"));
             }
             result.verbosity = uint64_t(verbosity);
@@ -723,10 +724,74 @@ get_chain_tips(method_context& ctx, request const& /*req*/) {
     co_return render_chain_tips(*tips);
 }
 
-// getrawtransaction <txid> [verbose] [blockhash] -> the wire-serialized
-// transaction as hex. With a block hash it is read from that block; without
-// one only the mempool can answer, since confirmed transactions are not
-// indexed by txid (#491).
+// The outputs a mempool transaction spends, one for each input: a parent's in
+// the mempool, or one of the UTXO set at the connected tip `tip`. The inputs
+// the active versions of the set cannot answer are resolved against the older
+// ones in one request. Empty when an input spends an output that is in
+// neither; an error only when the UTXO store cannot be read.
+std::expected<std::vector<domain::chain::output>, rpc_error> pooled_prevouts(
+    blockchain::block_chain const& chain, domain::chain::transaction const& tx, size_t tip) {
+    auto const unreadable = [] {
+        return kth::fail(make_error(error_code::internal_error,
+            "the UTXO store could not be read"));
+    };
+    auto const height = database::to_store_height(tip);
+    if ( ! height) {
+        return kth::fail(make_error(error_code::internal_error,
+            "tip height does not fit the UTXO store"));
+    }
+    auto const& inputs = tx.inputs();
+    std::vector<std::optional<domain::chain::output>> found(inputs.size());
+    std::vector<utxoz::lookup_request> pending;
+    std::vector<size_t> pending_inputs;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        auto const& point = inputs[i].previous_output();
+        if (auto output = chain.mempool_ref().resolve(point)) {
+            found[i] = std::move(*output);
+            continue;
+        }
+        auto utxo = chain.get_utxo(point, tip);
+        if (utxo) {
+            found[i] = std::move(utxo->output);
+        } else if (utxo.error() == database::result_code::not_resolved) {
+            auto const& txid = point.hash();
+            pending.push_back(utxoz::lookup_request{
+                utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, point.index()),
+                *height});
+            pending_inputs.push_back(i);
+        } else if (utxo.error() == database::result_code::key_not_found) {
+            return std::vector<domain::chain::output>{};
+        } else {
+            return unreadable();
+        }
+    }
+    if ( ! pending.empty()) {
+        auto const resolved = chain.utxo_resolve(pending);
+        if ( ! resolved) {
+            return unreadable();
+        }
+        for (size_t at = 0; at < pending.size(); ++at) {
+            auto const it = resolved->found.find(pending[at].key);
+            if (it == resolved->found.end()) {
+                return std::vector<domain::chain::output>{};
+            }
+            found[pending_inputs[at]] = it->second.output();
+        }
+    }
+    std::vector<domain::chain::output> prevouts;
+    prevouts.reserve(inputs.size());
+    for (auto& output : found) {
+        prevouts.push_back(std::move(*output));
+    }
+    return prevouts;
+}
+
+// getrawtransaction <txid> [verbose] [blockhash] [patterns] -> the
+// wire-serialized transaction as hex, or with verbose its fields; with
+// verbosity 2 also the output each input spends and its fee, when the node
+// has them, and with patterns each script's byte code pattern. With a block
+// hash it is read from that block; without one only the mempool can answer,
+// since confirmed transactions are not indexed by txid (#491).
 // C-API counterpart: kth_chain_sync_transaction (+ kth_chain_sync_block_by_hash).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_raw_transaction(method_context& ctx, request const& req) {
@@ -741,10 +806,11 @@ get_raw_transaction(method_context& ctx, request const& req) {
             "chain state unavailable"));
     }
     auto const render = [&](domain::chain::transaction const& tx,
-                            std::optional<transaction_location> const& location) {
+                            std::optional<transaction_location> const& location,
+                            std::span<domain::chain::output const> prevouts) {
         if (args->verbosity != 0) {
             return render_transaction_verbose(tx, view->state->network(),
-                view->state->enabled_flags(), location);
+                view->state->enabled_flags(), location, prevouts, args->patterns);
         }
         writer w;
         w.value(transaction_to_hex(tx));
@@ -761,18 +827,62 @@ get_raw_transaction(method_context& ctx, request const& req) {
                 "Block hash not found"));
         }
         auto const& found = std::get<0>(*block);
-        for (auto const& tx : found->transactions()) {
-            if (tx.hash() == hash) {
-                if (args->verbosity == 0) {
-                    co_return render(tx, std::nullopt);
-                }
-                auto const progress = ctx.chain.get_block_progress(*args->block_hash, view);
-                if (!progress) {
-                    co_return kth::fail(from_code(progress.error()));
-                }
-                co_return render(tx, transaction_location{*args->block_hash,
-                    progress->confirmations, found->header().timestamp(), progress->confirmations_ticks});
+        auto const& txs = found->transactions();
+        for (size_t position = 0; position < txs.size(); ++position) {
+            auto const& tx = txs[position];
+            if (tx.hash() != hash) {
+                continue;
             }
+            if (args->verbosity == 0) {
+                co_return render(tx, std::nullopt, {});
+            }
+            auto const progress = ctx.chain.get_block_progress(*args->block_hash, view);
+            if (!progress) {
+                co_return kth::fail(from_code(progress.error()));
+            }
+            // With verbosity 2, the outputs it spends, from the block's undo
+            // record, which holds them for the inputs of each transaction after
+            // the coinbase in block order. A block connected without that record
+            // has none to give, and the fields are left out. A record that
+            // cannot be read is an error, and so is one that does not cover
+            // this transaction's inputs or what it pays, as for getblock: the
+            // block was connected, so that record is not this block's. The
+            // coinbase spends nothing.
+            std::vector<domain::chain::output> prevouts;
+            if (args->verbosity == 2 && position != 0) {
+                auto spent = co_await ctx.chain.fetch_spent_outputs(*args->block_hash, found);
+                if (spent) {
+                    size_t first = 0;
+                    for (size_t before = 1; before < position; ++before) {
+                        first += txs[before].inputs().size();
+                    }
+                    auto const not_this_blocks = [] {
+                        return kth::fail(make_error(error_code::internal_error,
+                            "the undo record of the block does not give the outputs the transaction spends"));
+                    };
+                    if (first + tx.inputs().size() > spent->outputs.size()) {
+                        co_return not_this_blocks();
+                    }
+                    uint64_t spends = 0;
+                    prevouts.reserve(tx.inputs().size());
+                    for (auto at = first; at < first + tx.inputs().size(); ++at) {
+                        spends += spent->outputs[at].value();
+                        prevouts.push_back(std::move(spent->outputs[at]));
+                    }
+                    uint64_t pays = 0;
+                    for (auto const& output : tx.outputs()) {
+                        pays += output.value();
+                    }
+                    if (pays > spends) {
+                        co_return not_this_blocks();
+                    }
+                } else if (spent.error() != error::not_found) {
+                    co_return kth::fail(from_code(spent.error()));
+                }
+            }
+            co_return render(tx, transaction_location{*args->block_hash,
+                progress->confirmations, found->header().timestamp(), progress->confirmations_ticks},
+                prevouts);
         }
         co_return kth::fail(make_error(error_code::invalid_address_or_key,
             "No such transaction found in the provided block"));
@@ -786,13 +896,25 @@ get_raw_transaction(method_context& ctx, request const& req) {
         }
         co_return kth::fail(from_code(result.error()));
     }
-    co_return render(*std::get<0>(*result), std::nullopt);
+    auto const& tx = *std::get<0>(*result);
+    // With verbosity 2, the outputs it spends, from its parents in the mempool
+    // and the UTXO set.
+    std::vector<domain::chain::output> prevouts;
+    if (args->verbosity == 2) {
+        auto spent = pooled_prevouts(ctx.chain, tx, view->connected_tip_height);
+        if ( ! spent) {
+            co_return kth::fail(spent.error());
+        }
+        prevouts = std::move(*spent);
+    }
+    co_return render(tx, std::nullopt, prevouts);
 }
 
 // getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
 // false) the wire-serialized block as hex; with 1 (or true) its fields and
-// txids; with 2 its fields and its transactions decoded, and with patterns each
-// of their scripts' byte code pattern.
+// txids; with 2 its fields and its transactions decoded, each with its fee
+// when the node has the outputs the block spends, and with patterns each of
+// their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -853,8 +975,28 @@ get_block(method_context& ctx, request const& req) {
             location.next_block_hash = index.get_hash(next);
         }
     }
+    // With the transactions decoded, each one's fee: what the outputs it
+    // spends hold, from the block's undo record, less what it pays. A block
+    // connected without that record has no fees to give, and the field is
+    // left out. A record that cannot be read is an error, and so is one whose
+    // outputs do not cover what the block's transactions pay: the block was
+    // connected, so that record is not this block's.
+    std::vector<uint64_t> fees;
+    if (args->verbosity == 2) {
+        auto const spent = co_await ctx.chain.fetch_spent_outputs(args->hash, block);
+        if (spent) {
+            auto computed = transaction_fees(*block, spent->outputs);
+            if ( ! computed) {
+                co_return kth::fail(make_error(error_code::internal_error,
+                    "the undo record of the block does not give the fees of its transactions"));
+            }
+            fees = std::move(*computed);
+        } else if (spent.error() != error::not_found) {
+            co_return kth::fail(from_code(spent.error()));
+        }
+    }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags(), args->patterns);
+        view->state->network(), view->state->enabled_flags(), args->patterns, fees);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its
