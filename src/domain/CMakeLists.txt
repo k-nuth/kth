@@ -189,8 +189,6 @@ set(kth_sources_just_legacy
         src/chain/point_iterator.cpp
         src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
-        src/chain/script_filter.cpp
-        src/chain/script_filter_builder.cpp
         src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
@@ -387,8 +385,6 @@ set(kth_headers
     include/kth/domain/chain/input.hpp
     include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
-    include/kth/domain/chain/script_filter.hpp
-    include/kth/domain/chain/script_filter_builder.hpp
     include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
@@ -470,7 +466,11 @@ if (KTH_WITH_NEUTRINO)
         src/chain/compact_filter.cpp
         src/chain/golomb_set.cpp
         include/kth/domain/chain/compact_filter.hpp
-        include/kth/domain/chain/golomb_set.hpp)
+        include/kth/domain/chain/golomb_set.hpp
+        src/chain/script_filter.cpp
+        src/chain/script_filter_builder.cpp
+        include/kth/domain/chain/script_filter.hpp
+        include/kth/domain/chain/script_filter_builder.hpp)
 endif()
 
 
@@ -611,9 +611,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/satoshi_words.cpp
         test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
-        test/chain/script_filter.cpp
-        test/chain/script_filter_builder.cpp
-        test/chain/script_filter_bchd.cpp
         test/chain/transaction.cpp
         test/main.cpp
 
@@ -712,7 +709,10 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if (KTH_WITH_NEUTRINO)
     add_executable(kth_domain_neutrino_test
         test/chain/compact_filter.cpp
-        test/chain/golomb_set.cpp)
+        test/chain/golomb_set.cpp
+        test/chain/script_filter.cpp
+        test/chain/script_filter_bchd.cpp
+        test/chain/script_filter_builder.cpp)
     target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)
