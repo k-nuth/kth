@@ -145,6 +145,27 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
+    src/detail/compact_filters.cpp
+
+    # JSON-RPC text and the bitcoind-shaped answers: the RPC server and the
+    # wallet support's Electrum listener both use them.
+    src/rpc/json.cpp
+    src/rpc/query.cpp
+
+    # Wallet support: answers from the node's own chain, or from peers.
+    src/wallet/blocks.cpp
+    src/wallet/chain_source.cpp
+    src/wallet/electrum.cpp
+    src/wallet/filter_store.cpp
+    src/wallet/history.cpp
+    src/wallet/peer_blocks.cpp
+    src/wallet/peer_filters.cpp
+    src/wallet/peer_links.cpp
+    src/wallet/peer_mempool.cpp
+    src/wallet/peer_source.cpp
+    src/wallet/scan.cpp
+    src/wallet/service.cpp
+    src/wallet/tokens.cpp
     src/detail/local_admission_tasks.cpp
     src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
@@ -181,9 +202,23 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 # A browser node compiles what an ordinary WebAssembly node does, plus the
-# headers-only client and the network layer it runs on.
+# headers-only client, wallet support answered from peers (it stores no
+# blocks), and the network layer they run on.
 if(KTH_BROWSER_NODE)
-  list(APPEND kth_sources_just_legacy src/header_sync.cpp)
+  list(APPEND kth_sources_just_legacy
+    src/header_sync.cpp
+    src/wallet/blocks.cpp
+    src/wallet/filter_store.cpp
+    src/wallet/history.cpp
+    src/wallet/peer_blocks.cpp
+    src/wallet/peer_filters.cpp
+    src/wallet/peer_links.cpp
+    src/wallet/peer_mempool.cpp
+    src/wallet/peer_source.cpp
+    src/wallet/scan.cpp
+    src/wallet/service.cpp
+    src/wallet/tokens.cpp
+  )
 endif()
 
 # Optional JSON-RPC server (llhttp transport). Compiled only when KTH_WITH_RPC is
@@ -191,10 +226,8 @@ endif()
 if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(kth_sources_just_legacy
     ${kth_sources_just_legacy}
-    src/rpc/json.cpp
     src/rpc/dispatch.cpp
     src/rpc/mining.cpp
-    src/rpc/query.cpp
     src/rpc/methods.cpp
     src/rpc/server.cpp
   )
@@ -303,7 +336,18 @@ set(kth_headers
   include/kth/node/define.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
+  include/kth/node/detail/compact_filters.hpp
   include/kth/node/parser.hpp
+
+  # Wallet support.
+  include/kth/node/wallet/blocks.hpp
+  include/kth/node/wallet/detail/service_impl.hpp
+  include/kth/node/wallet/electrum.hpp
+  include/kth/node/wallet/filter_store.hpp
+  include/kth/node/wallet/history.hpp
+  include/kth/node/wallet/scan.hpp
+  include/kth/node/wallet/service.hpp
+  include/kth/node/wallet/tokens.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
   include/kth/node/mining/job_store.hpp
@@ -344,7 +388,10 @@ set(kth_headers
 )
 
 if(KTH_BROWSER_NODE)
-  list(APPEND kth_headers include/kth/node/header_sync.hpp)
+  list(APPEND kth_headers
+    include/kth/node/header_sync.hpp
+    include/kth/node/detail/worker_runtime.hpp
+  )
 endif()
 
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
@@ -464,6 +511,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_cycle.cpp
           test/block_reads.cpp
           test/chain_data.cpp
+          test/compact_filters.cpp
+          test/wallet.cpp
+          test/wallet_chain.cpp
+          test/wallet_electrum.cpp
+          test/wallet_service.cpp
+          test/wallet_tokens.cpp
           test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
@@ -604,6 +657,13 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 
+
+# kth-wallet: wallet support answered from peers, with the local Electrum
+# listener for wallets that do not speak P2P.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  add_executable(kth-wallet tools/wallet.cpp)
+  target_link_libraries(kth-wallet PRIVATE ${PROJECT_NAME})
+endif()
 
 # Install
 # ------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 from websockets.asyncio.server import serve
 import fixtures
 
-CONTROLS = ("stream", "cap", "eof", "select", "terminal", "headers", "persist", "peers", "content")
+CONTROLS = ("stream", "cap", "eof", "select", "terminal", "headers", "persist", "peers", "content", "wallet")
 WORKER_TEST = r"""async name => {
     const lines = [];
     return await new Promise(resolve => {
@@ -93,7 +93,8 @@ async def run(args):
                                   (18800, fixtures.bch_content), (18801, fixtures.bch_bad_body),
                                   (18807, fixtures.bch_tx_silent), (18808, fixtures.bch_big_tx),
                                   (18809, fixtures.bch_missing_block),
-                                  (18811, fixtures.bch_tx_late), (18812, fixtures.bch_tx_disown)):
+                                  (18811, fixtures.bch_tx_late), (18812, fixtures.bch_tx_disown),
+                                  (18815, fixtures.bch_wallet_upload), (18816, fixtures.bch_wallet)):
                 await stack.enter_async_context(serve(handler, "127.0.0.1", port, max_size=65536))
         server = await asyncio.start_server(http, "127.0.0.1", 0)
         await stack.enter_async_context(server)

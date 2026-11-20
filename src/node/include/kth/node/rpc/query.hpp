@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <kth/node/rpc/chain_progress.hpp>
 #include <string>
 #include <string_view>
@@ -139,6 +140,9 @@ struct transaction_location {
     int64_t confirmations;     // -1 when its block is off the connected chain
     uint32_t block_time;
     std::optional<int64_t> confirmations_ticks = std::nullopt;
+    // The caller named the block (getrawtransaction's blockhash argument):
+    // only then is `in_active_chain` shown, as BCHN shows it.
+    bool block_named = true;
 };
 
 // The verbose getrawtransaction object: the decoderawtransaction fields, `hex`,
@@ -164,10 +168,24 @@ struct block_location {
 // transaction as verbose getrawtransaction's fields without the location;
 // otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
 // scriptPubKey of those transactions carries its byteCodePattern object.
+//
+// `fees`, when not empty, holds the fee of each transaction in satoshis, by
+// its place in the block: each one after the coinbase gets a `fee` field, in
+// BCH, between its outputs and its `hex`. Empty when the outputs the block
+// spends are not known, and then no transaction has the field.
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
-                                 bool patterns = false);
+                                 bool patterns = false,
+                                 std::span<uint64_t const> fees = {});
+
+// The fee of each transaction of a block, in satoshis, by its place in the
+// block: what its inputs spend less what its outputs pay. `spent` holds the
+// output each input spends, for every transaction after the coinbase, in block
+// order. The coinbase's entry is zero. Nothing when `spent` is not one output
+// for each input, or a transaction pays more than it spends.
+std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
+                                                      std::span<domain::chain::output const> spent);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.

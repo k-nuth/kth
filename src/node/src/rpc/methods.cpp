@@ -791,8 +791,9 @@ get_raw_transaction(method_context& ctx, request const& req) {
 
 // getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
 // false) the wire-serialized block as hex; with 1 (or true) its fields and
-// txids; with 2 its fields and its transactions decoded, and with patterns each
-// of their scripts' byte code pattern.
+// txids; with 2 its fields and its transactions decoded, each with its fee
+// when the node has the outputs the block spends, and with patterns each of
+// their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -853,8 +854,28 @@ get_block(method_context& ctx, request const& req) {
             location.next_block_hash = index.get_hash(next);
         }
     }
+    // With the transactions decoded, each one's fee: what the outputs it
+    // spends hold, from the block's undo record, less what it pays. A block
+    // connected without that record has no fees to give, and the field is
+    // left out. A record that cannot be read is an error, and so is one whose
+    // outputs do not cover what the block's transactions pay: the block was
+    // connected, so that record is not this block's.
+    std::vector<uint64_t> fees;
+    if (args->verbosity == 2) {
+        auto const spent = co_await ctx.chain.fetch_spent_outputs(args->hash, block);
+        if (spent) {
+            auto computed = transaction_fees(*block, spent->outputs);
+            if ( ! computed) {
+                co_return kth::fail(make_error(error_code::internal_error,
+                    "the undo record of the block does not give the fees of its transactions"));
+            }
+            fees = std::move(*computed);
+        } else if (spent.error() != error::not_found) {
+            co_return kth::fail(from_code(spent.error()));
+        }
+    }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags(), args->patterns);
+        view->state->network(), view->state->enabled_flags(), args->patterns, fees);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its

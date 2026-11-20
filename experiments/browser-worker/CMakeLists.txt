@@ -41,4 +41,12 @@ if(TARGET c-api)
       -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
       -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
   set_target_properties(browser_content_control PROPERTIES SUFFIX ".js")
+
+  # Wallet support answered from peers, against a scripted compact filter peer.
+  add_executable(browser_wallet_control wallet-proof.cpp)
+  target_link_libraries(browser_wallet_control PRIVATE node::node)
+  target_link_options(browser_wallet_control PRIVATE
+      -sENVIRONMENT=worker -sEXIT_RUNTIME=0 -sALLOW_MEMORY_GROWTH=1
+      -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=512MB)
+  set_target_properties(browser_wallet_control PROPERTIES SUFFIX ".js")
 endif()

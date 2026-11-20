@@ -17,11 +17,17 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/detail/fee_filter.hpp>
+#include <kth/node/detail/compact_filters.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
 #include <kth/infrastructure/utility/pseudo_random.hpp>
+
+#if ! defined(__EMSCRIPTEN__)
+#include <kth/node/wallet/electrum.hpp>
+#include <kth/node/wallet/service.hpp>
+#endif
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -82,6 +88,15 @@ full_node::full_node(configuration const& configuration)
 
     // Set user agent after initialization (network_ holds reference to network_settings_)
     network_settings_.user_agent = get_user_agent({});
+#if defined(KTH_CURRENCY_BCH)
+    // The service bit follows the setting: a wallet looks for it before it asks.
+    auto const filters = uint64_t(domain::message::version::service::node_compact_filters);
+    network_settings_.services = (network_settings_.services & ~filters)
+        | (configuration.chain.compact_filters ? filters : 0);
+    compact_filter_file_ = configuration.database.directory / "compact_filter_checkpoints";
+    script_filter_file_ = configuration.database.directory / "script_filter_checkpoints";
+    input_prefix_filter_file_ = configuration.database.directory / "input_prefix_filter_checkpoints";
+#endif
 #endif
 }
 
@@ -107,6 +122,16 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(__EMSCRIPTEN__)
+    // The node's own wallet listener answers only wallets on this machine.
+    if ( ! node_settings_.wallet_electrum.empty()) {
+        if (auto const refusal = wallet::electrum_bind_refusal(node_settings_.wallet_electrum)) {
+            spdlog::error("[node] node.wallet_electrum is refused: {}", *refusal);
+            co_return error::operation_failed;
+        }
+    }
+#endif
+
     // Start the blockchain (pass disk magic for block file storage)
     if (!chain_.start(get_disk_magic(network_type_))) {
         spdlog::error("[node] Failure starting blockchain.");
@@ -129,6 +154,40 @@ full_node::~full_node() {
         [this](peer_session& peer, domain::message::get_data const& request) {
             return handlers::chain_data::handle_get_data(chain_, peer, request);
         });
+#if defined(KTH_CURRENCY_BCH)
+    // Compact filters for light wallets, built from the blocks when a peer
+    // asks. Also in the peer's service: a range is up to a thousand filters.
+    if (chain_settings_.compact_filters) {
+        compact_filters_ = std::make_unique<detail::compact_filter_service>(chain_,
+            get_genesis_block(network_type_), compact_filter_file_);
+        // The script filter too, for the blocks the node has the spent
+        // outputs of.
+        compact_filters_->serve_script_filters(script_filter_file_);
+        // And the input prefix filter, for every block.
+        compact_filters_->serve_input_prefix_filters(input_prefix_filter_file_);
+        compact_filters_->load();
+        network_.register_served_message_handler<domain::message::get_compact_filters>(
+            [this](peer_session& peer, domain::message::get_compact_filters const& request) {
+                return detail::handle_get_compact_filters(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_headers>(
+            [this](peer_session& peer, domain::message::get_compact_filter_headers const& request) {
+                return detail::handle_get_compact_filter_headers(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_checkpoint>(
+            [this](peer_session& peer, domain::message::get_compact_filter_checkpoint const& request) {
+                return detail::handle_get_compact_filter_checkpoint(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_range>(
+            [this](peer_session& peer, domain::message::get_compact_filter_range const& request) {
+                return detail::handle_get_compact_filter_range(*compact_filters_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_proof>(
+            [this](peer_session& peer, domain::message::get_compact_filter_proof const& request) {
+                return detail::handle_get_compact_filter_proof(*compact_filters_, peer, request);
+            });
+    }
+#endif
     // Each newly connected tip, owed to every peer by the sync coordinator, is
     // announced by the peer's own service.
     network_.set_tip_announcement_handler(
@@ -273,8 +332,9 @@ full_node::~full_node() {
     // This blocks until ALL tasks complete (i.e., until stop() is called).
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
+    start_wallet();
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_filters());
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -286,8 +346,11 @@ full_node::~full_node() {
 #if defined(KTH_WITH_CAPNPROTO_RPC)
         if (capnp_server_) capnp_server_->stop();
 #endif
+        stop_wallet();
     };
-    co_await (core() && run_rpc());
+    co_await (core() && run_rpc() && run_wallet());
+    wallet_electrum_.reset();
+    wallet_.reset();
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -296,6 +359,47 @@ full_node::~full_node() {
 
     co_return error::success;
 }
+
+#if ! defined(__EMSCRIPTEN__)
+// The node's own wallet support, answered from its own chain, behind a local
+// Electrum listener for wallets that do not speak P2P. Runs on its own
+// executor; nothing of it is reachable unless node.wallet_electrum names it.
+void full_node::start_wallet() {
+    auto const& bind = node_settings_.wallet_electrum;
+    if (bind.empty()) return;
+    auto const parsed = wallet::parse_electrum_bind(bind);
+    if ( ! parsed) return;
+    auto const& [address, port] = *parsed;
+    wallet::chain_settings settings;
+    settings.birthday = node_settings_.wallet_birthday;
+    wallet_ = wallet::service::from_chain(chain_, network_type_, settings);
+    wallet_electrum_ = std::make_unique<wallet::electrum_server>(*wallet_, network_type_);
+    auto const bound = wallet_electrum_->listen(address, port);
+    if ( ! bound) {
+        spdlog::error("[node] The wallet's Electrum listener cannot listen on {}", bind);
+        wallet_electrum_.reset();
+        wallet_.reset();
+        return;
+    }
+    spdlog::info("[node] Wallet support answered from this node's own chain; Electrum listener on {}:{}",
+        address, *bound);
+}
+
+// Until stop_wallet(): the wallet's own executor runs it, and the node waits
+// for it as for its other tasks.
+::asio::awaitable<void> full_node::run_wallet() {
+    if ( ! wallet_) co_return;
+    auto const executor = wallet_->executor();
+    (void)co_await (::asio::co_spawn(executor, wallet_->run(), ::asio::use_awaitable) &&
+                    ::asio::co_spawn(executor, wallet_electrum_->run(), ::asio::use_awaitable));
+}
+
+// Ends run_wallet(). Thread safe.
+void full_node::stop_wallet() {
+    if (wallet_electrum_) wallet_electrum_->stop();
+    if (wallet_) wallet_->stop();
+}
+#endif
 
 ::asio::awaitable<void> full_node::run_rpc() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
@@ -406,6 +510,31 @@ full_node::~full_node() {
 
     organizer.stop();
     spdlog::debug("[full_node] run_sync() ENDED");
+}
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_compact_filters() {
+    if ( ! compact_filters_) co_return;
+    // On the network pool, like the sync: a first pass reads every block once.
+    co_await ::asio::co_spawn(network_.thread_pool().get_executor(),
+        [this]() -> ::asio::awaitable<void> {
+            auto executor = co_await ::asio::this_coro::executor;
+            ::asio::steady_timer timer(executor);
+            std::optional<uint64_t> seen;
+            while ( ! stopped()) {
+                // Once for each state the chain publishes: the filter headers
+                // follow the connected tip a thousand blocks at a time.
+                auto const view = chain_.chain_view();
+                if (view && seen != view->generation) {
+                    seen = view->generation;
+                    co_await compact_filters_->extend([this] { return stopped(); });
+                }
+                timer.expires_after(std::chrono::milliseconds(200));
+                auto [ec] = co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+                if (ec) break;
+            }
+        }, ::asio::use_awaitable);
 }
 #endif
 
