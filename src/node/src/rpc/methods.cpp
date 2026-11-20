@@ -515,6 +515,25 @@ get_best_block_hash(method_context& ctx, request const& /*req*/) {
     co_return w.str();
 }
 
+// The hash of the connected block at `height`, which is at most the connected
+// tip height of `view`. The header store runs ahead of the connected chain
+// while blocks download, and is rewritten from the fork point before a
+// reorganization connects anything, so it is taken from the connected tip's
+// ancestry instead.
+std::expected<hash_digest, rpc_error> connected_hash_at(blockchain::block_chain& chain,
+    blockchain::block_chain::published_chain_view const& view, size_t height) {
+    auto const& index = chain.headers();
+    auto const tip = index.find(view.tip_hash);
+    auto const found = tip == blockchain::header_index::null_index
+        ? blockchain::header_index::null_index
+        : index.get_ancestor(tip, int32_t(height));
+    if (found == blockchain::header_index::null_index) {
+        return kth::fail(make_error(error_code::internal_error,
+            "connected chain not in the header index"));
+    }
+    return index.get_hash(found);
+}
+
 // getblockhash <height> -> the hash of the connected block at that height.
 // The header store runs ahead of the connected chain while blocks download,
 // and is rewritten from the fork point before a reorganization connects
@@ -538,17 +557,12 @@ get_block_hash(method_context& ctx, request const& req) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "block height out of range"));
     }
-    auto const& index = ctx.chain.headers();
-    auto const tip = index.find(view->tip_hash);
-    auto const found = tip == blockchain::header_index::null_index
-        ? blockchain::header_index::null_index
-        : index.get_ancestor(tip, int32_t(*height));
-    if (found == blockchain::header_index::null_index) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "connected chain not in the header index"));
+    auto const hash = connected_hash_at(ctx.chain, *view, *height);
+    if ( ! hash) {
+        co_return kth::fail(hash.error());
     }
     writer w;
-    w.value(encode_hash(index.get_hash(found)));
+    w.value(encode_hash(*hash));
     co_return w.str();
 }
 
@@ -857,20 +871,67 @@ get_block(method_context& ctx, request const& req) {
         view->state->network(), view->state->enabled_flags(), args->patterns);
 }
 
-// getblockheader <blockhash> [verbose=true] -> the header fields with its
-// height and confirmations, or with verbose=false the 80-byte serialized
+// getblockheader's first argument, as BCHN takes it: a block hash, or a JSON
+// number, the height of a connected block (the one getblockhash names). A
+// negative height and one past the connected tip are invalid parameters.
+std::expected<hash_digest, rpc_error> header_target(blockchain::block_chain& chain,
+    request const& req) {
+    auto const missing = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getblockheader requires [blockhash or height]"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array args;
+    simdjson::ondemand::value first;
+    simdjson::ondemand::json_type type;
+    if ( ! req.params.empty() &&
+        parser.iterate(padded).get(doc) == simdjson::SUCCESS &&
+        doc.get_array().get(args) == simdjson::SUCCESS &&
+        args.at(0).get(first) == simdjson::SUCCESS &&
+        first.type().get(type) == simdjson::SUCCESS &&
+        type == simdjson::ondemand::json_type::number) {
+        int64_t height = 0;
+        if (first.get_int64().get(height) != simdjson::SUCCESS) {
+            return kth::fail(make_error(error_code::invalid_params, "height must be an integer"));
+        }
+        if (height < 0) {
+            return kth::fail(make_error(error_code::invalid_parameter,
+                fmt::format("Target block height {} is negative", height)));
+        }
+        auto const view = chain.chain_view();
+        if ( ! view) {
+            return kth::fail(make_error(error_code::internal_error, "chain state unavailable"));
+        }
+        if (uint64_t(height) > view->connected_tip_height) {
+            return kth::fail(make_error(error_code::invalid_parameter,
+                fmt::format("Target block height {} after current tip {}", height,
+                    view->connected_tip_height)));
+        }
+        return connected_hash_at(chain, *view, size_t(height));
+    }
+
+    auto const strings = params_strings(req.params);
+    if (strings.empty() || strings[0].empty()) {
+        return missing();
+    }
+    auto const hash = decode_hash(strings[0]);
+    if ( ! hash) {
+        return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
+    }
+    return *hash;
+}
+
+// getblockheader <blockhash|height> [verbose=true] -> the header fields with
+// its height and confirmations, or with verbose=false the 80-byte serialized
 // header as hex.
 // C-API counterpart: kth_chain_sync_block_header_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_header(method_context& ctx, request const& req) {
-    auto const args = params_strings(req.params);
-    if (args.empty() || args[0].empty()) {
-        co_return kth::fail(make_error(error_code::invalid_params,
-            "getblockheader requires [blockhash]"));
-    }
-    auto const hash = decode_hash(args[0]);
+    auto const hash = header_target(ctx.chain, req);
     if ( ! hash) {
-        co_return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
+        co_return kth::fail(hash.error());
     }
     auto const verbose = params_bool(req.params, 1, /*fallback*/ true);
     if ( ! verbose) {

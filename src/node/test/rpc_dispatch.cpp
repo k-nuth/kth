@@ -327,6 +327,69 @@ TEST_CASE("getblockheader dispatch counts confirmations from the connected tip",
     REQUIRE(confirmations(trunk[4].hash()) == -1);
 }
 
+TEST_CASE("getblockheader takes the height of a connected block for its hash", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_header_by_height");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        ::asio::io_context io;
+        auto const body = R"({"method":"getblockheader","params":)" + params + R"(,"id":4})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const by_hash = [&](hash_digest const& hash, std::string const& rest) {
+        return request("[\"" + encode_hash(hash) + '"' + rest + "]");
+    };
+
+    // A height answers as the hash of the connected block there does, verbose or not.
+    REQUIRE(request("[0]") == by_hash(domain::chain::block::genesis_regtest().hash(), ""));
+    REQUIRE(request("[0,false]") == by_hash(domain::chain::block::genesis_regtest().hash(), ",false"));
+    REQUIRE(request("[2,true]") == by_hash(trunk[1].hash(), ",true"));
+    REQUIRE(request("[3,false]") == by_hash(trunk[2].hash(), ",false"));
+    REQUIRE(request("[3,false]") == node::rpc::build_success("4",
+        '"' + node::rpc::header_to_hex(trunk[2].header()) + '"'));
+
+    // Past the connected tip, a stored header included, and below zero.
+    REQUIRE(request("[4]") == node::rpc::build_error("4", -8, "Target block height 4 after current tip 3"));
+    REQUIRE(request("[4]").find(encode_hash(trunk[3].hash())) == std::string::npos);
+    REQUIRE(request("[1000000,false]") ==
+        node::rpc::build_error("4", -8, "Target block height 1000000 after current tip 3"));
+    REQUIRE(request("[-1]") == node::rpc::build_error("4", -8, "Target block height -1 is negative"));
+
+    // A number that is not an integer is not a height; a string is a hash, digits or not.
+    for (auto const* invalid : {"[1.5]", "[1e2]", "[99999999999999999999]"}) {
+        CAPTURE(invalid);
+        REQUIRE(request(invalid) == node::rpc::build_error("4", -32602, "height must be an integer"));
+    }
+    REQUIRE(request(R"(["2"])") == node::rpc::build_error("4", -32602, "invalid block hash"));
+    for (auto const* invalid : {"[]", "[null]", "[true]", "[{}]", "[[2]]", R"("2")", "2"}) {
+        CAPTURE(invalid);
+        REQUIRE(request(invalid) == node::rpc::build_error("4", -32602,
+            "getblockheader requires [blockhash or height]"));
+    }
+    // The verbose argument is checked as for a hash.
+    REQUIRE(request("[2,1]") == node::rpc::build_error("4", -32602, "verbose must be a boolean"));
+}
+
 TEST_CASE("getblockhash and getbestblockhash name only connected blocks", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_block_hash_connected");
     REQUIRE(fixture.created());
