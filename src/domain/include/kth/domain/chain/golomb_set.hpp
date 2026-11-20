@@ -5,6 +5,10 @@
 #ifndef KTH_DOMAIN_CHAIN_GOLOMB_SET_HPP
 #define KTH_DOMAIN_CHAIN_GOLOMB_SET_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <array>
 #include <cstdint>
 #include <expected>
