@@ -5,6 +5,7 @@
 #include <kth/domain/chain/block.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cfenv>
 #include <cmath>
 #include <cstddef>
@@ -437,6 +438,34 @@ hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) cons
     KTH_ASSERT(txids.size() == transactions_.size());
     return merkle_root(hash_list(txids.begin(), txids.end()));
 }
+
+#if defined(KTH_WITH_NEUTRINO)
+hash_list block::transaction_merkle_branch(size_t index) const {
+    return merkle_branch(to_hashes(), index);
+}
+
+hash_list block::transaction_merkle_branch(size_t index, std::span<hash_digest const> txids) const {
+    KTH_ASSERT(txids.size() == transactions_.size());
+    return merkle_branch(hash_list(txids.begin(), txids.end()), index);
+}
+
+std::optional<hash_digest> block::merkle_branch_root(hash_digest const& transaction_hash, size_t index, std::span<hash_digest const> branch) {
+    auto hash = transaction_hash;
+    std::array<uint8_t, 2 * hash_size> pair;
+
+    for (auto const& sibling : branch) {
+        if (index % 2 != 0 && sibling == hash) return std::nullopt;
+        auto const& left = index % 2 == 0 ? hash : sibling;
+        auto const& right = index % 2 == 0 ? sibling : hash;
+        std::copy(left.begin(), left.end(), pair.begin());
+        std::copy(right.begin(), right.end(), pair.begin() + hash_size);
+        hash = bitcoin_hash(pair);
+        index /= 2;
+    }
+
+    return hash;
+}
+#endif // KTH_WITH_NEUTRINO
 
 size_t block::non_coinbase_input_count() const {
     if (transactions_.empty()) {

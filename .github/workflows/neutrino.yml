@@ -27,6 +27,12 @@ on:
       - src/domain/src/chain/golomb_set.cpp
       - src/domain/test/chain/compact_filter.cpp
       - src/domain/test/chain/golomb_set.cpp
+      - src/domain/include/kth/domain/chain/block.hpp
+      - src/domain/src/chain/block.cpp
+      - src/domain/test/chain/block_merkle_branch.cpp
+      - src/domain/include/kth/domain/chain/script_filter*.hpp
+      - src/domain/src/chain/script_filter*.cpp
+      - src/domain/test/chain/script_filter*.cpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_reader.hpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_writer.hpp
       - conanfile.py

@@ -468,7 +468,11 @@ if (KTH_WITH_NEUTRINO)
         src/chain/compact_filter.cpp
         src/chain/golomb_set.cpp
         include/kth/domain/chain/compact_filter.hpp
-        include/kth/domain/chain/golomb_set.hpp)
+        include/kth/domain/chain/golomb_set.hpp
+        src/chain/script_filter.cpp
+        src/chain/script_filter_builder.cpp
+        include/kth/domain/chain/script_filter.hpp
+        include/kth/domain/chain/script_filter_builder.hpp)
 endif()
 
 
@@ -707,8 +711,12 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # its workflow builds and runs them and nothing else.
   if (KTH_WITH_NEUTRINO)
     add_executable(kth_domain_neutrino_test
+        test/chain/block_merkle_branch.cpp
         test/chain/compact_filter.cpp
-        test/chain/golomb_set.cpp)
+        test/chain/golomb_set.cpp
+        test/chain/script_filter.cpp
+        test/chain/script_filter_bchd.cpp
+        test/chain/script_filter_builder.cpp)
     target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)
