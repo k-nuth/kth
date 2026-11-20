@@ -18,6 +18,7 @@
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/chain/transaction.hpp>
+#include <kth/domain/config/network.hpp>
 
 
 #include <kth/domain/concepts.hpp>
@@ -114,6 +115,10 @@ struct KD_API block {
     static
     block genesis_chipnet();
 #endif
+
+    /// The genesis block of `network`. Tempnet starts from chipnet's.
+    static
+    block genesis(domain::config::network network);
 
     static
     size_t locator_size(size_t top);

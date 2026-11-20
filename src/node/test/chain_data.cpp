@@ -141,6 +141,7 @@ TEST_CASE("headers_after_locator with an empty locator answers the stop header a
 
 TEST_CASE("block_request_allowed admits only stored blocks on the connected chain", "[chain_data]") {
     served_chain c;
+    CHECK(block_request_allowed(c.index(), c.tip(), domain::chain::block::genesis_regtest().hash()));
     for (size_t h = 1; h <= 4; ++h) {
         CAPTURE(h);
         CHECK(block_request_allowed(c.index(), c.tip(), c.trunk[h - 1].hash()));
@@ -284,7 +285,9 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
     loopback_peer peer;
     using domain::message::inventory_vector;
     using type_id = inventory_vector::type_id;
+    auto const genesis = domain::chain::block::genesis_regtest();
     auto const request = domain::message::get_data::create({
+        {type_id::block, genesis.hash()},                                   // never downloaded
         {type_id::block, c.trunk[1].hash()},
         {type_id::transaction, c.trunk[0].transactions().front().hash()},   // confirmed, not pooled
         {type_id::block, c.side.hash()},                                    // off the connected chain
@@ -296,19 +299,20 @@ TEST_CASE("getdata sends the requested connected blocks and a notfound for the r
         node::message_result::handled);
 
     auto const sent = peer.received();
-    REQUIRE(sent.size() == 3);
+    REQUIRE(sent.size() == 4);
     hash_list blocks;
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         REQUIRE(sent[i].command == domain::message::block::command);
         byte_reader reader(sent[i].payload);
         auto const block = domain::message::block::from_data(reader, peer.session->negotiated_version());
         REQUIRE(block);
         blocks.push_back(block->hash());
     }
-    CHECK(blocks == hash_list{c.trunk[1].hash(), c.trunk[3].hash()});
+    CHECK(blocks == hash_list{genesis.hash(), c.trunk[1].hash(), c.trunk[3].hash()});
+    CHECK(sent[0].payload == to_data_chunk(genesis));
 
-    REQUIRE(sent[2].command == domain::message::not_found::command);
-    byte_reader reader(sent[2].payload);
+    REQUIRE(sent[3].command == domain::message::not_found::command);
+    byte_reader reader(sent[3].payload);
     auto const missing = domain::message::not_found::from_data(reader, peer.session->negotiated_version());
     REQUIRE(missing);
     CHECK(missing->inventories() == inventory_vector::list{
