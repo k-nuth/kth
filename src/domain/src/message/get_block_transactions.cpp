@@ -27,9 +27,14 @@ get_block_transactions::get_block_transactions(hash_digest const& block_hash, st
 
 // static
 expect<get_block_transactions> get_block_transactions::create(hash_digest const& block_hash, std::vector<uint64_t> indexes) {
-    // More indexes than a block could hold describes no block.
-    if (indexes.size() > static_absolute_max_block_size()) {
-        return std::unexpected(error::invalid_size);
+    uint64_t previous = 0;
+    bool started = false;
+    for (auto const index : indexes) {
+        if (index >= max_compact_transactions() || (started && index <= previous)) {
+            return std::unexpected(error::invalid_size);
+        }
+        previous = index;
+        started = true;
     }
     return get_block_transactions(block_hash, std::move(indexes));
 }
@@ -47,17 +52,24 @@ expect<get_block_transactions> get_block_transactions::from_data(byte_reader& re
     if ( ! count) {
         return std::unexpected(count.error());
     }
-    if (*count > static_absolute_max_block_size()) {
+    // Each index needs at least one byte. Check before reserving memory.
+    if (*count > max_compact_transactions() || *count > reader.remaining_size()) {
         return std::unexpected(error::invalid_size);
     }
     std::vector<uint64_t> indexes;
     indexes.reserve(*count);
+    uint64_t next = 0;
     for (size_t i = 0; i < *count; ++i) {
-        auto const index = reader.read_size_little_endian();
-        if ( ! index) {
-            return std::unexpected(index.error());
+        auto const differential = reader.read_variable_little_endian();
+        if ( ! differential) {
+            return std::unexpected(differential.error());
         }
-        indexes.push_back(*index);
+        if (*differential >= max_compact_transactions() - next) {
+            return std::unexpected(error::invalid_size);
+        }
+        auto const absolute = next + *differential;
+        indexes.push_back(absolute);
+        next = absolute + 1;
     }
     return create(*block_hash, std::move(indexes));
 }
@@ -68,8 +80,11 @@ expect<get_block_transactions> get_block_transactions::from_data(byte_reader& re
 size_t get_block_transactions::serialized_size(uint32_t /*version*/) const {
     auto size = hash_size + infrastructure::message::variable_uint_size(indexes_.size());
 
-    for (auto const& element : indexes_) {
-        size += infrastructure::message::variable_uint_size(element);
+    uint64_t next = 0;
+    for (auto const element : indexes_) {
+        auto const differential = element - next;
+        next = element + 1;
+        size += infrastructure::message::variable_uint_size(differential);
     }
 
     return size;
@@ -86,8 +101,11 @@ std::vector<uint64_t> const& get_block_transactions::indexes() const {
 expect<void> get_block_transactions::to_data(byte_writer& writer, uint32_t version) const noexcept {
         if (auto r = writer.write_hash(block_hash_); ! r) return r;
         if (auto r = writer.write_variable_little_endian(indexes_.size()); ! r) return r;
-        for (auto const& element : indexes_) {
-            if (auto r = writer.write_variable_little_endian(element); ! r) return r;
+        uint64_t next = 0;
+        for (auto const element : indexes_) {
+            auto const differential = element - next;
+            if (auto r = writer.write_variable_little_endian(differential); ! r) return r;
+            next = element + 1;
         }
         return {};
 }

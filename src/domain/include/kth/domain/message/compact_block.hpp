@@ -31,8 +31,7 @@ struct KD_API compact_block {
     static
     compact_block factory_from_block(message::block const& blk);
 
-    // Construction cannot fail (no consensus checks); every state, including
-    // the all-default one, is syntactically valid.
+    // Construction does no validation. Prefilled indexes in memory are absolute.
     compact_block() = default;
     compact_block(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
 
@@ -77,6 +76,11 @@ private:
 };
 
 hash_digest hash(compact_block const& block);
+
+/// Low 48 bits of SipHash-2-4(txid), keyed by the first two little-endian
+/// words of SHA256(header || nonce). The hash helpers above supply that hash.
+[[nodiscard]] KD_API
+uint64_t compact_short_id(hash_digest const& header_nonce_hash, hash_digest const& txid);
 
 } // namespace kth::domain::message
 

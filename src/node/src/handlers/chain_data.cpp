@@ -5,8 +5,10 @@
 #include <kth/node/handlers/chain_data.hpp>
 
 #include <algorithm>
+#include <utility>
 
 #include <kth/domain/message/block.hpp>
+#include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/not_found.hpp>
 #include <kth/node/p2p_node.hpp>
@@ -97,6 +99,26 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
     return chain.contains(idx) && index.has_block_data(idx);
 }
 
+std::optional<domain::message::block_transactions> block_transactions_for(
+    domain::message::block const& block, domain::message::get_block_transactions const& request) {
+
+    auto const& indexes = request.indexes();
+    auto const& transactions = block.transactions();
+    // A request's indexes are strictly increasing (it cannot be built
+    // otherwise), so the last one bounds them all, and it is checked before
+    // anything is reserved.
+    if (request.block_hash() != block.hash() ||
+            ( ! indexes.empty() && indexes.back() >= transactions.size())) {
+        return std::nullopt;
+    }
+    domain::chain::transaction::list selected;
+    selected.reserve(indexes.size());
+    for (auto const index : indexes) {
+        selected.push_back(transactions[size_t(index)]);
+    }
+    return domain::message::block_transactions(request.block_hash(), std::move(selected));
+}
+
 ::asio::awaitable<message_result> handle_get_headers(blockchain::block_chain& chain,
     network::peer_session& peer, domain::message::get_headers const& request) {
 
@@ -153,7 +175,18 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
         if (view && block_request_allowed(chain.headers(), view->tip_hash, item.hash())) {
             auto const block = co_await chain.fetch_block(item.hash());
             if (block) {
-                if (co_await peer.send_data(*block->first)) {
+                auto const& served = *block->first;
+                // On the connected chain, so at or below the view's tip.
+                bool const compact = item.type() == type_id::compact_block &&
+                    ! served.transactions().empty() &&
+                    block->second + max_compact_block_depth >= view->connected_tip_height;
+                code ec;
+                if (compact) {
+                    ec = co_await peer.send_data(domain::message::compact_block::factory_from_block(served));
+                } else {
+                    ec = co_await peer.send_data(served);
+                }
+                if (ec) {
                     // The peer is gone; nothing more can be sent to it.
                     co_return message_result::handled;
                 }
@@ -169,6 +202,38 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
             (void)co_await peer.send_data(*reply);
         }
     }
+    co_return message_result::handled;
+}
+
+::asio::awaitable<message_result> handle_get_block_transactions(blockchain::block_chain& chain,
+    network::peer_session& peer, domain::message::get_block_transactions const& request) {
+
+    if (request.indexes().empty()) {
+        // No reason to ask for nothing.
+        spdlog::debug("[chain_data] getblocktxn for no transaction from [{}]; disconnecting",
+            peer.authority());
+        co_return message_result::disconnect;
+    }
+    auto const view = chain.chain_view();
+    if ( ! view || ! block_request_allowed(chain.headers(), view->tip_hash, request.block_hash())) {
+        spdlog::debug("[chain_data] getblocktxn for block {} from [{}], not on the connected chain",
+            encode_hash(request.block_hash()), peer.authority());
+        co_return message_result::handled;
+    }
+    auto const block = co_await chain.fetch_block(request.block_hash());
+    if ( ! block) {
+        spdlog::debug("[chain_data] Block {} requested by [{}] could not be read: {}",
+            encode_hash(request.block_hash()), peer.authority(), block.error().message());
+        co_return message_result::handled;
+    }
+    auto const reply = block_transactions_for(*block->first, request);
+    if ( ! reply) {
+        spdlog::debug("[chain_data] getblocktxn past the {} transaction(s) of block {} from [{}]; "
+            "disconnecting", block->first->transactions().size(), encode_hash(request.block_hash()),
+            peer.authority());
+        co_return message_result::disconnect;
+    }
+    (void)co_await peer.send_data(*reply);
     co_return message_result::handled;
 }
 

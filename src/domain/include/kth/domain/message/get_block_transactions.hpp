@@ -24,8 +24,10 @@ struct KD_API get_block_transactions {
 
     get_block_transactions();
 
-    /// Fails with error::invalid_size over the number of transactions a block
-    /// could hold.
+    /// Fails with error::invalid_size when there are more indexes than a block
+    /// could hold, an index is past that, or the indexes are not strictly
+    /// increasing. Stored indexes are absolute positions in the block. The wire
+    /// form is BIP152's differential encoding, applied by to_data / from_data.
     static
     expect<get_block_transactions> create(hash_digest const& block_hash, std::vector<uint64_t> indexes);
 
