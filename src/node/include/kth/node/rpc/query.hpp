@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <kth/node/rpc/chain_progress.hpp>
 #include <string>
 #include <string_view>
@@ -164,10 +165,53 @@ struct block_location {
 // transaction as verbose getrawtransaction's fields without the location;
 // otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
 // scriptPubKey of those transactions carries its byteCodePattern object.
+//
+// `fees`, when not empty, holds the fee of each transaction in satoshis, by
+// its place in the block: each one after the coinbase gets a `fee` field, in
+// BCH, between its outputs and its `hex`. Empty when the outputs the block
+// spends are not known, and then no transaction has the field.
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
-                                 bool patterns = false);
+                                 bool patterns = false,
+                                 std::span<uint64_t const> fees = {});
+
+// The fee of each transaction of a block, in satoshis, by its place in the
+// block: what its inputs spend less what its outputs pay. `spent` holds the
+// output each input spends, for every transaction after the coinbase, in block
+// order. The coinbase's entry is zero. Nothing when `spent` is not one output
+// for each input, or a transaction pays more than it spends.
+std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
+                                                      std::span<domain::chain::output const> spent);
+
+// What getblockstats reports about a block beyond the block itself.
+struct block_stats_location {
+    size_t height;
+    uint32_t median_time;             // of the 11 blocks ending at this one
+    uint64_t subsidy;                 // satoshis
+};
+
+// Whether getblockstats needs the outputs a block spends for the statistics
+// named in `selected` (all of them when it is empty): the fees, the feerates
+// and utxo_size_inc do.
+bool block_stats_need_spent(std::span<std::string const> selected);
+
+// The first name in `selected`, in name order, that getblockstats does not
+// report. Nothing when it reports them all.
+std::optional<std::string> unknown_block_stat(std::span<std::string const> selected);
+
+// The getblockstats object: the statistics named in `selected`, all of them
+// when it is empty, in name order, as other Bitcoin Cash nodes compute them.
+// Amounts are in BCH and feerates in BCH per byte, each rounded down to whole
+// satoshis; the coinbase counts only in `outs`, `txs` and the UTXO figures.
+// `spent` holds the output each input spends, for every transaction after the
+// coinbase, in block order. Nothing when the statistics asked for need it and
+// it is missing, when it is not one output for each input, or when a
+// transaction pays more than it spends.
+std::optional<std::string> render_block_stats(domain::chain::block const& block,
+                                              block_stats_location const& location,
+                                              std::optional<std::span<domain::chain::output const>> spent,
+                                              std::span<std::string const> selected);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.

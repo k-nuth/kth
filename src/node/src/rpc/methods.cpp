@@ -180,6 +180,91 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     return result;
 }
 
+// getblockstats arguments, as BCHN takes them: the block by its hash or its
+// height, then the names of the statistics to report (null or an empty list
+// reports them all). Types and arity are checked before storage is touched.
+struct block_stats_arguments {
+    std::optional<hash_digest> hash;
+    int32_t height;                 // when there is no hash
+    std::vector<std::string> stats;
+};
+
+std::expected<block_stats_arguments, rpc_error> block_stats_params(request const& req) {
+    auto const invalid = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getblockstats requires [hash_or_height, stats]"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array args;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(args) != simdjson::SUCCESS) {
+        return invalid();
+    }
+    block_stats_arguments result{.hash = std::nullopt, .height = 0, .stats = {}};
+    size_t count = 0;
+    for (auto element : args) {
+        simdjson::ondemand::value value;
+        simdjson::ondemand::json_type type;
+        if (count >= 2 || element.get(value) != simdjson::SUCCESS ||
+            value.type().get(type) != simdjson::SUCCESS) {
+            return invalid();
+        }
+        if (count == 0 && type == simdjson::ondemand::json_type::number) {
+            // A height the reference reads as a 32-bit integer.
+            int64_t height;
+            if (value.get_int64().get(height) != simdjson::SUCCESS ||
+                height < std::numeric_limits<int32_t>::min() || height > std::numeric_limits<int32_t>::max()) {
+                return invalid();
+            }
+            result.height = int32_t(height);
+        } else if (count == 0) {
+            std::string_view text;
+            if (value.get_string().get(text) != simdjson::SUCCESS) {
+                return invalid();
+            }
+            auto const hash = decode_hash(text);
+            if ( ! hash) {
+                return kth::fail(make_error(error_code::invalid_params, "invalid block hash"));
+            }
+            result.hash = *hash;
+        } else if (type != simdjson::ondemand::json_type::null) {
+            simdjson::ondemand::array names;
+            if (value.get_array().get(names) != simdjson::SUCCESS) {
+                return invalid();
+            }
+            for (auto name : names) {
+                simdjson::ondemand::value item;
+                std::string_view text;
+                if (name.get(item) != simdjson::SUCCESS || item.get_string().get(text) != simdjson::SUCCESS) {
+                    return invalid();
+                }
+                result.stats.emplace_back(text);
+            }
+        }
+        ++count;
+    }
+    if (count == 0) {
+        return invalid();
+    }
+    return result;
+}
+
+// The median time past of the block at `idx`: the median of its timestamp and
+// those of the ten blocks before it on its own branch.
+uint32_t block_median_time(blockchain::header_index const& index, blockchain::header_index::index_t idx) {
+    return domain::chain::median_time_past_of(idx,
+        [&](blockchain::header_index::index_t at) { return index.get_timestamp(at); },
+        [&](blockchain::header_index::index_t at) -> std::optional<blockchain::header_index::index_t> {
+            auto const parent = index.get_parent_index(at);
+            if (parent == blockchain::header_index::null_index) {
+                return std::nullopt;
+            }
+            return parent;
+        });
+}
+
 
 // getblockcount -> the height of the most-work fully-validated block.
 // C-API counterpart: kth_chain_sync_last_height (see docs/json-rpc.md).
@@ -791,8 +876,9 @@ get_raw_transaction(method_context& ctx, request const& req) {
 
 // getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
 // false) the wire-serialized block as hex; with 1 (or true) its fields and
-// txids; with 2 its fields and its transactions decoded, and with patterns each
-// of their scripts' byte code pattern.
+// txids; with 2 its fields and its transactions decoded, each with its fee
+// when the node has the outputs the block spends, and with patterns each of
+// their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -833,15 +919,7 @@ get_block(method_context& ctx, request const& req) {
     block_location location{
         .height = height,
         .confirmations = progress->confirmations,
-        .median_time = domain::chain::median_time_past_of(idx,
-            [&](blockchain::header_index::index_t at) { return index.get_timestamp(at); },
-            [&](blockchain::header_index::index_t at) -> std::optional<blockchain::header_index::index_t> {
-                auto const parent = index.get_parent_index(at);
-                if (parent == blockchain::header_index::null_index) {
-                    return std::nullopt;
-                }
-                return parent;
-            }),
+        .median_time = block_median_time(index, idx),
         .chain_work = index.total_chain_work(args->hash),
         .next_block_hash = std::nullopt,
         .progress = chain_progress{progress->ticks, progress->target_time, progress->next_target_time},
@@ -853,8 +931,126 @@ get_block(method_context& ctx, request const& req) {
             location.next_block_hash = index.get_hash(next);
         }
     }
+    // With the transactions decoded, each one's fee: what the outputs it
+    // spends hold, from the block's undo record, less what it pays. A block
+    // connected without that record has no fees to give, and the field is
+    // left out. A record that cannot be read is an error, and so is one whose
+    // outputs do not cover what the block's transactions pay: the block was
+    // connected, so that record is not this block's.
+    std::vector<uint64_t> fees;
+    if (args->verbosity == 2) {
+        auto const spent = co_await ctx.chain.fetch_spent_outputs(args->hash, block);
+        if (spent) {
+            auto computed = transaction_fees(*block, spent->outputs);
+            if ( ! computed) {
+                co_return kth::fail(make_error(error_code::internal_error,
+                    "the undo record of the block does not give the fees of its transactions"));
+            }
+            fees = std::move(*computed);
+        } else if (spent.error() != error::not_found) {
+            co_return kth::fail(from_code(spent.error()));
+        }
+    }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags(), args->patterns);
+        view->state->network(), view->state->enabled_flags(), args->patterns, fees);
+}
+
+// getblockstats <hash_or_height> [stats] -> the statistics of a block of the
+// connected chain: its fees, feerates and sizes, its inputs and outputs, and
+// what it does to the UTXO set, as other Bitcoin Cash nodes compute them.
+// `stats` names the ones to report, all of them by default. The fees, the
+// feerates and utxo_size_inc need the outputs the block spends, which only its
+// undo record holds: a block connected without one (at or below the checkpoint,
+// without chain.full_validation) answers only for the others.
+// C-API counterpart: kth_chain_sync_block_by_hash.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_block_stats(method_context& ctx, request const& req) {
+    auto const args = block_stats_params(req);
+    if (!args) {
+        co_return kth::fail(args.error());
+    }
+    auto const view = ctx.chain.chain_view();
+    if ( ! view || ! view->state) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    auto const& index = ctx.chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    if (tip == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected tip not in the header index"));
+    }
+    auto const tip_height = view->connected_tip_height;
+
+    // The block on the connected chain, as the reference looks it up: a hash
+    // the index knows off that chain, or a height past its tip, is refused.
+    auto idx = blockchain::header_index::null_index;
+    if (args->hash) {
+        idx = index.find(*args->hash);
+        if (idx != blockchain::header_index::null_index) {
+            auto const height = index.get_height(idx);
+            if (height < 0 || size_t(height) > tip_height || index.get_ancestor(tip, height) != idx) {
+                co_return kth::fail(make_error(error_code::invalid_parameter, fmt::format(
+                    "Block is not in chain {}", domain::config::chain_name(view->state->network()))));
+            }
+        }
+    } else {
+        if (args->height < 0) {
+            co_return kth::fail(make_error(error_code::invalid_parameter,
+                fmt::format("Target block height {} is negative", args->height)));
+        }
+        if (size_t(args->height) > tip_height) {
+            co_return kth::fail(make_error(error_code::invalid_parameter,
+                fmt::format("Target block height {} after current tip {}", args->height, tip_height)));
+        }
+        idx = index.get_ancestor(tip, args->height);
+    }
+    if (idx == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::invalid_address_or_key,
+            "Block not found"));
+    }
+    auto const hash = index.get_hash(idx);
+    auto const height = size_t(index.get_height(idx));
+
+    auto const result = co_await ctx.chain.fetch_block(hash);
+    if ( ! result) {
+        co_return kth::fail(from_code(result.error()));
+    }
+    auto const& block = result->first;
+
+    // The outputs the block spends are read only when what is asked needs
+    // them. A record the node does not have, or cannot read, or that does not
+    // fit the block, is what the reference calls undo data it cannot read.
+    auto const unreadable_undo = [] {
+        return kth::fail(make_error(error_code::misc_error,
+            "Can't read undo data from disk"));
+    };
+    std::optional<blockchain::spent_output_list> spent;
+    if (block_stats_need_spent(args->stats)) {
+        auto read = co_await ctx.chain.fetch_spent_outputs(hash, block);
+        if ( ! read) {
+            co_return unreadable_undo();
+        }
+        spent = std::move(*read);
+    }
+    if (auto const unknown = unknown_block_stat(args->stats)) {
+        co_return kth::fail(make_error(error_code::invalid_parameter,
+            fmt::format("Invalid selected statistic {}", *unknown)));
+    }
+    // The subsidy of the block under the connected chain's interval schedule,
+    // which the block is on.
+    auto const location = block_stats_location{
+        .height = height,
+        .median_time = block_median_time(index, idx),
+        .subsidy = domain::chain::block::subsidy(view->state->ticks(), height,
+            ctx.chain.chain_settings().retarget)};
+    auto json = render_block_stats(*block, location,
+        spent ? std::optional<std::span<domain::chain::output const>>(spent->outputs) : std::nullopt,
+        args->stats);
+    if ( ! json) {
+        co_return unreadable_undo();
+    }
+    co_return std::move(*json);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its
@@ -1427,6 +1623,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getnetworkinfo", get_network_info);
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
+    d.add("getblockstats", get_block_stats);
     d.add("sendrawtransaction", send_raw_transaction);
     d.add("validateaddress", validate_address);
     d.add("getindexinfo", get_index_info);

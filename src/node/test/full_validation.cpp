@@ -7,14 +7,24 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include <unistd.h>
 
+#include <asio/co_spawn.hpp>
+#include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
+#include <utxoz/utils.hpp>
+
 #include <kth/blockchain/validate/batch_validate.hpp>
+#include <kth/database/block_undo.hpp>
+#include <kth/database/databases/utxo_entry.hpp>
 #include <kth/node.hpp>
+#include <kth/node/mining/job_store.hpp>
+#include <kth/node/rpc/dispatch.hpp>
 
 #include "sync_harness.hpp"
 
@@ -537,4 +547,248 @@ TEST_CASE("full mode checks header work version and time below a retained anchor
     REQUIRE(expected != error::success);
     CHECK(added.error == expected);
     CHECK(added.headers_added == 0);
+}
+
+// -----------------------------------------------------------------------------
+// The outputs a block spends, and the fee getblock reports from them
+// -----------------------------------------------------------------------------
+
+namespace {
+
+template <typename Awaitable>
+auto run_on_own_context(Awaitable&& operation) {
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io, std::forward<Awaitable>(operation), ::asio::use_future);
+    io.run();
+    return result.get();
+}
+
+// Headers into the index, then the node's connect path over the bodies, on a
+// fixture the caller keeps to read the chain afterwards.
+void connect_on(chain_fixture& fixture, scenario const& sc) {
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    REQUIRE( ! fixture.organizer().add_headers(headers_of(sc.blocks)).error);
+    persist_headers(fixture, sc.blocks, 1);
+    run_connect_tasks(fixture, sc.blocks, 1);
+}
+
+// The JSON-RPC reply to getblock <hash> <verbosity>.
+std::string get_block_reply(chain_fixture& fixture, hash_digest const& hash, int verbosity) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"getblock","params":[")" + encode_hash(hash) + R"(",)"
+        + std::to_string(verbosity) + R"(],"id":7})";
+    return run_on_own_context(dispatcher.handle(context, body));
+}
+
+// The JSON-RPC reply to getblockstats with `params`.
+std::string get_block_stats_reply(chain_fixture& fixture, std::string const& params) {
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto const body = R"({"method":"getblockstats","params":)" + params + R"(,"id":7})";
+    return run_on_own_context(dispatcher.handle(context, body));
+}
+
+} // namespace
+
+TEST_CASE("the outputs a block spends are read from its undo record, and getblock reports the fee",
+          "[node][full_validation][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_spent_outputs", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto const& chain = fixture.chain();
+
+    // The one spend of the chain: block 1's coinbase output, created at height 1.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const stored = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(stored);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), stored->first));
+    REQUIRE(spent);
+    REQUIRE(spent->outputs.size() == 1);
+    CHECK(spent->outputs.front() == sc.blocks.front().transactions().front().outputs()[0]);
+    CHECK(spent->heights == std::vector<uint32_t>{1});
+
+    // A block of one transaction spends nothing, and no block is no outputs.
+    auto const& plain = sc.blocks[4];
+    auto const plain_stored = run_on_own_context(chain.fetch_block(plain.hash()));
+    REQUIRE(plain_stored);
+    auto const none = run_on_own_context(chain.fetch_spent_outputs(plain.hash(), plain_stored->first));
+    REQUIRE(none);
+    CHECK(none->outputs.empty());
+    auto const missing = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), nullptr));
+    REQUIRE( ! missing);
+    CHECK(missing.error() == error::not_found);
+
+    // getblock with the transactions decoded gives the spend its fee, 1,000
+    // satoshis, after its outputs. The coinbase has none, and neither has the
+    // list of txids.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    auto const at = decoded.find(R"(}],"fee":0.00001,"hex":")");
+    REQUIRE(at != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == at + 3);
+    CHECK(decoded.find(R"("fee":)", at + 4) == std::string::npos);
+    CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("fee":)") == std::string::npos);
+    CHECK(get_block_reply(fixture, plain.hash(), 2).find(R"("fee":)") == std::string::npos);
+}
+
+TEST_CASE("a block connected without an undo record is decoded without fees",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_spent_outputs_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto const& chain = fixture.chain();
+
+    // Below the anchor the node wrote no record of what the block spent.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const stored = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(stored);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), stored->first));
+    REQUIRE( ! spent);
+    CHECK(spent.error() == error::not_found);
+
+    // getblock still decodes both transactions; the fee field is left out.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") != std::string::npos);
+    CHECK(decoded.find(encode_hash(spending.transactions()[1].hash())) != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+}
+
+#if ! defined(KTH_UTXOZ_REFERENCE_MODE)
+TEST_CASE("getblock fails when the undo record does not cover what the block's transactions pay",
+          "[node][full_validation][optimized][spent_outputs]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+
+    chain_fixture fixture("fv_spent_outputs_short", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto& chain = fixture.chain();
+
+    // The spending block was connected without a record. Give it one that
+    // reads well and holds the output it spends with one satoshi in it: less
+    // than the transaction pays.
+    auto const& spending = sc.blocks[spend_height - 1];
+    auto const& funding = sc.blocks.front().transactions().front();
+    auto short_output = funding.outputs()[0];
+    short_output.set_value(1);
+    auto const stored = database::utxo_entry{short_output, 1, 0, true}.to_data();
+
+    database::block_undo undo;
+    undo.spent.push_back(database::spent_output{
+        utxoz::make_outpoint(std::span<uint8_t const, hash_size>{funding.hash()}, 0),
+        std::vector<uint8_t>(stored.begin(), stored.end()), 1});
+    auto const idx = chain.headers().find(spending.hash());
+    REQUIRE(idx != blockchain::header_index::null_index);
+    REQUIRE(chain.store_block_undo(idx, undo, spending.header().previous_block_hash()));
+
+    // The record is read: the outputs come back, in the order of the inputs.
+    auto const block = run_on_own_context(chain.fetch_block(spending.hash()));
+    REQUIRE(block);
+    auto const spent = run_on_own_context(chain.fetch_spent_outputs(spending.hash(), block->first));
+    REQUIRE(spent);
+    REQUIRE(spent->outputs.size() == 1);
+    CHECK(spent->outputs.front().value() == 1);
+
+    // It is not left out as a missing record is: the request fails.
+    auto const decoded = get_block_reply(fixture, spending.hash(), 2);
+    CHECK(decoded.find(R"("error":null)") == std::string::npos);
+    CHECK(decoded.find("the undo record of the block does not give the fees of its transactions")
+        != std::string::npos);
+    CHECK(decoded.find(R"("fee":)") == std::string::npos);
+    // The txids need no fees.
+    CHECK(get_block_reply(fixture, spending.hash(), 1).find(R"("error":null)") != std::string::npos);
+}
+#endif
+
+TEST_CASE("getblockstats reads the fees from the undo record, by hash or by height",
+          "[node][full_validation][spent_outputs][block_stats]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parse_options(parser, {"--chain.full_validation=true", anchor_option(sc)}, error));
+
+    chain_fixture fixture("fv_block_stats", parser.configured.chain);
+    connect_on(fixture, sc);
+    auto const request = [&](std::string const& params) { return get_block_stats_reply(fixture, params); };
+    auto const quoted = [](hash_digest const& hash) { return '"' + encode_hash(hash) + '"'; };
+
+    // The block at spend_height: its coinbase, and the spend of block 1's
+    // coinbase output, 50 BCH, paying it back less 1,000 satoshis: 5 for each
+    // of its bytes, which are about 190 (a signature's encoding varies in
+    // length). Each pays one 34-byte output, which the UTXO set counts with 41
+    // bytes more: two created, one spent. Its median time is that of block 96,
+    // the middle one of blocks 91 to 101.
+    auto const& block = sc.blocks[spend_height - 1];
+    auto const size = std::to_string(block.transactions()[1].serialized_size(true));
+    std::string const rate = "0.00000005";
+    auto const all = request("[" + quoted(block.hash()) + "]");
+    CHECK(all == node::rpc::build_success("7", R"({"avgfee":0.00001,"avgfeerate":)" + rate +
+        R"(,"avgtxsize":)" + size + R"(,"blockhash":)" + quoted(block.hash()) +
+        R"(,"feerate_percentiles":[)" + rate + "," + rate + "," + rate + "," + rate + "," + rate +
+        R"(],"height":101,"ins":1,"maxfee":0.00001,"maxfeerate":)" + rate + R"(,"maxtxsize":)" + size +
+        R"(,"medianfee":0.00001,"mediantime":)" + std::to_string(sc.blocks[96 - 1].header().timestamp()) +
+        R"(,"mediantxsize":)" + size + R"(,"minfee":0.00001,"minfeerate":)" + rate + R"(,"mintxsize":)" +
+        size + R"(,"outs":2,"subsidy":50,"time":)" + std::to_string(block.header().timestamp()) +
+        R"(,"total_out":49.99999,"total_size":)" + size +
+        R"(,"totalfee":0.00001,"txs":2,"utxo_increase":1,"utxo_size_inc":75})"));
+
+    // By height, and with no stats or an empty list: all of them.
+    CHECK(request("[101]") == all);
+    CHECK(request("[" + quoted(block.hash()) + ",null]") == all);
+    CHECK(request("[101,[]]") == all);
+
+    // Only those asked for, each once and in name order.
+    CHECK(request(R"([101,["utxo_size_inc","height","avgfee","height"]])") ==
+        node::rpc::build_success("7", R"({"avgfee":0.00001,"height":101,"utxo_size_inc":75})"));
+
+    // A name it does not report: the first of them in name order.
+    CHECK(request(R"([101,["height","nosuchstat","alsobad"]])") ==
+        node::rpc::build_error("7", -8, "Invalid selected statistic alsobad"));
+    // No such block, no block that high, and no negative height.
+    CHECK(request("[" + quoted(null_hash) + "]") == node::rpc::build_error("7", -5, "Block not found"));
+    CHECK(request("[111]") ==
+        node::rpc::build_error("7", -8, "Target block height 111 after current tip 110"));
+    CHECK(request("[-1]") == node::rpc::build_error("7", -8, "Target block height -1 is negative"));
+
+    // Wrong types, a height past 32 bits and extra arguments.
+    for (auto const* params : {"[]", "null", "{}", R"("101")", "[true]", "[null]", "[1.5]", "[2147483648]",
+                               R"([101,"height"])", "[101,[1]]", "[101,{}]", "[101,[],1]"}) {
+        CAPTURE(params);
+        CHECK(request(params) ==
+            node::rpc::build_error("7", -32602, "getblockstats requires [hash_or_height, stats]"));
+    }
+    CHECK(request(R"(["101"])") == node::rpc::build_error("7", -32602, "invalid block hash"));
+}
+
+TEST_CASE("getblockstats of a block connected without an undo record answers what needs none",
+          "[node][full_validation][optimized][spent_outputs][block_stats]") {
+    auto const sc = build_scenario(/*tampered*/ false, 0);
+    chain_fixture fixture("fv_block_stats_opt", optimized_settings(sc));
+    connect_on(fixture, sc);
+    auto const request = [&](std::string const& params) { return get_block_stats_reply(fixture, params); };
+
+    // Below the anchor the node wrote no record of what the block spent: no
+    // fee, feerate or utxo_size_inc, with the error other nodes give for undo
+    // data they cannot read.
+    auto const unreadable = node::rpc::build_error("7", -1, "Can't read undo data from disk");
+    CHECK(request("[101]") == unreadable);
+    CHECK(request(R"([101,["height","totalfee"]])") == unreadable);
+    CHECK(request(R"([101,["utxo_size_inc"]])") == unreadable);
+
+    // What the block holds by itself needs no record.
+    auto const size = std::to_string(sc.blocks[spend_height - 1].transactions()[1].serialized_size(true));
+    CHECK(request(R"([101,["txs","utxo_increase","total_size","total_out","outs","ins","height"]])") ==
+        node::rpc::build_success("7", R"({"height":101,"ins":1,"outs":2,"total_out":49.99999,"total_size":)" +
+            size + R"(,"txs":2,"utxo_increase":1})"));
+    // A name it does not report is still refused.
+    CHECK(request(R"([101,["height","bogus"]])") ==
+        node::rpc::build_error("7", -8, "Invalid selected statistic bogus"));
 }
