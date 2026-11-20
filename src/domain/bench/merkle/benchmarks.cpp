@@ -5,6 +5,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include <kth/domain/chain/merkle.hpp>
+
 #include <fmt/core.h>
 
 #include <random>
@@ -108,9 +110,17 @@ void benchmark_all_sizes() {
                     generate_merkle_root_v0_original(hashes)
                 );
             })
-            .run("Production (SHA256D64 batched)", [&] {
+            .run("Previous (SHA256D64, copied to and from buffers)", [&] {
                 ankerl::nanobench::doNotOptimizeAway(
                     generate_merkle_root_v4_sha256d64_batched(hashes)
+                );
+            })
+            // What the node runs: chain::merkle_root, each level hashed over
+            // the one below. It takes its hashes by value, as the buffered one
+            // does here, so both pay for the same copy of the input.
+            .run("Production (chain::merkle_root, in place)", [&] {
+                ankerl::nanobench::doNotOptimizeAway(
+                    ::kth::domain::chain::merkle_root(hashes)
                 );
             });
     }

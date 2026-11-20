@@ -183,6 +183,7 @@ set(kth_sources_just_legacy
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
+        src/chain/merkle.cpp
         src/chain/partial_merkle_tree.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
@@ -367,6 +368,7 @@ set(kth_headers
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
     include/kth/domain/chain/bloom_filter.hpp
+    include/kth/domain/chain/merkle.hpp
     include/kth/domain/chain/partial_merkle_tree.hpp
     include/kth/domain/chain/block_ticks.hpp
     include/kth/domain/chain/faster_blocks.hpp
@@ -585,6 +587,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
         test/chain/bloom_filter.cpp
+        test/chain/merkle.cpp
         test/chain/partial_merkle_tree.cpp
         test/chain/block_ticks.cpp
         test/chain/abla_ticks.cpp

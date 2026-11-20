@@ -35,10 +35,8 @@
 #include <kth/infrastructure/utility/assert.hpp>
 #include <kth/infrastructure/utility/limits.hpp>
 
-// Bitcoin Core optimized SHA256D64 for merkle tree computation
-#include <crypto/sha256.h>
 
-#include <kth/domain/chain/detail/gpu_merkle.hpp>
+#include <kth/domain/chain/merkle.hpp>
 
 namespace kth::domain::chain {
 
@@ -431,60 +429,13 @@ bool block::is_distinct_transaction_set(std::span<hash_digest const> txids) cons
 }
 
 hash_digest block::generate_merkle_root() const {
-    return generate_merkle_root(to_hashes());
+    // The hashes are computed for this call alone, so the tree is built over them.
+    return merkle_root(to_hashes());
 }
 
 hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) const {
     KTH_ASSERT(txids.size() == transactions_.size());
-    if (txids.empty()) {
-        return null_hash;
-    }
-
-    hash_list hashes(txids.begin(), txids.end());
-
-    // A large tree goes to the GPU when there is one, every level on the device.
-    bool equal_siblings = false;
-    if (auto const root = detail::gpu_merkle_root(hashes, equal_siblings)) {
-        return *root;
-    }
-
-    // Temporary buffers for batched SHA256D64 processing
-    // SHA256D64 uses SIMD: 2-way on ARM, 4-way on SSE4.1, 8-way on AVX2
-    std::vector<uint8_t> batch_input;
-    std::vector<uint8_t> batch_output;
-
-    while (hashes.size() > 1) {
-        // Bitcoin merkle: duplicate last hash if odd count at this level
-        if (hashes.size() % 2 != 0) {
-            hashes.push_back(hashes.back());
-        }
-
-        size_t const num_pairs = hashes.size() / 2;
-
-        // Prepare batch input: all pairs concatenated (64 bytes each)
-        batch_input.resize(num_pairs * 64);
-        batch_output.resize(num_pairs * 32);
-
-        for (size_t i = 0; i < num_pairs; ++i) {
-            std::copy(hashes[i * 2].begin(), hashes[i * 2].end(),
-                      batch_input.begin() + i * 64);
-            std::copy(hashes[i * 2 + 1].begin(), hashes[i * 2 + 1].end(),
-                      batch_input.begin() + i * 64 + 32);
-        }
-
-        // Process all pairs at once using Bitcoin Core's optimized SHA256D64
-        SHA256D64(batch_output.data(), batch_input.data(), num_pairs);
-
-        // Copy results back to hashes vector
-        hashes.resize(num_pairs);
-        for (size_t i = 0; i < num_pairs; ++i) {
-            std::copy(batch_output.begin() + i * 32,
-                      batch_output.begin() + (i + 1) * 32,
-                      hashes[i].begin());
-        }
-    }
-
-    return hashes.front();
+    return merkle_root(hash_list(txids.begin(), txids.end()));
 }
 
 size_t block::non_coinbase_input_count() const {
