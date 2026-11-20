@@ -105,10 +105,17 @@ std::expected<golomb_set, script_filter_error>
 build_set(hash_digest const& hash, std::span<script_leaf const> leaves) {
     std::vector<data_chunk> items;
     items.reserve(leaves.size());
+    // The leaves are sorted by key first, so the occurrences of a key are
+    // together: one item for each key, and none copied to be dropped later.
+    hash_digest const* previous = nullptr;
     for (auto const& leaf : leaves) {
+        if (previous != nullptr && *previous == leaf.key) {
+            continue;
+        }
         items.push_back(to_chunk(leaf.key));
+        previous = &leaf.key;
     }
-    // Equal keys are one item. The set reports one error for every failure to build.
+    // The set reports one error for every failure to build.
     auto built = golomb_set::build(key_from_hash(hash), items);
     if ( ! built) {
         return std::unexpected(script_filter_error::set);
