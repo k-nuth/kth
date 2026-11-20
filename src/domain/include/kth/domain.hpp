@@ -11,6 +11,8 @@
 
 #include <kth/domain/chain/abla.hpp>
 #include <kth/domain/chain/block.hpp>
+#include <kth/domain/chain/bloom_filter.hpp>
+#include <kth/domain/chain/partial_merkle_tree.hpp>
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/chain/header.hpp>

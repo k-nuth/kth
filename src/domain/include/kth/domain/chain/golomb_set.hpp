@@ -30,8 +30,7 @@ enum class golomb_set_error {
     truncated
 };
 
-class KD_API golomb_set {
-public:
+struct KD_API golomb_set {
     golomb_set() = default;
 
     // Builds the set of the distinct items under the key.

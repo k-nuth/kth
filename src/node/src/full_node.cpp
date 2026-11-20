@@ -217,7 +217,7 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_);
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_, started_);
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -307,7 +307,7 @@ full_node::~full_node() {
 }
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
-    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
+    spdlog::debug("[full_node] run_blockchain_subscriber() STARTING");
     auto blockchain_channel = subscribe_blockchain();
     if (!blockchain_channel) {
         spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
@@ -349,12 +349,12 @@ full_node::~full_node() {
             }
         }
     }
-    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
+    spdlog::debug("[full_node] run_blockchain_subscriber() ENDED");
 }
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
+    spdlog::debug("[full_node] run_sync() STARTING - CSP sync system");
 
     // Create the header organizer (single instance for the sync lifetime)
     blockchain::header_organizer organizer(
@@ -405,7 +405,7 @@ full_node::~full_node() {
     );
 
     organizer.stop();
-    spdlog::info("[full_node] run_sync() ENDED");
+    spdlog::debug("[full_node] run_sync() ENDED");
 }
 #endif
 

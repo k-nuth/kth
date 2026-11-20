@@ -28,10 +28,16 @@ public:
     task_group(task_group const&) = delete;
     ~task_group() { assert(!state_->active); }
     template<class Coro>
-    void spawn(std::string_view, Coro&& coroutine) {
+    void spawn(std::string_view name, Coro&& coroutine) {
+        spawn_on(state_->executor, name, std::forward<Coro>(coroutine));
+    }
+    // There is one Worker and no thread to give a task: `executor` is the
+    // group's own, or another of the same Worker.
+    template<class Coro>
+    void spawn_on(::asio::any_io_executor executor, std::string_view, Coro&& coroutine) {
         auto shared = state_;
         ++shared->active; ++shared->total;
-        ::asio::co_spawn(shared->executor,
+        ::asio::co_spawn(std::move(executor),
             [work=std::forward<Coro>(coroutine)]() mutable -> ::asio::awaitable<void> {
                 if constexpr (std::is_invocable_v<Coro>) co_await std::invoke(std::move(work));
                 else co_await std::move(work);

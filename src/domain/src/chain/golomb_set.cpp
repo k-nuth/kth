@@ -8,11 +8,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <optional>
 #include <utility>
 #include <vector>
 
+#include <kth/infrastructure/expect.hpp>
 #include <kth/infrastructure/math/sip_hash.hpp>
+#include <kth/infrastructure/utility/bit_reader.hpp>
+#include <kth/infrastructure/utility/bit_writer.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
 #include <kth/infrastructure/utility/endian.hpp>
@@ -25,8 +27,6 @@ static_assert(golomb_set_p < 64, "The Golomb-Rice remainder is shifted inside a 
 static_assert(
     golomb_set_m <= std::numeric_limits<uint64_t>::max() / std::numeric_limits<uint32_t>::max(),
     "N times M fits in a uint64 for every uint32 N.");
-
-constexpr uint64_t remainder_mask = (uint64_t{1} << golomb_set_p) - 1;
 
 // The reduction is the high half of the 128-bit product, which maps a hash into [0, modulus).
 #if defined(__GNUC__)
@@ -52,71 +52,19 @@ uint64_t hash_item(golomb_key const& key, byte_span item) {
     return hasher.finalize();
 }
 
-// Cursor over a byte string. Within each byte the first bit read is the most significant.
-struct bit_reader {
-    byte_span bytes;
-    size_t index = 0;
-    uint8_t left = 8;
-
-    explicit bit_reader(byte_span data)
-        : bytes(data)
-    {}
-
-    [[nodiscard]]
-    std::optional<bool> read_bit() {
-        if (index >= bytes.size()) {
-            return std::nullopt;
-        }
-        if (left == 0) {
-            ++index;
-            if (index >= bytes.size()) {
-                return std::nullopt;
-            }
-            left = 8;
-        }
-        auto const mask = static_cast<uint8_t>(1u << (left - 1));
-        bool const one = (bytes[index] & mask) != 0;
-        --left;
-        return one;
-    }
-};
-
+// One value of the set as it is stored: the quotient in unary (that many 1
+// bits, then a 0) and the low P bits, the most significant first.
 [[nodiscard]]
-std::optional<uint64_t> read_low_bits(bit_reader& reader) {
-    uint64_t value = 0;
-    for (uint8_t bit = 0; bit < golomb_set_p; ++bit) {
-        value <<= 1;
-        auto const one = reader.read_bit();
-        if ( ! one) {
-            return std::nullopt;
-        }
-        if (*one) {
-            value |= uint64_t{1};
-        }
+expect<uint64_t> read_difference(bit_reader& reader) {
+    auto const quotient = reader.read_unary();
+    if ( ! quotient) {
+        return std::unexpected(quotient.error());
     }
-    return value;
-}
-
-// Quotient in unary (that many 1 bits, then a 0) plus the low P bits, most significant bit first.
-[[nodiscard]]
-std::optional<uint64_t> read_difference(bit_reader& reader) {
-    uint64_t quotient = 0;
-    auto bit = reader.read_bit();
-    if ( ! bit) {
-        return std::nullopt;
-    }
-    while (*bit) {
-        ++quotient;
-        bit = reader.read_bit();
-        if ( ! bit) {
-            return std::nullopt;
-        }
-    }
-    auto const remainder = read_low_bits(reader);
+    auto const remainder = reader.read_bits(golomb_set_p);
     if ( ! remainder) {
-        return std::nullopt;
+        return std::unexpected(remainder.error());
     }
-    return (quotient << golomb_set_p) + *remainder;
+    return (*quotient << golomb_set_p) + *remainder;
 }
 
 [[nodiscard]]
@@ -130,41 +78,11 @@ bool contains_count(byte_span bytes, uint32_t count) {
     return true;
 }
 
-struct bit_writer {
-    data_chunk bytes;
-    uint8_t space = 0;
-
-    void write_bit(bool one) {
-        if (space == 0) {
-            // A fresh byte is zero, so any bit that is never written stays zero.
-            bytes.push_back(0);
-            space = 8;
-        }
-        if (one) {
-            auto const mask = static_cast<uint8_t>(1u << (space - 1));
-            bytes.back() = static_cast<uint8_t>(bytes.back() | mask);
-        }
-        --space;
-    }
-
-    // The low P bits, most significant of those bits first.
-    void write_low_bits(uint64_t value) {
-        for (int bit = int{golomb_set_p} - 1; bit >= 0; --bit) {
-            write_bit(((value >> bit) & uint64_t{1}) != 0);
-        }
-    }
-
-    void write_difference(uint64_t delta) {
-        auto const remainder = delta & remainder_mask;
-        auto quotient = (delta - remainder) >> golomb_set_p;
-        while (quotient != 0) {
-            write_bit(true);
-            --quotient;
-        }
-        write_bit(false);
-        write_low_bits(remainder);
-    }
-};
+// The bits one difference takes in the stream.
+[[nodiscard]]
+constexpr size_t difference_bits(uint64_t delta) noexcept {
+    return size_t(delta >> golomb_set_p) + 1 + golomb_set_p;
+}
 
 } // namespace
 
@@ -193,15 +111,27 @@ golomb_set::build(golomb_key const& key, std::span<data_chunk const> items) {
     }
     std::sort(values.begin(), values.end());
 
-    // Each difference is taken from the previous reduced value. The first is taken from zero.
-    bit_writer writer;
+    // Each difference is taken from the previous reduced value. The first is
+    // taken from zero. They replace the values in place.
     uint64_t previous = 0;
-    for (auto const value : values) {
+    size_t bits = 0;
+    for (auto& value : values) {
         auto const delta = value - previous;
         previous = value;
-        writer.write_difference(delta);
+        value = delta;
+        bits += difference_bits(delta);
     }
-    set.bits_ = std::move(writer.bytes);
+
+    // The writer fills a buffer of the stream's exact size, so no write can
+    // fall outside it.
+    set.bits_.resize(bytes_for_bits(bits));
+    bit_writer writer(set.bits_);
+    for (auto const delta : values) {
+        if ( ! writer.write_unary(delta >> golomb_set_p) || ! writer.write_bits(delta, golomb_set_p)) {
+            return std::unexpected(golomb_set_error::too_many_items);
+        }
+    }
+    writer.flush();
     return set;
 }
 

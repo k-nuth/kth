@@ -5,6 +5,8 @@
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/blockchain/utxo_builder.hpp>
 
+#include <kth/infrastructure/math/hash_batch.hpp>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -36,7 +38,25 @@ namespace kth::blockchain {
 // Minimal raw block parser for UTXO indexing
 // =============================================================================
 
-expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_digest const> txids) {
+namespace {
+
+// Where a transaction is in its block and which of the outputs kept are its own.
+struct tx_extent {
+    size_t start;
+    size_t size;
+    size_t first_output;
+    size_t output_count;
+};
+
+// A block read but not yet keyed: the outputs are kept as they are read, with
+// the identifier part of their key left empty. The identifiers are hashed
+// afterwards, together, once every transaction's bytes are known.
+struct scanned_block {
+    utxo_compact_block block;
+    std::vector<tx_extent> transactions;
+};
+
+expect<scanned_block> scan_utxo_block(byte_span raw_block, std::span<hash_digest const> txids) {
     byte_reader r(raw_block);
 
     // Skip block header (80 bytes)
@@ -49,11 +69,19 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_
         return std::unexpected(error::invalid_size);
     }
 
-    utxo_compact_block result;
+    scanned_block scanned;
+    auto& result = scanned.block;
+    auto& extents = scanned.transactions;
+    // A count read from the block is not a size to trust before the bytes
+    // behind it have been read: the reserve is capped by what the block could
+    // hold, a transaction being 60 bytes at the very least.
+    extents.reserve(std::min<uint64_t>(tx_count, raw_block.size() / 60 + 1));
+    constexpr hash_digest no_txid{};
 
     for (uint64_t tx_i = 0; tx_i < tx_count; ++tx_i) {
         bool const is_coinbase = (tx_i == 0);
         auto const tx_start = r.position();
+        auto const first_output = result.outputs.size();
 
         // Skip version (4 bytes)
         if (auto s = r.skip(4); !s) return std::unexpected(s.error());
@@ -89,14 +117,6 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_
         auto const output_count_exp = r.read_variable_little_endian();
         if (!output_count_exp) return std::unexpected(output_count_exp.error());
 
-        struct pending_output {
-            uint32_t original_index;
-            std::span<uint8_t const> raw;
-            bool coinbase;
-            uint32_t tx_start;
-        };
-        std::vector<pending_output> tx_outputs;
-
         for (uint64_t out_i = 0; out_i < *output_count_exp; ++out_i) {
             auto const out_start = r.position();
 
@@ -117,8 +137,11 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_
                 raw_block[script_start] == static_cast<uint8_t>(domain::machine::opcode::return_);
             if (is_op_return) continue;
 
-            tx_outputs.push_back({
-                static_cast<uint32_t>(out_i),
+            // The key carries the output's index now and its transaction's
+            // identifier once that is known.
+            result.outputs.push_back({
+                utxoz::make_outpoint(std::span<uint8_t const, 32>{no_txid.data(), 32},
+                    static_cast<uint32_t>(out_i)),
                 raw_block.subspan(out_start, out_end - out_start),
                 is_coinbase,
                 static_cast<uint32_t>(tx_start)
@@ -129,23 +152,86 @@ expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_
         if (auto s = r.skip(4); !s) return std::unexpected(s.error());
 
         auto const tx_end = r.position();
+        extents.push_back({tx_start, tx_end - tx_start, first_output,
+            result.outputs.size() - first_output});
+    }
 
-        // txid = SHA256d of the raw tx bytes, unless the caller already has it.
-        auto const txid = txids.empty()
-            ? bitcoin_hash(raw_block.subspan(tx_start, tx_end - tx_start))
-            : txids[tx_i];
+    return scanned;
+}
 
-        // Build raw_outpoint keys using the original output index and add to result
-        for (auto const& out : tx_outputs) {
-            result.outputs.push_back({
-                utxoz::make_outpoint(std::span<uint8_t const, 32>{txid.data(), 32}, out.original_index),
-                out.raw,
-                out.coinbase,
-                out.tx_start
-            });
+// Writes each transaction's identifier into the keys of its outputs.
+void key_outputs(scanned_block& scanned, std::span<hash_digest const> txids) {
+    for (size_t tx_i = 0; tx_i < scanned.transactions.size(); ++tx_i) {
+        auto const& tx = scanned.transactions[tx_i];
+        auto const& txid = txids[tx_i];
+        for (size_t i = 0; i < tx.output_count; ++i) {
+            auto& key = scanned.block.outputs[tx.first_output + i].key;
+            std::copy(txid.begin(), txid.end(), key.begin());
+        }
+    }
+}
+
+} // namespace
+
+expect<utxo_compact_block> parse_utxo_block(byte_span raw_block, std::span<hash_digest const> txids) {
+    byte_span const blocks[] = {raw_block};
+    std::span<hash_digest const> const known[] = {txids};
+    auto parsed = parse_utxo_blocks(blocks, known);
+    if ( ! parsed) return std::unexpected(parsed.error().error);
+    return std::move(parsed->front());
+}
+
+std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_blocks(
+        std::span<byte_span const> raw_blocks,
+        std::span<std::span<hash_digest const> const> txids,
+        hash_dispatch::dispatcher* hashing) {
+    auto const known = [&](size_t i) {
+        return i < txids.size() ? txids[i] : std::span<hash_digest const>{};
+    };
+
+    std::vector<scanned_block> scanned;
+    scanned.reserve(raw_blocks.size());
+    size_t to_hash = 0;
+    for (size_t i = 0; i < raw_blocks.size(); ++i) {
+        auto block = scan_utxo_block(raw_blocks[i], known(i));
+        if ( ! block) return std::unexpected(utxo_parse_failure{i, block.error()});
+        if (known(i).empty()) to_hash += block->transactions.size();
+        scanned.push_back(std::move(*block));
+    }
+
+    // txid = SHA256d of the raw tx bytes, unless the caller already has it.
+    // Every transaction of every block in one batch: how many are hashed in
+    // step, and where, is decided on the whole run and not block by block.
+    hash_list hashed(to_hash);
+    if (to_hash != 0) {
+        std::vector<byte_span> transactions;
+        transactions.reserve(to_hash);
+        for (size_t i = 0; i < scanned.size(); ++i) {
+            if ( ! known(i).empty()) continue;
+            for (auto const& tx : scanned[i].transactions) {
+                transactions.push_back(raw_blocks[i].subspan(tx.start, tx.size));
+            }
+        }
+        if (hashing != nullptr) {
+            hashing->hash(transactions, hashed);
+        } else {
+            bitcoin_hash_batch(transactions, hashed);
         }
     }
 
+    std::vector<utxo_compact_block> result;
+    result.reserve(scanned.size());
+    size_t next = 0;
+    for (size_t i = 0; i < scanned.size(); ++i) {
+        auto const count = scanned[i].transactions.size();
+        if (known(i).empty()) {
+            key_outputs(scanned[i], std::span<hash_digest const>{hashed}.subspan(next, count));
+            next += count;
+        } else {
+            key_outputs(scanned[i], known(i));
+        }
+        result.push_back(std::move(scanned[i].block));
+    }
     return result;
 }
 
@@ -160,7 +246,7 @@ namespace {
 inline constexpr size_t utxo_raw_prefix_size = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint8_t); // height + mtp + coinbase
 
 [[nodiscard]]
-std::vector<uint8_t> serialize_utxo_raw_value(
+utxo_raw_value::bytes serialize_utxo_raw_value(
     std::span<uint8_t const> raw_output,
     uint32_t height,
     uint32_t median_time_past,
@@ -172,7 +258,8 @@ std::vector<uint8_t> serialize_utxo_raw_value(
     // the value as an output and fail with "not found" for every full-mode UTXO
     // lookup.
     size_t const total = raw_output.size() + utxo_raw_prefix_size;
-    std::vector<uint8_t> result(total);
+    // Every byte is written below, so none is zeroed first.
+    utxo_raw_value::bytes result(total, boost::container::default_init);
     auto* p = result.data();
 
     // raw output bytes (value + varint + script)
@@ -316,7 +403,7 @@ expect<utxo_raw_delta> process_compact_block_utxos(
             static_cast<uint32_t>(file_number),
             block_data_pos + out.tx_start
         };
-        std::vector<uint8_t> value(8);
+        utxo_raw_value::bytes value(8, boost::container::default_init);
         std::memcpy(value.data(), &ref, 8);
 #else
         auto value = serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase);

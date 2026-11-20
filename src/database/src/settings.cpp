@@ -26,6 +26,7 @@ settings::settings()
     , safe_mode(true)
     , nocow(true)
     , cache_capacity(0)
+    , prune_keep_blocks(0)
 {}
 
 settings::settings(domain::config::network context)

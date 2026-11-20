@@ -132,6 +132,16 @@ public:
     [[nodiscard]]
     bool stopped() const;
 
+    /// What the session was stopped with: the first reason a stop() gave,
+    /// also when another stop(), called at the same time with another reason,
+    /// is the one that did the stopping. error::success while it is running, and never once it
+    /// is stopped: a stop given no error reports error::channel_stopped. A
+    /// code that is not one of Knuth's is reported as error::unknown, since
+    /// only its number would be kept and a number means nothing without its
+    /// category. Whoever sees stopped() true sees the reason too.
+    [[nodiscard]]
+    code stop_reason() const;
+
     /// The strand all of this session's I/O completes on. The peer's whole
     /// lifecycle (handshake, protocols) runs on it, so what remains of
     /// `operator||` in that code (run()'s own loops) completes on one strand.
@@ -554,6 +564,8 @@ private:
 
     // State
     std::atomic<bool> stopped_{false};
+    // Set once, by the first stop() to offer a reason, before `stopped_`.
+    std::atomic<int> stop_reason_{error::success};
 
     /// Empty the per-request channels. Closing them is not enough: a closed
     /// channel still hands out what it already holds.

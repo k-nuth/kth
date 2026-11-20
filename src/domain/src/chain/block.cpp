@@ -38,6 +38,8 @@
 // Bitcoin Core optimized SHA256D64 for merkle tree computation
 #include <crypto/sha256.h>
 
+#include <kth/domain/chain/detail/gpu_merkle.hpp>
+
 namespace kth::domain::chain {
 
 using namespace kth::domain::machine;
@@ -439,6 +441,12 @@ hash_digest block::generate_merkle_root(std::span<hash_digest const> txids) cons
     }
 
     hash_list hashes(txids.begin(), txids.end());
+
+    // A large tree goes to the GPU when there is one, every level on the device.
+    bool equal_siblings = false;
+    if (auto const root = detail::gpu_merkle_root(hashes, equal_siblings)) {
+        return *root;
+    }
 
     // Temporary buffers for batched SHA256D64 processing
     // SHA256D64 uses SIMD: 2-way on ARM, 4-way on SSE4.1, 8-way on AVX2

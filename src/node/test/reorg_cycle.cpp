@@ -871,14 +871,15 @@ TEST_CASE("short-block chains survive a deep reorganization in both directions a
         block_storage_input_channel input(io.get_executor(), 2);
         chunk_validated_channel output(io.get_executor(), 2);
         std::atomic<uint32_t> contiguous{first};
+        utxo_build_wake_channel wake(io.get_executor(), 1);
         std::vector<std::shared_ptr<domain::chain::light_block const>> light;
         for (auto const& blk : blocks) light.push_back(to_light(blk));
         std::string fatal;
         auto storage = ::asio::co_spawn(io,
-            block_storage_task(chain, input, output, first, fixture.organizer(), &contiguous),
+            block_storage_task(chain, input, output, first, fixture.organizer(), &contiguous, &wake),
             ::asio::use_future);
         auto builder = ::asio::co_spawn(io,
-            utxo_build_task(chain, contiguous, first, domain::config::network::regtest,
+            utxo_build_task(chain, contiguous, wake, first, domain::config::network::regtest,
                 [&] { auto h = chain.get_utxo_built_height(); return stop || (h && *h >= last); },
                 [&](std::string const& why) { fatal = why; }), ::asio::use_future);
         REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
@@ -895,6 +896,7 @@ TEST_CASE("short-block chains survive a deep reorganization in both directions a
             stop = true;
             input.close();
             output.close();
+            wake.close();
             io.restart();
             io.run_for(std::chrono::seconds(5));
         }
