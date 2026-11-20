@@ -281,6 +281,56 @@ TEST_CASE("help keeps prepared JSON current when methods are added or replaced",
         node::rpc::build_success("10", R"("a\"b\\c")"));
 }
 
+TEST_CASE("a batch gets each member's response, in order, errors included", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_batch");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto handle = [&](std::string const& body) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const genesis = '"' + encode_hash(domain::chain::block::genesis_regtest().hash()) + '"';
+
+    // A member is answered as it would be alone.
+    auto const single = handle(R"({"method":"getblockhash","params":[0],"id":1})");
+    REQUIRE(single == node::rpc::build_success("1", genesis));
+    REQUIRE(handle(R"([{"method":"getblockhash","params":[0],"id":1}])") == "[" + single + "]");
+
+    // Order is kept, ids are echoed, and a member's error stays its own.
+    auto const reply = handle(R"( [{"method":"getbestblockhash","id":"a"},
+        {"method":"nosuchmethod","id":2},
+        {"method":"getblockhash","params":[99],"id":3},
+        7,
+        [{"method":"getbestblockhash","id":4}],
+        {"id":5},
+        {"method":"getblockhash","params":[0],"id":6}])");
+    REQUIRE(reply == "[" +
+        node::rpc::build_success("\"a\"", genesis) + "," +
+        node::rpc::build_error("2", -32601, "Method not found") + "," +
+        node::rpc::build_error("3", -32602, "block height out of range") + "," +
+        // Neither a number nor a nested array is a request.
+        node::rpc::build_error("null", -32600, "Invalid Request object") + "," +
+        node::rpc::build_error("null", -32600, "Invalid Request object") + "," +
+        node::rpc::build_error("null", -32600, "Missing or invalid 'method'") + "," +
+        node::rpc::build_success("6", genesis) + "]");
+
+    // An empty batch is answered with an empty array.
+    REQUIRE(handle("[]") == "[]");
+    REQUIRE(handle(" [ ] ") == "[]");
+
+    // A batch that is not valid JSON gets one parse error, as a single request does.
+    for (auto const* bad : {"[", R"([{"method":"getbestblockhash","id":1})", "[1,]", "[] []"}) {
+        CAPTURE(bad);
+        REQUIRE(handle(bad) == node::rpc::build_error("null", -32700, "Parse error"));
+    }
+}
+
 TEST_CASE("getblockheader dispatch counts confirmations from the connected tip", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_header_confirmations");
     REQUIRE(fixture.created());

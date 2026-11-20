@@ -37,6 +37,36 @@ std::vector<std::string> const& dispatcher::methods() const noexcept {
 
 ::asio::awaitable<std::string>
 dispatcher::handle(method_context& ctx, std::string_view body) const {
+    if ( ! is_batch(body)) {
+        co_return co_await handle_request(ctx, body);
+    }
+    // A batch, as BCHN serves one: every member runs, in order, and each gets
+    // the response it would get alone, errors included. Clients such as
+    // Rostrum match the responses to their requests by id.
+    auto const members = parse_batch(body);
+    if ( ! members) {
+        co_return build_error("null", members.error().code, members.error().message);
+    }
+    std::string reply = "[";
+    bool first = true;
+    for (auto const& member : *members) {
+        if ( ! first) {
+            reply += ',';
+        }
+        first = false;
+        if ( ! member.object) {
+            reply += build_error("null", static_cast<int>(error_code::invalid_request),
+                "Invalid Request object");
+            continue;
+        }
+        reply += co_await handle_request(ctx, member.raw);
+    }
+    reply += ']';
+    co_return reply;
+}
+
+::asio::awaitable<std::string>
+dispatcher::handle_request(method_context& ctx, std::string_view body) const {
     auto const req = parse_request(body);
     if ( ! req) {
         co_return build_error("null", req.error().code, req.error().message);

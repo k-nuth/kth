@@ -30,6 +30,21 @@ struct request {
 // parse_error for malformed JSON, invalid_request when "method" is missing.
 std::expected<request, rpc_error> parse_request(std::string_view body);
 
+// Whether `body` is a batch: its first character after JSON whitespace opens
+// an array.
+bool is_batch(std::string_view body);
+
+// One member of a batch: its raw JSON text, and whether it is an object. A
+// member that is not an object is not a request.
+struct batch_member {
+    std::string raw;
+    bool object;
+};
+
+// The members of a batch body, in order. parse_error when the body is not a
+// JSON array, or not valid JSON.
+std::expected<std::vector<batch_member>, rpc_error> parse_batch(std::string_view body);
+
 // Positional params (a JSON array) decoded as strings. A missing/empty params,
 // a non-array, or a non-string element each yields an empty string in that slot;
 // handlers validate arity and emptiness themselves.

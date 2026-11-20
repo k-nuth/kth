@@ -60,6 +60,45 @@ std::expected<request, rpc_error> parse_request(std::string_view body) {
     return req;
 }
 
+bool is_batch(std::string_view body) {
+    auto const first = body.find_first_not_of(" \t\n\r");
+    return first != std::string_view::npos && body[first] == '[';
+}
+
+std::expected<std::vector<batch_member>, rpc_error> parse_batch(std::string_view body) {
+    auto const parse_error = [] {
+        return std::unexpected(make_error(error_code::parse_error, "Parse error"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(body);
+
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array members;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(members) != simdjson::SUCCESS) {
+        return parse_error();
+    }
+
+    std::vector<batch_member> out;
+    for (auto element : members) {
+        simdjson::ondemand::value value;
+        simdjson::ondemand::json_type type;
+        std::string_view raw;
+        // The type is read first: raw_json() consumes an object or an array.
+        if (element.get(value) != simdjson::SUCCESS ||
+            value.type().get(type) != simdjson::SUCCESS ||
+            value.raw_json().get(raw) != simdjson::SUCCESS) {
+            return parse_error();
+        }
+        out.push_back({std::string(raw), type == simdjson::ondemand::json_type::object});
+    }
+    // Nothing may follow the array.
+    if ( ! doc.at_end()) {
+        return parse_error();
+    }
+    return out;
+}
+
 std::vector<std::string> params_strings(std::string_view params_json) {
     std::vector<std::string> out;
     if (params_json.empty()) {

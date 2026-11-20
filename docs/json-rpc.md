@@ -79,6 +79,24 @@ curl --user myuser:mypass -H 'content-type: application/json' \
 Responses use the Bitcoin envelope `{"result":..., "error":..., "id":...}`. Error
 codes follow Bitcoin Core (`-32700` parse error, `-32601` method not found, ...).
 
+### Batches
+
+A body that is a JSON array of request objects is a batch. Every member runs, in
+order, and the reply is an array of their responses in the same order, each the
+one the member would get on its own: an error stays in its member's response,
+with its `id`, and the members after it still run. Clients such as Rostrum send
+batches and match the responses to their requests by `id`. A member that is not
+an object gets `-32600` `Invalid Request object` with a null `id`, an empty array
+gets an empty array, and a body that is not valid JSON gets a single `-32700`
+error, as a single request does.
+
+```bash
+curl --user myuser:mypass -H 'content-type: application/json' \
+     -d '[{"id":1,"method":"getblockcount"},{"id":2,"method":"nosuchmethod"}]' \
+     http://127.0.0.1:8332/
+# => [{"result":0,"error":null,"id":1},{"result":null,"error":{"code":-32601,"message":"Method not found"},"id":2}]
+```
+
 ## Method equivalences
 
 Each row maps a JSON-RPC method to its C-API function and the underlying C++
