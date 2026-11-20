@@ -997,8 +997,11 @@ TEST_CASE("getnetworkinfo reads the P2P node and rejects arguments", "[rpc dispa
     CHECK(reply.find(R"("error":null)") != std::string::npos);
     CHECK(request("") == reply);
     CHECK(request("[ ]") == reply);
+    // Null params are no arguments, as Rostrum sends them.
+    CHECK(request("null") == reply);
+    CHECK(request(" null ") == reply);
 
-    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "1", "false", R"("x")", R"("null")"}) {
         CAPTURE(params);
         CHECK(request(params) == node::rpc::build_error("42", -32602, "getnetworkinfo takes no arguments"));
     }
@@ -1043,12 +1046,13 @@ TEST_CASE("uptime dispatch counts whole seconds from the node's start", "[rpc di
     auto const second = seconds(request(""));
     CHECK(second >= first);
     CHECK(seconds(request("[ ]")) >= second);
+    CHECK(seconds(request("null")) >= second);
 
     // A start the clock has not reached yet answers 0, never a negative count.
     context.started = std::chrono::steady_clock::now() + std::chrono::hours(1);
     CHECK(request("[]") == node::rpc::build_success("43", "0"));
 
-    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "1", "false", R"("x")", R"("null")"}) {
         CAPTURE(params);
         CHECK(request(params) == node::rpc::build_error("43", -32602, "uptime takes no arguments"));
     }
