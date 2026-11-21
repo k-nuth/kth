@@ -5,6 +5,7 @@
 #include <kth/blockchain/prune.hpp>
 #include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/detail/block_chain_internal.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
@@ -2550,6 +2551,9 @@ size_t block_chain::trim_mempool(uint64_t limit) {
 }
 
 uint64_t block_chain::mempool_minimum_fee_per_kb() {
+    if (mempool_fee_read_observer_) {
+        (void)mempool_fee_read_observer_->reads.try_send(std::error_code{}, std::this_thread::get_id());
+    }
     validation_low_priority_lock const lock(validation_mutex_);
     return mempool_limit_.minimum_fee_per_kb(settings_.mempool_limit_bytes(), unix_now());
 }
@@ -2738,6 +2742,10 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
 
 ::asio::awaitable<code> block_chain::transaction_validate(transaction_const_ptr tx) const {
     co_return co_await transaction_organizer_.transaction_validate(tx);
+}
+
+awaitable_expected<size_t> block_chain::test_accept(transaction_const_ptr tx) {
+    co_return co_await transaction_organizer_.test_accept(tx);
 }
 
 // =============================================================================

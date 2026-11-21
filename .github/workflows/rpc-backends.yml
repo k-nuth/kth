@@ -39,6 +39,7 @@ on:
       - 'src/node/src/full_node.cpp'
       - 'src/node/test/internal_shutdown_exit.cpp'
       - 'src/node/test/local_block_admission.cpp'
+      - 'src/node/test/mempool_admission.cpp'
       - 'src/node/include/kth/node/rpc/**'
       - 'src/node/include/kth/node/grpc_rpc/**'
       - 'src/node/include/kth/node/capnp_rpc/**'

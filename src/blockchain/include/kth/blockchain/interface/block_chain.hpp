@@ -88,7 +88,7 @@ struct mempool_entry_info {
 
 /// Unified blockchain interface.
 /// Thread safety: get_* methods are NOT thread safe, fetch_* methods are thread safe.
-namespace detail { struct block_chain_internal; }
+namespace detail { struct block_chain_internal; struct mempool_fee_read_observer; }
 
 struct KB_API block_chain {
     using executor_type = ::asio::any_io_executor;
@@ -935,6 +935,11 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> transaction_validate(transaction_const_ptr tx) const;
 
+    /// Whether submit_transaction(tx) would admit `tx` to the mempool, without
+    /// admitting or announcing it. Yields the transaction's sigchecks when it would.
+    [[nodiscard]]
+    awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
+
     // =========================================================================
     // PROPERTIES
     // =========================================================================
@@ -1296,6 +1301,10 @@ private:
     // Thread safe
     mutable prioritized_mutex validation_mutex_;
     mutable threadpool priority_pool_;
+
+    // Optional observation sink installed before startup by internal controls.
+    // Immutable while running; it never participates in validation decisions.
+    std::shared_ptr<detail::mempool_fee_read_observer> mempool_fee_read_observer_;
 
 
     // Must be declared before block_organizer_: the organizer's block_pool is
