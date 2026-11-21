@@ -39,6 +39,7 @@ on:
       - src/domain/include/kth/domain/message/messages.hpp
       - src/domain/src/message/heading.cpp
       - src/domain/test/message/compact_filters.cpp
+      - src/domain/test/message/script_filter_messages.cpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_reader.hpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_writer.hpp
       - conanfile.py

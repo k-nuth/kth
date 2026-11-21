@@ -35,6 +35,8 @@ enum class message_type {
     compact_filter,
     compact_filter_checkpoint,
     compact_filter_headers,
+    compact_filter_proof,
+    compact_filter_range,
 #endif
     double_spend_proof,
     fee_filter,
@@ -47,6 +49,8 @@ enum class message_type {
 #if defined(KTH_WITH_NEUTRINO)
     get_compact_filter_checkpoint,
     get_compact_filter_headers,
+    get_compact_filter_proof,
+    get_compact_filter_range,
     get_compact_filters,
 #endif
     get_data,

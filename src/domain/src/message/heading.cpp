@@ -100,6 +100,8 @@ message_type heading::type() const {
     if (command_ == compact_filter::command) return message_type::compact_filter;
     if (command_ == compact_filter_checkpoint::command) return message_type::compact_filter_checkpoint;
     if (command_ == compact_filter_headers::command) return message_type::compact_filter_headers;
+    if (command_ == compact_filter_proof::command) return message_type::compact_filter_proof;
+    if (command_ == compact_filter_range::command) return message_type::compact_filter_range;
 #endif
     if (command_ == double_spend_proof::command) return message_type::double_spend_proof;
     if (command_ == fee_filter::command) return message_type::fee_filter;
@@ -112,6 +114,8 @@ message_type heading::type() const {
 #if defined(KTH_WITH_NEUTRINO)
     if (command_ == get_compact_filter_checkpoint::command) return message_type::get_compact_filter_checkpoint;
     if (command_ == get_compact_filter_headers::command) return message_type::get_compact_filter_headers;
+    if (command_ == get_compact_filter_proof::command) return message_type::get_compact_filter_proof;
+    if (command_ == get_compact_filter_range::command) return message_type::get_compact_filter_range;
     if (command_ == get_compact_filters::command) return message_type::get_compact_filters;
 #endif
     if (command_ == get_data::command) return message_type::get_data;
