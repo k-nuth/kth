@@ -127,8 +127,8 @@ script_range_answer honest_script_range(std::span<chain::script_leaf const> leav
     REQUIRE(found);
 
     script_range_answer answer{};
-    answer.count = static_cast<uint32_t>(leaves.size());
-    answer.first = static_cast<uint32_t>(found->first);
+    answer.count = uint32_t(leaves.size());
+    answer.first = uint32_t(found->first);
     answer.run = leaves.subspan(found->first, found->end - found->first);
     answer.before = nullptr;
     answer.after = nullptr;
@@ -229,7 +229,7 @@ TEST_CASE("script filter range hashes rebuild the ten leaf root", "[script filte
 
         auto const rebuilt = chain::script_range_root(
             10,
-            static_cast<uint32_t>(item.lo),
+            uint32_t(item.lo),
             all.subspan(item.lo, item.end - item.lo),
             *hashes);
         REQUIRE(rebuilt);
@@ -250,17 +250,17 @@ TEST_CASE("script filter range root rebuilds every run of one to forty leaves", 
         std::vector<chain::script_leaf> leaves(n);
         for (size_t i = 0; i < n; ++i) {
             // Two leaves share a key. The key's first four bytes are that key number, big-endian.
-            auto const value = static_cast<uint32_t>(i / 2);
-            leaves[i].key[0] = static_cast<uint8_t>(value >> 24);
-            leaves[i].key[1] = static_cast<uint8_t>(value >> 16);
-            leaves[i].key[2] = static_cast<uint8_t>(value >> 8);
-            leaves[i].key[3] = static_cast<uint8_t>(value);
-            leaves[i].tx_index = static_cast<uint32_t>(i % 2);
+            auto const value = uint32_t(i / 2);
+            leaves[i].key[0] = uint8_t(value >> 24);
+            leaves[i].key[1] = uint8_t(value >> 16);
+            leaves[i].key[2] = uint8_t(value >> 8);
+            leaves[i].key[3] = uint8_t(value);
+            leaves[i].tx_index = uint32_t(i % 2);
         }
 
         std::span<chain::script_leaf const> const all = leaves;
         auto const root = chain::script_leaves_root(all);
-        auto const count = static_cast<uint32_t>(n);
+        auto const count = uint32_t(n);
         for (size_t lo = 0; lo < n; ++lo) {
             for (size_t end = lo + 1; end <= n; ++end) {
                 INFO("leaves " << n << " run " << lo << " to " << end);
@@ -268,7 +268,7 @@ TEST_CASE("script filter range root rebuilds every run of one to forty leaves", 
                 REQUIRE(hashes);
 
                 auto const run = all.subspan(lo, end - lo);
-                auto const lo_index = static_cast<uint32_t>(lo);
+                auto const lo_index = uint32_t(lo);
                 auto const got = chain::script_range_root(count, lo_index, run, *hashes);
                 REQUIRE(got);
                 REQUIRE(*got == root);

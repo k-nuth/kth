@@ -5,6 +5,10 @@
 #ifndef KTH_DOMAIN_CHAIN_SCRIPT_FILTER_BUILDER_HPP
 #define KTH_DOMAIN_CHAIN_SCRIPT_FILTER_BUILDER_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <expected>
 #include <span>
 #include <vector>
@@ -36,7 +40,11 @@ KD_API
 hash_digest script_key(byte_span script);
 
 /// SHA-256 of 0x01 followed by the category.
-/// The tag keeps a category key from equalling the key of any locking script.
+/// The tag keeps a category key apart from a transaction key, which carries
+/// another tag. It does not keep it apart from every script key: the script
+/// made of 0x01 and the 32 bytes of a category has that category's key, and
+/// the script made of 0x02 and a transaction hash has that transaction's key.
+/// Whoever checks a range proof tells them apart by script_leaf::kind.
 [[nodiscard]]
 KD_API
 hash_digest category_key(hash_digest const& category);

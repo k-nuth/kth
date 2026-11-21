@@ -38,7 +38,7 @@ std::vector<data_chunk> sha256_bytes(uint32_t count) {
     std::vector<data_chunk> items;
     items.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
-        uint8_t const byte = static_cast<uint8_t>(i);
+        uint8_t const byte = uint8_t(i);
         items.push_back(to_chunk(sha256_hash(byte_span(&byte, 1))));
     }
     return items;

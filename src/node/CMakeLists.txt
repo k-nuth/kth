@@ -447,6 +447,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/body_range_reopen.cpp
           test/body_range_genesis_checkpoint.cpp
           test/connected_tip_remainder.cpp
+          test/utxo_build_remainder.cpp
           test/resume_stored_bodies.cpp
           test/resume_stored_bodies_decision.cpp
           test/directory_probe.cpp
@@ -456,6 +457,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/bip30_integration.cpp
           test/header_durability.cpp
           test/utxo_batch_atomicity.cpp
+          test/utxo_build_wake.cpp
           test/validated_finality.cpp
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
@@ -489,6 +491,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/configured_peers.cpp
           test/p2p_node.cpp
           test/p2p_connection_close.cpp
+          test/outbound_retry.cpp
           test/p2p_status_timer.cpp
           test/sync_decisions.cpp
           test/mining_job_store.cpp

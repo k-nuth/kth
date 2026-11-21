@@ -75,7 +75,7 @@ namespace kth::node::sync {
     }
 
     // NOTE: Don't close output channel here - peer_provider closes all channels during shutdown
-    spdlog::info("[header_validation] Task ended");
+    spdlog::debug("[header_validation] Task ended");
 }
 
 } // namespace kth::node::sync

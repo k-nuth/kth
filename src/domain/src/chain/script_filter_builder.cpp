@@ -24,7 +24,7 @@ static_assert(golomb_key{}.size() <= hash_size);
 // The opcode is the first byte only: an OP_RETURN later in the script does not drop it.
 bool watched_script(byte_span script) {
     return ! script.empty()
-        && script.front() != static_cast<uint8_t>(machine::opcode::return_);
+        && script.front() != uint8_t(machine::opcode::return_);
 }
 
 // A block hash is stored in the order the hash function writes, which is also the order on the wire.
@@ -65,7 +65,7 @@ append_leaves(std::vector<script_leaf>& leaves, transaction const& tx, uint32_t 
             }
             auto const& prev = spent[used];
             ++used;
-            auto const index = static_cast<uint32_t>(j);
+            auto const index = uint32_t(j);
             append_script_leaf(leaves, prev.script().bytes(), tx_index, index, script_leaf_kind::spent);
             append_category_leaf(leaves, prev.token_data(), tx_index, index, script_leaf_kind::spent_category);
         }
@@ -74,7 +74,7 @@ append_leaves(std::vector<script_leaf>& leaves, transaction const& tx, uint32_t 
     auto const& outputs = tx.outputs();
     for (size_t j = 0; j < outputs.size(); ++j) {
         auto const& created = outputs[j];
-        auto const index = static_cast<uint32_t>(j);
+        auto const index = uint32_t(j);
         append_script_leaf(leaves, created.script().bytes(), tx_index, index, script_leaf_kind::output);
         append_category_leaf(leaves, created.token_data(), tx_index, index, script_leaf_kind::output_category);
     }
@@ -88,7 +88,7 @@ collect_leaves(std::span<transaction const> txs, std::span<output const> spent, 
     for (size_t i = 0; i < txs.size(); ++i) {
         // Only the transaction at index 0 can be the coinbase. A later transaction spends an output even when its outpoint is null.
         auto const coinbase = first_is_coinbase && i == 0;
-        auto const next = append_leaves(leaves, txs[i], static_cast<uint32_t>(i), coinbase, spent, used);
+        auto const next = append_leaves(leaves, txs[i], uint32_t(i), coinbase, spent, used);
         if ( ! next) {
             return std::unexpected(next.error());
         }
@@ -105,10 +105,18 @@ std::expected<golomb_set, script_filter_error>
 build_set(hash_digest const& hash, std::span<script_leaf const> leaves) {
     std::vector<data_chunk> items;
     items.reserve(leaves.size());
-    for (auto const& leaf : leaves) {
-        items.push_back(to_chunk(leaf.key));
+    // The leaves are sorted by key first, so the occurrences of a key are
+    // together: one item for each key, and none copied to be dropped later.
+    if ( ! leaves.empty()) {
+        items.push_back(to_chunk(leaves.front().key));
+        for (size_t i = 1; i < leaves.size(); ++i) {
+            if (leaves[i].key == leaves[i - 1].key) {
+                continue;
+            }
+            items.push_back(to_chunk(leaves[i].key));
+        }
     }
-    // Equal keys are one item. The set reports one error for every failure to build.
+    // The set reports one error for every failure to build.
     auto built = golomb_set::build(key_from_hash(hash), items);
     if ( ! built) {
         return std::unexpected(script_filter_error::set);

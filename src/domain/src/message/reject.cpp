@@ -10,9 +10,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const reject::command = "reject";
-uint32_t const reject::version_minimum = version::level::bip61;
-uint32_t const reject::version_maximum = version::level::maximum;
 
 reject::reject()
     :  data_(null_hash)

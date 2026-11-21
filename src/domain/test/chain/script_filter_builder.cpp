@@ -214,7 +214,7 @@ TEST_CASE("every transaction of the test block has one transaction leaf, the coi
         require_hex(txid, txid_hex[i]);
         require_hex(chain::transaction_key(txid), txid_key_hex[i]);
 
-        auto const position = static_cast<uint32_t>(i);
+        auto const position = uint32_t(i);
         auto const count = std::ranges::count_if(*leaves, [&](chain::script_leaf const& leaf) {
             return leaf.kind == chain::script_leaf_kind::transaction && leaf.tx_index == position;
         });
@@ -225,7 +225,7 @@ TEST_CASE("every transaction of the test block has one transaction leaf, the coi
     auto const transaction_leaves = std::ranges::count_if(*leaves, [](chain::script_leaf const& leaf) {
         return leaf.kind == chain::script_leaf_kind::transaction;
     });
-    REQUIRE(transaction_leaves == static_cast<std::ptrdiff_t>(transactions.size()));
+    REQUIRE(transaction_leaves == std::ptrdiff_t(transactions.size()));
 }
 
 TEST_CASE("the full key of a transaction selects its one leaf and the range proof of that leaf holds", "[script filter builder]") {
@@ -234,7 +234,7 @@ TEST_CASE("the full key of a transaction selects its one leaf and the range proo
     REQUIRE(leaves);
     std::span<chain::script_leaf const> const all = *leaves;
     auto const root = chain::script_leaves_root(all);
-    auto const count = static_cast<uint32_t>(all.size());
+    auto const count = uint32_t(all.size());
 
     // Where each transaction's leaf sits in tree order.
     constexpr size_t places[] = {2, 9, 3};
@@ -248,7 +248,7 @@ TEST_CASE("the full key of a transaction selects its one leaf and the range proo
         REQUIRE(run->end == run->first + 1);
         auto const& found = all[run->first];
         REQUIRE(found.kind == chain::script_leaf_kind::transaction);
-        REQUIRE(found.tx_index == static_cast<uint32_t>(i));
+        REQUIRE(found.tx_index == uint32_t(i));
         REQUIRE(found.index == 0u);
 
         // The run with the leaf before and the leaf after it rebuilds the root,
@@ -257,12 +257,12 @@ TEST_CASE("the full key of a transaction selects its one leaf and the range proo
         auto const* after = &all[run->end];
         auto const hashes = chain::script_range_hashes(all, run->first - 1, run->end + 1);
         REQUIRE(hashes);
-        REQUIRE(chain::check_script_range(root, count, static_cast<uint32_t>(run->first),
+        REQUIRE(chain::check_script_range(root, count, uint32_t(run->first),
             all.subspan(run->first, 1), before, after, *hashes, key, 256));
 
         // The same proof does not hold for another transaction's key.
         auto const other = chain::transaction_key(transactions[(i + 1) % transactions.size()].hash());
-        REQUIRE( ! chain::check_script_range(root, count, static_cast<uint32_t>(run->first),
+        REQUIRE( ! chain::check_script_range(root, count, uint32_t(run->first),
             all.subspan(run->first, 1), before, after, *hashes, other, 256));
     }
 
@@ -334,8 +334,8 @@ TEST_CASE("edge hashes of runs of the test block leaves are the known hashes", "
         for (size_t i = 0; i < item.hashes.size(); ++i) {
             require_hex((*hashes)[i], item.hashes[i]);
         }
-        auto const rebuilt = chain::script_range_root(static_cast<uint32_t>(all.size()),
-            static_cast<uint32_t>(item.lo), all.subspan(item.lo, item.end - item.lo), *hashes);
+        auto const rebuilt = chain::script_range_root(uint32_t(all.size()),
+            uint32_t(item.lo), all.subspan(item.lo, item.end - item.lo), *hashes);
         REQUIRE(rebuilt);
         REQUIRE(*rebuilt == root);
     }
@@ -477,7 +477,7 @@ TEST_CASE("served bytes, filter hash, and headers of the test block match the kn
 
     hash_digest counting{};
     for (size_t i = 0; i < counting.size(); ++i) {
-        counting[i] = static_cast<uint8_t>(i);
+        counting[i] = uint8_t(i);
     }
     require_hex(chain::script_filter_header(*filter, counting), header_counting_hex);
 
@@ -542,7 +542,7 @@ TEST_CASE("the script filter of the test block's loose transactions matches thei
     REQUIRE(filter->to_data() == want->to_data());
     // Six keys: A, B, the category, D and the two transactions.
     require_hex(filter->to_data(), "0617ae8a5598e5c0fb85a9d946a2c972d0");
-    REQUIRE(filter->size() == static_cast<uint32_t>(distinct.size()));
+    REQUIRE(filter->size() == uint32_t(distinct.size()));
     for (auto const& item : distinct) {
         REQUIRE(filter->match(key, item));
     }

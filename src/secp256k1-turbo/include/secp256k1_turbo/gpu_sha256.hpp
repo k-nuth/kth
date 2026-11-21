@@ -42,6 +42,21 @@ bool worth_it(std::size_t n);
 // hash of in[64 * i .. 64 * i + 63]. `out` must not overlap `in`.
 bool sha256d64(std::uint8_t* out, std::uint8_t const* in, std::size_t count);
 
+// Double SHA-256 of `count` messages of any length: message i is sizes[i]
+// bytes at messages[i], and out[32 * i .. 32 * i + 31] is its hash. `out` must
+// not overlap them. The messages may lie anywhere: they are gathered into the
+// buffer that goes to the device, each copied once.
+//
+// A message is hashed by one thread of the device, block after block, so a
+// launch lasts as long as its longest message. A caller that has a few long
+// messages among many short ones should hash the long ones on the CPU.
+//
+// Unlike the other functions here, this one does not wait for the device: when
+// every context is taken by other work it returns false at once, and the
+// caller hashes on the CPU, which for hashing is never far behind.
+bool sha256d_messages(std::uint8_t* out, std::uint8_t const* const* messages, std::uint32_t const* sizes,
+                      std::size_t count);
+
 // Merkle root of `count` >= 1 hashes of 32 bytes, by the Bitcoin rule: the last
 // hash of a level with an odd number of them is paired with itself. Every
 // level is hashed on the device and only the root comes back.

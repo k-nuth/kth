@@ -30,11 +30,11 @@ std::expected<void, script_range_error> check_script_prefix(hash_digest const& p
         return std::unexpected(script_range_error::prefix);
     }
 
-    auto full = static_cast<size_t>(bits / 8);
-    auto const rem = static_cast<unsigned>(bits % 8);
+    auto full = size_t(bits / 8);
+    auto const rem = uint32_t(bits % 8);
     if (rem != 0) {
         // The prefix occupies the high `rem` bits of this byte. The low bits must be clear.
-        auto const mask = static_cast<uint8_t>(0xffu >> rem);
+        auto const mask = uint8_t(0xffu >> rem);
         if ((prefix[full] & mask) != 0) {
             return std::unexpected(script_range_error::prefix);
         }
@@ -52,7 +52,7 @@ std::expected<void, script_range_error> check_script_prefix(hash_digest const& p
 // rejected a length above 256, so a partial byte still lies inside the key.
 // Only the sign of the result is significant.
 int compare_script_prefix(hash_digest const& key, hash_digest const& prefix, uint16_t bits) {
-    auto const full = static_cast<size_t>(bits / 8);
+    auto const full = size_t(bits / 8);
     for (size_t i = 0; i < full; ++i) {
         if (key[i] < prefix[i]) {
             return -1;
@@ -62,11 +62,11 @@ int compare_script_prefix(hash_digest const& key, hash_digest const& prefix, uin
         }
     }
 
-    auto const rem = static_cast<unsigned>(bits % 8);
+    auto const rem = uint32_t(bits % 8);
     if (rem != 0) {
         // Keep the high `rem` bits. The prefix's unused low bits are zero.
-        auto const mask = static_cast<uint8_t>(0xffu << (8u - rem));
-        auto const key_bits = static_cast<uint8_t>(key[full] & mask);
+        auto const mask = uint8_t(0xffu << (8u - rem));
+        auto const key_bits = uint8_t(key[full] & mask);
         if (key_bits < prefix[full]) {
             return -1;
         }
@@ -86,7 +86,7 @@ size_t prefix_bound(std::span<script_leaf const> leaves, Predicate pred) {
     size_t upper = leaves.size();
     while (lower < upper) {
         // The sum is widened so a large leaf count cannot wrap the midpoint.
-        auto const mid = static_cast<size_t>((static_cast<uint64_t>(lower) + static_cast<uint64_t>(upper)) / 2);
+        auto const mid = size_t((uint64_t(lower) + uint64_t(upper)) / 2);
         if ( ! pred(leaves[mid])) {
             lower = mid + 1;
         } else {
@@ -124,12 +124,12 @@ std::array<uint8_t, script_leaf_size> to_data(script_leaf const& leaf) {
     auto const index = to_little_endian(leaf.index);
     std::copy(tx_index.begin(), tx_index.end(), out.begin() + tx_index_offset);
     std::copy(index.begin(), index.end(), out.begin() + index_offset);
-    out[kind_offset] = static_cast<uint8_t>(leaf.kind);
+    out[kind_offset] = uint8_t(leaf.kind);
     return out;
 }
 
 std::expected<script_leaf, script_range_error> parse_script_leaf(byte_span data) {
-    if (data.size() != script_leaf_size || data[kind_offset] > static_cast<uint8_t>(script_leaf_kind::transaction)) {
+    if (data.size() != script_leaf_size || data[kind_offset] > uint8_t(script_leaf_kind::transaction)) {
         return std::unexpected(script_range_error::leaf);
     }
 
@@ -142,7 +142,7 @@ std::expected<script_leaf, script_range_error> parse_script_leaf(byte_span data)
     std::copy_n(data.data() + index_offset, index.size(), index.begin());
     leaf.tx_index = from_little_endian<uint32_t>(std::span<uint8_t const, sizeof(uint32_t)>{tx_index});
     leaf.index = from_little_endian<uint32_t>(std::span<uint8_t const, sizeof(uint32_t)>{index});
-    leaf.kind = static_cast<script_leaf_kind>(data[kind_offset]);
+    leaf.kind = script_leaf_kind(data[kind_offset]);
     return leaf;
 }
 
@@ -231,7 +231,7 @@ script_range_hashes(std::span<script_leaf const> leaves, size_t lo, size_t end) 
 std::expected<hash_digest, script_range_error>
 script_range_root(uint32_t count, uint32_t lo, std::span<script_leaf const> run, std::span<hash_digest const> hashes) {
     // Widened before the addition so a large index and a large run cannot wrap.
-    if (run.empty() || static_cast<uint64_t>(lo) + static_cast<uint64_t>(run.size()) > static_cast<uint64_t>(count)) {
+    if (run.empty() || uint64_t(lo) + uint64_t(run.size()) > uint64_t(count)) {
         return std::unexpected(script_range_error::range);
     }
 
@@ -242,9 +242,9 @@ script_range_root(uint32_t count, uint32_t lo, std::span<script_leaf const> run,
     }
 
     auto remaining = hashes;
-    auto a = static_cast<uint64_t>(lo);
-    auto b = static_cast<uint64_t>(lo) + static_cast<uint64_t>(run.size()) - 1;
-    auto width = static_cast<uint64_t>(count);
+    auto a = uint64_t(lo);
+    auto b = uint64_t(lo) + uint64_t(run.size()) - 1;
+    auto width = uint64_t(count);
     while (width > 1) {
         if (a % 2 == 1) {
             if (remaining.empty()) {
@@ -287,7 +287,7 @@ check_script_range(hash_digest const& root, uint32_t count, uint32_t first,
     }
 
     // Widened so the end index cannot wrap when the run is far past `first`.
-    auto const end = static_cast<uint64_t>(first) + static_cast<uint64_t>(run.size());
+    auto const end = uint64_t(first) + uint64_t(run.size());
     if (end > count || (first > 0) != (before != nullptr) || (end < count) != (after != nullptr)) {
         return std::unexpected(script_range_error::range);
     }

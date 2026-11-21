@@ -1,0 +1,95 @@
+name: Neutrino
+
+# Compact block filters for light wallets are an optional feature, selected by
+# the Conan option `neutrino` and off by default (docs/optional-features.md).
+# The main workflows build without it; this one builds with it and runs the
+# feature's own tests, and no others. It uses no secrets and uploads nothing.
+
+on:
+  # Not on every push to master: the nightly run covers it. Pull requests run
+  # it only when they touch what it checks.
+  schedule:
+    - cron: '0 3 * * *'
+  push:
+    branches:
+      - 'release/**'
+      - 'hotfix/**'
+      - 'dev-publish/**'
+    tags:
+      - v*
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/domain/CMakeLists.txt
+      - src/domain/include/kth/domain/chain/compact_filter.hpp
+      - src/domain/include/kth/domain/chain/golomb_set.hpp
+      - src/domain/src/chain/compact_filter.cpp
+      - src/domain/src/chain/golomb_set.cpp
+      - src/domain/test/chain/compact_filter.cpp
+      - src/domain/test/chain/golomb_set.cpp
+      - src/domain/include/kth/domain/chain/block.hpp
+      - src/domain/src/chain/block.cpp
+      - src/domain/test/chain/block_merkle_branch.cpp
+      - src/domain/include/kth/domain/chain/script_filter*.hpp
+      - src/domain/src/chain/script_filter*.cpp
+      - src/domain/test/chain/script_filter*.cpp
+      - src/domain/include/kth/domain/message/*compact_filter*.hpp
+      - src/domain/src/message/*compact_filter*.cpp
+      - src/domain/include/kth/domain/message/heading.hpp
+      - src/domain/include/kth/domain/message/messages.hpp
+      - src/domain/src/message/heading.cpp
+      - src/domain/test/message/compact_filters.cpp
+      - src/domain/test/message/script_filter_messages.cpp
+      - src/infrastructure/include/kth/infrastructure/utility/bit_reader.hpp
+      - src/infrastructure/include/kth/infrastructure/utility/bit_writer.hpp
+      - conanfile.py
+      - conan.lock
+      - CMakeLists.txt
+      - .github/workflows/neutrino.yml
+permissions:
+  contents: read
+concurrency:
+  group: neutrino-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  neutrino:
+    runs-on: ubuntu-24.04
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./ci_utils/.github/actions/setup-conan
+      - uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/neutrino-dependencies.tgz
+          key: neutrino-v1-${{ runner.os }}-${{ hashFiles('conan.lock', 'conanfile.py', 'ci_utils/.conan/profiles/*', '.github/conan/rpc-ci') }}
+      - name: Import dependencies
+        if: steps.dependencies.outputs.cache-hit == 'true'
+        run: conan cache restore "$RUNNER_TEMP/neutrino-dependencies.tgz"
+      - name: Install dependencies with the feature on
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b .github/conan/rpc-ci -pr:h .github/conan/rpc-ci \
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=none -o neutrino=True
+      - name: Export dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        run: conan cache save "*:*" --no-source --file="$RUNNER_TEMP/neutrino-dependencies.tgz"
+      - name: Cache dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/neutrino-dependencies.tgz
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Build the feature's tests
+        run: |
+          cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_domain_neutrino_test
+      - name: Test the compact filters
+        run: ./build/build/Release/src/domain/kth_domain_neutrino_test

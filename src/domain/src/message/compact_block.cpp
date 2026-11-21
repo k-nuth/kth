@@ -16,9 +16,6 @@
 
 namespace kth::domain::message {
 
-std::string const compact_block::command = "cmpctblock";
-uint32_t const compact_block::version_minimum = version::level::bip152;
-uint32_t const compact_block::version_maximum = version::level::bip152;
 
 // static
 compact_block compact_block::factory_from_block(message::block const& block) {

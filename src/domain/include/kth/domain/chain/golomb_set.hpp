@@ -5,6 +5,10 @@
 #ifndef KTH_DOMAIN_CHAIN_GOLOMB_SET_HPP
 #define KTH_DOMAIN_CHAIN_GOLOMB_SET_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <array>
 #include <cstdint>
 #include <expected>
@@ -30,8 +34,7 @@ enum class golomb_set_error {
     truncated
 };
 
-class KD_API golomb_set {
-public:
+struct KD_API golomb_set {
     golomb_set() = default;
 
     // Builds the set of the distinct items under the key.

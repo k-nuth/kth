@@ -47,12 +47,8 @@ size_t heading::satoshi_fixed_size() {
            sizeof(uint32_t);
 }
 
-heading::heading(uint32_t magic, std::string const& command, uint32_t payload_size, uint32_t checksum)
+heading::heading(uint32_t magic, std::string_view command, uint32_t payload_size, uint32_t checksum)
     : magic_(magic), command_(command), payload_size_(payload_size), checksum_(checksum) {
-}
-
-heading::heading(uint32_t magic, std::string&& command, uint32_t payload_size, uint32_t checksum)
-    : magic_(magic), command_(std::move(command)), payload_size_(payload_size), checksum_(checksum) {
 }
 
 // Deserialization.
@@ -76,7 +72,7 @@ expect<heading> heading::from_data(byte_reader& reader, uint32_t /*version*/) {
     if ( ! checksum) {
         return std::unexpected(checksum.error());
     }
-    return heading(*magic, std::move(*command), *payload_size, *checksum);
+    return heading(*magic, *command, *payload_size, *checksum);
 }
 
 // Serialization.
@@ -100,11 +96,13 @@ message_type heading::type() const {
     if (command_ == block_transactions::command) return message_type::block_transactions;
     if (command_ == block::command) return message_type::block;
     if (command_ == compact_block::command) return message_type::compact_block;
+#if defined(KTH_WITH_NEUTRINO)
     if (command_ == compact_filter::command) return message_type::compact_filter;
     if (command_ == compact_filter_checkpoint::command) return message_type::compact_filter_checkpoint;
     if (command_ == compact_filter_headers::command) return message_type::compact_filter_headers;
     if (command_ == compact_filter_proof::command) return message_type::compact_filter_proof;
     if (command_ == compact_filter_range::command) return message_type::compact_filter_range;
+#endif
     if (command_ == double_spend_proof::command) return message_type::double_spend_proof;
     if (command_ == fee_filter::command) return message_type::fee_filter;
     if (command_ == filter_add::command) return message_type::filter_add;
@@ -113,11 +111,13 @@ message_type heading::type() const {
     if (command_ == get_address::command) return message_type::get_address;
     if (command_ == get_block_transactions::command) return message_type::get_block_transactions;
     if (command_ == get_blocks::command) return message_type::get_blocks;
+#if defined(KTH_WITH_NEUTRINO)
     if (command_ == get_compact_filter_checkpoint::command) return message_type::get_compact_filter_checkpoint;
     if (command_ == get_compact_filter_headers::command) return message_type::get_compact_filter_headers;
     if (command_ == get_compact_filter_proof::command) return message_type::get_compact_filter_proof;
     if (command_ == get_compact_filter_range::command) return message_type::get_compact_filter_range;
     if (command_ == get_compact_filters::command) return message_type::get_compact_filters;
+#endif
     if (command_ == get_data::command) return message_type::get_data;
     if (command_ == get_headers::command) return message_type::get_headers;
     if (command_ == headers::command) return message_type::headers;
@@ -155,12 +155,8 @@ std::string const& heading::command() const {
     return command_;
 }
 
-void heading::set_command(std::string const& value) {
+void heading::set_command(std::string_view value) {
     command_ = value;
-}
-
-void heading::set_command(std::string&& value) {
-    command_ = std::move(value);
 }
 
 uint32_t heading::payload_size() const {

@@ -10,7 +10,7 @@ The server transport is opt-in at build time:
 
 ```sh
 conan install . --version=0.0.0 -s compiler.cppstd=23 \
-  -o with_websocket=True --build=missing --lockfile-partial -of build-ws
+  -o websocket=True --build=missing --lockfile-partial -of build-ws
 cmake -S . -B build-ws/build/Release \
   -DCMAKE_TOOLCHAIN_FILE="$PWD/build-ws/build/Release/generators/conan_toolchain.cmake" \
   -DCMAKE_BUILD_TYPE=Release

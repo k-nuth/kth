@@ -14,9 +14,6 @@
 
 namespace kth::domain::message {
 
-std::string const transaction::command = "tx";
-uint32_t const transaction::version_minimum = version::level::minimum;
-uint32_t const transaction::version_maximum = version::level::maximum;
 
 transaction::transaction(chain::transaction&& x)
     : chain::transaction(std::move(x)) {

@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const verack::command = "verack";
-uint32_t const verack::version_minimum = version::level::minimum;
-uint32_t const verack::version_maximum = version::level::maximum;
 
 // Serialization.
 //-----------------------------------------------------------------------------

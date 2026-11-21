@@ -5,13 +5,19 @@
 #ifndef KTH_DOMAIN_MESSAGE_COMPACT_FILTER_HPP
 #define KTH_DOMAIN_MESSAGE_COMPACT_FILTER_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
+#include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
@@ -23,9 +29,6 @@ namespace kth::domain::message {
 // filter: the outpoint of every input after the coinbase, and every output
 // script that is not empty.
 inline constexpr uint8_t regular_compact_filter = 0;
-
-// The largest filter a `cfilter` may carry.
-inline constexpr size_t max_compact_filter_size = 4 * 1024 * 1024;
 
 // `cfilter`: the filter of one block, as its Golomb-coded set goes on the
 // wire (the item count, then the bit stream).
@@ -44,9 +47,9 @@ struct KD_API compact_filter {
     [[nodiscard]] expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
     [[nodiscard]] size_t serialized_size(uint32_t version) const;
 
-    static std::string const command;
-    static uint32_t const version_minimum;
-    static uint32_t const version_maximum;
+    static constexpr std::string_view command = "cfilter";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 };
 
 } // namespace kth::domain::message
