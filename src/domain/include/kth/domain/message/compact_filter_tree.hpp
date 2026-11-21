@@ -88,6 +88,10 @@ expect<chain::script_leaf> read_tree_leaf(byte_reader& reader) {
 
 inline
 expect<void> write_tree_leaf(byte_writer& writer, chain::script_leaf const& leaf) noexcept {
+    // A kind the tree does not know is not read, so it is not written.
+    if (uint8_t(leaf.kind) > uint8_t(chain::script_leaf_kind::transaction)) {
+        return std::unexpected(error::illegal_value);
+    }
     return writer.write_array(chain::to_data(leaf));
 }
 

@@ -283,6 +283,12 @@ TEST_CASE("cfrange refuses what does not fit its tree", "[script filters][messag
     REQUIRE( ! from_data_chunk<message::compact_filter_range>(strange, wire_version));
     strange[82] = 0xff;
     REQUIRE( ! from_data_chunk<message::compact_filter_range>(strange, wire_version));
+    // Nor is such a leaf written.
+    auto unwritable = range;
+    unwritable.leaves[0].kind = kind(5);
+    data_chunk unwritable_buffer(unwritable.serialized_size(wire_version));
+    byte_writer unwritable_writer(unwritable_buffer);
+    REQUIRE( ! unwritable.to_data(unwritable_writer, wire_version));
 }
 
 TEST_CASE("getcfproof is a type, a block and a leaf index", "[script filters][message]") {
@@ -362,6 +368,11 @@ TEST_CASE("cfproof of a transaction's leaf is the leaf, its branch and that tran
     // A kind above 4 is refused.
     raw[81] = 5;
     REQUIRE( ! from_data_chunk<message::compact_filter_proof>(raw, wire_version));
+    auto unwritable = *parsed;
+    unwritable.leaf.kind = kind(5);
+    data_chunk unwritable_buffer(unwritable.serialized_size(wire_version));
+    byte_writer unwritable_writer(unwritable_buffer);
+    REQUIRE( ! unwritable.to_data(unwritable_writer, wire_version));
 }
 
 TEST_CASE("cfproof of a spent output adds the transaction that created it", "[script filters][message]") {
