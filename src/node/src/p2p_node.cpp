@@ -10,6 +10,9 @@
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/node/detail/compact_filters.hpp>
+#endif
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/ws_discovery_task.hpp>
 
@@ -50,6 +53,9 @@ p2p_node::p2p_node(network::settings const& settings)
     , block_announcement_channel_(std::make_unique<concurrent_channel<blocks_announced>>(pool_.get_executor(), 1))
     , header_ingest_(std::make_unique<detail::header_ingest_channels>(pool_.get_executor()))
     , tx_relay_(std::make_unique<detail::tx_relay_channels>())
+#if defined(KTH_WITH_NEUTRINO)
+    , compact_filters_(std::make_unique<detail::compact_filter_channels>())
+#endif
 {
     ws_discovery_ = std::make_unique<detail::ws_discovery_inbox>();
     spdlog::debug("[p2p_node] p2p_node constructor - thread pool size: {}", pool_.size());
@@ -327,6 +333,12 @@ void p2p_node::stop() {
     if (tx_relay_) {
         tx_relay_->close();
     }
+#if defined(KTH_WITH_NEUTRINO)
+    // The compact filter index waits on these the same way.
+    if (compact_filters_) {
+        compact_filters_->close();
+    }
+#endif
     ws_discovery_->commands.close();
 
     // Stop acceptor - this causes run_inbound() to exit
@@ -1091,6 +1103,12 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
 detail::tx_relay_channels& p2p_node::tx_relay() {
     return *tx_relay_;
 }
+
+#if defined(KTH_WITH_NEUTRINO)
+detail::compact_filter_channels& p2p_node::compact_filters() {
+    return *compact_filters_;
+}
+#endif
 
 p2p_node::announced_blocks p2p_node::take_announced_blocks() {
     std::lock_guard<std::mutex> const guard(announced_blocks_mutex_);

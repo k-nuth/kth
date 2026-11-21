@@ -17,6 +17,7 @@ settings::settings()
     , refresh_transactions(true)
     , compact_blocks_high_bandwidth(true)
     , ds_proofs_enabled(false)
+    , compact_filters(false)
 {}
 
 // There are no current distinctions spanning chain contexts.

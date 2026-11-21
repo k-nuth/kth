@@ -23,7 +23,10 @@ pull requests add to it.
 
 | Option | Feature | Tests | Workflow |
 |---|---|---|---|
-| `neutrino` | Compact block filters for light wallets (Neutrino, BIP157/158): the Golomb-coded set, the regular filter of a block, the script filter of a block with its entry tree, the six filter messages (`getcfilters`, `cfilter`, `getcfheaders`, `cfheaders`, `getcfcheckpt`, `cfcheckpt`), and the four messages of the script filter tree (`getcfrange`, `cfrange`, `getcfproof`, `cfproof`) | `kth_domain_neutrino_test` | `neutrino.yml` |
+| `neutrino` | Compact block filters for light wallets (Neutrino, BIP157/158): the Golomb-coded set, the regular filter of a block, the script filter of a block with its entry tree, the six filter messages (`getcfilters`, `cfilter`, `getcfheaders`, `cfheaders`, `getcfcheckpt`, `cfcheckpt`), the four messages of the script filter tree (`getcfrange`, `cfrange`, `getcfproof`, `cfproof`), and serving the regular filter to peers ([compact-filters.md](compact-filters.md)) | `kth_domain_neutrino_test`, `kth_node_neutrino_test` | `neutrino.yml` |
+
+`neutrino` needs `currency=BCH`: the regular filter it builds is the one of
+Bitcoin Cash, which is not the basic filter of BIP158.
 
 ## Building with a feature on
 
@@ -31,5 +34,5 @@ pull requests add to it.
 conan install conanfile.py --version 0.0.0 -of build --build=missing \
     -o tests=True -o neutrino=True
 cmake --preset conan-release -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
-cmake --build --preset conan-release --target kth_domain_neutrino_test
+cmake --build --preset conan-release --target kth_domain_neutrino_test kth_node_neutrino_test
 ```
