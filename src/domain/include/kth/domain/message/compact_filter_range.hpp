@@ -5,17 +5,23 @@
 #ifndef KTH_DOMAIN_MESSAGE_COMPACT_FILTER_RANGE_HPP
 #define KTH_DOMAIN_MESSAGE_COMPACT_FILTER_RANGE_HPP
 
+#if ! defined(KTH_WITH_NEUTRINO)
+#error "Compact filters are an optional feature: build with the Conan option neutrino=True."
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kth/domain/chain/script_filter.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/deserialization.hpp>
 #include <kth/domain/message/compact_filter_tree.hpp>
+#include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
@@ -61,9 +67,9 @@ struct KD_API compact_filter_range {
     [[nodiscard]] expect<void> to_data(byte_writer& writer, uint32_t version) const noexcept;
     [[nodiscard]] size_t serialized_size(uint32_t version) const;
 
-    static std::string const command;
-    static uint32_t const version_minimum;
-    static uint32_t const version_maximum;
+    static constexpr std::string_view command = "cfrange";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 };
 
 } // namespace kth::domain::message

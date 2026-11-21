@@ -30,10 +30,6 @@ constexpr bool fits(uint32_t count, uint32_t first, size_t held) noexcept {
 
 } // namespace
 
-std::string const compact_filter_range::command = "cfrange";
-uint32_t const compact_filter_range::version_minimum = version::level::minimum;
-uint32_t const compact_filter_range::version_maximum = version::level::maximum;
-
 expect<compact_filter_range> compact_filter_range::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());

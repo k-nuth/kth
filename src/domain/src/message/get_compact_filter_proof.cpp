@@ -8,10 +8,6 @@
 
 namespace kth::domain::message {
 
-std::string const get_compact_filter_proof::command = "getcfproof";
-uint32_t const get_compact_filter_proof::version_minimum = version::level::minimum;
-uint32_t const get_compact_filter_proof::version_maximum = version::level::maximum;
-
 expect<get_compact_filter_proof> get_compact_filter_proof::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());

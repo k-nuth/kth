@@ -8,10 +8,6 @@
 
 namespace kth::domain::message {
 
-std::string const get_compact_filter_range::command = "getcfrange";
-uint32_t const get_compact_filter_range::version_minimum = version::level::minimum;
-uint32_t const get_compact_filter_range::version_maximum = version::level::maximum;
-
 expect<get_compact_filter_range> get_compact_filter_range::from_data(byte_reader& reader, uint32_t /*version*/) {
     auto const type = reader.read_byte();
     if ( ! type) return std::unexpected(type.error());
