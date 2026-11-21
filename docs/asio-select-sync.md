@@ -46,16 +46,16 @@ Selection replaces those application patterns and explicitly returns unsent payl
 
 `fast_validation_input_channel` is a `select_channel<fast_validation_input>`
 (capacity 256). Each `block_download_task` owns one selector for its whole life
-with a `send` case on it and an `after` case, armed with the chunk coordinator's
-stop token. Per chunk it emplaces the chunk as the send payload and waits
+with a `send` case on it and an `after` case, armed with the stop token of its
+range (`download_range`). Per chunk it emplaces the chunk as the send payload and waits
 (`hand_over_chunk` in `block_tasks.cpp`). Exactly one of these happens:
 
 | outcome | who owns the chunk afterwards | what the worker does |
 |---|---|---|
-| the send wins | the channel (or the validation task's pending receive) | `chunk_completed`, next chunk |
-| the `after` case wins (every 10 s) | still the worker | re-reads the coordinator: stopped → drop and `chunk_failed`; chain switched → drop and `chunk_failed`; otherwise logs and waits again |
-| `operation_aborted` (coordinator stop token) | still the worker | drop, `chunk_failed`, leave the loop |
-| `broken_pipe` (channel closed at shutdown) | still the worker | drop, `chunk_failed`, leave the loop — nothing will ever take a chunk again |
+| the send wins | the channel (or the validation task's pending receive) | reports `completed`, asks for the next chunk |
+| the `after` case wins (every 10 s) | still the worker | re-reads its range: stopped → drop and report `failed`; chain switched → drop and report `failed`; otherwise logs and waits again |
+| `operation_aborted` (the range's stop token) | still the worker | drop, report `failed`, leave the loop |
+| `broken_pipe` (channel closed at shutdown) | still the worker | drop, report `failed`, leave the loop — nothing will ever take a chunk again |
 
 The in-flight bound is explicit: the channel's capacity plus one chunk per
 worker. No copy per attempt, no poll, and no give-up that throws away blocks
@@ -78,19 +78,19 @@ single receive case. Every receive is what resumes a suspended worker. After
 `block_download_input_channel` and `block_download_task_output_channel` are
 `select_channel`s. The supervisor is one loop over one selector with three
 cases, **biased** in this order: `receive(input)` (stop, range, peers), the
-10 s timeout tick (`after`), `receive(task_output)` (blocks on the old path,
-`task_ended`, performance). Control before data: a stop or a new range is
+stall deadline (`after`), `receive(task_output)` (chunk requests and reports,
+blocks on the old path, `task_ended`, performance). Control before data: a stop or a new range is
 attended within one wait however full the workers' output is; this gives control traffic priority. Sustained control traffic can delay worker
 reports; this priority policy does not provide a general starvation bound.
 
 This replaced a timer task and two bridge tasks feeding a unified 512-entry
 queue. What the old shape preserved is preserved directly: per-source FIFO
 (each channel is FIFO, one message per wait), `task_ended` and stop never
-dropped (there is no intermediate queue to be full), the timeout cadence (an
-`after` case re-armed per tick, instead of a timer task whose `try_send` could
-be refused by a full queue — which also ended that task for good), and one
-coroutine touching the coordinator and the ownership bookkeeping with nothing
-between a start and its record (#652). What is not preserved is the
+dropped (there is no intermediate queue to be full), stalled requests (an
+`after` case, instead of a timer task whose `try_send` could be refused by a
+full queue — which also ended that task for good), and one coroutine touching
+the coordinator and the ownership bookkeeping with nothing between a start and
+its record (#652). What is not preserved is the
 cross-source interleaving of the old queue, which was an artefact of bridge
 scheduling and retry delays, not a contract.
 
@@ -100,9 +100,53 @@ supervisor having closed `task_output`, which it does after its loop, before
 joining its workers — so a worker suspended on its report completes with
 `broken_pipe` and ends, and the join completes.
 
-Shutdown order: loop exits (stop request or input `eof`) → `coordinator->stop()`
-(flag, then its stop token) → `task_output.close()` → `tasks.join()` →
-coordinator destroyed → selector destroyed with the frame, after its last wait.
+Shutdown order: loop exits (stop request or input `eof`) → the range is
+stopped (its stop token) and the requests waiting for a chunk are answered →
+`task_output.close()` → `tasks.join()` → range and chunks dropped → selector
+destroyed with the frame, after its last wait.
+
+### The chunks of a range
+
+The state of a range — which chunk is free, being requested, downloaded or
+delivered — is a `chunk_coordinator`: plain data, with no atomics and no locks,
+owned by the supervisor's coroutine. No worker touches it. What the workers of
+a range share is a `download_range`: its heights, the header index to read
+hashes from, and its stop token.
+
+A worker talks to the owner through `task_output`, with `chunk_client`:
+
+| message | from | meaning |
+|---|---|---|
+| `chunk_request{epoch, reply}` | worker | "give me a chunk"; answered on `reply`, the worker's own channel (capacity 1) |
+| `chunk_assignment` on `reply` | supervisor | the claim to report with and the heights of the chunk |
+| `nullopt` on `reply` | supervisor | the range has no more work for this worker: it leaves |
+| `chunk_report{epoch, claim, downloaded}` | worker | the blocks arrived; the chunk can no longer stall |
+| `chunk_report{epoch, claim, completed}` | worker | the blocks were handed over |
+| `chunk_report{epoch, claim, failed}` | worker | the chunk is given back |
+
+* **Waiting.** A request that finds every chunk held is kept by the owner, in
+  arrival order, and the worker stays suspended on its reply channel. It is
+  answered by the event that frees a chunk — a `failed` report or a stalled
+  request — or by the completion of the range. No worker polls, and none wakes
+  up to find nothing.
+* **Stalls.** Each request for a chunk has a deadline (`stall_timeout_secs`
+  after the claim). The supervisor's `after` case is armed for the earliest
+  one, and never when nothing is pending; when it fires, the overdue chunks
+  are freed and handed to the waiting workers. A chunk reported `downloaded`
+  has no deadline: the wait that follows belongs to validation, not to the peer.
+* **Full channel.** Requests and reports are suspended sends with no deadline:
+  `task_output` being full is waited out, never dropped. The supervisor is its
+  only consumer and always returns to it. A reply always has room, because a
+  worker has at most one request pending.
+* **Cancellation.** Stopping a range requests its stop token, which aborts the
+  workers' waits (for an answer, or for room in validation), and answers the
+  requests still waiting. A worker that outlives its range is recognised by
+  its epoch: its requests are answered with no work and its reports are
+  ignored, so a claim on chunk 3 of the old range cannot complete chunk 3 of
+  the new one.
+* **A worker that ends holding a chunk** reports `failed` on its way out,
+  whatever made it leave. A chunk whose worker cannot be answered (its reply
+  channel is closed) is not assigned to it.
 
 ### The coordinator's range request
 
