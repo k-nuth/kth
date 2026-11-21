@@ -13,6 +13,9 @@
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/node/detail/compact_filters.hpp>
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -2597,6 +2600,10 @@ static
                 announce_connected_tip();
                 // The orphans a connected block resolves (detail/tx_relay.hpp).
                 network.tx_relay().tip_moved();
+#if defined(KTH_WITH_NEUTRINO)
+                // The compact filter index reads the blocks connected since.
+                network.compact_filters().tip_moved();
+#endif
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
