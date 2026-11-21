@@ -31,6 +31,11 @@ enum class message_type {
     block,
     block_transactions,
     compact_block,
+#if defined(KTH_WITH_NEUTRINO)
+    compact_filter,
+    compact_filter_checkpoint,
+    compact_filter_headers,
+#endif
     double_spend_proof,
     fee_filter,
     filter_add,
@@ -39,6 +44,11 @@ enum class message_type {
     get_address,
     get_block_transactions,
     get_blocks,
+#if defined(KTH_WITH_NEUTRINO)
+    get_compact_filter_checkpoint,
+    get_compact_filter_headers,
+    get_compact_filters,
+#endif
     get_data,
     get_headers,
     headers,

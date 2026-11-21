@@ -472,7 +472,19 @@ if (KTH_WITH_NEUTRINO)
         src/chain/script_filter.cpp
         src/chain/script_filter_builder.cpp
         include/kth/domain/chain/script_filter.hpp
-        include/kth/domain/chain/script_filter_builder.hpp)
+        include/kth/domain/chain/script_filter_builder.hpp
+        src/message/compact_filter.cpp
+        src/message/compact_filter_checkpoint.cpp
+        src/message/compact_filter_headers.cpp
+        src/message/get_compact_filter_checkpoint.cpp
+        src/message/get_compact_filter_headers.cpp
+        src/message/get_compact_filters.cpp
+        include/kth/domain/message/compact_filter.hpp
+        include/kth/domain/message/compact_filter_checkpoint.hpp
+        include/kth/domain/message/compact_filter_headers.hpp
+        include/kth/domain/message/get_compact_filter_checkpoint.hpp
+        include/kth/domain/message/get_compact_filter_headers.hpp
+        include/kth/domain/message/get_compact_filters.hpp)
 endif()
 
 
@@ -716,7 +728,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/golomb_set.cpp
         test/chain/script_filter.cpp
         test/chain/script_filter_bchd.cpp
-        test/chain/script_filter_builder.cpp)
+        test/chain/script_filter_builder.cpp
+        test/message/compact_filters.cpp)
     target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)

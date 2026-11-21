@@ -15,6 +15,11 @@
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/block_transactions.hpp>
 #include <kth/domain/message/compact_block.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/domain/message/compact_filter.hpp>
+#include <kth/domain/message/compact_filter_checkpoint.hpp>
+#include <kth/domain/message/compact_filter_headers.hpp>
+#endif
 #include <kth/domain/message/double_spend_proof.hpp>
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/filter_add.hpp>
@@ -24,6 +29,11 @@
 #include <kth/domain/message/get_block_transactions.hpp>
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_data.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/domain/message/get_compact_filter_checkpoint.hpp>
+#include <kth/domain/message/get_compact_filter_headers.hpp>
+#include <kth/domain/message/get_compact_filters.hpp>
+#endif
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/heading.hpp>
@@ -112,12 +122,22 @@ DECLARE_MESSAGE_POINTER_TYPES(address);
 DECLARE_MESSAGE_POINTER_TYPES(block);
 DECLARE_MESSAGE_POINTER_TYPES(block_transactions);
 DECLARE_MESSAGE_POINTER_TYPES(compact_block);
+#if defined(KTH_WITH_NEUTRINO)
+DECLARE_MESSAGE_POINTER_TYPES(compact_filter);
+DECLARE_MESSAGE_POINTER_TYPES(compact_filter_checkpoint);
+DECLARE_MESSAGE_POINTER_TYPES(compact_filter_headers);
+#endif
 DECLARE_MESSAGE_POINTER_TYPES(double_spend_proof);
 DECLARE_MESSAGE_POINTER_TYPES(get_address);
 DECLARE_MESSAGE_POINTER_TYPES(fee_filter);
 DECLARE_MESSAGE_POINTER_TYPES(get_blocks);
 DECLARE_MESSAGE_POINTER_TYPES(get_block_transactions);
 DECLARE_MESSAGE_POINTER_TYPES(get_data);
+#if defined(KTH_WITH_NEUTRINO)
+DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_checkpoint);
+DECLARE_MESSAGE_POINTER_TYPES(get_compact_filter_headers);
+DECLARE_MESSAGE_POINTER_TYPES(get_compact_filters);
+#endif
 DECLARE_MESSAGE_POINTER_TYPES(get_headers);
 DECLARE_MESSAGE_POINTER_TYPES(header);
 DECLARE_MESSAGE_POINTER_TYPES(headers);
