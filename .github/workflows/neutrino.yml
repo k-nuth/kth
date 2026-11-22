@@ -40,6 +40,15 @@ on:
       - src/domain/src/message/heading.cpp
       - src/domain/test/message/compact_filters.cpp
       - src/domain/test/message/script_filter_messages.cpp
+      - src/node/CMakeLists.txt
+      - src/node/include/kth/node/detail/compact_filter*.hpp
+      - src/node/src/detail/compact_filter*.cpp
+      - src/node/test/compact_filter*.cpp
+      - src/node/include/kth/node/full_node.hpp
+      - src/node/src/full_node.cpp
+      - src/node/include/kth/node/p2p_node.hpp
+      - src/node/src/p2p_node.cpp
+      - src/node/src/parser.cpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_reader.hpp
       - src/infrastructure/include/kth/infrastructure/utility/bit_writer.hpp
       - conanfile.py
@@ -90,6 +99,8 @@ jobs:
       - name: Build the feature's tests
         run: |
           cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
-          cmake --build --preset conan-release -j"$(nproc)" --target kth_domain_neutrino_test
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_domain_neutrino_test kth_node_neutrino_test
       - name: Test the compact filters
         run: ./build/build/Release/src/domain/kth_domain_neutrino_test
+      - name: Test serving them
+        run: ./build/build/Release/src/node/kth_node_neutrino_test

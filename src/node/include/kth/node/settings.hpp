@@ -50,6 +50,9 @@ struct KND_API settings {
     bool refresh_transactions;
     bool compact_blocks_high_bandwidth;
     bool ds_proofs_enabled;
+    // Serve compact block filters to light wallets (the cfilter messages). Read
+    // only by a build with the option `neutrino`.
+    bool compact_filters;
 
     /// Display mode for console output (tui, log, daemon)
     display_mode display{display_mode::log};

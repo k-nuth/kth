@@ -322,6 +322,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.refresh_transactions",           cfg.node.refresh_transactions);
     app.add_option("--node.compact_blocks_high_bandwidth",  cfg.node.compact_blocks_high_bandwidth);
     app.add_option("--node.ds_proofs",                      cfg.node.ds_proofs_enabled);
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+    app.add_option("--node.compact_filters",                cfg.node.compact_filters,
+        "Serve compact block filters to light wallets: getcfilters, getcfheaders and getcfcheckpt "
+        "(default false). Not on a pruning node.");
+#endif
     add_enum_option(app, "--node.display",
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");
@@ -381,6 +386,17 @@ void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
 
 // Preserve the historical non-BCH configuration restriction. BCH uses the
 // independent Knuth policy and can disable it without relaxing consensus.
+// A filter header chains back to the first block, and a filter is built from
+// its block: a node that removes old blocks can serve neither.
+bool check_compact_filters(configuration const& cfg, std::ostream& error) {
+    if (cfg.node.compact_filters && cfg.database.prune_keep_blocks != 0) {
+        error << "Error: node.compact_filters is not allowed on a pruning node "
+                 "(db.prune_keep_blocks); it needs every block." << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
 #if !defined(KTH_CURRENCY_BCH)
     if (cfg.net == domain::config::network::mainnet && cfg.chain.accept_non_standard_transactions) {
@@ -508,7 +524,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
-        if ( ! check_standardness_policy(configured, error)) {
+        if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)) {
             return false;
         }
 
@@ -584,7 +600,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         }
     }
 
-    if ( ! check_standardness_policy(configured, error)) {
+    if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)) {
         return false;
     }
 

@@ -249,6 +249,9 @@ namespace detail {
 struct header_ingest_channels;
 struct tx_relay_channels;
 class tx_relay_backlog;
+#if defined(KTH_WITH_NEUTRINO)
+struct compact_filter_channels;
+#endif
 } // namespace detail
 
 /// Woken when at least one block has been announced. Carries nothing: the
@@ -455,6 +458,14 @@ public:
     /// Closed by stop().
     [[nodiscard]]
     detail::tx_relay_channels& tx_relay();
+
+#if defined(KTH_WITH_NEUTRINO)
+    /// What the peers' services ask of the compact filter index, and the ring
+    /// of each connected tip (detail/compact_filters.hpp). Owned and drained by
+    /// the index when the node serves compact filters. Closed by stop().
+    [[nodiscard]]
+    detail::compact_filter_channels& compact_filters();
+#endif
 
     /// What was announced since the last take. `overflowed` says the registry
     /// refused hashes for want of room, so the list is not the whole story and
@@ -750,6 +761,9 @@ private:
 
     std::unique_ptr<detail::header_ingest_channels> header_ingest_;
     std::unique_ptr<detail::tx_relay_channels> tx_relay_;
+#if defined(KTH_WITH_NEUTRINO)
+    std::unique_ptr<detail::compact_filter_channels> compact_filters_;
+#endif
 
     /// Each form a header or an announcement arrives in. Every one of them
     /// states what it does with the message; none accepts a message and

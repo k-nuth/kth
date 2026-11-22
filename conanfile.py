@@ -186,6 +186,10 @@ class KthRecipe(KnuthConanFileV2):
         KnuthConanFileV2.validate(self)
         if self.options.browser_node and (self.settings.os != "Emscripten" or not self.options.asio_standalone):
             raise ConanInvalidConfiguration("browser_node requires Emscripten and standalone Asio")
+        # The regular filter built is the one of Bitcoin Cash, which is not
+        # the basic filter of BIP158.
+        if self.options.neutrino and self.options.currency != "BCH":
+            raise ConanInvalidConfiguration("neutrino requires currency=BCH")
         if self.info.settings.compiler.cppstd:
             check_min_cppstd(self, "23")
 

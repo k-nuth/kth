@@ -82,6 +82,11 @@ if(KTH_BROWSER_NODE)
 endif()
 option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 option(KTH_WITH_NEUTRINO "Build the compact block filters for light wallets (Neutrino, BIP157/158)" OFF)
+# The regular filter built is the one of Bitcoin Cash, which is not the basic
+# filter of BIP158: another currency would serve filters its wallets cannot use.
+if (KTH_WITH_NEUTRINO AND NOT CURRENCY STREQUAL "BCH")
+    message(FATAL_ERROR "KTH_WITH_NEUTRINO requires CURRENCY=BCH")
+endif()
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)
