@@ -766,7 +766,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
         FILE* other = open_native(undo_files_.file_name(flat_file_pos{file_number, 0}), "rb");
         if (other == nullptr) return std::nullopt;
         data_chunk payload(size);
-        bool const read = std::fseek(other, static_cast<long>(position), SEEK_SET) == 0
+        bool const read = std::fseek(other, long(position), SEEK_SET) == 0
             && std::fread(payload.data(), 1, payload.size(), other) == payload.size();
         std::fclose(other);
         if ( ! read) return std::nullopt;
@@ -922,7 +922,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
 
             // The position handed back is what read_undo expects: just past the
             // header, since it seeks backwards from there.
-            auto const position = offset + static_cast<uint32_t>(undo_header_size);
+            auto const position = offset + uint32_t(undo_header_size);
             auto const [existing, inserted] = seen.try_emplace(block_hash,
                 kept_record{stored_checksum, file_num, position, undo_size, std::nullopt});
 
