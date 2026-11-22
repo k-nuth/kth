@@ -641,6 +641,9 @@ jobs:
             build/build/Release/ci-test-evidence/**/*.json
             build/build/Release/ci-test-evidence/**/*.cpp
             build/build/Release/ci-test-evidence/**/*.rsp
+            # The log each node test keeps of its own run, written to the
+            # temporary directory of its shard.
+            build/build/Release/ci-tests/**/tmp/*_dump.log
             build/package-validation.json
             build/dependency-binaries.json
           if-no-files-found: warn
