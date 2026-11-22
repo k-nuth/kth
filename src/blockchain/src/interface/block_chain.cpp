@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/prune.hpp>
 #include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
@@ -120,6 +121,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , in_place_nocow_(database_settings.nocow)
+    , prune_keep_blocks_(database_settings.prune_keep_blocks)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -256,12 +258,27 @@ bool block_chain::start(uint32_t disk_magic) {
     // block_store_ is not yet initialized here — we wire it below after initialization.
 #endif
 
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // In reference mode a UTXO entry names the block file its output is in.
+    // Removing block files would leave entries pointing at nothing.
+    if (prune_keep_blocks_ != 0) {
+        spdlog::error("[blockchain] db.prune_keep_blocks cannot be used with the UTXO reference "
+            "mode: its entries point into the block files that pruning removes");
+        return false;
+    }
+#endif
+
     // Initialize flat file block storage
     // Convert disk magic to little-endian bytes for file header
     auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
     auto magic = to_little_endian(disk_magic);
     block_store_ = std::make_unique<database::block_store>(blocks_path, magic);
-    if ( ! block_store_->initialize()) {
+    // A pruning node's block files start above zero once it has removed some.
+    // Any other node treats a missing first file as a lost one.
+    auto const numbering = prune_keep_blocks_ != 0
+        ? database::block_store::numbering::pruned
+        : database::block_store::numbering::complete;
+    if ( ! block_store_->initialize(numbering)) {
         spdlog::error("[blockchain] Failed to initialize block store at {}", blocks_path.string());
         return false;
     }
@@ -559,7 +576,12 @@ bool block_chain::start(uint32_t disk_magic) {
             // Undo is captured from the first height that is validated, which is
             // the trusted height + 1, not the anchor + 1: in full-validation mode
             // it starts at height 1.
-            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
+            //
+            // A pruning node has removed the files below its prune height, undo
+            // included, so its range starts above that.
+            auto const first = static_cast<int32_t>(first_height_with_undo(
+                static_cast<uint32_t>(settings_.trusted_checkpoint_height()), *built,
+                prune_keep_blocks_));
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||
@@ -1119,6 +1141,33 @@ bool block_chain::insert(block_const_ptr block, size_t height) {
     (void)block;
     (void)height;
     return false;
+}
+
+std::expected<size_t, database::result_code> block_chain::prune_block_files(uint32_t built_height) {
+    // How far the built height moves between passes. A pass reads the whole
+    // header index, and a block file holds far more blocks than this.
+    constexpr uint32_t pass_interval = 64;
+
+    if (prune_keep_blocks_ == 0 || ! block_store_) {
+        return 0;
+    }
+    if (pruned_at_height_ != 0 && built_height < pruned_at_height_ + pass_interval) {
+        return 0;
+    }
+    pruned_at_height_ = built_height;
+
+    auto const pruned = blockchain::prune_block_files(header_index_, *block_store_,
+        built_height, prune_keep_blocks_);
+    if ( ! pruned) {
+        return std::unexpected(pruned.error());
+    }
+    if (pruned->files_removed != 0) {
+        spdlog::info("[blockchain] Pruned {} block file(s) holding {} block(s) below height {}; "
+            "the block files now start at blk{:05d}.dat",
+            pruned->files_removed, pruned->blocks_forgotten,
+            prune_height(built_height, prune_keep_blocks_) + 1, pruned->first_file);
+    }
+    return pruned->files_removed;
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
@@ -3039,6 +3088,46 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
 
     // Read all blocks from flat files
     auto result = block_store_->read_blocks_raw(positions);
+    if (!result) {
+        return std::unexpected(database::result_code::other);
+    }
+
+    return std::move(*result);
+}
+
+std::expected<std::vector<data_chunk>, database::result_code>
+block_chain::fetch_blocks_raw_within(uint32_t from, uint32_t to, uint64_t max_bytes) const {
+    // A range that ends before it starts holds no block, and the count below
+    // would wrap.
+    if (from > to) {
+        return std::unexpected(database::result_code::key_not_found);
+    }
+
+    // Read blocks from flat files using positions stored in header_index
+    // NOTE: During IBD, blocks are stored sequentially, so index == height
+    std::vector<database::flat_file_pos> positions;
+    positions.reserve(to - from + 1);
+
+    for (uint32_t h = from; h <= to; ++h) {
+        // Resolve through the active chain — the index also holds side branches,
+        // numbered in arrival order, so an entry's index is not its height.
+        auto const idx = header_index_.active_at(static_cast<int32_t>(h));
+
+        if (idx == header_index::null_index) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: Height {} is not on the active chain", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: No block data for height {}", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+        positions.push_back(pos);
+    }
+
+    // Read all blocks from flat files
+    auto result = block_store_->read_blocks_raw_within(positions, max_bytes);
     if (!result) {
         return std::unexpected(database::result_code::other);
     }

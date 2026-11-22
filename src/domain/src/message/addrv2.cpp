@@ -127,9 +127,6 @@ addrv2_entry addrv2_entry::from_network_address(infrastructure::message::network
 // addrv2 implementation
 //-----------------------------------------------------------------------------
 
-std::string const addrv2::command = "addrv2";
-uint32_t const addrv2::version_minimum = version::level::feature_negotiation;
-uint32_t const addrv2::version_maximum = version::level::maximum;
 
 addrv2::addrv2(entry_list addresses)
     : addresses_(std::move(addresses))

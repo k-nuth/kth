@@ -14,6 +14,7 @@
 #include <cstring>
 #include <deque>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -195,7 +196,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     block_download_task_output_channel& output,
     uint64_t task_id,
     uint64_t coordinator_epoch,
-    fast_validation_input_channel* fast_val
+    fast_validation_input_channel* fast_val,
+    std::chrono::seconds batch_timeout
 ) {
     auto const addr = peer->authority_with_agent();
     auto const peer_nonce = peer->nonce();
@@ -377,7 +379,7 @@ std::atomic<uint32_t> g_active_download_peers{0};
         // Download from peer - measure time
         auto download_start = std::chrono::steady_clock::now();
         auto result = co_await network::request_blocks_batch<network::sync_mode::fast>(
-            *peer, blocks, 60s);
+            *peer, blocks, batch_timeout);
         auto download_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - download_start).count();
 
@@ -387,6 +389,26 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 peer->stopped(), coordinator->is_stopped());
             // Report failure - slot reset to FREE for retry by another peer
             coordinator->chunk_failed(claim);
+            if (result.error() == error::peer_throttling) {
+                // Not one block in the whole time: this peer is not serving
+                // blocks. Left connected it would keep its outbound slot until
+                // the inactivity timer, with nothing downloading through it.
+                // Closing the session frees the slot for another peer.
+                spdlog::debug("[block_download] Peer {} sent no block of chunk {}; closing the session",
+                    addr, chunk_id);
+                peer->stop(error::peer_throttling);
+            } else if (result.error() == error::channel_timeout) {
+                // Part of the chunk arrived, but not all of it in time. This
+                // task ends here, and the session it leaves behind would keep
+                // an outbound slot with nothing downloading through it, the
+                // same as a peer that sent nothing.
+                spdlog::debug("[block_download] Peer {} did not finish chunk {} in time; closing the session",
+                    addr, chunk_id);
+                // Stopped with the same reason: the session's own inactivity
+                // timer already uses channel_timeout, and the retry accounting
+                // must tell this close from that one.
+                peer->stop(error::peer_throttling);
+            }
             break;
         }
 
@@ -1729,7 +1751,8 @@ std::atomic<uint32_t> g_active_download_peers{0};
     chunk_validated_channel& output,
     uint32_t start_height,
     blockchain::header_organizer&,
-    std::atomic<uint32_t>* contiguous_out
+    std::atomic<uint32_t>* contiguous_out,
+    utxo_build_wake_channel* utxo_wake
 ) {
     spdlog::debug("[block_storage] Task started at height {}", start_height);
 
@@ -1900,6 +1923,10 @@ std::atomic<uint32_t> g_active_download_peers{0};
             // Publish contiguous height for utxo_build_task
             if (contiguous_out) {
                 contiguous_out->store(contiguous_height, std::memory_order_release);
+            }
+            // After the height: the builder reads it when this wakes it.
+            if (utxo_wake) {
+                (void)utxo_wake->try_send(std::error_code{});
             }
 
         } else {
@@ -2094,8 +2121,7 @@ struct window_fatal {
     std::string reason;   ///< What on_fatal is told, verbatim as before.
 };
 
-uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
-                        uint32_t validated_blocks) {
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height) {
     // Never let a batch straddle the checkpoint. Cap it at the checkpoint so
     // the below-checkpoint remainder is built (merkle-only) as its own batch
     // and the UTXO delta of those blocks is applied first. The next batch then
@@ -2107,14 +2133,17 @@ uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t check
     if (batch_start <= checkpoint_height && checkpoint_height < batch_end) {
         return checkpoint_height;
     }
+    return batch_end;
+}
+
+uint32_t utxo_validated_batch_reach(uint32_t batch_start, uint32_t available, uint32_t max_blocks) {
     // Above the checkpoint every block's undo data is captured and can only be
     // written after the batch's delta is applied, so the whole batch is held in
-    // memory first: a full block can spend tens of thousands of outputs.
-    auto const cap = std::max(validated_blocks, uint32_t{1});
-    if (batch_start > checkpoint_height && batch_end - batch_start + 1 > cap) {
-        return batch_start + cap - 1;
-    }
-    return batch_end;
+    // memory first. What that takes follows the bytes of the blocks, and the
+    // read cuts the batch by them; the count is only a limit on top.
+    auto const blocks = std::max(std::min(available, std::max(max_blocks, uint32_t{1})), uint32_t{1});
+    return uint32_t(std::min<uint64_t>(uint64_t{batch_start} + blocks - 1,
+        std::numeric_limits<uint32_t>::max()));
 }
 
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
@@ -2127,6 +2156,15 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     return 0;
 }
 
+uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_t available,
+        uint32_t checkpoint_height, uint32_t max_blocks) {
+    if (batch_end > checkpoint_height || available == 0 || max_blocks == 0) {
+        return batch_end;
+    }
+    auto const furthest = uint64_t{batch_start} + std::min(available, max_blocks) - 1;
+    return std::max(batch_end, uint32_t(std::min<uint64_t>(furthest, checkpoint_height)));
+}
+
 // =============================================================================
 // Incremental UTXO Build Task
 // =============================================================================
@@ -2134,43 +2172,50 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal
 ) {
-    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+    co_await utxo_build_task(chain, contiguous_height, wake, start_height, network,
         std::move(should_stop), std::move(on_fatal), nullptr);
 }
 
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress
 ) {
-    co_await utxo_build_task(chain, contiguous_height, start_height, network,
+    co_await utxo_build_task(chain, contiguous_height, wake, start_height, network,
         std::move(should_stop), std::move(on_fatal), progress, nullptr, nullptr);
 }
 
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress,
     block_rejection_channel* rejections,
-    block_rejection_ack_channel* rejection_ack
+    block_rejection_ack_channel* rejection_ack,
+    utxo_build_remainder_channel* remainder
 ) {
     spdlog::debug("[utxo_build] Task started at height {}", start_height);
 
     constexpr uint32_t batch_size = 1000;
-    constexpr auto poll_interval = std::chrono::milliseconds(500);
+    // The most a batch at or below the checkpoint holds: blocks, and bytes of
+    // them. The bytes bound what one batch keeps in memory at once.
+    constexpr uint32_t fast_batch_blocks = 20'000;
+    constexpr uint64_t fast_batch_bytes = uint64_t{1} << 30;
 
     // The trusted height: at/below it IBD is merkle-only (fast), strictly above it
     // every block runs FULL validation. It is the highest checkpoint in the
@@ -2180,7 +2225,10 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     uint32_t const checkpoint_height =
         static_cast<uint32_t>(chain_cfg.trusted_checkpoint_height());
     // Validated batches never exceed the window this task reads at once.
-    uint32_t const validated_batch_blocks = std::min(chain_cfg.validation_batch_blocks, batch_size);
+    // Above the checkpoint a batch is closed by the bytes of its blocks, which
+    // is what the memory it holds follows, and by a count only as a limit.
+    uint32_t const validated_batch_blocks = std::max(chain_cfg.validation_batch_blocks, uint32_t{1});
+    uint64_t const validated_batch_bytes = std::max(chain_cfg.validation_batch_bytes, uint64_t{1});
     spdlog::info("[utxo_build] Validation mode: {}; checkpoint anchor height {}; "
         "script/signature/UTXO validation starts at height {}",
         chain_cfg.full_validation ? "FULL" : "optimized",
@@ -2326,15 +2374,20 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     };
     std::optional<batch_ahead> ahead;
 
-    auto const judge_ahead = [&chain, &validation_pool, judge_batch](uint32_t first, uint32_t last,
-            std::optional<database::header_abla_record> parent) {
+    // `last` is as far as the batch may reach. Where it ends is decided by
+    // the bytes read, as in the batch's own turn: it is the blocks in `raw`.
+    auto const judge_ahead = [&chain, &validation_pool, judge_batch, validated_batch_bytes](
+            uint32_t first, uint32_t last, std::optional<database::header_abla_record> parent) {
         auto channel = std::make_shared<judgement_channel>(validation_pool.get_executor(), 1);
-        ::asio::post(validation_pool.get_executor(), [&chain, judge_batch, first, last, parent, channel]() {
+        ::asio::post(validation_pool.get_executor(),
+                [&chain, judge_batch, validated_batch_bytes, first, last, parent, channel]() {
             auto judged = std::make_shared<judged_batch>();
             try {
-                if (auto raw = chain.fetch_blocks_raw(first, last); raw) {
+                if (auto raw = chain.fetch_blocks_raw_within(first, last, validated_batch_bytes);
+                        raw && ! raw->empty()) {
                     judged->raw = std::move(*raw);
-                    judged->verdict = judge_batch(judged->raw, first, last, judged->blocks,
+                    judged->verdict = judge_batch(judged->raw, first,
+                        first + uint32_t(judged->raw.size()) - 1, judged->blocks,
                         judged->txids, judged->parse_failed, judged->rejection, parent);
                 } else {
                     judged->fetch_failed = true;
@@ -2365,6 +2418,30 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
     // rebuilding it as it grows and stop freeing the old one. Its entries are
     // released as soon as each batch is applied; only the capacity carries over.
     blockchain::utxo_raw_delta delta;
+    // Where each batch of transactions is hashed, and what that has been
+    // measured to cost. This task is the only one that hashes whole batches,
+    // so the model is its own.
+    hash_dispatch::dispatcher hashing;
+
+    // The height the coordinator last said nothing will be stored above until
+    // it is built. While the chain is behind a batch waits to be full, because
+    // more blocks are on their way; below this height none are, and waiting
+    // for them would hold the download that waits for this task.
+    uint32_t build_through = 0;
+    auto const waits_for_a_full_batch = [&chain, &build_through](uint32_t built) {
+        return built >= build_through && chain.is_stale();
+    };
+    // The last height told is the one that counts: the coordinator's cursor
+    // moves back when the chain switches or a block is refused, and blocks
+    // above the lower height are on their way again.
+    auto const hear_the_coordinator = [remainder, &build_through] {
+        if (remainder == nullptr) {
+            return;
+        }
+        while (remainder->try_receive([&build_through](std::error_code ec, uint32_t height) {
+            if ( ! ec) build_through = height;
+        })) {}
+    };
 
     // Exit on the node-owned stop signal too, not only chain.stopped(): the chain
     // is stopped in full_node::join(), which runs AFTER run() completes (all sync
@@ -2378,13 +2455,33 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // a block boundary, which is what disconnect expects.
         if (chain.reorg_pause_requested()) {
             co_await drop_ahead();
-            chain.enter_reorg_barrier();
-            while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
-                ::asio::steady_timer timer(executor);
-                timer.expires_after(poll_interval);
-                co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            // Woken when the pause is lifted, and by the stop request. A
+            // closed channel is the shutdown, and ends the task.
+            bool wake_closed = false;
+            {
+                // Parked for as long as the wait lasts, however it ends: a
+                // bare pair around the await would leave the parked count one
+                // too high on a cancellation or an exception. Same scope as
+                // the storage task's.
+                struct parked_scope {
+                    blockchain::block_chain& chain;
+                    explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+                    ~parked_scope() { chain.leave_reorg_barrier(); }
+                    parked_scope(parked_scope const&) = delete;
+                    parked_scope& operator=(parked_scope const&) = delete;
+                } const parked(chain);
+                while (chain.reorg_pause_requested() && ! chain.stopped() && ! should_stop()) {
+                    auto const [wake_ec] = co_await wake.async_receive(
+                        ::asio::as_tuple(::asio::use_awaitable));
+                    if (wake_ec) {
+                        wake_closed = true;
+                        break;
+                    }
+                }
             }
-            chain.leave_reorg_barrier();
+            if (wake_closed) {
+                break;
+            }
 
             // The switch rewound the built height and re-pointed the active chain,
             // so re-read the height and rebuild the MTP window from the new chain.
@@ -2396,6 +2493,11 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
             }
             continue;
         }
+
+        // What the coordinator has said since the last pass. Read before the
+        // stored height: it rings after sending, and a height sent later than
+        // this read wakes the wait below.
+        hear_the_coordinator();
 
         uint32_t current_contiguous = contiguous_height.load(std::memory_order_acquire);
 
@@ -2424,22 +2526,52 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // different one and waste the work.
         uint32_t const batch_len = ahead
             ? ahead->end - ahead->start + 1
-            : utxo_batch_len(available, batch_size, chain.is_stale());
+            : utxo_batch_len(available, batch_size, waits_for_a_full_batch(utxo_built_height));
 
         if (batch_len == 0) {
-            // Still in IBD and short of a full batch — wait and poll.
-            ::asio::steady_timer timer(executor);
-            timer.expires_after(poll_interval);
-            co_await timer.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            // Nothing to build: no block stored past the built height, or, still
+            // in IBD, fewer than a full batch. Everything read above to decide
+            // that — the height, the pause, the header tip, the stop request —
+            // rings `wake` when it changes. A ring sent since those reads is
+            // held by the channel, so the receive returns at once and they are
+            // read again.
+            auto const [wake_ec] = co_await wake.async_receive(
+                ::asio::as_tuple(::asio::use_awaitable));
+            if (wake_ec) {
+                break;      // shutdown: the owner closed the channel
+            }
             continue;
         }
 
         // Process one batch
         uint32_t const batch_start = utxo_built_height + 1;
-        uint32_t const batch_end = ahead
+        uint32_t batch_end = ahead
             ? ahead->end
-            : utxo_batch_end(batch_start, batch_start + batch_len - 1,
-                checkpoint_height, validated_batch_blocks);
+            : utxo_batch_end(batch_start, batch_start + batch_len - 1, checkpoint_height);
+
+        // At or below the checkpoint a batch is sized by what it holds, not by
+        // a count of blocks. Every batch ends in the stores' durability
+        // barrier, which costs the same after a thousand blocks of two hundred
+        // bytes as after a thousand full ones, so a batch of small blocks
+        // spends most of its time there. The batch reaches as far as the
+        // blocks stored allow, up to fast_batch_blocks, and the read below
+        // cuts it at fast_batch_bytes.
+        bool const sized_by_bytes = ! ahead && batch_end <= checkpoint_height;
+        if (sized_by_bytes) {
+            batch_end = utxo_fast_batch_reach(batch_start, batch_end, available,
+                checkpoint_height, fast_batch_blocks);
+        }
+
+        // Above it the same holds, and more: every batch also waits for the
+        // undo files and the transition record to be durable. What bounds the
+        // batch there is the memory its parsed blocks and undo data take,
+        // which follows their bytes. The batch reaches as far as the blocks
+        // stored allow, up to validated_batch_blocks, and the read below (or
+        // the one that judged it ahead) cuts it at validated_batch_bytes.
+        bool const validated_by_bytes = batch_start > checkpoint_height;
+        if (validated_by_bytes && ! ahead) {
+            batch_end = utxo_validated_batch_reach(batch_start, available, validated_batch_blocks);
+        }
 
         // The judgement started ahead, if there is one. Collected before
         // anything else is done with this batch; a fetch that failed there is
@@ -2463,7 +2595,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // Read raw blocks from flat files
         auto raw_result = judged
             ? std::expected<std::vector<data_chunk>, database::result_code>{std::move(judged->raw)}
-            : chain.fetch_blocks_raw(batch_start, batch_end);
+            : sized_by_bytes
+                ? chain.fetch_blocks_raw_within(batch_start, batch_end, fast_batch_bytes)
+                : validated_by_bytes
+                    ? chain.fetch_blocks_raw_within(batch_start, batch_end, validated_batch_bytes)
+                    : chain.fetch_blocks_raw(batch_start, batch_end);
+        if (raw_result && (sized_by_bytes || validated_by_bytes) && ! raw_result->empty()) {
+            batch_end = batch_start + uint32_t(raw_result->size()) - 1;
+        }
         if ( ! raw_result) {
             spdlog::error("[utxo_build] Failed to fetch blocks {}-{}", batch_start, batch_end);
             // Wait and retry — blocks might not be fully written yet
@@ -2683,22 +2822,31 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         };
         std::vector<pending_undo_entry> pending_undo;
 
+        // The whole batch is parsed first, so that the transactions of all of
+        // its blocks are hashed together. A block validation parsed has its
+        // identifiers already.
+        std::vector<byte_span> batch_blocks;
+        batch_blocks.reserve(raw_result->size());
+        for (auto const& raw : *raw_result) {
+            batch_blocks.emplace_back(raw.data(), raw.size());
+        }
+        std::vector<std::span<hash_digest const>> batch_txids;
+        batch_txids.reserve(validated_txids.size());
+        for (auto const& ids : validated_txids) {
+            batch_txids.emplace_back(ids);
+        }
+        auto parsed_blocks = blockchain::parse_utxo_blocks(batch_blocks, batch_txids, &hashing);
+        if ( ! parsed_blocks) {
+            spdlog::critical("[utxo_build] Failed to parse block at height {}",
+                batch_start + parsed_blocks.error().block);
+            on_fatal("a stored block could not be parsed");
+            co_return;
+        }
+
         for (uint32_t i = 0; i < raw_result->size(); ++i) {
             uint32_t h = batch_start + i;
             uint32_t mtp = calculate_mtp(timestamp_window);
-
-            // A block validation parsed has its identifiers already.
-            std::span<hash_digest const> known_txids;
-            if (i < validated_txids.size()) {
-                known_txids = validated_txids[i];
-            }
-            auto parsed = blockchain::parse_utxo_block(
-                byte_span{(*raw_result)[i].data(), (*raw_result)[i].size()}, known_txids);
-            if ( ! parsed) {
-                spdlog::critical("[utxo_build] Failed to parse block at height {}", h);
-                on_fatal("a stored block could not be parsed");
-                co_return;
-            }
+            auto const* parsed = &(*parsed_blocks)[i];
 
             auto const idx = chain.headers().active_at(static_cast<int32_t>(h));
             if (idx == blockchain::header_index::null_index) {
@@ -3140,9 +3288,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
         // started here would only have to be waited out and thrown away.
         if (uint32_t const next_start = batch_end + 1;
                 next_start > checkpoint_height && ! chain.reorg_pause_requested()) {
+            // Heard again first: what is decided here is whether the blocks
+            // stored past this batch are a batch, which the coordinator may
+            // have spoken about while this one was being applied.
+            hear_the_coordinator();
             uint32_t const contiguous = contiguous_height.load(std::memory_order_acquire);
             uint32_t const stored = contiguous > next_start ? contiguous - next_start : 0;
-            if (uint32_t const next_len = utxo_batch_len(stored, batch_size, chain.is_stale());
+            if (uint32_t const next_len = utxo_batch_len(stored, batch_size,
+                        waits_for_a_full_batch(batch_end));
                     next_len != 0) {
                 // The state this batch leaves, which the next one's limits
                 // start from. Publication writes it below; the judgement
@@ -3153,8 +3306,8 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                     tip_state = abla_records.back();
                 }
 #endif
-                ahead = judge_ahead(next_start, utxo_batch_end(next_start,
-                    next_start + next_len - 1, checkpoint_height, validated_batch_blocks),
+                ahead = judge_ahead(next_start,
+                    utxo_validated_batch_reach(next_start, stored, validated_batch_blocks),
                     tip_state);
             }
         }
@@ -3226,6 +3379,14 @@ uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale) {
                 database::result_code_name(synced));
             on_fatal("a published transition could not be made durable");
             co_return;
+        }
+
+        // The built height is durable, so a pruning node can let go of the
+        // block files that fell out of its window. Not fatal: a file that could
+        // not be removed costs disk and is tried again on a later batch.
+        if (auto const pruned = chain.prune_block_files(utxo_built_height); ! pruned) {
+            spdlog::warn("[utxo_build] Old block files could not be removed at height {} ({})",
+                utxo_built_height, database::result_code_name(pruned.error()));
         }
 
         // These blocks are connected now — the delta is applied, the undo records

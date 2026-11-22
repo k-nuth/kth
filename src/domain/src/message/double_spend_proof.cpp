@@ -14,9 +14,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const double_spend_proof::command = "dsproof-beta";
-uint32_t const double_spend_proof::version_minimum = version::level::minimum;
-uint32_t const double_spend_proof::version_maximum = version::level::maximum;
 
 double_spend_proof::double_spend_proof(chain::output_point const& out_point, spender const& spender1, spender const& spender2)
     : out_point_(out_point)

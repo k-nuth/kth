@@ -13,6 +13,9 @@
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/node/detail/compact_filters.hpp>
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -37,6 +40,7 @@
 #include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/thread_pool.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
@@ -254,6 +258,22 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
 
 } // namespace
 
+// The latest height replaces one the builder has not read yet, which this
+// task alone could have sent.
+void tell_builder_remainder(body_range_deps const& deps, uint32_t height) {
+    if (deps.utxo_remainder == nullptr || height == 0) {
+        return;
+    }
+    if ( ! deps.utxo_remainder->try_send(std::error_code{}, height)) {
+        (void)deps.utxo_remainder->try_receive([](std::error_code, uint32_t) {});
+        (void)deps.utxo_remainder->try_send(std::error_code{}, height);
+    }
+    if (deps.utxo_wake != nullptr) {
+        (void)deps.utxo_wake->try_send(std::error_code{});
+    }
+}
+
+
 // Reliable delivery of a block_range_request: a dropped try_send would leave the
 // download coordinator uncreated and the node stalled with peers idle, so this
 // waits until the channel accepts it. Returns false only when we are shutting
@@ -308,6 +328,11 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
                 end_name(range_end));
             memory.last_quiet = reason;
         }
+        // The bodies are level with the headers: nothing is left to ask for,
+        // and what is stored is all the builder will get until a header comes.
+        if (reason == range_quiet::no_advance) {
+            tell_builder_remainder(deps, blocks_synced_to);
+        }
         co_return std::nullopt;
     }
     memory.last_quiet = range_quiet::none;
@@ -347,6 +372,12 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
                     range->start, *built, range->start, range->start - 1);
             }
             memory.last_hold = admission;
+        }
+
+        // The range waits for the builder, and the builder may be waiting for
+        // more blocks than the previous range held. None are coming.
+        if (admission == slow_sync_admission::builder_behind) {
+            tell_builder_remainder(deps, range->start - 1);
         }
 
         // A gap nothing is working on. There IS a range to open, which means the
@@ -651,6 +682,16 @@ static
     // Capacity one each: one refusal is outstanding at most (messages.hpp).
     block_rejection_channel utxo_rejections(executor, 1);
     block_rejection_ack_channel rejection_ack(executor, 1);
+
+    // The builder waits on this with nothing to build (messages.hpp). The stop
+    // request rings it here; the other changes ring it where they are made.
+    utxo_build_wake_channel utxo_wake(executor, 1);
+    // The coordinator's word to the builder that a remainder is all there is.
+    // Only ever tried, never awaited, so it needs no closing to end anyone.
+    utxo_build_remainder_channel utxo_remainder(executor, 1);
+    std::stop_callback const wake_utxo_on_stop(network.stop_token(), [&utxo_wake] {
+        (void)utxo_wake.try_send(std::error_code{});
+    });
 
     // =========================================================================
     // TASKS - All independent, communicate only via channels
@@ -976,6 +1017,8 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
+        utxo_wake.cancel();
+        utxo_wake.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
@@ -1182,7 +1225,8 @@ static
         stored_chunks,
         initial_stored_height + 1,
         organizer,
-        contiguous_height.get()
+        contiguous_height.get(),
+        &utxo_wake
     ));
 
     // The bridge is not a reorg participant. It can wait for coordinator room
@@ -1204,16 +1248,34 @@ static
     });
 
     // 7d. Incremental UTXO build task (reads from disk as contiguous blocks become available)
-    all_tasks.spawn("utxo_build_task", utxo_build_task(
+    //
+    // On a thread of its own, not on this group's executor. Applying a batch is
+    // synchronous from the transition record to the durability barrier: the
+    // store's sync, the mutations, the undo files and the fsyncs do not
+    // suspend. On the network pool every one of them is a thread that reads no
+    // socket for as long as the disk takes. The stage talks to the rest through
+    // its channels, which do not care which thread is at the other end.
+#if defined(KTH_BROWSER_NODE)
+    // One Worker and no threads: the stage stays where the group runs.
+    auto const utxo_executor = executor;
+#else
+    // Joined by its destructor, which runs after all_tasks.join() and so finds
+    // the thread idle.
+    ::asio::thread_pool utxo_stage(1);
+    auto const utxo_executor = utxo_stage.get_executor();
+#endif
+    all_tasks.spawn_on(utxo_executor, "utxo_build_task", utxo_build_task(
         chain,
         *contiguous_height,
+        utxo_wake,
         initial_block_height + 1,
         network_type,
         [&network]() { return network.stopped(); },
         on_fatal,
         &utxo_progress,
         &utxo_rejections,
-        &rejection_ack
+        &rejection_ack,
+        &utxo_remainder
     ));
 
     // Bridge: utxo_rejections -> coordinator_events. Awaited: a refusal
@@ -1439,7 +1501,8 @@ static
         // What the range decision needs, and what its logs remember. Both live
         // outside the loop so the decision itself is a function a control can
         // drive with real channels — see open_body_range_if_owed.
-        body_range_deps deps{chain, network, block_download_input, checkpoint_height};
+        body_range_deps deps{chain, network, block_download_input, checkpoint_height,
+            &utxo_remainder, &utxo_wake};
         body_range_log_memory range_log;
         bool body_retry_armed = false;
         uint64_t body_retry_generation = 0;
@@ -1932,6 +1995,10 @@ static
             if (headers_synced_to <= blocks_synced_to) {
                 // Nothing owed to the bodies. Nothing polls either: the next
                 // block reaches us as a header, a cmpctblock or an inv.
+                // The builder may still be behind them, as after a restart
+                // with every body stored, and nothing heard from here on would
+                // tell it that they are all there are.
+                tell_builder_remainder(deps, blocks_synced_to);
                 spdlog::debug("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
                 co_return;
             }
@@ -2165,7 +2232,7 @@ static
                         [&network] { return network.stopped(); },
                         [&chain](domain::chain::header::list const& headers, size_t start_height) {
                             return chain.replace_headers_from(headers, start_height);
-                        }, reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                        }, reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                     if (reorg.fatal) {
                         // The chain moved but its persisted description did not.
@@ -2320,6 +2387,10 @@ static
                 // and the batch that eventually reaches them has its own barrier
                 // that does fail.
                 if (headers_synced_to > prev_headers_synced) {
+                    // The builder leaves a remainder shorter than one batch
+                    // unbuilt while the header tip is stale, and a newer tip is
+                    // what ends that.
+                    (void)utxo_wake.try_send(std::error_code{});
                     if ( ! ensure_headers_persisted(chain, organizer.index(),
                                                     headers_synced_to)) {
                         spdlog::warn("[header_persist] Could not persist headers through {}; "
@@ -2529,6 +2600,10 @@ static
                 announce_connected_tip();
                 // The orphans a connected block resolves (detail/tx_relay.hpp).
                 network.tx_relay().tip_moved();
+#if defined(KTH_WITH_NEUTRINO)
+                // The compact filter index reads the blocks connected since.
+                network.compact_filters().tip_moved();
+#endif
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
@@ -2554,7 +2629,7 @@ static
                 auto const outcome = co_await execute_body_rejection(
                     chain, organizer, rejected->height, rejected->hash,
                     network.stop_token(), truncate_active,
-                    reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                    reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                 if (outcome.fatal) {
                     (void)rejection_ack.try_send(std::error_code{});
@@ -2745,6 +2820,8 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
+        utxo_wake.cancel();
+        utxo_wake.close();
         coordinator_events.cancel();
         coordinator_events.close();
         spdlog::debug("[sync_coordinator] Task ended");
