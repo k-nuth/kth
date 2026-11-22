@@ -16,6 +16,9 @@
 
 #include <spdlog/spdlog.h>
 #include <kth/database/native_file.hpp>
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+#include <utxoz/types.hpp>
+#endif
 #include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
@@ -136,9 +139,6 @@ hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_d
 }
 
 #if defined(KTH_UTXOZ_REFERENCE_MODE)
-// The size of a reference-mode entry's value: {file_number, tx_offset}.
-constexpr size_t reference_value_size = 8;
-
 // Whether two records of one block are the same undo written twice.
 //
 // In reference mode a spent output is stored as the position of the transaction
@@ -165,7 +165,8 @@ bool is_reference_replay(data_chunk const& earlier, data_chunk const& later) {
         auto const& a = first->spent[i];
         auto const& b = second->spent[i];
         if (a.key != b.key || a.height != b.height) return false;
-        if (a.value.size() != reference_value_size || b.value.size() != reference_value_size) {
+        if (a.value.size() != utxoz::reference_value_size
+                || b.value.size() != utxoz::reference_value_size) {
             return false;
         }
     }
