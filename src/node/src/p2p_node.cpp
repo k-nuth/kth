@@ -9,7 +9,9 @@
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/header_ingest.hpp>
+#if defined(KTH_WITH_BLOOM_FILTERS)
 #include <kth/node/detail/bloom_filters.hpp>
+#endif
 #include <kth/node/detail/tx_relay.hpp>
 #if defined(KTH_WITH_NEUTRINO)
 #include <kth/node/detail/compact_filters.hpp>
@@ -1100,8 +1102,14 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
         || command == domain::message::filter_clear::command) {
         // BIP37 and BIP111, as BCHN takes them. Consumed: nothing else handles
         // a filter message.
+        // A build without the feature offers none, whatever the service bits say.
+#if defined(KTH_WITH_BLOOM_FILTERS)
         using service = domain::message::version::service;
-        if ((settings_.services & service::node_bloom) == 0) {
+        auto const offered = (settings_.services & service::node_bloom) != 0;
+#else
+        auto const offered = false;
+#endif
+        if ( ! offered) {
             // Not offered: the service bit says so, and a peer that loads or
             // extends a filter anyway is disconnected, and scored when it is
             // new enough to read that bit. A `filterclear` still turns the
@@ -1121,6 +1129,7 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
             peer->stop(error::channel_stopped);
             return true;
         }
+#if defined(KTH_WITH_BLOOM_FILTERS)
         auto const change = detail::apply_filter_message(peer->tx_inventory(), command, raw.payload,
             peer->negotiated_version());
         if (change == detail::filter_change::refused) {
@@ -1134,6 +1143,7 @@ bool p2p_node::observe_transaction_message(peer_session::ptr const& peer, raw_me
         } else if (change != detail::filter_change::none) {
             spdlog::trace("[p2p_node] {} from [{}]", command, peer->authority());
         }
+#endif
         return true;
     }
     if (command == domain::message::memory_pool::command) {

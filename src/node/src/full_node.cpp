@@ -87,10 +87,15 @@ full_node::full_node(configuration const& configuration)
     // Set user agent after initialization (network_ holds reference to network_settings_)
     network_settings_.user_agent = get_user_agent({});
     // The bloom filter service bit follows the setting: a wallet looks for
-    // it before it loads a filter, and without it the node refuses one.
+    // it before it loads a filter, and without it the node refuses one. A
+    // build without the feature never sets it.
     auto const bloom = uint64_t(domain::message::version::service::node_bloom);
-    network_settings_.services = (network_settings_.services & ~bloom)
-        | (configuration.chain.bloom_filters ? bloom : 0);
+#if defined(KTH_WITH_BLOOM_FILTERS)
+    auto const offered = configuration.node.bloom_filters;
+#else
+    auto const offered = false;
+#endif
+    network_settings_.services = (network_settings_.services & ~bloom) | (offered ? bloom : 0);
 #if defined(KTH_WITH_NEUTRINO)
     // The service bit follows the setting: a wallet looks for it before it asks.
     // Not on a pruning node, which start() refuses: the filters come from the
@@ -156,7 +161,9 @@ full_node::~full_node() {
         });
     network_.register_served_message_handler<domain::message::get_data>(
         [this](peer_session& peer, domain::message::get_data const& request) {
-            return handlers::chain_data::handle_get_data(chain_, peer, request);
+            auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+            return handlers::chain_data::handle_get_data(chain_, peer, request,
+                (network_settings_.services & bloom) != 0);
         });
 #if defined(KTH_WITH_NEUTRINO)
     // Compact filters for light wallets. Also in the peer's service: a range

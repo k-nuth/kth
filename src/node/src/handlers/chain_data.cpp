@@ -11,7 +11,9 @@
 #include <kth/domain/message/merkle_block.hpp>
 #include <kth/domain/message/transaction.hpp>
 #include <kth/domain/message/not_found.hpp>
+#if defined(KTH_WITH_BLOOM_FILTERS)
 #include <kth/node/detail/bloom_filters.hpp>
+#endif
 #include <kth/node/p2p_node.hpp>
 
 #include <spdlog/spdlog.h>
@@ -124,7 +126,8 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
 }
 
 ::asio::awaitable<message_result> handle_get_data(blockchain::block_chain& chain,
-    network::peer_session& peer, domain::message::get_data const& request) {
+    network::peer_session& peer, domain::message::get_data const& request,
+    [[maybe_unused]] bool filtered_blocks) {
 
     using type_id = domain::message::inventory_vector::type_id;
     auto const view = chain.chain_view();
@@ -150,7 +153,8 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
             missing.push_back(item);
             continue;
         }
-        if (item.type() == type_id::filtered_block) {
+#if defined(KTH_WITH_BLOOM_FILTERS)
+        if (filtered_blocks && item.type() == type_id::filtered_block) {
             // BIP37: the proof that the transactions matching the peer's
             // filter are in the block, then those transactions. A peer that
             // loaded no filter has the one that holds everything, and gets
@@ -178,6 +182,7 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
             missing.push_back(item);
             continue;
         }
+#endif
         if (item.type() != type_id::block && item.type() != type_id::compact_block) {
             continue;
         }

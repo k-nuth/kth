@@ -18,6 +18,11 @@ settings::settings()
     , compact_blocks_high_bandwidth(true)
     , ds_proofs_enabled(false)
     , compact_filters(false)
+#if defined(KTH_WITH_BLOOM_FILTERS)
+    , bloom_filters(true)
+#else
+    , bloom_filters(false)
+#endif
 {}
 
 // There are no current distinctions spanning chain contexts.

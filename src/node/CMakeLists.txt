@@ -145,7 +145,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/detail/header_ingest.cpp
     src/detail/header_walk.cpp
     src/detail/header_walk_tasks.cpp
-    src/detail/bloom_filters.cpp
     src/detail/local_admission_tasks.cpp
     src/detail/tx_announcements.cpp
     src/detail/tx_relay.cpp
@@ -304,7 +303,6 @@ set(kth_headers
   include/kth/node/define.hpp
   include/kth/node/settings.hpp
   include/kth/node/full_node.hpp
-  include/kth/node/detail/bloom_filters.hpp
   include/kth/node/parser.hpp
 
   # Mining helpers shared by the JSON-RPC server and other template consumers.
@@ -383,6 +381,15 @@ endif()
 
 if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
+endif()
+
+# Serving wallets that load a bloom filter (BIP37). An optional feature: built
+# only when asked for (docs/optional-features.md).
+if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_BLOOM_FILTERS)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/detail/bloom_filters.cpp
+    include/kth/node/detail/bloom_filters.hpp)
 endif()
 
 # Serving compact block filters to light wallets (Neutrino, BIP157/158). An
@@ -476,7 +483,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/reorg_cycle.cpp
           test/block_reads.cpp
           test/chain_data.cpp
-          test/bloom_filters.cpp
           test/tip_announcement.cpp
           test/reorg_deferred_sweep.cpp
           test/reorg_stale_chunk_drop.cpp
@@ -596,9 +602,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_socks5_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_socks5_test PRIVATE Catch2::Catch2WithMain)
   endif()
+  if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_bloom_filters_test
+      test/bloom_filters.cpp)
+    target_include_directories(kth_node_bloom_filters_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_bloom_filters_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_bloom_filters_test PRIVATE Catch2::Catch2WithMain)
+  endif()
 
   include(CTest)
   kth_register_tests(kth_node_test TIMEOUT 600)
+  if(TARGET kth_node_bloom_filters_test)
+    kth_register_tests(kth_node_bloom_filters_test TIMEOUT 600)
+  endif()
   if(TARGET kth_node_neutrino_test)
     kth_register_tests(kth_node_neutrino_test TIMEOUT 600)
   endif()

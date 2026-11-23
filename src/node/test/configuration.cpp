@@ -90,6 +90,36 @@ TEST_CASE("outbound proxy settings are empty and randomized by default", "[confi
     CHECK(defaults.configured.network.proxy_randomize);
 }
 
+#if ! defined(KTH_WITH_BLOOM_FILTERS)
+// A build without the feature serves no bloom filters, so it does not start as
+// if it did.
+TEST_CASE("bloom filters are off, and refused, in a build without the feature", "[configuration tests][parser][bloom filters]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK_FALSE(defaults.configured.node.bloom_filters);
+
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "true"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("bloom_refused", "node.bloom_filters=true");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("turned off, it is what the build does anyway") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "false"};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
+}
+#endif
+
 #if ! defined(KTH_WITH_SOCKS5)
 // A build without the feature cannot use a proxy. Taking the setting and going
 // on would connect directly, so the node refuses to start.

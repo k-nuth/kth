@@ -4,12 +4,24 @@ A light wallet can load a bloom filter into a node. The node then sends it only
 the transactions that match the filter, and for a block a proof that those
 transactions are in it.
 
-It is on unless turned off, as on other Bitcoin Cash nodes, and the node sets
-the bloom filter service bit (bit 2) in its version message. To turn it off:
+It is an optional feature of the build ([optional-features.md](optional-features.md)):
+the Conan option `bloom_filters`, off by default.
+
+```sh
+conan install . -o bloom_filters=True ...
+```
+
+In a build with it, it is on unless turned off, as on other Bitcoin Cash nodes,
+and the node sets the bloom filter service bit (bit 2) in its version message.
+To turn it off:
 
 ```ini
 node.bloom_filters = false
 ```
+
+A build without it never sets the service bit, behaves as described under
+[With the setting off](#with-the-setting-off), and refuses to start with
+`node.bloom_filters = true`.
 
 A bloom filter tells the node roughly what the wallet watches: the wallet
 chooses how many false positives to hide among. A wallet that wants the node to
@@ -52,4 +64,4 @@ transaction can stand before the one it spends.
 The service bit is not set. A peer that sends `filterload` or `filteradd`
 anyway is disconnected, and scored when its protocol version is 70011 or
 higher, new enough to read the service bit (BIP111). A `filterclear` only turns
-the peer's announcements on.
+the peer's announcements on. A `getdata` for a filtered block is not answered.

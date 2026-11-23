@@ -83,6 +83,7 @@ endif()
 option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 option(KTH_WITH_NEUTRINO "Build the compact block filters for light wallets (Neutrino, BIP157/158)" OFF)
 option(KTH_WITH_SOCKS5 "Build outbound connections through a SOCKS5 proxy" OFF)
+option(KTH_WITH_BLOOM_FILTERS "Build serving wallets that load a bloom filter (BIP37)" OFF)
 # The regular filter built is the one of Bitcoin Cash, which is not the basic
 # filter of BIP158: another currency would serve filters its wallets cannot use.
 if (KTH_WITH_NEUTRINO AND NOT CURRENCY STREQUAL "BCH")

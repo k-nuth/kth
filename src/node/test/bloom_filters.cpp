@@ -4,10 +4,16 @@
 
 #include <test_helpers.hpp>
 #include "sync_harness.hpp"
+#include "chain_data_fixtures.hpp"
+#include "header_peer_harness.hpp"
+#include "tx_relay_harness.hpp"
 
 #include <cstdint>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <asio/io_context.hpp>
 
 #include <kth/domain/chain/partial_merkle_tree.hpp>
 #include <kth/domain/message/filter_add.hpp>
@@ -16,8 +22,17 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/network/tx_inventory.hpp>
 #include <kth/node/detail/bloom_filters.hpp>
+#include <kth/node/handlers/chain_data.hpp>
+#include <kth/node/p2p_node.hpp>
+#include <kth/node/parser.hpp>
 
 using namespace kth;
+using test::loopback_peer;
+using test::make_peer;
+using test::relay_settings;
+using test::serve;
+using test::served_chain;
+using test::unknown_hash;
 using domain::chain::bloom_filter;
 using node::detail::apply_filter_message;
 using node::detail::filter_change;
@@ -60,6 +75,20 @@ data_chunk add_payload(size_t bytes) {
 
 filter_change apply(network::tx_inventory& inventory, std::string const& command, data_chunk const& payload) {
     return apply_filter_message(inventory, command, payload, wire_version);
+}
+
+network::raw_message wire(std::string_view command, data_chunk payload) {
+    network::raw_message raw;
+    raw.heading = domain::message::heading(0xdab5bffa, command, uint32_t(payload.size()), 0);
+    raw.payload = std::move(payload);
+    return raw;
+}
+
+// A node that offers bloom filters: the service bit is what it goes by.
+network::settings offering_settings() {
+    auto settings = relay_settings();
+    settings.services |= domain::message::version::service::node_bloom;
+    return settings;
 }
 
 } // namespace
@@ -207,4 +236,135 @@ TEST_CASE("a filtered block proves its matched transactions and names them", "[b
     CHECK(proved->root == block.header().merkle());
     REQUIRE(proved->matches.size() == 1);
     CHECK(proved->matches.front().second == txid);
+}
+
+TEST_CASE("getdata for a filtered block sends the proof and the matched transactions", "[bloom filters][chain_data]") {
+    served_chain c;
+    using domain::chain::bloom_filter;
+    using domain::message::inventory_vector;
+    using type_id = inventory_vector::type_id;
+    auto const coinbase = c.trunk[1].transactions().front().hash();
+    auto const request = domain::message::get_data::create({
+        {type_id::filtered_block, c.trunk[1].hash()},     // its coinbase is watched
+        {type_id::filtered_block, c.trunk[2].hash()},     // nothing in it is
+        {type_id::filtered_block, c.side.hash()},         // off the connected chain
+        {type_id::filtered_block, unknown_hash()}});
+    REQUIRE(request);
+
+    SECTION("with no filter loaded: every transaction of each block held, as BCHN answers") {
+        loopback_peer peer;
+        CHECK(serve(peer, node::handlers::chain_data::handle_get_data(c.fixture.chain(), *peer.session, *request,
+            true)) ==
+            node::message_result::handled);
+        auto const sent = peer.received();
+        // A proof and the one transaction for each of the two blocks, then
+        // what is not served.
+        REQUIRE(sent.size() == 5);
+        CHECK(sent[0].command == domain::message::merkle_block::command);
+        CHECK(sent[1].command == domain::message::transaction::command);
+        CHECK(sent[2].command == domain::message::merkle_block::command);
+        CHECK(sent[3].command == domain::message::transaction::command);
+        CHECK(sent[4].command == domain::message::not_found::command);
+        byte_reader reader(sent[0].payload);
+        auto const first = domain::message::merkle_block::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(first);
+        CHECK(first->hashes() == hash_list{coinbase});
+        CHECK(first->flags() == data_chunk{0x01});
+    }
+    SECTION("with a filter: a merkleblock for each block held, and what it matched") {
+        loopback_peer peer;
+        auto filter = *bloom_filter::sized(10, 0.000001, 0, bloom_filter::update_all);
+        filter.insert(coinbase);
+        peer.session->tx_inventory().load_filter(filter);
+        CHECK(serve(peer, node::handlers::chain_data::handle_get_data(c.fixture.chain(), *peer.session, *request,
+            true)) ==
+            node::message_result::handled);
+
+        auto const sent = peer.received();
+        REQUIRE(sent.size() == 4);
+        auto const version = peer.session->negotiated_version();
+
+        REQUIRE(sent[0].command == domain::message::merkle_block::command);
+        byte_reader first_reader(sent[0].payload);
+        auto const first = domain::message::merkle_block::from_data(first_reader, version);
+        REQUIRE(first);
+        CHECK(domain::chain::hash(first->header()) == c.trunk[1].hash());
+        CHECK(first->total_transactions() == 1);
+        CHECK(first->hashes() == hash_list{coinbase});
+        CHECK(first->flags() == data_chunk{0x01});
+
+        REQUIRE(sent[1].command == domain::message::transaction::command);
+        byte_reader tx_reader(sent[1].payload);
+        auto const tx = domain::message::transaction::from_data(tx_reader, version);
+        REQUIRE(tx);
+        CHECK(tx->hash() == coinbase);
+        // It was sent, so it is not announced to the peer again.
+        CHECK(peer.session->tx_inventory().known(coinbase));
+
+        REQUIRE(sent[2].command == domain::message::merkle_block::command);
+        byte_reader second_reader(sent[2].payload);
+        auto const second = domain::message::merkle_block::from_data(second_reader, version);
+        REQUIRE(second);
+        CHECK(domain::chain::hash(second->header()) == c.trunk[2].hash());
+        CHECK(second->flags() == data_chunk{0x00});
+
+        REQUIRE(sent[3].command == domain::message::not_found::command);
+        byte_reader missing_reader(sent[3].payload);
+        auto const missing = domain::message::not_found::from_data(missing_reader, version);
+        REQUIRE(missing);
+        CHECK(missing->inventories() == inventory_vector::list{
+            {type_id::filtered_block, c.side.hash()},
+            {type_id::filtered_block, unknown_hash()}});
+    }
+}
+
+TEST_CASE("a node that offers bloom filters takes the filter messages of a peer", "[bloom filters][routing]") {
+    ::asio::io_context ioc;
+    auto const settings = offering_settings();
+    node::p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9601);
+
+    CHECK(node.observe_transaction_message(peer,
+        wire(domain::message::filter_load::command, load_payload(64, 5))));
+    CHECK_FALSE(peer->stopped());
+    CHECK(peer->tx_inventory().filter().bits().size() == 64);
+    CHECK(peer->tx_inventory().relay_requested());
+
+    CHECK(node.observe_transaction_message(peer,
+        wire(domain::message::filter_add::command, add_payload(20))));
+    CHECK_FALSE(peer->stopped());
+
+    CHECK(node.observe_transaction_message(peer,
+        wire(domain::message::filter_clear::command, data_chunk{})));
+    CHECK_FALSE(peer->stopped());
+    CHECK(peer->tx_inventory().filter().bits().empty());
+}
+
+TEST_CASE("a filter message that breaks a limit ends the session of the peer", "[bloom filters][routing]") {
+    ::asio::io_context ioc;
+    auto const settings = offering_settings();
+    node::p2p_node node(settings);
+    auto peer = make_peer(ioc, settings, 9602);
+
+    SECTION("a filter over 36,000 bytes") {
+        CHECK(node.observe_transaction_message(peer,
+            wire(domain::message::filter_load::command, load_payload(36001, 5))));
+    }
+    SECTION("an element over 520 bytes") {
+        CHECK(node.observe_transaction_message(peer,
+            wire(domain::message::filter_add::command, add_payload(521))));
+    }
+    CHECK(peer->stopped());
+    CHECK(peer->tx_inventory().filter().bits().empty());
+}
+
+TEST_CASE("bloom filters are on unless turned off in a build with the feature", "[bloom filters][parser]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.node.bloom_filters);
+
+    node::parser parser(domain::config::network::regtest);
+    char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "false"};
+    std::ostringstream error;
+    REQUIRE(parser.parse(5, argv, error));
+    CHECK_FALSE(parser.configured.node.bloom_filters);
 }
