@@ -50,6 +50,13 @@ struct KND_API settings {
     bool refresh_transactions;
     bool compact_blocks_high_bandwidth;
     bool ds_proofs_enabled;
+    // Serve compact block filters to light wallets (the cfilter messages). Read
+    // only by a build with the option `neutrino`.
+    bool compact_filters;
+    // Serve wallets that load a bloom filter (BIP37). On unless turned off in
+    // a build with the option `bloom_filters`, as on other Bitcoin Cash nodes;
+    // off, and refused, in a build without it.
+    bool bloom_filters;
 
     /// Display mode for console output (tui, log, daemon)
     display_mode display{display_mode::log};

@@ -119,6 +119,44 @@ TEST_CASE("validateaddress dispatch checks addresses against the node's network"
     }
 }
 
+TEST_CASE("getindexinfo dispatch reports no index, for any name", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_index_info");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& body) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const with = [](std::string const& params) {
+        return R"({"method":"getindexinfo","params":)" + params + R"(,"id":4})";
+    };
+
+    // kth runs no index: no argument, no name, and a name of an index other
+    // nodes run, or of none at all, all find nothing.
+    auto const none = node::rpc::build_success("4", "{}");
+    CHECK(request(R"({"method":"getindexinfo","id":4})") == none);
+    for (auto const* params : {"[]", "[null]", R"([""])", R"(["txindex"])", R"(["coinstatsindex"])",
+                               R"(["basic block filter index"])", R"(["nosuchindex"])"}) {
+        CAPTURE(params);
+        CHECK(request(with(params)) == none);
+    }
+    // A name that is not a string, more than one argument, and params that
+    // are not a list are refused.
+    for (auto const* params : {"[1]", "[true]", "[{}]", R"([["txindex"]])", R"(["txindex","extra"])",
+                               R"([null,null])", "null", "{}", R"("txindex")"}) {
+        CAPTURE(params);
+        CHECK(request(with(params)) ==
+            node::rpc::build_error("4", -32602, "getindexinfo takes no argument or [index_name]"));
+    }
+}
+
 TEST_CASE("help dispatch lists the registered methods", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_help");
     REQUIRE(fixture.created());

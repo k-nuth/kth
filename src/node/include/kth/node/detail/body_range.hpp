@@ -156,6 +156,11 @@ struct body_range_deps {
     kth::node::p2p_node& network;
     block_download_input_channel& block_download_input;
     uint32_t checkpoint_height;
+    /// Where the builder is told that the bodies it is waiting for are all
+    /// there are (see utxo_build_remainder_channel), and the channel that
+    /// wakes it to read that. Both null where no builder is listening.
+    utxo_build_remainder_channel* utxo_remainder = nullptr;
+    utxo_build_wake_channel* utxo_wake = nullptr;
 };
 
 
@@ -173,6 +178,14 @@ struct body_range_log_memory {
     /// The (headers, bodies) pair a standstill was last warned about.
     std::optional<std::pair<uint32_t, uint32_t>> last_stall;
 };
+
+/// Tell the UTXO builder that every body up to `height` is downloaded and that
+/// none above it will be stored until the set describes it, and wake it. No
+/// range above `height` is in flight when this is called, so the builder is all
+/// that can move the node on, and what is stored up to there is everything it
+/// will get. Does nothing where no builder is listening, or for height zero.
+KND_API
+void tell_builder_remainder(body_range_deps const& deps, uint32_t height);
 
 /// Ask the download supervisor for a range, retrying until it is taken.
 ///

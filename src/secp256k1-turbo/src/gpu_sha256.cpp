@@ -100,6 +100,16 @@ bool sha256d64(std::uint8_t* out, std::uint8_t const* in, std::size_t count) {
     return false;
 }
 
+bool sha256d_messages(std::uint8_t* out, std::uint8_t const* const* messages, std::uint32_t const* sizes,
+                      std::size_t count) {
+#if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)
+    if (gpu::cuda_available()) return gpu::cuda_sha256d_messages(messages, sizes, count, out);
+#endif
+    // Not on Metal yet: the caller hashes on the CPU.
+    (void)out; (void)messages; (void)sizes; (void)count;
+    return false;
+}
+
 bool merkle_root(std::uint8_t* root32, std::uint8_t const* hashes, std::size_t count, bool* mutated) {
     if (count == 0) return false;
 #if defined(KTH_SECP256K1_TURBO_HAVE_CUDA)

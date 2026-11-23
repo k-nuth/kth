@@ -58,9 +58,13 @@ bool block_request_allowed(blockchain::header_index const& index, hash_digest co
 /// and a notfound for those that cannot be served. A compact block request is
 /// answered with the full block. A transaction is served while it is pooled
 /// and was announced to the peer or listed in its answer to `mempool`.
+/// `filtered_blocks`: the node offers bloom filters (BIP37), so a filtered
+/// block request is answered with a `merkleblock` and what the peer's filter
+/// matched. Otherwise it is ignored, as any other type the node does not serve.
 [[nodiscard]] KN_API
 ::asio::awaitable<message_result> handle_get_data(blockchain::block_chain& chain,
-    network::peer_session& peer, domain::message::get_data const& request);
+    network::peer_session& peer, domain::message::get_data const& request,
+    bool filtered_blocks = false);
 
 } // namespace handlers::chain_data
 } // namespace kth::node

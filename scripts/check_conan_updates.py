@@ -28,6 +28,7 @@ import yaml
 
 
 CUSTOM_PACKAGE_REMOTES = {
+    "parlaylib": "kth",
     "secp256k1-precompute": "kth",
     "utxoz": "kth",
 }

@@ -383,6 +383,25 @@ if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
 
+# Serving wallets that load a bloom filter (BIP37). An optional feature: built
+# only when asked for (docs/optional-features.md).
+if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_BLOOM_FILTERS)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/detail/bloom_filters.cpp
+    include/kth/node/detail/bloom_filters.hpp)
+endif()
+
+# Serving compact block filters to light wallets (Neutrino, BIP157/158). An
+# optional feature: built only when asked for (docs/optional-features.md).
+if(KTH_WITH_NEUTRINO AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/detail/compact_filter_store.cpp
+    src/detail/compact_filters.cpp
+    include/kth/node/detail/compact_filter_store.hpp
+    include/kth/node/detail/compact_filters.hpp)
+endif()
+
 # JSON-RPC server: link the llhttp HTTP parser and enable the feature macro.
 if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(llhttp REQUIRED)
@@ -447,6 +466,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/body_range_reopen.cpp
           test/body_range_genesis_checkpoint.cpp
           test/connected_tip_remainder.cpp
+          test/utxo_build_remainder.cpp
           test/resume_stored_bodies.cpp
           test/resume_stored_bodies_decision.cpp
           test/directory_probe.cpp
@@ -456,6 +476,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/bip30_integration.cpp
           test/header_durability.cpp
           test/utxo_batch_atomicity.cpp
+          test/utxo_build_wake.cpp
           test/validated_finality.cpp
           test/fatal_outside_window.cpp
           test/slow_sync_ordering.cpp
@@ -489,6 +510,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/configured_peers.cpp
           test/p2p_node.cpp
           test/p2p_connection_close.cpp
+          test/outbound_retry.cpp
           test/p2p_status_timer.cpp
           test/sync_decisions.cpp
           test/mining_job_store.cpp
@@ -563,8 +585,42 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   _group_sources(kth_node_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
+  # The tests of an optional feature are an executable of their own, so that
+  # its workflow builds and runs them and nothing else.
+  if(KTH_WITH_NEUTRINO AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_neutrino_test
+      test/compact_filter_store.cpp
+      test/compact_filters.cpp)
+    target_include_directories(kth_node_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_neutrino_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_neutrino_test PRIVATE Catch2::Catch2WithMain)
+  endif()
+  if(KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_socks5_test
+      test/socks5.cpp)
+    target_include_directories(kth_node_socks5_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_socks5_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_socks5_test PRIVATE Catch2::Catch2WithMain)
+  endif()
+  if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_bloom_filters_test
+      test/bloom_filters.cpp)
+    target_include_directories(kth_node_bloom_filters_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_bloom_filters_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_bloom_filters_test PRIVATE Catch2::Catch2WithMain)
+  endif()
+
   include(CTest)
   kth_register_tests(kth_node_test TIMEOUT 600)
+  if(TARGET kth_node_bloom_filters_test)
+    kth_register_tests(kth_node_bloom_filters_test TIMEOUT 600)
+  endif()
+  if(TARGET kth_node_neutrino_test)
+    kth_register_tests(kth_node_neutrino_test TIMEOUT 600)
+  endif()
+  if(TARGET kth_node_socks5_test)
+    kth_register_tests(kth_node_socks5_test TIMEOUT 600)
+  endif()
 
   # README C++ snippet checks disabled: v1.0 switched the public API
   # to coroutines (start/run/stop/join), so the legacy start_chain /

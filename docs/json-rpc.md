@@ -102,6 +102,7 @@ counterpart.
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `testmempoolaccept` | — (`kth_chain_transaction_validate` does not apply the pool's first-seen rule) | `test_accept(tx)` |
 | `validateaddress` | `kth_wallet_payment_address_parse_from` | `wallet::payment_address::parse_from(address, network)` |
+| `getindexinfo` (always `{}`, with or without `index_name`) | — (there is no index to describe) | — |
 | `decoderawtransaction` | `kth_chain_transaction_construct_from_data` | `transaction::from_data()` |
 | `gettxout` | — (no C-API UTXO reader yet) | `get_utxo()` + `utxo_resolve()` + `mempool_ref().spender()` / `resolve()` |
 | `getrawmempool` | `kth_chain_get_mempool_txids` | `get_mempool_txids()` |
@@ -135,6 +136,14 @@ help results are prepared during registration. Custom methods must be
 registered before the built-ins, which install `help` last. An omitted parameter
 or an empty string lists all methods. Parameters must be an array containing
 at most one string; other types or extra arguments return invalid params.
+
+## getindexinfo
+
+`getindexinfo ["index_name"]` always returns `{}`, with or without a name: the
+node keeps no transaction, coin statistics or block filter index (compact
+filters are built from the block when asked for), so there is no index whose
+`synced` and `best_block_height` to report. The name must be a string or null;
+other types and extra arguments are rejected with `-32602`.
 
 ## estimatefee
 

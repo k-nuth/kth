@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const pong::command = "pong";
-uint32_t const pong::version_minimum = version::level::minimum;
-uint32_t const pong::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

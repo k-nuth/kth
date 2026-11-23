@@ -1090,6 +1090,47 @@ validate_address(method_context& ctx, request const& req) {
     co_return render_validate_address(address, view->state->network());
 }
 
+// getindexinfo [index_name] -> the indexes the node runs, keyed by name, each
+// with whether it is synced and the height it has reached; with a name, only
+// that one. kth keeps no transaction, coin statistics or block filter index
+// (compact filters are built from the block when asked for), so the answer is
+// always an empty object. The name, when given, is a string or null, as other
+// Bitcoin Cash nodes take it; anything else is refused rather than answered.
+// C-API counterpart: none; there is no index to describe.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_index_info(method_context& /*ctx*/, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getindexinfo takes no argument or [index_name]"));
+    };
+    if ( ! req.params.empty()) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        size_t count = 0;
+        for (auto element : args) {
+            simdjson::ondemand::value value;
+            simdjson::ondemand::json_type type;
+            std::string_view name;
+            if (count++ != 0 || element.get(value) != simdjson::SUCCESS ||
+                value.type().get(type) != simdjson::SUCCESS ||
+                (type != simdjson::ondemand::json_type::null &&
+                    value.get_string().get(name) != simdjson::SUCCESS)) {
+                co_return invalid_params();
+            }
+        }
+    }
+    writer w;
+    w.begin_object();
+    w.end_object();
+    co_return w.str();
+}
+
 // estimatefee [nblocks] -> the fee per kB, in BCH, that the size part of this
 // node's transaction price asks for (chain.byte_fee_satoshis). A price per
 // signature operation (chain.sigop_fee_satoshis, 0 by default) is charged on
@@ -1502,6 +1543,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("sendrawtransaction", send_raw_transaction);
     d.add("testmempoolaccept", test_mempool_accept);
     d.add("validateaddress", validate_address);
+    d.add("getindexinfo", get_index_info);
     d.add("decoderawtransaction", decode_raw_transaction);
     d.add("gettxout", get_tx_out);
     d.add("getrawmempool", get_raw_mempool);

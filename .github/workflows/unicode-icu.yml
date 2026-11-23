@@ -49,7 +49,7 @@ jobs:
         run: |
           conan install conanfile.py --version 0.0.0 -of build --build=missing \
             -pr:b .github/conan/rpc-ci -pr:h .github/conan/rpc-ci \
-            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=none -o with_icu=True
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=none -o icu=True
       - name: Export dependencies
         if: steps.dependencies.outputs.cache-hit != 'true'
         run: conan cache save "*:*" --no-source --file="$RUNNER_TEMP/unicode-icu-dependencies.tgz"

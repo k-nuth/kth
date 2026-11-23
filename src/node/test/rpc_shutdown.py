@@ -49,6 +49,10 @@ for mode in args.modes:
         argv.append('--init_run')
     if mode == 'rpc-cli-off':
         argv.append('--rpc.enabled=false')
+    if mode == 'rpc-accept-recovery':
+        # The all-tasks-started line this mode waits for is a debug message,
+        # which the console shows only when asked for everything.
+        argv.append('--log.verbose=true')
     process = subprocess.Popen(argv, cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)

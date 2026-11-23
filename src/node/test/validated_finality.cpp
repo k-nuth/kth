@@ -47,6 +47,7 @@ TEST_CASE("stored invalid bodies cannot become the validated or finalized tip", 
     node::sync::block_storage_input_channel input(ctx.get_executor(), 16);
     node::sync::chunk_validated_channel output(ctx.get_executor(), 256);
     std::atomic<uint32_t> contiguous{1}; // Existing production task interface.
+    node::sync::utxo_build_wake_channel wake(ctx.get_executor(), 1);
     std::vector<std::shared_ptr<domain::chain::light_block const>> light;
     for (auto const& block : blocks) light.push_back(to_light(block));
     REQUIRE(input.try_send(std::error_code{}, node::sync::downloaded_chunk{
@@ -55,10 +56,10 @@ TEST_CASE("stored invalid bodies cannot become the validated or finalized tip", 
     REQUIRE(input.try_send(std::error_code{}, node::sync::stop_request{}));
     std::vector<std::string> fatals;
     auto storage = ::asio::co_spawn(ctx,
-        node::sync::block_storage_task(chain, input, output, 1, fixture.organizer(), &contiguous),
+        node::sync::block_storage_task(chain, input, output, 1, fixture.organizer(), &contiguous, &wake),
         ::asio::use_future);
     auto writer = ::asio::co_spawn(ctx,
-        node::sync::utxo_build_task(chain, contiguous, 1, domain::config::network::regtest,
+        node::sync::utxo_build_task(chain, contiguous, wake, 1, domain::config::network::regtest,
             [&chain] { auto const built = chain.get_utxo_built_height(); return built && *built >= count; },
             [&fatals](std::string const& reason) { fatals.push_back(reason); }),
         ::asio::use_future);
@@ -105,6 +106,7 @@ TEST_CASE("connected publication delivers finality progress without a polling br
     node::sync::chunk_validated_channel output(ctx.get_executor(), 16);
     node::sync::utxo_build_progress_channel progress(ctx.get_executor(), 1);
     std::atomic<uint32_t> contiguous{1};
+    node::sync::utxo_build_wake_channel wake(ctx.get_executor(), 1);
     std::vector<std::shared_ptr<domain::chain::light_block const>> light;
     for (auto const& block : blocks) light.push_back(to_light(block));
     REQUIRE(input.try_send(std::error_code{}, node::sync::downloaded_chunk{
@@ -133,17 +135,25 @@ TEST_CASE("connected publication delivers finality progress without a polling br
             deadline_fired = true;
             progress.cancel();
             progress.close();
+            wake.cancel();
+            wake.close();
         });
     }
     std::vector<std::string> fatals;
     auto storage = ::asio::co_spawn(ctx,
-        node::sync::block_storage_task(chain, input, output, 1, fixture.organizer(), &contiguous),
+        node::sync::block_storage_task(chain, input, output, 1, fixture.organizer(), &contiguous, &wake),
         ::asio::use_future);
     auto writer = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         try {
-            co_await node::sync::utxo_build_task(chain, contiguous, 1,
+            co_await node::sync::utxo_build_task(chain, contiguous, wake, 1,
                 domain::config::network::regtest,
-                [&chain] { auto const built = chain.get_utxo_built_height(); return built && *built >= count; },
+                // The watchdog ends the builder too: closing the channels
+                // does not reach a builder that is retrying a block read.
+                [&chain, &deadline_fired] {
+                    if (deadline_fired) return true;
+                    auto const built = chain.get_utxo_built_height();
+                    return built && *built >= count;
+                },
                 [&fatals](std::string const& reason) { fatals.push_back(reason); }, &progress);
         } catch (...) {
             watchdog.cancel();
