@@ -21,6 +21,10 @@
 
 namespace kth::network {
 
+/// The least time a connection through the proxy is given, whatever deadline
+/// direct connections have.
+inline constexpr std::chrono::seconds socks5_minimum_deadline{20};
+
 /// The proxy must be a numeric IP and port. Hostnames are resolved by SOCKS5.
 /// The deadline covers both the TCP connection and the SOCKS5 exchange.
 [[nodiscard]]

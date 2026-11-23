@@ -1006,8 +1006,11 @@ awaitable_expected<peer_session::ptr> async_connect(
         // the node was asked not to show its peers which address it has.
         co_return std::unexpected(error::operation_failed);
 #else
+        // The proxy answers only once it has reached the destination, which
+        // through Tor means building a circuit first.
         auto result = co_await async_socks5_connect(
-            executor, settings.proxy, hostname, port, settings.proxy_randomize, timeout);
+            executor, settings.proxy, hostname, port, settings.proxy_randomize,
+            std::max(timeout, socks5_minimum_deadline));
         if ( ! result) {
             co_return std::unexpected(result.error());
         }

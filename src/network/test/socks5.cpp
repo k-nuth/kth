@@ -54,6 +54,7 @@ struct socks5_reply {
     bool split{false};
     int stop_after{3};
     int stall_at{0};
+    std::chrono::milliseconds connect_delay{0};
 };
 
 struct fake_socks5 {
@@ -142,6 +143,12 @@ struct fake_socks5 {
         }
         if ( ! co_await read(request, address_size + 2)) co_return;
         if (reply.stall_at == 3) co_return;
+        if (reply.connect_delay.count() != 0) {
+            ::asio::steady_timer pause(ctx);
+            pause.expires_after(reply.connect_delay);
+            auto [timer_ec] = co_await pause.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (timer_ec) co_return;
+        }
         if ( ! co_await write(reply.connect, reply.split)) co_return;
         finish_reply();
     }
@@ -456,6 +463,21 @@ TEST_CASE("configured proxy carries an unresolvable peer hostname", "[socks5][pe
     REQUIRE(proxy.request.size() == hostname.size() + 7);
     REQUIRE(proxy.request[3] == 3);
     REQUIRE(std::string(proxy.request.begin() + 5, proxy.request.end() - 2) == hostname);
+}
+
+// A proxy answers once it has reached the destination, and through Tor that
+// takes longer than the deadline of a direct connection.
+TEST_CASE("a proxied connection outlasts the deadline of a direct one", "[socks5][peer_session]") {
+    fake_socks5 proxy;
+    socks5_reply reply;
+    reply.connect_delay = 1300ms;
+    proxy.start(reply);
+    network::settings settings(domain::config::network::regtest);
+    settings.proxy = proxy.proxy();
+    settings.proxy_randomize = false;
+    auto result = proxy.run(network::async_connect(
+        proxy.ctx.get_executor(), "192.0.2.1", 18444, settings, 1s));
+    REQUIRE(result.has_value());
 }
 
 TEST_CASE("proxy refusal never falls back to a direct peer connection", "[socks5][peer_session]") {
