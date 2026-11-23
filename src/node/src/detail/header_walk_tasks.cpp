@@ -64,7 +64,7 @@ namespace kth::node::detail {
 
     handoff.cancel();
     handoff.close();
-    spdlog::info("[header_ingest] Task ended");
+    spdlog::debug("[header_ingest] Task ended");
 }
 
 ::asio::awaitable<void> header_ingest_forwarder(

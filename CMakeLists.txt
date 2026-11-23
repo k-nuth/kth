@@ -24,19 +24,7 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Mempool backing map: cfm (boost::concurrent_flat_map) | parlay (ParlayHash).
-# Set at the root so the define (and, for parlay, the vendored include) reach
-# every module that includes block_chain.hpp — not only blockchain.
-set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
-if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
-    add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
-elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
-    add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
-    include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/third_party/parlayhash/include)
-else()
-    message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
-endif()
-message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
+include(cmake/KthParlayHash.cmake)
 
 # Signature verification: secp256k1 (libsecp256k1, one signature at a time,
 # inline in the script interpreter) | secp256k1_turbo (the interpreters defer
@@ -93,6 +81,13 @@ if(KTH_BROWSER_NODE)
         ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer)
 endif()
 option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
+option(KTH_WITH_NEUTRINO "Build the compact block filters for light wallets (Neutrino, BIP157/158)" OFF)
+option(KTH_WITH_SOCKS5 "Build outbound connections through a SOCKS5 proxy" OFF)
+# The regular filter built is the one of Bitcoin Cash, which is not the basic
+# filter of BIP158: another currency would serve filters its wallets cannot use.
+if (KTH_WITH_NEUTRINO AND NOT CURRENCY STREQUAL "BCH")
+    message(FATAL_ERROR "KTH_WITH_NEUTRINO requires CURRENCY=BCH")
+endif()
 
 # set(ENABLE_POSITION_INDEPENDENT_CODE ON)
 # set(WITH_CONSOLE OFF)

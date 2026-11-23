@@ -51,13 +51,11 @@ std::expected<endpoint, kth::code> endpoint::parse_from(std::string_view text) {
     return endpoint{std::move(scheme), std::move(host), port};
 }
 
-endpoint::endpoint(authority const& authority) {
-    auto parsed = parse_from(authority.to_string());
-    // authority::to_string() is always a valid endpoint text (host[:port]),
-    // so this can't fail — enforce the invariant even in Release.
-    KTH_CONTRACT(parsed.has_value());
-    *this = std::move(*parsed);
-}
+// Taken apart, not written out and parsed back: the text of a scoped IPv6
+// address (fe80::1%eth0) is not one the parser accepts.
+endpoint::endpoint(authority const& authority)
+    : host_(authority.to_hostname()), port_(authority.port())
+{}
 
 #if !defined(__EMSCRIPTEN__) || defined(KTH_BROWSER_NODE)
 endpoint::endpoint(asio::endpoint const& host)

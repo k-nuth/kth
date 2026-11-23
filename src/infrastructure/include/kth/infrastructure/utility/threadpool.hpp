@@ -40,11 +40,11 @@ struct threadpool {
         , num_threads_(num_threads == 0 ? std::thread::hardware_concurrency() : num_threads)
         , pool_(num_threads_)
     {
-        spdlog::info("[threadpool] '{}' created with {} threads", name_, num_threads_);
+        spdlog::debug("[threadpool] '{}' created with {} threads", name_, num_threads_);
     }
 
     ~threadpool() {
-        spdlog::info("[threadpool] '{}' destroyed ({} threads)", name_, num_threads_);
+        spdlog::debug("[threadpool] '{}' destroyed ({} threads)", name_, num_threads_);
     }
 
     threadpool(threadpool const&) = delete;

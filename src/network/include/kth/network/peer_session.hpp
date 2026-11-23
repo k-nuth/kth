@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #if defined(KTH_WITH_WEBSOCKET)
@@ -111,7 +112,9 @@ public:
     /// @param socket The connected socket
     /// @param settings Network settings
     /// @param inbound True if this is an inbound connection (we accepted it)
-    peer_session(socket_type socket, settings const& settings, bool inbound = false);
+    /// @param destination Requested SOCKS destination, when the socket reaches a proxy
+    peer_session(socket_type socket, settings const& settings, bool inbound = false,
+        std::optional<infrastructure::config::endpoint> destination = std::nullopt);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -131,6 +134,16 @@ public:
     /// Check if the session is stopped
     [[nodiscard]]
     bool stopped() const;
+
+    /// What the session was stopped with: the first reason a stop() gave,
+    /// also when another stop(), called at the same time with another reason,
+    /// is the one that did the stopping. error::success while it is running, and never once it
+    /// is stopped: a stop given no error reports error::channel_stopped. A
+    /// code that is not one of Knuth's is reported as error::unknown, since
+    /// only its number would be kept and a number means nothing without its
+    /// category. Whoever sees stopped() true sees the reason too.
+    [[nodiscard]]
+    code stop_reason() const;
 
     /// The strand all of this session's I/O completes on. The peer's whole
     /// lifecycle (handshake, protocols) runs on it, so what remains of
@@ -338,9 +351,17 @@ public:
     // Properties
     // -------------------------------------------------------------------------
 
-    /// Get the authority (address:port) of the remote peer
+    /// Numeric peer address for wire messages; unspecified for a proxy-resolved hostname.
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
+
+    /// The requested destination; a proxy's socket address is never a peer identity.
+    [[nodiscard]]
+    infrastructure::config::endpoint const& destination() const;
+
+    /// Hostnames resolved by a proxy have no numeric authority locally.
+    [[nodiscard]]
+    bool has_numeric_authority() const;
 
     /// Get formatted string with authority and user agent (for logging)
     /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
@@ -554,11 +575,15 @@ private:
 
     // State
     std::atomic<bool> stopped_{false};
+    // Set once, by the first stop() to offer a reason, before `stopped_`.
+    std::atomic<int> stop_reason_{error::success};
 
     /// Empty the per-request channels. Closing them is not enough: a closed
     /// channel still hands out what it already holds.
     void drain_response_channels();
     infrastructure::config::authority authority_;
+    infrastructure::config::endpoint destination_;
+    bool const has_numeric_authority_;
 
     // Protocol settings
     uint32_t const protocol_magic_;

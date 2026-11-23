@@ -96,7 +96,7 @@ size_t flat_file_seq::allocate(flat_file_pos const& pos, size_t add_size, bool& 
         if (check_disk_space(dir_, inc_size)) {
             FILE* file = open(pos, false);
             if (file) {
-                spdlog::info("Pre-allocating up to position {:#x} in {}{:05}.dat",
+                spdlog::debug("Pre-allocating up to position {:#x} in {}{:05}.dat",
                             new_size, prefix_, pos.file);
 
                 KTH_STATS_TIME_START(allocate);

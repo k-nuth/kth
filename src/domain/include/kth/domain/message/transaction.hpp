@@ -10,6 +10,8 @@
 #include <istream>
 #include <memory>
 
+#include <string_view>
+
 #include <kth/domain/chain/input.hpp>
 #include <kth/domain/chain/output.hpp>
 #include <kth/domain/chain/transaction.hpp>
@@ -59,14 +61,9 @@ public:
 
     size_t serialized_size(uint32_t version) const;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "tx";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 };
 
 } // namespace kth::domain::message

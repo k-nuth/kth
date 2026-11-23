@@ -298,6 +298,22 @@ using block_rejection_channel = concurrent_channel<block_rejected>;
 // the cursors re-derived; the builder may go on. Closing it is the shutdown.
 using block_rejection_ack_channel = concurrent_event_channel;
 
+// Tells the UTXO builder that something it decides by has changed: the
+// contiguous stored height, the reorg pause, the header tip its recency is
+// judged by, or the stop request. It carries nothing; the builder reads those
+// again when it wakes. Capacity one, sent with try_send: a full channel already
+// holds a wake that has not been read, and one is all a re-read needs.
+using utxo_build_wake_channel = concurrent_event_channel;
+
+// Tells the UTXO builder a height that nothing will be stored above until the
+// set describes it: every body up to it has been downloaded, and the next
+// range is not asked for before the builder reaches it. The builder waits for
+// a full batch while the chain is behind, because more blocks are about to
+// come; up to this height none are, so it builds what there is. Sent by the
+// coordinator alone, which then rings the wake channel. Capacity one, and the
+// latest height is the one that counts: a height not yet read is replaced.
+using utxo_build_remainder_channel = concurrent_channel<uint32_t>;
+
 // -----------------------------------------------------------------------------
 // Local block admission
 // -----------------------------------------------------------------------------

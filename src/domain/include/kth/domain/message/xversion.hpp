@@ -9,7 +9,9 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/message/network_address.hpp>
@@ -38,14 +40,9 @@ struct KD_API xversion {
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "xversion";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
 private:
 };
