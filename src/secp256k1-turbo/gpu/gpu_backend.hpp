@@ -43,6 +43,11 @@ void sha256d64_host(std::uint8_t const* in, std::size_t n, std::uint8_t* out);
 // hashed at any level.
 void merkle_root_host(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated);
 
+// Double SHA-256 of n messages of any length: message i is sizes[i] bytes at
+// data + offsets[i], and its hash goes to out + 32 * i.
+void sha256d_messages_host(std::uint8_t const* data, std::size_t data_size, std::uint64_t const* offsets,
+                           std::uint32_t const* sizes, std::size_t n, std::uint8_t* out);
+
 // A merkle tree is hashed in 32-bit indices on the device.
 constexpr std::size_t max_hashes = std::size_t(1) << 27;
 
@@ -61,6 +66,10 @@ bool cuda_field_test(gpu_field_test_in const* in, std::size_t n, gpu_field_test_
 bool cuda_sha256d64(std::uint8_t const* in, std::size_t n, std::uint8_t* out);
 // Merkle root of n >= 1 hashes, every level on the device.
 bool cuda_merkle_root(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated);
+// Double SHA-256 of n messages of any length: message i is sizes[i] bytes at
+// messages[i]. False, with nothing written, also when every context is busy.
+bool cuda_sha256d_messages(std::uint8_t const* const* messages, std::uint32_t const* sizes, std::size_t n,
+                           std::uint8_t* out);
 #endif
 
 #if defined(KTH_SECP256K1_TURBO_HAVE_METAL)

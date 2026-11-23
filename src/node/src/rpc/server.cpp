@@ -15,7 +15,8 @@
 #include <utility>
 #include <exception>
 #include <memory>
-#include <unordered_set>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
@@ -384,7 +385,7 @@ void server::stop() {
     // are admitted, and every completion is consumed before this scope exits.
     constexpr std::size_t capacity = 64;
     ::asio::experimental::channel<void(std::error_code, std::exception_ptr)> ended(owner_, capacity);
-    std::unordered_set<std::shared_ptr<tcp::socket>> connections;
+    boost::unordered_flat_set<std::shared_ptr<tcp::socket>> connections;
     std::size_t pending = 0;
     bool stopping = false;
     ::asio::steady_timer accept_retry(owner_);

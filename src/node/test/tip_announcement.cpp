@@ -7,8 +7,10 @@
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -17,8 +19,10 @@
 #include <asio/use_future.hpp>
 
 #include <kth/blockchain/header_index.hpp>
+#include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/domain/message/send_compact.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 
@@ -203,4 +207,128 @@ TEST_CASE("the peer's service announces the latest owed tip from what it last an
     REQUIRE(headers);
     CHECK(c.hashes(headers->elements()) == hash_list{c.trunk[11]});
     CHECK(command_of(*second) == domain::message::inventory::command);
+}
+
+// -----------------------------------------------------------------------------
+// Compact blocks (BIP152)
+// -----------------------------------------------------------------------------
+
+namespace {
+
+std::string command_of(data_chunk const& raw) {
+    char command[13] = {};
+    std::memcpy(command, raw.data() + 4, 12);
+    return std::string(command);
+}
+
+} // namespace
+
+TEST_CASE("sendcmpct records the high-bandwidth flag of a version 1 request only",
+          "[tip_announcement][compact_blocks]") {
+    idle_session peer;
+    network::settings settings;
+    settings.identifier = 0xdab5bffa;   // regtest
+    settings.inbound_port = 0;
+    settings.outbound_connections = 0;
+    settings.threads = 1;
+    settings.hosts_file = "/tmp/kth_sendcmpct_hosts_nonexistent.dat";
+    settings.banlist_file = "/tmp/kth_sendcmpct_banlist_nonexistent.dat";
+    node::p2p_node p2p(settings);
+
+    // Through the dispatcher the read loop hands every message to.
+    auto const receive = [&](bool high_bandwidth, uint64_t version) {
+        domain::message::send_compact const message(high_bandwidth, version);
+        network::raw_message raw;
+        raw.payload = to_data_chunk(message, peer.session->negotiated_version());
+        raw.heading = domain::message::heading(0xdab5bffa, domain::message::send_compact::command,
+            uint32_t(raw.payload.size()), 0);
+        auto dispatched = ::asio::co_spawn(peer.io, p2p.dispatcher().dispatch(*peer.session, raw),
+            ::asio::use_future);
+        peer.io.restart();
+        peer.io.run();
+        return dispatched.get();
+    };
+
+    CHECK_FALSE(peer.session->prefers_compact_blocks());
+    // Another version says nothing about the one this node speaks.
+    CHECK(receive(true, 2));
+    CHECK_FALSE(peer.session->prefers_compact_blocks());
+    CHECK(receive(true, 1));
+    CHECK(peer.session->prefers_compact_blocks());
+    CHECK(receive(false, 2));
+    CHECK(peer.session->prefers_compact_blocks());
+    // Low bandwidth after high: announcements go back to headers or inv.
+    CHECK(receive(false, 1));
+    CHECK_FALSE(peer.session->prefers_compact_blocks());
+
+    // Malformed: a mode that is neither 0 nor 1, or a version cut short.
+    // Neither parses, and neither changes what was recorded.
+    CHECK(receive(true, 1));
+    for (auto const& payload : {data_chunk{2, 1, 0, 0, 0, 0, 0, 0, 0}, data_chunk{0, 1, 0, 0, 0, 0, 0, 0}}) {
+        network::raw_message raw;
+        raw.payload = payload;
+        raw.heading = domain::message::heading(0xdab5bffa, domain::message::send_compact::command,
+            uint32_t(raw.payload.size()), 0);
+        auto dispatched = ::asio::co_spawn(peer.io, p2p.dispatcher().dispatch(*peer.session, raw),
+            ::asio::use_future);
+        peer.io.restart();
+        peer.io.run();
+        CHECK(dispatched.get());
+        CHECK(peer.session->prefers_compact_blocks());
+    }
+    peer.session->stop();
+}
+
+TEST_CASE("a peer that prefers compact blocks is announced the one new block as a cmpctblock",
+          "[tip_announcement][compact_blocks]") {
+    indexed_chain c;
+    idle_session peer;
+    peer.session->set_prefers_headers(true);
+    peer.session->set_prefers_compact_blocks(true);
+
+    // What full_node's cache gives: here, a cmpctblock of the header alone.
+    size_t built = 0;
+    node::sync::compact_block_source const compact =
+        [&](hash_digest const& hash) -> ::asio::awaitable<domain::message::compact_block::const_ptr> {
+            ++built;
+            co_return std::make_shared<domain::message::compact_block const>(
+                c.index.get_header(c.index.find(hash)), 7u,
+                domain::message::compact_block::short_id_list{},
+                domain::message::prefilled_transaction::list{});
+        };
+    node::sync::compact_block_source const none =
+        [](hash_digest const&) -> ::asio::awaitable<domain::message::compact_block::const_ptr> {
+            co_return nullptr;
+        };
+
+    // Announce `tip` after `last` and answer the command that went out.
+    std::optional<hash_digest> last = c.trunk[10];
+    auto const announce = [&](hash_digest const& tip, node::sync::compact_block_source source) {
+        auto done = ::asio::co_spawn(peer.io,
+            node::sync::announce_tip(c.index, *peer.session, tip, last, std::move(source)),
+            ::asio::use_future);
+        peer.io.restart();
+        peer.io.run();
+        done.get();
+        std::error_code ec;
+        auto const sent = peer.session->data_outbound().try_receive(ec);
+        REQUIRE(sent);
+        CHECK_FALSE(peer.session->data_outbound().try_receive(ec));
+        return command_of(*sent);
+    };
+
+    // One block past the last announcement: its cmpctblock.
+    CHECK(announce(c.trunk[11], compact) == domain::message::compact_block::command);
+    CHECK(built == 1);
+    // Two past: the peer could not connect it, so headers, and none is built.
+    CHECK(announce(c.trunk[13], compact) == domain::message::headers::command);
+    CHECK(built == 1);
+    // No cmpctblock to give, or nothing to give one: headers.
+    CHECK(announce(c.trunk[14], none) == domain::message::headers::command);
+    CHECK(announce(c.trunk[15], {}) == domain::message::headers::command);
+    // A peer that asked for low bandwidth: headers, and none is built.
+    peer.session->set_prefers_compact_blocks(false);
+    CHECK(announce(c.trunk[16], compact) == domain::message::headers::command);
+    CHECK(built == 1);
+    peer.session->stop();
 }

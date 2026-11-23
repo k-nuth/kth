@@ -48,6 +48,8 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/sync/compact_blocks.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
@@ -68,6 +70,10 @@
 #include <asio/awaitable.hpp>
 
 namespace kth::node {
+
+#if defined(KTH_WITH_NEUTRINO)
+namespace detail { struct compact_filter_blocks; }
+#endif
 
 /// Startup mode selection
 enum class start_modules {
@@ -215,6 +221,8 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_compact_blocks();
+    ::asio::awaitable<void> run_compact_filters();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -230,7 +238,23 @@ private:
 #endif
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
+#if ! defined(__EMSCRIPTEN__)
+    // The cmpctblock of the latest tip, shared by the peers' services that
+    // announce it to peers asking for high-bandwidth compact blocks.
+    sync::compact_tip_source compact_tips_;
+    // Rebuilds the cmpctblocks peers send. Made before the network starts,
+    // so the first peer's is taken too; its run() ends within run().
+    std::unique_ptr<sync::compact_block_receiver> compact_blocks_;
+#endif
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+    // Set when node.compact_filters is on. The peers' services and the index
+    // read it, and both end before the node does.
+    kth::path compact_filter_file_;
+    // node.compact_filters on a pruning node: start() refuses it.
+    bool compact_filters_refused_{false};
+    std::unique_ptr<detail::compact_filter_blocks> compact_filter_blocks_;
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     // When this node was built, which uptime counts from: the node starts
     // here, before the database is opened and the network comes up.

@@ -8,7 +8,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
@@ -52,14 +54,9 @@ struct KD_API fee_filter {
         return satoshi_fixed_size(version);
     }
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "feefilter";
+    static constexpr uint32_t version_minimum = version::level::bip133;
+    static constexpr uint32_t version_maximum = version::level::bip133;
 
 private:
     uint64_t minimum_fee_{0};

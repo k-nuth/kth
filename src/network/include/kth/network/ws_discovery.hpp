@@ -17,7 +17,7 @@ namespace kth::network::ws_discovery {
 
 // Versioned handshake advertisement: understand/relay, not a listener promise.
 struct announcement {
-    inline static std::string const command = "sendwsaddr";
+    static constexpr std::string_view command = "sendwsaddr";
 
     constexpr size_t serialized_size(uint32_t) const noexcept { return 1; }
     expect<void> to_data(byte_writer& writer, uint32_t) const noexcept {

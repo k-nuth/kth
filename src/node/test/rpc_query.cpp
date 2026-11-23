@@ -191,6 +191,35 @@ TEST_CASE("render_block_header reports a block off the connected chain", "[rpc q
         R"("confirmations":-1,"height":5,)") != std::string::npos);
 }
 
+TEST_CASE("render_mempool_accept serializes an allowed and a refused transaction", "[rpc query]") {
+    hash_digest txid{};
+    txid[0] = 0xab;
+    auto const shown = encode_hash(txid);
+
+    // 1000 satoshis over 226 bytes is 4424 satoshis per kB, truncated.
+    mempool_accept_result allowed{.txid = txid, .allowed = true, .size = 226, .vsize = 226, .fee = 1000};
+    REQUIRE(render_mempool_accept(allowed) ==
+        R"([{"txid":")" + shown + R"(","allowed":true,"size":226,"vsize":226,)"
+        R"("fees":{"base":0.00001,"effective-feerate":0.00004424}}])");
+
+    // Heavy in signature checks: 20 of them weigh 1000 virtual bytes, and the
+    // rate is per those, 1000 satoshis per kB.
+    allowed.vsize = 1000;
+    REQUIRE(render_mempool_accept(allowed) ==
+        R"([{"txid":")" + shown + R"(","allowed":true,"size":226,"vsize":1000,)"
+        R"("fees":{"base":0.00001,"effective-feerate":0.00001}}])");
+
+    mempool_accept_result refused{.txid = txid, .reject_reason = "missing-inputs"};
+    REQUIRE(render_mempool_accept(refused) ==
+        R"([{"txid":")" + shown + R"(","allowed":false,"reject-reason":"missing-inputs"}])");
+
+    refused.reject_reason = "18: txn-mempool-conflict";
+    refused.reject_details = "double spend mempool";
+    REQUIRE(render_mempool_accept(refused) ==
+        R"([{"txid":")" + shown + R"(","allowed":false,"reject-reason":"18: txn-mempool-conflict",)"
+        R"("reject-details":"double spend mempool"}])");
+}
+
 TEST_CASE("render_estimate_fee converts the per-byte fee to BCH per kB", "[rpc query]") {
     // The default 0.1 satoshi per byte is 100 satoshis per kB.
     REQUIRE(render_estimate_fee(0.1f) == render_estimate_fee(0.1000001f));

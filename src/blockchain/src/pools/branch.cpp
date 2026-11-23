@@ -260,7 +260,7 @@ void branch::populate_prevout(output_point const& outpoint) const {
 //TODO(legacy): use the type alias instead of the std::unord...
 
 // TODO(legacy): absorb into the main chain for speed and code consolidation.
-void branch::populate_prevout(output_point const& outpoint, std::vector<std::unordered_map<point, output const*>> const& branch_utxo) const {
+void branch::populate_prevout(output_point const& outpoint, local_utxo_set_t const& branch_utxo) const {
     auto& prevout = outpoint.validation;
 
     // In case this input is a coinbase or the prevout is spent.
