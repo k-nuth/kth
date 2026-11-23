@@ -23,8 +23,9 @@
 #include <memory>
 #include <numeric>
 #include <string>
-#include <unordered_set>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/blockchain/pools/mempool_config.hpp>
 #include <kth/blockchain/pools/template_prevouts.hpp>
@@ -50,27 +51,6 @@
 #include <asio/experimental/concurrent_channel.hpp>
 
 #include <utxoz/logging.hpp>
-
-namespace kth::blockchain {
-
-using spent_value_type = std::pair<hash_digest, uint32_t>;
-using spent_container = std::unordered_set<spent_value_type>;
-
-} // namespace kth::blockchain
-
-namespace std {
-
-template <>
-struct hash<kth::blockchain::spent_value_type> {
-    size_t operator()(kth::blockchain::spent_value_type const& point) const {
-        size_t seed = 0;
-        boost::hash_combine(seed, point.first);
-        boost::hash_combine(seed, point.second);
-        return seed;
-    }
-};
-
-} // namespace std
 
 namespace kth {
 
@@ -3898,7 +3878,8 @@ std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
 
     std::vector<mempool_transaction_summary> ret;
 
-    std::unordered_set<kth::domain::wallet::payment_address> addrs;
+    boost::unordered_flat_set<kth::domain::wallet::payment_address,
+        std::hash<kth::domain::wallet::payment_address>> addrs;
     for (auto const& payment_address : payment_addresses) {
         if (auto address = kth::domain::wallet::payment_address::parse_from(payment_address); address) {
             addrs.insert(*address);

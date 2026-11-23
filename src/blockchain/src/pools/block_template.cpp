@@ -10,8 +10,9 @@
 #include <cstring>
 #include <numeric>
 #include <queue>
-#include <unordered_map>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 
@@ -47,7 +48,7 @@ bool canonical_less(transaction_const_ptr const& a, transaction_const_ptr const&
 // zero even if the input still carries metadata from an earlier admission.
 // Confirmed prevouts rely on the owner's fresh metadata (see the API contract).
 bool contextually_eligible(transaction const& tx, block_template_context const& ctx,
-                          std::unordered_map<hash_digest, uint32_t, digest_hasher> const& index) {
+                          boost::unordered_flat_map<hash_digest, uint32_t, digest_hasher> const& index) {
     bool const sequence_locks = ctx.sequence_locks &&
         tx.version() >= relative_locktime_min_version && ! tx.is_coinbase();
 
@@ -97,7 +98,7 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
     }
 
     // 2. txid -> snapshot index.
-    std::unordered_map<hash_digest, uint32_t, digest_hasher> index;
+    boost::unordered_flat_map<hash_digest, uint32_t, digest_hasher> index;
     index.reserve(n);
     for (uint32_t i = 0; i < n; ++i) {
         index.emplace(entries[i].tx->hash(), i);

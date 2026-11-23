@@ -10,9 +10,10 @@
 #include <optional>
 #include <system_error>
 #include <tuple>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain/chain/output_point.hpp>
 #include <kth/domain/chain/token_data.hpp>
@@ -119,7 +120,7 @@ struct KD_API coin_selection_result {
     // Collateral tokens: tokens that were picked up incidentally because
     // a selected UTXO carried them. Only populated in mixed mode.
     // The caller MUST create change outputs for these to avoid burning them.
-    std::unordered_map<hash_digest, uint64_t> collateral_fts;
+    boost::unordered_flat_map<hash_digest, uint64_t> collateral_fts;
     std::vector<chain::token_data_t> collateral_nfts;
 };
 

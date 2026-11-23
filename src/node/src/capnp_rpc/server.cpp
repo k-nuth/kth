@@ -28,8 +28,9 @@
 #include <unistd.h>
 #endif
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <asio/cancellation_signal.hpp>
 #include <asio/cancellation_state.hpp>
@@ -210,7 +211,7 @@ struct server::impl {
     // Owner-strand state.
     bool started = false;
     std::thread kj_thread;
-    std::unordered_map<uint64_t, std::unique_ptr<entry>> active;
+    boost::unordered_flat_map<uint64_t, std::unique_ptr<entry>> active;
     size_t block_reads = 0;
     bool stopping = false;
     // Set when the KJ thread has finished with every KJ object, posted here

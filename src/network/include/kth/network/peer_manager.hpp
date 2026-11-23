@@ -8,10 +8,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <unordered_map>
 #include <vector>
 
 #include <boost/unordered/unordered_flat_set.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
@@ -172,7 +172,7 @@ private:
     ::asio::strand<::asio::any_io_executor> strand_;
 
     // Peers indexed by nonce
-    std::unordered_map<uint64_t, peer_session::ptr> peers_;
+    boost::unordered_flat_map<uint64_t, peer_session::ptr> peers_;
     // The nonces of the peers holding a high-bandwidth compact block slot.
     // Only on the strand, as peers_.
     boost::unordered_flat_set<uint64_t> compact_slots_;

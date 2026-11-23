@@ -14,8 +14,9 @@
 #include <memory>
 #include <numeric>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 
 #include <kth/domain/chain/chain_state.hpp>
@@ -493,14 +494,15 @@ bool block::is_forward_reference() const {
 
 bool block::is_forward_reference(std::span<hash_digest const> txids) const {
     KTH_ASSERT(txids.size() == transactions_.size());
-    std::unordered_map<hash_digest, bool> hashes(transactions_.size());
+    boost::unordered_flat_set<hash_digest> hashes;
+    hashes.reserve(transactions_.size());
     auto const is_forward = [&hashes](input const& input) {
-        return hashes.count(input.previous_output().hash()) != 0;
+        return hashes.contains(input.previous_output().hash());
     };
 
     // From the last transaction back to the first.
     for (size_t i = transactions_.size(); i-- > 0;) {
-        hashes.emplace(txids[i], true);
+        hashes.insert(txids[i]);
 
         auto const& inputs = transactions_[i].inputs();
         if (std::any_of(inputs.begin(), inputs.end(), is_forward)) {
