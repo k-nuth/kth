@@ -84,6 +84,39 @@ private:
 
 } // namespace
 
+TEST_CASE("outbound proxy settings are empty and randomized by default", "[configuration tests][parser][socks5]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.proxy.empty());
+    CHECK(defaults.configured.network.proxy_randomize);
+}
+
+#if ! defined(KTH_WITH_SOCKS5)
+// A build without the feature cannot use a proxy. Taking the setting and going
+// on would connect directly, so the node refuses to start.
+TEST_CASE("a proxy is refused by a build without the SOCKS5 feature", "[configuration tests][parser][socks5]") {
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "127.0.0.1:9050"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("proxy_refused", "net.proxy=127.0.0.1:9050");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("an empty one is no proxy") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", ""};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
+}
+#endif
+
 namespace {
 
 #if !defined(KTH_CURRENCY_BCH)

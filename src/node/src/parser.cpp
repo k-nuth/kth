@@ -206,6 +206,13 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
     app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
     app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    // Read by every build, so that one without the feature refuses it (see
+    // check_proxy) and never takes a proxy it was given for no proxy at all.
+    app.add_option("--net.proxy", cfg.network.proxy,
+        "SOCKS5 proxy as numeric IP:port; empty disables proxying. "
+        "Needs a build with the option socks5.");
+    app.add_option("--net.proxy_randomize", cfg.network.proxy_randomize,
+        "Use fresh SOCKS5 credentials for each outbound connection (default true).");
     app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
     app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
     app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
@@ -397,6 +404,28 @@ bool check_compact_filters(configuration const& cfg, std::ostream& error) {
     return true;
 }
 
+// A node given a proxy was asked not to connect directly. A build without the
+// feature cannot use one, so it refuses to start: going on would connect
+// directly and show every peer the address the proxy was there to hide.
+bool check_proxy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(KTH_WITH_SOCKS5)
+    if ( ! cfg.network.proxy.empty()) {
+        error << "Error: net.proxy needs a build with the option socks5; "
+                 "this one would connect directly." << std::endl;
+        return false;
+    }
+#endif
+    // WebSocket discovery resolves, with the system's resolver, the names its
+    // peers announce. Behind a proxy that is a lookup no proxy carries, of a
+    // name a peer chose.
+    if ( ! cfg.network.proxy.empty() && cfg.network.ws_discovery) {
+        error << "Error: net.ws_discovery is not allowed with net.proxy; "
+                 "it resolves names without the proxy." << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
 #if !defined(KTH_CURRENCY_BCH)
     if (cfg.net == domain::config::network::mainnet && cfg.chain.accept_non_standard_transactions) {
@@ -524,7 +553,8 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
-        if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)) {
+        if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
+            || ! check_proxy(configured, error)) {
             return false;
         }
 
@@ -600,7 +630,8 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         }
     }
 
-    if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)) {
+    if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
+            || ! check_proxy(configured, error)) {
         return false;
     }
 

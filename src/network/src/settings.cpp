@@ -31,6 +31,8 @@ settings::settings()
     , manual_attempt_limit(0)
     , connect_batch_size(5)
     , connect_timeout_seconds(5)
+    , proxy()
+    , proxy_randomize(true)
     , channel_handshake_seconds(6000)
     , channel_heartbeat_minutes(2)  // BCHN: PING_INTERVAL = 2 minutes
     , channel_inactivity_minutes(10)

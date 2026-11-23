@@ -24,6 +24,7 @@ pull requests add to it.
 | Option | Feature | Tests | Workflow |
 |---|---|---|---|
 | `neutrino` | Compact block filters for light wallets (Neutrino, BIP157/158): the Golomb-coded set, the regular filter of a block, the script filter of a block with its entry tree, the six filter messages (`getcfilters`, `cfilter`, `getcfheaders`, `cfheaders`, `getcfcheckpt`, `cfcheckpt`), the four messages of the script filter tree (`getcfrange`, `cfrange`, `getcfproof`, `cfproof`), and serving the regular filter to peers ([compact-filters.md](compact-filters.md)) | `kth_domain_neutrino_test`, `kth_node_neutrino_test` | `neutrino.yml` |
+| `socks5` | Outbound connections through a SOCKS5 proxy, for a node behind Tor: `net.proxy` and `net.proxy_randomize` ([outbound-tor.md](outbound-tor.md)). A build without it refuses to start with `net.proxy` set, and never connects directly in its place | `kth_network_socks5_test`, `kth_node_socks5_test` | `socks5.yml` |
 
 `neutrino` needs `currency=BCH`: the regular filter it builds is the one of
 Bitcoin Cash, which is not the basic filter of BIP158.
