@@ -535,6 +535,25 @@ TEST_CASE("proxy permissions follow the destination rather than the proxy IP", "
     CHECK((*result)->has_permission(permission_flags::noban) == expected_noban);
 }
 
+// The proxy is asked to resolve "192.0.2.1." as a name. What it resolves to is
+// not known to the node, so the session is not the peer at 192.0.2.1.
+TEST_CASE("a name that reads as an address is not a numeric peer", "[socks5][peer_session]") {
+    fake_socks5 proxy;
+    network::settings settings(domain::config::network::regtest);
+    settings.proxy = proxy.proxy();
+    settings.proxy_randomize = false;
+    auto const entry = parse_whitelist("noban@192.0.2.1");
+    REQUIRE(entry.has_value());
+    settings.whitelist.push_back(*entry);
+    proxy.start();
+    auto result = proxy.run(network::async_connect(
+        proxy.ctx.get_executor(), "192.0.2.1.", 8333, settings, 1s));
+    REQUIRE(result.has_value());
+    REQUIRE(proxy.request[3] == 3);
+    CHECK_FALSE((*result)->has_numeric_authority());
+    CHECK_FALSE((*result)->has_permission(permission_flags::noban));
+}
+
 TEST_CASE("two outbound peers through one proxy retain distinct numeric identities", "[socks5][peer_session]") {
     fake_socks5 proxy;
     network::settings settings(domain::config::network::regtest);

@@ -6,12 +6,26 @@
 #define KTH_NETWORK_PEER_IDENTITY_HPP
 
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #include <asio/ip/address.hpp>
 #include <kth/infrastructure/config/endpoint.hpp>
 
 namespace kth::network {
+
+// Whether a destination is an IP literal. It decides what a SOCKS5 CONNECT
+// carries, an address or a name for the proxy to resolve, and only a peer
+// reached by its address is known by one.
+[[nodiscard]] inline
+bool is_ip_literal(std::string_view host) {
+    if (host.size() > 1 && host.front() == '[' && host.back() == ']') {
+        host = host.substr(1, host.size() - 2);
+    }
+    std::error_code ec;
+    ::asio::ip::make_address(std::string(host), ec);
+    return ! ec;
+}
 
 [[nodiscard]] inline
 infrastructure::config::endpoint canonical_peer_endpoint(

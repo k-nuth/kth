@@ -84,6 +84,23 @@ infrastructure::config::authority extract_authority(peer_session::socket_type co
 #endif
 }
 
+// The address of a destination given as one. A name has none, even one that
+// reads as an address once it is canonical ("192.0.2.1."): the proxy was asked
+// to resolve it, and what it resolved to is not known here.
+std::optional<infrastructure::config::authority> numeric_authority(
+    infrastructure::config::endpoint const& destination)
+{
+    if ( ! is_ip_literal(destination.host())) {
+        return std::nullopt;
+    }
+    auto const parsed = infrastructure::config::authority::parse_from(
+        canonical_peer_endpoint(destination).host(), destination.port());
+    if ( ! parsed) {
+        return std::nullopt;
+    }
+    return *parsed;
+}
+
 size_t maximum_payload(settings const& settings) {
     auto const protocol = heading::maximum_payload_size(settings.protocol_maximum,
         settings.identifier, settings.inbound_port == 48333);
@@ -121,14 +138,11 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(destination
-        ? infrastructure::config::authority::parse_from(
-            canonical_peer_endpoint(*destination).host(), destination->port())
-                .value_or(infrastructure::config::authority::any())
+        ? numeric_authority(*destination).value_or(infrastructure::config::authority::any())
         : extract_authority(socket_))
     , destination_(destination ? canonical_peer_endpoint(*destination)
         : infrastructure::config::endpoint(authority_))
-    , has_numeric_authority_( ! destination ||
-        infrastructure::config::authority::parse_from(destination_.host(), destination_.port()).has_value())
+    , has_numeric_authority_( ! destination || numeric_authority(*destination).has_value())
     , protocol_magic_(settings.identifier)
     , maximum_payload_(maximum_payload(settings))
     , validate_checksum_(settings.validate_checksum)
@@ -951,6 +965,7 @@ awaitable_expected<peer_session::ptr> async_accept_websocket(
     // Scores and bans apply to the client, not to the proxy it came through.
     if (auto client = peer->websocket_->forwarded_client()) {
         peer->authority_ = infrastructure::config::authority(*client, peer->authority_.port());
+        peer->destination_ = infrastructure::config::endpoint(peer->authority_);
     }
     co_return peer;
 }
