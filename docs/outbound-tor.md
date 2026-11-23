@@ -50,7 +50,8 @@ or `net.connect_timeout_seconds` when that is longer.
 peers announce with the system's resolver, which no proxy carries.
 
 A node with `net.proxy` set does not listen for inbound P2P connections, whatever
-`net.inbound_port` says: a listener answers on the node's own address.
+`net.inbound_port` and `net.ws_enabled` say: a listener answers on the node's
+own address.
 
 These options affect P2P traffic. They do not change RPC or mining services. Onion peer identities, onion address advertisement,
 `onion`/`onlynet` options, and I2P are not supported by this feature.
