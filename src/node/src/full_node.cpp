@@ -63,6 +63,7 @@ full_node::full_node(configuration const& configuration)
         configuration.network.relay_transactions,
         block_submissions_
     )
+    , compact_tips_(chain_)
     , rpc_settings_(configuration.rpc)
 #else
     : node_settings_(configuration.node)
@@ -205,7 +206,7 @@ full_node::~full_node() {
     network_.set_tip_announcement_handler(
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
             return sync::announce_tip(chain_.headers(), peer, tip, last_announced,
-                [this](hash_digest const& hash) { return compact_tips_.get(chain_, hash); });
+                [this](hash_digest const& hash) { return compact_tips_.get(hash); });
         });
     // The fee filter (BIP133) each peer's service sends on its schedule: the
     // mempool's minimum, rounded as BCHN rounds it, never below the relay
@@ -276,13 +277,7 @@ full_node::~full_node() {
     // node is caught up, and the blocktxn that completes one: both taken
     // from the read loop without waiting.
     compact_blocks_ = std::make_unique<sync::compact_block_receiver>(chain_, network_);
-    network_.set_compact_block_handlers(
-        [this](peer_session::ptr const& peer, domain::message::compact_block message) {
-            return compact_blocks_->offer(peer, std::move(message));
-        },
-        [this](peer_session::ptr const& peer, domain::message::block_transactions message) {
-            return compact_blocks_->deliver(peer, std::move(message));
-        });
+    network_.set_compact_block_receiver(compact_blocks_.get());
     // Off, no peer is asked to send a cmpctblock before announcing a block.
     network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
 #endif
@@ -520,8 +515,9 @@ full_node::~full_node() {
 ::asio::awaitable<void> full_node::run_compact_blocks() {
     // Until the network stops, then until the reconstructions under way have
     // ended: they hold the chain and the network.
+    // The cmpctblock of the tip, for the peers' services, runs as long.
     if (compact_blocks_) {
-        co_await compact_blocks_->run();
+        co_await (compact_blocks_->run() && compact_tips_.run(network_.stop_token()));
     }
 }
 #endif

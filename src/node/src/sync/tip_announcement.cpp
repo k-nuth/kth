@@ -2,6 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
+#include <asio/experimental/channel_select.hpp>
+#include <asio/this_coro.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 
 #include <memory>
@@ -103,29 +107,73 @@ std::optional<tip_announcement> next_tip_announcement(blockchain::header_index c
     }
 }
 
-::asio::awaitable<domain::message::compact_block::const_ptr> compact_tip_cache::get(
-    blockchain::block_chain const& chain, hash_digest const& hash) {
+compact_tip_source::compact_tip_source(blockchain::block_chain const& chain)
+    : chain_(chain)
+    , requests_(16)
+{}
 
-    {
-        std::lock_guard const lock(mutex_);
-        if (compact_ && hash_ == hash) {
-            co_return compact_;
-        }
-    }
-    auto const block = co_await chain.fetch_block(hash);
-    if ( ! block || block->first->transactions().empty()) {
-        spdlog::debug("[tip_announcement] No cmpctblock for {}: the block could not be read",
-            encode_hash(hash));
+::asio::awaitable<domain::message::compact_block::const_ptr> compact_tip_source::get(hash_digest const& hash) {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto const answer = std::make_shared<answer_channel>(1);
+    // Waits for room, then for the answer: run() answers every request it
+    // takes, and closes the channel when it ends.
+    auto asked = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(requests_, request{hash, answer})
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    if (std::get<0>(asked)) {
         co_return nullptr;
     }
-    // Built outside the lock: services that miss together each build one,
-    // and the last one built is kept. Every one is a valid cmpctblock.
-    auto built = std::make_shared<domain::message::compact_block const>(
-        domain::message::compact_block::factory_from_block(*block->first));
-    std::lock_guard const lock(mutex_);
-    hash_ = hash;
-    compact_ = built;
-    co_return built;
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*answer)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec) {
+        co_return nullptr;
+    }
+    co_return std::move(*selected.value<0>());
+}
+
+::asio::awaitable<void> compact_tip_source::run(std::stop_token stop) {
+    auto executor = co_await ::asio::this_coro::executor;
+    // Owned here: the one cmpctblock held, and the block it is of.
+    hash_digest held_hash = null_hash;
+    domain::message::compact_block::const_ptr held;
+
+    auto const answer = [&](request const& asked) -> ::asio::awaitable<void> {
+        if ( ! held || held_hash != asked.hash) {
+            auto const block = co_await chain_.fetch_block(asked.hash);
+            if ( ! block || block->first->transactions().empty()) {
+                spdlog::debug("[tip_announcement] No cmpctblock for {}: the block could not be read",
+                    encode_hash(asked.hash));
+                (void)asked.answer->try_send(nullptr);
+                co_return;
+            }
+            held = std::make_shared<domain::message::compact_block const>(
+                domain::message::compact_block::factory_from_block(*block->first));
+            held_hash = asked.hash;
+        }
+        auto shared = held;
+        (void)asked.answer->try_send(std::move(shared));
+    };
+
+    while ( ! stop.stop_requested()) {
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(requests_)
+        ).async_wait(executor, {}, stop, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
+        if (ec) {
+            break;
+        }
+        co_await answer(*selected.value<0>());
+    }
+
+    // Nobody is left waiting: later requests are refused, and those already
+    // queued are told there is none.
+    requests_.close();
+    std::error_code drained;
+    while (auto const left = requests_.try_receive(drained)) {
+        (void)left->answer->try_send(nullptr);
+    }
 }
 
 } // namespace kth::node::sync

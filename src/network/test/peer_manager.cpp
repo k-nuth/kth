@@ -218,6 +218,62 @@ TEST_CASE("peer_manager add multiple peers", "[peer_manager]") {
     REQUIRE(manager.count_snapshot() == 5);
 }
 
+// BIP152: a node asks a few peers for high-bandwidth compact blocks. The
+// slots are counted where the peers are held, so one is free again as its
+// peer is removed, with nothing else to tell.
+TEST_CASE("peer_manager gives out compact block slots and takes them back with their peers", "[peer_manager][compact_blocks]") {
+    ::asio::io_context ctx;
+    test_peers pool(ctx);
+    peer_manager manager(ctx.get_executor(), 100);
+
+    std::vector<peer_session::ptr> peers;
+    for (int i = 0; i < 4; ++i) {
+        auto peer = pool.make();
+        peer->set_nonce(2000 + i);
+        peers.push_back(peer);
+    }
+    auto const stranger = pool.make();
+    stranger->set_nonce(2999);
+
+    bool done = false;
+    std::vector<bool> taken;
+    bool again = false;
+    bool unknown = true;
+    size_t held = 0;
+    bool fourth_before = true;
+    bool fourth_after = false;
+    size_t held_after = 0;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        for (auto const& peer : peers) {
+            (void)co_await manager.add(peer);
+        }
+        for (size_t i = 0; i < 3; ++i) {
+            taken.push_back(co_await manager.take_compact_slot(peers[i], 3));
+        }
+        // Its own slot, asked for again: still one slot.
+        again = co_await manager.take_compact_slot(peers[0], 3);
+        // A peer the manager does not hold gets none.
+        unknown = co_await manager.take_compact_slot(stranger, 3);
+        fourth_before = co_await manager.take_compact_slot(peers[3], 3);
+        held = co_await manager.compact_slots();
+
+        co_await manager.remove(peers[1]);
+        held_after = co_await manager.compact_slots();
+        fourth_after = co_await manager.take_compact_slot(peers[3], 3);
+        done = true;
+    }, ::asio::detached);
+    run_until_pm(ctx, [&]{ return done; });
+
+    REQUIRE(done);
+    CHECK(taken == std::vector<bool>{true, true, true});
+    CHECK(again);
+    CHECK_FALSE(unknown);
+    CHECK_FALSE(fourth_before);
+    CHECK(held == 3);
+    CHECK(held_after == 2);
+    CHECK(fourth_after);
+}
+
 TEST_CASE("peer_manager add duplicate nonce rejected", "[peer_manager]") {
     ::asio::io_context ctx;
     test_peers pool(ctx);

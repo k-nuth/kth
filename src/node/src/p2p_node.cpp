@@ -13,6 +13,7 @@
 #include <kth/node/detail/bloom_filters.hpp>
 #endif
 #include <kth/node/detail/tx_relay.hpp>
+#include <kth/node/sync/compact_blocks.hpp>
 #if defined(KTH_WITH_NEUTRINO)
 #include <kth/node/detail/compact_filters.hpp>
 #endif
@@ -999,7 +1000,7 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
         // not taken contributes its header, as during initial sync, which is
         // all its first field is needed for. These arrive because we asked
         // for them: `sendcmpct` goes out right after the handshake.
-        if ( ! compact_block_handler_ || ! offer_compact_block(peer, raw)) {
+        if (compact_blocks_ == nullptr || ! offer_compact_block(peer, raw)) {
             ingest_compact_block(peer, raw);
         }
         // Observed, not consumed: a handler registered for `cmpctblock` still
@@ -1008,7 +1009,7 @@ bool p2p_node::observe_block_message(peer_session::ptr const& peer, raw_message 
     }
     if (command == domain::message::block_transactions::command) {
         // Only ever the answer to a getblocktxn a reconstruction sent.
-        return block_transactions_handler_ && deliver_block_transactions(peer, raw);
+        return compact_blocks_ != nullptr && deliver_block_transactions(peer, raw);
     }
     if (command == domain::message::inventory::command) {
         // The oldest of the announcement forms: hashes, no headers.
@@ -1060,7 +1061,7 @@ bool p2p_node::offer_compact_block(peer_session::ptr const& peer, raw_message co
     if ( ! parsed || reader.remaining_size() != 0) {
         return false;
     }
-    return compact_block_handler_(peer, std::move(*parsed));
+    return compact_blocks_->offer(peer, std::move(*parsed));
 }
 
 bool p2p_node::deliver_block_transactions(peer_session::ptr const& peer, raw_message const& raw) {
@@ -1070,33 +1071,21 @@ bool p2p_node::deliver_block_transactions(peer_session::ptr const& peer, raw_mes
         spdlog::debug("[p2p_node] Unparseable blocktxn from [{}]; ignored", peer->authority());
         return false;
     }
-    if ( ! block_transactions_handler_(peer, std::move(*parsed))) {
-        spdlog::debug("[p2p_node] blocktxn from [{}] answers no request; ignored", peer->authority());
+    if ( ! compact_blocks_->deliver(peer, std::move(*parsed))) {
+        spdlog::debug("[p2p_node] blocktxn from [{}] not taken; ignored", peer->authority());
         return false;
     }
     return true;
 }
 
-void p2p_node::set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions) {
-    compact_block_handler_ = std::move(compact_block);
-    block_transactions_handler_ = std::move(block_transactions);
+void p2p_node::set_compact_block_receiver(sync::compact_block_receiver* receiver) {
+    compact_blocks_ = receiver;
 }
 
 void p2p_node::set_compact_high_bandwidth(bool enabled) {
     compact_high_bandwidth_ = enabled;
 }
 
-bool p2p_node::take_high_bandwidth_compact_slot() {
-    if ( ! compact_high_bandwidth_) {
-        return false;
-    }
-    // Peers finish their handshakes on several strands at once.
-    auto taken = high_bandwidth_compact_peers_.load();
-    while (taken < max_high_bandwidth_compact_peers &&
-           ! high_bandwidth_compact_peers_.compare_exchange_weak(taken, taken + 1)) {
-    }
-    return taken < max_high_bandwidth_compact_peers;
-}
 
 detail::header_ingest_channels& p2p_node::header_ingest() {
     return *header_ingest_;
@@ -2206,13 +2195,11 @@ void p2p_node::wake_status_task() noexcept {
                         // bandwidth); a slot is the peer's until its protocols
                         // end.
                         co_await peer->send(domain::message::send_headers{});
-                        detail::scope_action release_high_bandwidth(
-                            [this]() noexcept { high_bandwidth_compact_peers_.fetch_sub(1); }, false);
                         if (peer->negotiated_version() >= domain::message::send_compact::version_minimum) {
-                            bool const high_bandwidth = take_high_bandwidth_compact_slot();
-                            if (high_bandwidth) {
-                                release_high_bandwidth.arm();
-                            }
+                            // Asked of the owner of the peers, which counts
+                            // the slots and frees this one when the peer goes.
+                            bool const high_bandwidth = compact_high_bandwidth_
+                                && co_await manager_.take_compact_slot(peer, max_high_bandwidth_compact_peers);
                             co_await peer->send(domain::message::send_compact(high_bandwidth, 1));
                         }
 

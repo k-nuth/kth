@@ -2199,13 +2199,7 @@ struct compact_receiver {
         std::chrono::milliseconds blocktxn_timeout = compact_block_receiver::default_blocktxn_timeout)
         : network(p2p)
         , receiver(fixture.chain(), p2p, blocktxn_timeout) {
-        network.set_compact_block_handlers(
-            [this](peer_ptr const& peer, domain::message::compact_block message) {
-                return receiver.offer(peer, std::move(message));
-            },
-            [this](peer_ptr const& peer, domain::message::block_transactions message) {
-                return receiver.deliver(peer, std::move(message));
-            });
+        network.set_compact_block_receiver(&receiver);
         running = ::asio::co_spawn(network.thread_pool().get_executor(), receiver.run(), ::asio::use_future);
     }
 
@@ -2214,7 +2208,14 @@ struct compact_receiver {
         bool const ended = running.wait_for(std::chrono::seconds(120)) == std::future_status::ready;
         CHECK(ended);
         if (ended) running.get();
-        network.set_compact_block_handlers({}, {});
+        network.set_compact_block_receiver(nullptr);
+    }
+
+    // Reconstructions under way, as the receiver's own task counts them.
+    size_t pending() {
+        auto answer = ::asio::co_spawn(network.thread_pool().get_executor(), receiver.pending(), ::asio::use_future);
+        REQUIRE(answer.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+        return answer.get();
     }
 
     compact_receiver(compact_receiver const&) = delete;
@@ -2351,11 +2352,13 @@ TEST_CASE("integrated: a compact block whose transactions are in the mempool con
 
 TEST_CASE("integrated: missing transactions come with blocktxn, and a block that cannot be rebuilt is downloaded",
           "[header_tip][integration][compact_blocks]") {
-    enum class answer { complete, wrong_transaction, other_block, none, truncated, trailing, collision, merkle };
+    enum class answer { complete, wrong_transaction, other_block, other_block_first, none, truncated, trailing,
+        collision, merkle };
     auto reply = answer::complete;
     SECTION("the requested transaction completes the block") {}
     SECTION("a wrong transaction") { reply = answer::wrong_transaction; }
     SECTION("an answer for another block") { reply = answer::other_block; }
+    SECTION("an answer for another block, and then the block's own") { reply = answer::other_block_first; }
     SECTION("no answer in time") { reply = answer::none; }
     SECTION("an answer cut short") { reply = answer::truncated; }
     SECTION("an answer with a byte past its end") { reply = answer::trailing; }
@@ -2384,7 +2387,10 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
             compact.short_ids(), {std::move(*coinbase)});
     }
     wire_peer peer(node_settings("compact_missing_peer"), 9802, 100);
-    bool const waits = reply == answer::none || reply == answer::truncated || reply == answer::trailing;
+    // An answer for another block is not the one waited for, either.
+    bool const waits = reply == answer::none || reply == answer::truncated || reply == answer::trailing ||
+        reply == answer::other_block;
+    bool const completes = reply == answer::complete || reply == answer::other_block_first;
 
     bool rebuilt = false;
     bool downloaded = false;
@@ -2409,6 +2415,14 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
             CHECK(request->indexes() == std::vector<uint64_t>{1});
             CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
 
+            if (reply == answer::other_block_first) {
+                // As a late answer to a request the node gave up on: it takes
+                // nothing from the reconstruction under way.
+                domain::message::block_transactions const late(staged.trunk.back().hash(),
+                    domain::chain::transaction::list{block.transactions()[0]});
+                CHECK(run.network.observe_block_message(peer.session,
+                    peer.message(domain::message::block_transactions::command, payload_of(peer, late))));
+            }
             if (reply != answer::none) {
                 domain::message::block_transactions const answered(
                     reply == answer::other_block ? staged.trunk.back().hash() : block.hash(),
@@ -2425,7 +2439,7 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
             }
         }
 
-        if (reply == answer::complete) {
+        if (completes) {
             rebuilt = wait_until([&] { return connected_at(fixture, block, 101); }, quick);
             sent = peer.sent_until_quiet(quiet);
         } else {
@@ -2447,7 +2461,7 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
     }
     log.dump("compact_missing");
     CHECK(stopped_cleanly);
-    if (reply == answer::complete) {
+    if (completes) {
         REQUIRE(rebuilt);
         CHECK(std::none_of(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
             return message.command == domain::message::get_data::command;
@@ -2532,9 +2546,40 @@ TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and wh
     }
     CHECK_FALSE(run.network.observe_block_message(peer.session, raw));
     require_ingested(run.network, peer.session, domain::chain::hash(compact.header()));
-    CHECK(wait_until([&] { return receiver.receiver.pending() == 0u; }, quick));
+    CHECK(wait_until([&] { return receiver.pending() == 0u; }, quick));
     CHECK(fixture.chain().chain_view()->connected_tip_height == 100u);
     CHECK_FALSE(peer.session->stopped());
+}
+
+// Whoever asks the receiver something waits for its answer. One that asked
+// just before the receiver's task ended is answered as it ends, and does not
+// wait for a task that will never look at its question.
+TEST_CASE("a question the receiver had not taken when it ended is answered", "[header_tip][compact_blocks]") {
+    chain_fixture fixture{"compact_question_at_stop"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    started_network run("compact_question_at_stop");
+    compact_block_receiver receiver(fixture.chain(), run.network);
+    run.network.stop();
+    REQUIRE(run.network.stopped());
+
+    // One thread, in this order: the question is in the receiver's queue
+    // before its task starts, and the task finds the network stopped.
+    ::asio::io_context io;
+    auto asked = ::asio::co_spawn(io, receiver.pending(), ::asio::use_future);
+    // And a blocktxn no task took: the receiver holds its peer's session
+    // until it ends, and no longer.
+    wire_peer peer(node_settings("compact_question_at_stop_peer"), 9815, 100);
+    auto const held = peer.session.use_count();
+    REQUIRE(receiver.deliver(peer.session, domain::message::block_transactions{}));
+    CHECK(peer.session.use_count() == held + 1);
+    auto ended = ::asio::co_spawn(io, receiver.run(), ::asio::use_future);
+    io.run_for(std::chrono::seconds(10));
+
+    REQUIRE(ended.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    REQUIRE(asked.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    CHECK(asked.get() == 0u);
+    CHECK(peer.session.use_count() == held);
 }
 
 TEST_CASE("at most three blocks are rebuilt at once, one per peer", "[header_tip][compact_blocks]") {
@@ -2580,7 +2625,7 @@ TEST_CASE("at most three blocks are rebuilt at once, one per peer", "[header_tip
     REQUIRE(asked(q, quick));
     offer(r, blocks[3]);
     REQUIRE(asked(r, quick));
-    CHECK(receiver.receiver.pending() == compact_block_receiver::max_reconstructions);
+    CHECK(receiver.pending() == compact_block_receiver::max_reconstructions);
     // ...and a fourth peer's block is downloaded instead.
     offer(s, blocks[1]);
     require_ingested(run.network, s.session, blocks[1].hash());

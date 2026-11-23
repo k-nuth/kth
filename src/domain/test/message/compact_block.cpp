@@ -194,7 +194,7 @@ TEST_CASE("compact block short ids follow the BIP152 construction", "[compact bl
 TEST_CASE("compact block short id matches the 32 byte SipHash vector", "[compact block][bip152]") {
     hash_digest bytes{};
     for (size_t i = 0; i < bytes.size(); ++i) {
-        bytes[i] = static_cast<uint8_t>(i);
+        bytes[i] = uint8_t(i);
     }
     // SipHash's key is 00..0f and its message is 00..1f.
     REQUIRE(message::compact_short_id(bytes, bytes) == uint64_t{0x512f72f27cce});
