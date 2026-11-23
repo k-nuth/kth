@@ -386,11 +386,37 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
     return w.str();
 }
 
+std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
+                                                      std::span<domain::chain::output const> spent) {
+    auto const& txs = block.transactions();
+    std::vector<uint64_t> fees(txs.size(), 0);
+    size_t used = 0;
+    for (size_t i = 1; i < txs.size(); ++i) {
+        uint64_t in = 0;
+        for (size_t j = 0; j < txs[i].inputs().size(); ++j) {
+            if (used == spent.size()) return std::nullopt;
+            in += spent[used++].value();
+        }
+        uint64_t out = 0;
+        for (auto const& output : txs[i].outputs()) {
+            out += output.value();
+        }
+        if (out > in) return std::nullopt;
+        fees[i] = in - out;
+    }
+    if (used != spent.size()) return std::nullopt;
+    return fees;
+}
+
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
-                                 bool patterns) {
+                                 bool patterns,
+                                 std::span<uint64_t const> fees) {
     auto const& header = block.header();
+    // One fee for each transaction, or none at all.
+    auto const with_fees = fees.size() == block.transactions().size();
+    size_t place = 0;
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(block.hash()));
@@ -413,11 +439,16 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
         if (with_transactions) {
             w.begin_object();
             write_transaction_fields(w, tx, net, flags, patterns);
+            // The coinbase pays no fee.
+            if (with_fees && place != 0) {
+                w.field_raw("fee", satoshi_to_bitcoin(fees[place]));
+            }
             w.field("hex", transaction_to_hex(tx));
             w.end_object();
         } else {
             w.value(encode_hash(tx.hash()));
         }
+        ++place;
     }
     w.end_array();
     w.field("time", int64_t(header.timestamp()));

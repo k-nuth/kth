@@ -23,6 +23,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -3079,6 +3080,120 @@ block_chain::fetch_block(hash_digest const& hash) const {
         co_return kth::fail(error::not_found);
     }
     co_return co_await read_stored_block(hash, size_t(header_index_.get_height(idx)), pos);
+}
+
+namespace {
+
+// The transactions that created the outputs of one block's undo record, in
+// reference mode: each is read, parsed and hashed once, so a block that spends
+// several outputs of one transaction reads it once. Keyed by where the
+// transaction starts in the block files. The bytes kept are bounded: past the
+// bound the kept transactions are dropped and the reads start over.
+struct funding_transactions {
+    static constexpr size_t max_bytes = 8 * 1024 * 1024;
+    std::unordered_map<uint64_t, std::pair<domain::chain::transaction, hash_digest>> by_position;
+    size_t bytes = 0;
+};
+
+// The output an undo entry stands for.
+std::expected<domain::chain::output, result_code>
+read_undo_output(block_store const& store, spent_output const& entry, funding_transactions& funding) {
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // The entry is {file_number(4 LE), tx_offset(4 LE)}: where the transaction
+    // that created the output starts in the block files. The hash and the index
+    // of the output are in the key.
+    if (entry.value.size() != 8) {
+        return std::unexpected(result_code::other);
+    }
+    uint32_t file_number = 0;
+    uint32_t offset = 0;
+    std::memcpy(&file_number, entry.value.data(), 4);
+    std::memcpy(&offset, entry.value.data() + 4, 4);
+
+    auto const position = (uint64_t(file_number) << 32) | offset;
+    auto found = funding.by_position.find(position);
+    if (found == funding.by_position.end()) {
+        auto const raw = store.read_tx_raw(flat_file_pos{int32_t(file_number), offset});
+        if ( ! raw) {
+            return std::unexpected(raw.error());
+        }
+        auto tx = kth::from_data_chunk<domain::chain::transaction>(*raw, true);
+        if ( ! tx) {
+            return std::unexpected(result_code::other);
+        }
+        if (funding.bytes + raw->size() > funding_transactions::max_bytes) {
+            funding.by_position.clear();
+            funding.bytes = 0;
+        }
+        funding.bytes += raw->size();
+        auto const tx_hash = tx->hash();
+        found = funding.by_position.emplace(position, std::pair{std::move(*tx), tx_hash}).first;
+    }
+    auto const& [tx, tx_hash] = found->second;
+
+    // The block files are read by position alone: the transaction there must
+    // be the one the key names, or its output is not the one that was spent.
+    auto const point = utxoz_database::key_to_point(entry.key);
+    if (tx_hash != point.hash()) {
+        return std::unexpected(result_code::other);
+    }
+    if (point.index() >= tx.outputs().size()) {
+        return std::unexpected(result_code::other);
+    }
+    return tx.outputs()[point.index()];
+#else
+    (void)store;
+    (void)funding;
+    return output_of_stored_entry(entry.value);
+#endif
+}
+
+} // namespace
+
+awaitable_expected<spent_output_list>
+block_chain::fetch_spent_outputs(hash_digest const& hash, block_const_ptr block) const {
+    if (stopped() || ! block_store_) {
+        co_return kth::fail(error::service_stopped);
+    }
+    if ( ! block) {
+        co_return kth::fail(error::not_found);
+    }
+    // A block of one transaction spends nothing, so it needs no record.
+    if (block->transactions().size() <= 1) {
+        co_return spent_output_list{};
+    }
+
+    auto const idx = header_index_.find(hash);
+    if (idx == header_index::null_index || ! header_index_.has_undo_data(idx)) {
+        co_return kth::fail(error::not_found);
+    }
+    // Everything the index says about the block is read here, before the read
+    // of the file runs on the pool.
+    auto const height = uint32_t(header_index_.get_height(idx));
+    flat_file_pos const undo_pos{header_index_.get_file_number(idx), header_index_.get_undo_pos(idx)};
+    auto const prev_hash = header_index_.get_prev_block_hash(idx);
+
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, block, hash, height, prev_hash, undo_pos]() -> awaitable_expected<spent_output_list> {
+            auto const record = block_store_->read_undo(undo_pos, hash, prev_hash);
+            if ( ! record) {
+                spdlog::error("[blockchain] cannot read the undo record of block {} at {}",
+                    encode_hash(hash), undo_pos.to_string());
+                co_return kth::fail(error::operation_failed);
+            }
+            funding_transactions funding;
+            auto spent = spent_outputs_with_heights(*block, height, *record,
+                [this, &funding](spent_output const& entry) {
+                    return read_undo_output(*block_store_, entry, funding);
+                });
+            if ( ! spent) {
+                spdlog::error("[blockchain] the undo record of block {} does not give the outputs "
+                    "the block spends: {}", encode_hash(hash), result_code_name(spent.error()));
+                co_return kth::fail(error::operation_failed);
+            }
+            co_return std::move(*spent);
+        },
+        ::asio::use_awaitable);
 }
 
 std::expected<domain::chain::block::list, database::result_code>
