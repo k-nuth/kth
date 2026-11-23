@@ -1394,6 +1394,13 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         co_return;
     }
 
+    // A listener answers on the node's own address, which is what a proxy is
+    // configured to keep from its peers.
+    if ( ! settings_.proxy.empty()) {
+        spdlog::info("[p2p_node] Inbound connections disabled (net.proxy is set)");
+        co_return;
+    }
+
     auto executor = co_await ::asio::this_coro::executor;
 
     // Use async_listen from peer_session.hpp

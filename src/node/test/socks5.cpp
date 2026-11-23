@@ -11,9 +11,12 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 #if defined(_WIN32)
@@ -23,6 +26,8 @@
 #endif
 
 #include <test_helpers.hpp>
+
+#include <catch2/generators/catch_generators.hpp>
 
 #include <kth/network.hpp>
 #include <kth/node.hpp>
@@ -35,7 +40,11 @@
 #include <asio/ip/tcp.hpp>
 #include <asio/read.hpp>
 #include <asio/use_awaitable.hpp>
+#include <asio/use_future.hpp>
 #include <asio/write.hpp>
+
+#include <spdlog/sinks/base_sink.h>
+#include <spdlog/spdlog.h>
 
 using namespace kth;
 using namespace kth::network;
@@ -228,6 +237,63 @@ network::settings proxy_connect_settings(std::string const& proxy) {
     settings.channel_handshake_seconds = 2;
     settings.proxy = proxy;
     return settings;
+}
+
+// What run_inbound() says it decided: true once it listens, false once it says
+// it will not. The node's log is the only place that decision shows before a
+// connection is tried, and trying one before the decision tells nothing.
+struct inbound_decision_sink : spdlog::sinks::base_sink<std::mutex> {
+    std::promise<bool> decision;
+    bool decided{false};
+
+protected:
+    void sink_it_(spdlog::details::log_msg const& message) override {
+        if (decided) {
+            return;
+        }
+        std::string_view const text(message.payload.data(), message.payload.size());
+        if (text.find("[p2p_node] Listening on port") != std::string_view::npos) {
+            decided = true;
+            decision.set_value(true);
+        } else if (text.find("[p2p_node] Inbound connections disabled") != std::string_view::npos) {
+            decided = true;
+            decision.set_value(false);
+        }
+    }
+
+    void flush_() override {}
+};
+
+struct inbound_decision_log {
+    std::shared_ptr<inbound_decision_sink> sink{std::make_shared<inbound_decision_sink>()};
+    std::shared_ptr<spdlog::logger> previous{spdlog::default_logger()};
+
+    inbound_decision_log() {
+        auto logger = std::make_shared<spdlog::logger>("inbound_decision", sink);
+        logger->set_level(spdlog::level::info);
+        spdlog::set_default_logger(std::move(logger));
+    }
+
+    ~inbound_decision_log() {
+        spdlog::set_default_logger(previous);
+    }
+
+    inbound_decision_log(inbound_decision_log const&) = delete;
+    inbound_decision_log& operator=(inbound_decision_log const&) = delete;
+};
+
+uint16_t free_port() {
+    ::asio::io_context ctx;
+    ::asio::ip::tcp::acceptor probe(ctx, {::asio::ip::address_v4::loopback(), 0});
+    return probe.local_endpoint().port();
+}
+
+bool accepts_connections(uint16_t port) {
+    ::asio::io_context ctx;
+    ::asio::ip::tcp::socket socket(ctx);
+    std::error_code ec;
+    socket.connect({::asio::ip::address_v4::loopback(), port}, ec);
+    return ! ec;
 }
 
 void finish_proxy(socks5_success_proxy& proxy, ::asio::io_context& ctx) {
@@ -472,4 +538,53 @@ TEST_CASE("p2p_node connect rejects a duplicate hostname and still dials when th
     REQUIRE( ! third.has_value());
     REQUIRE(third.error() != error::address_blocked);
     REQUIRE(third.error() != error::address_in_use);
+}
+
+// A listener answers on the node's own address, the one a proxy is there to
+// keep from its peers.
+TEST_CASE("a node behind a proxy does not listen for inbound connections", "[p2p_node][socks5]") {
+    bool const behind_proxy = GENERATE(true, false);
+    CAPTURE(behind_proxy);
+
+    auto settings = proxy_connect_settings(behind_proxy ? "127.0.0.1:9050" : "");
+    settings.inbound_port = free_port();
+    settings.inbound_connections = 8;
+
+    inbound_decision_log log;
+    auto decision = log.sink->decision.get_future();
+
+    bool listens = false;
+    bool reachable = false;
+    bool decided = false;
+    bool stopped_cleanly = false;
+    {
+        p2p_node node(settings);
+        auto started = ::asio::co_spawn(node.thread_pool().get_executor(),
+            [&node]() -> ::asio::awaitable<int> {
+                auto const ec = co_await node.start();
+                co_return ec.value();
+            }, ::asio::use_future);
+        REQUIRE(started.wait_for(30s) == std::future_status::ready);
+        REQUIRE(started.get() == 0);
+
+        auto running = ::asio::co_spawn(node.thread_pool().get_executor(),
+            [&node]() -> ::asio::awaitable<int> {
+                auto const ec = co_await node.run();
+                co_return ec.value();
+            }, ::asio::use_future);
+
+        decided = decision.wait_for(30s) == std::future_status::ready;
+        if (decided) {
+            listens = decision.get();
+            reachable = accepts_connections(settings.inbound_port);
+        }
+
+        node.stop();
+        stopped_cleanly = running.wait_for(60s) == std::future_status::ready;
+    }
+
+    REQUIRE(decided);
+    CHECK(stopped_cleanly);
+    CHECK(listens == ! behind_proxy);
+    CHECK(reachable == ! behind_proxy);
 }

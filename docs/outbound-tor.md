@@ -41,14 +41,16 @@ database records, bans, misbehavior scores, performance samples, or cooldowns
 because their numeric addresses are unknown. An error that would ban a numeric
 peer on its own disconnects a hostname peer.
 
-The connection deadline (`net.connect_timeout_seconds`, 5 by default) covers the
-whole exchange with the proxy, which answers only once it has reached the
-destination: through Tor that includes building a circuit. Raise it if outbound
-connections time out.
+The connection deadline covers the whole exchange with the proxy, which answers
+only once it has reached the destination: through Tor that includes building a
+circuit. A connection through the proxy is therefore given at least 20 seconds,
+or `net.connect_timeout_seconds` when that is longer.
 
 `net.ws_discovery` is refused together with `net.proxy`: it resolves the names
 peers announce with the system's resolver, which no proxy carries.
 
-These options affect outbound P2P traffic. They do not change inbound listening,
-RPC, or mining services. Onion peer identities, onion address advertisement,
+A node with `net.proxy` set does not listen for inbound P2P connections, whatever
+`net.inbound_port` says: a listener answers on the node's own address.
+
+These options affect P2P traffic. They do not change RPC or mining services. Onion peer identities, onion address advertisement,
 `onion`/`onlynet` options, and I2P are not supported by this feature.
