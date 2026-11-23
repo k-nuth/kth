@@ -12,9 +12,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const get_block_transactions::command = "getblocktxn";
-uint32_t const get_block_transactions::version_minimum = version::level::bip152;
-uint32_t const get_block_transactions::version_maximum = version::level::bip152;
 
 get_block_transactions::get_block_transactions()
     : block_hash_(null_hash)

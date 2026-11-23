@@ -305,6 +305,17 @@ struct KB_API block_chain {
     [[nodiscard]]
     std::expected<uint32_t, database::result_code> get_utxo_built_height() const;
 
+    /// Remove the block files a pruning node no longer keeps, given the height
+    /// the UTXO set was just built to. Does nothing on a node that keeps every
+    /// block (`db.prune_keep_blocks` zero), and looks again only after the
+    /// built height has moved on a little, so calling it per batch is cheap.
+    ///
+    /// For the task that applies blocks to the UTXO set, after it has made
+    /// `built_height` durable: see `prune_block_files` in prune.hpp.
+    /// @return How many block files were removed.
+    [[nodiscard]]
+    std::expected<size_t, database::result_code> prune_block_files(uint32_t built_height);
+
     [[nodiscard]]
     database::result_code set_utxo_built_height(uint32_t height);
 
@@ -710,6 +721,13 @@ struct KB_API block_chain {
     [[nodiscard]]
     code commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected);
 
+    /// What commit_validated_transaction(entry, ...) would refuse `entry` for,
+    /// or success, without recording it: its pooled parents, the pool's
+    /// minimum fee, and the eviction of a pool at its limit. On the chain's
+    /// executor, as mempool_minimum_fee().
+    [[nodiscard]]
+    ::asio::awaitable<code> test_commit_validated_transaction(mempool_entry entry);
+
     // Metadata relative to a single connected publication. The overload taking
     // a view lets multi-part API responses retain the same reference chain.
     // An unavailable reference leaves both depths at -1; own branch metadata
@@ -924,6 +942,12 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> transaction_validate(transaction_const_ptr tx) const;
 
+    /// Whether submit_transaction(tx) would admit `tx` to the mempool as the
+    /// pool is now, without admitting or announcing it: the pool can change
+    /// before a later submission. Yields the transaction's sigchecks when it would.
+    [[nodiscard]]
+    awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
+
     // =========================================================================
     // PROPERTIES
     // =========================================================================
@@ -1020,6 +1044,17 @@ struct KB_API block_chain {
     // Raw batch fetch: returns serialized block data without deserialization
     [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
     fetch_blocks_raw(uint32_t from, uint32_t to) const;
+
+    // fetch_blocks_raw for as many of the blocks from `from` as fit in
+    // `max_bytes`, never past `to` and never fewer than one: the caller reads
+    // how many came back. Lets a batch be sized by what it holds rather than
+    // by a count of blocks, which says little when a block is anything from
+    // two hundred bytes to tens of megabytes. Every height of the range has
+    // to be stored, whether or not it ends up read: the range is the caller's
+    // statement of what is there. key_not_found when one is not, and when
+    // `from` is above `to`.
+    [[nodiscard]] std::expected<std::vector<data_chunk>, database::result_code>
+    fetch_blocks_raw_within(uint32_t from, uint32_t to, uint64_t max_bytes) const;
 
     [[nodiscard]] awaitable_expected<std::pair<header_ptr, size_t>>
     fetch_block_header(size_t height) const;
@@ -1257,6 +1292,11 @@ private:
     database::data_base database_;
     // db.nocow: the UTXO-Z directory is created NOCOW on btrfs.
     bool const in_place_nocow_;
+    // db.prune_keep_blocks: zero on a node that keeps every block.
+    uint32_t const prune_keep_blocks_;
+    // The built height of the last pruning pass. Touched only by the task that
+    // calls prune_block_files.
+    uint32_t pruned_at_height_{0};
 
     /// The published state on its own. Private: a caller that wants the state
     /// wants the tip and the generation that go with it, and reading them apart
@@ -1287,6 +1327,11 @@ private:
     // and a trim, each ringing mempool_fee_events_ when the minimum moved.
     void note_mempool_block_connected();
     size_t trim_mempool(uint64_t limit);
+
+    // What keeps a validated transaction out of the pool before it is added:
+    // a pooled parent that left, or a fee under the pool's minimum. The caller
+    // holds the validation mutex.
+    code admission_refusal(mempool_entry const& entry, uint64_t limit);
     ::asio::experimental::select_channel<std::monostate> mempool_fee_events_{1};
 
     // Under validation_mutex_: the order of admission, and its doorbell.

@@ -165,6 +165,7 @@ endif()
 set(kth_sources_just_legacy
         ${CMAKE_CURRENT_BINARY_DIR}/generated/version.cpp
         src/chain/block.cpp
+        src/chain/bloom_filter.cpp
         src/chain/block_ticks.cpp
         src/chain/chain_state.cpp
         src/chain/compact.cpp
@@ -182,10 +183,14 @@ set(kth_sources_just_legacy
         src/chain/input.cpp
         src/chain/light_block.cpp
         src/chain/output.cpp
+        src/chain/merkle.cpp
+        src/chain/partial_merkle_tree.cpp
         src/chain/output_point.cpp
         src/chain/point.cpp
         src/chain/point_iterator.cpp
+        src/chain/byte_code_pattern.cpp
         src/chain/script.cpp
+        src/chain/sighash_cache.cpp
         src/chain/transaction.cpp
         src/policy/standardness.cpp
         src/chain/utxo.cpp
@@ -359,8 +364,12 @@ set(kth_headers
     include/kth/domain/chain/points_value.hpp
     include/kth/domain/chain/chain_state.hpp
     include/kth/domain/chain/input_point.hpp
+    include/kth/domain/chain/detail/gpu_merkle.hpp
     include/kth/domain/chain/light_block.hpp
     include/kth/domain/chain/block.hpp
+    include/kth/domain/chain/bloom_filter.hpp
+    include/kth/domain/chain/merkle.hpp
+    include/kth/domain/chain/partial_merkle_tree.hpp
     include/kth/domain/chain/block_ticks.hpp
     include/kth/domain/chain/faster_blocks.hpp
     include/kth/domain/chain/output.hpp
@@ -376,7 +385,9 @@ set(kth_headers
     include/kth/domain/chain/history.hpp
     include/kth/domain/chain/compact.hpp
     include/kth/domain/chain/input.hpp
+    include/kth/domain/chain/byte_code_pattern.hpp
     include/kth/domain/chain/script.hpp
+    include/kth/domain/chain/sighash_cache.hpp
     include/kth/domain/chain/transaction.hpp
     include/kth/domain/chain/point.hpp
     include/kth/domain/chain/point_value.hpp
@@ -448,6 +459,42 @@ endif(ENABLE_POSITION_INDEPENDENT_CODE)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
+
+# Compact block filters for light wallets (Neutrino, BIP157/158). An optional
+# feature: built only when asked for (docs/optional-features.md).
+if (KTH_WITH_NEUTRINO)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_NEUTRINO)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/chain/compact_filter.cpp
+        src/chain/golomb_set.cpp
+        include/kth/domain/chain/compact_filter.hpp
+        include/kth/domain/chain/golomb_set.hpp
+        src/chain/script_filter.cpp
+        src/chain/script_filter_builder.cpp
+        include/kth/domain/chain/script_filter.hpp
+        include/kth/domain/chain/script_filter_builder.hpp
+        src/message/compact_filter.cpp
+        src/message/compact_filter_checkpoint.cpp
+        src/message/compact_filter_headers.cpp
+        src/message/compact_filter_proof.cpp
+        src/message/compact_filter_range.cpp
+        src/message/get_compact_filter_checkpoint.cpp
+        src/message/get_compact_filter_headers.cpp
+        src/message/get_compact_filter_proof.cpp
+        src/message/get_compact_filter_range.cpp
+        src/message/get_compact_filters.cpp
+        include/kth/domain/message/compact_filter.hpp
+        include/kth/domain/message/compact_filter_checkpoint.hpp
+        include/kth/domain/message/compact_filter_headers.hpp
+        include/kth/domain/message/compact_filter_proof.hpp
+        include/kth/domain/message/compact_filter_range.hpp
+        include/kth/domain/message/compact_filter_tree.hpp
+        include/kth/domain/message/get_compact_filter_checkpoint.hpp
+        include/kth/domain/message/get_compact_filter_headers.hpp
+        include/kth/domain/message/get_compact_filter_proof.hpp
+        include/kth/domain/message/get_compact_filter_range.hpp
+        include/kth/domain/message/get_compact_filters.hpp)
+endif()
 
 
 if (NOT ENABLE_SHARED)
@@ -564,6 +611,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/imported_vectors.cpp
         test/chain/vmb_tests.cpp
         test/chain/block.cpp
+        test/chain/bloom_filter.cpp
+        test/chain/merkle.cpp
+        test/chain/partial_merkle_tree.cpp
         test/chain/block_ticks.cpp
         test/chain/abla_ticks.cpp
         test/chain/asert_ticks.cpp
@@ -583,6 +633,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/point_value.cpp
         test/chain/points_value.cpp
         test/chain/satoshi_words.cpp
+        test/chain/byte_code_pattern.cpp
         test/chain/script.cpp
         test/chain/transaction.cpp
         test/main.cpp
@@ -676,6 +727,24 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   include(CTest)
   kth_register_tests(kth_domain_test)
+
+  # The tests of an optional feature are an executable of their own, so that
+  # its workflow builds and runs them and nothing else.
+  if (KTH_WITH_NEUTRINO)
+    add_executable(kth_domain_neutrino_test
+        test/chain/block_merkle_branch.cpp
+        test/chain/compact_filter.cpp
+        test/chain/golomb_set.cpp
+        test/chain/script_filter.cpp
+        test/chain/script_filter_bchd.cpp
+        test/chain/script_filter_builder.cpp
+        test/message/compact_filters.cpp
+        test/message/script_filter_messages.cpp)
+    target_include_directories(kth_domain_neutrino_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_domain_neutrino_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_domain_neutrino_test PRIVATE Catch2::Catch2WithMain)
+    kth_register_tests(kth_domain_neutrino_test)
+  endif()
 endif()
 
 # Benchmarks
@@ -712,7 +781,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(kth_domain_bench_debugger PRIVATE ${PROJECT_NAME})
   target_link_libraries(kth_domain_bench_debugger PRIVATE nanobench::nanobench)
 
+  # Signature hashes of a transaction: the shared hashes computed per input
+  # against kept for the transaction.
+  add_executable(kth_domain_bench_sighash bench/sighash/benchmarks.cpp)
+  target_link_libraries(kth_domain_bench_sighash PRIVATE ${PROJECT_NAME})
+  target_link_libraries(kth_domain_bench_sighash PRIVATE nanobench::nanobench)
+
   _group_sources(kth_domain_bench_merkle "${CMAKE_CURRENT_LIST_DIR}/bench")
+  _group_sources(kth_domain_bench_sighash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_debugger "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_hash "${CMAKE_CURRENT_LIST_DIR}/bench")
   _group_sources(kth_domain_bench_to_data "${CMAKE_CURRENT_LIST_DIR}/bench")

@@ -96,7 +96,7 @@ void executor::start_io_thread() {
 
     // Start io_context in background thread
     io_thread_ = std::thread([this]() {
-        spdlog::info("[executor:io_thread] io_context_.run() starting (thread_id={})",
+        spdlog::debug("[executor:io_thread] io_context_.run() starting (thread_id={})",
             std::hash<std::thread::id>{}(std::this_thread::get_id()));
         try {
             io_context_.run();

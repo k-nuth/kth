@@ -14,6 +14,7 @@
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -30,6 +31,7 @@
 #include <kth/network/protocols_coro.hpp>
 #include <kth/network/settings.hpp>
 
+#include <kth/node/detail/outbound_retry.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 
 #include <asio/awaitable.hpp>
@@ -114,19 +116,19 @@ public:
     ::asio::awaitable<bool> dispatch(peer_session& peer, raw_message const& msg);
 
     /// Register a raw handler for a specific command
-    void register_handler(std::string const& command, message_handler_fn handler);
+    void register_handler(std::string_view command, message_handler_fn handler);
 
     /// Register a typed handler for a specific message type
     /// The message type must have a static 'command' string member
     template <typename Message>
     void register_handler(typed_message_handler_fn<Message> handler) {
-        handlers_[Message::command] = make_handler<Message>(std::move(handler));
+        handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(std::move(handler)));
     }
 
     /// Register a typed handler from a function pointer
     template <typename Message>
     void register_handler(::asio::awaitable<message_result>(*handler)(peer_session&, Message const&)) {
-        handlers_[Message::command] = make_handler<Message>(handler);
+        handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(handler));
     }
 
     /// Register a default handler for unhandled messages
@@ -138,7 +140,7 @@ public:
     /// For requests whose answer waits on the peer's data queue.
     template <typename Message>
     void register_served_handler(typed_message_handler_fn<Message> handler) {
-        served_handlers_[Message::command] = make_handler<Message>(std::move(handler));
+        served_handlers_.insert_or_assign(std::string{Message::command}, make_handler<Message>(std::move(handler)));
     }
 
     /// Announces a tip to one peer. `last_announced` is what this peer's
@@ -247,6 +249,9 @@ namespace detail {
 struct header_ingest_channels;
 struct tx_relay_channels;
 class tx_relay_backlog;
+#if defined(KTH_WITH_NEUTRINO)
+struct compact_filter_channels;
+#endif
 } // namespace detail
 
 /// Woken when at least one block has been announced. Carries nothing: the
@@ -481,6 +486,14 @@ public:
     [[nodiscard]]
     detail::tx_relay_channels& tx_relay();
 
+#if defined(KTH_WITH_NEUTRINO)
+    /// What the peers' services ask of the compact filter index, and the ring
+    /// of each connected tip (detail/compact_filters.hpp). Owned and drained by
+    /// the index when the node serves compact filters. Closed by stop().
+    [[nodiscard]]
+    detail::compact_filter_channels& compact_filters();
+#endif
+
     /// What was announced since the last take. `overflowed` says the registry
     /// refused hashes for want of room, so the list is not the whole story and
     /// something unaccounted for may be missing — a consumer that cannot verify
@@ -595,7 +608,8 @@ private:
     ::asio::awaitable<void> connect_to_seed(
         std::string seed_host,
         uint16_t seed_port,
-        std::shared_ptr<std::atomic<size_t>> seeds_completed);
+        std::shared_ptr<std::atomic<size_t>> seeds_completed,
+        std::stop_token enough);
 
     uint64_t generate_nonce();
 
@@ -613,13 +627,9 @@ private:
     // Prevents multiple simultaneous connection attempts to the same IP
     boost::concurrent_flat_set<::asio::ip::address, salted_ip_hasher> pending_connections_;
 
-    // Track recently failed connection IPs with cooldown timestamp
-    // Prevents rapid reconnection to failing peers
-    boost::concurrent_flat_map<
-        ::asio::ip::address,
-        std::chrono::steady_clock::time_point,
-        salted_ip_hasher
-    > failed_connections_;
+    // Addresses left alone for a while: the ones that could not be reached,
+    // and the ones whose sessions keep ending at once.
+    detail::outbound_retry outbound_retry_;
 
     // Acceptor for inbound connections
     std::unique_ptr<::asio::ip::tcp::acceptor> acceptor_;
@@ -778,6 +788,9 @@ private:
 
     std::unique_ptr<detail::header_ingest_channels> header_ingest_;
     std::unique_ptr<detail::tx_relay_channels> tx_relay_;
+#if defined(KTH_WITH_NEUTRINO)
+    std::unique_ptr<detail::compact_filter_channels> compact_filters_;
+#endif
 
     /// Each form a header or an announcement arrives in. Every one of them
     /// states what it does with the message; none accepts a message and

@@ -10,9 +10,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const address::command = "addr";
-uint32_t const address::version_minimum = version::level::minimum;
-uint32_t const address::version_maximum = version::level::maximum;
 
 address::address(infrastructure::message::network_address::list addresses)
     : addresses_(std::move(addresses))

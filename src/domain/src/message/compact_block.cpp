@@ -26,9 +26,6 @@ constexpr size_t min_prefilled_wire_size = 1 + min_wire_transaction_size;
 
 } // namespace
 
-std::string const compact_block::command = "cmpctblock";
-uint32_t const compact_block::version_minimum = version::level::bip152;
-uint32_t const compact_block::version_maximum = version::level::bip152;
 
 uint64_t compact_short_id(hash_digest const& header_nonce_hash, hash_digest const& txid) {
     auto const k0 = from_little_endian_unsafe<uint64_t>(header_nonce_hash);

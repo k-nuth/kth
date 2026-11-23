@@ -169,6 +169,32 @@ TEST_CASE("tx announcement schedule: in order of admission, skipping what the pe
     CHECK(schedule.due() == clock_type::time_point::max());
 }
 
+TEST_CASE("tx announcement schedule: a peer with a bloom filter is announced what the filter matches",
+          "[tx announcement]") {
+    tx_announcement_schedule schedule(false, 0);
+    network::tx_inventory inventory;
+    auto filter = *domain::chain::bloom_filter::sized(10, 0.000001, 0, domain::chain::bloom_filter::update_none);
+    filter.insert(txid(2));
+    filter.insert(txid(4));
+    inventory.load_filter(filter);
+
+    std::vector<hash_digest> out;
+    schedule.take(batch({1, 2, 3, 4}, 4), true, inventory, 100, out);
+    CHECK(out == txids({2, 4}));
+    // What was filtered out is not owed again: the cursor passed it.
+    CHECK(schedule.cursor() == 4);
+    CHECK(inventory.announced(txid(2)));
+    CHECK_FALSE(inventory.announced(txid(1)));
+
+    // The answer to `mempool` goes through the same filter.
+    network::tx_inventory asking;
+    asking.load_filter(filter);
+    std::vector<hash_digest> listed;
+    take_mempool(batch({1, 2, 3, 4}, 4), asking, listed);
+    CHECK(listed == txids({2, 4}));
+    CHECK_FALSE(asking.known(txid(3)));
+}
+
 TEST_CASE("tx announcement schedule: past one announcement's worth, the rest waits for the next",
           "[tx_announcement][schedule]") {
     auto const t0 = clock_type::now();
@@ -363,6 +389,34 @@ TEST_CASE("the peer's service skips what the peer knows or filters",
     pool.admit(3, 2000);
     peer.session->announce_admissions({3, clock_type::now()});
     CHECK(peer.invs(300ms) == std::vector<hash_list>{txids({3})});
+}
+
+// BIP37: a filter message turns the announcements of such a peer on. What is
+// admitted from then on is owed to it, and what passed before is not.
+TEST_CASE("the peer's service announces to a peer that asked for no transactions once it sends a filter message",
+          "[tx_announcement][service]") {
+    order pool;
+    served_peer peer(false);
+    node::message_dispatcher dispatcher;
+    dispatcher.set_tx_announcement_handler(pool.sources());
+    dispatcher.set_fee_filter_draw([] { return 0.5; });
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+    peer.run(50ms);
+
+    pool.admit(1);
+    peer.session->announce_admissions({1, clock_type::now()});
+    CHECK(peer.invs(300ms).empty());
+
+    // As the read loop takes a `filterclear`, on the session's strand.
+    peer.session->tx_inventory().clear_filter();
+    pool.admit(2);
+    peer.session->announce_admissions({2, clock_type::now()});
+    CHECK(peer.invs(300ms) == std::vector<hash_list>{txids({2})});
+
+    peer.session->stop();
+    peer.io.restart();
+    peer.io.run_for(200ms);
+    CHECK(service.wait_for(0s) == std::future_status::ready);
 }
 
 TEST_CASE("the peer's service announces nothing to a peer that asked for no transactions",

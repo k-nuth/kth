@@ -1380,3 +1380,132 @@ TEST_CASE("config script parser handles whitespace through the expected factory"
     REQUIRE(valid->to_data() == kth::data_chunk{0x76, 0xa9});
     REQUIRE_FALSE(kth::domain::config::script::parse_from("not_an_opcode"));
 }
+
+// The hashes of the whole transaction, kept across its signature hashes.
+//-----------------------------------------------------------------------------
+
+namespace {
+
+ec_secret const shared_hashes_secret = "ce8f4b713ffdd2658900845251890f30371856be201cd1f5b3d970f793634333"_hash;
+
+// Pay to the public key of `shared_hashes_secret`.
+script shared_hashes_prevout_script() {
+    ec_compressed point;
+    REQUIRE(secret_to_public(point, shared_hashes_secret));
+    return script(operation::list{operation(data_chunk(point.begin(), point.end())), operation(opcode::checksig)});
+}
+
+// A transaction whose inputs, sequences and outputs all differ, with the
+// outputs it spends in place (SIGHASH_UTXOS hashes them). `input_scripts`,
+// when given, are the unlocking scripts; a signature does not cover them.
+chain::transaction several_inputs_transaction(size_t inputs, size_t outputs, std::vector<script> const& input_scripts = {}) {
+    auto const prevout_script = shared_hashes_prevout_script();
+
+    chain::input::list ins;
+    for (size_t i = 0; i < inputs; ++i) {
+        hash_digest previous{};
+        previous[0] = uint8_t(i + 1);
+        previous[31] = 0xab;
+        ins.emplace_back(chain::output_point{previous, uint32_t(i)},
+            i < input_scripts.size() ? input_scripts[i] : chain::script{}, 0xfffffff0u + uint32_t(i));
+    }
+    chain::output::list outs;
+    for (size_t i = 0; i < outputs; ++i) {
+        outs.emplace_back(uint64_t(1000 * (i + 1)), prevout_script, std::nullopt);
+    }
+    chain::transaction tx(2, 7, std::move(ins), std::move(outs));
+    for (size_t i = 0; i < inputs; ++i) {
+        tx.inputs()[i].previous_output().validation.cache = chain::output(uint64_t(5000 + i), prevout_script, std::nullopt);
+    }
+    return tx;
+}
+
+} // namespace
+
+TEST_CASE("script signature hash is the same with the hashes of the transaction kept across its inputs", "[script][sighash_cache]") {
+    auto const tx = several_inputs_transaction(5, 3);
+    auto const script_code = shared_hashes_prevout_script();
+    static constexpr script_flags_t active_flags = to_flags(upgrade::bch_leibniz);
+
+    // One set of shared hashes for every signature hash below, as a verifier
+    // of this transaction would keep it.
+    chain::sighash_cache shared(tx);
+
+    for (uint8_t const base : {sighash_algorithm::all, sighash_algorithm::none, sighash_algorithm::single}) {
+        for (uint8_t const anyone_can_pay : {uint8_t(0), uint8_t(sighash_algorithm::anyone_can_pay)}) {
+            for (uint8_t const utxos : {uint8_t(0), uint8_t(sighash_algorithm::utxos)}) {
+                auto const sighash_type = uint8_t(base | sighash_algorithm::forkid | anyone_can_pay | utxos);
+                for (uint32_t index = 0; index < tx.inputs().size(); ++index) {
+                    auto const value = tx.inputs()[index].previous_output().validation.cache.value();
+                    auto const alone = script::generate_signature_hash(tx, index, script_code, sighash_type, active_flags, value);
+                    auto const kept = script::generate_signature_hash(tx, index, script_code, sighash_type, active_flags, value, &shared);
+                    INFO("sighash type " << int(sighash_type) << ", input " << index);
+                    REQUIRE(kept.first == alone.first);
+                    REQUIRE(kept.second == alone.second);
+                }
+            }
+        }
+    }
+
+    // The legacy algorithm (no fork id) takes nothing from them.
+    auto const legacy_alone = script::generate_signature_hash(tx, 1, script_code, sighash_algorithm::all, active_flags, 5001);
+    auto const legacy_kept = script::generate_signature_hash(tx, 1, script_code, sighash_algorithm::all, active_flags, 5001, &shared);
+    REQUIRE(legacy_kept.first == legacy_alone.first);
+}
+
+TEST_CASE("script signature hash ignores the kept hashes of another transaction", "[script][sighash_cache]") {
+    auto const tx = several_inputs_transaction(4, 2);
+    auto const other = several_inputs_transaction(6, 5);
+    auto const script_code = shared_hashes_prevout_script();
+    static constexpr script_flags_t active_flags = to_flags(upgrade::bch_leibniz);
+    auto const sighash_type = uint8_t(sighash_algorithm::all | sighash_algorithm::forkid);
+
+    // Filled with the hashes of `other`.
+    chain::sighash_cache of_other(other);
+    (void)script::generate_signature_hash(other, 0, script_code, sighash_type, active_flags, 5000, &of_other);
+
+    auto const alone = script::generate_signature_hash(tx, 2, script_code, sighash_type, active_flags, 5002);
+    auto const with_other = script::generate_signature_hash(tx, 2, script_code, sighash_type, active_flags, 5002, &of_other);
+    REQUIRE(with_other.first == alone.first);
+    REQUIRE(alone.first != script::generate_signature_hash(other, 2, script_code, sighash_type, active_flags, 5002).first);
+}
+
+TEST_CASE("script verification gives the same verdicts with the hashes of the transaction kept across its inputs", "[script][sighash_cache]") {
+    auto const unsigned_tx = several_inputs_transaction(4, 3);
+    auto const prevout_script = shared_hashes_prevout_script();
+    static constexpr script_flags_t active_flags = to_flags(upgrade::bch_leibniz);
+    auto const sighash_type = uint8_t(sighash_algorithm::all | sighash_algorithm::forkid);
+
+    // Sign every input.
+    std::vector<script> signatures;
+    for (uint32_t index = 0; index < unsigned_tx.inputs().size(); ++index) {
+        auto const value = unsigned_tx.inputs()[index].previous_output().validation.cache.value();
+        auto const endorsement = script::create_endorsement(shared_hashes_secret, prevout_script, unsigned_tx, index,
+            sighash_type, active_flags, value);
+        REQUIRE(endorsement.has_value());
+        signatures.emplace_back(operation::list{operation(*endorsement)});
+    }
+    auto const tx = several_inputs_transaction(4, 3, signatures);
+
+    {
+        chain::sighash_cache shared(tx);
+        for (uint32_t index = 0; index < tx.inputs().size(); ++index) {
+            INFO("input " << index);
+            REQUIRE(chain::verify_with_sigchecks(tx, index, active_flags).first == error::success);
+            REQUIRE(chain::verify_with_sigchecks(tx, index, active_flags, &shared).first == error::success);
+        }
+    }
+
+    // One signature moved to another input: that input fails, with or without
+    // the kept hashes, and the others still pass.
+    signatures[2] = signatures[1];
+    auto const tampered = several_inputs_transaction(4, 3, signatures);
+    chain::sighash_cache shared(tampered);
+    for (uint32_t index = 0; index < tampered.inputs().size(); ++index) {
+        INFO("input " << index);
+        auto const alone = chain::verify_with_sigchecks(tampered, index, active_flags).first;
+        auto const kept = chain::verify_with_sigchecks(tampered, index, active_flags, &shared).first;
+        REQUIRE(kept == alone);
+        REQUIRE((alone == error::success) == (index != 2));
+    }
+}

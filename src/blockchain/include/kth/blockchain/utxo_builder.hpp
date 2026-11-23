@@ -13,6 +13,7 @@
 #include <span>
 #include <vector>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
@@ -33,6 +34,7 @@
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/point.hpp>
 #include <kth/infrastructure/math/hash.hpp>
+#include <kth/infrastructure/math/hash_dispatch.hpp>
 
 // Fast hasher for outpoints during IBD.
 // Since txid is already SHA256 (uniformly distributed), we just grab the
@@ -58,14 +60,6 @@ struct block_chain;
 // Outputs store raw bytes (value + script) as a span into the original buffer.
 // Inputs store only the outpoint being spent.
 // =============================================================================
-
-/// UTXO storage reference: points to the transaction in blk*.dat flat files.
-/// In reference mode, this 8-byte value replaces the full serialized output data.
-struct reference_utxo_ref {
-    uint32_t file_number;   // blk*.dat file number
-    uint32_t tx_offset;     // absolute byte offset of the tx within that file
-};
-static_assert(sizeof(reference_utxo_ref) == 8);
 
 struct utxo_compact_block {
     struct output_entry {
@@ -94,6 +88,29 @@ struct utxo_compact_block {
 KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block,
     std::span<hash_digest const> txids = {});
 
+// Which block of a run could not be parsed, and why.
+struct utxo_parse_failure {
+    size_t block;
+    code error;
+};
+
+// parse_utxo_block for a run of blocks: one result per block, in order, each
+// the same as parsing that block alone. What differs is that the identifiers
+// of every transaction of the run are hashed in a single batch, which is what
+// lets them be hashed several in step however small each block is.
+//
+// txids[i], when present and not empty, are the identifiers already known for
+// raw_blocks[i]; the run may be longer than txids.
+//
+// `hashing`, when given, decides where the batch is hashed (processor or
+// device) and learns from it; it belongs to the caller and is used only during
+// the call. Without it the batch is hashed on the processor.
+[[nodiscard]]
+KB_API std::expected<std::vector<utxo_compact_block>, utxo_parse_failure> parse_utxo_blocks(
+    std::span<byte_span const> raw_blocks,
+    std::span<std::span<hash_digest const> const> txids = {},
+    hash_dispatch::dispatcher* hashing = nullptr);
+
 // =============================================================================
 // Pre-serialized UTXO value for zero-copy insertion into UTXO-Z.
 // =============================================================================
@@ -103,8 +120,22 @@ KB_API expect<utxo_compact_block> parse_utxo_block(byte_span raw_block,
 // =============================================================================
 
 struct utxo_raw_value {
-    std::vector<uint8_t> data;      // serialized in format above
-    uint32_t height;                // also passed separately to UTXO-Z insert()
+    // Held in place up to this many bytes. A delta carries one of these per
+    // output, millions in a batch, and nearly all of them are a pay-to-key-hash
+    // or pay-to-script-hash output: 34 or 32 bytes of wire output and 9 of
+    // metadata. In place, creating and dropping one does not go to the
+    // allocator; a longer value is allocated as before.
+    static constexpr size_t inline_bytes = 48;
+    using bytes = boost::container::small_vector<uint8_t, inline_bytes>;
+
+    bytes data;                     // serialized in format above
+    uint32_t height{0};             // also passed separately to UTXO-Z insert()
+
+    utxo_raw_value() = default;
+    utxo_raw_value(bytes value, uint32_t at)
+        : data(std::move(value)), height(at) {}
+    utxo_raw_value(std::span<uint8_t const> value, uint32_t at)
+        : data(value.begin(), value.end()), height(at) {}
 };
 
 // =============================================================================
@@ -388,7 +419,7 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
 
     for (auto const& key : block_delta.authorized_replacements) {
         if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
-            undo.spent.push_back({key, it->second.data, it->second.height});
+            undo.spent.push_back({key, {it->second.data.begin(), it->second.data.end()}, it->second.height});
             continue;
         }
         auto stored = source.find_utxo_raw(key, height);
@@ -440,7 +471,7 @@ std::expected<database::block_undo, database::result_code> capture_block_undo(
         // Parent created earlier in this same batch: it lives only in the
         // in-flight delta, UTXO-Z has not seen it yet.
         if (auto it = batch_delta.inserts.find(key); it != batch_delta.inserts.end()) {
-            undo.spent.push_back({key, it->second.data, it->second.height});
+            undo.spent.push_back({key, {it->second.data.begin(), it->second.data.end()}, it->second.height});
             continue;
         }
 

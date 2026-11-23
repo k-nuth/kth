@@ -10,13 +10,16 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -28,10 +31,12 @@
 #include <asio/executor_work_guard.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/tcp.hpp>
+#include <asio/post.hpp>
 #include <asio/read.hpp>
 #include <asio/use_future.hpp>
 #include <asio/write.hpp>
 
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
@@ -127,6 +132,57 @@ struct captured_log {
         return n;
     }
 };
+
+// Keeps the threads that wrote a line carrying `needle`.
+struct writer_threads final : spdlog::sinks::base_sink<std::mutex> {
+    explicit writer_threads(std::string needle) : needle_(std::move(needle)) {}
+
+    [[nodiscard]] std::set<std::thread::id> seen() {
+        std::lock_guard const lock(mutex_);
+        return threads_;
+    }
+
+    // Drop what was seen so far, so that only what writes from here on counts.
+    void forget() {
+        std::lock_guard const lock(mutex_);
+        threads_.clear();
+    }
+
+protected:
+    void sink_it_(spdlog::details::log_msg const& msg) override {
+        if (std::string_view(msg.payload.data(), msg.payload.size()).find(needle_) != std::string_view::npos) {
+            threads_.insert(std::this_thread::get_id());
+        }
+    }
+
+    void flush_() override {}
+
+private:
+    std::string needle_;
+    std::set<std::thread::id> threads_;
+};
+
+// Every thread of the pool, each caught once: no handler returns before all of
+// them have started, so no thread can take two.
+std::set<std::thread::id> threads_of(threadpool& pool) {
+    auto const expected = pool.size();
+    std::mutex mutex;
+    std::condition_variable all_in;
+    std::set<std::thread::id> threads;
+    std::vector<std::future<void>> handlers;
+    for (size_t i = 0; i < expected; ++i) {
+        handlers.push_back(::asio::post(pool.get_executor(), std::packaged_task<void()>([&] {
+            std::unique_lock lock(mutex);
+            threads.insert(std::this_thread::get_id());
+            all_in.notify_all();
+            all_in.wait(lock, [&] { return threads.size() == expected; });
+        })));
+    }
+    for (auto& handler : handlers) {
+        handler.get();
+    }
+    return threads;
+}
 
 network::settings node_settings(std::string const& tag) {
     network::settings settings;
@@ -303,7 +359,7 @@ struct wire_peer {
     }
 
     // What arrives from this peer, through the read loop's own entry point.
-    network::raw_message message(std::string const& command, data_chunk payload) const {
+    network::raw_message message(std::string_view command, data_chunk payload) const {
         network::raw_message raw;
         raw.heading = domain::message::heading(0xdab5bffa, command, uint32_t(payload.size()), 0);
         raw.payload = std::move(payload);
@@ -573,6 +629,55 @@ TEST_CASE("integrated: confirming the tip opens the first block range, exactly o
 
     // A peer at the same tip is not accused of anything.
     CHECK(log.count("Peer error") == 0u);
+}
+
+// The UTXO stage applies a batch and makes it durable without suspending: the
+// transition record, the store's sync, the mutations, the undo files and the
+// durability barrier are all synchronous calls. On a thread of the network pool
+// each of them is a thread that reads no socket for as long as the disk takes.
+TEST_CASE("integrated: the UTXO stage runs on none of the network threads",
+          "[header_tip][integration]") {
+    captured_log log;
+    auto const utxo_stage = std::make_shared<writer_threads>("[utxo_build]");
+    log.installed->sinks().push_back(utxo_stage);
+
+    chain_fixture fixture{"utxo_stage_thread"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const staged = stage(fixture, 5, 2);
+
+    // Staging the fixture runs a UTXO build of its own, which logs the same
+    // lines from its own thread. Neither is the node's: what it started and
+    // where it wrote are left out, so only the node's stage is observed.
+    auto const started_by_fixture = log.count("[utxo_build] Task started");
+    utxo_stage->forget();
+
+    auto const peer_config = node_settings("utxo_stage_thread_peer");
+    wire_peer peer(peer_config, 9001, 5);
+
+    bool started = false;
+    bool stopped_cleanly = false;
+    std::set<std::thread::id> network_threads;
+    {
+        node_run run(fixture, "utxo_stage_thread");
+        run.connect(peer.session);
+        started = wait_until([&] {
+            return log.count("[utxo_build] Task started") > started_by_fixture;
+        }, quick);
+        network_threads = threads_of(run.network.thread_pool());
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("utxo_stage_thread");
+
+    CHECK(stopped_cleanly);
+    REQUIRE(started);
+    REQUIRE_FALSE(network_threads.empty());
+
+    auto const stage_threads = utxo_stage->seen();
+    REQUIRE_FALSE(stage_threads.empty());
+    for (auto const& thread : stage_threads) {
+        CHECK_FALSE(network_threads.contains(thread));
+    }
 }
 
 TEST_CASE("integrated: a new header after the tip is confirmed opens its body range",
@@ -879,7 +984,7 @@ TEST_CASE("integrated: a header whose parent we lack is followed up, not scored"
 
 namespace {
 
-size_t count_command(std::vector<wire_peer::sent_message> const& sent, std::string const& command) {
+size_t count_command(std::vector<wire_peer::sent_message> const& sent, std::string_view command) {
     return size_t(std::count_if(sent.begin(), sent.end(),
         [&](auto const& message) { return message.command == command; }));
 }
@@ -2024,7 +2129,7 @@ network::raw_message from_peer(wire_peer const& peer, Message const& message) {
 // What the node writes to `peer` from now up to the first message with
 // `command`, that one included, within `limit`. Ends early, without it, when
 // nothing more arrives in time.
-std::vector<network::raw_message> sent_through(wire_peer& peer, std::string const& command,
+std::vector<network::raw_message> sent_through(wire_peer& peer, std::string_view command,
     std::chrono::milliseconds limit = quick) {
 
     std::vector<network::raw_message> out;
@@ -2046,7 +2151,7 @@ std::vector<network::raw_message> sent_through(wire_peer& peer, std::string cons
 
 // The first message with `command` the node writes to `peer` within `limit`.
 // The commands of those before it are kept in `skipped`.
-std::optional<network::raw_message> next_sent(wire_peer& peer, std::string const& command,
+std::optional<network::raw_message> next_sent(wire_peer& peer, std::string_view command,
     std::chrono::milliseconds limit = quick, std::vector<std::string>* skipped = nullptr) {
 
     auto sent = sent_through(peer, command, limit);
