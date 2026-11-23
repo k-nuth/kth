@@ -295,6 +295,12 @@ void add_settings(CLI::App& app, configuration& cfg) {
 #endif
 
     // [node]
+    // Known to every build: a build without the feature refuses it (see
+    // check_bloom_filters) rather than ignore it in a configuration file.
+    app.add_option("--node.bloom_filters",         cfg.node.bloom_filters,
+        "Serve wallets that load a bloom filter: filterload, filteradd, filterclear and merkleblock "
+        "answers. Needs a build with the option bloom_filters, where it is on by default; "
+        "off in a build without it.");
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
@@ -401,6 +407,18 @@ bool check_compact_filters(configuration const& cfg, std::ostream& error) {
                  "(db.prune_keep_blocks); it needs every block." << std::endl;
         return false;
     }
+    return true;
+}
+
+// A build without the feature does not serve bloom filters, so it does not
+// start as if it did.
+bool check_bloom_filters([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(KTH_WITH_BLOOM_FILTERS)
+    if (cfg.node.bloom_filters) {
+        error << "Error: node.bloom_filters needs a build with the option bloom_filters." << std::endl;
+        return false;
+    }
+#endif
     return true;
 }
 
@@ -557,7 +575,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
         }
 
         if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
-            || ! check_proxy(configured, error)) {
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)) {
             return false;
         }
 
@@ -634,7 +652,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
     }
 
     if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
-            || ! check_proxy(configured, error)) {
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)) {
         return false;
     }
 

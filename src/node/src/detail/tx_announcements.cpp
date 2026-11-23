@@ -61,6 +61,10 @@ void tx_announcement_schedule::take(admitted_batch const& batch, bool complete,
         if (filter != 0 && fee_per_kb(entry) < filter) {
             continue;
         }
+        // Last, as a match adds to the peer's bloom filter (BIP37).
+        if ( ! inventory.wants(*entry.tx)) {
+            continue;
+        }
         out.push_back(txid);
         inventory.add_announced(txid);
     }
@@ -75,6 +79,9 @@ void take_mempool(admitted_batch const& pool, network::tx_inventory& inventory,
     auto const filter = inventory.fee_filter();
     for (auto const& entry : pool.entries) {
         if (filter != 0 && fee_per_kb(entry) < filter) {
+            continue;
+        }
+        if ( ! inventory.wants(*entry.tx)) {
             continue;
         }
         auto const txid = entry.tx->hash();

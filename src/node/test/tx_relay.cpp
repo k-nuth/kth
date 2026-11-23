@@ -23,6 +23,9 @@
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <boost/unordered/unordered_flat_set.hpp>
 
+#include <kth/domain/message/filter_add.hpp>
+#include <kth/domain/message/filter_clear.hpp>
+#include <kth/domain/message/filter_load.hpp>
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/get_data.hpp>
 #include <kth/domain/message/inventory.hpp>
@@ -1441,6 +1444,45 @@ TEST_CASE("relay routing: a mempool is let through only with bloom filters offer
         CHECK(node.observe_transaction_message(peer, request));
         CHECK_FALSE(peer->stopped());
         CHECK(requested(peer));
+    }
+}
+
+// BIP111, as BCHN takes it. A node that does not offer bloom filters says so
+// with its service bits, and a peer that loads a filter anyway is not served.
+TEST_CASE("relay routing: a filter message to a node that offers no bloom filters ends the session",
+          "[tx_relay][routing][bip111]") {
+    using network::permission_flags;
+    ::asio::io_context ioc;
+    auto const settings = relay_settings();
+    p2p_node node(settings);
+    // filterload: no bytes, no hash functions, no tweak, no flags.
+    auto const load = wire(domain::message::filter_load::command, data_chunk{0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    auto const add = wire(domain::message::filter_add::command, data_chunk{1, 0x42});
+    auto const clear = wire(domain::message::filter_clear::command, data_chunk{});
+
+    SECTION("filterload disconnects the peer") {
+        auto peer = make_peer(ioc, settings, 9531);
+        CHECK(node.observe_transaction_message(peer, load));
+        CHECK(peer->stopped());
+        CHECK_FALSE(peer->tx_inventory().relay_requested());
+    }
+    SECTION("filteradd disconnects the peer") {
+        auto peer = make_peer(ioc, settings, 9532);
+        CHECK(node.observe_transaction_message(peer, add));
+        CHECK(peer->stopped());
+    }
+    SECTION("a peer that may not be disconnected is ignored") {
+        auto peer = make_peer(ioc, settings, 9533);
+        peer->set_permissions(permission_flags::noban);
+        CHECK(node.observe_transaction_message(peer, load));
+        CHECK_FALSE(peer->stopped());
+        CHECK_FALSE(peer->tx_inventory().relay_requested());
+    }
+    SECTION("filterclear turns the peer's announcements on and keeps the session") {
+        auto peer = make_peer(ioc, settings, 9534);
+        CHECK(node.observe_transaction_message(peer, clear));
+        CHECK_FALSE(peer->stopped());
+        CHECK(peer->tx_inventory().relay_requested());
     }
 }
 

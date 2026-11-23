@@ -383,6 +383,15 @@ if (MINGW)
   target_link_libraries(${PROJECT_NAME} PUBLIC ws2_32 wsock32)
 endif()
 
+# Serving wallets that load a bloom filter (BIP37). An optional feature: built
+# only when asked for (docs/optional-features.md).
+if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_BLOOM_FILTERS)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/detail/bloom_filters.cpp
+    include/kth/node/detail/bloom_filters.hpp)
+endif()
+
 # Serving compact block filters to light wallets (Neutrino, BIP157/158). An
 # optional feature: built only when asked for (docs/optional-features.md).
 if(KTH_WITH_NEUTRINO AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -593,9 +602,19 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_socks5_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_socks5_test PRIVATE Catch2::Catch2WithMain)
   endif()
+  if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_bloom_filters_test
+      test/bloom_filters.cpp)
+    target_include_directories(kth_node_bloom_filters_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_bloom_filters_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_bloom_filters_test PRIVATE Catch2::Catch2WithMain)
+  endif()
 
   include(CTest)
   kth_register_tests(kth_node_test TIMEOUT 600)
+  if(TARGET kth_node_bloom_filters_test)
+    kth_register_tests(kth_node_bloom_filters_test TIMEOUT 600)
+  endif()
   if(TARGET kth_node_neutrino_test)
     kth_register_tests(kth_node_neutrino_test TIMEOUT 600)
   endif()

@@ -114,6 +114,9 @@ class KthRecipe(KnuthConanFileV2):
         # Outbound connections through a SOCKS5 proxy (Tor). Not part of the
         # consensus protocol, so off unless asked for.
         "socks5": [True, False],
+        # Serving wallets that load a bloom filter (BIP37). Not part of the
+        # consensus protocol, so off unless asked for.
+        "bloom_filters": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -162,6 +165,7 @@ class KthRecipe(KnuthConanFileV2):
         "websocket": False,
         "neutrino": False,
         "socks5": False,
+        "bloom_filters": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -422,6 +426,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.websocket)
         tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
         tc.variables["KTH_WITH_SOCKS5"] = option_on_off(self.options.socks5)
+        tc.variables["KTH_WITH_BLOOM_FILTERS"] = option_on_off(self.options.bloom_filters)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -716,6 +721,8 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
         self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines + sigverify_defines
+        if self.options.bloom_filters and self.settings.os != "Emscripten":
+            self.cpp_info.components["node"].defines.append("KTH_WITH_BLOOM_FILTERS")
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict

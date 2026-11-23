@@ -103,11 +103,11 @@
 // cmpctblock   v3      70014   BIP152
 // getblocktxn  v3      70014   BIP152
 // sendcmpct    v3      70014   BIP152
-// merkleblock  v3      70001   BIP037  no bloom filters so unfiltered only
+// merkleblock  v3      70001   BIP037  the peer's bloom filter applied
+// filterload   v3      70001   BIP037  served unless node.bloom_filters is off, see BIP111
+// filteradd    v3      70001   BIP037  served unless node.bloom_filters is off, see BIP111
+// filterclear  v3      70001   BIP037  served unless node.bloom_filters is off, see BIP111
 // ----------------------------------------------------------------------------
-// filterload   --      70001   BIP037  no intent to support, see BIP111
-// filteradd    --      70001   BIP037  no intent to support, see BIP111
-// filterclear  --      70001   BIP037  no intent to support, see BIP111
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 namespace kth {

@@ -4,7 +4,14 @@
 
 #include <test_helpers.hpp>
 #include <kth/node.hpp>
+#include <filesystem>
 #include <fstream>
+#include <future>
+
+#include <asio/co_spawn.hpp>
+#include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
+
 #include <sstream>
 #if defined(_WIN32)
 #include <process.h>
@@ -89,6 +96,65 @@ TEST_CASE("outbound proxy settings are empty and randomized by default", "[confi
     CHECK(defaults.configured.network.proxy.empty());
     CHECK(defaults.configured.network.proxy_randomize);
 }
+
+#if ! defined(KTH_WITH_BLOOM_FILTERS)
+// A build without the feature serves no bloom filters, so it does not start as
+// if it did.
+TEST_CASE("bloom filters are off, and refused, in a build without the feature", "[configuration tests][parser][bloom filters]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK_FALSE(defaults.configured.node.bloom_filters);
+
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "true"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("bloom_refused", "node.bloom_filters=true");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("turned off, it is what the build does anyway") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "false"};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
+}
+
+TEST_CASE("a node built without bloom filters does not start as one that serves them", "[configuration tests][node][bloom filters]") {
+    auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_bloom_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    auto const config = [&dir](bool filters) {
+        node::configuration cfg{domain::config::network::regtest};
+        cfg.database.directory = dir;
+        cfg.database.db_max_size = 16ULL << 20;
+        cfg.network.threads = 0;
+        cfg.network.peers_file = dir / "peers.dat";
+        cfg.network.hosts_file = dir / "hosts.dat";
+        cfg.node.bloom_filters = filters;
+        return cfg;
+    };
+
+    node::full_node node{config(true)};
+    CHECK((node.network_settings().services & bloom) == 0);
+
+    ::asio::io_context io;
+    auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+    io.run();
+    CHECK(started.get() == error::operation_failed);
+    std::filesystem::remove_all(dir, ec);
+}
+#endif
 
 #if ! defined(KTH_WITH_SOCKS5)
 // A build without the feature cannot use a proxy. Taking the setting and going
