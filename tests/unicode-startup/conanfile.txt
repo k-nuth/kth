@@ -1,0 +1,5 @@
+[requires]
+simdutf/9.3.2
+[generators]
+CMakeDeps
+CMakeToolchain

@@ -25,6 +25,40 @@ TEST_CASE("parser retains explicit settings after network defaults are rebuilt",
     CHECK(parser.configured.network.outbound_connections == 0);
 }
 
+TEST_CASE("parser accepts a pruning depth of zero or at least the minimum", "[configuration tests][parser][prune]") {
+    auto const parse = [](char const* value, uint32_t* parsed = nullptr) {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--db.prune_keep_blocks", value};
+        std::ostringstream error;
+        auto const ok = parser.parse(5, argv, error);
+        if (ok && parsed) *parsed = parser.configured.database.prune_keep_blocks;
+        return ok;
+    };
+
+    // Every block is kept unless the option says otherwise.
+    {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest"};
+        std::ostringstream error;
+        REQUIRE(parser.parse(3, argv, error));
+        CHECK(parser.configured.database.prune_keep_blocks == 0u);
+    }
+
+    uint32_t parsed = 1;
+    CHECK(parse("0", &parsed));
+    CHECK(parsed == 0u);
+    CHECK(parse("288", &parsed));
+    CHECK(parsed == 288u);
+    CHECK(parse("10000", &parsed));
+    CHECK(parsed == 10000u);
+
+    // Fewer than a limited node has to serve.
+    CHECK_FALSE(parse("1"));
+    CHECK_FALSE(parse("287"));
+    CHECK_FALSE(parse("-1"));
+    CHECK_FALSE(parse("many"));
+}
+
 namespace {
 
 int process_id() {
@@ -451,8 +485,8 @@ TEST_CASE("parser config network rebuilds defaults and preserves command line pr
 }
 #endif
 
-TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[configuration tests][parser]") {
-    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 500u);
+TEST_CASE("validation_batch_blocks defaults to 20000 and accepts 1..20000", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 20000u);
     {
         std::ostringstream error;
         config_file file("batch_blocks", "chain.validation_batch_blocks=250");
@@ -460,10 +494,27 @@ TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[confi
         REQUIRE(parser.parse_from_file(file.path(), error));
         CHECK(parser.configured.chain.validation_batch_blocks == 250u);
     }
-    for (char const* refused : {"0", "1001"}) {
+    for (char const* refused : {"0", "20001"}) {
         std::ostringstream error;
         node::parser parser(domain::config::network::mainnet);
         char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_blocks", refused};
+        CHECK_FALSE(parser.parse(5, argv, error));
+    }
+}
+
+TEST_CASE("validation_batch_bytes defaults to 512 MiB and refuses zero", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_bytes == (uint64_t{512} << 20));
+    {
+        std::ostringstream error;
+        config_file file("batch_bytes", "chain.validation_batch_bytes=1048576");
+        node::parser parser(domain::config::network::mainnet);
+        REQUIRE(parser.parse_from_file(file.path(), error));
+        CHECK(parser.configured.chain.validation_batch_bytes == 1048576u);
+    }
+    {
+        std::ostringstream error;
+        node::parser parser(domain::config::network::mainnet);
+        char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_bytes", "0"};
         CHECK_FALSE(parser.parse(5, argv, error));
     }
 }

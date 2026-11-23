@@ -11,6 +11,8 @@
 
 #include <kth/domain/chain/abla.hpp>
 #include <kth/domain/chain/block.hpp>
+#include <kth/domain/chain/bloom_filter.hpp>
+#include <kth/domain/chain/partial_merkle_tree.hpp>
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/chain/header.hpp>
@@ -46,6 +48,14 @@
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/block_transactions.hpp>
 #include <kth/domain/message/compact_block.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/domain/message/compact_filter.hpp>
+#include <kth/domain/message/compact_filter_checkpoint.hpp>
+#include <kth/domain/message/compact_filter_headers.hpp>
+#include <kth/domain/message/compact_filter_proof.hpp>
+#include <kth/domain/message/compact_filter_range.hpp>
+#include <kth/domain/message/compact_filter_tree.hpp>
+#endif
 #include <kth/domain/message/double_spend_proof.hpp>
 #include <kth/domain/message/fee_filter.hpp>
 #include <kth/domain/message/filter_add.hpp>
@@ -55,6 +65,13 @@
 #include <kth/domain/message/get_block_transactions.hpp>
 #include <kth/domain/message/get_blocks.hpp>
 #include <kth/domain/message/get_data.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/domain/message/get_compact_filter_checkpoint.hpp>
+#include <kth/domain/message/get_compact_filter_headers.hpp>
+#include <kth/domain/message/get_compact_filter_proof.hpp>
+#include <kth/domain/message/get_compact_filter_range.hpp>
+#include <kth/domain/message/get_compact_filters.hpp>
+#endif
 #include <kth/domain/message/get_headers.hpp>
 #include <kth/domain/message/header.hpp>
 #include <kth/domain/message/headers.hpp>

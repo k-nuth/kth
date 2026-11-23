@@ -74,7 +74,7 @@ bool store_mempool(std::filesystem::path const& file, std::vector<mempool_stored
         return false;
     }
 
-    spdlog::info("[database] dumped {} mempool transactions to {}", txs.size(), file.string());
+    spdlog::debug("[database] dumped {} mempool transactions to {}", txs.size(), file.string());
     return true;
 }
 
@@ -125,7 +125,7 @@ std::vector<mempool_stored_tx> load_mempool(std::filesystem::path const& file) {
         result.push_back({std::make_shared<domain::message::transaction>(std::move(*tx)), *time});
     }
 
-    spdlog::info("[database] read {} mempool transactions from {}", result.size(), file.string());
+    spdlog::debug("[database] read {} mempool transactions from {}", result.size(), file.string());
     return result;
 }
 

@@ -50,22 +50,11 @@ endif()
 
 message(STATUS "Knuth: Cryptocurrency: ${CURRENCY}")
 
-# Mempool backing map: cfm (boost::concurrent_flat_map) | parlay (ParlayHash).
-# Selects the mempool's concurrent hashmap implementation at compile time so the
-# two can be A/B measured on a running node.
-set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/KthParlayHash.cmake)
 
-if (${KTH_MEMPOOL_BACKEND} STREQUAL "cfm")
-  add_definitions(-DKTH_MEMPOOL_BACKEND_CFM)
-elseif (${KTH_MEMPOOL_BACKEND} STREQUAL "parlay")
-  add_definitions(-DKTH_MEMPOOL_BACKEND_PARLAY)
-  # Vendored, header-only; SYSTEM so its deprecation warnings stay out of KTH.
-  include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/parlayhash/include)
-else()
-  message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
+if(NOT KTH_BROWSER_NODE)
+  find_package(Parlay 2.4.0 CONFIG REQUIRED)
 endif()
-
-message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")
 
 # Header index capacity (number of headers for static array allocation)
 # Default: one-minute tempnet through 2030, with its 600-second history (aligned to 2^16)
@@ -205,6 +194,7 @@ set(kth_sources_just_legacy
   src/validate/validate_transaction.cpp
   src/settings.cpp
   src/finalization.cpp
+  src/prune.cpp
   src/parking.cpp
   src/utxo_builder.cpp
         src/utxo_deletion_sweep.cpp
@@ -294,6 +284,14 @@ endif()
 # endif(WITH_CONSENSUS)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC database::database)
+# The scheduler fork_join_for runs on. Before ParlayHash, which carries a copy
+# of these headers of its own: the ones found first are the ones used.
+if(NOT KTH_BROWSER_NODE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC Parlay::parlay)
+endif()
+if(KTH_MEMPOOL_BACKEND STREQUAL "parlay")
+  target_link_libraries(${PROJECT_NAME} PUBLIC ParlayHash::parlay)
+endif()
 
 if (WITH_CONSENSUS)
   target_compile_definitions(${PROJECT_NAME} PUBLIC -DWITH_CONSENSUS)
@@ -354,6 +352,9 @@ if (ENABLE_TEST)
         test/block_undo.cpp
         test/reorg_undo_roundtrip.cpp
         test/undo_scan.cpp
+        test/block_store_read_within.cpp
+        test/block_store_prune.cpp
+        test/prune.cpp
         test/utxo_transition_record.cpp
         test/undo_barriers.cpp
         test/bip30_duplicate_coinbase.cpp

@@ -18,6 +18,7 @@
 // call has already been written and executed, whereas these fail while the
 // wrong call is being written.
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 
@@ -573,7 +574,7 @@ TEST_CASE("utxoz behaviour: a negative file number fails in reference mode only"
     REQUIRE(negative->inserts.size() == 1);
     auto const& stored = negative->inserts.begin()->second;
     CHECK(stored.height == 500u);
-    CHECK(stored.data == std::vector<uint8_t>{0xf4, 0x01, 0, 0, 10, 0, 0, 0, 0});
+    CHECK(std::ranges::equal(stored.data, std::vector<uint8_t>{0xf4, 0x01, 0, 0, 10, 0, 0, 0, 0}));
 #endif
 
     // The control that keeps the above from passing by always failing: a valid

@@ -38,6 +38,7 @@
 //
 // =============================================================================
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -67,6 +68,10 @@
 #include <asio/awaitable.hpp>
 
 namespace kth::node {
+
+#if defined(KTH_WITH_NEUTRINO)
+namespace detail { struct compact_filter_blocks; }
+#endif
 
 /// Startup mode selection
 enum class start_modules {
@@ -214,6 +219,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_compact_filters();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -230,7 +236,18 @@ private:
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+    // Set when node.compact_filters is on. The peers' services and the index
+    // read it, and both end before the node does.
+    kth::path compact_filter_file_;
+    // node.compact_filters on a pruning node: start() refuses it.
+    bool compact_filters_refused_{false};
+    std::unique_ptr<detail::compact_filter_blocks> compact_filter_blocks_;
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
+    // When this node was built, which uptime counts from: the node starts
+    // here, before the database is opened and the network comes up.
+    std::chrono::steady_clock::time_point const started_ = std::chrono::steady_clock::now();
     std::unique_ptr<rpc::server> rpc_server_;
 #endif
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)

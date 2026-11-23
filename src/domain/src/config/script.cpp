@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string.hpp>
 
 #include <kth/domain/chain/script.hpp>
 #include <kth/infrastructure/config/base16.hpp>
@@ -21,13 +20,9 @@ namespace kth::domain::config {
 
 // static
 expect<script> script::parse_from(std::string_view mnemonic) {
-    std::string trimmed{mnemonic};
-    boost::trim(trimmed);
-    chain::script s;
-    if ( ! s.from_string(trimmed) && ! trimmed.empty()) {
-        return std::unexpected(kth::error::illegal_value);
-    }
-    return script{s};
+    return chain::script::parse_from(trim_view(mnemonic)).transform([](chain::script&& parsed) {
+        return script{std::move(parsed)};
+    });
 }
 
 // static

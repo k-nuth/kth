@@ -4,6 +4,8 @@
 
 #include <test_helpers.hpp>
 
+#include <utility>
+
 using namespace kth;
 using namespace kd;
 using namespace kth::domain::machine;
@@ -11,6 +13,20 @@ using namespace kth::domain::machine;
 data_chunk valid_raw_operation = to_chunk("0900ff11ee22bb33aa44"_base16);
 
 // Start Test Suite: operation tests
+
+TEST_CASE("operation take_data transfers the decoded allocation and resets the operation", "[operation][take_data]") {
+    data_chunk raw{0x4d, 0x00, 0x04};
+    raw.resize(3 + 1024, 0xaa);
+    byte_reader reader(raw);
+    auto parsed = operation::from_data(reader);
+    REQUIRE(parsed);
+    auto const* const allocation = parsed->data().data();
+    auto const payload = std::move(*parsed).take_data();
+    CHECK(payload.data() == allocation);
+    CHECK(payload == data_chunk(1024, 0xaa));
+    CHECK_FALSE(parsed->is_valid());
+    CHECK(parsed->data().empty());
+}
 
 TEST_CASE("operation constructor 1 always returns default initialized", "[operation]") {
     operation instance;

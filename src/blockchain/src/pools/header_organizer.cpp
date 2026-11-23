@@ -56,7 +56,7 @@ void header_organizer::note_block_validated(int32_t block_valid_height) {
 #endif
     auto const after = finalizer_.finalized_height();
     if (after != before) {
-        spdlog::info("[header_organizer] Finalized block advanced to height {}", after);
+        spdlog::debug("[header_organizer] Finalized block advanced to height {}", after);
     }
 }
 
@@ -138,7 +138,7 @@ void header_organizer::adopt_tip(index_t tip_idx) {
         // which is what marks work requested against the old chain as stale.
         index_.active_set_tip(tip_idx);
     }
-    spdlog::info("[header_organizer] Adopted tip: index {}, hash {}, height {}, generation {}",
+    spdlog::debug("[header_organizer] Adopted tip: index {}, hash {}, height {}, generation {}",
         tip_idx, encode_hash(index_.get_hash(tip_idx)), index_.get_height(tip_idx),
         index_.generation());
 }

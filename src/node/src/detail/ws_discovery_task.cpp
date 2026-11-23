@@ -151,7 +151,7 @@ struct verified_endpoint { network::ws_discovery::endpoint endpoint; bool public
                 auto& endpoints = std::get<detail::ws_candidates>(event).endpoints;
                 for (auto& endpoint : endpoints) admit(std::move(endpoint), false);
                 pump();
-                spdlog::info("[ws_discovery] Accepted endpoint response ({} candidates)", endpoints.size());
+                spdlog::debug("[ws_discovery] Accepted endpoint response ({} candidates)", endpoints.size());
             }
         }
     };
