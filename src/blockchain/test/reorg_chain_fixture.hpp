@@ -6,7 +6,6 @@
 #define KTH_BLOCKCHAIN_TEST_REORG_CHAIN_FIXTURE_HPP
 
 #include <filesystem>
-#include <functional>
 #include <string>
 #include <unistd.h>
 
@@ -87,15 +86,11 @@ struct chain_fixture {
 
     // Construct and start the chain. Separate from the constructor so a test can
     // assert on creation failure without the chain half-built.
-    [[nodiscard]] bool start(std::shared_ptr<blockchain::block_submission_channel> submissions = {},
-        std::function<void(blockchain::block_chain&)> const& before_start = {}) {
+    [[nodiscard]] bool start(std::shared_ptr<blockchain::block_submission_channel> submissions = {}) {
         if ( ! created_) return false;
         chain_ = std::make_unique<blockchain::block_chain>(
             chain_settings_, db_settings_, network_,
             /*relay_transactions*/ false, std::move(submissions));
-        if (before_start) {
-            before_start(*chain_);
-        }
         if ( ! chain_->start(kth::get_disk_magic(network_))) {
             return false;
         }

@@ -13,20 +13,10 @@
 
 #include <cstdint>
 #include <mutex>
-#include <thread>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 
 namespace kth::blockchain::detail {
-
-/// Observation only: a bounded, non-blocking report of the thread reading the
-/// rolling fee. Internal controls own the sink; no chain state is handed out.
-struct mempool_fee_read_observer {
-    explicit mempool_fee_read_observer(::asio::any_io_executor executor)
-        : reads(std::move(executor), 1) {}
-
-    ::asio::experimental::concurrent_channel<void(std::error_code, std::thread::id)> reads;
-};
 
 /// The two pieces of block_chain state the node owns rather than the chain: the
 /// hydration phase, which the start path ends once the header index exists, and
@@ -37,15 +27,6 @@ struct mempool_fee_read_observer {
 /// claiming a range durable that nobody wrote. Here they are reachable by the
 /// node's own persistence path and by the controls, and by nothing else.
 struct block_chain_internal {
-    /// Install once, before the first start: readers never race a setter and
-    /// production code neither installs nor replaces an observation sink.
-    static void observe_mempool_fee_reads(block_chain& chain,
-        std::shared_ptr<mempool_fee_read_observer> observer) {
-        KTH_ASSERT(chain.stopped());
-        KTH_ASSERT( ! chain.mempool_fee_read_observer_);
-        chain.mempool_fee_read_observer_ = std::move(observer);
-    }
-
     static void end_hydration(block_chain& chain) {
         chain.end_hydration();
     }
