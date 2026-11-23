@@ -12,6 +12,8 @@
 #include <memory>
 #include <optional>
 
+#include <boost/unordered/unordered_flat_map.hpp>
+
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_transaction.hpp>
@@ -110,7 +112,7 @@ private:
     transaction_broadcaster broadcaster_;
     ds_proof_broadcaster ds_proof_broadcaster_;
 
-    std::unordered_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
+    boost::unordered_flat_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
 };
 
 } // namespace kth::blockchain

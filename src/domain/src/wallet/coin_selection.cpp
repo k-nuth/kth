@@ -489,7 +489,7 @@ create_token_split_tx_template(
     // Collect the UTXOs to split and accumulate totals.
     std::vector<utxo> utxos_to_split;
     uint64_t total_bch = 0;
-    std::unordered_map<hash_digest, uint64_t> token_amounts;  // category -> total amount
+    boost::unordered_flat_map<hash_digest, uint64_t> token_amounts;  // category -> total amount
 
     for (auto const& outpoint : outpoints_to_split) {
         auto it = utxo_map.find(outpoint);
