@@ -262,13 +262,14 @@ TEST_CASE("compact mempool fill preserves absolute indexes beyond 16 bits", "[me
     transaction::list available(70001, transaction::null());
     auto const coinbase = make_tx({output_point{null_hash, point::null_index}}, 1, 99);
     available.front() = coinbase;
-    size_t count = 0;
-    REQUIRE_FALSE(chain.fill_tx_list_from_mempool(compact, count, available, slots));
-    REQUIRE(count == 2);
-    REQUIRE(available.front() == coinbase);
-    REQUIRE(available.at(1) == *first);
-    REQUIRE(available.at(70000) == *last);
-    REQUIRE(available.at(2).is_null());
+    auto const filled = chain.fill_tx_list_from_mempool(compact, std::move(available), slots);
+    REQUIRE_FALSE(filled.collided);
+    REQUIRE(filled.matched == 2);
+    REQUIRE(filled.transactions.size() == 70001);
+    REQUIRE(filled.transactions.front() == coinbase);
+    REQUIRE(filled.transactions.at(1) == *first);
+    REQUIRE(filled.transactions.at(70000) == *last);
+    REQUIRE(filled.transactions.at(2).is_null());
 }
 
 TEST_CASE("compact mempool fill clears a slot with multiple candidates once", "[mempool][bip152]") {
@@ -288,8 +289,8 @@ TEST_CASE("compact mempool fill clears a slot with multiple candidates once", "[
         REQUIRE(slots.emplace(domain::message::compact_short_id(key, tx->hash()), 1).second);
     }
     transaction::list available(2, transaction::null());
-    size_t count = 0;
-    REQUIRE(chain.fill_tx_list_from_mempool(compact, count, available, slots));
-    REQUIRE(count == 0);
-    REQUIRE(available.at(1).is_null());
+    auto const filled = chain.fill_tx_list_from_mempool(compact, std::move(available), slots);
+    REQUIRE(filled.collided);
+    REQUIRE(filled.matched == 0);
+    REQUIRE(filled.transactions.at(1).is_null());
 }

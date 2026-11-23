@@ -5,6 +5,7 @@
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/node/sync/compact_blocks.hpp>
 
+#include <optional>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
@@ -95,9 +96,11 @@ compact_reconstruction reconstruct_with(domain::message::compact_block const& me
             return {compact_reconstruct::collision, {}, {}};
         }
     }
-    if (fill(positions, slots)) {
+    auto filled = fill(positions, std::move(slots));
+    if ( ! filled) {
         return {compact_reconstruct::collision, {}, {}};
     }
+    slots = std::move(*filled);
 
     std::vector<uint64_t> missing;
     for (size_t at = 0; at < slots.size(); ++at) {
@@ -120,7 +123,8 @@ compact_reconstruction reconstruct_compact_block(domain::message::compact_block 
     domain::chain::transaction::list const& available) {
 
     auto const key = domain::message::hash(message);
-    return reconstruct_with(message, [&](short_id_slots const& positions, domain::chain::transaction::list& slots) {
+    return reconstruct_with(message, [&](short_id_slots const& positions, domain::chain::transaction::list slots)
+            -> std::optional<domain::chain::transaction::list> {
         std::vector<bool> filled(slots.size());
         for (auto const& tx : available) {
             auto const found = positions.find(domain::message::compact_short_id(key, tx.hash()));
@@ -128,21 +132,25 @@ compact_reconstruction reconstruct_compact_block(domain::message::compact_block 
                 continue;
             }
             if (filled[found->second]) {
-                return true;
+                return std::nullopt;
             }
             filled[found->second] = true;
             slots[found->second] = tx;
         }
-        return false;
+        return slots;
     });
 }
 
 compact_reconstruction reconstruct_compact_block(domain::message::compact_block const& message,
     blockchain::block_chain const& chain) {
 
-    return reconstruct_with(message, [&](short_id_slots const& positions, domain::chain::transaction::list& slots) {
-        size_t mempool_count = 0;
-        return chain.fill_tx_list_from_mempool(message, mempool_count, slots, positions);
+    return reconstruct_with(message, [&](short_id_slots const& positions, domain::chain::transaction::list slots)
+            -> std::optional<domain::chain::transaction::list> {
+        auto filled = chain.fill_tx_list_from_mempool(message, std::move(slots), positions);
+        if (filled.collided) {
+            return std::nullopt;
+        }
+        return std::move(filled.transactions);
     });
 }
 
