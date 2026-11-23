@@ -111,6 +111,9 @@ class KthRecipe(KnuthConanFileV2):
         # Compact block filters for light wallets (Neutrino, BIP157/158). Not
         # part of the consensus protocol, so off unless asked for.
         "neutrino": [True, False],
+        # Outbound connections through a SOCKS5 proxy (Tor). Not part of the
+        # consensus protocol, so off unless asked for.
+        "socks5": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -158,6 +161,7 @@ class KthRecipe(KnuthConanFileV2):
         "wasm_simd": True,
         "websocket": False,
         "neutrino": False,
+        "socks5": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -417,6 +421,7 @@ class KthRecipe(KnuthConanFileV2):
             tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
         tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.websocket)
         tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
+        tc.variables["KTH_WITH_SOCKS5"] = option_on_off(self.options.socks5)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -700,6 +705,8 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain and simdjson (for peer_database JSON parsing)
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
+            if self.options.socks5 and self.settings.os != "Emscripten":
+                self.cpp_info.components["network"].defines.append("KTH_WITH_SOCKS5")
             if self.options.websocket:
                 self.cpp_info.components["network"].defines.append("KTH_WITH_WEBSOCKET")
                 self.cpp_info.components["network"].requires.append("wslay::wslay")

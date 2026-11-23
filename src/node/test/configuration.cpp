@@ -84,32 +84,36 @@ private:
 
 } // namespace
 
-#if ! defined(__EMSCRIPTEN__)
-TEST_CASE("outbound proxy settings retain defaults and explicit command line values", "[configuration tests][parser][socks5]") {
+TEST_CASE("outbound proxy settings are empty and randomized by default", "[configuration tests][parser][socks5]") {
     node::parser defaults(domain::config::network::regtest);
     CHECK(defaults.configured.network.proxy.empty());
     CHECK(defaults.configured.network.proxy_randomize);
-
-    node::parser parser(domain::config::network::mainnet);
-    char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "[::1]:9050",
-        "--net.proxy_randomize", "false"};
-    std::ostringstream error;
-    REQUIRE(parser.parse(7, argv, error));
-    CHECK(parser.configured.network.proxy == "[::1]:9050");
-    CHECK_FALSE(parser.configured.network.proxy_randomize);
 }
 
-TEST_CASE("outbound proxy settings load from dotted config keys and reject invalid booleans", "[configuration tests][parser][socks5]") {
-    config_file file("proxy", "net.proxy=127.0.0.1:9050\nnet.proxy_randomize=false");
-    node::parser parser(domain::config::network::regtest);
-    std::ostringstream error;
-    REQUIRE(parser.parse_from_file(file.path(), error));
-    CHECK(parser.configured.network.proxy == "127.0.0.1:9050");
-    CHECK_FALSE(parser.configured.network.proxy_randomize);
-
-    node::parser invalid(domain::config::network::regtest);
-    char const* argv[]{"kth", "--net.proxy_randomize", "sometimes"};
-    CHECK_FALSE(invalid.parse(3, argv, error));
+#if ! defined(KTH_WITH_SOCKS5)
+// A build without the feature cannot use a proxy. Taking the setting and going
+// on would connect directly, so the node refuses to start.
+TEST_CASE("a proxy is refused by a build without the SOCKS5 feature", "[configuration tests][parser][socks5]") {
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "127.0.0.1:9050"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("proxy_refused", "net.proxy=127.0.0.1:9050");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("an empty one is no proxy") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", ""};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
 }
 #endif
 

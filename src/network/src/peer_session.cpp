@@ -4,8 +4,10 @@
 
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/peer_session.hpp>
-#include <kth/network/socks5.hpp>
 #include <kth/network/peer_identity.hpp>
+#if defined(KTH_WITH_SOCKS5)
+#include <kth/network/socks5.hpp>
+#endif
 
 #include <asio/cancel_after.hpp>
 #include <asio/cancel_at.hpp>
@@ -999,6 +1001,11 @@ awaitable_expected<peer_session::ptr> async_connect(
     co_return std::make_shared<peer_session>(std::move(socket), settings, false);
 #else
     if ( ! settings.proxy.empty()) {
+#if ! defined(KTH_WITH_SOCKS5)
+        // A proxy that cannot be used must never become a direct connection:
+        // the node was asked not to show its peers which address it has.
+        co_return std::unexpected(error::operation_failed);
+#else
         auto result = co_await async_socks5_connect(
             executor, settings.proxy, hostname, port, settings.proxy_randomize, timeout);
         if ( ! result) {
@@ -1016,6 +1023,7 @@ awaitable_expected<peer_session::ptr> async_connect(
             }
         }
         co_return session;
+#endif
     }
 
     // Try to parse hostname as IP address first (skip DNS for IPs)

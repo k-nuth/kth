@@ -586,11 +586,21 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_neutrino_test PRIVATE Catch2::Catch2WithMain)
   endif()
+  if(KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_socks5_test
+      test/socks5.cpp)
+    target_include_directories(kth_node_socks5_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_socks5_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_socks5_test PRIVATE Catch2::Catch2WithMain)
+  endif()
 
   include(CTest)
   kth_register_tests(kth_node_test TIMEOUT 600)
   if(TARGET kth_node_neutrino_test)
     kth_register_tests(kth_node_neutrino_test TIMEOUT 600)
+  endif()
+  if(TARGET kth_node_socks5_test)
+    kth_register_tests(kth_node_socks5_test TIMEOUT 600)
   endif()
 
   # README C++ snippet checks disabled: v1.0 switched the public API

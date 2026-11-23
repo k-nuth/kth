@@ -1,5 +1,10 @@
 # Outbound P2P over Tor
 
+The SOCKS5 proxy is an optional feature: the node has it when built with the
+Conan option `socks5=True` ([optional-features.md](optional-features.md)). A
+build without it refuses to start with `net.proxy` set; it does not connect
+directly in its place.
+
 Run a Tor client with a SOCKS5 listener, then set the node's outbound proxy:
 
 ```ini
@@ -35,6 +40,14 @@ records. Hostname destinations have distinct runtime identities but no peer
 database records, bans, misbehavior scores, performance samples, or cooldowns
 because their numeric addresses are unknown. An error that would ban a numeric
 peer on its own disconnects a hostname peer.
+
+The connection deadline (`net.connect_timeout_seconds`, 5 by default) covers the
+whole exchange with the proxy, which answers only once it has reached the
+destination: through Tor that includes building a circuit. Raise it if outbound
+connections time out.
+
+`net.ws_discovery` is refused together with `net.proxy`: it resolves the names
+peers announce with the system's resolver, which no proxy carries.
 
 These options affect outbound P2P traffic. They do not change inbound listening,
 RPC, or mining services. Onion peer identities, onion address advertisement,

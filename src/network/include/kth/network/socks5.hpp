@@ -5,6 +5,10 @@
 #ifndef KTH_NETWORK_SOCKS5_HPP
 #define KTH_NETWORK_SOCKS5_HPP
 
+#if ! defined(KTH_WITH_SOCKS5)
+#error "The SOCKS5 proxy is an optional feature: build with the Conan option socks5=True."
+#endif
+
 #include <chrono>
 #include <cstdint>
 #include <string>
