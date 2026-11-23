@@ -25,6 +25,7 @@
 
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/formats/base_16.hpp>
+#include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth::network {
@@ -199,7 +200,7 @@ awaitable_expected<::asio::ip::tcp::socket> async_socks5_connect(
     ::asio::strand<::asio::any_io_executor> exchange_strand(executor);
     auto const negotiated = co_await ::asio::co_spawn(exchange_strand,
         [&]() -> awaitable_expected<void> {
-            ::asio::steady_timer timer(exchange_strand);
+            kth::steady_timer timer(exchange_strand);
             timer.expires_after(timeout);
             using namespace ::asio::experimental::awaitable_operators;
             auto result = co_await (
