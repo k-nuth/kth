@@ -588,3 +588,26 @@ TEST_CASE("a node behind a proxy does not listen for inbound connections", "[p2p
     CHECK(listens == ! behind_proxy);
     CHECK(reachable == ! behind_proxy);
 }
+
+// The parser refuses the pair, and settings built without it reach run().
+TEST_CASE("a node behind a proxy does not run with WebSocket discovery", "[p2p_node][socks5]") {
+    auto settings = proxy_connect_settings("127.0.0.1:9050");
+    settings.ws_discovery = true;
+
+    p2p_node node(settings);
+    auto started = ::asio::co_spawn(node.thread_pool().get_executor(),
+        [&node]() -> ::asio::awaitable<int> {
+            auto const ec = co_await node.start();
+            co_return ec.value();
+        }, ::asio::use_future);
+    REQUIRE(started.wait_for(30s) == std::future_status::ready);
+    REQUIRE(started.get() == 0);
+
+    auto running = ::asio::co_spawn(node.thread_pool().get_executor(),
+        [&node]() -> ::asio::awaitable<code> {
+            co_return co_await node.run();
+        }, ::asio::use_future);
+    REQUIRE(running.wait_for(30s) == std::future_status::ready);
+    CHECK(running.get() == error::operation_failed);
+    node.stop();
+}

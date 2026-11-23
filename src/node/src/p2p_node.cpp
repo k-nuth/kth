@@ -191,6 +191,14 @@ p2p_node::~p2p_node() {
         co_return error::service_stopped;
     }
 
+    // WebSocket discovery resolves the names its peers announce with the
+    // system's resolver, which no proxy carries. The parser refuses the pair;
+    // settings built without it get here.
+    if ( ! settings_.proxy.empty() && settings_.ws_discovery) {
+        spdlog::error("[p2p_node] run() refused: net.ws_discovery is not allowed with net.proxy.");
+        co_return error::operation_failed;
+    }
+
     // Admitted once, like start(). A second run() would spawn every network task
     // again -- among them the status task, and two coroutines waiting on the one
     // status_timer_ means a cancellation ends whichever happens to be waiting.
