@@ -408,9 +408,12 @@ TEST_CASE("SOCKS5 cancellation ends a stalled exchange without a session", "[soc
 
 TEST_CASE("SOCKS5 proxy TCP refusal fails without negotiation", "[socks5]") {
     fake_socks5 proxy;
-    // Reserve an ephemeral TCP port without listening on it.
-    ::asio::ip::tcp::socket unavailable(proxy.ctx, {::asio::ip::address_v4::loopback(), 0});
+    // A port nothing listens on: one the system just gave out, closed again.
+    // A socket bound to it and not listening is not refused on every system:
+    // macOS leaves the connection unanswered until the deadline.
+    ::asio::ip::tcp::acceptor unavailable(proxy.ctx, {::asio::ip::address_v4::loopback(), 0});
     auto const address = "127.0.0.1:" + std::to_string(unavailable.local_endpoint().port());
+    unavailable.close();
     std::string const hostname = "peer.invalid";
     auto result = proxy.run(async_socks5_connect(proxy.ctx.get_executor(), address, hostname, 8333, false, 1s));
     REQUIRE( ! result);
