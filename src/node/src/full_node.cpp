@@ -132,6 +132,14 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(KTH_WITH_BLOOM_FILTERS) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if (node_settings_.bloom_filters) {
+        spdlog::error("[node] node.bloom_filters needs a build with the option bloom_filters.");
+        co_return error::operation_failed;
+    }
+#endif
+
 #if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
     // The parser refuses this too; a configuration built by hand gets here.
     if (compact_filters_refused_) {

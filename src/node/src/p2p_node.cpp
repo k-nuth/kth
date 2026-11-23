@@ -600,8 +600,15 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
     // admitted from now on.
     using detail::tx_announcement_schedule;
     std::optional<tx_announcement_schedule> announcing;
+    // The last admission the peer is not owed: those before it connected, and
+    // those that passed while it asked for no transactions. A schedule starts
+    // after it.
+    uint64_t not_owed = 0;
+    if (tx_announcement_.last) {
+        not_owed = co_await tx_announcement_.last();
+    }
     if (tx_announcement_.last && peer.peer_version() && peer.peer_version()->relay()) {
-        announcing.emplace(peer.is_inbound(), co_await tx_announcement_.last());
+        announcing.emplace(peer.is_inbound(), not_owed);
     }
     auto const announcement_due = [&] {
         return announcing ? announcing->due() : tx_announcement_schedule::time_point::max();
@@ -639,13 +646,17 @@ void message_dispatcher::set_tx_announcement_handler(detail::tx_announcement_sou
         }
         if (selected.index == 3) {
             // A peer whose version asked for no transactions is announced them
-            // from the admission after it loads or clears a filter (BIP37).
+            // from the admission after it loads or clears a filter (BIP37):
+            // this one, when the filter came before it.
+            auto const& admissions = *selected.value<3>();
             if ( ! announcing && tx_announcement_.last && peer.tx_inventory().relay_requested()) {
-                announcing.emplace(peer.is_inbound(), co_await tx_announcement_.last());
+                announcing.emplace(peer.is_inbound(), not_owed);
             }
             if (announcing) {
                 auto const now = tx_announcement_schedule::clock::now();
-                announcing->on_admitted(*selected.value<3>(), now, announcement_delay());
+                announcing->on_admitted(admissions, now, announcement_delay());
+            } else {
+                not_owed = std::max(not_owed, admissions.last);
             }
             continue;
         }

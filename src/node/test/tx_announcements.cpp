@@ -391,6 +391,34 @@ TEST_CASE("the peer's service skips what the peer knows or filters",
     CHECK(peer.invs(300ms) == std::vector<hash_list>{txids({3})});
 }
 
+// BIP37: a filter message turns the announcements of such a peer on. What is
+// admitted from then on is owed to it, and what passed before is not.
+TEST_CASE("the peer's service announces to a peer that asked for no transactions once it sends a filter message",
+          "[tx_announcement][service]") {
+    order pool;
+    served_peer peer(false);
+    node::message_dispatcher dispatcher;
+    dispatcher.set_tx_announcement_handler(pool.sources());
+    dispatcher.set_fee_filter_draw([] { return 0.5; });
+    auto service = ::asio::co_spawn(peer.io, dispatcher.serve(*peer.session), ::asio::use_future);
+    peer.run(50ms);
+
+    pool.admit(1);
+    peer.session->announce_admissions({1, clock_type::now()});
+    CHECK(peer.invs(300ms).empty());
+
+    // As the read loop takes a `filterclear`, on the session's strand.
+    peer.session->tx_inventory().clear_filter();
+    pool.admit(2);
+    peer.session->announce_admissions({2, clock_type::now()});
+    CHECK(peer.invs(300ms) == std::vector<hash_list>{txids({2})});
+
+    peer.session->stop();
+    peer.io.restart();
+    peer.io.run_for(200ms);
+    CHECK(service.wait_for(0s) == std::future_status::ready);
+}
+
 TEST_CASE("the peer's service announces nothing to a peer that asked for no transactions",
           "[tx_announcement][service]") {
     SECTION("relay off in its version") {

@@ -9,6 +9,7 @@
 #include "tx_relay_harness.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@
 #include <kth/domain/message/version.hpp>
 #include <kth/network/tx_inventory.hpp>
 #include <kth/node/detail/bloom_filters.hpp>
+#include <kth/node/full_node.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/p2p_node.hpp>
 #include <kth/node/parser.hpp>
@@ -367,4 +369,34 @@ TEST_CASE("bloom filters are on unless turned off in a build with the feature", 
     std::ostringstream error;
     REQUIRE(parser.parse(5, argv, error));
     CHECK_FALSE(parser.configured.node.bloom_filters);
+}
+
+TEST_CASE("a node announces bloom filters when it serves them", "[bloom filters][node]") {
+    auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+    auto const dir = std::filesystem::temp_directory_path() / "kth_bloom_node_served";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    auto const config = [&dir](bool filters) {
+        node::configuration cfg{domain::config::network::regtest};
+        cfg.database.directory = dir;
+        cfg.database.db_max_size = 16ULL << 20;
+        cfg.network.threads = 0;
+        cfg.network.peers_file = dir / "peers.dat";
+        cfg.network.hosts_file = dir / "hosts.dat";
+        cfg.node.bloom_filters = filters;
+        return cfg;
+    };
+
+    {
+        node::full_node node{config(true)};
+        CHECK((node.network_settings().services & bloom) != 0);
+    }
+    {
+        node::full_node node{config(false)};
+        CHECK((node.network_settings().services & bloom) == 0);
+    }
+    std::filesystem::remove_all(dir, ec);
 }

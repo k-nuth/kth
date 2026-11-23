@@ -299,7 +299,8 @@ void add_settings(CLI::App& app, configuration& cfg) {
     // check_bloom_filters) rather than ignore it in a configuration file.
     app.add_option("--node.bloom_filters",         cfg.node.bloom_filters,
         "Serve wallets that load a bloom filter: filterload, filteradd, filterclear and merkleblock "
-        "answers (default true). Needs a build with the option bloom_filters.");
+        "answers. Needs a build with the option bloom_filters, where it is on by default; "
+        "off in a build without it.");
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
