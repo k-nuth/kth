@@ -8,7 +8,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <mutex>
+#include <memory>
+#include <stop_token>
 #include <optional>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include <kth/blockchain/header_index.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/message/compact_block.hpp>
+#include <kth/infrastructure/utility/async_channel.hpp>
 #include <kth/domain/message/header.hpp>
 #include <kth/network/define.hpp>
 #include <kth/network/peer_session.hpp>
@@ -70,19 +72,37 @@ using compact_block_source = std::function<
 
 /// The cmpctblock of the latest tip announced with one, built once from the
 /// stored block and handed to every peer's service that asks for it, as BCHN
-/// builds one for the block it last connected. The services ask at once.
-class KN_API compact_tip_cache {
-public:
-    /// The cmpctblock of `hash`, built when it is not the one held. Null when
-    /// the block cannot be read.
+/// builds one for the block it last connected.
+///
+/// Ownership: run() is the one task that holds the cmpctblock and builds the
+/// next. The peers' services ask it through a bounded channel and wait for
+/// its answer; they ask at once when a tip connects, and all of them get the
+/// one it built.
+struct KN_API compact_tip_source {
+    /// The chain outlives run().
+    explicit compact_tip_source(blockchain::block_chain const& chain);
+
+    compact_tip_source(compact_tip_source const&) = delete;
+    compact_tip_source& operator=(compact_tip_source const&) = delete;
+
+    /// The cmpctblock of `hash`, from a peer's service. Null when the block
+    /// cannot be read, or run() has ended.
     [[nodiscard]]
-    ::asio::awaitable<domain::message::compact_block::const_ptr> get(
-        blockchain::block_chain const& chain, hash_digest const& hash);
+    ::asio::awaitable<domain::message::compact_block::const_ptr> get(hash_digest const& hash);
+
+    /// Until `stop` is requested. Every request it took is answered first.
+    ::asio::awaitable<void> run(std::stop_token stop);
 
 private:
-    std::mutex mutex_;
-    hash_digest hash_{null_hash};
-    domain::message::compact_block::const_ptr compact_;
+    using answer_channel = select_channel<domain::message::compact_block::const_ptr>;
+
+    struct request {
+        hash_digest hash;
+        std::shared_ptr<answer_channel> answer;
+    };
+
+    blockchain::block_chain const& chain_;
+    select_channel<request> requests_;
 };
 
 } // namespace kth::node::sync

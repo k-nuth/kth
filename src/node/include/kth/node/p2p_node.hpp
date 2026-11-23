@@ -46,6 +46,10 @@
 namespace kth::node::detail { struct p2p_node_test_seam; }
 namespace kth::node::detail { struct ws_discovery_inbox; }
 
+namespace kth::node::sync {
+struct compact_block_receiver;
+} // namespace kth::node::sync
+
 namespace kth::node {
 using namespace kth::network;
 
@@ -365,20 +369,11 @@ public:
         dispatcher_.set_tx_announcement_handler(std::move(sources));
     }
 
-    /// Takes a cmpctblock (BIP152) for the node to rebuild the block from.
-    /// Called from the read loop, so it must not wait. True means it was
-    /// taken, and its header does not go to the header ingest.
-    using compact_block_fn = std::function<bool(
-        peer_session::ptr const&, domain::message::compact_block)>;
-
-    /// Hands a blocktxn to the reconstruction waiting for it from that peer.
-    /// Called from the read loop, so it must not wait. True means it was taken.
-    using block_transactions_fn = std::function<bool(
-        peer_session::ptr const&, domain::message::block_transactions)>;
-
-    /// Set the node's compact block handlers, before run(). Without them a
-    /// cmpctblock contributes its header alone, and a blocktxn is not taken.
-    void set_compact_block_handlers(compact_block_fn compact_block, block_transactions_fn block_transactions);
+    /// The node's compact block receiver (BIP152), set before run() and
+    /// outliving it. The read loop offers it each cmpctblock and blocktxn,
+    /// without waiting. Without one a cmpctblock contributes its header
+    /// alone, and a blocktxn is not taken.
+    void set_compact_block_receiver(sync::compact_block_receiver* receiver);
 
     /// Peers asked at once to send new blocks as a cmpctblock before they
     /// announce them (BIP152 high bandwidth, sendcmpct(1, 1)), as BIP152
@@ -441,7 +436,7 @@ public:
     // are registered as announcements instead, under a mutex, because they
     // arrive on several peer strands at once. Its channel is only a doorbell.
     // The exception is a `cmpctblock` the node takes to rebuild its block
-    // (set_compact_block_handlers): its header comes in with the block.
+    // (set_compact_block_receiver): its header comes in with the block.
 
     /// What the read loop does with `headers`, `cmpctblock`, `blocktxn` and
     /// `inv` before anything else sees them. Answers whether the message was
@@ -807,17 +802,9 @@ private:
     bool offer_compact_block(peer_session::ptr const& peer, raw_message const& raw);
     bool deliver_block_transactions(peer_session::ptr const& peer, raw_message const& raw);
 
-    compact_block_fn compact_block_handler_;
-    block_transactions_fn block_transactions_handler_;
-
-    /// One of the high-bandwidth slots for a peer that just finished its
-    /// handshake, when the setting allows and one is free. The peer's task
-    /// gives it back when its protocols end.
-    [[nodiscard]]
-    bool take_high_bandwidth_compact_slot();
+    sync::compact_block_receiver* compact_blocks_{nullptr};
 
     bool compact_high_bandwidth_{true};
-    std::atomic<size_t> high_bandwidth_compact_peers_{0};
 
     // Peers choose what goes in here, so it is bounded and its membership test
     // is constant time. Beyond the bound new hashes are refused and the refusal

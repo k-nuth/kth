@@ -4,10 +4,10 @@
 
 #include <test_helpers.hpp>
 
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <kth/blockchain/pools/mempool_hashers.hpp>
 #include <kth/domain/message/block.hpp>
 #include <kth/domain/message/compact_block.hpp>
 #include <kth/domain/message/prefilled_transaction.hpp>
@@ -145,20 +145,30 @@ TEST_CASE("compact reconstruction checks the merkle root before and after blockt
         == compact_reconstruct::complete);
 }
 
-TEST_CASE("compact reconstruction bounds the work a crowded short ID bucket costs", "[compact_blocks]") {
-    // Short IDs a peer chose to land in one bucket.
-    std::unordered_map<uint64_t, size_t> probe;
-    probe.reserve(14);
-    domain::message::compact_block::short_id_list ids;
-    for (uint64_t id = 0; id < 10000 && ids.size() < 14; ++id) {
-        if (probe.bucket(id) == probe.bucket(0)) {
-            ids.push_back(id);
+// A peer chooses the short IDs it sends. Under a hash it could compute it
+// would choose them to collide; the table's hash is keyed with a salt drawn
+// for each table, so the same short IDs land elsewhere in every one.
+TEST_CASE("the table of short IDs hashes them with a salt of its own", "[compact_blocks]") {
+    blockchain::salted_short_id_hasher const first;
+    blockchain::salted_short_id_hasher const second;
+    size_t same = 0;
+    for (uint64_t id = 0; id < 1000; ++id) {
+        if (first(id) == second(id)) {
+            ++same;
         }
     }
-    REQUIRE(ids.size() == 14);
+    // Two salts that agreed on a thousand 64-bit values would not be two salts.
+    CHECK(same == 0);
+
+    // Short IDs that collide under the identity hash an unsalted table would
+    // use are rebuilt as any others: none is a collision.
+    domain::message::compact_block::short_id_list ids;
+    for (uint64_t i = 1; i <= 14; ++i) {
+        ids.push_back(i << 32);
+    }
     auto const block = reconstruction_block();
     domain::message::compact_block const crowded(block.header(), 42, std::move(ids), {
         domain::message::prefilled_transaction::create(0, block.transactions()[0]).value()});
     CHECK(reconstruct_compact_block(crowded, domain::chain::transaction::list{}).status
-        == compact_reconstruct::collision);
+        == compact_reconstruct::missing);
 }

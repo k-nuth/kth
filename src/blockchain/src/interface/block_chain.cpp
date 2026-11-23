@@ -4012,7 +4012,7 @@ block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
 bool block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
                                             size_t& mempool_count,
                                             std::vector<domain::chain::transaction>& txn_available,
-                                            std::unordered_map<uint64_t, size_t> const& shorttxids) const {
+                                            short_id_slots const& shorttxids) const {
 
     std::vector<bool> have_txn(txn_available.size());
     bool collided = false;

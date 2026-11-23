@@ -9,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include <boost/unordered/unordered_flat_map.hpp>
@@ -85,12 +84,15 @@ compact_reconstruction accept_block_transactions(domain::message::compact_block 
     compact_reconstruction const& partial, domain::chain::transaction::list const& provided);
 
 /// Takes the cmpctblocks peers send and rebuilds them, each in a task of its
-/// own: the read loop that offers one, and the blocktxn that answers it, never
-/// waits. At most three are rebuilt at once, one per peer, as BIP152 expects
-/// of a node asking three peers for high-bandwidth compact blocks; a slow peer
+/// own. At most three are rebuilt at once, one per peer, as BIP152 expects of
+/// a node asking three peers for high-bandwidth compact blocks; a slow peer
 /// holds only its own.
-class KN_API compact_block_receiver {
-public:
+///
+/// Ownership: run() is the one task that knows which blocks are being
+/// rebuilt and for whom. The read loops hand it what they receive through
+/// bounded channels and never wait; a reconstruction tells it when it ends the
+/// same way. Nothing here is shared between tasks but those channels.
+struct KN_API compact_block_receiver {
     /// Reconstructions under way at once, each from a different peer.
     static constexpr size_t max_reconstructions = 3;
 
@@ -105,16 +107,18 @@ public:
     compact_block_receiver(compact_block_receiver const&) = delete;
     compact_block_receiver& operator=(compact_block_receiver const&) = delete;
 
-    /// A cmpctblock from `peer`, from its read loop; never waits. True when it
-    /// was taken to be rebuilt, or is the block another peer's cmpctblock is
-    /// being rebuilt from: its header is then not for the header ingest. False
-    /// when the node is not caught up, the block does not follow the connected
-    /// tip, or the reconstructions are taken.
+    /// A cmpctblock from `peer`, from its read loop; never waits. True when
+    /// it was handed to run(), which either rebuilds the block or sends its
+    /// header to the header ingest: either way the read loop owes it nothing
+    /// more. False when the node is not caught up, the block does not follow
+    /// the connected tip, its header fails, or run() has no room or has ended:
+    /// the header is then the read loop's to ingest.
     [[nodiscard]]
     bool offer(network::peer_session::ptr const& peer, domain::message::compact_block message);
 
-    /// A blocktxn from `peer`, from its read loop; never waits. True when the
-    /// reconstruction that asked this peer for transactions took it.
+    /// A blocktxn from `peer`, from its read loop; never waits. True when it
+    /// was handed to run(), which gives it to the reconstruction waiting for
+    /// that peer's answer, if there is one.
     [[nodiscard]]
     bool deliver(network::peer_session::ptr const& peer, domain::message::block_transactions message);
 
@@ -122,37 +126,58 @@ public:
     /// reconstructions under way, which the stop ends.
     ::asio::awaitable<void> run();
 
-    /// Reconstructions under way.
+    /// Reconstructions under way, asked of run(). Zero once it has ended.
     [[nodiscard]]
-    size_t pending() const;
+    ::asio::awaitable<size_t> pending();
 
 private:
     using reply_channel = select_channel<domain::message::block_transactions>;
+    using count_channel = select_channel<size_t>;
 
+    struct offered {
+        network::peer_session::ptr peer;
+        domain::message::compact_block message;
+    };
+
+    struct answered {
+        network::peer_session::ptr peer;
+        domain::message::block_transactions message;
+    };
+
+    /// What run() keeps for a block being rebuilt.
     struct reconstruction {
         hash_digest hash;
-        /// Where the blocktxn goes once getblocktxn is out. One answer.
+        /// Where the peer's blocktxn goes. One answer.
         std::shared_ptr<reply_channel> reply;
     };
 
+    using reconstructions = boost::unordered_flat_map<network::peer_session const*, reconstruction>;
+
+    /// run()'s: rebuild the block, or send its header to the header ingest.
+    void take(reconstructions& pending, task_group& tasks, offered offer);
+
     ::asio::awaitable<void> reconstruct(network::peer_session::ptr peer,
-        domain::message::compact_block message);
+        domain::message::compact_block message, std::shared_ptr<reply_channel> reply);
 
     /// Whether the block was rebuilt and the chain took it (connected, or
     /// already held); false when it is to be downloaded instead.
     ::asio::awaitable<bool> rebuild(network::peer_session::ptr const& peer,
-        domain::message::compact_block const& message);
+        domain::message::compact_block const& message, reply_channel& reply);
 
     void fall_back(network::peer_session::ptr const& peer, domain::chain::header const& header);
 
     blockchain::block_chain& chain_;
     p2p_node& network_;
     std::chrono::milliseconds const blocktxn_timeout_;
-    task_group tasks_;
 
-    mutable std::mutex mutex_;
-    bool stopping_{false};
-    boost::unordered_flat_map<network::peer_session const*, reconstruction> pending_;
+    // From the read loops, which never wait: what does not fit is refused.
+    select_channel<offered> offers_;
+    select_channel<answered> answers_;
+    // From each reconstruction as it ends. One per reconstruction, so there
+    // is always room.
+    select_channel<network::peer_session const*> finished_;
+    // Questions for run(), each with where to answer.
+    select_channel<std::shared_ptr<count_channel>> questions_;
 };
 
 } // namespace kth::node::sync

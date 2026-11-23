@@ -5,7 +5,6 @@
 #include <test_helpers.hpp>
 
 #include <vector>
-#include <unordered_map>
 
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/domain.hpp>
@@ -255,7 +254,7 @@ TEST_CASE("compact mempool fill preserves absolute indexes beyond 16 bits", "[me
 
     domain::message::compact_block const compact(header{}, 42, {}, {});
     auto const key = domain::message::hash(compact);
-    std::unordered_map<uint64_t, size_t> const slots{
+    blockchain::short_id_slots const slots{
         {domain::message::compact_short_id(key, first->hash()), 1},
         {domain::message::compact_short_id(key, last->hash()), 70000},
         {domain::message::compact_short_id(key, outside->hash()), 70001}};
@@ -280,7 +279,7 @@ TEST_CASE("compact mempool fill clears a slot with multiple candidates once", "[
     auto& pool = chain.mempool_ref();
     domain::message::compact_block const compact(header{}, 42, {}, {});
     auto const key = domain::message::hash(compact);
-    std::unordered_map<uint64_t, size_t> slots;
+    blockchain::short_id_slots slots;
     for (uint64_t tag = 1; tag <= 3; ++tag) {
         auto const tx = as_ptr(make_tx({op(tag, 0)}, 1, tag));
         REQUIRE(pool.add(entry_for(tx, tag)));

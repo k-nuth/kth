@@ -2,10 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/node/detail/scope_action.hpp>
 #include <kth/node/sync/compact_blocks.hpp>
 
-#include <exception>
-#include <unordered_map>
 #include <utility>
 
 #include <asio/as_tuple.hpp>
@@ -16,6 +15,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
+#include <kth/blockchain/pools/mempool_hashers.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/chain_state.hpp>
 #include <kth/domain/constants/functions.hpp>
@@ -32,12 +32,7 @@ namespace kth::node::sync {
 
 namespace {
 
-using short_id_slots = std::unordered_map<uint64_t, size_t>;
-
-// Peers choose the short IDs, and std::hash leaves an integer as it is, so a
-// peer can put them all in one bucket and make every lookup walk it. A bucket
-// this crowded is taken for a collision, and the block is downloaded instead.
-constexpr size_t max_short_id_bucket = 12;
+using blockchain::short_id_slots;
 
 // Whether `header` commits to `transactions`. They are lent to a block for the
 // check and handed back, not copied.
@@ -96,8 +91,7 @@ compact_reconstruction reconstruct_with(domain::message::compact_block const& me
         }
         // A repeated short ID cannot tell its two positions apart, even when
         // the mempool holds only one match.
-        if ( ! positions.emplace(id, next_free++).second ||
-                positions.bucket_size(positions.bucket(id)) > max_short_id_bucket) {
+        if ( ! positions.emplace(id, next_free++).second) {
             return {compact_reconstruct::collision, {}, {}};
         }
     }
@@ -204,7 +198,10 @@ compact_block_receiver::compact_block_receiver(blockchain::block_chain& chain, p
     : chain_(chain)
     , network_(network)
     , blocktxn_timeout_(blocktxn_timeout)
-    , tasks_("compact_blocks", network.thread_pool().get_executor())
+    , offers_(2 * max_reconstructions)
+    , answers_(max_reconstructions)
+    , finished_(max_reconstructions)
+    , questions_(max_reconstructions)
 {}
 
 bool compact_block_receiver::offer(network::peer_session::ptr const& peer,
@@ -240,108 +237,153 @@ bool compact_block_receiver::offer(network::peer_session::ptr const& peer,
     if (message.short_ids().size() + message.transactions().size() > max_transactions(*view->state)) {
         return false;
     }
-
-    std::lock_guard const lock(mutex_);
-    if (stopping_) {
-        return false;
-    }
-    // Another peer's cmpctblock for a block already being rebuilt is taken
-    // and left: downloading it beside the reconstruction would fetch it twice.
-    for (auto const& entry : pending_) {
-        if (entry.second.hash == hash) {
-            return true;
-        }
-    }
-    if (pending_.contains(peer.get()) || pending_.size() >= max_reconstructions) {
-        return false;
-    }
-    pending_.emplace(peer.get(), reconstruction{hash, nullptr});
-    // Spawned under the lock, so run() cannot stop waiting before this task
-    // is counted. The task leaves the read loop before it does anything.
-    tasks_.spawn("compact_block", reconstruct(peer, std::move(message)));
-    spdlog::debug("[compact_blocks] Rebuilding block {} from [{}]", encode_hash(hash), peer->authority());
-    return true;
+    // Refused when run() has no room for it, or has ended and closed this.
+    return offers_.try_send(offered{peer, std::move(message)});
 }
 
 bool compact_block_receiver::deliver(network::peer_session::ptr const& peer,
     domain::message::block_transactions message) {
 
-    std::shared_ptr<reply_channel> reply;
-    {
-        std::lock_guard const lock(mutex_);
-        auto const found = pending_.find(peer.get());
-        if (found == pending_.end()) {
-            return false;
-        }
-        reply = found->second.reply;
+    if ( ! peer) {
+        return false;
     }
-    // One slot: the answer to the request. Whatever follows it is not. Sent
-    // outside the lock, which the reconstruction it wakes takes at its end.
-    return reply && reply->try_send(std::move(message));
+    return answers_.try_send(answered{peer, std::move(message)});
 }
 
-size_t compact_block_receiver::pending() const {
-    std::lock_guard const lock(mutex_);
-    return pending_.size();
+::asio::awaitable<size_t> compact_block_receiver::pending() {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto const answer = std::make_shared<count_channel>(1);
+    // Waits for room, and for the answer: run() answers every question it
+    // takes, and closes this when it ends.
+    auto asked = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(questions_, answer)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    if (std::get<0>(asked)) {
+        co_return 0;
+    }
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*answer)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec) {
+        co_return 0;
+    }
+    co_return *selected.value<0>();
+}
+
+void compact_block_receiver::take(reconstructions& pending, task_group& tasks, offered offer) {
+    auto const hash = domain::chain::hash(offer.message.header());
+    // Another peer's cmpctblock for a block already being rebuilt is taken
+    // and left: downloading it beside the reconstruction would fetch it twice.
+    for (auto const& entry : pending) {
+        if (entry.second.hash == hash) {
+            return;
+        }
+    }
+    // One per peer, three in all: past that the block is downloaded.
+    if (pending.contains(offer.peer.get()) || pending.size() >= max_reconstructions) {
+        fall_back(offer.peer, offer.message.header());
+        return;
+    }
+    auto reply = std::make_shared<reply_channel>(1);
+    pending.emplace(offer.peer.get(), reconstruction{hash, reply});
+    spdlog::debug("[compact_blocks] Rebuilding block {} from [{}]", encode_hash(hash), offer.peer->authority());
+    tasks.spawn("compact_block", reconstruct(std::move(offer.peer), std::move(offer.message), std::move(reply)));
 }
 
 ::asio::awaitable<void> compact_block_receiver::run() {
     auto executor = co_await ::asio::this_coro::executor;
-    // The network's stop, as an event: a selection with nothing but a
-    // never-due `after` case ends with operation_aborted when it stops.
-    if ( ! network_.stopped()) {
+    // Owned here, and by nothing else.
+    reconstructions pending;
+    task_group tasks("compact_blocks", network_.thread_pool().get_executor());
+
+    while ( ! network_.stopped()) {
         auto completion = co_await ::asio::experimental::make_select(
-            ::asio::experimental::after(::asio::steady_timer::time_point::max())
+            ::asio::experimental::receive(finished_),
+            ::asio::experimental::receive(answers_),
+            ::asio::experimental::receive(offers_),
+            ::asio::experimental::receive(questions_)
         ).async_wait(executor, {}, network_.stop_token(), ::asio::as_tuple(::asio::deferred));
-        (void)completion;
+        auto& [ec, selected] = completion;
+        if (ec) {
+            // The network stopped.
+            break;
+        }
+        if (selected.index == 0) {
+            pending.erase(*selected.value<0>());
+            continue;
+        }
+        if (selected.index == 1) {
+            auto answer = std::move(*selected.value<1>());
+            auto const found = pending.find(answer.peer.get());
+            // One slot: the answer to the request, which names its block. One
+            // for another block, a late answer to a request given up on among
+            // them, takes no slot, and whatever follows the answer is not it.
+            if (found == pending.end() || answer.message.block_hash() != found->second.hash ||
+                    ! found->second.reply->try_send(std::move(answer.message))) {
+                spdlog::debug("[compact_blocks] blocktxn from [{}] answers no request; ignored",
+                    answer.peer->authority());
+            }
+            continue;
+        }
+        if (selected.index == 2) {
+            take(pending, tasks, std::move(*selected.value<2>()));
+            continue;
+        }
+        (void)(*selected.value<3>())->try_send(pending.size());
     }
-    {
-        std::lock_guard const lock(mutex_);
-        stopping_ = true;
+
+    // Nothing more is taken: the read loops are refused from here on, and
+    // whoever is asking is answered. A cmpctblock still queued is not
+    // rebuilt; the node is stopping.
+    offers_.close();
+    answers_.close();
+    questions_.close();
+    // A question sent before the close and not yet taken is answered here:
+    // whoever sent it is waiting for the answer, and nothing else would give
+    // it one.
+    std::error_code drained;
+    while (auto const left = questions_.try_receive(drained)) {
+        (void)(*left)->try_send(size_t{0});
     }
-    // Their waits for blocktxn end with the same stop; a submission still
+    // What was queued and not taken holds its peer's session: let go of here,
+    // not when the receiver is destroyed.
+    while (offers_.try_receive(drained)) {}
+    while (answers_.try_receive(drained)) {}
+    // The reconstructions' waits end with the same stop; a submission still
     // owed is answered by the coordinator as it ends.
-    co_await tasks_.join();
+    co_await tasks.join();
+    finished_.close();
 }
 
 ::asio::awaitable<void> compact_block_receiver::reconstruct(network::peer_session::ptr peer,
-    domain::message::compact_block message) {
+    domain::message::compact_block message, std::shared_ptr<reply_channel> reply) {
 
-    // Off the read loop that offered it: co_spawn runs a task inline up to
-    // its first wait when called from a thread of the task's executor, and the
-    // read loops run on the same pool.
+    // run() is told when this ends, however it ends. There is room: the
+    // channel holds one for each reconstruction there can be.
+    detail::scope_action const finished([this, key = peer.get()]() noexcept {
+        network::peer_session const* who = key;
+        (void)finished_.try_send(std::move(who));
+    }, true);
+
+    // Off the task that spawned it: co_spawn runs a task inline up to its
+    // first wait when called from a thread of the task's executor.
     auto executor = co_await ::asio::this_coro::executor;
     co_await ::asio::post(executor, ::asio::use_awaitable);
 
-    bool taken = false;
-    try {
-        taken = co_await rebuild(peer, message);
-    } catch (std::exception const& e) {
-        spdlog::debug("[compact_blocks] Rebuilding a block from [{}] failed: {}", peer->authority(), e.what());
-    }
+    auto const taken = co_await rebuild(peer, message, *reply);
     if ( ! taken && ! network_.stopped()) {
         fall_back(peer, message.header());
     }
-    std::lock_guard const lock(mutex_);
-    pending_.erase(peer.get());
 }
 
 ::asio::awaitable<bool> compact_block_receiver::rebuild(network::peer_session::ptr const& peer,
-    domain::message::compact_block const& message) {
+    domain::message::compact_block const& message, reply_channel& reply) {
 
     auto const hash = domain::chain::hash(message.header());
     auto rebuilt = reconstruct_compact_block(message, chain_);
     if (rebuilt.status == compact_reconstruct::missing) {
         auto const request = domain::message::get_block_transactions::create(hash, rebuilt.missing);
-        auto const reply = std::make_shared<reply_channel>(1);
-        {
-            std::lock_guard const lock(mutex_);
-            auto const found = pending_.find(peer.get());
-            if (found == pending_.end()) {
-                co_return false;
-            }
-            found->second.reply = reply;
-        }
         // Never waits for room: a peer that is not reading holds no
         // reconstruction while its queue drains.
         if ( ! request || ! peer->try_send(*request)) {
@@ -356,7 +398,7 @@ size_t compact_block_receiver::pending() const {
         // the read loop that delivers the answer never waits on it.
         auto executor = co_await ::asio::this_coro::executor;
         auto completion = co_await ::asio::experimental::make_select(
-            ::asio::experimental::receive(*reply),
+            ::asio::experimental::receive(reply),
             ::asio::experimental::after(std::chrono::steady_clock::now() + blocktxn_timeout_)
         ).async_wait(executor, {}, network_.stop_token(), ::asio::as_tuple(::asio::deferred));
         auto& [ec, selected] = completion;
@@ -368,12 +410,8 @@ size_t compact_block_receiver::pending() const {
                 encode_hash(hash), peer->authority());
             co_return false;
         }
+        // For this block: run() hands over no other.
         auto const response = std::move(*selected.value<0>());
-        if (response.block_hash() != hash) {
-            spdlog::debug("[compact_blocks] blocktxn from [{}] is for {}, not {}",
-                peer->authority(), encode_hash(response.block_hash()), encode_hash(hash));
-            co_return false;
-        }
         rebuilt = accept_block_transactions(message, rebuilt, response.transactions());
     }
     if (rebuilt.status != compact_reconstruct::complete) {

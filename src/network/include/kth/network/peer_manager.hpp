@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/unordered/unordered_flat_set.hpp>
+
 #include <kth/domain.hpp>
 #include <kth/infrastructure.hpp>
 #include <kth/network/define.hpp>
@@ -108,6 +110,17 @@ public:
     /// @return Count of peers
     ::asio::awaitable<size_t> count() const;
 
+    /// One of `limit` high-bandwidth compact block slots (BIP152) for `peer`,
+    /// its own until it is removed. False when every slot is taken or the
+    /// peer is not held here. The slots belong with the peers: a slot is free
+    /// again the moment its peer leaves, with nobody telling anybody.
+    [[nodiscard]]
+    ::asio::awaitable<bool> take_compact_slot(peer_session::ptr peer, size_t limit);
+
+    /// Peers holding one of those slots.
+    [[nodiscard]]
+    ::asio::awaitable<size_t> compact_slots() const;
+
     // -------------------------------------------------------------------------
     // Synchronous accessors (for compatibility, use with care)
     // -------------------------------------------------------------------------
@@ -160,6 +173,9 @@ private:
 
     // Peers indexed by nonce
     std::unordered_map<uint64_t, peer_session::ptr> peers_;
+    // The nonces of the peers holding a high-bandwidth compact block slot.
+    // Only on the strand, as peers_.
+    boost::unordered_flat_set<uint64_t> compact_slots_;
 
     // Configuration
     size_t const max_connections_;

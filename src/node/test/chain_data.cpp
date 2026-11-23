@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstring>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -337,23 +338,53 @@ TEST_CASE("getblocktxn for no transaction, or past the block, disconnects the pe
 
 TEST_CASE("the cmpctblock of a tip is built once and shared", "[chain_data][tip_announcement][compact_blocks]") {
     served_chain c;
-    node::sync::compact_tip_cache cache;
-    auto& chain = c.fixture.chain();
+    node::sync::compact_tip_source source(c.fixture.chain());
 
-    auto const tip = run_on_own_context(cache.get(chain, c.trunk[3].hash()));
+    // The source's own task, and the peers' services that ask it.
+    ::asio::io_context io;
+    std::stop_source stop;
+    // Ended on every way out of the case, a failed REQUIRE among them: a
+    // thread left running would end the whole run, not this case.
+    struct io_thread {
+        ::asio::io_context& io;
+        std::stop_source& stop;
+        ::asio::executor_work_guard<::asio::io_context::executor_type> guard{::asio::make_work_guard(io)};
+        std::thread runner{[this] { io.run(); }};
+
+        ~io_thread() {
+            stop.request_stop();
+            // Not left to the source ending: a case that failed because it
+            // did not end would wait here for it.
+            io.stop();
+            runner.join();
+        }
+    } const thread{io, stop};
+    auto running = ::asio::co_spawn(io, source.run(stop.get_token()), ::asio::use_future);
+    auto const ask = [&](hash_digest const& hash) {
+        auto answer = ::asio::co_spawn(io, source.get(hash), ::asio::use_future);
+        REQUIRE(answer.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+        return answer.get();
+    };
+
+    auto const tip = ask(c.trunk[3].hash());
     REQUIRE(tip);
     CHECK(domain::chain::hash(tip->header()) == c.trunk[3].hash());
     REQUIRE(tip->transactions().size() == 1);
     CHECK(tip->transactions().front().transaction() == c.trunk[3].transactions().front());
     // The same one, not built again: same nonce, same short IDs.
-    CHECK(run_on_own_context(cache.get(chain, c.trunk[3].hash())) == tip);
+    CHECK(ask(c.trunk[3].hash()) == tip);
 
     // The next tip replaces it; a block the node does not hold gives nothing.
-    auto const next = run_on_own_context(cache.get(chain, c.trunk[2].hash()));
+    auto const next = ask(c.trunk[2].hash());
     REQUIRE(next);
     CHECK(next != tip);
     CHECK(domain::chain::hash(next->header()) == c.trunk[2].hash());
-    CHECK_FALSE(run_on_own_context(cache.get(chain, unknown_hash())));
+    CHECK_FALSE(ask(unknown_hash()));
+
+    // Once it has ended, whoever asks is told there is none, and does not wait.
+    stop.request_stop();
+    REQUIRE(running.wait_for(std::chrono::seconds(30)) == std::future_status::ready);
+    CHECK_FALSE(ask(c.trunk[3].hash()));
 }
 
 namespace {

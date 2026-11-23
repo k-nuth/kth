@@ -241,7 +241,7 @@ private:
 #if ! defined(__EMSCRIPTEN__)
     // The cmpctblock of the latest tip, shared by the peers' services that
     // announce it to peers asking for high-bandwidth compact blocks.
-    sync::compact_tip_cache compact_tips_;
+    sync::compact_tip_source compact_tips_;
     // Rebuilds the cmpctblocks peers send. Made before the network starts,
     // so the first peer's is taken too; its run() ends within run().
     std::unique_ptr<sync::compact_block_receiver> compact_blocks_;

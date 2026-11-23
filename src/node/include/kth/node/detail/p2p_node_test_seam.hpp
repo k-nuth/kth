@@ -12,8 +12,12 @@
 #define KTH_NODE_DETAIL_P2P_NODE_TEST_SEAM_HPP_
 
 #include <cstddef>
+#include <future>
 #include <system_error>
 #include <utility>
+
+#include <asio/co_spawn.hpp>
+#include <asio/use_future.hpp>
 
 #include <kth/node/p2p_node.hpp>
 
@@ -58,8 +62,9 @@ struct p2p_node_test_seam {
     }
 
     /// Peers holding one of the high-bandwidth compact block slots.
-    static size_t high_bandwidth_compact_peers(p2p_node const& target) {
-        return target.high_bandwidth_compact_peers_.load();
+    static size_t high_bandwidth_compact_peers(p2p_node& target) {
+        return ::asio::co_spawn(target.pool_.get_executor(), target.manager_.compact_slots(),
+            ::asio::use_future).get();
     }
 };
 
