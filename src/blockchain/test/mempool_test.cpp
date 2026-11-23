@@ -16,6 +16,8 @@
 
 #include <test_helpers.hpp>
 
+#include <catch2/generators/catch_generators.hpp>
+
 #include <kth/blockchain/pools/mempool.hpp>
 #include <kth/blockchain/pools/mempool_limit.hpp>
 #include <kth/blockchain/settings.hpp>
@@ -1036,6 +1038,76 @@ TEST_CASE("mempool limit refuses a newcomer that is the cheapest", "[mempool][se
     CHECK(lp.trim(bytes) == 1);
     CHECK(lp.pool.contains(pooled.hash()));
     CHECK_FALSE(lp.pool.contains(newcomer.hash()));
+}
+
+// would_evict() answers what add-then-trim would do to a newcomer, and leaves
+// the pool and the limit as they were.
+TEST_CASE("mempool limit says whether a newcomer would be evicted without adding it",
+          "[mempool][serial][limit]") {
+    limited_pool lp;
+    auto const cheap = make_tx({op(1, 0)}, 1, 1);
+    auto const child = make_tx({output_point{cheap.hash(), 0}}, 1, 2);
+    auto const middle = make_tx({op(2, 0)}, 1, 3);
+    REQUIRE(lp.add(priced(cheap, 200, 200)));        // 1000 per kB
+    REQUIRE(lp.add(priced(child, 20'000, 200)));     // pays well, but spends cheap
+    REQUIRE(lp.add(priced(middle, 400, 200)));       // 2000 per kB
+    auto const full = lp.limit.usage();
+    mempool_limit const& limit = lp.limit;
+
+    auto const newcomer = make_tx({op(3, 0)}, 1, 4);
+
+    SECTION("a pool with room evicts nothing") {
+        auto const entry = priced(newcomer, 100, 200);
+        CHECK_FALSE(limit.would_evict(lp.pool, entry, full + mempool_limit::entry_usage(entry)));
+    }
+    SECTION("the cheapest of a full pool is the one evicted") {
+        CHECK(limit.would_evict(lp.pool, priced(newcomer, 100, 200), full));
+    }
+    SECTION("at an equal rate the newcomer is the most recent, and goes first") {
+        CHECK(limit.would_evict(lp.pool, priced(newcomer, 200, 200), full));
+    }
+    SECTION("one that pays more stays: the cheapest leaves with its descendant") {
+        CHECK_FALSE(limit.would_evict(lp.pool, priced(newcomer, 300, 200), full));
+    }
+    SECTION("one that pays more does not stay when what leaves frees too little") {
+        // Room for one transaction only: everything cheaper leaves, and the
+        // pool still does not fit until the newcomer leaves too.
+        auto const entry = priced(newcomer, 300, 200);
+        CHECK(limit.would_evict(lp.pool, entry, mempool_limit::entry_usage(entry) - 1));
+    }
+    SECTION("one that spends what is evicted goes with it") {
+        auto const grandchild = make_tx({output_point{child.hash(), 0}}, 1, 5);
+        CHECK(limit.would_evict(lp.pool, priced(grandchild, 50'000, 200), full));
+    }
+
+    // Nothing was touched.
+    CHECK(lp.limit.usage() == full);
+    CHECK(lp.pool.contains(cheap.hash()));
+    CHECK(lp.pool.contains(child.hash()));
+    CHECK(lp.pool.contains(middle.hash()));
+    CHECK_FALSE(lp.pool.contains(newcomer.hash()));
+}
+
+// The answer is the one adding and trimming gives.
+TEST_CASE("mempool limit's test of a newcomer agrees with adding it and trimming",
+          "[mempool][serial][limit]") {
+    auto const fee = GENERATE(uint64_t{100}, uint64_t{200}, uint64_t{300}, uint64_t{500}, uint64_t{30'000});
+    limited_pool lp;
+    auto const cheap = make_tx({op(1, 0)}, 1, 1);
+    auto const child = make_tx({output_point{cheap.hash(), 0}}, 1, 2);
+    auto const middle = make_tx({op(2, 0)}, 1, 3);
+    REQUIRE(lp.add(priced(cheap, 200, 200)));
+    REQUIRE(lp.add(priced(child, 20'000, 200)));
+    REQUIRE(lp.add(priced(middle, 400, 200)));
+    auto const full = lp.limit.usage();
+
+    auto const newcomer = make_tx({op(3, 0)}, 1, 4);
+    auto const entry = priced(newcomer, fee, 200);
+    auto const predicted = lp.limit.would_evict(lp.pool, entry, full);
+
+    REQUIRE(lp.add(entry));
+    (void)lp.trim(full);
+    CHECK(predicted == ! lp.pool.contains(newcomer.hash()));
 }
 
 TEST_CASE("mempool limit orders by virtual size, so signature checks are paid for",

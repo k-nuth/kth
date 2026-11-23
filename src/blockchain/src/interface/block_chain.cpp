@@ -2617,23 +2617,9 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     };
     validation_mutex_.lock_low_priority();
     unlock const release{validation_mutex_};
-    // A pooled parent may have been removed while script validation was running.
-    // Its hash commits to the output, so presence is enough to recheck it here.
-    for (auto const& input : entry.tx->inputs()) {
-        auto const& point = input.previous_output();
-        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
-            return error::missing_previous_output;
-        }
-    }
-
-    // A pool that has been full asks more for a while (BCHN "mempool min fee
-    // not met"), per virtual byte, so a transaction heavy in signature checks
-    // pays for them. Checked here, under the lock that orders it against the
-    // evictions and blocks that move it.
     auto const limit = settings_.mempool_limit_bytes();
-    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
-    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
-        return error::insufficient_fee;
+    if (auto const refused = admission_refusal(entry, limit)) {
+        return refused;
     }
 
     auto const txid = entry.tx->hash();
@@ -2655,6 +2641,44 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     mempool_admissions_.record(tracked.entry_id, txid, mempool_);
     (void)mempool_admission_events_.try_send(std::monostate{});
     return error::success;
+}
+
+code block_chain::admission_refusal(mempool_entry const& entry, uint64_t limit) {
+    // A pooled parent may have been removed while script validation was running.
+    // Its hash commits to the output, so presence is enough to recheck it here.
+    for (auto const& input : entry.tx->inputs()) {
+        auto const& point = input.previous_output();
+        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
+            return error::missing_previous_output;
+        }
+    }
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"), per virtual byte, so a transaction heavy in signature checks
+    // pays for them. Checked under the lock that orders it against the
+    // evictions and blocks that move it.
+    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
+    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
+        return error::insufficient_fee;
+    }
+    return error::success;
+}
+
+::asio::awaitable<code> block_chain::test_commit_validated_transaction(mempool_entry entry) {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, entry = std::move(entry)]() -> ::asio::awaitable<code> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            auto const limit = settings_.mempool_limit_bytes();
+            if (auto const refused = admission_refusal(entry, limit)) {
+                co_return refused;
+            }
+            // Past its limit the pool evicts the lowest fee per virtual byte,
+            // and a transaction that would be the one evicted is refused.
+            if (mempool_limit_.would_evict(mempool_, entry, limit)) {
+                co_return error::insufficient_fee;
+            }
+            co_return error::success;
+        }, ::asio::use_awaitable);
 }
 
 ::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_admitted_after(uint64_t after, size_t limit) {
@@ -2738,6 +2762,10 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
 
 ::asio::awaitable<code> block_chain::transaction_validate(transaction_const_ptr tx) const {
     co_return co_await transaction_organizer_.transaction_validate(tx);
+}
+
+awaitable_expected<size_t> block_chain::test_accept(transaction_const_ptr tx) {
+    co_return co_await transaction_organizer_.test_accept(tx);
 }
 
 // =============================================================================
