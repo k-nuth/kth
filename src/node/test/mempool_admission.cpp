@@ -28,6 +28,7 @@
 #include "sync_harness.hpp"
 #include "child_process_harness.hpp"
 #include "tx_relay_harness.hpp"
+#include <kth/blockchain/pools/mempool_limit.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
@@ -604,6 +605,129 @@ TEST_CASE("testing acceptance refuses a transaction whose pooled parent has left
     REQUIRE(chain.mempool_trim(0) == 1);
     CHECK(commit() == error::missing_previous_output);
     CHECK(chain.mempool_ref().size() == 0);
+}
+
+namespace {
+
+// A signed spend of the first output of `prev_tx` into `count` equal outputs,
+// paying `rate` satoshis per byte. The outputs are what gives it its weight in
+// the pool: a few of these fill the smallest limit a node can be given.
+transaction_const_ptr fan_out(domain::chain::transaction const& prev_tx, size_t count, uint64_t rate,
+                              domain::script_flags_t flags) {
+    auto const prev_value = prev_tx.outputs()[0].value();
+    auto const build = [&](uint64_t fee_paid) {
+        domain::chain::input::list inputs;
+        inputs.emplace_back(domain::chain::output_point{prev_tx.hash(), 0}, domain::chain::script{}, 0xffffffffu);
+        domain::chain::output::list outputs;
+        outputs.reserve(count);
+        auto const each = (prev_value - fee_paid) / count;
+        for (size_t i = 0; i < count; ++i) {
+            outputs.emplace_back(each, test::miner_script(), domain::chain::token_data_opt{});
+        }
+        domain::chain::transaction unsigned_tx(1, 0, std::move(inputs), std::move(outputs));
+        unsigned_tx.inputs()[0].previous_output().validation.cache = prev_tx.outputs()[0];
+        auto const sighash_type = uint8_t(infrastructure::machine::sighash_algorithm::forkid_all);
+        auto const endorsement = domain::chain::script::create_endorsement(
+            test::miner_secret(), test::miner_script(), unsigned_tx, 0, sighash_type, flags, prev_value);
+        REQUIRE(endorsement);
+        domain::chain::input::list signed_inputs;
+        signed_inputs.emplace_back(domain::chain::output_point{prev_tx.hash(), 0},
+            domain::chain::script(domain::chain::script::to_pay_public_key_hash_pattern_unlocking(
+                *endorsement, test::miner_public())),
+            0xffffffffu);
+        auto signed_outputs = unsigned_tx.outputs();
+        return domain::chain::transaction(1, 0, std::move(signed_inputs), std::move(signed_outputs));
+    };
+    // The fee does not change the size: every amount takes eight bytes.
+    auto const size = build(0).serialized_size(true);
+    return std::make_shared<domain::message::transaction>(build(rate * size));
+}
+
+// What the pool's limit counts for a transaction it has not seen yet.
+uint64_t usage_of(transaction_const_ptr const& tx, uint64_t rate) {
+    auto const size = tx->serialized_size(true);
+    return blockchain::mempool_limit::entry_usage(
+        blockchain::mempool_entry{tx, rate * size, uint32_t(size), 1, 0});
+}
+
+} // namespace
+
+// A pool at its limit evicts the transaction that pays least per virtual byte,
+// so admission refuses a newcomer that would be the one. Nothing has been
+// evicted here, so the pool asks no minimum fee: what refuses the cheap
+// newcomer is the pool being full, and the test of acceptance says so too.
+TEST_CASE("testing acceptance refuses what a pool at its limit would evict", "[mempool][admission][limit]") {
+    // Coinbases 1 to 10 have matured at the tip of this trunk.
+    admission_chain built("test_accept_full_pool", trunk_len + 10, true, 1'000'000,
+        [](blockchain::settings& settings) { settings.mempool_max_mb = 1; });
+    auto& chain = built.chain();
+    auto const flags = chain.chain_settings().enabled_flags();
+    auto const limit = chain.chain_settings().mempool_limit_bytes();
+    REQUIRE(limit == 1'000'000u);
+    auto const coinbase = [&](size_t block) -> domain::chain::transaction const& {
+        return built.trunk[block].transactions().front();
+    };
+    auto const submit = [&](transaction_const_ptr const& tx) {
+        return run_on_chain(chain, [&chain, tx] { return chain.submit_transaction(tx); });
+    };
+    constexpr uint64_t filler_rate = 3;
+
+    // The newcomers, one output each.
+    auto const cheap = fan_out(coinbase(8), 1, 2, flags);
+    auto const paying = fan_out(coinbase(9), 1, 10, flags);
+    // A signature is a byte longer or shorter from one to the next.
+    auto const newcomer_usage = std::min(usage_of(cheap, 2), usage_of(paying, 10));
+
+    // Fill the pool until less than one newcomer fits: whole fillers first,
+    // then one sized for what is left.
+    size_t next = 0;
+    auto const whole = fan_out(coinbase(next), 1500, filler_rate, flags);
+    auto const whole_usage = usage_of(whole, filler_rate);
+    REQUIRE(whole_usage < limit);
+    REQUIRE(submit(whole) == error::success);
+    ++next;
+    while (chain.mempool_usage() + whole_usage <= limit) {
+        REQUIRE(next < 7);
+        REQUIRE(submit(fan_out(coinbase(next), 1500, filler_rate, flags)) == error::success);
+        ++next;
+    }
+    REQUIRE(next < 7);
+    auto const room = limit - chain.mempool_usage();
+    // What a filler takes grows by the same amount with each output.
+    auto const one = usage_of(fan_out(coinbase(next), 1, filler_rate, flags), filler_rate);
+    auto const per_output = usage_of(fan_out(coinbase(next), 2, filler_rate, flags), filler_rate) - one;
+    if (room >= one + per_output) {
+        // The estimate first, then down to what fits.
+        auto outputs = (room - one) / per_output;
+        auto last = fan_out(coinbase(next), outputs, filler_rate, flags);
+        while (usage_of(last, filler_rate) > room) {
+            REQUIRE(outputs > 1);
+            outputs -= 1 + (usage_of(last, filler_rate) - room) / per_output;
+            last = fan_out(coinbase(next), outputs, filler_rate, flags);
+        }
+        REQUIRE(submit(last) == error::success);
+    }
+    auto const pooled = chain.mempool_ref().size();
+    REQUIRE(chain.mempool_usage() <= limit);
+    REQUIRE(chain.mempool_usage() + newcomer_usage > limit);
+    // Nothing was evicted on the way: the pool asks no minimum fee.
+    REQUIRE(chain.mempool_minimum_fee_per_kb() == 0);
+
+    // The cheapest of a full pool: refused, as admission refuses it.
+    auto const refused = test_accept_on_chain(chain, cheap);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == error::insufficient_fee);
+
+    // One that pays more than what is pooled: a pooled one would leave instead.
+    CHECK(test_accept_on_chain(chain, paying).has_value());
+
+    // Testing changed nothing.
+    CHECK(chain.mempool_ref().size() == pooled);
+    CHECK(chain.mempool_minimum_fee_per_kb() == 0);
+
+    // And admission answers the same for both.
+    CHECK(submit(cheap) == error::insufficient_fee);
+    CHECK_FALSE(chain.mempool_ref().contains(cheap->hash()));
 }
 
 // Admission asks a full pool's raised minimum only when it records the
