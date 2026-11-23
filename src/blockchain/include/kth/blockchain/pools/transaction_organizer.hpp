@@ -63,8 +63,9 @@ struct KB_API transaction_organizer {
 
     /// Whether organize() would admit `tx`, without admitting it: the pool's
     /// first-seen rule and every check admission makes, but nothing is added
-    /// to the pool and nothing is announced. Yields the transaction's
-    /// sigchecks when it would be admitted.
+    /// to the pool and nothing is announced. The answer is for the pool as it
+    /// is now, which can change before a later organize(). Yields the
+    /// transaction's sigchecks when it would be admitted.
     [[nodiscard]]
     awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
 

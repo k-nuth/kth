@@ -232,8 +232,8 @@ bool transaction_organizer::stop() {
     auto const committed = chain_.commit_validated_transaction(mempool_entry{
         tx,
         tx->fees(),
-        static_cast<uint32_t>(tx->serialized_size(true)),
-        static_cast<uint32_t>(*sigchecks),
+        uint32_t(tx->serialized_size(true)),
+        uint32_t(*sigchecks),
         seen}, published);
     if (committed) co_return committed;
     //#########################################################################
@@ -359,13 +359,17 @@ awaitable_expected<size_t> transaction_organizer::test_accept(transaction_const_
         co_return sigchecks;
     }
 
-    // A pool that has been full asks more for a while (BCHN "mempool min fee
-    // not met"). Admission asks it only when it records the transaction
-    // (block_chain::commit_validated_transaction), which a test never reaches,
-    // so the test asks it here, per virtual byte as admission does.
-    auto const minimum = co_await chain_.mempool_minimum_fee();
-    if (tx->fees() < fee_for(minimum, virtual_size(tx->serialized_size(true), *sigchecks))) {
-        co_return std::unexpected(error::insufficient_fee);
+    // What admission refuses only when it records the transaction, a step a
+    // test never reaches: a pooled parent that left meanwhile, the minimum fee
+    // of a pool that has been full, and the eviction of a pool at its limit.
+    auto const refused = co_await chain_.test_commit_validated_transaction(mempool_entry{
+        tx,
+        tx->fees(),
+        uint32_t(tx->serialized_size(true)),
+        uint32_t(*sigchecks),
+        /*time_seen*/ 0});
+    if (refused) {
+        co_return std::unexpected(refused);
     }
     co_return sigchecks;
 }

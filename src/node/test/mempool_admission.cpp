@@ -577,6 +577,35 @@ TEST_CASE("after the mempool was full, admission asks its raised minimum fee",
     CHECK(chain.mempool_ref().contains(paying->hash()));
 }
 
+// A pooled parent can leave the pool while its child is validated. Admission
+// looks again when it records the child, and the test of it looks the same way.
+TEST_CASE("testing acceptance refuses a transaction whose pooled parent has left", "[mempool][admission]") {
+    admission_chain built("test_accept_parent_left", trunk_len);
+    auto& chain = built.chain();
+    auto const parent = built.matured_spend(fee);
+    auto const child = std::make_shared<domain::message::transaction>(test::spend_p2pkh(
+        parent, 0, parent.outputs()[0].value() - fee, chain.chain_settings().enabled_flags()));
+    REQUIRE(run_on_chain(chain, [&] {
+        return chain.submit_transaction(std::make_shared<domain::message::transaction>(parent));
+    }) == error::success);
+
+    // Validated while its parent is pooled: its prevout is marked as the
+    // pool's, as it is when admission reaches the step that records it.
+    auto const tested = test_accept_on_chain(chain, child);
+    REQUIRE(tested.has_value());
+    blockchain::mempool_entry const entry{child, child->fees(), uint32_t(child->serialized_size(true)),
+        uint32_t(*tested), /*time_seen*/ 0};
+    auto const commit = [&] {
+        return ::asio::co_spawn(chain.executor(), chain.test_commit_validated_transaction(entry),
+            ::asio::use_future).get();
+    };
+    CHECK(commit() == error::success);
+
+    REQUIRE(chain.mempool_trim(0) == 1);
+    CHECK(commit() == error::missing_previous_output);
+    CHECK(chain.mempool_ref().size() == 0);
+}
+
 // Admission asks a full pool's raised minimum only when it records the
 // transaction, a step testing never reaches; testing asks it too, so the two
 // give the same answer either side of it.

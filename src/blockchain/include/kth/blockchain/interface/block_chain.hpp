@@ -721,6 +721,13 @@ struct KB_API block_chain {
     [[nodiscard]]
     code commit_validated_transaction(mempool_entry entry, chain_view_ptr const& expected);
 
+    /// What commit_validated_transaction(entry, ...) would refuse `entry` for,
+    /// or success, without recording it: its pooled parents, the pool's
+    /// minimum fee, and the eviction of a pool at its limit. On the chain's
+    /// executor, as mempool_minimum_fee().
+    [[nodiscard]]
+    ::asio::awaitable<code> test_commit_validated_transaction(mempool_entry entry);
+
     // Metadata relative to a single connected publication. The overload taking
     // a view lets multi-part API responses retain the same reference chain.
     // An unavailable reference leaves both depths at -1; own branch metadata
@@ -935,8 +942,9 @@ struct KB_API block_chain {
     [[nodiscard]]
     ::asio::awaitable<code> transaction_validate(transaction_const_ptr tx) const;
 
-    /// Whether submit_transaction(tx) would admit `tx` to the mempool, without
-    /// admitting or announcing it. Yields the transaction's sigchecks when it would.
+    /// Whether submit_transaction(tx) would admit `tx` to the mempool as the
+    /// pool is now, without admitting or announcing it: the pool can change
+    /// before a later submission. Yields the transaction's sigchecks when it would.
     [[nodiscard]]
     awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
 
@@ -1317,6 +1325,11 @@ private:
     // and a trim, each ringing mempool_fee_events_ when the minimum moved.
     void note_mempool_block_connected();
     size_t trim_mempool(uint64_t limit);
+
+    // What keeps a validated transaction out of the pool before it is added:
+    // a pooled parent that left, or a fee under the pool's minimum. The caller
+    // holds the validation mutex.
+    code admission_refusal(mempool_entry const& entry, uint64_t limit);
     ::asio::experimental::select_channel<std::monostate> mempool_fee_events_{1};
 
     // Under validation_mutex_: the order of admission, and its doorbell.

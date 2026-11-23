@@ -241,10 +241,8 @@ and `18: txn-mempool-conflict` (BIP61 code 18, duplicate) when the pool already
 holds it or already holds a spend of one of its prevouts, each with the node's
 own message as `reject-details`, and otherwise the node's own reason.
 
-The answer is for the pool as it was when the test ran. A transaction it allows
-can still be refused when submitted: a pooled parent may have left the pool
-since, and a pool at its size limit evicts the transaction paying least per
-virtual byte once it has been added, which the test does not simulate.
+The answer is for the pool as it was when the test ran, and a pool changes: a
+transaction it allows can still be refused when it is submitted later.
 
 ## Mining: getblocktemplate
 
