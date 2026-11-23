@@ -408,6 +408,8 @@ bool check_compact_filters(configuration const& cfg, std::ostream& error) {
 // feature cannot use one, so it refuses to start: going on would connect
 // directly and show every peer the address the proxy was there to hide.
 bool check_proxy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+// A WebAssembly build has no network settings: it makes no connections of its own.
+#if ! defined(__EMSCRIPTEN__)
 #if ! defined(KTH_WITH_SOCKS5)
     if ( ! cfg.network.proxy.empty()) {
         error << "Error: net.proxy needs a build with the option socks5; "
@@ -423,6 +425,7 @@ bool check_proxy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std
                  "it resolves names without the proxy." << std::endl;
         return false;
     }
+#endif // ! defined(__EMSCRIPTEN__)
     return true;
 }
 
