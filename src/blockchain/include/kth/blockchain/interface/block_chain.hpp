@@ -1144,9 +1144,21 @@ struct KB_API block_chain {
     std::vector<domain::chain::transaction> get_mempool_transactions_from_wallets(std::vector<domain::wallet::payment_address> const& payment_addresses, bool use_testnet_rules) const;
 
     mempool_mini_hash_map get_mempool_mini_hash_map(domain::message::compact_block const& block) const;
-    /// Fill absolute slots from short ids; clear ambiguous slots and report a collision.
+    /// What the mempool gave a compact block's slots.
+    struct mempool_fill {
+        /// The slots handed in, with each one the mempool holds exactly one
+        /// transaction for filled. An ambiguous slot is left null.
+        domain::chain::transaction::list transactions;
+        /// How many of them the mempool filled.
+        size_t matched = 0;
+        /// Whether two of the mempool's transactions claimed one slot.
+        bool collided = false;
+    };
+
+    /// Fill `slots`, positions in the block, from the mempool: `positions`
+    /// gives the slot of each short ID.
     [[nodiscard]]
-    bool fill_tx_list_from_mempool(domain::message::compact_block const& block, size_t& mempool_count, std::vector<domain::chain::transaction>& txn_available, short_id_slots const& shorttxids) const;
+    mempool_fill fill_tx_list_from_mempool(domain::message::compact_block const& block, domain::chain::transaction::list slots, short_id_slots const& positions) const;
 
     // Mempool query readers, backing the typical BCH JSON-RPC mempool calls.
     hash_list get_mempool_txids() const;                                                             // getrawmempool

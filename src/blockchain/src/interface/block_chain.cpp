@@ -4009,40 +4009,41 @@ block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
     return mempool;
 }
 
-bool block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
-                                            size_t& mempool_count,
-                                            std::vector<domain::chain::transaction>& txn_available,
-                                            short_id_slots const& shorttxids) const {
+block_chain::mempool_fill block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
+                                                                domain::chain::transaction::list slots,
+                                                                short_id_slots const& positions) const {
 
-    std::vector<bool> have_txn(txn_available.size());
-    bool collided = false;
+    mempool_fill filled{std::move(slots), 0, false};
+    auto& transactions = filled.transactions;
+    std::vector<bool> have(transactions.size());
 
     auto const header_hash = hash(block);
 
     mempool_.for_each([&](mempool_entry const& e) {
         auto const& tx = *e.tx;
-        auto const shortid = domain::message::compact_short_id(header_hash, tx.hash());
+        auto const short_id = domain::message::compact_short_id(header_hash, tx.hash());
 
-        auto idit = shorttxids.find(shortid);
-        if (idit == shorttxids.end() || idit->second >= txn_available.size()) {
+        auto const found = positions.find(short_id);
+        if (found == positions.end() || found->second >= transactions.size()) {
             return;
         }
-        if ( ! have_txn[idit->second]) {
-            txn_available[idit->second] = tx;
-            have_txn[idit->second] = true;
-            ++mempool_count;
+        auto const at = found->second;
+        if ( ! have[at]) {
+            transactions[at] = tx;
+            have[at] = true;
+            ++filled.matched;
             return;
         }
         // A second transaction maps to the same short id, so the slot is
         // ambiguous and gets cleared. A cleared slot holds the null
         // transaction, so clear (and decrement) only once.
-        if ( ! txn_available[idit->second].is_null()) {
-            txn_available[idit->second] = domain::chain::transaction::null();
-            --mempool_count;
+        if ( ! transactions[at].is_null()) {
+            transactions[at] = domain::chain::transaction::null();
+            --filled.matched;
         }
-        collided = true;
+        filled.collided = true;
     });
-    return collided;
+    return filled;
 }
 
 // =============================================================================

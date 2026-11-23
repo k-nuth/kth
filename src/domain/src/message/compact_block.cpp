@@ -170,8 +170,6 @@ expect<compact_block> compact_block::from_data(byte_reader& reader, uint32_t ver
 
 
 size_t compact_block::serialized_size(uint32_t /*version*/) const {
-    //std::println("compact_block::serialized_size");
-
     auto size = chain::header::satoshi_fixed_size() +
                 infrastructure::message::variable_uint_size(short_ids_.size()) +
                 (short_ids_.size() * 6u) +
