@@ -66,6 +66,7 @@ struct fake_socks5 {
     data_chunk credentials;
     data_chunk request;
     bool accepted{false};
+    int stalled_at{0};
     bool server_done{false};
     std::exception_ptr server_exception;
 
@@ -111,7 +112,7 @@ struct fake_socks5 {
         accepted = true;
         if ( ! co_await read(greeting, 2)) co_return;
         if ( ! co_await read(greeting, greeting[1])) co_return;
-        if (reply.stall_at == 1) co_return;
+        if (reply.stall_at == 1) { stalled_at = 1; co_return; }
         if ( ! co_await write(reply.method, reply.split)) co_return;
         if (reply.stop_after == 1) {
             finish_reply();
@@ -123,7 +124,7 @@ struct fake_socks5 {
             if ( ! co_await read(credentials, 1)) co_return;
             auto const password_size = credentials.back();
             if ( ! co_await read(credentials, password_size)) co_return;
-            if (reply.stall_at == 2) co_return;
+            if (reply.stall_at == 2) { stalled_at = 2; co_return; }
             if ( ! co_await write(reply.auth, reply.split)) co_return;
             if (reply.stop_after == 2) {
                 finish_reply();
@@ -142,7 +143,7 @@ struct fake_socks5 {
             default: co_return;
         }
         if ( ! co_await read(request, address_size + 2)) co_return;
-        if (reply.stall_at == 3) co_return;
+        if (reply.stall_at == 3) { stalled_at = 3; co_return; }
         if (reply.connect_delay.count() != 0) {
             ::asio::steady_timer pause(ctx);
             pause.expires_after(reply.connect_delay);
@@ -161,6 +162,7 @@ struct fake_socks5 {
         credentials.clear();
         request.clear();
         accepted = false;
+        stalled_at = 0;
         server_done = false;
         server_exception = nullptr;
         ctx.restart();
@@ -394,6 +396,8 @@ TEST_CASE("SOCKS5 bounds every negotiation phase by the connection deadline", "[
     proxy.start(reply);
     auto result = proxy.connect("peer.invalid", randomize, 100ms);
     REQUIRE(proxy.accepted);
+    // The deadline ended the phase under test, not an earlier one.
+    REQUIRE(proxy.stalled_at == reply.stall_at);
     REQUIRE( ! result);
     REQUIRE(result.error() == error::channel_timeout);
 }

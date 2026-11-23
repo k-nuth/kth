@@ -17,7 +17,9 @@
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/ip/address.hpp>
 #include <asio/read.hpp>
+#include <asio/co_spawn.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/strand.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 
@@ -144,8 +146,8 @@ awaitable_expected<void> connect_and_negotiate(
 
 awaitable_expected<::asio::ip::tcp::socket> async_socks5_connect(
     ::asio::any_io_executor executor,
-    std::string const& proxy,
-    std::string const& hostname,
+    std::string proxy,
+    std::string hostname,
     uint16_t port,
     bool randomize,
     std::chrono::steady_clock::duration timeout)
@@ -190,18 +192,31 @@ awaitable_expected<::asio::ip::tcp::socket> async_socks5_connect(
         co_return std::unexpected(error::illegal_value);
     }
     auto const proxy_endpoint = ::asio::ip::tcp::endpoint(proxy_ip_address, proxy_address->port());
+    // The exchange and its deadline complete without synchronisation between
+    // them, so asio requires both to run on a strand; the caller's executor is
+    // usually the thread pool, so the exchange gets its own strand here.
     ::asio::ip::tcp::socket socket(executor);
-    ::asio::steady_timer timer(executor);
-    timer.expires_after(timeout);
-    using namespace ::asio::experimental::awaitable_operators;
-    auto result = co_await (
-        connect_and_negotiate(socket, proxy_endpoint, request, randomize) ||
-        timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
-    );
-    if (result.index() == 1) {
-        co_return std::unexpected(error::channel_timeout);
-    }
-    auto const& negotiated = std::get<0>(result);
+    ::asio::strand<::asio::any_io_executor> exchange_strand(executor);
+    auto const negotiated = co_await ::asio::co_spawn(exchange_strand,
+        [&]() -> awaitable_expected<void> {
+            ::asio::steady_timer timer(exchange_strand);
+            timer.expires_after(timeout);
+            using namespace ::asio::experimental::awaitable_operators;
+            auto result = co_await (
+                connect_and_negotiate(socket, proxy_endpoint, request, randomize) ||
+                timer.async_wait(::asio::as_tuple(::asio::use_awaitable))
+            );
+            if (result.index() == 0) {
+                co_return std::get<0>(std::move(result));
+            }
+            // A timer that was cancelled did not expire.
+            auto const [timer_ec] = std::get<1>(result);
+            if (timer_ec) {
+                co_return std::unexpected(error::boost_to_error_code(timer_ec));
+            }
+            co_return std::unexpected(error::channel_timeout);
+        },
+        ::asio::use_awaitable);
     if ( ! negotiated) {
         co_return std::unexpected(negotiated.error());
     }

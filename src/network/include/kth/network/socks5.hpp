@@ -30,8 +30,8 @@ inline constexpr std::chrono::seconds socks5_minimum_deadline{20};
 [[nodiscard]]
 KN_API awaitable_expected<::asio::ip::tcp::socket> async_socks5_connect(
     ::asio::any_io_executor executor,
-    std::string const& proxy,
-    std::string const& hostname,
+    std::string proxy,
+    std::string hostname,
     uint16_t port,
     bool randomize,
     std::chrono::steady_clock::duration timeout);
