@@ -48,6 +48,8 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/sync/compact_blocks.hpp>
+#include <kth/node/sync/tip_announcement.hpp>
 #endif
 #include <kth/domain/multi_crypto_support.hpp>
 #include <kth/node/configuration.hpp>
@@ -219,6 +221,7 @@ private:
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
     ::asio::awaitable<void> run_sync();
+    ::asio::awaitable<void> run_compact_blocks();
     ::asio::awaitable<void> run_compact_filters();
 #endif
 
@@ -235,6 +238,14 @@ private:
 #endif
     std::shared_ptr<blockchain::block_submission_channel> const block_submissions_;
     blockchain::block_chain chain_;
+#if ! defined(__EMSCRIPTEN__)
+    // The cmpctblock of the latest tip, shared by the peers' services that
+    // announce it to peers asking for high-bandwidth compact blocks.
+    sync::compact_tip_cache compact_tips_;
+    // Rebuilds the cmpctblocks peers send. Made before the network starts,
+    // so the first peer's is taken too; its run() ends within run().
+    std::unique_ptr<sync::compact_block_receiver> compact_blocks_;
+#endif
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
 #if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
     // Set when node.compact_filters is on. The peers' services and the index
