@@ -260,25 +260,6 @@ void check_subscription(subscription const& s, int scenario) {
             s.publish(bc);
             bc.drain();
             require(out.calls == 1 && out.errors == 1 && out.status == kth_ec_out_of_memory && ! out.bad, "conversion failure not delivered after cleanup");
-        } else if (scenario == 15 || scenario == 16) {
-            // end_transition's internal wake is not a block event for C callers.
-            require(bc.block_events->wire.try_send(std::error_code{}, size_t{42},
-                        chain_type::blocks{}, chain_type::blocks{}), "tip wake refused");
-            bc.poll();
-            require(out.calls == 0 && bc.active == 1 && bc.unsubscribed == 0,
-                    "internal tip wake delivered as a block event");
-            if (scenario == 15) {
-                out.stop_after = 1;
-                s.publish(bc);
-            } else {
-                s.cancel(bc);
-            }
-            bc.drain();
-            require(out.calls == 1 && bc.active == 0 && bc.unsubscribed == 1 && ! out.bad,
-                    "subscription lost after internal tip wake");
-            require(scenario == 15 ? out.errors == 0 && out.released == 2
-                                  : out.errors == 1 && out.status == kth_ec_service_stopped,
-                    "block event or terminal error changed after internal tip wake");
         } else if (scenario == 14) {
             s.publish(bc);
             bc.poll();
@@ -337,8 +318,8 @@ int main() {
             test("second owned result rollback", [&] { check_query(q, fault::none, 2); });
     }
     for (auto const& s : subscriptions())
-        for (int scenario = 0; scenario <= 16; ++scenario) {
-            if ((scenario == 11 || scenario >= 15) && std::string(s.name) != "blocks")
+        for (int scenario = 0; scenario <= 14; ++scenario) {
+            if (scenario == 11 && std::string(s.name) != "blocks")
                 continue;
             test(std::string(s.name) + " subscription " + std::to_string(scenario), [&] { check_subscription(s, scenario); });
         }

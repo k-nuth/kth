@@ -686,6 +686,31 @@ TEST_CASE("rpc server answers other connections while a long poll is held", "[rp
     CHECK_NOTHROW(fixture.finish());
 }
 
+TEST_CASE("rpc server keeps answering after long polls whose clients went away", "[rpc server][rpc longpoll]") {
+    rpc_server_fixture fixture("rpc_server_longpoll_abandoned");
+    fixture.chain.settings().notify_limit_hours = 0;
+    REQUIRE(fixture.start());
+
+    // As many abandoned long polls as the server admits connections, on a
+    // chain where nothing changes. Each one still held would keep its
+    // connection, and none would be left.
+    ::asio::io_context client;
+    for (size_t i = 0; i < 64; ++i) {
+        ::asio::ip::tcp::socket held(client);
+        REQUIRE(run_client(client, bounded(hold_long_poll(held, fixture.port,
+            std::chrono::milliseconds(50)), std::chrono::seconds(5))));
+        std::error_code ignored;
+        held.close(ignored);
+    }
+
+    auto const other = run_client(client, bounded(ask(fixture.port, request(5, "close")),
+        std::chrono::seconds(5)));
+    auto const answers = bodies(other);
+    REQUIRE(answers.size() == 1);
+    CHECK(answers[0].find(R"("id":5)") != std::string::npos);
+    CHECK_NOTHROW(fixture.finish());
+}
+
 TEST_CASE("rpc server stop ends a held long poll at once", "[rpc server][rpc longpoll]") {
     rpc_server_fixture fixture("rpc_server_longpoll_stop");
     fixture.chain.settings().notify_limit_hours = 0;
@@ -704,13 +729,11 @@ TEST_CASE("rpc server stop ends a held long poll at once", "[rpc server][rpc lon
     CHECK_NOTHROW(fixture.finish());
     CHECK(std::chrono::steady_clock::now() - began < std::chrono::seconds(10));
 
-    // The connection is closed. If an answer came first, it is the shutdown
-    // error, not a template.
+    // The connection is closed, and no template went out on it.
     auto const rest = run_client(client, bounded(read_rest(held), std::chrono::seconds(5)));
-    for (auto const& body : bodies(rest)) {
-        CHECK(body.find(R"("code":-9)") != std::string::npos);
-    }
     CHECK(rest.find(R"("previousblockhash")") == std::string::npos);
+}
+
 TEST_CASE("rpc server ends a held request whose client went away", "[rpc server][rpc held]") {
     held_requests held("rpc_server_held_abandoned");
     REQUIRE(held.fixture.start());

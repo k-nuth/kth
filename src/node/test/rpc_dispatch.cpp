@@ -1292,21 +1292,27 @@ std::string longpollid_of(std::string_view reply) {
 }
 
 // A long-polling getblocktemplate dispatched on a thread of its own, so the
-// test can change the chain while it is held. Destruction requests the stop,
-// which ends a hold the test leaves behind, and joins the thread.
+// test can change the chain while it is held. That thread also does what the
+// server does for a held request: it rings the request's bell when the chain
+// changes. Destruction closes the request's connection doorbell, which ends a
+// hold the test leaves behind, and joins the thread.
 struct held_template_request {
     held_template_request(node::rpc::dispatcher const& dispatcher, blockchain::block_chain& chain,
         node::mining::job_store& jobs, std::string const& longpollid,
         std::chrono::steady_clock::duration wait = node::rpc::longpoll_mempool_wait)
-        : context{.chain = chain, .jobs = jobs, .stop = stop.get_token(), .longpoll_wait = wait}
+        : context{.chain = chain, .jobs = jobs, .work = &bell, .closed = &closed,
+            .longpoll_wait = wait}
         , body(R"({"method":"getblocktemplate","params":[{"longpollid":")" + longpollid +
             R"("}],"id":21})")
+        , ringing(::asio::co_spawn(io,
+            node::rpc::ring_on_chain_changes(chain, bell, ends), ::asio::use_future))
         , reply(::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future))
         , runner([this] { io.run(); })
     {}
 
     ~held_template_request() {
-        stop.request_stop();
+        closed.close();
+        ends.close();
         runner.join();
     }
 
@@ -1318,10 +1324,13 @@ struct held_template_request {
         return reply.wait_for(limit) == std::future_status::ready;
     }
 
-    std::stop_source stop;
+    node::rpc::work_bell bell;
+    node::rpc::doorbell closed{1};
+    node::rpc::doorbell ends{1};
     node::rpc::method_context context;
     std::string body;
     ::asio::io_context io;
+    std::future<void> ringing;
     std::future<std::string> reply;
     std::thread runner;
 };

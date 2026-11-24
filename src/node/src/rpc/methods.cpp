@@ -15,9 +15,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <fmt/format.h>
@@ -25,15 +23,8 @@
 #include <functional>
 
 
-#include <asio/as_tuple.hpp>
 #include <asio/awaitable.hpp>
-#include <asio/deferred.hpp>
 #include <asio/error.hpp>
-#include <asio/steady_timer.hpp>
-#include <asio/this_coro.hpp>
-#include <asio/use_awaitable.hpp>
-#include <asio/experimental/awaitable_operators.hpp>
-#include <asio/experimental/channel_select.hpp>
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -51,7 +42,6 @@
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
 
-#include <kth/node/detail/scope_action.hpp>
 #include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/rpc/error.hpp>
 #include <kth/node/mining/block_submit.hpp>
@@ -234,115 +224,34 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 // BIP22 long polling: hold a getblocktemplate whose longpollid names `watched`
 // until the template it names is out of date. A new tip ends the hold at once;
 // a mempool change ends it once ctx.longpoll_wait has passed since the
-// request. False when the server is stopping.
+// request. It also ends when the request's connection is gone.
 //
-// The chain's own signals wake it: the tip published at the end of a
-// transition and each transaction admitted to the mempool. A wake only rings;
-// the tip and the mempool generation are read again from the chain, so a
-// notification the broadcaster dropped on a full channel loses no change.
-// Nothing polls: the only deadline is the minimum wait itself.
-::asio::awaitable<bool> wait_for_new_template(method_context& ctx, longpoll_state const& watched) {
-    using namespace ::asio::experimental::awaitable_operators;
-    if (ctx.stop.stop_requested()) {
-        co_return false;
-    }
-    auto const executor = co_await ::asio::this_coro::executor;
+// Nothing polls. The server wakes the request when the tip or the mempool
+// changes, and the tip and the mempool generation are read again from the
+// chain each time, so it does not matter which change woke it or how many.
+::asio::awaitable<void> wait_for_new_template(method_context& ctx, longpoll_state const& watched) {
     auto const deadline = std::chrono::steady_clock::now() + ctx.longpoll_wait;
-
-    // Subscribed before the first look at the chain, so a change after that
-    // look rings.
-    auto const tips = ctx.chain.subscribe_blockchain();
-    auto const transactions = ctx.chain.subscribe_transaction();
-    // Closing a channel does not wake an operation already waiting on it in
-    // the pinned Asio; cancelling first does.
-    auto const end_tips = [&] {
-        if (tips) {
-            tips->cancel();
-            tips->close();
+    for (;;) {
+        // Before the read below, so a change after that read ends the wait.
+        auto const watching = watch_work(ctx);
+        auto const view = ctx.chain.chain_view();
+        if ( ! view || view->tip_hash != watched.tip) {
+            co_return;
         }
-    };
-    auto const end_transactions = [&] {
-        if (transactions) {
-            transactions->cancel();
-            transactions->close();
+        auto const pool_changed =
+            ctx.chain.mempool_ref().generation() != watched.mempool_generation;
+        auto const now = std::chrono::steady_clock::now();
+        if (now >= deadline && (pool_changed || ! watching)) {
+            // Without a server nothing wakes the request after its deadline.
+            co_return;
         }
-    };
-    detail::scope_action unsubscribe([&] {
-        end_tips();
-        end_transactions();
-        ctx.chain.unsubscribe_blockchain(tips);
-        ctx.chain.unsubscribe_transaction(transactions);
-    }, true);
-    // A stopped broadcaster hands out no channel: the chain is stopping, and
-    // the template fetch that follows reports it.
-    if ( ! tips || ! transactions) {
-        co_return true;
+        // Until the deadline it bounds the wait; past it only a change does.
+        auto const until = now < deadline
+            ? deadline : std::chrono::steady_clock::time_point::max();
+        if (co_await wait_for_work(ctx, watching, until) == wake::connection_closed) {
+            co_return;
+        }
     }
-
-    // One ring is all a re-read needs: the channel holds one, and a ring that
-    // finds it full loses nothing.
-    ::asio::experimental::select_channel<std::monostate> wake{1, 1};
-    auto forward_tips = [&]() -> ::asio::awaitable<void> {
-        for (;;) {
-            auto const received = co_await tips->async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            (void)wake.try_send(std::monostate{});
-            if (std::get<0>(received)) co_return;
-        }
-    };
-    auto forward_transactions = [&]() -> ::asio::awaitable<void> {
-        for (;;) {
-            auto const received = co_await transactions->async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            (void)wake.try_send(std::monostate{});
-            if (std::get<0>(received)) co_return;
-        }
-    };
-    bool stopping = false;
-    auto hold = [&]() -> ::asio::awaitable<void> {
-        // Both forwarders end however this returns; the group below joins them.
-        detail::scope_action finish([&] {
-            end_tips();
-            end_transactions();
-        }, true);
-        bool pool_changed = false;
-        for (;;) {
-            // A new tip ends it, and so does the chain stopping, which closes
-            // the tip channel.
-            auto const view = ctx.chain.chain_view();
-            if ( ! view || view->tip_hash != watched.tip || ! tips->is_open()) {
-                co_return;
-            }
-            if ( ! pool_changed &&
-                ctx.chain.mempool_ref().generation() != watched.mempool_generation) {
-                // Whatever the pool does next cannot end the hold sooner, so
-                // stop waking on it.
-                pool_changed = true;
-                end_transactions();
-            }
-            auto const now = std::chrono::steady_clock::now();
-            if (pool_changed && now >= deadline) {
-                co_return;
-            }
-            // Past the deadline with the pool unchanged, only a ring ends it.
-            auto const until = now < deadline ? deadline : ::asio::steady_timer::time_point::max();
-            // Named, then bound by reference, which is correct with any
-            // compiler (docs/asio-select-sync.md).
-            auto completion = co_await ::asio::experimental::make_select(
-                ::asio::experimental::receive(wake),
-                ::asio::experimental::after(until)
-            ).async_wait(executor, {}, ctx.stop, ::asio::as_tuple(::asio::deferred));
-            auto const& [ec, selected] = completion;
-            (void)selected;
-            if (ec) {
-                // operation_aborted: the server is stopping.
-                stopping = true;
-                co_return;
-            }
-        }
-    };
-    co_await (forward_tips() && forward_transactions() && hold());
-    co_return ! stopping;
 }
 
 // getblocktemplate [template_request] -> the next-block template with its
@@ -397,8 +306,8 @@ get_block_template(method_context& ctx, request const& req) {
     // answered at once.
     if (longpollid) {
         auto const watched = parse_longpollid(*longpollid);
-        if (watched && ! co_await wait_for_new_template(ctx, *watched)) {
-            co_return kth::fail(make_error(error_code::client_not_connected, "Shutting down"));
+        if (watched) {
+            co_await wait_for_new_template(ctx, *watched);
         }
     }
 

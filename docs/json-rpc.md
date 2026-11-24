@@ -113,7 +113,7 @@ counterpart.
 | `getmempoolentry` | `kth_chain_get_mempool_entry` | `get_mempool_entry()` (+ depends/spentby) |
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
-| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` (long polling: `chain_view()`, `mempool_ref().generation()`, `subscribe_blockchain()`, `subscribe_transaction()`) |
+| `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` (long polling: `chain_view()`, `mempool_ref().generation()`, `tip_changes()`, `mempool_ref().changes()`) |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblock` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
@@ -271,9 +271,9 @@ describes:
 - Otherwise it is held. A new tip answers it as soon as the block is connected.
   A mempool change answers it only once it has been held for 60 seconds, since
   transactions arrive all the time: then at once if the mempool has changed
-  since the template, or else at the next transaction the mempool admits.
-- If the node shuts down while the request is held, the request ends at once:
-  with error `-9` (`Shutting down`), or with its connection closed.
+  since the template, or else at its next change.
+- If the client closes the connection, or the node shuts down, the hold ends
+  at once. A client that only closed its sending side still gets its template.
 
 The answer is a fresh template with its own `longpollid`. Pools that wait for
 new work this way, instead of asking for a template every few seconds, need it

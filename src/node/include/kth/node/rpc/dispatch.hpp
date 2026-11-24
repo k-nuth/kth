@@ -90,6 +90,13 @@ struct method_context {
     std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
 
+// Ring `bell` each time the chain's tip or mempool changes, until `ends` is
+// closed. It is the one consumer of the chain's two doorbells, and runs where
+// `bell` belongs: the server's strand.
+[[nodiscard]]
+::asio::awaitable<void> ring_on_chain_changes(blockchain::block_chain& chain,
+    work_bell& bell, doorbell& ends);
+
 // Why a request stopped waiting.
 enum class wake {
     work_changed,

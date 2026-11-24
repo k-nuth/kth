@@ -522,23 +522,8 @@ void server::stop() {
     };
     // The chain's two doorbells have this one consumer. It turns each ring
     // into a wake for every held request; they read the chain again.
-    auto watch_work = [&]() -> ::asio::awaitable<void> {
-        using namespace ::asio::experimental;
-        auto const executor = co_await ::asio::this_coro::executor;
-        for (;;) {
-            auto completion = co_await make_select(
-                receive(work_watch_ends),
-                receive(chain_.tip_changes()),
-                receive(chain_.mempool_ref().changes())
-            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-            auto const& [ec, selected] = completion;
-            if (ec || selected.index == 0) {
-                co_return;
-            }
-            work_.ring();
-        }
-    };
-    co_await (accept_connections() && receive_stop() && watch_work());
+    co_await (accept_connections() && receive_stop()
+        && ring_on_chain_changes(chain_, work_, work_watch_ends));
     spdlog::info("[rpc] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }
