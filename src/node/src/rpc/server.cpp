@@ -328,7 +328,17 @@ bool server::authorized(std::string_view authorization_header) const {
         // taken. This read notices. What it reads meanwhile is the start of
         // the next pipelined request, kept for the parser; past one buffer of
         // it the read stops, and with it the notice of a client that goes
-        // away. The stop does not depend on it: it closes `closed` itself.
+        // away. A handler that waits is then told to stop waiting: `closed`
+        // is rung, and the requests read ahead are served, which reads the
+        // connection again. The stop does not depend on the read: it closes
+        // `closed` itself.
+        //
+        // A ring left by the request before this one, whose handler was not
+        // waiting, is not this request's.
+        {
+            std::error_code ignored;
+            (void)closed.try_receive(ignored);
+        }
         bool handled = false;
         auto handle = [&]() -> ::asio::awaitable<void> {
             // However the handler ends, the read ends with it: it is the only
@@ -354,6 +364,9 @@ bool server::authorized(std::string_view authorization_header) const {
                     co_return;
                 }
                 pending.append(buffer.data(), n);
+            }
+            if ( ! handled) {
+                (void)closed.try_send(std::monostate{});
             }
         };
         co_await (handle() && watch());
