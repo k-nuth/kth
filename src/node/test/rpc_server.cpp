@@ -430,6 +430,15 @@ struct held_requests {
                 (void)woken.try_send(wake(why));
                 co_return std::string(name(why));
             });
+            // A request that takes a while and waits for nothing the server
+            // could wake.
+            d.add("pause", [](node::rpc::method_context&, node::rpc::request const&)
+                    -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+                ::asio::steady_timer timer(co_await ::asio::this_coro::executor,
+                    std::chrono::milliseconds(200));
+                co_await timer.async_wait(::asio::use_awaitable);
+                co_return std::string("0");
+            });
         };
     }
 
@@ -871,6 +880,71 @@ TEST_CASE("rpc server keeps the request that follows a held one on its connectio
     CHECK(answers[0].find(R"("result":"connection_closed")") != std::string::npos);
     CHECK(answers[1].find(R"("id":2)") != std::string::npos);
     CHECK(answers[1].find(R"("result":0)") != std::string::npos);
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server ends a hold when more waits behind it than it reads ahead", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_read_ahead_full");
+    REQUIRE(held.fixture.start());
+
+    // More pipelined requests behind the hold than the server reads ahead.
+    // Past that it stops reading the connection, so it could not notice this
+    // client going away: the hold would keep the connection for as long as
+    // nothing else woke it.
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    REQUIRE(held.hold(socket, call(1, "hold", "keep-alive")));
+    std::string behind;
+    int sent = 1;
+    while (behind.size() < 3 * 8192) {
+        behind += request(++sent, "keep-alive");
+    }
+    behind += request(++sent, "close");
+    ::asio::write(socket, ::asio::buffer(behind));
+
+    // Nothing changed the mining work and the hold's deadline is far.
+    auto const why = take(held.woken);
+    REQUIRE(why.has_value());
+    CHECK(*why == wake::connection_closed);
+
+    // The hold is answered, and then every request behind it, in order.
+    auto const stream = within(client, read_to_end(socket));
+    REQUIRE(stream.has_value());
+    auto const answers = bodies(*stream);
+    REQUIRE(answers.size() == size_t(sent));
+    CHECK(answers[0].find(R"("result":"connection_closed")") != std::string::npos);
+    for (int id = 1; id <= sent; ++id) {
+        CAPTURE(id);
+        auto const& answer = answers[size_t(id - 1)];
+        auto const field = R"("id":)" + std::to_string(id);
+        CHECK((answer.find(field + ",") != std::string::npos || answer.find(field + "}") != std::string::npos));
+    }
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server holds the request that follows one whose handler did not wait", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_after_backlog");
+    REQUIRE(held.fixture.start());
+
+    // A backlog behind a request that takes a while, and waits for nothing,
+    // rings the connection's doorbell with nobody to hear it. The hold that
+    // comes last on the same connection must not take that ring for its own.
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    socket.connect({::asio::ip::make_address("127.0.0.1"), held.fixture.port});
+    int sent = 1;
+    auto backlog = call(sent, "pause", "keep-alive");
+    while (backlog.size() < 3 * 8192) {
+        backlog += request(++sent, "keep-alive");
+    }
+    ::asio::write(socket, ::asio::buffer(backlog + call(++sent, "hold", "keep-alive")));
+    REQUIRE(take(held.entered).has_value());
+    CHECK_FALSE(take(held.woken, std::chrono::milliseconds(300)).has_value());
+
+    held.change_mempool(7u);
+    auto const why = take(held.woken);
+    REQUIRE(why.has_value());
+    CHECK(*why == wake::work_changed);
     CHECK_NOTHROW(held.fixture.finish());
 }
 
