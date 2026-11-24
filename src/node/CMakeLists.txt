@@ -173,12 +173,6 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/mining/job_store.cpp
     src/mining/block_submit.cpp
     src/mining/work_changes.cpp
-
-    # Stratum V2 template provider.
-    src/sv2/framing.cpp
-    src/sv2/primitives.cpp
-    src/sv2/messages.cpp
-    src/sv2/connection.cpp
   )
 endif()
 
@@ -312,12 +306,6 @@ set(kth_headers
   include/kth/node/mining/block_submit.hpp
   include/kth/node/mining/work_changes.hpp
 
-  # Stratum V2 template provider.
-  include/kth/node/sv2/framing.hpp
-  include/kth/node/sv2/primitives.hpp
-  include/kth/node/sv2/messages.hpp
-  include/kth/node/sv2/connection.hpp
-
   # Optional JSON-RPC server (compiled only when KTH_WITH_RPC is set).
   include/kth/node/rpc/error.hpp
   include/kth/node/rpc/json.hpp
@@ -394,6 +382,22 @@ if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_sources(${PROJECT_NAME} PRIVATE
     src/detail/bloom_filters.cpp
     include/kth/node/detail/bloom_filters.hpp)
+endif()
+
+# Stratum V2 for pools and miners. An optional feature: built only when asked
+# for (docs/optional-features.md).
+if(KTH_WITH_SV2 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_SV2)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/sv2/framing.cpp
+    src/sv2/primitives.cpp
+    src/sv2/messages.cpp
+    src/sv2/connection.cpp
+    include/kth/node/sv2/feature.hpp
+    include/kth/node/sv2/framing.hpp
+    include/kth/node/sv2/primitives.hpp
+    include/kth/node/sv2/messages.hpp
+    include/kth/node/sv2/connection.hpp)
 endif()
 
 # Serving compact block filters to light wallets (Neutrino, BIP157/158). An
@@ -521,10 +525,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/mining_job_store.cpp
           test/mining_block_submit.cpp
           test/mining_work_changes.cpp
-          test/sv2_framing.cpp
-          test/sv2_primitives.cpp
-          test/sv2_messages.cpp
-          test/sv2_connection.cpp
           test/settings.cpp)
 
   # JSON-RPC unit tests build only when the server is compiled in.
@@ -616,8 +616,22 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_bloom_filters_test PRIVATE Catch2::Catch2WithMain)
   endif()
 
+  if(KTH_WITH_SV2 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_sv2_test
+      test/sv2_framing.cpp
+      test/sv2_primitives.cpp
+      test/sv2_messages.cpp
+      test/sv2_connection.cpp)
+    target_include_directories(kth_node_sv2_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_sv2_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_sv2_test PRIVATE Catch2::Catch2WithMain)
+  endif()
+
   include(CTest)
   kth_register_tests(kth_node_test TIMEOUT 600)
+  if(TARGET kth_node_sv2_test)
+    kth_register_tests(kth_node_sv2_test TIMEOUT 600)
+  endif()
   if(TARGET kth_node_bloom_filters_test)
     kth_register_tests(kth_node_bloom_filters_test TIMEOUT 600)
   endif()

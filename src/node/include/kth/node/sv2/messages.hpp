@@ -5,6 +5,8 @@
 #ifndef KTH_NODE_SV2_MESSAGES_HPP
 #define KTH_NODE_SV2_MESSAGES_HPP
 
+#include <kth/node/sv2/feature.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
