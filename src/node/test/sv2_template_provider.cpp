@@ -4,6 +4,8 @@
 
 #include <test_helpers.hpp>
 
+#include <catch2/generators/catch_generators.hpp>
+
 #include "sync_harness.hpp"
 
 #include <algorithm>
@@ -617,7 +619,7 @@ TEST_CASE("sv2 session closes on malformed, server-only and undefined messages",
     require_closed(oversized.process({0, 0, template_provider_session::max_payload_size + 1}, {}));
 }
 
-TEST_CASE("sv2 drops the work of a tip the chain left more than one block ago", "[sv2 template_provider]") {
+TEST_CASE("sv2 keeps the replaced tip's work only one block above it", "[sv2 template_provider]") {
     hash_digest next_tip{};
     next_tip[0] = 1;
     auto value = empty_template();
@@ -630,8 +632,11 @@ TEST_CASE("sv2 drops the work of a tip the chain left more than one block ago", 
         session.set_tip(next_tip, 10);
         REQUIRE(process(session, solution).solution);
     }
-    SECTION("two blocks later, seen in one step, it does not") {
-        session.set_tip(next_tip, 11);
+    SECTION("a tip it would not stand beside does not") {
+        // Two blocks later seen in one step; another tip at the same height,
+        // as after the chain went one block back and up again; a lower tip.
+        auto const height = GENERATE(size_t(11), size_t(9), size_t(8));
+        session.set_tip(next_tip, height);
         auto const ignored = process(session, solution);
         require_silent(ignored);
         REQUIRE_FALSE(ignored.solution);

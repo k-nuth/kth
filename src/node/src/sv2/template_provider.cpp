@@ -101,12 +101,14 @@ auto find_entry(Entries& entries, uint64_t id) {
 void template_provider_session::set_tip(hash_digest const& previous, size_t height) {
     if (previous_ && *previous_ != previous) {
         stale_through_ = next_id_ - 1;
-        // A block found on the replaced tip's work still competes at its
-        // height (sv2-spec 7). Work from any earlier tip is dropped, and so
-        // is this work when the chain moved more than one block since: the
-        // tip it was built on is then not the one just replaced.
+        // A block found on the replaced tip's work still competes with the
+        // new tip when it would stand at the new tip's height (sv2-spec 7).
+        // That is so only when the tip is one block above the one this work
+        // was built on, whatever tips the chain went through in between: a
+        // chain that moved further, or back and up again to the same height,
+        // has left this work behind. Work from any earlier tip is dropped.
         auto held = std::exchange(templates_, {});
-        if (height <= tip_height_ + 1) {
+        if (height == tip_height_ + 1) {
             replaced_ = std::move(held);
         } else {
             replaced_.clear();
@@ -458,6 +460,9 @@ template_provider::template_provider(sv2_settings const& settings,
                 result = co_await next_template();
             } else {
                 result = session.process(input.header, input.payload);
+                // Before anything is awaited for this client: the time a
+                // template or its write takes is not the client's.
+                if (session.constraints()) (void)set_up.try_send(std::monostate{});
                 if (result.constraints_changed) {
                     // The work sent so far leaves the room the old constraints
                     // asked for. Until work for these is sent, the tip counts
@@ -472,7 +477,6 @@ template_provider::template_provider(sv2_settings const& settings,
                 if (write_error) co_return;
             }
             if (result.close) co_return;
-            if (session.constraints()) (void)set_up.try_send(std::monostate{});
             if (result.solution) {
                 // A local block, admitted through the sync pipeline as a
                 // submitblock is: the answer comes once it is refused or

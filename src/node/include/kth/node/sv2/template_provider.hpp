@@ -67,8 +67,8 @@ struct template_provider_session {
 
     // Retire old work, but remember which issued ids belonged to an old tip.
     // The replaced tip's templates still take solutions until the next tip.
-    // `height` is the tip's: a tip more than one block above the last one
-    // seen replaced a tip this session never saw, so no work is kept.
+    // `height` is the tip's: work is kept only for a tip one block above the
+    // one it was built on, where a block found on it would be a rival.
     void set_tip(hash_digest const& previous, size_t height);
 
     // The latest CoinbaseOutputConstraints from this client, if any. Templates
