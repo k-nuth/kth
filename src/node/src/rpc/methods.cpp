@@ -304,15 +304,20 @@ get_block_template(method_context& ctx, request const& req) {
 
     // An id that names another tip, or no state this node gave out, is
     // answered at once.
+    //
+    // The client holds the template of the id it sent, so the answer to its
+    // long poll is a later one: not that one again out of the template cache.
+    std::optional<uint64_t> held_generation;
     if (longpollid) {
         auto const watched = parse_longpollid(*longpollid);
         if (watched) {
             co_await wait_for_new_template(ctx, *watched);
+            held_generation = watched->mempool_generation;
         }
     }
 
     auto const tmpl = co_await ctx.chain.fetch_mining_template(
-        blockchain::default_coinbase_reserve_size);
+        blockchain::default_coinbase_reserve_size, std::nullopt, held_generation);
     if ( ! tmpl) {
         co_return kth::fail(from_code(tmpl.error()));
     }

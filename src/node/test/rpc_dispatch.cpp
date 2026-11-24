@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 #include <kth/domain/chain/byte_code_pattern.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <optional>
 #include <boost/make_shared.hpp>
 #include "sync_harness.hpp"
@@ -1424,10 +1425,14 @@ TEST_CASE("getblocktemplate holds a long poll until a block connects", "[rpc dis
 }
 
 TEST_CASE("getblocktemplate answers a long poll on a mempool change only after the minimum wait", "[rpc dispatch][rpc longpoll]") {
-    // Rebuilt on every mempool change, so the answer shows the change.
+    // The answer shows the change whether a template is rebuilt on every
+    // mempool change or served from the cache for as long as its tip lasts:
+    // the client already holds the cached one.
+    auto const refresh_seconds = GENERATE(uint32_t(0), max_uint32);
+    CAPTURE(refresh_seconds);
     test::chain_fixture fixture("rpc_longpoll_mempool", 0);
     REQUIRE(fixture.created());
-    fixture.settings().gbt_template_refresh_seconds = 0;
+    fixture.settings().gbt_template_refresh_seconds = refresh_seconds;
     REQUIRE(fixture.start());
 
     // 101 connected blocks, so a spend of block 1's coinbase is admitted and
@@ -1474,6 +1479,7 @@ TEST_CASE("getblocktemplate answers a long poll on a mempool change only after t
         CHECK(reply.find(R"("txid":")" + encode_hash(tx->hash()) + '"') != std::string::npos);
         CHECK_FALSE(longpollid_of(reply).empty());
         CHECK(longpollid_of(reply) != id);
+        CHECK(longpollid_of(reply) != id);
     }
 
     SECTION("past the wait, the next admitted transaction answers it") {
@@ -1486,6 +1492,7 @@ TEST_CASE("getblocktemplate answers a long poll on a mempool change only after t
         auto const reply = held.reply.get();
         INFO(reply);
         CHECK(reply.find(R"("txid":")" + encode_hash(tx->hash()) + '"') != std::string::npos);
+        CHECK(longpollid_of(reply) != id);
     }
 }
 

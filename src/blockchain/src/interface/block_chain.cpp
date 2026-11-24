@@ -3580,12 +3580,15 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const {
-    co_return co_await fetch_mining_template(blockchain::coinbase_reserve{coinbase_reserve_size}, request_time);
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time,
+    std::optional<uint64_t> after_generation) const {
+    co_return co_await fetch_mining_template(blockchain::coinbase_reserve{coinbase_reserve_size}, request_time,
+        after_generation);
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::optional<uint32_t> request_time) const {
+block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::optional<uint32_t> request_time,
+    std::optional<uint64_t> after_generation) const {
     auto const coinbase_reserve_size = reserve.size;
     auto const coinbase_reserve_sigchecks = reserve.sigchecks;
     if (stopped()) {
@@ -3625,6 +3628,12 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
     // unchanged or its last change is still within the refresh window; a new tip
     // always forces a rebuild. The tip and generation are parameters rather than
     // captures because this is asked twice, against two different captures.
+    //
+    // A caller that asks for a selection later than the one it holds is not
+    // served that one, or an earlier one, out of the refresh window.
+    auto const later = [&](boost::shared_ptr<template_snapshot> const& s) {
+        return ! after_generation || s->generation > *after_generation;
+    };
     auto const usable = [&](boost::shared_ptr<template_snapshot> const& s,
                             hash_digest const& tip, uint64_t gen, uint32_t at) {
         return s &&
@@ -3632,7 +3641,7 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
                s->coinbase_reserve_size == coinbase_reserve_size &&
                s->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
                (s->generation == gen ||
-                at - s->time < settings_.gbt_template_refresh_seconds);
+                (later(s) && at - s->time < settings_.gbt_template_refresh_seconds));
     };
 
     // Selection remains cached, but header time and time-sensitive work are
@@ -3657,10 +3666,12 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
     // value; ownership itself is acquired by receiving the token below.
     // The budget is both reserves: a snapshot built for another SigChecks
     // reserve leaves the caller's coinbase a different amount of room.
+    // A caller that asks for a later selection waits for the owner instead.
     if (!template_rebuild_gate_.ready() && snapshot &&
         snapshot->previous == served->tip_hash &&
         snapshot->coinbase_reserve_size == coinbase_reserve_size &&
-        snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks) {
+        snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
+        later(snapshot)) {
         co_return refresh_header(snapshot->value, served, now);
     }
 

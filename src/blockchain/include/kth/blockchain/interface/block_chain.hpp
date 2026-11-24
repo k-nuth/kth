@@ -1139,17 +1139,25 @@ struct KB_API block_chain {
     fetch_mining_template(uint64_t coinbase_reserve_size) const;
 
     // Optional request clock for deterministic callers; nullopt samples wall time.
+    //
+    // `after_generation` is for a caller that already holds the template
+    // selected from the mempool of that generation and asks for a later one,
+    // as a long poll does once its wait is over. A cached template that is not
+    // later is then served only when the mempool has not changed since it was
+    // selected, since no later one exists.
     awaitable_expected<blockchain::mining_template>
-    fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const;
+    fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time,
+        std::optional<uint64_t> after_generation = std::nullopt) const;
 
     // Both reserves, space and SigChecks, for a caller whose coinbase needs
     // SigChecks room too, such as an SV2 client's CoinbaseOutputConstraints.
     // Both are part of the template cache key. The reserve is its own type so
     // that a SigChecks count cannot be passed where the overload above takes
-    // the request clock.
+    // the request clock. `after_generation` is as in the overload above.
     [[nodiscard]] awaitable_expected<blockchain::mining_template>
     fetch_mining_template(blockchain::coinbase_reserve reserve,
-        std::optional<uint32_t> request_time = std::nullopt) const;
+        std::optional<uint32_t> request_time = std::nullopt,
+        std::optional<uint64_t> after_generation = std::nullopt) const;
 
     // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
     // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
