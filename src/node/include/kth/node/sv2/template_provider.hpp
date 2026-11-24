@@ -7,6 +7,7 @@
 
 #include <kth/node/sv2/feature.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -66,7 +67,9 @@ struct template_provider_session {
 
     // Retire old work, but remember which issued ids belonged to an old tip.
     // The replaced tip's templates still take solutions until the next tip.
-    void set_tip(hash_digest const& previous);
+    // `height` is the tip's: a tip more than one block above the last one
+    // seen replaced a tip this session never saw, so no work is kept.
+    void set_tip(hash_digest const& previous, size_t height);
 
     // The latest CoinbaseOutputConstraints from this client, if any. Templates
     // for this connection must leave this room in the coinbase.
@@ -98,6 +101,7 @@ private:
     state state_ = state::awaiting_setup;
     std::optional<coinbase_output_constraints> constraints_;
     std::optional<hash_digest> previous_;
+    size_t tip_height_ = 0;
     std::deque<entry> templates_;
     // The templates of the tip just replaced, at most max_templates.
     std::deque<entry> replaced_;
@@ -126,6 +130,11 @@ struct template_provider {
     // One startup outcome: the actual bound port, or the listener's error.
     // May be awaited before run() starts. Cancellation wakes the waiter.
     [[nodiscard]] ::asio::awaitable<uint16_t> wait_until_listening();
+
+    // How long a connection has to complete its setup and send its coinbase
+    // constraints. One that has not by then is closed: it would hold one of
+    // the listener's connections without ever taking work. Tests shorten it.
+    std::chrono::steady_clock::duration setup_timeout = std::chrono::seconds(30);
 
 private:
     ::asio::awaitable<void> run_owned();

@@ -143,6 +143,14 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if (sv2_settings_.enabled) {
+        spdlog::error("[node] sv2.enabled needs a build with the option sv2.");
+        co_return error::operation_failed;
+    }
+#endif
+
 #if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
     // The parser refuses this too; a configuration built by hand gets here.
     if (compact_filters_refused_) {

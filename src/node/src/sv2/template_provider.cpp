@@ -98,14 +98,22 @@ auto find_entry(Entries& entries, uint64_t id) {
 
 } // namespace
 
-void template_provider_session::set_tip(hash_digest const& previous) {
+void template_provider_session::set_tip(hash_digest const& previous, size_t height) {
     if (previous_ && *previous_ != previous) {
         stale_through_ = next_id_ - 1;
         // A block found on the replaced tip's work still competes at its
-        // height (sv2-spec 7). Work from any earlier tip is dropped.
-        replaced_ = std::exchange(templates_, {});
+        // height (sv2-spec 7). Work from any earlier tip is dropped, and so
+        // is this work when the chain moved more than one block since: the
+        // tip it was built on is then not the one just replaced.
+        auto held = std::exchange(templates_, {});
+        if (height <= tip_height_ + 1) {
+            replaced_ = std::move(held);
+        } else {
+            replaced_.clear();
+        }
     }
     previous_ = previous;
+    tip_height_ = height;
 }
 
 template_provider_session::entry*
@@ -177,7 +185,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
         value.previous_block_hash, value.current_time, value.bits, target_bytes});
     bytes.insert(bytes.end(), activation.begin(), activation.end());
 
-    set_tip(value.previous_block_hash);
+    set_tip(value.previous_block_hash, value.height == 0 ? 0 : size_t(value.height) - 1);
     templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
     return {std::move(bytes), false};
@@ -346,6 +354,24 @@ template_provider::template_provider(sv2_settings const& settings,
     };
     detail::scope_action cleanup(end_inputs, true);
 
+    // Rung by dispatch once the client has sent its coinbase constraints:
+    // from then on it is a client waiting for work, for as long as it likes.
+    mining::doorbell set_up{1};
+    auto await_setup = [&]() -> ::asio::awaitable<void> {
+        using namespace ::asio::experimental;
+        auto const executor = co_await ::asio::this_coro::executor;
+        auto completion = co_await make_select(
+            receive(closed),
+            receive(set_up),
+            after(std::chrono::steady_clock::now() + setup_timeout)
+        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto const& [ec, selected] = completion;
+        if (selected.index == 2) {
+            spdlog::debug("[sv2] Closing a connection that did not complete its setup in time");
+            end_inputs();
+        }
+    };
+
     auto read_frames = [&]() -> ::asio::awaitable<void> {
         std::array<uint8_t, message_header::size> header_bytes{};
         for (;;) {
@@ -424,7 +450,7 @@ template_provider::template_provider(sv2_settings const& settings,
                 ::asio::as_tuple(::asio::use_awaitable));
             if (error || input.kind == event_kind::end) co_return;
             auto const view = chain_.chain_view();
-            if (view) session.set_tip(view->tip_hash);
+            if (view) session.set_tip(view->tip_hash, view->connected_tip_height);
 
             template_provider_session::result result;
             if (input.kind == event_kind::tip) {
@@ -432,7 +458,13 @@ template_provider::template_provider(sv2_settings const& settings,
                 result = co_await next_template();
             } else {
                 result = session.process(input.header, input.payload);
-                if (result.constraints_changed) result = co_await next_template();
+                if (result.constraints_changed) {
+                    // The work sent so far leaves the room the old constraints
+                    // asked for. Until work for these is sent, the tip counts
+                    // as one this client has no template for.
+                    sent_previous.reset();
+                    result = co_await next_template();
+                }
             }
             if ( ! result.response.empty()) {
                 auto [write_error, written] = co_await ::asio::async_write(socket,
@@ -440,6 +472,7 @@ template_provider::template_provider(sv2_settings const& settings,
                 if (write_error) co_return;
             }
             if (result.close) co_return;
+            if (session.constraints()) (void)set_up.try_send(std::monostate{});
             if (result.solution) {
                 // A local block, admitted through the sync pipeline as a
                 // submitblock is: the answer comes once it is refused or
@@ -451,7 +484,7 @@ template_provider::template_provider(sv2_settings const& settings,
             }
         }
     };
-    co_await (read_frames() && receive_tips() && dispatch());
+    co_await (read_frames() && receive_tips() && dispatch() && await_setup());
 }
 
 void template_provider::stop() {

@@ -13,6 +13,11 @@
 #include <asio/use_future.hpp>
 
 #include <sstream>
+#include <algorithm>
+#include <memory>
+#include <string_view>
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/spdlog.h>
 #if defined(_WIN32)
 #include <process.h>
 #else
@@ -119,6 +124,48 @@ TEST_CASE("the sv2 listener is off, and refused, in a build without the feature"
         std::ostringstream error;
         CHECK(parser.parse(9, argv, error));
     }
+}
+
+TEST_CASE("a node built without Stratum V2 does not start as one that listens for it", "[configuration tests][node][sv2]") {
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_sv2_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    node::configuration cfg{domain::config::network::regtest};
+    cfg.database.directory = dir;
+    cfg.database.db_max_size = 16ULL << 20;
+    cfg.network.threads = 0;
+    cfg.network.peers_file = dir / "peers.dat";
+    cfg.network.hosts_file = dir / "hosts.dat";
+    cfg.sv2.enabled = true;
+
+    // The directory holds no database, so a start that got as far as opening
+    // one fails too, with the same code. What the node wrote tells the two
+    // apart: it refuses for the setting, before it opens anything.
+    auto const sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256);
+    auto const previous = spdlog::default_logger();
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("captured", sink));
+    code result;
+    {
+        node::full_node node{cfg};
+        ::asio::io_context io;
+        auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+        io.run();
+        result = started.get();
+    }
+    spdlog::set_default_logger(previous);
+    auto const lines = sink->last_formatted();
+    auto const wrote = [&lines](std::string_view text) {
+        return std::ranges::any_of(lines, [text](std::string const& line) {
+            return line.find(text) != std::string::npos;
+        });
+    };
+    CHECK(result == error::operation_failed);
+    CHECK(wrote("sv2.enabled needs a build with the option sv2"));
+    CHECK_FALSE(wrote("Failed to open database"));
+    std::filesystem::remove_all(dir, ec);
 }
 #endif
 

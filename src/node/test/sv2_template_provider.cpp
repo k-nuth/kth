@@ -617,7 +617,84 @@ TEST_CASE("sv2 session closes on malformed, server-only and undefined messages",
     require_closed(oversized.process({0, 0, template_provider_session::max_payload_size + 1}, {}));
 }
 
+TEST_CASE("sv2 drops the work of a tip the chain left more than one block ago", "[sv2 template_provider]") {
+    hash_digest next_tip{};
+    next_tip[0] = 1;
+    auto value = empty_template();
+    value.height = 10;   // built on a tip at height 9
+    auto session = ready_session();
+    auto const job = template_messages(session.set_template(value));
+    auto const solution = solution_message(job, domain::chain::block({}, {coinbase_for(job)}));
+
+    SECTION("the tip just replaced still takes a solution") {
+        session.set_tip(next_tip, 10);
+        REQUIRE(process(session, solution).solution);
+    }
+    SECTION("two blocks later, seen in one step, it does not") {
+        session.set_tip(next_tip, 11);
+        auto const ignored = process(session, solution);
+        require_silent(ignored);
+        REQUIRE_FALSE(ignored.solution);
+    }
+}
+
 // The listener, over loopback sockets on an OS-assigned port.
+
+TEST_CASE("sv2 closes a connection that does not complete its setup in time", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    (void)seed_chain(fixture, 101);
+    fixture.provider->setup_timeout = 300ms;
+    auto const port = fixture.start();
+
+    SECTION("one that sends nothing") {
+        auto client = fixture.connect(port);
+        fixture.require_closed(*client);
+    }
+    SECTION("one that sets up and never sends its constraints") {
+        auto client = fixture.connect(port);
+        fixture.write(*client, frame(setup()));
+        (void)fixture.receive<setup_connection_success>(*client);
+        fixture.require_closed(*client);
+    }
+    SECTION("one that has its work is kept past it") {
+        auto client = fixture.connect(port);
+        fixture.write(*client, frame(setup()));
+        (void)fixture.receive<setup_connection_success>(*client);
+        auto const job = request_template(fixture, *client);
+        int slices = 0;
+        (void)fixture.wait_until([&] { return ++slices > 120; });   // twice the timeout
+        fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+        REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == job.work.template_id);
+    }
+    fixture.stop();
+}
+
+TEST_CASE("sv2 sends work for new constraints once it can, on the same tip", "[sv2 template_provider]") {
+    // The client has work, then changes its constraints at a moment when the
+    // chain has no template. The work it holds leaves the old room, so the
+    // wake-up that follows brings work for the new constraints though the
+    // tip is the same.
+    listener_fixture fixture(loopback_settings());
+    (void)seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const first = request_template(fixture, *client);
+
+    auto& chain = fixture.chain.chain();
+    REQUIRE(chain.begin_transition());
+    fixture.write(*client, frame(coinbase_output_constraints{400, 5}));
+    int slices = 0;
+    (void)fixture.wait_until([&] { return ++slices > 20; });
+    chain.end_transition();
+
+    auto const work = fixture.receive<new_template>(*client);
+    auto const activation = fixture.receive<set_new_prev_hash>(*client);
+    CHECK(work.template_id > first.work.template_id);
+    CHECK(activation.template_id == work.template_id);
+    CHECK(activation.prev_hash == first.prev.prev_hash);
+    fixture.stop();
+}
 
 TEST_CASE("sv2 templates encode the BIP34 height and distinguish evicted from stale ids", "[sv2 template_provider]") {
     auto session = ready_session();
@@ -645,7 +722,7 @@ TEST_CASE("sv2 templates encode the BIP34 height and distinguish evicted from st
         request_transaction_data{first_id}).response).error_code == "template-id-not-found");
     hash_digest next_tip{};
     next_tip[0] = 1;
-    session.set_tip(next_tip);
+    session.set_tip(next_tip, 128);
     REQUIRE(response<request_transaction_data_error>(process(session,
         request_transaction_data{first_id}).response).error_code == "stale-template-id");
     REQUIRE(response<request_transaction_data_error>(process(session,
@@ -813,7 +890,11 @@ TEST_CASE("sv2 listener closes a connection on an oversized, partial or channel 
         }
         fixture.write(*client, byte_span(bytes).first(3));
         fixture.write(*client, byte_span(bytes).subspan(3));
-        fixture.finish_writing(*client);
+        // A truncated frame is one the client stopped sending. The others
+        // are refused as they are, with the client still able to write.
+        if (invalid == 1 || invalid == 2) {
+            fixture.finish_writing(*client);
+        }
         fixture.require_closed(*client);
         fixture.stop();
     }
@@ -1054,7 +1135,9 @@ TEST_CASE("sv2 submits solutions for the replaced tip's templates, not older one
 }
 
 TEST_CASE("sv2 refuses malformed coinbase solutions even across reads", "[sv2 template_provider]") {
-    listener_fixture fixture(loopback_settings());
+    // With the endpoint a submission would be sent to, and nothing draining
+    // it: a malformed coinbase that got that far would be found there.
+    listener_fixture fixture(loopback_settings(), true);
     auto const trunk = seed_chain(fixture, 5);
     auto client = fixture.connect(fixture.start());
     fixture.write(*client, frame(setup()));
@@ -1075,6 +1158,8 @@ TEST_CASE("sv2 refuses malformed coinbase solutions even across reads", "[sv2 te
         fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
         REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == job.work.template_id);
         REQUIRE(fixture.chain.chain().chain_view()->tip_hash == trunk.back().hash());
+        std::error_code none;
+        CHECK_FALSE(fixture.submissions->try_receive(none).has_value());
     }
     fixture.stop();
 }
@@ -1099,7 +1184,7 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     auto const oversized = frame(coinbase_output_constraints{std::numeric_limits<uint32_t>::max(), 0});
     fixture.write(*client, byte_span(oversized).first(oversized.size() - 1));
     fixture.write(*client, byte_span(oversized).last(1));
-    fixture.finish_writing(*client);
+    // The client keeps its side open: the server is the one that closes.
     fixture.require_closed(*client);
     fixture.stop();
 }

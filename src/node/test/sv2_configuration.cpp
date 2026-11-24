@@ -69,10 +69,12 @@ TEST_CASE("sv2 listener settings survive network selection and config loading", 
 
     auto const path = file.path().string();
     node::parser overridden(domain::config::network::mainnet);
+    // Neither value below is a default: the bind address can only have come
+    // from the file, and the port only from the command line.
     char const* override_argv[]{"kth", "--network", "regtest", "--config", path.c_str(),
-        "--sv2.enabled=false", "--sv2.bind", "127.0.0.1", "--sv2.port", "8442"};
-    REQUIRE(overridden.parse(10, override_argv, error));
-    CHECK_FALSE(overridden.configured.sv2.enabled);
-    CHECK(overridden.configured.sv2.bind == "127.0.0.1");
-    CHECK(overridden.configured.sv2.port == 8442u);
+        "--sv2.port", "18443"};
+    REQUIRE(overridden.parse(7, override_argv, error));
+    CHECK(overridden.configured.sv2.enabled);
+    CHECK(overridden.configured.sv2.bind == "127.0.0.2");
+    CHECK(overridden.configured.sv2.port == 18443u);
 }

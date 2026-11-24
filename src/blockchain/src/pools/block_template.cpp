@@ -190,7 +190,10 @@ block_template build_block_template(std::vector<mempool_entry> const& entries,
         auto const& e = entries[i];
 
         // Block resource limits (BCHN TestTx uses >=).
-        if (block_size + e.size >= max_size || block_sigchecks + e.sigchecks >= max_sigchecks) {
+        // The SigChecks half is written without a sum: a caller's reserve may
+        // be any value, and a sum that wrapped would pass.
+        if (block_size + e.size >= max_size || block_sigchecks >= max_sigchecks
+                || e.sigchecks >= max_sigchecks - block_sigchecks) {
             if (++consecutive_failed > max_consecutive_failures && block_size > max_size - coinbase_size_reserve) {
                 break;
             }
