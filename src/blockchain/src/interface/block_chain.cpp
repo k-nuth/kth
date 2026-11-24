@@ -3580,7 +3580,8 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const {
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time,
+    std::optional<uint64_t> after_generation) const {
     if (stopped()) {
         co_return std::unexpected(error::service_stopped);
     }
@@ -3618,13 +3619,19 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
     // unchanged or its last change is still within the refresh window; a new tip
     // always forces a rebuild. The tip and generation are parameters rather than
     // captures because this is asked twice, against two different captures.
+    //
+    // A caller that asks for a selection later than the one it holds is not
+    // served that one, or an earlier one, out of the refresh window.
+    auto const later = [&](boost::shared_ptr<template_snapshot> const& s) {
+        return ! after_generation || s->generation > *after_generation;
+    };
     auto const usable = [&](boost::shared_ptr<template_snapshot> const& s,
                             hash_digest const& tip, uint64_t gen, uint32_t at) {
         return s &&
                s->previous == tip &&
                s->coinbase_reserve_size == coinbase_reserve_size &&
                (s->generation == gen ||
-                at - s->time < settings_.gbt_template_refresh_seconds);
+                (later(s) && at - s->time < settings_.gbt_template_refresh_seconds));
     };
 
     // Selection remains cached, but header time and time-sensitive work are
@@ -3647,9 +3654,11 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional
     // A busy owner may serve the existing same-tip, same-budget snapshot.
     // This single availability observation only chooses a valid immutable
     // value; ownership itself is acquired by receiving the token below.
+    // A caller that asks for a later selection waits for the owner instead.
     if (!template_rebuild_gate_.ready() && snapshot &&
         snapshot->previous == served->tip_hash &&
-        snapshot->coinbase_reserve_size == coinbase_reserve_size) {
+        snapshot->coinbase_reserve_size == coinbase_reserve_size &&
+        later(snapshot)) {
         co_return refresh_header(snapshot->value, served, now);
     }
 
