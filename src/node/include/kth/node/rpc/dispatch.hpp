@@ -21,6 +21,7 @@
 
 #include <kth/node/rpc/error.hpp>
 #include <kth/node/rpc/json.hpp>
+#include <kth/node/mining/work_changes.hpp>
 
 namespace kth::blockchain {
 class block_chain;
@@ -42,28 +43,9 @@ namespace kth::node::rpc {
 // answers at once.
 inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
 
-// A channel that only wakes: nothing is read from what it carries.
-using doorbell = ::asio::experimental::select_channel<std::monostate>;
-
-// The server's wake-up for every request held until the mining work changes:
-// a new connected tip, or a mempool that is no longer the one a template was
-// selected from. Closing a doorbell wakes everyone waiting on it at once, so
-// each change closes the current one and puts a new one in its place. It
-// belongs to the RPC strand: watched and rung from there only.
-struct work_bell {
-    // The doorbell the next change closes. A request takes it before reading
-    // the state its wait depends on, so a change after that read finds it.
-    [[nodiscard]]
-    std::shared_ptr<doorbell> watch();
-
-    // Wake every request that watches. With none watching there is no one to
-    // wake and the doorbell stays.
-    void ring();
-
-private:
-    std::shared_ptr<doorbell> current_ = std::make_shared<doorbell>(1);
-    bool watched_ = false;
-};
+using mining::doorbell;
+using mining::ring_on_work_changes;
+using mining::work_bell;
 
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
 // cache, the P2P node and when the node started. Passed by reference; owned by
@@ -89,13 +71,6 @@ struct method_context {
     // Tests shorten it.
     std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
-
-// Ring `bell` each time the chain's tip or mempool changes, until `ends` is
-// closed. It is the one consumer of the chain's two doorbells, and runs where
-// `bell` belongs: the server's strand.
-[[nodiscard]]
-::asio::awaitable<void> ring_on_chain_changes(blockchain::block_chain& chain,
-    work_bell& bell, doorbell& ends);
 
 // Why a request stopped waiting.
 enum class wake {

@@ -19,39 +19,6 @@
 
 namespace kth::node::rpc {
 
-std::shared_ptr<doorbell> work_bell::watch() {
-    watched_ = true;
-    return current_;
-}
-
-void work_bell::ring() {
-    if ( ! watched_) {
-        return;
-    }
-    watched_ = false;
-    auto const rung = std::exchange(current_, std::make_shared<doorbell>(1));
-    rung->close();
-}
-
-::asio::awaitable<void> ring_on_chain_changes(blockchain::block_chain& chain,
-    work_bell& bell, doorbell& ends) {
-
-    using namespace ::asio::experimental;
-    auto const executor = co_await ::asio::this_coro::executor;
-    for (;;) {
-        auto completion = co_await make_select(
-            receive(ends),
-            receive(chain.tip_changes()),
-            receive(chain.mempool_ref().changes())
-        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
-        auto const& [ec, selected] = completion;
-        if (ec || selected.index == 0) {
-            co_return;
-        }
-        bell.ring();
-    }
-}
-
 std::shared_ptr<doorbell> watch_work(method_context const& ctx) {
     return ctx.work != nullptr ? ctx.work->watch() : nullptr;
 }

@@ -300,7 +300,8 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_, started_);
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_, started_,
+            std::function<void(rpc::dispatcher&)>{}, &work_changes_.subscribe());
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -359,6 +360,9 @@ full_node::~full_node() {
     auto core = [this]() -> ::asio::awaitable<void> {
         co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks()
             && run_compact_filters());
+        // As for the listeners below: nothing may keep run() pending after
+        // the core tasks have finished.
+        work_changes_.stop();
 #if defined(KTH_WITH_RPC)
         // Embedders may stop P2P directly. RPC must not keep run() pending
         // after every core task has finished, even without full_node::stop().
@@ -371,7 +375,7 @@ full_node::~full_node() {
         if (capnp_server_) capnp_server_->stop();
 #endif
     };
-    co_await (core() && run_rpc());
+    co_await (core() && run_rpc() && work_changes_.run(chain_));
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -542,6 +546,9 @@ void full_node::notify_fatal(std::string const& reason) {
 }
 
 void full_node::stop() {
+#if ! defined(__EMSCRIPTEN__)
+    work_changes_.stop();
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
