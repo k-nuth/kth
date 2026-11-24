@@ -48,6 +48,7 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #include <kth/node/sync.hpp>
+#include <kth/node/mining/work_changes.hpp>
 #include <kth/node/sync/compact_blocks.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #endif
@@ -254,6 +255,11 @@ private:
     // node.compact_filters on a pruning node: start() refuses it.
     bool compact_filters_refused_{false};
     std::unique_ptr<detail::compact_filter_blocks> compact_filter_blocks_;
+#endif
+#if ! defined(__EMSCRIPTEN__)
+    // The one consumer of the chain's tip and mempool doorbells. Each part
+    // that serves mining work subscribes when it is made, before run().
+    mining::work_changes work_changes_;
 #endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     // When this node was built, which uptime counts from: the node starts

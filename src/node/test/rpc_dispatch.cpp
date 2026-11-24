@@ -1304,8 +1304,9 @@ struct held_template_request {
             .longpoll_wait = wait}
         , body(R"({"method":"getblocktemplate","params":[{"longpollid":")" + longpollid +
             R"("}],"id":21})")
+        , changing(::asio::co_spawn(io, changes.run(chain), ::asio::use_future))
         , ringing(::asio::co_spawn(io,
-            node::rpc::ring_on_chain_changes(chain, bell, ends), ::asio::use_future))
+            node::rpc::ring_on_work_changes(changes.subscribe(), bell, ends), ::asio::use_future))
         , reply(::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future))
         , runner([this] { io.run(); })
     {}
@@ -1313,6 +1314,7 @@ struct held_template_request {
     ~held_template_request() {
         closed.close();
         ends.close();
+        changes.stop();
         runner.join();
     }
 
@@ -1327,9 +1329,11 @@ struct held_template_request {
     node::rpc::work_bell bell;
     node::rpc::doorbell closed{1};
     node::rpc::doorbell ends{1};
+    node::mining::work_changes changes;
     node::rpc::method_context context;
     std::string body;
     ::asio::io_context io;
+    std::future<void> changing;
     std::future<void> ringing;
     std::future<std::string> reply;
     std::thread runner;

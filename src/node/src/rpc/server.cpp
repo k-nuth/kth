@@ -215,7 +215,7 @@ std::string random_token() {
 server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     ::asio::any_io_executor executor, p2p_node const* network,
     std::chrono::steady_clock::time_point started,
-    std::function<void(dispatcher&)> const& methods)
+    std::function<void(dispatcher&)> const& methods, doorbell* work_changes)
     : settings_(settings)
     , chain_(chain)
     , network_(network)
@@ -223,7 +223,8 @@ server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     , jobs_(settings.gbt_cache_size, settings.gbt_store_time)
     , owner_(::asio::make_strand(std::move(executor)))
     , stop_requests_(owner_, 1)
-    , listening_(owner_, 1) {
+    , listening_(owner_, 1)
+    , work_changes_(work_changes) {
     if (methods) {
         methods(dispatcher_);
     }
@@ -316,7 +317,10 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_, network_, started_, &work_, &closed};
+        // Without a subscription nothing rings work_, so a request gets no
+        // watch: one that waits is woken by its deadline.
+        method_context mctx{chain_, jobs_, network_, started_,
+            work_changes_ != nullptr ? &work_ : nullptr, &closed};
         std::string response;
         // Nothing reads the socket while a handler runs, so a client that
         // goes away, or the server closing the socket to stop, would pass
@@ -520,10 +524,14 @@ void server::stop() {
         spdlog::info("[rpc] Stop received; closing listener and {} connections", connections.size());
         close_owned();
     };
-    // The chain's two doorbells have this one consumer. It turns each ring
-    // into a wake for every held request; they read the chain again.
-    co_await (accept_connections() && receive_stop()
-        && ring_on_chain_changes(chain_, work_, work_watch_ends));
+    // Turns each ring of the node's work changes into a wake for every held
+    // request; they read the chain again.
+    auto ring_work = [&]() -> ::asio::awaitable<void> {
+        if (work_changes_ != nullptr) {
+            co_await ring_on_work_changes(*work_changes_, work_, work_watch_ends);
+        }
+    };
+    co_await (accept_connections() && receive_stop() && ring_work());
     spdlog::info("[rpc] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }

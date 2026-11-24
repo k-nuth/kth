@@ -65,11 +65,13 @@ struct rpc_server_fixture {
 
     ~rpc_server_fixture() {
         if (server) server->stop();
+        work_changes.stop();
         if (runner.joinable()) runner.join();
     }
 
     void finish() {
         server->stop();
+        work_changes.stop();
         if (runner.joinable()) runner.join();
         if (server_done.valid()) server_done.get();
     }
@@ -77,7 +79,11 @@ struct rpc_server_fixture {
     [[nodiscard]] bool start() {
         if ( ! chain.created() || ! chain.start()) return false;
         server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor(),
-            nullptr, std::chrono::steady_clock::now(), methods);
+            nullptr, std::chrono::steady_clock::now(), methods,
+            subscribed ? &work_changes.subscribe() : nullptr);
+        // As the node does: one consumer of the chain's doorbells, whose
+        // rings reach the server through its subscription.
+        work_changes_done = ::asio::co_spawn(io, work_changes.run(chain.chain()), ::asio::use_future);
         server_done = ::asio::co_spawn(io, server->run(), ::asio::use_future);
         auto started = ::asio::co_spawn(io, await_startup(), ::asio::use_future);
         runner = std::thread([this] { io.run(); });
@@ -190,9 +196,13 @@ struct rpc_server_fixture {
     node::rpc_settings settings;
     // Methods a test adds to the server's own.
     std::function<void(node::rpc::dispatcher&)> methods;
+    node::mining::work_changes work_changes;
+    // Whether the server gets a subscription to them, as the node's does.
+    bool subscribed = true;
     ::asio::io_context io;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
+    std::future<void> work_changes_done;
     std::future<void> server_done;
     std::error_code startup_error;
     uint16_t port = 0;
@@ -913,6 +923,34 @@ TEST_CASE("rpc server stop ends a held request it no longer reads behind", "[rpc
     auto const why = take(held.woken);
     REQUIRE(why.has_value());
     CHECK(*why == wake::connection_closed);
+}
+
+TEST_CASE("rpc server gives its requests a work watch only when it is subscribed to the work changes",
+          "[rpc server][rpc held]") {
+    rpc_server_fixture fixture("rpc_server_watch");
+    // Whether a request has a watch: one with a watch that nothing rings
+    // would wait past its deadline.
+    fixture.methods = [](node::rpc::dispatcher& d) {
+        d.add("watched", [](node::rpc::method_context& ctx, node::rpc::request const&)
+                -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+            co_return std::string(node::rpc::watch_work(ctx) ? "true" : "false");
+        });
+    };
+
+    SECTION("subscribed") {
+        REQUIRE(fixture.start());
+        auto const answers = bodies(fixture.exchange(call(1, "watched", "close")));
+        REQUIRE(answers.size() == 1);
+        CHECK(answers[0].find(R"("result":true)") != std::string::npos);
+    }
+    SECTION("built on its own") {
+        fixture.subscribed = false;
+        REQUIRE(fixture.start());
+        auto const answers = bodies(fixture.exchange(call(1, "watched", "close")));
+        REQUIRE(answers.size() == 1);
+        CHECK(answers[0].find(R"("result":false)") != std::string::npos);
+    }
+    CHECK_NOTHROW(fixture.finish());
 }
 
 TEST_CASE("a change after a request's watch ends its wait, however late it waits", "[rpc held]") {
