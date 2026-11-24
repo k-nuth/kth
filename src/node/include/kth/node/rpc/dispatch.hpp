@@ -9,12 +9,14 @@
 #include <cstddef>
 #include <expected>
 #include <functional>
-#include <stop_token>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include <asio/awaitable.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/node/rpc/error.hpp>
@@ -40,6 +42,29 @@ namespace kth::node::rpc {
 // answers at once.
 inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
 
+// A channel that only wakes: nothing is read from what it carries.
+using doorbell = ::asio::experimental::select_channel<std::monostate>;
+
+// The server's wake-up for every request held until the mining work changes:
+// a new connected tip, or a mempool that is no longer the one a template was
+// selected from. Closing a doorbell wakes everyone waiting on it at once, so
+// each change closes the current one and puts a new one in its place. It
+// belongs to the RPC strand: watched and rung from there only.
+struct work_bell {
+    // The doorbell the next change closes. A request takes it before reading
+    // the state its wait depends on, so a change after that read finds it.
+    [[nodiscard]]
+    std::shared_ptr<doorbell> watch();
+
+    // Wake every request that watches. With none watching there is no one to
+    // wake and the doorbell stays.
+    void ring();
+
+private:
+    std::shared_ptr<doorbell> current_ = std::make_shared<doorbell>(1);
+    bool watched_ = false;
+};
+
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
 // cache, the P2P node and when the node started. Passed by reference; owned by
 // the server for the connection's lifetime.
@@ -52,14 +77,39 @@ struct method_context {
     // When the node started, for uptime. The server passes the node's own
     // start; a context built without one (tests) counts from its creation.
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
-    // Requested when the server stops. A handler that waits on the chain, a
-    // long-polled getblocktemplate, ends its wait on it, so the server's drain
-    // of its connections never waits on a client.
-    std::stop_token stop{};
+    // What wakes a request that waits (wait_for_work). Both are the server's;
+    // a context built without one (tests) has neither, and such a request is
+    // woken by its deadline alone.
+    work_bell* work = nullptr;
+    // Closed when the request's connection is gone: its client closed it, or
+    // the server is stopping. A request that outlived its connection would
+    // hold one of the server's connections for an answer nobody reads.
+    doorbell* closed = nullptr;
     // The long-polled getblocktemplate's minimum wait for a mempool change.
     // Tests shorten it.
     std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
+
+// Why a request stopped waiting.
+enum class wake {
+    work_changed,
+    deadline,
+    connection_closed,
+};
+
+// The doorbell the next change of the mining work closes, null without a
+// server. Taken before reading the state the wait depends on.
+[[nodiscard]]
+std::shared_ptr<doorbell> watch_work(method_context const& ctx);
+
+// Suspend the request until the mining work changes after `watched` was taken,
+// `deadline` passes or its connection is gone, whichever is first. A closed
+// connection wins over the others: nothing is left to answer. The caller reads
+// the chain again on work_changed; the wake says that something moved, not
+// what. steady_clock::time_point::max() is no deadline.
+[[nodiscard]]
+::asio::awaitable<wake> wait_for_work(method_context const& ctx,
+    std::shared_ptr<doorbell> watched, std::chrono::steady_clock::time_point deadline);
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
 // returns an rpc_error. It runs on the RPC coroutine and may co_await the chain.
