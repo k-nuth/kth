@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <array>
@@ -220,10 +221,44 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 #endif
 }
 
+// BIP22 long polling: hold a getblocktemplate whose longpollid names `watched`
+// until the template it names is out of date. A new tip ends the hold at once;
+// a mempool change ends it once ctx.longpoll_wait has passed since the
+// request. It also ends when the request's connection is gone.
+//
+// Nothing polls. The server wakes the request when the tip or the mempool
+// changes, and the tip and the mempool generation are read again from the
+// chain each time, so it does not matter which change woke it or how many.
+::asio::awaitable<void> wait_for_new_template(method_context& ctx, longpoll_state const& watched) {
+    auto const deadline = std::chrono::steady_clock::now() + ctx.longpoll_wait;
+    for (;;) {
+        // Before the read below, so a change after that read ends the wait.
+        auto const watching = watch_work(ctx);
+        auto const view = ctx.chain.chain_view();
+        if ( ! view || view->tip_hash != watched.tip) {
+            co_return;
+        }
+        auto const pool_changed =
+            ctx.chain.mempool_ref().generation() != watched.mempool_generation;
+        auto const now = std::chrono::steady_clock::now();
+        if (now >= deadline && (pool_changed || ! watching)) {
+            // Without a server nothing wakes the request after its deadline.
+            co_return;
+        }
+        // Until the deadline it bounds the wait; past it only a change does.
+        auto const until = now < deadline
+            ? deadline : std::chrono::steady_clock::time_point::max();
+        if (co_await wait_for_work(ctx, watching, until) == wake::connection_closed) {
+            co_return;
+        }
+    }
+}
+
 // getblocktemplate [template_request] -> the next-block template with its
 // transactions in full (BIP22), for pools that build and submit whole blocks.
 // Only "template" mode; "proposal" is refused. The request's capabilities and
-// rules ask for nothing this template leaves out.
+// rules ask for nothing this template leaves out. A request that sends back a
+// template's longpollid is held until that template is out of date.
 // C-API counterpart: kth_chain_async_fetch_mining_template.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_template(method_context& ctx, request const& req) {
@@ -240,6 +275,7 @@ get_block_template(method_context& ctx, request const& req) {
         co_return invalid_params();
     }
     size_t count = 0;
+    std::optional<std::string> longpollid;
     for (auto element : params) {
         simdjson::ondemand::object request_object;
         if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
@@ -255,6 +291,23 @@ get_block_template(method_context& ctx, request const& req) {
                 co_return kth::fail(make_error(error_code::invalid_params,
                     "only template mode is supported"));
             }
+        }
+        std::string_view id;
+        auto const id_error = request_object["longpollid"].get_string().get(id);
+        if (id_error != simdjson::NO_SUCH_FIELD) {
+            if (id_error != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            longpollid.emplace(id);
+        }
+    }
+
+    // An id that names another tip, or no state this node gave out, is
+    // answered at once.
+    if (longpollid) {
+        auto const watched = parse_longpollid(*longpollid);
+        if (watched) {
+            co_await wait_for_new_template(ctx, *watched);
         }
     }
 

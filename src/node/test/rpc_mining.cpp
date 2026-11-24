@@ -154,6 +154,7 @@ TEST_CASE("render_block_template serializes the GBT fields with the transactions
         /*size_limit*/ 32000000u,
         /*sigchecks_limit*/ 226950u,
         selection};
+    tmpl.mempool_generation = 7u;
 
     // Both entries are owned by the selection, independently of the live pool.
     auto const json = render_block_template(tmpl);
@@ -169,6 +170,7 @@ TEST_CASE("render_block_template serializes the GBT fields with the transactions
         R"({"data":")" + hex(child) + R"(","txid":")" + encode_hash(child->hash()) +
         R"(","hash":")" + encode_hash(child->hash()) + R"(","depends":[1],"fee":200,"sigops":3}],)" +
         R"("coinbaseaux":{"flags":""},"coinbasevalue":5000000300,)" +
+        R"("longpollid":"00000000000000000000000000000000000000000000000000000000000000007",)" +
         R"("target":"00000000ffff0000000000000000000000000000000000000000000000000000",)" +
         R"("mintime":1000,"mutable":["time","transactions","prevblock"],"noncerange":"00000000ffffffff",)" +
         R"("sigoplimit":226950,"sizelimit":32000000,"curtime":2000,"bits":"1d00ffff","height":5})");
@@ -201,4 +203,29 @@ TEST_CASE("block template dependencies deduplicate inputs independently per tran
     REQUIRE(second != std::string::npos);
     CHECK(json.find(depends, second + depends.size()) == std::string::npos);
     CHECK(json.find(R"("depends":[2,1,2)") == std::string::npos);
+}
+
+TEST_CASE("longpollid names a template's tip and mempool generation", "[rpc mining][rpc longpoll]") {
+    blockchain::mining_template tmpl{};
+    tmpl.previous_block_hash = domain::chain::block::genesis_regtest().hash();
+    tmpl.mempool_generation = 42u;
+    auto const tip = encode_hash(tmpl.previous_block_hash);
+    REQUIRE(make_longpollid(tmpl) == tip + "42");
+    auto const state = parse_longpollid(make_longpollid(tmpl));
+    REQUIRE(state);
+    CHECK(state->tip == tmpl.previous_block_hash);
+    CHECK(state->mempool_generation == 42u);
+
+    tmpl.mempool_generation = max_uint64;
+    auto const largest = parse_longpollid(make_longpollid(tmpl));
+    REQUIRE(largest);
+    CHECK(largest->mempool_generation == max_uint64);
+
+    // A held request trusts what this reads back, so only the spelling
+    // make_longpollid writes names a state.
+    for (auto const& other : {std::string{}, tip, tip + "-1", tip + "+1", tip + "042", tip + "4 2",
+        tip + "x", tip + "18446744073709551616", "zz" + tip.substr(2) + "42"}) {
+        CAPTURE(other);
+        CHECK_FALSE(parse_longpollid(other));
+    }
 }

@@ -13,6 +13,7 @@
 #include <asio/this_coro.hpp>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/pools/mempool.hpp>
 
 #include <kth/node/rpc/error.hpp>
 
@@ -30,6 +31,25 @@ void work_bell::ring() {
     watched_ = false;
     auto const rung = std::exchange(current_, std::make_shared<doorbell>(1));
     rung->close();
+}
+
+::asio::awaitable<void> ring_on_chain_changes(blockchain::block_chain& chain,
+    work_bell& bell, doorbell& ends) {
+
+    using namespace ::asio::experimental;
+    auto const executor = co_await ::asio::this_coro::executor;
+    for (;;) {
+        auto completion = co_await make_select(
+            receive(ends),
+            receive(chain.tip_changes()),
+            receive(chain.mempool_ref().changes())
+        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto const& [ec, selected] = completion;
+        if (ec || selected.index == 0) {
+            co_return;
+        }
+        bell.ring();
+    }
 }
 
 std::shared_ptr<doorbell> watch_work(method_context const& ctx) {

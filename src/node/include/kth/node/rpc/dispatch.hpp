@@ -36,6 +36,12 @@ struct job_store;
 
 namespace kth::node::rpc {
 
+// How long a long-polled getblocktemplate is held before a mempool change
+// alone answers it, BIP22's "after some time". Transactions arrive all the
+// time, so a pool answered on each one would be polling again. A new tip
+// answers at once.
+inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
+
 // A channel that only wakes: nothing is read from what it carries.
 using doorbell = ::asio::experimental::select_channel<std::monostate>;
 
@@ -79,7 +85,17 @@ struct method_context {
     // the server is stopping. A request that outlived its connection would
     // hold one of the server's connections for an answer nobody reads.
     doorbell* closed = nullptr;
+    // The long-polled getblocktemplate's minimum wait for a mempool change.
+    // Tests shorten it.
+    std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
+
+// Ring `bell` each time the chain's tip or mempool changes, until `ends` is
+// closed. It is the one consumer of the chain's two doorbells, and runs where
+// `bell` belongs: the server's strand.
+[[nodiscard]]
+::asio::awaitable<void> ring_on_chain_changes(blockchain::block_chain& chain,
+    work_bell& bell, doorbell& ends);
 
 // Why a request stopped waiting.
 enum class wake {
