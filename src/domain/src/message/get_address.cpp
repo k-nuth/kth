@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const get_address::command = "getaddr";
-uint32_t const get_address::version_minimum = version::level::minimum;
-uint32_t const get_address::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

@@ -8,7 +8,9 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/chain/block.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/constants.hpp>
@@ -58,14 +60,9 @@ struct KD_API merkle_block {
     size_t serialized_size(uint32_t version) const;
 
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "merkleblock";
+    static constexpr uint32_t version_minimum = version::level::bip37;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
 
 private:

@@ -7,6 +7,9 @@
 
 #include <istream>
 
+#include <string_view>
+
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
@@ -31,8 +34,7 @@ struct KD_API compact_block {
     static
     compact_block factory_from_block(message::block const& blk);
 
-    // Construction cannot fail (no consensus checks); every state, including
-    // the all-default one, is syntactically valid.
+    // Construction does no validation. Prefilled indexes in memory are absolute.
     compact_block() = default;
     compact_block(chain::header header, uint64_t nonce, short_id_list short_ids, prefilled_transaction::list transactions);
 
@@ -60,14 +62,9 @@ struct KD_API compact_block {
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "cmpctblock";
+    static constexpr uint32_t version_minimum = version::level::bip152;
+    static constexpr uint32_t version_maximum = version::level::bip152;
 
 private:
     chain::header header_;
@@ -77,6 +74,11 @@ private:
 };
 
 hash_digest hash(compact_block const& block);
+
+/// Low 48 bits of SipHash-2-4(txid), keyed by the first two little-endian
+/// words of SHA256(header || nonce). The hash helpers above supply that hash.
+[[nodiscard]] KD_API
+uint64_t compact_short_id(hash_digest const& header_nonce_hash, hash_digest const& txid);
 
 } // namespace kth::domain::message
 

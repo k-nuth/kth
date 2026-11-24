@@ -52,6 +52,13 @@ __global__ void merkle_level_kernel(u32 const* __restrict__ in, u32* __restrict_
     if (gpu_merkle_node(in, n, i, out)) atomicOr(mutated, 1u);
 }
 
+// One thread per message, whatever its length.
+__global__ void sha256d_messages_kernel(u32 const* __restrict__ data, u64 const* __restrict__ offsets,
+                                        u32 const* __restrict__ sizes, u32* __restrict__ out, u32 n) {
+    u32 const i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) gpu_sha256d_message(data, offsets[i], sizes[i], out + 8 * i);
+}
+
 // A batch goes to the device in chunks: the first is small, so the device
 // starts early; each next one is as large as all before it, up to
 // max_chunk, so a large batch takes few launches. Returns the end of the
@@ -86,6 +93,19 @@ struct context {
     u32* d_hash_flag = nullptr;
     unsigned char* h_hash = nullptr;   // pinned
     std::size_t hash_capacity = 0;     // bytes of d_hash_a and h_hash; d_hash_b holds half
+    // Messages of any length: their bytes one after another, where each
+    // starts and how long it is, and a hash out for each. The host buffers are
+    // pinned.
+    u32* d_msg_data = nullptr;
+    u64* d_msg_offsets = nullptr;
+    u32* d_msg_sizes = nullptr;
+    u32* d_msg_out = nullptr;
+    unsigned char* h_msg_data = nullptr;
+    u64* h_msg_offsets = nullptr;
+    u32* h_msg_sizes = nullptr;
+    unsigned char* h_msg_out = nullptr;
+    std::size_t msg_data_capacity = 0;  // bytes
+    std::size_t msg_capacity = 0;       // messages
     bool busy = false;
 };
 
@@ -135,6 +155,41 @@ bool reserve_hashes(context& c, std::size_t bytes) {
     return true;
 }
 
+bool reserve_messages(context& c, std::size_t bytes, std::size_t messages) {
+    if (bytes > c.msg_data_capacity) {
+        std::size_t cap = c.msg_data_capacity ? c.msg_data_capacity : (std::size_t(1) << 20);
+        while (cap < bytes) cap *= 2;
+        if (c.d_msg_data) cudaFree(c.d_msg_data);
+        if (c.h_msg_data) cudaFreeHost(c.h_msg_data);
+        c.d_msg_data = nullptr; c.h_msg_data = nullptr;
+        c.msg_data_capacity = 0;
+        if (cudaMalloc(&c.d_msg_data, cap) != cudaSuccess) return false;
+        if (cudaHostAlloc(&c.h_msg_data, cap, cudaHostAllocDefault) != cudaSuccess) return false;
+        c.msg_data_capacity = cap;
+    }
+    if (messages > c.msg_capacity) {
+        std::size_t cap = c.msg_capacity ? c.msg_capacity : 4096;
+        while (cap < messages) cap *= 2;
+        if (c.d_msg_offsets) cudaFree(c.d_msg_offsets);
+        if (c.d_msg_sizes) cudaFree(c.d_msg_sizes);
+        if (c.d_msg_out) cudaFree(c.d_msg_out);
+        if (c.h_msg_offsets) cudaFreeHost(c.h_msg_offsets);
+        if (c.h_msg_sizes) cudaFreeHost(c.h_msg_sizes);
+        if (c.h_msg_out) cudaFreeHost(c.h_msg_out);
+        c.d_msg_offsets = nullptr; c.d_msg_sizes = nullptr; c.d_msg_out = nullptr;
+        c.h_msg_offsets = nullptr; c.h_msg_sizes = nullptr; c.h_msg_out = nullptr;
+        c.msg_capacity = 0;
+        if (cudaMalloc(&c.d_msg_offsets, cap * sizeof(u64)) != cudaSuccess) return false;
+        if (cudaMalloc(&c.d_msg_sizes, cap * sizeof(u32)) != cudaSuccess) return false;
+        if (cudaMalloc(&c.d_msg_out, cap * 32) != cudaSuccess) return false;
+        if (cudaHostAlloc(&c.h_msg_offsets, cap * sizeof(u64), cudaHostAllocDefault) != cudaSuccess) return false;
+        if (cudaHostAlloc(&c.h_msg_sizes, cap * sizeof(u32), cudaHostAllocDefault) != cudaSuccess) return false;
+        if (cudaHostAlloc(&c.h_msg_out, cap * 32, cudaHostAllocDefault) != cudaSuccess) return false;
+        c.msg_capacity = cap;
+    }
+    return true;
+}
+
 void init(state& st) {
     int count = 0;
     if (cudaGetDeviceCount(&count) != cudaSuccess || count == 0) { cudaGetLastError(); return; }
@@ -166,6 +221,12 @@ context& acquire(state& s) {
         for (context& c : s.ctx) if (!c.busy) { c.busy = true; return c; }
         s.cv.wait(lock);
     }
+}
+// A free context, or none: for work that has somewhere else to go.
+context* try_acquire(state& s) {
+    std::lock_guard<std::mutex> lock(s.m);
+    for (context& c : s.ctx) if (!c.busy) { c.busy = true; return &c; }
+    return nullptr;
 }
 void release(state& s, context& c) {
     { std::lock_guard<std::mutex> lock(s.m); c.busy = false; }
@@ -247,6 +308,49 @@ bool cuda_sha256d64(std::uint8_t const* in, std::size_t n, std::uint8_t* out) {
     }
     if (cudaStreamSynchronize(stream) != cudaSuccess) ok = false;
     if (ok) std::memcpy(out, c.h_hash, 32 * n);
+    release(s, c);
+    return ok;
+}
+
+bool cuda_sha256d_messages(std::uint8_t const* const* messages, std::uint32_t const* sizes, std::size_t n,
+                           std::uint8_t* out) {
+    state& s = get_state();
+    if (!s.ok || n > max_hashes) return false;
+    if (n == 0) return true;
+    std::size_t bytes = 0;
+    for (std::size_t i = 0; i < n; ++i) bytes += sizes[i];
+    // The kernel reads whole words and may read one past a message.
+    std::size_t const padded = (bytes + 3) / 4 * 4 + 8;
+
+    context* const taken = try_acquire(s);
+    if (taken == nullptr) return false;
+    context& c = *taken;
+    cudaStream_t const stream = c.streams[0];
+    bool ok = reserve_messages(c, padded, n);
+    if (ok) {
+        // Gathered into the pinned buffer one after another: each message is
+        // copied once, and that copy is the only work the host does per message.
+        std::size_t at = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (sizes[i] != 0) std::memcpy(c.h_msg_data + at, messages[i], sizes[i]);
+            c.h_msg_offsets[i] = at;
+            c.h_msg_sizes[i] = sizes[i];
+            at += sizes[i];
+        }
+        std::memset(c.h_msg_data + bytes, 0, padded - bytes);
+        ok = cudaMemcpyAsync(c.d_msg_data, c.h_msg_data, padded, cudaMemcpyHostToDevice, stream) == cudaSuccess &&
+             cudaMemcpyAsync(c.d_msg_offsets, c.h_msg_offsets, n * sizeof(u64), cudaMemcpyHostToDevice, stream) == cudaSuccess &&
+             cudaMemcpyAsync(c.d_msg_sizes, c.h_msg_sizes, n * sizeof(u32), cudaMemcpyHostToDevice, stream) == cudaSuccess;
+    }
+    if (ok) {
+        u32 const blocks = static_cast<u32>((n + block_size - 1) / block_size);
+        sha256d_messages_kernel<<<blocks, block_size, 0, stream>>>(c.d_msg_data, c.d_msg_offsets, c.d_msg_sizes,
+                                                                   c.d_msg_out, static_cast<u32>(n));
+        ok = cudaGetLastError() == cudaSuccess &&
+             cudaMemcpyAsync(c.h_msg_out, c.d_msg_out, 32 * n, cudaMemcpyDeviceToHost, stream) == cudaSuccess;
+    }
+    if (cudaStreamSynchronize(stream) != cudaSuccess) ok = false;
+    if (ok) std::memcpy(out, c.h_msg_out, 32 * n);
     release(s, c);
     return ok;
 }

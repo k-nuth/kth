@@ -5,13 +5,64 @@
 #include <kth/node/rpc/dispatch.hpp>
 
 #include <algorithm>
+#include <stop_token>
 #include <utility>
+
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
+#include <asio/this_coro.hpp>
 
 #include <kth/blockchain/interface/block_chain.hpp>
 
 #include <kth/node/rpc/error.hpp>
 
 namespace kth::node::rpc {
+
+std::shared_ptr<doorbell> work_bell::watch() {
+    watched_ = true;
+    return current_;
+}
+
+void work_bell::ring() {
+    if ( ! watched_) {
+        return;
+    }
+    watched_ = false;
+    auto const rung = std::exchange(current_, std::make_shared<doorbell>(1));
+    rung->close();
+}
+
+std::shared_ptr<doorbell> watch_work(method_context const& ctx) {
+    return ctx.work != nullptr ? ctx.work->watch() : nullptr;
+}
+
+::asio::awaitable<wake> wait_for_work(method_context const& ctx,
+    std::shared_ptr<doorbell> watched, std::chrono::steady_clock::time_point deadline) {
+
+    using namespace ::asio::experimental;
+    auto const executor = co_await ::asio::this_coro::executor;
+    // Stands in for a doorbell this request does not have; nothing rings it.
+    doorbell silent{1};
+    // In this order: a connection that is gone ends the wait even when the
+    // work changed too.
+    channel_select_options options;
+    options.biased = true;
+    auto completion = co_await make_select(
+        receive(ctx.closed != nullptr ? *ctx.closed : silent),
+        receive(watched ? *watched : silent),
+        after(deadline)
+    ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto const& [ec, selected] = completion;
+    if (selected.index == 1) {
+        co_return wake::work_changed;
+    }
+    if (selected.index == 2) {
+        co_return wake::deadline;
+    }
+    // The connection, or a wait that could not be made: neither is a reason
+    // to keep the request held.
+    co_return wake::connection_closed;
+}
 
 void dispatcher::add(std::string method, handler_fn handler) {
     if (auto const found = methods_.find(method); found != methods_.end()) {

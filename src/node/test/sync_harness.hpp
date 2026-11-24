@@ -112,6 +112,7 @@ inline bool run_connect_tasks(test::chain_fixture& fixture,
     block_storage_input_channel input(ctx.get_executor(), 16);
     chunk_validated_channel output(ctx.get_executor(), 256);
     std::atomic<uint32_t> contiguous{start_height};
+    utxo_build_wake_channel wake(ctx.get_executor(), 1);
 
     std::vector<std::shared_ptr<domain::chain::light_block const>> light;
     light.reserve(blocks.size());
@@ -144,23 +145,27 @@ inline bool run_connect_tasks(test::chain_fixture& fixture,
         output.close();
         progress.cancel();
         progress.close();
+        wake.cancel();
+        wake.close();
     });
     auto storage = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         try {
             co_await block_storage_task(chain, input, output, start_height,
-                fixture.organizer(), &contiguous);
+                fixture.organizer(), &contiguous, &wake);
         } catch (...) {
             storage_failed = true;
             input.cancel();
             input.close();
             progress.cancel();
             progress.close();
+            wake.cancel();
+            wake.close();
             throw;
         }
     }, ::asio::use_future);
     auto writer = ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
         try {
-            co_await utxo_build_task(chain, contiguous, start_height,
+            co_await utxo_build_task(chain, contiguous, wake, start_height,
                 domain::config::network::regtest,
                 [&chain, end_height, &storage_failed] {
                     if (storage_failed) return true;

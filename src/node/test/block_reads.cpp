@@ -361,3 +361,13 @@ TEST_CASE("fetch_transaction answers a mempool transaction by txid unless confir
     REQUIRE_FALSE(missing);
     CHECK(missing.error() == error::not_found);
 }
+
+TEST_CASE("fetch_blocks_raw_within refuses a range that ends before it starts", "[block reads]") {
+    test::chain_fixture fixture("block_reads_reversed_range");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const read = fixture.chain().fetch_blocks_raw_within(5, 2, 1000);
+    REQUIRE_FALSE(read);
+    CHECK(read.error() == database::result_code::key_not_found);
+}

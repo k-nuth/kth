@@ -29,7 +29,7 @@ chunk_coordinator::chunk_coordinator(
     }
 
     auto const mem_kb = (slots_.size() * bytes_per_slot) / 1024;
-    spdlog::info("[chunk_coordinator] Created: blocks {}-{}, {} chunks ({} KB)",
+    spdlog::debug("[chunk_coordinator] Created: blocks {}-{}, {} chunks ({} KB)",
         start_height, end_height, total_chunks_, mem_kb);
 }
 
