@@ -110,7 +110,17 @@ def main():
         output.write(shlex.join(command) + "\n")
         output.flush()
         subprocess.run(command, cwd=build / "src/node", stdout=output, stderr=subprocess.STDOUT, check=True)
-    env = dict(os.environ, TSAN_OPTIONS="halt_on_error=1:exitcode=66")
+    # Only the worker and the test are compiled with the sanitizer. The chain
+    # the test builds is validated by fork-joins on the ParlayLib scheduler,
+    # whose threads hand work to each other with atomics and, on Linux, futex
+    # calls made from code that is not instrumented. The sanitizer does not see
+    # that ordering, and reports the block data one fork-join leaves and the
+    # next reads as a race between two of its threads. With one thread there is
+    # no such hand-off: the caller and that thread meet on mutexes, which the
+    # sanitizer intercepts everywhere. What this control observes, the
+    # cancellation of the template worker, runs on other threads and is not
+    # touched by it.
+    env = dict(os.environ, TSAN_OPTIONS="halt_on_error=1:exitcode=66", PARLAY_NUM_THREADS="1")
     run_log = logs / "run.log"
     with run_log.open("w") as output:
         result = subprocess.run([str(binary), "[template_cancel_owner]"], env=env,

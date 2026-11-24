@@ -13,12 +13,18 @@ namespace kth {
 
 // Construct kth::ofstream.
 ofstream::ofstream(std::string const& path, std::ofstream::openmode mode)
-#ifdef _MSC_VER
-  : std::ofstream(kth::to_utf16(path), mode)
-#else
-  : std::ofstream(path, mode)
-#endif
+  : std::ofstream()
 {
+#ifdef _MSC_VER
+    auto const wide = kth::to_utf16(path);
+    if (!wide) {
+        setstate(std::ios_base::failbit);
+        return;
+    }
+    open(*wide, mode);
+#else
+    open(path, mode);
+#endif
 }
 
 } // namespace kth

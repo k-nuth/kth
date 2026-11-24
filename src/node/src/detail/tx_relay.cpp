@@ -1022,7 +1022,7 @@ private:
 
     // The admission task ends after the transaction in hand.
     admission.close();
-    spdlog::info("[tx_relay] Task ended");
+    spdlog::debug("[tx_relay] Task ended");
 }
 
 // =============================================================================

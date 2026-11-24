@@ -17,6 +17,10 @@
 #include <kth/node/configuration.hpp>
 #include <kth/node/define.hpp>
 #include <kth/node/detail/fee_filter.hpp>
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+#include <kth/node/detail/compact_filters.hpp>
+#include <asio/thread_pool.hpp>
+#endif
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
@@ -59,6 +63,7 @@ full_node::full_node(configuration const& configuration)
         configuration.network.relay_transactions,
         block_submissions_
     )
+    , compact_tips_(chain_)
     , rpc_settings_(configuration.rpc)
     , sv2_settings_(configuration.sv2)
 #else
@@ -84,6 +89,27 @@ full_node::full_node(configuration const& configuration)
 
     // Set user agent after initialization (network_ holds reference to network_settings_)
     network_settings_.user_agent = get_user_agent({});
+    // The bloom filter service bit follows the setting: a wallet looks for
+    // it before it loads a filter, and without it the node refuses one. A
+    // build without the feature never sets it.
+    auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+#if defined(KTH_WITH_BLOOM_FILTERS)
+    auto const offered = configuration.node.bloom_filters;
+#else
+    auto const offered = false;
+#endif
+    network_settings_.services = (network_settings_.services & ~bloom) | (offered ? bloom : 0);
+#if defined(KTH_WITH_NEUTRINO)
+    // The service bit follows the setting: a wallet looks for it before it asks.
+    // Not on a pruning node, which start() refuses: the filters come from the
+    // blocks, all of them.
+    compact_filters_refused_ = configuration.node.compact_filters
+        && configuration.database.prune_keep_blocks != 0;
+    auto const served = configuration.node.compact_filters && ! compact_filters_refused_;
+    auto const filters = uint64_t(domain::message::version::service::node_compact_filters);
+    network_settings_.services = (network_settings_.services & ~filters) | (served ? filters : 0);
+    compact_filter_file_ = configuration.database.directory / "compact_filter_headers";
+#endif
 #endif
 }
 
@@ -109,6 +135,23 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(KTH_WITH_BLOOM_FILTERS) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if (node_settings_.bloom_filters) {
+        spdlog::error("[node] node.bloom_filters needs a build with the option bloom_filters.");
+        co_return error::operation_failed;
+    }
+#endif
+
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if (compact_filters_refused_) {
+        spdlog::error("[node] node.compact_filters is not allowed on a pruning node "
+            "(db.prune_keep_blocks); it needs every block.");
+        co_return error::operation_failed;
+    }
+#endif
+
     // Start the blockchain (pass disk magic for block file storage)
     if (!chain_.start(get_disk_magic(network_type_))) {
         spdlog::error("[node] Failure starting blockchain.");
@@ -119,23 +162,53 @@ full_node::~full_node() {
     // the network comes up, so peers can be served from a warm mempool.
     co_await chain_.load_mempool_from_disk();
 
-    // Serve the connected chain: headers for a locator, and the blocks a
-    // peer asks for after an announcement or during its own sync. Both run in
-    // the peer's service, off its read loop: their answers wait on the peer's
-    // data queue.
+    // Serve the connected chain: headers for a locator, the blocks a peer
+    // asks for after an announcement or during its own sync, and the
+    // transactions it is missing to rebuild a compact block (BIP152). All run
+    // in the peer's service, off its read loop: their answers wait on the
+    // peer's data queue.
     network_.register_served_message_handler<domain::message::get_headers>(
         [this](peer_session& peer, domain::message::get_headers const& request) {
             return handlers::chain_data::handle_get_headers(chain_, peer, request);
         });
     network_.register_served_message_handler<domain::message::get_data>(
         [this](peer_session& peer, domain::message::get_data const& request) {
-            return handlers::chain_data::handle_get_data(chain_, peer, request);
+            auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+            return handlers::chain_data::handle_get_data(chain_, peer, request,
+                (network_settings_.services & bloom) != 0);
         });
+    network_.register_served_message_handler<domain::message::get_block_transactions>(
+        [this](peer_session& peer, domain::message::get_block_transactions const& request) {
+            return handlers::chain_data::handle_get_block_transactions(chain_, peer, request);
+        });
+#if defined(KTH_WITH_NEUTRINO)
+    // Compact filters for light wallets. Also in the peer's service: a range
+    // is up to a thousand filters, each built from its block, and the filter
+    // headers are asked of the index.
+    if (node_settings_.compact_filters) {
+        compact_filter_blocks_ = std::make_unique<detail::compact_filter_blocks>(chain_,
+            get_genesis_block(network_type_));
+        network_.register_served_message_handler<domain::message::get_compact_filters>(
+            [this](peer_session& peer, domain::message::get_compact_filters const& request) {
+                return detail::handle_get_compact_filters(*compact_filter_blocks_, peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_headers>(
+            [this](peer_session& peer, domain::message::get_compact_filter_headers const& request) {
+                return detail::handle_get_compact_filter_headers(network_.compact_filters(), peer, request);
+            });
+        network_.register_served_message_handler<domain::message::get_compact_filter_checkpoint>(
+            [this](peer_session& peer, domain::message::get_compact_filter_checkpoint const& request) {
+                return detail::handle_get_compact_filter_checkpoint(network_.compact_filters(), peer, request);
+            });
+    }
+#endif
     // Each newly connected tip, owed to every peer by the sync coordinator, is
-    // announced by the peer's own service.
+    // announced by the peer's own service; to a high-bandwidth compact block
+    // peer with the cmpctblock all of them share.
     network_.set_tip_announcement_handler(
         [this](peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
-            return sync::announce_tip(chain_.headers(), peer, tip, last_announced);
+            return sync::announce_tip(chain_.headers(), peer, tip, last_announced,
+                [this](hash_digest const& hash) { return compact_tips_.get(hash); });
         });
     // The fee filter (BIP133) each peer's service sends on its schedule: the
     // mempool's minimum, rounded as BCHN rounds it, never below the relay
@@ -202,6 +275,16 @@ full_node::~full_node() {
 #endif
 
 #if ! defined(__EMSCRIPTEN__)
+    // Compact blocks peers send (BIP152), rebuilt from the mempool once the
+    // node is caught up, and the blocktxn that completes one: both taken
+    // from the read loop without waiting.
+    compact_blocks_ = std::make_unique<sync::compact_block_receiver>(chain_, network_);
+    network_.set_compact_block_receiver(compact_blocks_.get());
+    // Off, no peer is asked to send a cmpctblock before announcing a block.
+    network_.set_compact_high_bandwidth(node_settings_.compact_blocks_high_bandwidth);
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
     // Start the P2P network
     auto ec = co_await network_.start();
     if (ec != error::success) {
@@ -219,7 +302,8 @@ full_node::~full_node() {
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
         auto rpc_executor = network_.thread_pool().get_executor();
-        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_);
+        rpc_server_ = std::make_unique<rpc::server>(rpc_settings_, chain_, rpc_executor, &network_, started_,
+            std::function<void(rpc::dispatcher&)>{}, &work_changes_.subscribe());
     } else {
         spdlog::info("[node] JSON-RPC server disabled (rpc.enabled=false).");
     }
@@ -238,10 +322,11 @@ full_node::~full_node() {
     }
 #endif
 
-#if ! defined(__EMSCRIPTEN__)
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
     if (sv2_settings_.enabled) {
         template_provider_ = std::make_unique<sv2::template_provider>(
-            sv2_settings_, network_.thread_pool().get_executor(), chain_);
+            sv2_settings_, network_.thread_pool().get_executor(), chain_,
+            work_changes_.subscribe());
     } else {
         spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
     }
@@ -284,9 +369,11 @@ full_node::~full_node() {
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
     auto core = [this]() -> ::asio::awaitable<void> {
-        co_await (run_blockchain_subscriber() && network_.run() && run_sync());
+        co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks()
+            && run_compact_filters());
         // Embedders may stop P2P directly. Listeners must not keep run()
         // pending after the core tasks finish without full_node::stop().
+        work_changes_.stop();
 #if defined(KTH_WITH_RPC)
         if (rpc_server_) rpc_server_->stop();
 #endif
@@ -296,9 +383,11 @@ full_node::~full_node() {
 #if defined(KTH_WITH_CAPNPROTO_RPC)
         if (capnp_server_) capnp_server_->stop();
 #endif
+#if defined(KTH_WITH_SV2)
         if (template_provider_) template_provider_->stop();
+#endif
     };
-    co_await (core() && run_rpc() && run_sv2());
+    co_await (core() && run_rpc() && run_sv2() && work_changes_.run(chain_));
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -319,13 +408,15 @@ full_node::~full_node() {
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sv2() {
+#if defined(KTH_WITH_SV2)
     if (template_provider_) co_await template_provider_->run();
+#endif
     co_return;
 }
 #endif
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
-    spdlog::info("[full_node] run_blockchain_subscriber() STARTING");
+    spdlog::debug("[full_node] run_blockchain_subscriber() STARTING");
     auto blockchain_channel = subscribe_blockchain();
     if (!blockchain_channel) {
         spdlog::debug("[full_node] run_blockchain_subscriber() - no channel, exiting");
@@ -367,12 +458,12 @@ full_node::~full_node() {
             }
         }
     }
-    spdlog::info("[full_node] run_blockchain_subscriber() ENDED");
+    spdlog::debug("[full_node] run_blockchain_subscriber() ENDED");
 }
 
 #if ! defined(__EMSCRIPTEN__)
 ::asio::awaitable<void> full_node::run_sync() {
-    spdlog::info("[full_node] run_sync() STARTING - CSP sync system");
+    spdlog::debug("[full_node] run_sync() STARTING - CSP sync system");
 
     // Create the header organizer (single instance for the sync lifetime)
     blockchain::header_organizer organizer(
@@ -423,7 +514,36 @@ full_node::~full_node() {
     );
 
     organizer.stop();
-    spdlog::info("[full_node] run_sync() ENDED");
+    spdlog::debug("[full_node] run_sync() ENDED");
+}
+#endif
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_compact_filters() {
+#if defined(KTH_WITH_NEUTRINO)
+    if ( ! compact_filter_blocks_) {
+        co_return;
+    }
+    // The index on a thread of its own: it owns the records, and its file is
+    // written from there, off the network pool. It ends when the network
+    // closes its channels.
+    ::asio::thread_pool pool(1);
+    co_await ::asio::co_spawn(pool.get_executor(),
+        detail::run_compact_filter_index(network_.compact_filters(), *compact_filter_blocks_,
+            compact_filter_file_),
+        ::asio::use_awaitable);
+    pool.join();
+#endif
+    co_return;
+}
+
+::asio::awaitable<void> full_node::run_compact_blocks() {
+    // Until the network stops, then until the reconstructions under way have
+    // ended: they hold the chain and the network.
+    // The cmpctblock of the tip, for the peers' services, runs as long.
+    if (compact_blocks_) {
+        co_await (compact_blocks_->run() && compact_tips_.run(network_.stop_token()));
+    }
 }
 #endif
 
@@ -447,6 +567,9 @@ void full_node::notify_fatal(std::string const& reason) {
 }
 
 void full_node::stop() {
+#if ! defined(__EMSCRIPTEN__)
+    work_changes_.stop();
+#endif
 #if defined(KTH_WITH_RPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_server_) rpc_server_->stop();
 #endif
@@ -457,8 +580,10 @@ void full_node::stop() {
 #if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
     if (capnp_server_) capnp_server_->stop();
 #endif
-#if ! defined(__EMSCRIPTEN__)
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
     if (template_provider_) template_provider_->stop();
+#endif
+#if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!
     // The chain must remain operational until run() completes because
     // run_sync() may still be inside chain.submit_block() when this is called.
@@ -619,24 +744,7 @@ bool full_node::handle_reorganized(
 // =============================================================================
 
 domain::chain::block full_node::get_genesis_block(domain::config::network network) {
-    switch (network) {
-        case domain::config::network::testnet:
-            return domain::chain::block::genesis_testnet();
-        case domain::config::network::regtest:
-            return domain::chain::block::genesis_regtest();
-#if defined(KTH_CURRENCY_BCH)
-        case domain::config::network::testnet4:
-            return domain::chain::block::genesis_testnet4();
-        case domain::config::network::scalenet:
-            return domain::chain::block::genesis_scalenet();
-        case domain::config::network::tempnet:
-        case domain::config::network::chipnet:
-            return domain::chain::block::genesis_chipnet();
-#endif
-        default:
-        case domain::config::network::mainnet:
-            return domain::chain::block::genesis_mainnet();
-    }
+    return domain::chain::block::genesis(network);
 }
 
 } // namespace kth::node

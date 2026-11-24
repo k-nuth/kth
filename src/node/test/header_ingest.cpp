@@ -196,7 +196,7 @@ std::vector<written> run_and_read(::asio::io_context& ioc, network::peer_session
     return out;
 }
 
-size_t count_command(std::vector<written> const& sent, std::string const& command) {
+size_t count_command(std::vector<written> const& sent, std::string_view command) {
     return size_t(std::count_if(sent.begin(), sent.end(),
         [&](auto const& m) { return m.command == command; }));
 }

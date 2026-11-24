@@ -1,0 +1,98 @@
+name: Bloom filters
+
+# Serving wallets that load a bloom filter (BIP37) is an optional feature,
+# selected by the Conan option `bloom_filters` and off by default
+# (docs/optional-features.md). The main workflows build without it; this one
+# builds with it and runs the feature's own tests, and no others. It uses no
+# secrets and uploads nothing.
+
+on:
+  # Not on every push to master: the nightly run covers it. Pull requests run
+  # it only when they touch what it checks.
+  schedule:
+    - cron: '0 3 * * *'
+  push:
+    branches:
+      - 'release/**'
+      - 'hotfix/**'
+      - 'dev-publish/**'
+    tags:
+      - v*
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/domain/include/kth/domain/chain/bloom_filter.hpp
+      - src/domain/src/chain/bloom_filter.cpp
+      - src/domain/include/kth/domain/chain/partial_merkle_tree.hpp
+      - src/domain/src/chain/partial_merkle_tree.cpp
+      - src/domain/include/kth/domain/message/filter_*.hpp
+      - src/domain/src/message/filter_*.cpp
+      - src/domain/include/kth/domain/message/merkle_block.hpp
+      - src/domain/src/message/merkle_block.cpp
+      - src/network/include/kth/network/tx_inventory.hpp
+      - src/network/src/tx_inventory.cpp
+      - src/node/CMakeLists.txt
+      - src/node/include/kth/node/detail/bloom_filters.hpp
+      - src/node/src/detail/bloom_filters.cpp
+      - src/node/test/bloom_filters.cpp
+      - src/node/test/chain_data_fixtures.hpp
+      - src/node/include/kth/node/handlers/chain_data.hpp
+      - src/node/src/handlers/chain_data.cpp
+      - src/node/src/detail/tx_announcements.cpp
+      - src/node/include/kth/node/settings.hpp
+      - src/node/src/settings.cpp
+      - src/node/src/full_node.cpp
+      - src/node/include/kth/node/p2p_node.hpp
+      - src/node/src/p2p_node.cpp
+      - src/node/src/parser.cpp
+      - conanfile.py
+      - conan.lock
+      - CMakeLists.txt
+      - .github/workflows/bloom-filters.yml
+permissions:
+  contents: read
+concurrency:
+  group: bloom-filters-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  bloom-filters:
+    runs-on: ubuntu-24.04
+    container:
+      image: kthnode/gcc16-ubuntu24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: ./ci_utils/.github/actions/setup-conan
+      - uses: ./ci_utils/.github/actions/setup-kthbuild
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/bloom-filters-dependencies.tgz
+          key: bloom-filters-v1-${{ runner.os }}-${{ hashFiles('conan.lock', 'conanfile.py', 'ci_utils/.conan/profiles/*', '.github/conan/rpc-ci') }}
+      - name: Import dependencies
+        if: steps.dependencies.outputs.cache-hit == 'true'
+        run: conan cache restore "$RUNNER_TEMP/bloom-filters-dependencies.tgz"
+      - name: Install dependencies with the feature on
+        run: |
+          conan install conanfile.py --version 0.0.0 -of build --build=missing \
+            -pr:b .github/conan/rpc-ci -pr:h .github/conan/rpc-ci \
+            -o march_id=ZLm9Pjh -o tests=True -o consensus=False -o rpc=none -o bloom_filters=True
+      - name: Export dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        run: conan cache save "*:*" --no-source --file="$RUNNER_TEMP/bloom-filters-dependencies.tgz"
+      - name: Cache dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/bloom-filters-dependencies.tgz
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Build the feature's tests
+        run: |
+          cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_node_bloom_filters_test
+      - name: Test serving bloom filters
+        run: ./build/build/Release/src/node/kth_node_bloom_filters_test

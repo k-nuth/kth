@@ -98,6 +98,7 @@ set(kth_headers
   include/kth/network/peer_record.hpp
   include/kth/network/peer_database.hpp
   include/kth/network/peer_session.hpp
+  include/kth/network/peer_identity.hpp
   include/kth/network/tx_inventory.hpp
   include/kth/network/peer_manager.hpp
   include/kth/network/protocols_coro.hpp
@@ -211,6 +212,16 @@ target_link_libraries(${PROJECT_NAME} PUBLIC domain::domain)
 find_package(simdjson REQUIRED)
 target_link_libraries(${PROJECT_NAME} PUBLIC simdjson::simdjson)
 
+# Outbound connections through a SOCKS5 proxy. An optional feature: built only
+# when asked for (docs/optional-features.md). Not in the browser node, whose
+# connections are the browser's.
+if(KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_SOCKS5)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/socks5.cpp
+        include/kth/network/socks5.hpp)
+endif()
+
 if(KTH_WITH_WEBSOCKET)
     find_package(wslay 1.1.1 REQUIRED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_WEBSOCKET)
@@ -232,6 +243,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(Catch2 3 REQUIRED)
 
   add_executable(kth_network_test
+    test/message_waits.cpp
     test/peer_database.cpp
     test/peer_manager.cpp
     test/peer_session.cpp
@@ -249,6 +261,17 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   include(CTest)
   kth_register_tests(kth_network_test TEST_SPEC "~[integration]")
+
+  # The tests of an optional feature are an executable of their own, so that
+  # its workflow builds and runs them and nothing else.
+  if (KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_network_socks5_test
+      test/socks5.cpp)
+    target_include_directories(kth_network_socks5_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_network_socks5_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_network_socks5_test PRIVATE Catch2::Catch2WithMain)
+    kth_register_tests(kth_network_socks5_test)
+  endif()
 endif()
 
 

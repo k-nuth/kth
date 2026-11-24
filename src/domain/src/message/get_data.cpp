@@ -15,9 +15,6 @@
 
 namespace kth::domain::message {
 
-std::string const get_data::command = "getdata";
-uint32_t const get_data::version_minimum = version::level::minimum;
-uint32_t const get_data::version_maximum = version::level::maximum;
 
 // static
 expect<get_data> get_data::create(inventory_vector::list inventories) {

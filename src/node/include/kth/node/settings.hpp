@@ -41,11 +41,9 @@ struct KND_API rpc_settings {
 /// Stratum V2 Template Provider settings. The plaintext listener is disabled
 /// by default and binds to localhost until the Noise transport is available.
 struct KND_API sv2_settings {
-    sv2_settings();
-
-    bool enabled;
-    std::string bind;
-    uint16_t port;
+    bool enabled = false;
+    std::string bind = "127.0.0.1";
+    uint16_t port = 8442;
 };
 
 /// Common database configuration settings, properties not thread safe.
@@ -60,6 +58,13 @@ struct KND_API settings {
     bool refresh_transactions;
     bool compact_blocks_high_bandwidth;
     bool ds_proofs_enabled;
+    // Serve compact block filters to light wallets (the cfilter messages). Read
+    // only by a build with the option `neutrino`.
+    bool compact_filters;
+    // Serve wallets that load a bloom filter (BIP37). On unless turned off in
+    // a build with the option `bloom_filters`, as on other Bitcoin Cash nodes;
+    // off, and refused, in a build without it.
+    bool bloom_filters;
 
     /// Display mode for console output (tui, log, daemon)
     display_mode display{display_mode::log};

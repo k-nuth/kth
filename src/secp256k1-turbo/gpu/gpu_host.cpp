@@ -90,4 +90,47 @@ std::uint32_t verify_one_host(gpu_raw_input const& in, bool schnorr) {
 
 void field_test_host(gpu_field_test_in const& in, gpu_field_test_out& out) { gpu_field_test_one(&in, &out); }
 
+void sha256d64_host(std::uint8_t const* in, std::size_t n, std::uint8_t* out) {
+    for (std::size_t i = 0; i < n; ++i) {
+        u32 pair[16];
+        u32 digest[8];
+        std::memcpy(pair, in + 64 * i, 64);
+        gpu_sha256d_pair(pair, pair + 8, digest);
+        std::memcpy(out + 32 * i, digest, 32);
+    }
+}
+
+void sha256d_messages_host(std::uint8_t const* data, std::size_t data_size, std::uint64_t const* offsets,
+                           std::uint32_t const* sizes, std::size_t n, std::uint8_t* out) {
+    // The kernel reads the bytes as words and may read one word past a
+    // message, so they are copied into words with that much room.
+    std::size_t const words = data_size / 4 + 2;
+    auto buffer = std::make_unique<u32[]>(words);
+    std::memset(buffer.get(), 0, words * sizeof(u32));
+    if (data_size != 0) std::memcpy(buffer.get(), data, data_size);
+    for (std::size_t i = 0; i < n; ++i) {
+        u32 digest[8];
+        gpu_sha256d_message(buffer.get(), offsets[i], sizes[i], digest);
+        std::memcpy(out + 32 * i, digest, 32);
+    }
+}
+
+void merkle_root_host(std::uint8_t const* hashes, std::size_t n, std::uint8_t* root, bool* mutated) {
+    // The same levels and the same node function as the device kernels.
+    auto level = std::make_unique<u32[]>(8 * n);
+    auto above = std::make_unique<u32[]>(8 * ((n + 1) / 2));
+    std::memcpy(level.get(), hashes, 32 * n);
+    bool equal_siblings = false;
+    for (std::size_t count = n; count > 1; count = (count + 1) / 2) {
+        for (std::size_t i = 0; i < (count + 1) / 2; ++i) {
+            if (gpu_merkle_node(level.get(), static_cast<u32>(count), static_cast<u32>(i), above.get())) {
+                equal_siblings = true;
+            }
+        }
+        level.swap(above);
+    }
+    std::memcpy(root, level.get(), 32);
+    if (mutated != nullptr) *mutated = equal_siblings;
+}
+
 } // namespace secp256k1_turbo::gpu

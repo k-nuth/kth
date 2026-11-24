@@ -779,3 +779,93 @@ TEST_CASE("configured peer child: draining a handler does not extend transport l
 TEST_CASE("configured peer health excludes handler drain time", "[node][configured_peers]") {
     require_clean_child(run_child("configured peer child: draining a handler does not extend transport lifetime"));
 }
+
+namespace {
+// A seed: completes the handshake and, when asked for addresses, sends
+// `addresses` of them (none: it never answers). Reads until the node closes
+// the session, and records how long that took from the request.
+::asio::awaitable<void> serve_seed(tcp::acceptor& acceptor, network::settings const& settings,
+        uint64_t nonce, uint8_t addresses, bool* asked, std::chrono::steady_clock::duration* open_for) {
+    auto [ec, socket] = co_await acceptor.async_accept(
+        ::asio::cancel_after(8s, ::asio::as_tuple(::asio::use_awaitable)));
+    if (ec) co_return;
+    auto peer = std::make_shared<network::peer_session>(std::move(socket), settings, true);
+    auto config = network::make_handshake_config(settings, 100, nonce);
+    config.ws_discovery = false;
+    if ( ! co_await network::perform_handshake_direct(*peer, config)) {
+        peer->stop();
+        co_return;
+    }
+    auto const deadline = std::chrono::steady_clock::now() + 60s;
+    std::chrono::steady_clock::time_point asked_at{};
+    while (true) {
+        auto message = co_await peer->read_message_direct(deadline);
+        if ( ! message) break;
+        if (message->heading.command() != domain::message::get_address::command) continue;
+        *asked = true;
+        asked_at = std::chrono::steady_clock::now();
+        if (addresses == 0) continue;
+        infrastructure::message::network_address::list list;
+        for (uint8_t i = 0; i < addresses; ++i) {
+            infrastructure::message::ip_address const ip{
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 8, 8, 8, uint8_t(i + 1)};
+            list.emplace_back(uint32_t(std::time(nullptr)), uint64_t(1), ip, uint16_t(8333));
+        }
+        auto reply = domain::message::address::create(std::move(list));
+        if (reply) (void)co_await peer->send_direct(*reply);
+    }
+    if (*asked) *open_for = std::chrono::steady_clock::now() - asked_at;
+    peer->stop();
+}
+} // namespace
+
+TEST_CASE("seeding child: ends when it has enough addresses", "[.configured-peer-child]") {
+    watchdog guard(90s, "seeding with a seed that never answers");
+    auto const dir = claimed_dir("kth_seeding_enough");
+    directory_cleanup cleanup{dir};
+    ::asio::io_context context;
+    tcp::acceptor answering(context, {::asio::ip::address_v4::loopback(), 0});
+    tcp::acceptor silent(context, {::asio::ip::address_v4::loopback(), 0});
+    auto settings = configured_settings(dir, 0);
+    settings.peers.clear();
+    // Two addresses are enough for a pool of eight.
+    settings.host_pool_capacity = 8;
+    settings.seeds.emplace_back("127.0.0.1", answering.local_endpoint().port());
+    settings.seeds.emplace_back("127.0.0.1", silent.local_endpoint().port());
+    node::p2p_node node(settings);
+    bool started = false;
+    bool answering_asked = false;
+    bool silent_asked = false;
+    std::chrono::steady_clock::duration answering_open{};
+    std::chrono::steady_clock::duration silent_open{};
+    std::chrono::steady_clock::duration seeding{};
+    size_t available = 0;
+    auto scenario = ::asio::co_spawn(context, [&]() -> ::asio::awaitable<void> {
+        task_group seeds("seeding_test", context.get_executor());
+        seeds.spawn("answering", serve_seed(answering, settings, 901, 4, &answering_asked, &answering_open));
+        seeds.spawn("silent", serve_seed(silent, settings, 902, 0, &silent_asked, &silent_open));
+        auto const began = std::chrono::steady_clock::now();
+        started = ! co_await node.start();
+        seeding = std::chrono::steady_clock::now() - began;
+        available = node.peer_db().count_by_status().first;
+        node.stop();
+        co_await seeds.join();
+    }, ::asio::use_future);
+    context.run();
+    scenario.get();
+    node.join();
+    CHECK(started);
+    CHECK(answering_asked);
+    CHECK(silent_asked);
+    CHECK(available >= 2);
+    // A seed session waits 30 s for addresses. With enough of them already
+    // stored, neither the silent seed nor the one that answered is waited for.
+    CHECK(seeding < 15s);
+    CHECK(silent_open < 15s);
+    CHECK(answering_open < 15s);
+    announce_completion();
+}
+
+TEST_CASE("seeding ends when it has enough addresses", "[node][configured_peers]") {
+    require_clean_child(run_child("seeding child: ends when it has enough addresses"));
+}

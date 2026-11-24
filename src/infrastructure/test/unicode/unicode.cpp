@@ -24,15 +24,15 @@ TEST_CASE("infrastructure unicode to normal nfc form validation", "[infrastructu
     REQUIRE(normal);
     std::string expected_normal_string(normal->begin(), normal->end());
 
-    auto const derived_normal_string = kth::to_normal_nfc_form(original_string);
+    auto const derived_normal_string = kth::to_normal_nfc_form(original_string).value();
     REQUIRE(expected_normal_string == derived_normal_string);
 }
 
 TEST_CASE("infrastructure unicode to normal nfkd form validation", "[infrastructure][unicode]") {
     auto const ascii_space_sandwich = "space-> <-space";
     auto const ideographic_space_sandwich = "space->　<-space";
-    auto const normalized = to_normal_nfkd_form(ideographic_space_sandwich);
-    REQUIRE(normalized.c_str() == ascii_space_sandwich);
+    auto const normalized = to_normal_nfkd_form(ideographic_space_sandwich).value();
+    REQUIRE(normalized == ascii_space_sandwich);
 }
 
 #endif
@@ -41,7 +41,7 @@ TEST_CASE("infrastructure unicode to normal nfkd form validation", "[infrastruct
 TEST_CASE("infrastructure unicode to utf8 string ascii conversion", "[infrastructure][unicode]") {
     auto const utf8_ascii = "ascii";
     auto const utf16_ascii = L"ascii";
-    auto const converted = to_utf8(utf16_ascii);
+    auto const converted = to_utf8(utf16_ascii).value();
     REQUIRE(converted == utf8_ascii);
 }
 
@@ -56,13 +56,13 @@ TEST_CASE("infrastructure unicode to utf8 string ascii conversion", "[infrastruc
 
 TEST_CASE("unicode string round trip ascii test", "[unicode tests]") {
     auto const utf8_ascii = "ascii";
-    auto const narrowed = to_utf8(to_utf16(utf8_ascii));
+    auto const narrowed = to_utf8(to_utf16(utf8_ascii).value()).value();
     REQUIRE(narrowed == utf8_ascii);
 }
 
 TEST_CASE("unicode string round trip utf8 test", "[unicode tests]") {
     auto const utf8 = "テスト";
-    auto const narrowed = to_utf8(to_utf16(utf8));
+    auto const narrowed = to_utf8(to_utf16(utf8).value()).value();
     REQUIRE(narrowed == utf8);
 }
 
@@ -95,7 +95,7 @@ TEST_CASE("unicode to utf8 array ascii test", "[unicode tests]") {
     const std::wstring utf16(L"ascii");
     std::string const expected_utf8("ascii");
 
-    auto const size = to_utf8(utf8, sizeof(utf8), utf16.c_str(), (int)utf16.size());
+    auto const size = to_utf8(utf8, sizeof(utf8), utf16.c_str(), (int)utf16.size()).value();
     REQUIRE(utf8 == expected_utf8);
     REQUIRE(size == expected_utf8.size());
 }
@@ -107,9 +107,9 @@ TEST_CASE("unicode to utf8 array non ascii test", "[unicode tests]") {
     memset(utf8, 0, sizeof(utf8) / sizeof(char));
 
     std::string const expected_utf8("テスト");
-    auto const utf16 = to_utf16(expected_utf8);
+    auto const utf16 = to_utf16(expected_utf8).value();
 
-    auto const size = to_utf8(utf8, sizeof(utf8), utf16.c_str(), (int)utf16.size());
+    auto const size = to_utf8(utf8, sizeof(utf8), utf16.c_str(), (int)utf16.size()).value();
 
     REQUIRE(utf8 == expected_utf8);
     REQUIRE(size == expected_utf8.size());
@@ -235,7 +235,7 @@ TEST_CASE("unicode to utf8 environment null termination test", "[unicode tests]"
     auto variables = const_cast<wchar_t**>(&wide_environment[0]);
     auto expected_count = int(wide_environment.size()) - 1;
 
-    auto environment = to_utf8(variables);
+    auto environment = to_utf8(variables).value();
     auto narrow_environment = reinterpret_cast<char**>(&environment[0]);
 
     // Each argument is a null terminated string.
@@ -282,7 +282,7 @@ TEST_CASE("unicode to utf8 main null termination test", "[unicode tests]") {
     auto argv = const_cast<wchar_t**>(&wide_args[0]);
     auto argc = int(wide_args.size()) - 1;
 
-    auto buffer = to_utf8(argc, argv);
+    auto buffer = to_utf8(argc, argv).value();
     auto narrow_args = reinterpret_cast<char**>(&buffer[0]);
 
     // Each argument is a null terminated string.

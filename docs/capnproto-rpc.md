@@ -89,8 +89,9 @@ non-loopback `rpc.bind`. Remote clients should tunnel (SSH, stunnel...).
   by-hash block/transaction fetches are currently stubs returning `not_found`
   (the LMDB stores were removed), so `getBlock` resolves hash -> height via the
   header index instead.
-  The genesis block's body is not in the flat-file store of a fresh node, so
-  `getBlock(genesis)` reports `notFound` ("block data not stored") until it is.
+  The genesis block is in the flat-file store like any other block (the chain
+  writes it at the first start that does not find it), so `getBlock(genesis)`
+  answers it at height 0.
 * `getTransaction` answers from the mempool today. It already calls
   `fetch_transaction` first, which reports `notFound` until a transaction index
   exists (issue #491), so confirmed lookups start working without an API change.

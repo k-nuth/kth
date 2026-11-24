@@ -273,6 +273,20 @@ TEST_CASE("block genesis chipnet valid structure", "[block serialization]") {
 
 #endif
 
+TEST_CASE("block genesis by network is that network's genesis block", "[block serialization]") {
+    using kth::domain::config::network;
+    CHECK(chain::block::genesis(network::mainnet).hash() == chain::block::genesis_mainnet().hash());
+    CHECK(chain::block::genesis(network::testnet).hash() == chain::block::genesis_testnet().hash());
+    CHECK(chain::block::genesis(network::regtest).hash() == chain::block::genesis_regtest().hash());
+#if defined(KTH_CURRENCY_BCH)
+    CHECK(chain::block::genesis(network::testnet4).hash() == chain::block::genesis_testnet4().hash());
+    CHECK(chain::block::genesis(network::scalenet).hash() == chain::block::genesis_scalenet().hash());
+    CHECK(chain::block::genesis(network::chipnet).hash() == chain::block::genesis_chipnet().hash());
+    // Tempnet has no genesis block of its own.
+    CHECK(chain::block::genesis(network::tempnet).hash() == chain::block::genesis_chipnet().hash());
+#endif
+}
+
 TEST_CASE("block from data genesis mainnet success", "[block serialization]") {
     auto const genesis = chain::block::genesis_mainnet();
     REQUIRE(genesis.serialized_size() == 285u);

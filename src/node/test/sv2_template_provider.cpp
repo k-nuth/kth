@@ -134,6 +134,9 @@ struct completion {
 // a deadline, so a server that never answers fails the test instead of hanging.
 struct listener_fixture {
     test::chain_fixture chain{"sv2_listener", 0};
+    // As in the node: one consumer of the chain's doorbells, whose rings
+    // reach the provider through its subscription.
+    node::mining::work_changes work_changes;
     ::asio::io_context io;
     // The endpoint block_chain::submit_block feeds, for a case whose solutions
     // a submission_pipeline drains. Without one, a submission is refused at
@@ -149,11 +152,14 @@ struct listener_fixture {
     {
         REQUIRE(chain.created());
         REQUIRE(chain.start(submissions));
-        provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain());
+        provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain(),
+            work_changes.subscribe());
+        ::asio::co_spawn(io, work_changes.run(chain.chain()), ::asio::detached);
     }
 
     ~listener_fixture() {
         provider->stop();
+        work_changes.stop();
         for (auto const& client : clients) {
             std::error_code ignored;
             client->close(ignored);

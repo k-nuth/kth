@@ -1,12 +1,22 @@
 # Stratum V2 Template Provider
 
 Knuth can serve block templates to Stratum V2 clients (a Job Declarator or a
-pool) over the Template Distribution Protocol. The provider is part of node
-core and does not need a build with JSON-RPC.
+pool) over the Template Distribution Protocol. It does not need a build with
+JSON-RPC.
+
+Stratum V2 is an [optional feature](optional-features.md): it needs a build
+with the Conan option `sv2`, off by default.
+
+```
+conan install . -o sv2=True ...
+```
+
+A build without it refuses to start with `sv2.enabled = true`.
 
 ## Running
 
-It is off by default. Enable it in the config file:
+In a build with the option the provider is still off by default. Enable it in
+the config file:
 
 ```ini
 sv2.enabled = true

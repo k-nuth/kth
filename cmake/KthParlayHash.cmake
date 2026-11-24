@@ -1,0 +1,13 @@
+# The packaged headers are from our maintained ParlayHash fork.
+include_guard(GLOBAL)
+set(KTH_MEMPOOL_BACKEND "cfm" CACHE STRING "Mempool backing map (cfm|parlay).")
+set_property(CACHE KTH_MEMPOOL_BACKEND PROPERTY STRINGS cfm parlay)
+if(KTH_MEMPOOL_BACKEND STREQUAL "cfm")
+    add_compile_definitions(KTH_MEMPOOL_BACKEND_CFM)
+elseif(KTH_MEMPOOL_BACKEND STREQUAL "parlay")
+    find_package(ParlayHash 0.3.0 EXACT CONFIG REQUIRED)
+    add_compile_definitions(KTH_MEMPOOL_BACKEND_PARLAY)
+else()
+    message(FATAL_ERROR "Invalid mempool backend: ${KTH_MEMPOOL_BACKEND} (expected cfm|parlay)")
+endif()
+message(STATUS "Knuth: Mempool backend: ${KTH_MEMPOOL_BACKEND}")

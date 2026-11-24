@@ -3,9 +3,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <array>
+#include <chrono>
 #include <expected>
 #include <limits>
 #include <memory>
@@ -22,6 +24,7 @@
 
 
 #include <asio/awaitable.hpp>
+#include <asio/error.hpp>
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -80,21 +83,24 @@ bool is_block_file(std::string_view name) {
 
 // getblock and getrawtransaction arguments, as BCHN takes them: the hash, then
 // the verbosity as a boolean or a number (null keeps the default), then, for
-// getrawtransaction only, the block to read the transaction from. Types and
-// arity are checked before storage is touched.
+// getrawtransaction, the block to read the transaction from, and for getblock,
+// whether to add each script's byte code pattern. Types and arity are checked
+// before storage is touched.
 struct raw_read_arguments {
     hash_digest hash;
     std::optional<hash_digest> block_hash;
     // getblock: 0 hex, 1 fields and txids, 2 decoded transactions (default 1).
     // getrawtransaction: 0 hex, otherwise decoded (default 0).
     uint64_t verbosity;
+    // getblock: the byteCodePattern objects (default false).
+    bool patterns = false;
 };
 
 std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req, bool transaction) {
     auto const invalid = [&] {
         return kth::fail(make_error(error_code::invalid_params,
             transaction ? "getrawtransaction requires [txid, verbose=false, blockhash]" :
-                          "getblock requires [blockhash, verbosity=1]"));
+                          "getblock requires [blockhash, verbosity=1, patterns=false]"));
     };
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(req.params);
@@ -110,9 +116,20 @@ std::expected<raw_read_arguments, rpc_error> raw_read_params(request const& req,
     for (auto element : args) {
         simdjson::ondemand::value value;
         simdjson::ondemand::json_type type;
-        if (count >= (transaction ? 3u : 2u) || element.get(value) != simdjson::SUCCESS ||
+        if (count >= 3u || element.get(value) != simdjson::SUCCESS ||
             value.type().get(type) != simdjson::SUCCESS) {
             return invalid();
+        }
+        if ( ! transaction && count == 2) {
+            if (type == simdjson::ondemand::json_type::boolean) {
+                if (value.get_bool().get(result.patterns) != simdjson::SUCCESS) {
+                    return invalid();
+                }
+            } else if (type != simdjson::ondemand::json_type::null) {
+                return kth::fail(make_error(error_code::invalid_params, "patterns must be a boolean"));
+            }
+            ++count;
+            continue;
         }
         if (count == 0 || count == 2) {
             if (count == 2 && type == simdjson::ondemand::json_type::null) {
@@ -204,10 +221,44 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 #endif
 }
 
+// BIP22 long polling: hold a getblocktemplate whose longpollid names `watched`
+// until the template it names is out of date. A new tip ends the hold at once;
+// a mempool change ends it once ctx.longpoll_wait has passed since the
+// request. It also ends when the request's connection is gone.
+//
+// Nothing polls. The server wakes the request when the tip or the mempool
+// changes, and the tip and the mempool generation are read again from the
+// chain each time, so it does not matter which change woke it or how many.
+::asio::awaitable<void> wait_for_new_template(method_context& ctx, longpoll_state const& watched) {
+    auto const deadline = std::chrono::steady_clock::now() + ctx.longpoll_wait;
+    for (;;) {
+        // Before the read below, so a change after that read ends the wait.
+        auto const watching = watch_work(ctx);
+        auto const view = ctx.chain.chain_view();
+        if ( ! view || view->tip_hash != watched.tip) {
+            co_return;
+        }
+        auto const pool_changed =
+            ctx.chain.mempool_ref().generation() != watched.mempool_generation;
+        auto const now = std::chrono::steady_clock::now();
+        if (now >= deadline && (pool_changed || ! watching)) {
+            // Without a server nothing wakes the request after its deadline.
+            co_return;
+        }
+        // Until the deadline it bounds the wait; past it only a change does.
+        auto const until = now < deadline
+            ? deadline : std::chrono::steady_clock::time_point::max();
+        if (co_await wait_for_work(ctx, watching, until) == wake::connection_closed) {
+            co_return;
+        }
+    }
+}
+
 // getblocktemplate [template_request] -> the next-block template with its
 // transactions in full (BIP22), for pools that build and submit whole blocks.
 // Only "template" mode; "proposal" is refused. The request's capabilities and
-// rules ask for nothing this template leaves out.
+// rules ask for nothing this template leaves out. A request that sends back a
+// template's longpollid is held until that template is out of date.
 // C-API counterpart: kth_chain_async_fetch_mining_template.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_template(method_context& ctx, request const& req) {
@@ -224,6 +275,7 @@ get_block_template(method_context& ctx, request const& req) {
         co_return invalid_params();
     }
     size_t count = 0;
+    std::optional<std::string> longpollid;
     for (auto element : params) {
         simdjson::ondemand::object request_object;
         if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
@@ -239,6 +291,23 @@ get_block_template(method_context& ctx, request const& req) {
                 co_return kth::fail(make_error(error_code::invalid_params,
                     "only template mode is supported"));
             }
+        }
+        std::string_view id;
+        auto const id_error = request_object["longpollid"].get_string().get(id);
+        if (id_error != simdjson::NO_SUCH_FIELD) {
+            if (id_error != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            longpollid.emplace(id);
+        }
+    }
+
+    // An id that names another tip, or no state this node gave out, is
+    // answered at once.
+    if (longpollid) {
+        auto const watched = parse_longpollid(*longpollid);
+        if (watched) {
+            co_await wait_for_new_template(ctx, *watched);
         }
     }
 
@@ -486,26 +555,26 @@ submit_block_light(method_context& ctx, request const& req) {
 
 // ---- blockchain query methods --------------------------------------------
 
-// getbestblockhash -> the tip block hash.
+// getbestblockhash -> the connected tip's hash.
 // C-API counterpart: kth_chain_sync_block_hash (see docs/json-rpc.md).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_best_block_hash(method_context& ctx, request const& /*req*/) {
-    auto const heights = ctx.chain.get_last_heights();
-    if ( ! heights) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
         co_return kth::fail(make_error(error_code::internal_error,
-            "chain height unavailable"));
-    }
-    auto const hash = ctx.chain.get_block_hash(heights->block);
-    if ( ! hash) {
-        co_return kth::fail(make_error(error_code::internal_error,
-            "best block hash unavailable"));
+            "chain state unavailable"));
     }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(view->tip_hash));
     co_return w.str();
 }
 
-// getblockhash <height> -> the block hash at that height.
+// getblockhash <height> -> the hash of the connected block at that height.
+// The header store runs ahead of the connected chain while blocks download,
+// and is rewritten from the fork point before a reorganization connects
+// anything, so the hash is taken from the connected tip's ancestry instead.
+// A height past the connected tip is out of range even when its header is
+// stored: getblock could not return that block yet.
 // C-API counterpart: kth_chain_sync_block_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_hash(method_context& ctx, request const& req) {
@@ -514,13 +583,26 @@ get_block_hash(method_context& ctx, request const& req) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "getblockhash requires [height] (a non-negative integer)"));
     }
-    auto const hash = ctx.chain.get_block_hash(size_t(*height));
-    if ( ! hash) {
+    auto const view = ctx.chain.chain_view();
+    if ( ! view) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "chain state unavailable"));
+    }
+    if (*height > view->connected_tip_height) {
         co_return kth::fail(make_error(error_code::invalid_params,
             "block height out of range"));
     }
+    auto const& index = ctx.chain.headers();
+    auto const tip = index.find(view->tip_hash);
+    auto const found = tip == blockchain::header_index::null_index
+        ? blockchain::header_index::null_index
+        : index.get_ancestor(tip, int32_t(*height));
+    if (found == blockchain::header_index::null_index) {
+        co_return kth::fail(make_error(error_code::internal_error,
+            "connected chain not in the header index"));
+    }
     writer w;
-    w.value(encode_hash(*hash));
+    w.value(encode_hash(index.get_hash(found)));
     co_return w.str();
 }
 
@@ -761,9 +843,10 @@ get_raw_transaction(method_context& ctx, request const& req) {
     co_return render(*std::get<0>(*result), std::nullopt);
 }
 
-// getblock <blockhash> [verbosity=1] -> with verbosity 0 (or false) the
-// wire-serialized block as hex; with 1 (or true) its fields and txids; with 2
-// its fields and its transactions decoded.
+// getblock <blockhash> [verbosity=1] [patterns=false] -> with verbosity 0 (or
+// false) the wire-serialized block as hex; with 1 (or true) its fields and
+// txids; with 2 its fields and its transactions decoded, and with patterns each
+// of their scripts' byte code pattern.
 // C-API counterpart: kth_chain_sync_block_by_hash.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block(method_context& ctx, request const& req) {
@@ -825,7 +908,7 @@ get_block(method_context& ctx, request const& req) {
         }
     }
     co_return render_block_verbose(*block, location, args->verbosity == 2,
-        view->state->network(), view->state->enabled_flags());
+        view->state->network(), view->state->enabled_flags(), args->patterns);
 }
 
 // getblockheader <blockhash> [verbose=true] -> the header fields with its
@@ -904,6 +987,118 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// testmempoolaccept [rawtx] (allowhighfees) -> whether the mempool would admit
+// the transaction. It runs the checks sendrawtransaction runs, through the
+// same admission path, but the transaction is neither added to the pool nor
+// announced. One transaction per call. allowhighfees is accepted and changes
+// nothing: the node sets no maximum fee. A refusal names missing inputs, a
+// transaction the pool already holds, or a conflict with a pooled spend, the
+// last two with BIP61's code 18 (duplicate); any other refusal is the node's
+// own reason.
+// C-API counterpart: none yet (kth_chain_transaction_validate does not apply
+// the pool's first-seen rule).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+test_mempool_accept(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "testmempoolaccept requires [[rawtx]] and an optional allowhighfees boolean"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    std::string rawtx;
+    size_t transactions = 0;
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::value value;
+        if (element.get(value) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        if (count == 0) {
+            simdjson::ondemand::array rawtxs;
+            if (value.get_array().get(rawtxs) != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            for (auto entry : rawtxs) {
+                std::string_view text;
+                if (entry.get_string().get(text) != simdjson::SUCCESS) {
+                    co_return invalid_params();
+                }
+                if (transactions++ == 0) {
+                    rawtx.assign(text);
+                }
+            }
+        } else if (count == 1) {
+            simdjson::ondemand::json_type type;
+            if (value.type().get(type) != simdjson::SUCCESS ||
+                (type != simdjson::ondemand::json_type::boolean &&
+                 type != simdjson::ondemand::json_type::null)) {
+                co_return invalid_params();
+            }
+        } else {
+            co_return invalid_params();
+        }
+        ++count;
+    }
+    if (count == 0) {
+        co_return invalid_params();
+    }
+    if (transactions != 1) {
+        co_return kth::fail(make_error(error_code::invalid_parameter,
+            "testmempoolaccept takes exactly one transaction"));
+    }
+
+    auto const raw = decode_base16(rawtx);
+    if ( ! raw) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx || ! reader.is_exhausted()) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not a decodable transaction"));
+    }
+
+    auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
+    auto const tested = co_await ctx.chain.test_accept(pooled);
+
+    mempool_accept_result result{.txid = pooled->hash(), .allowed = tested.has_value()};
+    if (tested) {
+        result.size = pooled->serialized_size(true);
+        // What the mempool prices: the size, or the signature checks it
+        // yields at 50 bytes each if they weigh more.
+        result.vsize = blockchain::virtual_size(result.size, *tested);
+        // Validation filled in the prevouts, so the fee is known now.
+        result.fee = pooled->fees();
+        co_return render_mempool_accept(result);
+    }
+
+    auto const ec = tested.error();
+    // The node could not answer, which says nothing about the transaction.
+    if (ec == error::service_stopped || ec == error::operation_failed ||
+        ec == ::asio::error::operation_aborted) {
+        co_return kth::fail(make_error(error_code::internal_error, ec.message()));
+    }
+    if (ec == error::missing_previous_output) {
+        result.reject_reason = "missing-inputs";
+    } else if (ec == error::duplicate_transaction) {
+        result.reject_reason = "18: txn-already-in-mempool";
+        result.reject_details = ec.message();
+    } else if (ec == error::double_spend_mempool) {
+        result.reject_reason = "18: txn-mempool-conflict";
+        result.reject_details = ec.message();
+    } else {
+        result.reject_reason = ec.message();
+    }
+    co_return render_mempool_accept(result);
+}
+
 // validateaddress <address> -> whether it is a P2PKH or P2SH address of this
 // node's network and, if it is, its cashaddr form and the scriptPubKey it pays.
 // C-API counterpart: kth_wallet_payment_address_parse_from.
@@ -946,6 +1141,47 @@ validate_address(method_context& ctx, request const& req) {
             "chain state unavailable"));
     }
     co_return render_validate_address(address, view->state->network());
+}
+
+// getindexinfo [index_name] -> the indexes the node runs, keyed by name, each
+// with whether it is synced and the height it has reached; with a name, only
+// that one. kth keeps no transaction, coin statistics or block filter index
+// (compact filters are built from the block when asked for), so the answer is
+// always an empty object. The name, when given, is a string or null, as other
+// Bitcoin Cash nodes take it; anything else is refused rather than answered.
+// C-API counterpart: none; there is no index to describe.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+get_index_info(method_context& /*ctx*/, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "getindexinfo takes no argument or [index_name]"));
+    };
+    if ( ! req.params.empty()) {
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        size_t count = 0;
+        for (auto element : args) {
+            simdjson::ondemand::value value;
+            simdjson::ondemand::json_type type;
+            std::string_view name;
+            if (count++ != 0 || element.get(value) != simdjson::SUCCESS ||
+                value.type().get(type) != simdjson::SUCCESS ||
+                (type != simdjson::ondemand::json_type::null &&
+                    value.get_string().get(name) != simdjson::SUCCESS)) {
+                co_return invalid_params();
+            }
+        }
+    }
+    writer w;
+    w.begin_object();
+    w.end_object();
+    co_return w.str();
 }
 
 // estimatefee [nblocks] -> the fee per kB, in BCH, that the size part of this
@@ -1149,6 +1385,38 @@ get_network_info(method_context& ctx, request const& req) {
         .byte_fee_satoshis = ctx.chain.chain_settings().byte_fee_satoshis});
 }
 
+// uptime -> the whole seconds since the node started. The steady clock is
+// used, so a change of the system clock cannot make the answer jump or go
+// backwards. Fulcrum calls it to probe the node.
+// C-API counterpart: none (it describes this server's process).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+uptime(method_context& ctx, request const& req) {
+    // Omitted parameters and an empty array are the only accepted forms.
+    if ( ! req.params.empty()) {
+        auto const invalid_params = [] {
+            return kth::fail(make_error(error_code::invalid_params,
+                "uptime takes no arguments"));
+        };
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(req.params);
+        simdjson::ondemand::document document;
+        simdjson::ondemand::array args;
+        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+            document.get_array().get(args) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        for (auto element : args) {
+            (void)element;
+            co_return invalid_params();
+        }
+    }
+    auto const elapsed = std::chrono::steady_clock::now() - ctx.started;
+    auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+    writer w;
+    w.value(uint64_t(seconds > 0 ? seconds : 0));
+    co_return w.str();
+}
+
 // ---- mempool query methods -----------------------------------------------
 
 // getrawmempool [verbose=false] -> the txids currently in the mempool; with
@@ -1326,7 +1594,9 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("testmempoolaccept", test_mempool_accept);
     d.add("validateaddress", validate_address);
+    d.add("getindexinfo", get_index_info);
     d.add("decoderawtransaction", decode_raw_transaction);
     d.add("gettxout", get_tx_out);
     d.add("getrawmempool", get_raw_mempool);
@@ -1340,6 +1610,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getmininginfo", get_mining_info);
     d.add("submitblock", submit_block);
     d.add("submitblocklight", submit_block_light);
+    d.add("uptime", uptime);
 
     // Help MUST be the last method registered: capture the completed catalog,
     // including its own name, before any request can be served.

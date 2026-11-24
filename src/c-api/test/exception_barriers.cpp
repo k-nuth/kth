@@ -1415,10 +1415,15 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
     // touched it (exception).
     auto* const stale = reinterpret_cast<void*>(std::uintptr_t{1});
 
+    // A block the node does not hold, for the reads the genesis block would
+    // answer: it is in the block files like any other block.
+    kth_hash_t const missing_hash = {{ 0x42 }};
+    kth_size_t const missing_height = 1000000;
+
     {   // block_by_height and block_by_hash zero their outputs on a domain error
         kth_block_mut_t block = static_cast<kth_block_mut_t>(stale);
         kth_size_t height = kUnset;
-        kth_error_code_t const expected = kth_chain_sync_block_by_height(chain, 0, &block, &height);
+        kth_error_code_t const expected = kth_chain_sync_block_by_height(chain, missing_height, &block, &height);
         REQUIRE(is_domain_error(expected));
         REQUIRE(block == nullptr);   // historical behaviour: zeroed
         REQUIRE(height == 0);
@@ -1426,7 +1431,7 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
             kth_block_mut_t b = static_cast<kth_block_mut_t>(stale);
             kth_size_t h = kUnset;
             return judge_with(fc, skip, expected,
-                [&] { return kth_chain_sync_block_by_height(chain, 0, &b, &h); },
+                [&] { return kth_chain_sync_block_by_height(chain, missing_height, &b, &h); },
                 [&] { return b == stale && h == kUnset; },
                 [&] { return b == nullptr && h == 0; });
         });
@@ -1434,7 +1439,7 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
             kth_block_mut_t b = static_cast<kth_block_mut_t>(stale);
             kth_size_t h = kUnset;
             return judge_with(fc, skip, expected,
-                [&] { return kth_chain_sync_block_by_hash(chain, genesis_hash, &b, &h); },
+                [&] { return kth_chain_sync_block_by_hash(chain, missing_hash, &b, &h); },
                 [&] { return b == stale && h == kUnset; },
                 [&] { return b == nullptr && h == 0; });
         });
@@ -1474,7 +1479,7 @@ TEST_CASE("C-API exception barrier - sync chain queries keep their domain errors
                            : kth_chain_sync_merkle_block_by_height(chain, 0, b, h);
         };
         auto const compact = [&](bool by_hash, kth_compact_block_mut_t* b, kth_size_t* h) {
-            return by_hash ? kth_chain_sync_compact_block_by_hash(chain, genesis_hash, b, h)
+            return by_hash ? kth_chain_sync_compact_block_by_hash(chain, missing_hash, b, h)
                            : kth_chain_sync_compact_block_by_height(chain, 0, b, h);
         };
         for (bool by_hash : { false, true }) {

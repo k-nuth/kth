@@ -5,6 +5,8 @@
 #ifndef KTH_NODE_SV2_TEMPLATE_PROVIDER_HPP
 #define KTH_NODE_SV2_TEMPLATE_PROVIDER_HPP
 
+#include <kth/node/sv2/feature.hpp>
+
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -18,6 +20,7 @@
 
 #include <kth/infrastructure/utility/data.hpp>
 #include <kth/blockchain/pools/block_template.hpp>
+#include <kth/node/mining/work_changes.hpp>
 #include <kth/node/settings.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/messages.hpp>
@@ -106,8 +109,10 @@ private:
 // server it runs on the node's executor, with one coroutine per connection,
 // and every socket is owned by one strand.
 struct template_provider {
+    // `work_changes` is this provider's subscription to the node's
+    // mining::work_changes: each ring has every client's tip read again.
     template_provider(sv2_settings const& settings, ::asio::any_io_executor executor,
-        blockchain::block_chain& chain);
+        blockchain::block_chain& chain, mining::doorbell& work_changes);
 
     // Bind the listener and serve connections until stop(). Intended to be
     // co_spawned. Returns on a bind error, or once every connection has ended
@@ -124,13 +129,20 @@ struct template_provider {
 
 private:
     ::asio::awaitable<void> run_owned();
-    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket);
+    // `closed` is the connection's: it closes it when its inputs end, which
+    // ends its wait for work.
+    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket,
+        mining::doorbell& closed);
 
     sv2_settings const settings_;
     blockchain::block_chain& chain_;
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
+    // Wakes the connections when the mining work changes. Rung by run_owned()
+    // on each ring of work_changes_; owner_ serializes every use.
+    mining::work_bell work_;
+    mining::doorbell& work_changes_;
 };
 
 } // namespace kth::node::sv2
