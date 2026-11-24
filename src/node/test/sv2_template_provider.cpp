@@ -669,8 +669,15 @@ TEST_CASE("sv2 session holds work for a tip only until the tip or the constraint
         (void)session.set_template(value);
         REQUIRE(session.has_work_for(tip));
     }
+    SECTION("the constraints it already has, sent again, keep it") {
+        auto const current = *session.constraints();
+        auto const repeated = process(session, current);
+        require_silent(repeated);
+        REQUIRE_FALSE(repeated.constraints_changed);
+        REQUIRE(session.has_work_for(tip));
+    }
     SECTION("new constraints leave it without work for them") {
-        require_silent(process(session, coinbase_output_constraints{400, 5}));
+        REQUIRE(process(session, coinbase_output_constraints{400, 5}).constraints_changed);
         REQUIRE_FALSE(session.has_work_for(tip));
         (void)session.set_template(value);
         REQUIRE(session.has_work_for(tip));
@@ -1224,7 +1231,8 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     auto const first = request_template(fixture, *client);
     auto previous = first.work.template_id;
     for (size_t i = 0; i < 16; ++i) {
-        auto const current = request_template(fixture, *client, {uint32_t(120 + i), 3});
+        // Other constraints each time: the same ones again bring nothing.
+        auto const current = request_template(fixture, *client, {uint32_t(121 + i), 3});
         REQUIRE(current.work.template_id > previous);
         previous = current.work.template_id;
     }

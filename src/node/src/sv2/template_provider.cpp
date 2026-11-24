@@ -258,6 +258,15 @@ template_provider_session::result template_provider_session::process(
             if ( ! constraints) {
                 return close();
             }
+            // The same constraints again change nothing: the work this
+            // client holds already leaves that room.
+            if (constraints_
+                    && constraints_->coinbase_output_max_additional_size
+                        == constraints->coinbase_output_max_additional_size
+                    && constraints_->coinbase_output_max_additional_sigops
+                        == constraints->coinbase_output_max_additional_sigops) {
+                return {};
+            }
             constraints_ = *constraints;
             // The work sent so far leaves the room the old constraints asked for.
             work_current_ = false;
