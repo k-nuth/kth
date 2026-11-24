@@ -100,6 +100,7 @@ auto find_entry(Entries& entries, uint64_t id) {
 
 void template_provider_session::set_tip(hash_digest const& previous, size_t height) {
     if (previous_ && *previous_ != previous) {
+        work_current_ = false;
         stale_through_ = next_id_ - 1;
         // A block found on the replaced tip's work still competes with the
         // new tip when it would stand at the new tip's height (sv2-spec 7).
@@ -190,6 +191,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
     set_tip(value.previous_block_hash, value.height == 0 ? 0 : size_t(value.height) - 1);
     templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
+    work_current_ = true;
     return {std::move(bytes), false};
 }
 
@@ -257,6 +259,8 @@ template_provider_session::result template_provider_session::process(
                 return close();
             }
             constraints_ = *constraints;
+            // The work sent so far leaves the room the old constraints asked for.
+            work_current_ = false;
             return {{}, false, true};
         }
         case request_transaction_data::message_type: {
@@ -397,7 +401,6 @@ template_provider::template_provider(sv2_settings const& settings,
         (void)co_await inbox.async_send(std::error_code{}, event{},
             ::asio::as_tuple(::asio::use_awaitable));
     };
-    std::optional<hash_digest> sent_previous;
     auto receive_tips = [&]() -> ::asio::awaitable<void> {
         using namespace ::asio::experimental;
         auto const executor = co_await ::asio::this_coro::executor;
@@ -410,9 +413,11 @@ template_provider::template_provider(sv2_settings const& settings,
             // finds it.
             auto const watched = work_.watch();
             auto const view = chain_.chain_view();
-            if ( ! view || sent_previous != view->tip_hash) {
+            if ( ! view || ! session.has_work_for(view->tip_hash)) {
                 // The mining work changes with the mempool too; only another
                 // tip, or a tip this client has no template for, is passed on.
+                // Read from the session, which dispatch alone changes: a tip
+                // the chain left and came back to is one it has no work for.
                 auto [send_error] = co_await inbox.async_send(std::error_code{},
                     event{event_kind::tip, {}, {}}, ::asio::as_tuple(::asio::use_awaitable));
                 if (send_error) co_return;
@@ -440,7 +445,6 @@ template_provider::template_provider(sv2_settings const& settings,
                 value.error().message());
             co_return template_provider_session::result{};
         }
-        sent_previous = value->previous_block_hash;
         co_return session.set_template(std::move(*value));
     };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
@@ -456,20 +460,16 @@ template_provider::template_provider(sv2_settings const& settings,
 
             template_provider_session::result result;
             if (input.kind == event_kind::tip) {
-                if ( ! session.constraints() || (view && sent_previous == view->tip_hash)) continue;
+                if ( ! session.constraints() || (view && session.has_work_for(view->tip_hash))) continue;
                 result = co_await next_template();
             } else {
                 result = session.process(input.header, input.payload);
                 // Before anything is awaited for this client: the time a
                 // template or its write takes is not the client's.
                 if (session.constraints()) (void)set_up.try_send(std::monostate{});
-                if (result.constraints_changed) {
-                    // The work sent so far leaves the room the old constraints
-                    // asked for. Until work for these is sent, the tip counts
-                    // as one this client has no template for.
-                    sent_previous.reset();
-                    result = co_await next_template();
-                }
+                // The session counts the tip as one this client has no work
+                // for until work for the new constraints is sent.
+                if (result.constraints_changed) result = co_await next_template();
             }
             if ( ! result.response.empty()) {
                 auto [write_error, written] = co_await ::asio::async_write(socket,

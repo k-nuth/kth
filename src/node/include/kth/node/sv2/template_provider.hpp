@@ -71,6 +71,14 @@ struct template_provider_session {
     // one it was built on, where a block found on it would be a rival.
     void set_tip(hash_digest const& previous, size_t height);
 
+    // Whether this client holds work for `tip` built for its current
+    // constraints. Not so once the tip changed, even back to this one, or the
+    // constraints did, until the next template is set.
+    [[nodiscard]]
+    bool has_work_for(hash_digest const& tip) const {
+        return work_current_ && previous_ == tip;
+    }
+
     // The latest CoinbaseOutputConstraints from this client, if any. Templates
     // for this connection must leave this room in the coinbase.
     [[nodiscard]]
@@ -102,6 +110,7 @@ private:
     std::optional<coinbase_output_constraints> constraints_;
     std::optional<hash_digest> previous_;
     size_t tip_height_ = 0;
+    bool work_current_ = false;
     std::deque<entry> templates_;
     // The templates of the tip just replaced, at most max_templates.
     std::deque<entry> replaced_;

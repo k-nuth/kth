@@ -643,6 +643,40 @@ TEST_CASE("sv2 keeps the replaced tip's work only one block above it", "[sv2 tem
     }
 }
 
+TEST_CASE("sv2 session holds work for a tip only until the tip or the constraints change", "[sv2 template_provider]") {
+    hash_digest other{};
+    other[0] = 1;
+    auto value = empty_template();
+    value.height = 10;
+    auto const tip = value.previous_block_hash;
+    auto session = ready_session();
+    REQUIRE_FALSE(session.has_work_for(tip));
+    (void)session.set_template(value);
+    REQUIRE(session.has_work_for(tip));
+    REQUIRE_FALSE(session.has_work_for(other));
+
+    SECTION("the same tip seen again keeps it") {
+        session.set_tip(tip, 9);
+        REQUIRE(session.has_work_for(tip));
+    }
+    SECTION("a tip the chain left and came back to has none") {
+        // The work was retired when the other tip was seen; the client has
+        // to be sent work again though the tip is the one it was sent for.
+        session.set_tip(other, 9);
+        REQUIRE_FALSE(session.has_work_for(other));
+        session.set_tip(tip, 9);
+        REQUIRE_FALSE(session.has_work_for(tip));
+        (void)session.set_template(value);
+        REQUIRE(session.has_work_for(tip));
+    }
+    SECTION("new constraints leave it without work for them") {
+        require_silent(process(session, coinbase_output_constraints{400, 5}));
+        REQUIRE_FALSE(session.has_work_for(tip));
+        (void)session.set_template(value);
+        REQUIRE(session.has_work_for(tip));
+    }
+}
+
 // The listener, over loopback sockets on an OS-assigned port.
 
 TEST_CASE("sv2 closes a connection that does not complete its setup in time", "[sv2 template_provider]") {
@@ -935,6 +969,19 @@ TEST_CASE("sv2 stop before run wakes a startup waiter", "[sv2 template_provider]
     REQUIRE(state->port == 0);
     fixture.run();
     fixture.stop();
+}
+
+TEST_CASE("sv2 stop wakes a startup waiter that is already waiting", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto state = std::make_shared<startup>();
+    ::asio::co_spawn(fixture.io, await_listening(fixture.provider, state), ::asio::detached);
+    int slices = 0;
+    (void)fixture.wait_until([&] { return ++slices > 4; });
+    REQUIRE_FALSE(state->done);
+
+    fixture.provider->stop();
+    REQUIRE(fixture.wait_until([&] { return state->done; }));
+    REQUIRE(state->error);
 }
 
 TEST_CASE("sv2 listener reaps finished connections before admitting more", "[sv2 template_provider]") {

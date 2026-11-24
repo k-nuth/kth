@@ -241,6 +241,23 @@ TEST_CASE("block_template: a coinbase sigchecks reserve at or above the limit se
     REQUIRE(tpl.txs.empty());
 }
 
+TEST_CASE("block_template: a coinbase size reserve at or above the limit selects nothing", "[block_template]") {
+    mempool pool(0x1111u, 0x2222u);
+    auto a = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    REQUIRE(pool.add(make_entry(a, 300u, 100u, /*sigchecks*/ 1u)));
+
+    auto ctx = unlimited_ctx();
+    ctx.max_block_size = 5000u;
+    // The limit itself, and a reserve so large that adding a transaction's
+    // size to it would wrap around to a small number.
+    auto const reserve = GENERATE(uint64_t(5000), std::numeric_limits<uint64_t>::max() - 10u);
+    CAPTURE(reserve);
+    ctx.coinbase_reserve_size = reserve;
+
+    auto const tpl = build_block_template(view_of(pool), ctx);
+    REQUIRE(tpl.txs.empty());
+}
+
 TEST_CASE("block_template: sigchecks limit caps selection", "[block_template]") {
     mempool pool(0x1111u, 0x2222u);
 
