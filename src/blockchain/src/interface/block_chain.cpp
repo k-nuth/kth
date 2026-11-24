@@ -2193,6 +2193,8 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
+    // After the gate, so whoever this wakes can capture at once.
+    (void)tip_changes_.try_send(std::monostate{});
 }
 
 bool block_chain::transition_in_progress() const {

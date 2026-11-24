@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <fstream>
 #include <random>
+#include <stop_token>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -20,6 +21,7 @@
 
 #include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/ip/address.hpp>
 #include <asio/steady_timer.hpp>
@@ -35,6 +37,7 @@
 #include <spdlog/spdlog.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
+#include <kth/blockchain/pools/mempool.hpp>
 #include <kth/node/detail/scope_action.hpp>
 #include <kth/infrastructure/formats/base_64.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -211,7 +214,8 @@ std::string random_token() {
 
 server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     ::asio::any_io_executor executor, p2p_node const* network,
-    std::chrono::steady_clock::time_point started)
+    std::chrono::steady_clock::time_point started,
+    std::function<void(dispatcher&)> const& methods)
     : settings_(settings)
     , chain_(chain)
     , network_(network)
@@ -220,6 +224,9 @@ server::server(rpc_settings const& settings, blockchain::block_chain& chain,
     , owner_(::asio::make_strand(std::move(executor)))
     , stop_requests_(owner_, 1)
     , listening_(owner_, 1) {
+    if (methods) {
+        methods(dispatcher_);
+    }
     register_builtin_methods(dispatcher_);
 
     if ( ! settings_.user.empty() || ! settings_.password.empty()) {
@@ -247,7 +254,8 @@ bool server::authorized(std::string_view authorization_header) const {
     return got == expected_credentials_;
 }
 
-::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket& socket) {
+::asio::awaitable<void> server::serve_connection(::asio::ip::tcp::socket& socket, doorbell& closed) {
+    using namespace ::asio::experimental::awaitable_operators;
     std::array<char, 8192> buffer;
     // Bytes read past the end of the previous request: the start of the next
     // one when a client pipelines requests on a keep-alive connection.
@@ -308,8 +316,43 @@ bool server::authorized(std::string_view authorization_header) const {
             co_return;
         }
 
-        method_context mctx{chain_, jobs_, network_, started_};
-        std::string const response = co_await dispatcher_.handle(mctx, ctx.body);
+        method_context mctx{chain_, jobs_, network_, started_, &work_, &closed};
+        std::string response;
+        // Nothing reads the socket while a handler runs, so a client that
+        // goes away, or the server closing the socket to stop, would pass
+        // unnoticed by a handler that waits, and its connection would stay
+        // taken. This read notices. What it reads meanwhile is the start of
+        // the next pipelined request, kept for the parser; past one buffer of
+        // it the read stops, and with it the notice of a client that goes
+        // away. The stop does not depend on it: it closes `closed` itself.
+        bool handled = false;
+        auto handle = [&]() -> ::asio::awaitable<void> {
+            // However the handler ends, the read ends with it: it is the only
+            // operation on the socket here.
+            detail::scope_action finish([&]() noexcept {
+                handled = true;
+                std::error_code ignored;
+                socket.cancel(ignored);
+            }, true);
+            response = co_await dispatcher_.handle(mctx, ctx.body);
+        };
+        auto watch = [&]() -> ::asio::awaitable<void> {
+            while ( ! handled && pending.size() < buffer.size()) {
+                auto [ec, n] = co_await socket.async_read_some(
+                    ::asio::buffer(buffer), ::asio::as_tuple(::asio::use_awaitable));
+                if (handled && ec == ::asio::error::operation_aborted) {
+                    co_return;
+                }
+                if (ec || n == 0) {
+                    // The request is still answered: a client that only
+                    // closed its sending side reads the reply.
+                    closed.close();
+                    co_return;
+                }
+                pending.append(buffer.data(), n);
+            }
+        };
+        co_await (handle() && watch());
         co_await write_response(socket, 200, "OK", response, ctx.keep_alive);
         if ( ! ctx.keep_alive) {
             co_return;
@@ -381,13 +424,21 @@ void server::stop() {
     // are admitted, and every completion is consumed before this scope exits.
     constexpr std::size_t capacity = 64;
     ::asio::experimental::channel<void(std::error_code, std::exception_ptr)> ended(owner_, capacity);
-    boost::unordered_flat_set<std::shared_ptr<tcp::socket>> connections;
+    // A connection's socket with the doorbell its held request waits on.
+    struct connection {
+        tcp::socket socket;
+        doorbell closed{1};
+    };
+    boost::unordered_flat_set<std::shared_ptr<connection>> connections;
     std::size_t pending = 0;
     bool stopping = false;
     ::asio::steady_timer accept_retry(owner_);
     std::exception_ptr failure;
+    // Closed to end the task that rings work_.
+    doorbell work_watch_ends{1};
     auto close_owned = [&] {
         stopping = true;
+        work_watch_ends.close();
         std::error_code ignored;
         acceptor.close(ignored);
         try {
@@ -396,8 +447,11 @@ void server::stop() {
             // A timer-service error must not bypass closing or joining children.
             if (!failure) failure = std::current_exception();
         }
-        for (auto const& socket : connections) {
-            socket->close(ignored);
+        for (auto const& child : connections) {
+            child->socket.close(ignored);
+            // Directly, not through a read that finds the socket closed: a
+            // connection read ahead as far as it goes has no read pending.
+            child->closed.close();
         }
     };
     auto reap = [&]() -> ::asio::awaitable<void> {
@@ -430,14 +484,14 @@ void server::stop() {
                     socket.close(ignored);
                     break;
                 }
-                auto child = std::make_shared<tcp::socket>(std::move(socket));
+                auto child = std::make_shared<connection>(std::move(socket));
                 connections.insert(child);
                 ++pending;
                 // co_spawn's completion adapter only publishes an owned result.
                 // It runs on the same strand; its captures cannot outlive the
                 // drain below, even for partial HTTP reads or handler errors.
                 try {
-                    ::asio::co_spawn(owner_, serve_connection(*child),
+                    ::asio::co_spawn(owner_, serve_connection(child->socket, child->closed),
                         [&, child](std::exception_ptr error) {
                             connections.erase(child);
                             (void)ended.try_send(std::error_code{}, error);
@@ -466,7 +520,25 @@ void server::stop() {
         spdlog::info("[rpc] Stop received; closing listener and {} connections", connections.size());
         close_owned();
     };
-    co_await (accept_connections() && receive_stop());
+    // The chain's two doorbells have this one consumer. It turns each ring
+    // into a wake for every held request; they read the chain again.
+    auto watch_work = [&]() -> ::asio::awaitable<void> {
+        using namespace ::asio::experimental;
+        auto const executor = co_await ::asio::this_coro::executor;
+        for (;;) {
+            auto completion = co_await make_select(
+                receive(work_watch_ends),
+                receive(chain_.tip_changes()),
+                receive(chain_.mempool_ref().changes())
+            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto const& [ec, selected] = completion;
+            if (ec || selected.index == 0) {
+                co_return;
+            }
+            work_.ring();
+        }
+    };
+    co_await (accept_connections() && receive_stop() && watch_work());
     spdlog::info("[rpc] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }

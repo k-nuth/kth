@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <expected>
+#include <functional>
+#include <optional>
+#include <stop_token>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -20,7 +24,10 @@
 #include <asio/this_coro.hpp>
 #include <variant>
 
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_future.hpp>
 
@@ -31,6 +38,9 @@
 #include <asio/read_until.hpp>
 #include <asio/write.hpp>
 
+#include <kth/blockchain/pools/mempool.hpp>
+#include <kth/node/mining/job_store.hpp>
+#include <kth/node/rpc/dispatch.hpp>
 #include <kth/node/rpc/server.hpp>
 #include <kth/node/settings.hpp>
 #include "../../blockchain/test/reorg_chain_fixture.hpp"
@@ -64,7 +74,8 @@ struct rpc_server_fixture {
 
     [[nodiscard]] bool start() {
         if ( ! chain.created() || ! chain.start()) return false;
-        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor());
+        server = std::make_unique<node::rpc::server>(settings, chain.chain(), io.get_executor(),
+            nullptr, std::chrono::steady_clock::now(), methods);
         server_done = ::asio::co_spawn(io, server->run(), ::asio::use_future);
         auto started = ::asio::co_spawn(io, await_startup(), ::asio::use_future);
         runner = std::thread([this] { io.run(); });
@@ -175,6 +186,8 @@ struct rpc_server_fixture {
 
     test::chain_fixture chain;
     node::rpc_settings settings;
+    // Methods a test adds to the server's own.
+    std::function<void(node::rpc::dispatcher&)> methods;
     ::asio::io_context io;
     std::unique_ptr<node::rpc::server> server;
     std::thread runner;
@@ -183,10 +196,10 @@ struct rpc_server_fixture {
     uint16_t port = 0;
 };
 
-// A POST of getblockcount with Basic auth for test:test.
-std::string request(int id, std::string_view connection) {
+// A POST of `method` without parameters, with Basic auth for test:test.
+std::string call(int id, std::string_view method, std::string_view connection) {
     auto const body = R"({"jsonrpc":"1.0","id":)" + std::to_string(id)
-        + R"(,"method":"getblockcount","params":[]})";
+        + R"(,"method":")" + std::string(method) + R"(","params":[]})";
     return "POST / HTTP/1.1\r\n"
            "Host: 127.0.0.1\r\n"
            "Authorization: Basic dGVzdDp0ZXN0\r\n"
@@ -194,6 +207,11 @@ std::string request(int id, std::string_view connection) {
            "Connection: " + std::string(connection) + "\r\n"
            "Content-Length: " + std::to_string(body.size()) + "\r\n"
            "\r\n" + body;
+}
+
+// A POST of getblockcount.
+std::string request(int id, std::string_view connection) {
+    return call(id, "getblockcount", connection);
 }
 
 // The bodies of the HTTP responses in a reply stream, framed by Content-Length.
@@ -214,6 +232,117 @@ std::vector<std::string> bodies(std::string_view reply) {
     }
     return out;
 }
+
+using node::rpc::doorbell;
+using node::rpc::wake;
+using wakes = ::asio::experimental::select_channel<wake>;
+
+constexpr auto patience = std::chrono::seconds(5);
+
+// Run `work` on `io`, the context of the sockets it uses, until it ends or
+// `limit` passes. Nullopt for the limit: the test thread never waits on a
+// server for ever.
+template <typename T>
+std::optional<T> within(::asio::io_context& io, ::asio::awaitable<T> work,
+    std::chrono::steady_clock::duration limit = patience) {
+    using namespace ::asio::experimental::awaitable_operators;
+    auto done = ::asio::co_spawn(io,
+        [&]() -> ::asio::awaitable<std::optional<T>> {
+            ::asio::steady_timer deadline(io, limit);
+            auto result = co_await (std::move(work)
+                || deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
+            if (result.index() != 0) co_return std::nullopt;
+            co_return std::get<0>(std::move(result));
+        }, ::asio::use_future);
+    io.restart();
+    io.run();
+    return done.get();
+}
+
+// The next value of a channel a server's handler writes to, from the test's
+// thread; nullopt when none came within `limit`.
+template <typename T>
+std::optional<T> take(::asio::experimental::select_channel<T>& channel,
+    std::chrono::steady_clock::duration limit = patience) {
+    using namespace ::asio::experimental;
+    ::asio::io_context io;
+    auto done = ::asio::co_spawn(io,
+        [&]() -> ::asio::awaitable<std::optional<T>> {
+            auto const executor = co_await ::asio::this_coro::executor;
+            auto completion = co_await make_select(receive(channel),
+                after(std::chrono::steady_clock::now() + limit)
+            ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto& [ec, selected] = completion;
+            if (ec || selected.index != 0) co_return std::nullopt;
+            co_return std::move(*selected.template value<0>());
+        }, ::asio::use_future);
+    io.run();
+    return done.get();
+}
+
+// Everything the server sends on `socket` until it closes the connection.
+::asio::awaitable<std::string> read_to_end(::asio::ip::tcp::socket& socket) {
+    std::string stream;
+    auto [ec, size] = co_await ::asio::async_read(socket, ::asio::dynamic_buffer(stream),
+        ::asio::as_tuple(::asio::use_awaitable));
+    if (ec != ::asio::error::eof) {
+        throw std::system_error(ec);
+    }
+    co_return stream;
+}
+
+// A server with one more method, "hold": a request that waits for the mining
+// work to change, the way a long-polled template request does. `entered`
+// rings when a hold has taken its watch and is about to wait; `woken` gets
+// why each one stopped. The reply names the reason too.
+struct held_requests {
+    explicit held_requests(char const* tag)
+        : fixture(tag) {
+        fixture.methods = [this](node::rpc::dispatcher& d) {
+            d.add("hold", [this](node::rpc::method_context& ctx, node::rpc::request const&)
+                    -> ::asio::awaitable<std::expected<std::string, node::rpc::rpc_error>> {
+                auto const watched = node::rpc::watch_work(ctx);
+                (void)entered.try_send(std::monostate{});
+                // Far beyond any test's patience, yet a hold nothing woke
+                // still ends and lets the server be joined.
+                auto const why = co_await node::rpc::wait_for_work(ctx, watched,
+                    std::chrono::steady_clock::now() + std::chrono::seconds(30));
+                (void)woken.try_send(wake(why));
+                co_return std::string(name(why));
+            });
+        };
+    }
+
+    static std::string_view name(wake why) {
+        switch (why) {
+            case wake::work_changed: return R"("work_changed")";
+            case wake::deadline: return R"("deadline")";
+            case wake::connection_closed: return R"("connection_closed")";
+        }
+        return R"("unknown")";
+    }
+
+    // Connect and send a hold; true once the server's handler is waiting.
+    [[nodiscard]] bool hold(::asio::ip::tcp::socket& socket, std::string const& bytes) {
+        socket.connect({::asio::ip::make_address("127.0.0.1"), fixture.port});
+        ::asio::write(socket, ::asio::buffer(bytes));
+        return take(entered).has_value();
+    }
+
+    // Change the mempool the way an admission does.
+    void change_mempool(uint32_t tag) {
+        auto const tx = std::make_shared<domain::message::transaction>(
+            domain::chain::transaction{1u, tag, {}, {}});
+        REQUIRE(fixture.chain.chain().mempool_ref().add(blockchain::mempool_entry{
+            tx, 0u, uint32_t(tx->serialized_size(true)), 0u, 0u}));
+    }
+
+    // Declared before the fixture: the server's handlers write to them until
+    // the fixture has stopped and joined the server.
+    ::asio::experimental::select_channel<std::monostate> entered{128};
+    wakes woken{128};
+    rpc_server_fixture fixture;
+};
 
 } // namespace
 
@@ -421,4 +550,233 @@ TEST_CASE("rpc server accepts a later keep-alive request", "[rpc server]") {
     CHECK(answers[0].find(R"("result":0)") != std::string::npos);
     CHECK(answers[1].find(R"("result":0)") != std::string::npos);
     CHECK_NOTHROW(fixture.finish());
+}
+
+TEST_CASE("rpc server ends a held request whose client went away", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_abandoned");
+    REQUIRE(held.fixture.start());
+
+    // As many abandoned requests as the server admits connections. Each one
+    // that stayed held would keep its connection, and the last would leave no
+    // room for anyone.
+    ::asio::io_context client;
+    for (size_t i = 0; i < 64; ++i) {
+        ::asio::ip::tcp::socket socket(client);
+        REQUIRE(held.hold(socket, call(int(i), "hold", "keep-alive")));
+        std::error_code ignored;
+        socket.close(ignored);
+        auto const why = take(held.woken);
+        REQUIRE(why.has_value());
+        REQUIRE(*why == wake::connection_closed);
+    }
+
+    ::asio::ip::tcp::socket socket(client);
+    socket.connect({::asio::ip::make_address("127.0.0.1"), held.fixture.port});
+    ::asio::write(socket, ::asio::buffer(request(7, "close")));
+    auto const reply = within(client, rpc_server_fixture::read_response(socket));
+    REQUIRE(reply.has_value());
+    auto const answers = bodies(*reply);
+    REQUIRE(answers.size() == 1);
+    CHECK(answers[0].find(R"("id":7)") != std::string::npos);
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server answers a held request whose client only stopped sending", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_half_closed");
+    REQUIRE(held.fixture.start());
+
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    REQUIRE(held.hold(socket, call(1, "hold", "close")));
+    socket.shutdown(::asio::ip::tcp::socket::shutdown_send);
+
+    // The wait ends, and the client, still reading, gets its answer.
+    auto const reply = within(client, rpc_server_fixture::read_response(socket));
+    REQUIRE(reply.has_value());
+    auto const answers = bodies(*reply);
+    REQUIRE(answers.size() == 1);
+    CHECK(answers[0].find(R"("result":"connection_closed")") != std::string::npos);
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server wakes every held request when the mining work changes", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_work");
+    REQUIRE(held.fixture.start());
+
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket first(client);
+    ::asio::ip::tcp::socket second(client);
+
+    auto const both_answer = [&] {
+        for (auto* socket : {&first, &second}) {
+            auto const reply = within(client, rpc_server_fixture::read_response(*socket));
+            REQUIRE(reply.has_value());
+            auto const answers = bodies(*reply);
+            REQUIRE(answers.size() == 1);
+            CHECK(answers[0].find(R"("result":"work_changed")") != std::string::npos);
+        }
+    };
+
+    SECTION("a change of the mempool") {
+        REQUIRE(held.hold(first, call(1, "hold", "keep-alive")));
+        REQUIRE(held.hold(second, call(2, "hold", "keep-alive")));
+        held.change_mempool(7u);
+        both_answer();
+    }
+
+    SECTION("the end of a transition") {
+        REQUIRE(held.hold(first, call(1, "hold", "keep-alive")));
+        REQUIRE(held.hold(second, call(2, "hold", "keep-alive")));
+        REQUIRE(held.fixture.chain.chain().begin_transition());
+        held.fixture.chain.chain().end_transition();
+        both_answer();
+    }
+
+    SECTION("one change after another, each for the requests held then") {
+        REQUIRE(held.hold(first, call(1, "hold", "keep-alive")));
+        held.change_mempool(7u);
+        auto const reply = within(client, rpc_server_fixture::read_response(first));
+        REQUIRE(reply.has_value());
+
+        // Held again on the same connections: the first change is spent.
+        ::asio::write(first, ::asio::buffer(call(3, "hold", "keep-alive")));
+        REQUIRE(take(held.entered).has_value());
+        REQUIRE(held.hold(second, call(4, "hold", "keep-alive")));
+        std::array<char, 1> byte{};
+        first.non_blocking(true);
+        std::error_code ec;
+        first.receive(::asio::buffer(byte), ::asio::socket_base::message_peek, ec);
+        CHECK(ec == ::asio::error::would_block);
+        first.non_blocking(false);
+
+        held.change_mempool(8u);
+        both_answer();
+    }
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server keeps the request that follows a held one on its connection", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_pipelined");
+    REQUIRE(held.fixture.start());
+
+    // The second request arrives while the first is held, so it is read by
+    // whatever watches the connection meanwhile. The client then stops
+    // sending, and that is what ends the hold: the end of the stream comes
+    // after the request, so the request has been read by then.
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    REQUIRE(held.hold(socket, call(1, "hold", "keep-alive")));
+    ::asio::write(socket, ::asio::buffer(request(2, "close")));
+    socket.shutdown(::asio::ip::tcp::socket::shutdown_send);
+
+    // Both replies may come in one segment, so the stream is read whole: the
+    // second request asks the server to close after answering.
+    auto const stream = within(client, read_to_end(socket));
+    REQUIRE(stream.has_value());
+    auto const answers = bodies(*stream);
+    REQUIRE(answers.size() == 2);
+    CHECK(answers[0].find(R"("id":1)") != std::string::npos);
+    CHECK(answers[0].find(R"("result":"connection_closed")") != std::string::npos);
+    CHECK(answers[1].find(R"("id":2)") != std::string::npos);
+    CHECK(answers[1].find(R"("result":0)") != std::string::npos);
+    CHECK_NOTHROW(held.fixture.finish());
+}
+
+TEST_CASE("rpc server stop ends a held request", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_stop");
+    REQUIRE(held.fixture.start());
+
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    REQUIRE(held.hold(socket, call(1, "hold", "keep-alive")));
+
+    // The server joins its connections before it returns. A held request that
+    // the stop did not reach would keep it from returning at all.
+    auto const began = std::chrono::steady_clock::now();
+    CHECK_NOTHROW(held.fixture.finish());
+    CHECK(std::chrono::steady_clock::now() - began < patience);
+    auto const why = take(held.woken);
+    REQUIRE(why.has_value());
+    CHECK(*why == wake::connection_closed);
+}
+
+TEST_CASE("rpc server stop ends a held request it no longer reads behind", "[rpc server][rpc held]") {
+    held_requests held("rpc_server_held_stop_read_ahead");
+    REQUIRE(held.fixture.start());
+
+    // More pipelined requests behind the hold than the server reads ahead:
+    // past that it stops reading the connection, so no read is there to
+    // report the socket the stop closes.
+    ::asio::io_context client;
+    ::asio::ip::tcp::socket socket(client);
+    REQUIRE(held.hold(socket, call(1, "hold", "keep-alive")));
+    std::string behind;
+    while (behind.size() < 3 * 8192) {
+        behind += request(2, "keep-alive");
+    }
+    ::asio::write(socket, ::asio::buffer(behind));
+
+    // Requests on another connection, each answered after the server's
+    // strand has run: by the last one it has read ahead as far as it will.
+    for (int i = 0; i < 8; ++i) {
+        ::asio::ip::tcp::socket other(client);
+        other.connect({::asio::ip::make_address("127.0.0.1"), held.fixture.port});
+        ::asio::write(other, ::asio::buffer(request(10 + i, "close")));
+        REQUIRE(within(client, read_to_end(other)).has_value());
+    }
+
+    auto const began = std::chrono::steady_clock::now();
+    CHECK_NOTHROW(held.fixture.finish());
+    CHECK(std::chrono::steady_clock::now() - began < patience);
+    auto const why = take(held.woken);
+    REQUIRE(why.has_value());
+    CHECK(*why == wake::connection_closed);
+}
+
+TEST_CASE("a change after a request's watch ends its wait, however late it waits", "[rpc held]") {
+    node::rpc::work_bell bell;
+    test::chain_fixture chain("rpc_held_watch_first");
+    REQUIRE(chain.created());
+    REQUIRE(chain.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context ctx{chain.chain(), jobs};
+    ctx.work = &bell;
+    ::asio::io_context waiting;
+    auto const far = std::chrono::steady_clock::now() + std::chrono::hours(1);
+
+    SECTION("rung between the watch and the wait") {
+        auto const watched = node::rpc::watch_work(ctx);
+        bell.ring();
+        auto const why = within(waiting, node::rpc::wait_for_work(ctx, watched, far));
+        REQUIRE(why.has_value());
+        CHECK(*why == wake::work_changed);
+    }
+
+    SECTION("a ring nobody watched wakes no later request") {
+        bell.ring();
+        auto const watched = node::rpc::watch_work(ctx);
+        auto const why = within(waiting, node::rpc::wait_for_work(ctx, watched,
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(50)));
+        REQUIRE(why.has_value());
+        CHECK(*why == wake::deadline);
+    }
+
+    SECTION("a connection already gone ends the wait before it starts") {
+        doorbell closed{1};
+        closed.close();
+        ctx.closed = &closed;
+        auto const watched = node::rpc::watch_work(ctx);
+        bell.ring();
+        auto const why = within(waiting, node::rpc::wait_for_work(ctx, watched, far));
+        REQUIRE(why.has_value());
+        CHECK(*why == wake::connection_closed);
+    }
+
+    SECTION("without a server only the deadline wakes") {
+        node::rpc::method_context bare{chain.chain(), jobs};
+        auto const why = within(waiting, node::rpc::wait_for_work(bare, node::rpc::watch_work(bare),
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(50)));
+        REQUIRE(why.has_value());
+        CHECK(*why == wake::deadline);
+    }
 }
