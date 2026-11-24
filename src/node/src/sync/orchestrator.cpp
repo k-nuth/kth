@@ -2824,8 +2824,10 @@ static
         rejection_ack.close();
         utxo_wake.cancel();
         utxo_wake.close();
-        coordinator_events.cancel();
-        coordinator_events.close();
+        // A submission that reached the channel and was never read, such as
+        // one queued behind the stop, is answered here: its requester waits
+        // for that and nothing else.
+        detail::close_and_refuse_unread_submissions(coordinator_events);
         spdlog::debug("[sync_coordinator] Task ended");
     });
 
