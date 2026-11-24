@@ -586,6 +586,31 @@ bool block_chain::start(uint32_t disk_magic) {
             }
         }
 
+#if ! defined(KTH_DB_READONLY)
+        // The genesis block is the one block no sync stores: it is never
+        // downloaded, and creating the database writes only its header. Its body
+        // is written here, the first time a start does not find it in the block
+        // files, so that it is served and read like any other block. That is the
+        // first start of a new database, or the first start of a database
+        // created before this was done. It has no undo record and gets none:
+        // genesis is never connected or disconnected, and its coinbase output
+        // stays out of the UTXO set.
+        auto const genesis = domain::chain::block::genesis(chain_state_populator_.network());
+        auto const genesis_idx = header_index_.find(genesis.hash());
+        if (genesis_idx != header_index::null_index && ! header_index_.has_block_data(genesis_idx)) {
+            auto const pos = block_store_->save_block(genesis, 0);
+            if (pos.is_null()) {
+                spdlog::critical("[blockchain] The genesis block could not be written to the "
+                    "block files");
+                return false;
+            }
+            header_index_.set_block_pos(genesis_idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(genesis_idx, header_status::have_data);
+            spdlog::info("[blockchain] Stored the genesis block {} in the block files",
+                encode_hash(genesis.hash()));
+        }
+#endif
+
         auto const scan_elapsed = std::chrono::steady_clock::now() - scan_start;
         auto const scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_elapsed).count();
         spdlog::info("[blockchain] Scanned {} blocks, restored {} positions in {}ms",

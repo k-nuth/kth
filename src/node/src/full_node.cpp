@@ -713,24 +713,7 @@ bool full_node::handle_reorganized(
 // =============================================================================
 
 domain::chain::block full_node::get_genesis_block(domain::config::network network) {
-    switch (network) {
-        case domain::config::network::testnet:
-            return domain::chain::block::genesis_testnet();
-        case domain::config::network::regtest:
-            return domain::chain::block::genesis_regtest();
-#if defined(KTH_CURRENCY_BCH)
-        case domain::config::network::testnet4:
-            return domain::chain::block::genesis_testnet4();
-        case domain::config::network::scalenet:
-            return domain::chain::block::genesis_scalenet();
-        case domain::config::network::tempnet:
-        case domain::config::network::chipnet:
-            return domain::chain::block::genesis_chipnet();
-#endif
-        default:
-        case domain::config::network::mainnet:
-            return domain::chain::block::genesis_mainnet();
-    }
+    return domain::chain::block::genesis(network);
 }
 
 } // namespace kth::node

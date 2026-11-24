@@ -1532,8 +1532,10 @@ TEST_CASE("getblockchaininfo still answers when the block files cannot be listed
     REQUIRE(fixture.start());
     auto const blocks = fixture.dir() / "blocks";
     auto const saved = fixture.dir() / "saved-blocks";
-    // Genesis-only fixtures have no open block/undo files (also on Windows).
-    REQUIRE(std::filesystem::is_empty(blocks));
+    // A genesis-only fixture holds the genesis block in its first block file,
+    // and the store keeps no block or undo file open between reads and writes,
+    // so the directory can be moved while the chain is up (also on Windows).
+    REQUIRE(std::filesystem::exists(blocks / "blk00000.dat"));
     std::filesystem::rename(blocks, saved);
     node::detail::scope_action restore([&]() { std::filesystem::rename(saved, blocks); }, true);
     auto const raw = blockchain_info(fixture.chain());
@@ -1860,6 +1862,20 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
         node::rpc::build_success("12", hex(node::rpc::block_to_hex(trunk[2]))));
     REQUIRE(request("getblock", "[" + quoted(null_hash) + "]") ==
         node::rpc::build_error("12", -5, "Block not found"));
+    // A header whose block is not stored.
+    REQUIRE(request("getblock", "[" + quoted(trunk[3].hash()) + "]") ==
+        node::rpc::build_error("12", -5, "Block not found"));
+
+    // The genesis block, which was never downloaded: as stored, and with its fields.
+    auto const genesis = domain::chain::block::genesis_regtest();
+    REQUIRE(request("getblock", "[" + quoted(genesis.hash()) + ",false]") ==
+        node::rpc::build_success("12", hex(node::rpc::block_to_hex(genesis))));
+    auto const genesis_fields = request("getblock", "[" + quoted(genesis.hash()) + "]");
+    CHECK(genesis_fields.find(R"("error":null)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("height":0,)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("confirmations":4,)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("nextblockhash":)" + quoted(trunk[0].hash())) != std::string::npos);
+    CHECK(genesis_fields.find("previousblockhash") == std::string::npos);
 
     // A confirmed transaction: with its block hash, and not without one.
     auto const& coinbase = trunk[2].transactions().front();
