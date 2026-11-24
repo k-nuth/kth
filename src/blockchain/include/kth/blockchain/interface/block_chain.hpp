@@ -56,6 +56,7 @@
 #include <asio/any_io_executor.hpp>
 #include <asio/awaitable.hpp>
 #include <stop_token>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
 
 
@@ -777,6 +778,16 @@ struct KB_API block_chain {
     [[nodiscard]]
     bool transition_in_progress() const;
 
+    /// Rung each time a transition ends, once capture has reopened: the
+    /// connected tip may have moved, and work can be built on it again. For
+    /// one consumer that waits for the tip to change instead of asking again;
+    /// it reads chain_view() for where the tip is. It holds one ring, and a
+    /// transition that finds it full adds nothing: the ring already waiting
+    /// asks for the same read. Whoever receives it takes it, so a second
+    /// consumer would be woken for some transitions only.
+    using doorbell = ::asio::experimental::select_channel<std::monostate>;
+    doorbell& tip_changes() { return tip_changes_; }
+
     /// Whether this node should be serving mining work: it has connected
     /// everything it has headers for, and that tip is recent.
     ///
@@ -1315,6 +1326,7 @@ private:
     /// is what produced the combinations #605 was about. The one legitimate use
     /// is seeding a branch's state below.
     mutable capture_gate capture_gate_;
+    doorbell tip_changes_{1};
 
     // One swap publishes the whole triple; see published_chain_view.
     mutable boost::atomic_shared_ptr<published_chain_view const> chain_view_;

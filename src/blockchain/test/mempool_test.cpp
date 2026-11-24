@@ -157,6 +157,29 @@ TEST_CASE("mempool generation bumps on add and remove", "[mempool][serial]") {
     REQUIRE(mp.size() == 0u);
 }
 
+TEST_CASE("mempool rings its doorbell once for the changes nobody has read", "[mempool][serial]") {
+    mempool mp{0x1111u, 0x2222u};
+    ::asio::error_code ec;
+    REQUIRE_FALSE(mp.changes().try_receive(ec).has_value());
+
+    // Two admissions before anyone looks: one ring says "read the pool again".
+    auto const first = make_tx({op(1, 0)}, 1, 1);
+    auto const second = make_tx({op(2, 0)}, 1, 2);
+    REQUIRE(mp.add(entry_for(first, 1)));
+    REQUIRE(mp.add(entry_for(second, 2)));
+    REQUIRE(mp.changes().try_receive(ec).has_value());
+    REQUIRE_FALSE(mp.changes().try_receive(ec).has_value());
+
+    // A refused admission changed nothing.
+    REQUIRE_FALSE(mp.add(entry_for(first, 1)));
+    REQUIRE_FALSE(mp.changes().try_receive(ec).has_value());
+
+    // A removal is a change like an admission, with no transaction arriving.
+    mp.remove_for_block(make_block({first}));
+    REQUIRE(mp.changes().try_receive(ec).has_value());
+    REQUIRE_FALSE(mp.changes().try_receive(ec).has_value());
+}
+
 TEST_CASE("mempool first-seen rejects conflicting input", "[mempool][serial]") {
     mempool mp{0x1111u, 0x2222u};
 
