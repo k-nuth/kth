@@ -44,6 +44,10 @@ on:
       - src/node/include/kth/node/full_node.hpp
       - src/node/src/full_node.cpp
       - src/node/src/parser.cpp
+      - src/c-api/CMakeLists.txt
+      - src/c-api/include/kth/capi/node/wallet.h
+      - src/c-api/src/node/wallet.cpp
+      - src/c-api/test/node/wallet.cpp
       - conanfile.py
       - conan.lock
       - CMakeLists.txt
@@ -92,6 +96,8 @@ jobs:
       - name: Build the feature's tests
         run: |
           cmake --preset conan-release -DCMAKE_VERBOSE_MAKEFILE=OFF -DGLOBAL_BUILD=ON -DENABLE_TEST=ON
-          cmake --build --preset conan-release -j"$(nproc)" --target kth_node_wallet_test
+          cmake --build --preset conan-release -j"$(nproc)" --target kth_node_wallet_test kth_capi_wallet_test
       - name: Test wallet support
         run: ./build/build/Release/src/node/kth_node_wallet_test
+      - name: Test its C API
+        run: ./build/build/Release/src/c-api/kth_capi_wallet_test

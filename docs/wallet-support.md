@@ -21,7 +21,10 @@ only memory is what the watched targets own and a bounded cache of blocks.
   confirmed in a range of heights or in the mempool.
 - **Broadcast** to the node's own mempool, which relays it.
 
-The calls are `kth::node::wallet::service`, made with `service::from_chain`.
+The calls are `kth::node::wallet::service` in C++, made with
+`service::from_chain`, and `kth/capi/node/wallet.h` in C, where requests and
+answers are the Electrum protocol's JSON-RPC (below), answered in the process
+with no listener, so every binding reads the same shapes.
 
 ## The local Electrum listener
 

@@ -519,6 +519,13 @@ if(KTH_BROWSER_NODE)
   list(APPEND kth_headers include/kth/capi/node/header_sync.h)
 endif()
 
+# Wallet support in the node, answered from the node's own chain. An optional
+# feature: built only when asked for (docs/optional-features.md).
+if(KTH_WITH_WALLET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  list(APPEND kth_sources src/node/wallet.cpp)
+  list(APPEND kth_headers include/kth/capi/node/wallet.h)
+endif()
+
 add_library(${PROJECT_NAME} ${MODE} ${kth_sources} ${kth_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX CXX_STANDARD 23 CXX_STANDARD_REQUIRED TRUE)
@@ -688,6 +695,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include(CTest)
     include(Catch)
     kth_register_tests(kth_capi_test)
+
+    # The tests of an optional feature are an executable of their own, so
+    # that its workflow builds and runs them and nothing else.
+    if(KTH_WITH_WALLET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+      add_executable(kth_capi_wallet_test test/node/wallet.cpp)
+      target_link_libraries(kth_capi_wallet_test PUBLIC ${PROJECT_NAME})
+      target_link_libraries(kth_capi_wallet_test PRIVATE Catch2::Catch2WithMain)
+      kth_register_tests(kth_capi_wallet_test)
+    endif()
 
     # This test resolves its own Asio dependency, independently of the node's
     # transport selection and targets imported in sibling directories.
