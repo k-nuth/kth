@@ -1030,6 +1030,7 @@ TEST_CASE("integrated: a stimulus its peer's queue cannot take is never sent lat
         std::chrono::milliseconds(60000)};
 
     bool timed_out = false;
+    bool withdrawn = false;
     std::optional<hash_digest> q_asked;
     std::optional<hash_digest> q_asked_again;
     std::vector<wire_peer::sent_message> p_sent;
@@ -1044,6 +1045,12 @@ TEST_CASE("integrated: a stimulus its peer's queue cannot take is never sent lat
         run.deliver(q.session, q.headers({staged.next}));
         q_asked_again = q.next_getheaders(quick);
 
+        // The withdrawal is carried out by the sender's own task, after the
+        // walk has moved on. Room that appeared before it ran would let the
+        // queue take the stimulus, which is as valid an outcome as the other;
+        // the case here is the one where the withdrawal came first.
+        withdrawn = wait_until([&] { return log.count("withdrawn before") > 0; }, quick);
+
         // Room appears on P.
         p.start();
         p_sent = p.sent_until_quiet(quiet);
@@ -1054,6 +1061,7 @@ TEST_CASE("integrated: a stimulus its peer's queue cannot take is never sent lat
 
     CHECK(stopped_cleanly);
     CHECK(timed_out);
+    CHECK(withdrawn);
     REQUIRE(q_asked.has_value());
     CHECK(*q_asked == tip_hash);
     REQUIRE(q_asked_again.has_value());
@@ -1092,6 +1100,7 @@ TEST_CASE("integrated: a stimulus the walk parks behind is withdrawn too",
         std::chrono::milliseconds(60000)};
 
     bool parked = false;
+    bool withdrawn = false;
     std::vector<wire_peer::sent_message> p_sent;
     bool stopped_cleanly = false;
     {
@@ -1099,6 +1108,12 @@ TEST_CASE("integrated: a stimulus the walk parks behind is withdrawn too",
         run.connect(p.session);
         parked = wait_until([&] { return log.count("retrying in 60000ms") > 0; }, quick);
         REQUIRE(parked);
+
+        // Parking asks the sender's task to withdraw the stimulus; room that
+        // appeared before that task ran would let the queue take it. Wait for
+        // the withdrawal itself, so the room below comes after it.
+        withdrawn = wait_until([&] { return log.count("withdrawn before") > 0; }, quick);
+        REQUIRE(withdrawn);
 
         p.start();
         p_sent = p.sent_until_quiet(quiet);
