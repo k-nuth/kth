@@ -71,6 +71,13 @@ struct service::impl {
     virtual ::asio::awaitable<std::vector<hash_digest>> dsproof_transactions() = 0;
     virtual ::asio::awaitable<uint64_t> changed(uint64_t seen, std::chrono::steady_clock::time_point deadline) = 0;
     virtual ::asio::awaitable<touched_keys> touched(uint64_t seen) = 0;
+    // The transaction that spends `outpoint`, whose locking script is
+    // `script`: confirmed at or above `from` when that is given, otherwise
+    // only in the mempool; none while it is unspent.
+    virtual ::asio::awaitable<std::expected<std::optional<transaction_info>, std::error_code>> spender_of(
+        domain::chain::point outpoint, data_chunk script, std::optional<uint32_t> from) = 0;
+    // The identities this wallet followed.
+    virtual detail::identity_memory& identities() = 0;
 };
 
 namespace detail {

@@ -23,6 +23,17 @@ only memory is what the watched targets own and a bounded cache of blocks.
 
 The calls are `kth::node::wallet::service`, made with `service::from_chain`.
 
+## CashTokens and BCMR
+
+With no index either: a token category's genesis, unspent outputs, supply
+(total, reserved, circulating), holders and NFTs are rebuilt from the blocks
+that hold its outputs, and a BCMR identity's authchain is followed one spend
+of its identity output at a time, to the authhead and its publication output.
+On a full node the UTXO set says whether an identity output is spent, and the
+node's blocks are read forward from it until one spends it. The node never
+fetches a registry: an app downloads it from the published URIs and checks the
+bytes against the published hash (`registry_matches`).
+
 ## The local Electrum listener
 
 For wallets that do not speak P2P, the node can answer the Electrum protocol
@@ -46,3 +57,9 @@ the wallet reads the blocks back to its birthday.
 A subscription is recorded as the very answer its client got, so a change
 after that answer is never lost between two readings, and only the
 subscriptions a change touched are read again.
+
+Besides Fulcrum's methods the listener answers three of Knuth's own, under
+names no Fulcrum method uses: `kth.token.category` (a category id),
+`kth.token.holdings` (a script hash or an address: what it holds per
+category) and `kth.identity.resolve` (an authbase, then optionally a
+registry's authchain extension as raw transactions).

@@ -422,11 +422,13 @@ if(KTH_WITH_WALLET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/wallet/electrum.cpp
     src/wallet/history.cpp
     src/wallet/service.cpp
+    src/wallet/tokens.cpp
     include/kth/node/wallet/blocks.hpp
     include/kth/node/wallet/detail/service_impl.hpp
     include/kth/node/wallet/electrum.hpp
     include/kth/node/wallet/history.hpp
-    include/kth/node/wallet/service.hpp)
+    include/kth/node/wallet/service.hpp
+    include/kth/node/wallet/tokens.hpp)
   # The local Electrum listener reads requests and writes answers with the
   # JSON-RPC server's JSON code, built here when the server is not.
   if(NOT KTH_WITH_RPC)
@@ -629,7 +631,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_executable(kth_node_wallet_test
       test/wallet.cpp
       test/wallet_chain.cpp
-      test/wallet_electrum.cpp)
+      test/wallet_electrum.cpp
+      test/wallet_tokens.cpp)
     target_include_directories(kth_node_wallet_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_node_wallet_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_wallet_test PRIVATE Catch2::Catch2WithMain)
