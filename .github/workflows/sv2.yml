@@ -24,6 +24,15 @@ on:
       - src/node/include/kth/node/sv2/**
       - src/node/src/sv2/**
       - src/node/test/sv2_*.cpp
+      - src/node/include/kth/node/mining/work_changes.hpp
+      - src/node/src/mining/work_changes.cpp
+      - src/node/include/kth/node/settings.hpp
+      - src/node/src/settings.cpp
+      - src/node/src/parser.cpp
+      - src/node/include/kth/node/full_node.hpp
+      - src/node/src/full_node.cpp
+      - src/blockchain/include/kth/blockchain/pools/block_template.hpp
+      - src/blockchain/src/interface/block_chain.cpp
       - conanfile.py
       - conan.lock
       - CMakeLists.txt

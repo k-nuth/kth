@@ -67,6 +67,9 @@
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
 #include <kth/node/grpc_rpc/server.hpp>
 #endif
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+#include <kth/node/sv2/template_provider.hpp>
+#endif
 
 #include <asio/awaitable.hpp>
 
@@ -221,6 +224,7 @@ private:
     ::asio::awaitable<void> run_blockchain_subscriber();
     ::asio::awaitable<void> run_rpc();
 #if ! defined(__EMSCRIPTEN__)
+    ::asio::awaitable<void> run_sv2();
     ::asio::awaitable<void> run_sync();
     ::asio::awaitable<void> run_compact_blocks();
     ::asio::awaitable<void> run_compact_filters();
@@ -248,6 +252,7 @@ private:
     std::unique_ptr<sync::compact_block_receiver> compact_blocks_;
 #endif
     node::rpc_settings rpc_settings_;  // Own copy; outlives the RPC server.
+    node::sv2_settings sv2_settings_;
 #if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
     // Set when node.compact_filters is on. The peers' services and the index
     // read it, and both end before the node does.
@@ -276,6 +281,9 @@ private:
     // Declared in this order so the server is destroyed before its reader.
     std::unique_ptr<capnp_rpc::chain_reader> capnp_reader_;
     std::unique_ptr<capnp_rpc::server> capnp_server_;
+#endif
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    std::unique_ptr<sv2::template_provider> template_provider_;
 #endif
 };
 

@@ -13,6 +13,11 @@
 #include <asio/use_future.hpp>
 
 #include <sstream>
+#include <algorithm>
+#include <memory>
+#include <string_view>
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/spdlog.h>
 #if defined(_WIN32)
 #include <process.h>
 #else
@@ -90,6 +95,88 @@ private:
 };
 
 } // namespace
+
+#if ! defined(KTH_WITH_SV2)
+// A build without the feature has no Template Provider, so it does not start
+// as if it listened.
+TEST_CASE("the sv2 listener is off, and refused, in a build without the feature", "[configuration tests][parser][sv2]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK_FALSE(defaults.configured.sv2.enabled);
+
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled", "true"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("sv2.enabled needs a build with the option sv2") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("sv2_refused", "sv2.enabled=true");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("sv2.enabled needs a build with the option sv2") != std::string::npos);
+    }
+    SECTION("turned off, it is what the build does anyway") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled", "false",
+            "--sv2.bind", "::1", "--sv2.port", "18442"};
+        std::ostringstream error;
+        CHECK(parser.parse(9, argv, error));
+    }
+}
+
+TEST_CASE("a node built without Stratum V2 does not start as one that listens for it", "[configuration tests][node][sv2]") {
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_sv2_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    node::configuration cfg{domain::config::network::regtest};
+    cfg.database.directory = dir;
+    cfg.database.db_max_size = 16ULL << 20;
+    cfg.network.threads = 0;
+    cfg.network.peers_file = dir / "peers.dat";
+    cfg.network.hosts_file = dir / "hosts.dat";
+    cfg.sv2.enabled = true;
+
+    // The directory holds no database, so a start that got as far as opening
+    // one fails too, with the same code. What the node wrote tells the two
+    // apart: it refuses for the setting, before it opens anything.
+    auto const sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256);
+    auto const previous = spdlog::default_logger();
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("captured", sink));
+    code result;
+    {
+        node::full_node node{cfg};
+        ::asio::io_context io;
+        auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+        io.run();
+        result = started.get();
+    }
+    spdlog::set_default_logger(previous);
+    auto const lines = sink->last_formatted();
+    auto const wrote = [&lines](std::string_view text) {
+        return std::ranges::any_of(lines, [text](std::string const& line) {
+            return line.find(text) != std::string::npos;
+        });
+    };
+    CHECK(result == error::operation_failed);
+    CHECK(wrote("sv2.enabled needs a build with the option sv2"));
+    CHECK_FALSE(wrote("Failed to open database"));
+    std::filesystem::remove_all(dir, ec);
+}
+#endif
+
+TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][parser][sv2 template_provider]") {
+    for (auto const* port : {"-1", "65536", "invalid"}) {
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        char const* argv[]{"kth", "--sv2.port", port};
+        CHECK_FALSE(parser.parse(3, argv, error));
+    }
+}
 
 TEST_CASE("outbound proxy settings are empty and randomized by default", "[configuration tests][parser][socks5]") {
     node::parser defaults(domain::config::network::regtest);

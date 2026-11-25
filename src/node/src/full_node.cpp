@@ -65,6 +65,7 @@ full_node::full_node(configuration const& configuration)
     )
     , compact_tips_(chain_)
     , rpc_settings_(configuration.rpc)
+    , sv2_settings_(configuration.sv2)
 #else
     : node_settings_(configuration.node)
     , chain_settings_(configuration.chain)
@@ -79,6 +80,7 @@ full_node::full_node(configuration const& configuration)
         block_submissions_
     )
     , rpc_settings_(configuration.rpc)
+    , sv2_settings_(configuration.sv2)
 #endif
 {
 #if ! defined(__EMSCRIPTEN__)
@@ -137,6 +139,14 @@ full_node::~full_node() {
     // The parser refuses this too; a configuration built by hand gets here.
     if (node_settings_.bloom_filters) {
         spdlog::error("[node] node.bloom_filters needs a build with the option bloom_filters.");
+        co_return error::operation_failed;
+    }
+#endif
+
+#if ! defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if (sv2_settings_.enabled) {
+        spdlog::error("[node] sv2.enabled needs a build with the option sv2.");
         co_return error::operation_failed;
     }
 #endif
@@ -320,6 +330,15 @@ full_node::~full_node() {
     }
 #endif
 
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    if (sv2_settings_.enabled) {
+        template_provider_ = std::make_unique<sv2::template_provider>(
+            sv2_settings_, network_.thread_pool().get_executor(), chain_,
+            work_changes_.subscribe());
+    } else {
+        spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
+    }
+#endif
 
     spdlog::info("[node] Node started successfully.");
     co_return error::success;
@@ -360,12 +379,10 @@ full_node::~full_node() {
     auto core = [this]() -> ::asio::awaitable<void> {
         co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks()
             && run_compact_filters());
-        // As for the listeners below: nothing may keep run() pending after
-        // the core tasks have finished.
+        // Embedders may stop P2P directly. Listeners must not keep run()
+        // pending after the core tasks finish without full_node::stop().
         work_changes_.stop();
 #if defined(KTH_WITH_RPC)
-        // Embedders may stop P2P directly. RPC must not keep run() pending
-        // after every core task has finished, even without full_node::stop().
         if (rpc_server_) rpc_server_->stop();
 #endif
 #if defined(KTH_WITH_GRPC)
@@ -374,8 +391,11 @@ full_node::~full_node() {
 #if defined(KTH_WITH_CAPNPROTO_RPC)
         if (capnp_server_) capnp_server_->stop();
 #endif
+#if defined(KTH_WITH_SV2)
+        if (template_provider_) template_provider_->stop();
+#endif
     };
-    co_await (core() && run_rpc() && work_changes_.run(chain_));
+    co_await (core() && run_rpc() && run_sv2() && work_changes_.run(chain_));
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -393,6 +413,15 @@ full_node::~full_node() {
 #endif
     co_return;
 }
+
+#if ! defined(__EMSCRIPTEN__)
+::asio::awaitable<void> full_node::run_sv2() {
+#if defined(KTH_WITH_SV2)
+    if (template_provider_) co_await template_provider_->run();
+#endif
+    co_return;
+}
+#endif
 
 ::asio::awaitable<void> full_node::run_blockchain_subscriber() {
     spdlog::debug("[full_node] run_blockchain_subscriber() STARTING");
@@ -558,6 +587,9 @@ void full_node::stop() {
 #endif
 #if defined(KTH_WITH_CAPNPROTO_RPC) && ! defined(__EMSCRIPTEN__)
     if (capnp_server_) capnp_server_->stop();
+#endif
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    if (template_provider_) template_provider_->stop();
 #endif
 #if ! defined(__EMSCRIPTEN__)
     // IMPORTANT: Only stop the network here, NOT the chain!

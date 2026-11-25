@@ -1149,6 +1149,16 @@ struct KB_API block_chain {
     fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time,
         std::optional<uint64_t> after_generation = std::nullopt) const;
 
+    // Both reserves, space and SigChecks, for a caller whose coinbase needs
+    // SigChecks room too, such as an SV2 client's CoinbaseOutputConstraints.
+    // Both are part of the template cache key. The reserve is its own type so
+    // that a SigChecks count cannot be passed where the overload above takes
+    // the request clock. `after_generation` is as in the overload above.
+    [[nodiscard]] awaitable_expected<blockchain::mining_template>
+    fetch_mining_template(blockchain::coinbase_reserve reserve,
+        std::optional<uint32_t> request_time = std::nullopt,
+        std::optional<uint64_t> after_generation = std::nullopt) const;
+
     // Mining-relevant chain snapshot (height, difficulty, mempool size, network)
     // for getmininginfo. C-API counterpart: kth_chain_async_fetch_mining_info.
     [[nodiscard]] awaitable_expected<blockchain::mining_info>
@@ -1382,6 +1392,7 @@ private:
         uint64_t generation;
         uint32_t time;
         uint64_t coinbase_reserve_size;
+        uint64_t coinbase_reserve_sigchecks;
     };
     mutable boost::atomic_shared_ptr<template_snapshot> template_cache_;
     /// Ends the hydration phase. Called once, by the start path, after the header

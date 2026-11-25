@@ -393,11 +393,13 @@ if(KTH_WITH_SV2 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/primitives.cpp
     src/sv2/messages.cpp
     src/sv2/connection.cpp
+    src/sv2/template_provider.cpp
     include/kth/node/sv2/feature.hpp
     include/kth/node/sv2/framing.hpp
     include/kth/node/sv2/primitives.hpp
     include/kth/node/sv2/messages.hpp
-    include/kth/node/sv2/connection.hpp)
+    include/kth/node/sv2/connection.hpp
+    include/kth/node/sv2/template_provider.hpp)
 endif()
 
 # Serving compact block filters to light wallets (Neutrino, BIP157/158). An
@@ -621,7 +623,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
       test/sv2_framing.cpp
       test/sv2_primitives.cpp
       test/sv2_messages.cpp
-      test/sv2_connection.cpp)
+      test/sv2_configuration.cpp
+      test/sv2_connection.cpp
+      test/sv2_template_provider.cpp)
     target_include_directories(kth_node_sv2_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_node_sv2_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_sv2_test PRIVATE Catch2::Catch2WithMain)

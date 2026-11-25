@@ -359,6 +359,14 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the plaintext Stratum V2 Template Provider. Needs a build with the option sv2.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Template Provider binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Template Provider (default 8442).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
@@ -407,6 +415,18 @@ bool check_compact_filters(configuration const& cfg, std::ostream& error) {
                  "(db.prune_keep_blocks); it needs every block." << std::endl;
         return false;
     }
+    return true;
+}
+
+// A build without the feature has no Template Provider, so it does not start
+// as if it listened.
+bool check_sv2([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(KTH_WITH_SV2)
+    if (cfg.sv2.enabled) {
+        error << "Error: sv2.enabled needs a build with the option sv2." << std::endl;
+        return false;
+    }
+#endif
     return true;
 }
 
@@ -575,7 +595,8 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
         }
 
         if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
-            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)) {
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
+            || ! check_sv2(configured, error)) {
             return false;
         }
 
@@ -652,7 +673,8 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
     }
 
     if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
-            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)) {
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
+            || ! check_sv2(configured, error)) {
         return false;
     }
 
