@@ -489,6 +489,8 @@ struct remote_peer {
     std::atomic<size_t> blocks_sent{0};
     // How many blocks of each getdata are answered; the rest are never sent.
     size_t blocks_per_request{std::numeric_limits<size_t>::max()};
+    // Answer with a `block` message whose payload is not a block.
+    bool unparseable_blocks{false};
 
     remote_peer(::asio::ip::tcp::socket sock, std::vector<domain::chain::block> const& chain_blocks,
                 uint32_t protocol_magic, uint32_t protocol_version)
@@ -525,13 +527,26 @@ struct remote_peer {
                 auto const it = std::ranges::find_if(blocks,
                     [&](auto const& b) { return b.hash() == inv.hash(); });
                 if (it == blocks.end()) continue;
-                auto const wire = domain::message::serialize(version, domain::message::block(*it), magic);
+                auto const wire = unparseable_blocks
+                    ? unparseable_block_message()
+                    : domain::message::serialize(version, domain::message::block(*it), magic);
                 auto [wec, wn] = co_await ::asio::async_write(socket, ::asio::buffer(wire),
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (wec) co_return;
                 ++blocks_sent;
             }
         }
+    }
+
+    // A well-formed message, checksum included, that carries too few bytes to
+    // be a block: the session accepts it and the parse of its payload fails.
+    data_chunk unparseable_block_message() const {
+        data_chunk const payload(10, uint8_t(0xff));
+        domain::message::heading const head(magic, domain::message::block::command,
+            uint32_t(payload.size()), bitcoin_checksum(payload));
+        auto wire = head.to_data();
+        wire.insert(wire.end(), payload.begin(), payload.end());
+        return wire;
     }
 
     ::asio::awaitable<void> ping(uint64_t nonce) {
@@ -663,6 +678,29 @@ TEST_CASE("select: a worker closes the session of a peer that delivers part of a
     CHECK(f.remote->blocks_sent.load() == 1u);
     CHECK(f.session->stopped());
     CHECK(f.session->stop_reason() == error::peer_throttling);
+
+    // The chunk went back to be claimed by another peer.
+    auto const progress = f.coordinator->get_progress();
+    CHECK(progress.chunks_completed == 0u);
+    CHECK(progress.chunks_in_progress == 0u);
+
+    f.finish();
+}
+
+TEST_CASE("select: a worker closes the session of a peer whose block does not parse",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "a worker with a peer whose block does not parse");
+    fast_path_fixture f;
+    f.remote->unparseable_blocks = true;
+    f.start_worker();
+
+    REQUIRE(run_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
+
+    // The worker is gone and no timeout will ever say so: the session must not
+    // be left holding its slot.
+    CHECK(f.session->stopped());
+    CHECK(f.session->stop_reason() == error::bad_stream);
 
     // The chunk went back to be claimed by another peer.
     auto const progress = f.coordinator->get_progress();

@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -653,20 +654,55 @@ TEST_CASE("a block that spent nothing still has an undo record", "[undo][scan]")
     CHECK(result.found[0].block_hash == block_a);
 }
 
-TEST_CASE("replayed undo retains the first position across a restart", "[undo][scan][replayed_undo]") {
+TEST_CASE("replayed undo is found at its latest position across a restart", "[undo][scan][replayed_undo]") {
     store_fixture fixture("replayed");
     auto const block = make_hash(1);
     auto const parent = make_hash(0);
     auto const undo = make_undo(10, 100);
-    auto const first = fixture.store.write_undo(undo, 0, block, parent);
-    REQUIRE_FALSE(first.is_null());
     REQUIRE_FALSE(fixture.store.write_undo(undo, 0, block, parent).is_null());
+    auto const latest = fixture.store.write_undo(undo, 0, block, parent);
+    REQUIRE_FALSE(latest.is_null());
     REQUIRE(fixture.store.initialize());
     auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
     REQUIRE(result.status == block_store::undo_scan_status::clean_eof);
     REQUIRE(result.found.size() == 1);
-    CHECK(result.found.front().position == first.pos);
-    CHECK(fixture.store.read_undo(first, block, parent).has_value());
+    CHECK(result.found.front().file_number == 0);
+    CHECK(result.found.front().position == latest.pos);
+    CHECK(fixture.store.read_undo(latest, block, parent).has_value());
+}
+
+TEST_CASE("a block replayed into a later file is found in that file's rev file",
+          "[undo][scan][replayed_undo]") {
+    // The index keeps an undo record's offset and takes its file from the
+    // block, whose position the block walk sets to the last copy. A replay that
+    // stored the block in blk00001.dat wrote its undo into rev00001.dat, and
+    // that is the record the scan has to report: the one in rev00000.dat, read
+    // at its offset in rev00001.dat, is not this block's record at all.
+    store_fixture fixture("replayed_later_file");
+    fixture.make_block_file(1);
+    REQUIRE(fixture.store.initialize());
+    authorise_appends(fixture.store);
+
+    auto const block = make_hash(1);
+    auto const parent = make_hash(0);
+    auto const undo = make_undo(10, 100);
+    // Other records first in rev00000.dat, so the two copies' offsets differ.
+    REQUIRE_FALSE(fixture.store.write_undo(make_undo(20, 90), 0, make_hash(5), make_hash(4)).is_null());
+    auto const first = fixture.store.write_undo(undo, 0, block, parent);
+    REQUIRE_FALSE(first.is_null());
+    auto const replayed = fixture.store.write_undo(undo, 1, block, parent);
+    REQUIRE_FALSE(replayed.is_null());
+    REQUIRE(first.pos != replayed.pos);
+
+    auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+    REQUIRE(result.status == block_store::undo_scan_status::clean_eof);
+    REQUIRE(result.found.size() == 1);
+    CHECK(result.found.front().file_number == 1);
+    CHECK(result.found.front().position == replayed.pos);
+
+    // What the index will do with it: the block's file, the record's offset.
+    CHECK(fixture.store.read_undo({1, result.found.front().position}, block, parent).has_value());
+    CHECK_FALSE(fixture.store.read_undo({1, first.pos}, block, parent).has_value());
 }
 
 TEST_CASE("repeated records are compared by their checksums", "[undo][scan][replayed_undo]") {
@@ -712,3 +748,133 @@ TEST_CASE("repeated records are compared by their checksums", "[undo][scan][repl
         CHECK(result.found.empty());
     }
 }
+
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+// =============================================================================
+// Replays in reference mode
+// =============================================================================
+//
+// In reference mode a spent output is stored as the position of the transaction
+// that created it, {file_number, tx_offset}. Replaying a branch stores its
+// blocks again, so a block that spends from an earlier block of its own branch
+// writes a second record naming the new copy: the same outputs, created at the
+// same heights, in the same order, with other references. The deep
+// reorganization cycle in the node suite runs that sequence end to end; these
+// pin what the scan accepts as a replay, and that nothing else passes for one.
+
+namespace {
+
+spent_output reference_entry(uint8_t seed, uint32_t height, uint32_t tx_offset) {
+    uint32_t const file_number = 0;
+    std::vector<uint8_t> value(8);
+    std::memcpy(value.data(), &file_number, 4);
+    std::memcpy(value.data() + 4, &tx_offset, 4);
+    return {make_outpoint(seed, 0), std::move(value), height};
+}
+
+block_undo undo_of(std::vector<spent_output> entries) {
+    block_undo undo;
+    undo.spent = std::move(entries);
+    return undo;
+}
+
+} // namespace
+
+TEST_CASE("a replayed record that names a new copy is not a conflict in reference mode",
+          "[undo][scan][replayed_undo]") {
+    store_fixture fixture("replayed_reference");
+    auto const block = make_hash(1);
+    auto const parent = make_hash(0);
+    // Two spent outputs, created at heights 100 and 101: referenced at offsets
+    // 1000 and 2000, then at 5000 and 6000 once the replay had stored the
+    // blocks that created them again.
+    auto const first_undo = undo_of({reference_entry(10, 100, 1000), reference_entry(11, 101, 2000)});
+    auto const replayed_undo = undo_of({reference_entry(10, 100, 5000), reference_entry(11, 101, 6000)});
+    REQUIRE(first_undo.to_data() != replayed_undo.to_data());
+
+    auto const first = fixture.store.write_undo(first_undo, 0, block, parent);
+    REQUIRE_FALSE(first.is_null());
+    auto const replayed = fixture.store.write_undo(replayed_undo, 0, block, parent);
+    REQUIRE_FALSE(replayed.is_null());
+
+    SECTION("a block the index holds keeps the replayed record") {
+        auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        REQUIRE(result.status == block_store::undo_scan_status::clean_eof);
+        REQUIRE(result.found.size() == 1);
+        CHECK(result.found.front().block_hash == block);
+        CHECK(result.found.front().position == replayed.pos);
+        auto const record = fixture.store.read_undo(replayed, block, parent);
+        REQUIRE(record.has_value());
+        REQUIRE(record->spent.size() == 2);
+        CHECK(record->spent[0].value == replayed_undo.spent[0].value);
+        CHECK(record->spent[1].value == replayed_undo.spent[1].value);
+    }
+    SECTION("a forgotten block's records are both counted") {
+        auto const result = fixture.store.scan_undo_positions(parents_of({}));
+        CHECK(result.status == block_store::undo_scan_status::clean_eof);
+        CHECK(result.unattributed == 2);
+        CHECK(result.found.empty());
+    }
+    // Leniency about which references a replay writes, not about whether the
+    // record is intact: each record of a block the index holds still has to
+    // match its own checksum.
+    SECTION("a replayed payload that was altered fails its checksum") {
+        corrupt_byte(fixture.rev_path(0), replayed.pos);
+        auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        CHECK(result.status == block_store::undo_scan_status::invalid_checksum);
+        CHECK(result.block_hash == block);
+        CHECK(result.found.empty());
+    }
+    SECTION("a replayed record whose checksum was altered fails it") {
+        corrupt_byte(fixture.rev_path(0), replayed.pos + replayed_undo.serialized_size());
+        auto const result = fixture.store.scan_undo_positions(parents_of({{block, parent}}));
+        CHECK(result.status == block_store::undo_scan_status::invalid_checksum);
+        CHECK(result.block_hash == block);
+        CHECK(result.found.empty());
+    }
+}
+
+TEST_CASE("in reference mode only the references may differ between two records of a block",
+          "[undo][scan][replayed_undo]") {
+    // Everything but the references is fixed by the block and its ancestry, so
+    // a second record that differs anywhere else is two records disagreeing
+    // about one block's undo, and it stops the scan as it does in full mode.
+    // Whether or not the index still holds the block: once two of a forgotten
+    // block's records disagree, their payloads are compared too.
+    auto const first_undo = undo_of({reference_entry(10, 100, 1000), reference_entry(11, 101, 2000)});
+
+    auto const refused = [&](std::string const& tag, block_undo const& second_undo) {
+        for (bool const known : {true, false}) {
+            CAPTURE(tag, known);
+            store_fixture fixture("reference_conflict_" + tag + (known ? "_known" : "_forgotten"));
+            auto const block = make_hash(1);
+            auto const parent = make_hash(0);
+            REQUIRE_FALSE(fixture.store.write_undo(first_undo, 0, block, parent).is_null());
+            REQUIRE_FALSE(fixture.store.write_undo(second_undo, 0, block, parent).is_null());
+            auto const result = fixture.store.scan_undo_positions(
+                known ? parents_of({{block, parent}}) : parents_of({}));
+            CHECK(result.status == block_store::undo_scan_status::duplicate_record);
+            CHECK(result.block_hash == block);
+            CHECK(result.found.empty());
+        }
+    };
+
+    SECTION("another output") {
+        refused("key", undo_of({reference_entry(10, 100, 5000), reference_entry(12, 101, 6000)}));
+    }
+    SECTION("another creation height") {
+        refused("height", undo_of({reference_entry(10, 100, 5000), reference_entry(11, 102, 6000)}));
+    }
+    SECTION("another number of outputs") {
+        refused("count", undo_of({reference_entry(10, 100, 5000)}));
+    }
+    SECTION("the same outputs in another order") {
+        refused("order", undo_of({reference_entry(11, 101, 6000), reference_entry(10, 100, 5000)}));
+    }
+    SECTION("a value that is not a reference") {
+        auto second_undo = undo_of({reference_entry(10, 100, 5000), reference_entry(11, 101, 6000)});
+        second_undo.spent[1].value.push_back(0x00);
+        refused("value", second_undo);
+    }
+}
+#endif

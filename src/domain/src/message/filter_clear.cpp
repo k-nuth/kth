@@ -8,9 +8,6 @@
 
 namespace kth::domain::message {
 
-std::string const filter_clear::command = "filterclear";
-uint32_t const filter_clear::version_minimum = version::level::bip37;
-uint32_t const filter_clear::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

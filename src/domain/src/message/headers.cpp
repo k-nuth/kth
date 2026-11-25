@@ -17,9 +17,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const headers::command = "headers";
-uint32_t const headers::version_minimum = version::level::headers;
-uint32_t const headers::version_maximum = version::level::maximum;
 
 // Uses headers copy assignment.
 headers::headers(header::list elements)
