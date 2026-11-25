@@ -27,6 +27,7 @@ pull requests add to it.
 | `socks5` | Outbound connections through a SOCKS5 proxy, for a node behind Tor: `net.proxy` and `net.proxy_randomize` ([outbound-tor.md](outbound-tor.md)). A build without it refuses to start with `net.proxy` set, and never connects directly in its place | `kth_network_socks5_test`, `kth_node_socks5_test` | `socks5.yml` |
 | `bloom_filters` | Serving wallets that load a bloom filter (BIP37): `filterload`, `filteradd`, `filterclear`, `merkleblock` answers and filtered announcements, under `node.bloom_filters` ([bloom-filters.md](bloom-filters.md)). A build without it never sets the bloom filter service bit and refuses to start with `node.bloom_filters = true` | `kth_node_bloom_filters_test` | `bloom-filters.yml` |
 | `sv2` | Stratum V2 for pools and miners: the frame header, the protocol's data types, the Template Distribution messages and the connection that reads and writes them (sv2-spec 03 and 07), and the Template Provider that serves templates to a pool or a Job Declarator, under `sv2.enabled` ([sv2.md](sv2.md)). A build without it refuses to start with `sv2.enabled` set | `kth_node_sv2_test` | `sv2.yml` |
+| `wallet` | Wallet support in the node: answers for the wallet of the node's own user from the node's own chain, with no index ([wallet-support.md](wallet-support.md)). It needs `neutrino` | `kth_node_wallet_test` | `wallet.yml` |
 
 `neutrino` needs `currency=BCH`: the regular filter it builds is the one of
 Bitcoin Cash, which is not the basic filter of BIP158.
