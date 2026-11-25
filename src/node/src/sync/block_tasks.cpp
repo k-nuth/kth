@@ -408,6 +408,13 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 // timer already uses channel_timeout, and the retry accounting
                 // must tell this close from that one.
                 peer->stop(error::peer_throttling);
+            } else if (result.error() == error::bad_stream) {
+                // A block that does not parse. This task ends here too, and
+                // no peer event follows it: left connected, the session would
+                // keep its slot with nothing downloading through it.
+                spdlog::debug("[block_download] Peer {} sent a block of chunk {} that does not parse; closing the session",
+                    addr, chunk_id);
+                peer->stop(error::bad_stream);
             }
             break;
         }
