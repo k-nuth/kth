@@ -7,9 +7,6 @@
 // #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const ping::command = "ping";
-uint32_t const ping::version_minimum = version::level::minimum;
-uint32_t const ping::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

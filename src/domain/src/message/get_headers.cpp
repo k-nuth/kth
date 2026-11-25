@@ -9,9 +9,6 @@
 
 namespace kth::domain::message {
 
-std::string const get_headers::command = "getheaders";
-uint32_t const get_headers::version_minimum = version::level::headers;
-uint32_t const get_headers::version_maximum = version::level::maximum;
 
 get_headers::get_headers(hash_list const& start, hash_digest const& stop)
     : get_blocks(start, stop) {

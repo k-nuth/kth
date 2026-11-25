@@ -71,7 +71,8 @@ bool data_base::create(block const& genesis) {
         return false;
     }
 
-    // Store the genesis header only (blocks are now stored in flat files).
+    // Store the genesis header only. Blocks are stored in flat files, which the
+    // chain opens at start: block_chain::start writes the genesis block there.
     auto res = internal_db_->push_header(genesis.header(), 0);
     if ( ! succeed(res)) {
         return false;

@@ -79,6 +79,12 @@ struct KB_API mempool_limit {
     // the evicted rate plus `increment_per_kb`. Returns how many left the pool.
     std::size_t trim(mempool& pool, uint64_t limit, uint64_t increment_per_kb);
 
+    // Whether trim(pool, limit, ...) would evict `entry` if it were added now:
+    // what a newcomer to a full pool is refused for. `entry` is not pooled and
+    // nothing is changed.
+    [[nodiscard]]
+    bool would_evict(mempool const& pool, mempool_entry const& entry, uint64_t limit) const;
+
     // The fee per 1000 virtual bytes a transaction must pay to enter the pool
     // now: 0 until the pool has been full. After a block it halves every 12
     // hours, faster while usage is under half or a quarter of `limit`. `now` is

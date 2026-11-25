@@ -16,6 +16,9 @@
 
 #include <spdlog/spdlog.h>
 #include <kth/database/native_file.hpp>
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+#include <utxoz/types.hpp>
+#endif
 #include <kth/infrastructure/utility/stats.hpp>
 
 namespace kth::database {
@@ -96,15 +99,15 @@ std::optional<uint32_t> physical_size_of(std::filesystem::path const& path) {
     // 32-bit on Windows: a size above LONG_MAX converts to a negative offset, the
     // seek does not fail in any useful way, and the walk reports an ending from
     // inside written data. A bound the reader cannot act on is not a bound.
-    if (size > static_cast<uintmax_t>(std::numeric_limits<long>::max())) return std::nullopt;
-    return static_cast<uint32_t>(size);
+    if (size > uintmax_t(std::numeric_limits<long>::max())) return std::nullopt;
+    return uint32_t(size);
 }
 
 enum class tail_check { all_zero, has_data, unreadable };
 
 tail_check check_tail(FILE* file, uint32_t offset, uint32_t file_size) {
     if (offset > file_size) return tail_check::unreadable;
-    if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+    if (std::fseek(file, long(offset), SEEK_SET) != 0) {
         return tail_check::unreadable;
     }
 
@@ -119,7 +122,7 @@ tail_check check_tail(FILE* file, uint32_t offset, uint32_t file_size) {
                         [](uint8_t byte) { return byte != 0; })) {
             return tail_check::has_data;
         }
-        remaining -= static_cast<uint32_t>(want);
+        remaining -= uint32_t(want);
     }
     return tail_check::all_zero;
 }
@@ -134,6 +137,42 @@ hash_digest undo_checksum(hash_digest const& prev_hash, data_chunk const& undo_d
     // the parent hash first.
     return sha256_hash(sha256_hash(prev_hash, undo_data));
 }
+
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+// Whether two records of one block are the same undo written twice.
+//
+// In reference mode a spent output is stored as the position of the transaction
+// that created it, and replaying a branch stores the branch's blocks again, at
+// new positions. A block that spends from an earlier block of its own branch
+// then writes a second record that names the new copy: the same outputs,
+// created at the same heights, in the same order, with only the references
+// different. That is a replay. Anything else is two records disagreeing about
+// one block's undo.
+bool is_reference_replay(data_chunk const& earlier, data_chunk const& later) {
+    byte_reader earlier_reader(earlier);
+    byte_reader later_reader(later);
+    auto const first = block_undo::from_data(earlier_reader);
+    auto const second = block_undo::from_data(later_reader);
+    if ( ! first || ! second) return false;
+
+    // Bytes after the last entry belong to no entry, so they replay nothing.
+    if (earlier_reader.remaining_size() != 0 || later_reader.remaining_size() != 0) {
+        return false;
+    }
+    if (first->spent.size() != second->spent.size()) return false;
+
+    for (size_t i = 0; i < first->spent.size(); ++i) {
+        auto const& a = first->spent[i];
+        auto const& b = second->spent[i];
+        if (a.key != b.key || a.height != b.height) return false;
+        if (a.value.size() != utxoz::reference_value_size
+                || b.value.size() != utxoz::reference_value_size) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
 
 } // anonymous namespace
 
@@ -206,7 +245,7 @@ bool block_store::initialize(numbering expected) {
             if (digits.find_first_not_of("0123456789") != std::string::npos) {
                 continue;
             }
-            auto const number = static_cast<int32_t>(std::stol(digits));
+            auto const number = int32_t(std::stol(digits));
             lowest = lowest < 0 ? number : std::min(lowest, number);
             highest = std::max(highest, number);
         }
@@ -259,8 +298,8 @@ bool block_store::initialize(numbering expected) {
     // not recorded here: a file is preallocated in whole chunks, so its size is
     // almost always larger than what was written into it, and it must never
     // become a write cursor (#668). Each walk measures the file it is reading.
-    if (file_info_.size() <= static_cast<size_t>(highest)) {
-        file_info_.resize(static_cast<size_t>(highest) + 1);
+    if (file_info_.size() <= size_t(highest)) {
+        file_info_.resize(size_t(highest) + 1);
     }
     first_block_file_ = lowest;
     last_block_file_ = highest;
@@ -280,7 +319,7 @@ flat_file_pos block_store::save_block(domain::chain::block const& block, uint32_
 
 flat_file_pos block_store::save_block_raw(data_chunk const& raw_block, uint32_t height, uint64_t timestamp) {
 
-    auto const block_size = static_cast<uint32_t>(raw_block.size());
+    auto const block_size = uint32_t(raw_block.size());
     auto pos = find_block_pos(block_size + block_header_size, height, timestamp);
 
     if (pos.is_null()) {
@@ -310,7 +349,7 @@ flat_file_pos block_store::write_block_at(data_chunk const& raw_block, flat_file
 flat_file_pos block_store::write_undo(block_undo const& undo, int32_t file_num,
                                      hash_digest const& block_hash, hash_digest const& prev_hash) {
 
-    auto const undo_size = static_cast<uint32_t>(undo.serialized_size());
+    auto const undo_size = uint32_t(undo.serialized_size());
     auto pos = find_undo_pos(file_num, undo_size + undo_header_size + undo_checksum_size);
 
     if (pos.is_null()) {
@@ -358,7 +397,7 @@ block_store::read_block_raw(flat_file_pos const& pos) const {
     }
 
     // Seek back to read the header (we're positioned at block data)
-    if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
+    if (std::fseek(file, -long(block_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -473,7 +512,7 @@ block_store::read_tx_raw(flat_file_pos const& pos) const {
         if (!skip(36)) { std::fclose(file); return std::unexpected(result_code::other); }  // prev_hash + prev_index
         auto script_len = read_varint();
         if (!script_len) { std::fclose(file); return std::unexpected(script_len.error()); }
-        if (!skip(static_cast<long>(*script_len) + 4)) { std::fclose(file); return std::unexpected(result_code::other); }  // script + sequence
+        if (!skip(long(*script_len) + 4)) { std::fclose(file); return std::unexpected(result_code::other); }  // script + sequence
     }
 
     // 4. vout_count
@@ -485,7 +524,7 @@ block_store::read_tx_raw(flat_file_pos const& pos) const {
         if (!skip(8)) { std::fclose(file); return std::unexpected(result_code::other); }  // value
         auto script_len = read_varint();
         if (!script_len) { std::fclose(file); return std::unexpected(script_len.error()); }
-        if (!skip(static_cast<long>(*script_len))) { std::fclose(file); return std::unexpected(result_code::other); }  // script
+        if (!skip(long(*script_len))) { std::fclose(file); return std::unexpected(result_code::other); }  // script
     }
 
     // 6. locktime (4 bytes)
@@ -495,7 +534,7 @@ block_store::read_tx_raw(flat_file_pos const& pos) const {
     long const tx_end = std::ftell(file);
     if (tx_end < 0) { std::fclose(file); return std::unexpected(result_code::other); }
 
-    auto const tx_size = static_cast<size_t>(tx_end - tx_start);
+    auto const tx_size = size_t(tx_end - tx_start);
 
     // Seek back and read the whole tx
     if (std::fseek(file, tx_start, SEEK_SET) != 0) {
@@ -525,7 +564,7 @@ block_store::read_block_size(flat_file_pos const& pos) const {
     }
 
     // Seek back to read the header
-    if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
+    if (std::fseek(file, -long(block_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -638,14 +677,14 @@ block_store::read_blocks_raw(std::vector<flat_file_pos> const& positions) const 
             current_file = item.pos.file;
         } else {
             // Seek to position within same file
-            if (std::fseek(file, static_cast<long>(item.pos.pos), SEEK_SET) != 0) {
+            if (std::fseek(file, long(item.pos.pos), SEEK_SET) != 0) {
                 std::fclose(file);
                 return std::unexpected(result_code::other);
             }
         }
 
         // Seek back to read the header (pos points to block data, after header)
-        if (std::fseek(file, -static_cast<long>(block_header_size), SEEK_CUR) != 0) {
+        if (std::fseek(file, -long(block_header_size), SEEK_CUR) != 0) {
             std::fclose(file);
             return std::unexpected(result_code::other);
         }
@@ -701,7 +740,40 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
     // own several records. Each is identified by its stored checksum: it is
     // seeded with the parent and covers the payload, so for one block equal
     // content means an equal checksum.
-    boost::unordered_flat_map<hash_digest, hash_digest> seen;
+    //
+    // The record kept is the LAST one, and where it is is remembered so a later
+    // record can take its place. The index stores only a record's offset and
+    // takes its file from the block, whose position the block walk sets to the
+    // last copy it reads. A replay writes its undo into the rev file of the copy
+    // it stored, and a block stored again lands in the same blk file or a later
+    // one, so the last record of a block is the one in the rev file the index
+    // will read. Keeping an earlier one would have it read from that file at
+    // another file's offset, and the block could not be disconnected.
+    struct kept_record {
+        hash_digest checksum;
+        int32_t file_number;
+        uint32_t position;              ///< Of the payload, as read_undo expects.
+        uint32_t size;                  ///< Of the payload.
+        std::optional<size_t> found_at; ///< In result.found, for a block the index holds.
+    };
+    boost::unordered_flat_map<hash_digest, kept_record> seen;
+
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+    // A payload read again, from whichever rev file holds it. Only when two
+    // records of one block disagree, so on the ordinary path a forgotten
+    // branch's payload is still not read.
+    auto const read_payload = [this](int32_t file_number, uint32_t position, uint32_t size)
+        -> std::optional<data_chunk> {
+        FILE* other = open_native(undo_files_.file_name(flat_file_pos{file_number, 0}), "rb");
+        if (other == nullptr) return std::nullopt;
+        data_chunk payload(size);
+        bool const read = std::fseek(other, long(position), SEEK_SET) == 0
+            && std::fread(payload.data(), 1, payload.size(), other) == payload.size();
+        std::fclose(other);
+        if ( ! read) return std::nullopt;
+        return payload;
+    };
+#endif
 
     auto fail = [&result](undo_scan_status status, int32_t file_num, uint32_t offset,
                           hash_digest const& hash) {
@@ -752,7 +824,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                 break;
             }
 
-            if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+            if (std::fseek(file, long(offset), SEEK_SET) != 0) {
                 std::fclose(file);
                 return fail(undo_scan_status::io_error, file_num, offset, {});
             }
@@ -831,7 +903,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                     std::fclose(file);
                     return fail(undo_scan_status::io_error, file_num, offset, block_hash);
                 }
-            } else if (std::fseek(file, static_cast<long>(undo_size), SEEK_CUR) != 0) {
+            } else if (std::fseek(file, long(undo_size), SEEK_CUR) != 0) {
                 std::fclose(file);
                 return fail(undo_scan_status::io_error, file_num, offset, block_hash);
             }
@@ -849,25 +921,59 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
                 return fail(undo_scan_status::invalid_checksum, file_num, offset, block_hash);
             }
 
-            // Two records of one block with different checksums disagree about
-            // its undo, whether or not the index still holds the block.
-            auto const [existing, inserted] = seen.emplace(block_hash, stored_checksum);
-            if ( ! inserted && existing->second != stored_checksum) {
-                std::fclose(file);
-                return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+            // The position handed back is what read_undo expects: just past the
+            // header, since it seeks backwards from there.
+            auto const position = offset + uint32_t(undo_header_size);
+            auto const [existing, inserted] = seen.try_emplace(block_hash,
+                kept_record{stored_checksum, file_num, position, undo_size, std::nullopt});
+
+            if ( ! inserted) {
+                auto& kept = existing->second;
+
+                // Two records of one block with different checksums disagree
+                // about its undo, whether or not the index still holds the block.
+                if (kept.checksum != stored_checksum) {
+#if defined(KTH_UTXOZ_REFERENCE_MODE)
+                    // Except a replay in reference mode, which names new
+                    // positions for the same outputs: see is_reference_replay.
+                    // Decided from both payloads, a forgotten block's too, since
+                    // a replay is the only difference allowed.
+                    auto const earlier = read_payload(kept.file_number, kept.position, kept.size);
+                    auto const later = prev_hash
+                        ? std::optional<data_chunk>{undo_data}
+                        : read_payload(file_num, position, undo_size);
+                    if ( ! earlier || ! later) {
+                        std::fclose(file);
+                        return fail(undo_scan_status::io_error, file_num, offset, block_hash);
+                    }
+                    if ( ! is_reference_replay(*earlier, *later)) {
+                        std::fclose(file);
+                        return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+                    }
+#else
+                    std::fclose(file);
+                    return fail(undo_scan_status::duplicate_record, file_num, offset, block_hash);
+#endif
+                }
+
+                // The later record takes the earlier one's place: see `seen`.
+                kept.checksum = stored_checksum;
+                kept.file_number = file_num;
+                kept.position = position;
+                kept.size = undo_size;
+                if (kept.found_at) {
+                    result.found[*kept.found_at] = {file_num, position, block_hash};
+                }
+            } else if (prev_hash) {
+                existing->second.found_at = result.found.size();
+                result.found.push_back({file_num, position, block_hash});
             }
 
             if ( ! prev_hash) {
                 ++result.unattributed;
-            } else if (inserted) {
-                // Keep the first occurrence; a replay wrote the same bytes. The
-                // position handed back is what read_undo expects: just past the
-                // header, since it seeks backwards from there.
-                result.found.push_back({file_num,
-                    offset + static_cast<uint32_t>(undo_header_size), block_hash});
             }
 
-            offset += static_cast<uint32_t>(record_size);
+            offset += uint32_t(record_size);
         }
 
         std::fclose(file);
@@ -875,7 +981,7 @@ block_store::scan_undo_positions(undo_parent_lookup const& parent_of) {
         // Measured, not published. Every `return fail(...)` above leaves this
         // vector on the floor, which is the point: a family is adopted whole or
         // not at all.
-        if (static_cast<size_t>(file_num) >= extents.size()) {
+        if (size_t(file_num) >= extents.size()) {
             return fail(undo_scan_status::io_error, file_num, offset, hash_digest{});
         }
         extents[file_num] = offset;
@@ -957,7 +1063,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
                 // No room for another header. That is an ending only if what is
                 // left is the zeroes of reserved space; anything else is a write
                 // that was cut short.
-                auto const tail = check_tail(file, offset, static_cast<uint32_t>(file_size));
+                auto const tail = check_tail(file, offset, uint32_t(file_size));
                 std::fclose(file);
                 if (tail == tail_check::unreadable) {
                     return fail(block_scan_status::short_read, file_num, offset);
@@ -972,7 +1078,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
                 break;   // status travels out with the loop; see `last_status`
             }
 
-            if (std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+            if (std::fseek(file, long(offset), SEEK_SET) != 0) {
                 std::fclose(file);
                 return fail(block_scan_status::seek_failed, file_num, offset);
             }
@@ -989,7 +1095,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
                 // beyond would otherwise end the walk here and hide every record
                 // past them, and the next append would land on top of those.
                 if (file_magic == std::array<uint8_t, 4>{}) {
-                    auto const tail = check_tail(file, offset, static_cast<uint32_t>(file_size));
+                    auto const tail = check_tail(file, offset, uint32_t(file_size));
                     std::fclose(file);
                     if (tail == tail_check::unreadable) {
                         return fail(block_scan_status::short_read, file_num, offset);
@@ -1030,7 +1136,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
                 return fail(block_scan_status::record_beyond_file, file_num, offset);
             }
 
-            auto const data_pos = static_cast<uint32_t>(offset + block_header_size);
+            auto const data_pos = uint32_t(offset + block_header_size);
 
             std::array<uint8_t, bitcoin_header_bytes> hdr{};
             if (std::fread(hdr.data(), 1, hdr.size(), file) != hdr.size()) {
@@ -1041,7 +1147,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
             callback(file_num, data_pos, bitcoin_hash(byte_span{hdr.data(), hdr.size()}));
             ++found;
 
-            offset = static_cast<uint32_t>(record_end);
+            offset = uint32_t(record_end);
         }
 
         if (file != nullptr) {
@@ -1052,7 +1158,7 @@ block_store::scan_block_positions(block_position_callback const& callback) {
         // slot for, which is a disagreement about how many files exist. Skipping
         // the assignment would publish a zero extent for it — an invitation to
         // append at the start of a file that already holds records.
-        if (static_cast<size_t>(file_num) >= extents.size()) {
+        if (size_t(file_num) >= extents.size()) {
             return fail(block_scan_status::open_failed, file_num, offset);
         }
         extents[file_num] = offset;
@@ -1092,7 +1198,7 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
     uint32_t undo_size;
 
     // Seek back to header position
-    if (std::fseek(file, -static_cast<long>(undo_header_size), SEEK_CUR) != 0) {
+    if (std::fseek(file, -long(undo_header_size), SEEK_CUR) != 0) {
         std::fclose(file);
         return std::unexpected(result_code::other);
     }
@@ -1154,7 +1260,7 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
     }
 
     // Read undo data + checksum
-    data_chunk data(static_cast<size_t>(undo_size) + undo_checksum_size);
+    data_chunk data(size_t(undo_size) + undo_checksum_size);
     if (std::fread(data.data(), 1, data.size(), file) != data.size()) {
         std::fclose(file);
         return std::unexpected(result_code::other);
@@ -1162,9 +1268,9 @@ block_store::read_undo(flat_file_pos const& pos, hash_digest const& block_hash,
     std::fclose(file);
 
     // Extract undo data and checksum
-    data_chunk undo_data(data.begin(), data.begin() + static_cast<ptrdiff_t>(undo_size));
+    data_chunk undo_data(data.begin(), data.begin() + ptrdiff_t(undo_size));
     hash_digest stored_checksum;
-    std::copy(data.begin() + static_cast<ptrdiff_t>(undo_size), data.end(),
+    std::copy(data.begin() + ptrdiff_t(undo_size), data.end(),
         stored_checksum.begin());
 
     if (undo_checksum(prev_hash, undo_data) != stored_checksum) {
@@ -1312,7 +1418,7 @@ flat_file_pos block_store::find_block_pos(uint32_t add_size, uint32_t height, ui
     }
 
     // Check if current file has space
-    auto file_num = static_cast<uint32_t>(last_block_file_);
+    auto file_num = uint32_t(last_block_file_);
 
     if (file_info_.size() <= file_num) {
         file_info_.resize(file_num + 1);
@@ -1327,16 +1433,16 @@ flat_file_pos block_store::find_block_pos(uint32_t add_size, uint32_t height, ui
         }
     }
 
-    flat_file_pos pos{static_cast<int32_t>(file_num), file_info_[file_num].size};
+    flat_file_pos pos{int32_t(file_num), file_info_[file_num].size};
 
     // Update file info
-    if (static_cast<int32_t>(file_num) != last_block_file_) {
+    if (int32_t(file_num) != last_block_file_) {
         spdlog::debug("Leaving block file {}: {}", last_block_file_,
                     file_info_[last_block_file_].to_string());
         // Flush old file
         flat_file_pos old_pos{last_block_file_, file_info_[last_block_file_].size};
         block_files_.flush(old_pos, true);
-        last_block_file_ = static_cast<int32_t>(file_num);
+        last_block_file_ = int32_t(file_num);
     }
 
     file_info_[file_num].add_block(height, time);
@@ -1367,7 +1473,7 @@ flat_file_pos block_store::find_undo_pos(int32_t file_num, uint32_t add_size) {
 
     // Below the first file as well: its block file was removed, and writing
     // here would bring a rev file back for blocks the store no longer holds.
-    if (file_num < first_block_file_ || static_cast<size_t>(file_num) >= file_info_.size()) {
+    if (file_num < first_block_file_ || size_t(file_num) >= file_info_.size()) {
         return {};
     }
 
@@ -1395,7 +1501,7 @@ bool block_store::write_block_to_disk(data_chunk const& raw_block, flat_file_pos
     KTH_STATS_TIME_START(write_block);
 
     // Write header: magic + size
-    auto const block_size = static_cast<uint32_t>(raw_block.size());
+    auto const block_size = uint32_t(raw_block.size());
 
     if (std::fwrite(magic_.data(), 1, magic_.size(), file) != magic_.size()) {
         std::fclose(file);
@@ -1413,7 +1519,7 @@ bool block_store::write_block_to_disk(data_chunk const& raw_block, flat_file_pos
         std::fclose(file);
         return false;
     }
-    pos.pos = static_cast<uint32_t>(data_pos);
+    pos.pos = uint32_t(data_pos);
 
     // Write block data
     if (std::fwrite(raw_block.data(), 1, raw_block.size(), file) != raw_block.size()) {
@@ -1437,7 +1543,7 @@ bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
     }
 
     auto const undo_data = undo.to_data();
-    auto const undo_size = static_cast<uint32_t>(undo_data.size());
+    auto const undo_size = uint32_t(undo_data.size());
 
     // Write header: undo marker + owning block hash + size
     if (std::fwrite(undo_magic_v2.data(), 1, undo_magic_v2.size(), file) != undo_magic_v2.size()) {
@@ -1461,7 +1567,7 @@ bool block_store::write_undo_to_disk(block_undo const& undo, flat_file_pos& pos,
         std::fclose(file);
         return false;
     }
-    pos.pos = static_cast<uint32_t>(data_pos);
+    pos.pos = uint32_t(data_pos);
 
     // Write undo data
     if (std::fwrite(undo_data.data(), 1, undo_data.size(), file) != undo_data.size()) {

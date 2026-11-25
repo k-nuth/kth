@@ -12,9 +12,6 @@
 
 namespace kth::domain::message {
 
-std::string const not_found::command = "notfound";
-uint32_t const not_found::version_minimum = version::level::bip37;
-uint32_t const not_found::version_maximum = version::level::maximum;
 
 // static
 expect<not_found> not_found::create(inventory_vector::list inventories) {

@@ -9,15 +9,19 @@
 #include <cstddef>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include <asio/awaitable.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/node/rpc/error.hpp>
 #include <kth/node/rpc/json.hpp>
+#include <kth/node/mining/work_changes.hpp>
 
 namespace kth::blockchain {
 class block_chain;
@@ -33,6 +37,16 @@ struct job_store;
 
 namespace kth::node::rpc {
 
+// How long a long-polled getblocktemplate is held before a mempool change
+// alone answers it, BIP22's "after some time". Transactions arrive all the
+// time, so a pool answered on each one would be polling again. A new tip
+// answers at once.
+inline constexpr std::chrono::seconds longpoll_mempool_wait{60};
+
+using mining::doorbell;
+using mining::ring_on_work_changes;
+using mining::work_bell;
+
 // Shared state a handler may reach: the chain, the getblocktemplatelight job
 // cache, the P2P node and when the node started. Passed by reference; owned by
 // the server for the connection's lifetime.
@@ -45,7 +59,43 @@ struct method_context {
     // When the node started, for uptime. The server passes the node's own
     // start; a context built without one (tests) counts from its creation.
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    // What wakes a request that waits (wait_for_work). Both are the server's;
+    // a context built without one (tests) has neither, and such a request is
+    // woken by its deadline alone.
+    work_bell* work = nullptr;
+    // Closed when the request's connection is gone: its client closed it, or
+    // the server is stopping. Rung when the server can no longer watch the
+    // connection, because the client sent more behind this request than the
+    // server reads ahead. A request that outlived its connection would hold
+    // one of the server's connections for an answer nobody reads.
+    doorbell* closed = nullptr;
+    // The long-polled getblocktemplate's minimum wait for a mempool change.
+    // Tests shorten it.
+    std::chrono::steady_clock::duration longpoll_wait = longpoll_mempool_wait;
 };
+
+// Why a request stopped waiting. connection_closed is a connection that is
+// gone, or one the server can no longer watch.
+enum class wake {
+    work_changed,
+    deadline,
+    connection_closed,
+};
+
+// The doorbell the next change of the mining work closes, null without a
+// server. Taken before reading the state the wait depends on.
+[[nodiscard]]
+std::shared_ptr<doorbell> watch_work(method_context const& ctx);
+
+// Suspend the request until the mining work changes after `watched` was taken,
+// `deadline` passes or its connection is gone or can no longer be watched,
+// whichever is first. The connection wins over the others: nothing is left to
+// answer, or more requests wait behind this one. The caller reads
+// the chain again on work_changed; the wake says that something moved, not
+// what. steady_clock::time_point::max() is no deadline.
+[[nodiscard]]
+::asio::awaitable<wake> wait_for_work(method_context const& ctx,
+    std::shared_ptr<doorbell> watched, std::chrono::steady_clock::time_point deadline);
 
 // A method handler serializes the JSON-RPC "result" fragment for `req`, or
 // returns an rpc_error. It runs on the RPC coroutine and may co_await the chain.

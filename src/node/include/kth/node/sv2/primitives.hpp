@@ -5,6 +5,8 @@
 #ifndef KTH_NODE_SV2_PRIMITIVES_HPP
 #define KTH_NODE_SV2_PRIMITIVES_HPP
 
+#include <kth/node/sv2/feature.hpp>
+
 #include <cstdint>
 #include <string>
 #include <string_view>

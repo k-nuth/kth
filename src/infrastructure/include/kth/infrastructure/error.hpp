@@ -7,7 +7,6 @@
 
 #include <string>
 #include <system_error>
-#include <unordered_map>
 
 
 #if defined(KTH_ASIO_STANDALONE)

@@ -200,7 +200,9 @@ struct KD_API block_store {
         io_error,           ///< A seek or read failed.
 
         invalid_checksum,   ///< A record whose contents do not match its checksum.
-        duplicate_record,   ///< Conflicting records claiming the same block.
+        duplicate_record,   ///< Conflicting records claiming the same block. In reference
+                            ///< mode two that differ only in the references their
+                            ///< entries hold are a replay, not a conflict.
     };
 
     struct undo_scan_result {
@@ -276,6 +278,8 @@ struct KD_API block_store {
     /// reported until every file has been read, so a failure late in the last
     /// file cannot leave earlier records already applied — a half-restored index
     /// is worse than none, because it looks complete.
+    /// A block replayed after a restart can own several records; the last one is
+    /// reported, since it is in the rev file of the copy the block walk keeps.
     /// Same contract as `scan_block_positions`: the extents stay here, and they
     /// are published only when every file read cleanly.
     [[nodiscard]]
