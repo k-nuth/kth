@@ -119,8 +119,7 @@ struct utxo {
 };
 
 /// The confirmed state of one target.
-class KND_API target_state {
-public:
+struct KND_API target_state {
     /// Watched from `start` on: blocks below it are never applied.
     target_state(target watched, uint32_t start);
 
@@ -183,8 +182,7 @@ struct mempool_tx {
 /// The wallet's own copy of the mempool, held to a number of bytes: on a full
 /// node, the transactions of the node's mempool. A fee is known when the
 /// values of all the outputs its transaction spends are.
-class KND_API mempool_copy {
-public:
+struct KND_API mempool_copy {
     /// The value of a confirmed output, when the client knows it.
     using value_lookup = std::function<std::optional<uint64_t>(domain::chain::point const&)>;
 

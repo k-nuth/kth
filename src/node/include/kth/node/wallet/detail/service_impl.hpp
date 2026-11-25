@@ -80,8 +80,7 @@ namespace detail {
 // reorganization, where the service stands), or to a few keys only (a
 // mempool transaction: the targets it pays or spends from, and its hash):
 // who follows other keys need not look again.
-class change_signal {
-public:
+struct change_signal {
     // Keys remembered at most; older ones count as a change to anything.
     static constexpr size_t touched_limit = 10'000;
 
@@ -154,8 +153,7 @@ std::vector<hash_digest> touched_by(domain::chain::transaction const& tx, mempoo
 // The Merkle tree of the block hashes 0 to cp_height (Electrum's header
 // proofs), kept for the last cp_height asked while its block is the chain's:
 // a wallet asks with one checkpoint again and again. One tree at a time.
-class header_tree {
-public:
+struct header_tree {
     // The branch of `height` and the root; `hash_at` gives a block hash.
     std::pair<hash_list, hash_digest> branch(uint32_t height, uint32_t cp_height,
         std::function<hash_digest(uint32_t)> const& hash_at);

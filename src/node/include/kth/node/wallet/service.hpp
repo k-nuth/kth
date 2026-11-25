@@ -167,8 +167,7 @@ struct chain_settings {
     size_t mempool_bytes = size_t(256) << 20;
 };
 
-class KND_API service {
-public:
+struct KND_API service {
     /// Answers from the node's own chain: its stored blocks, its chain state
     /// and its mempool. Nothing is sent to any peer and nothing is stored.
     [[nodiscard]]
