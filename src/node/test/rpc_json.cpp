@@ -66,10 +66,19 @@ TEST_CASE("parse_request echoes string id verbatim", "[rpc json]") {
 
 TEST_CASE("parse_request rejects malformed json", "[rpc json]") {
     REQUIRE_FALSE(parse_request("{bad").has_value());
+    // Not JSON at all is a parse error; JSON that is no request is an invalid request.
+    auto const garbage = parse_request("not json");
+    REQUIRE_FALSE(garbage.has_value());
+    REQUIRE(garbage.error().code == int(kth::node::rpc::error_code::parse_error));
+    auto const number = parse_request("123");
+    REQUIRE_FALSE(number.has_value());
+    REQUIRE(number.error().code == int(kth::node::rpc::error_code::invalid_request));
 }
 
 TEST_CASE("parse_request rejects missing method", "[rpc json]") {
-    REQUIRE_FALSE(parse_request(R"({"id":1})").has_value());
+    auto const missing = parse_request(R"({"id":1})");
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().code == int(kth::node::rpc::error_code::invalid_request));
 }
 
 TEST_CASE("build_success wraps result", "[rpc json]") {

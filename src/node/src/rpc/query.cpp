@@ -380,7 +380,7 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
                 w.field("confirmations_ticks", int64_t(0));
             }
         }
-        w.field("in_active_chain", active);
+        if (location->block_named) w.field("in_active_chain", active);
     }
     w.end_object();
     return w.str();

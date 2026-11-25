@@ -24,6 +24,9 @@
 #if ! defined(__EMSCRIPTEN__)
 #include <kth/network.hpp>
 #endif
+#if defined(KTH_WITH_WALLET)
+#include <kth/node/wallet/electrum.hpp>
+#endif
 
 #include <kth/infrastructure/config/authority.hpp>
 #include <kth/infrastructure/config/checkpoint.hpp>
@@ -340,6 +343,21 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "Serve compact block filters to light wallets: getcfilters, getcfheaders and getcfcheckpt "
         "(default false). Not on a pruning node.");
 #endif
+    // Known to every build: a build without the feature refuses it (see
+    // check_wallet) rather than ignore it in a configuration file.
+    [[maybe_unused]] auto* const wallet_electrum = app.add_option("--node.wallet_electrum",
+        cfg.node.wallet_electrum,
+        "LOOPBACK:PORT of a local Electrum listener answering this machine's wallets from this node's own "
+        "chain, for wallets that do not speak P2P (off by default). Only loopback addresses (127.0.0.0/8, "
+        "[::1]) are accepted: the node must not learn what other people's wallets watch. Needs a build "
+        "with the option wallet; not on a pruning node.");
+#if defined(KTH_WITH_WALLET)
+    wallet_electrum->check(CLI::Validator([](std::string& value) -> std::string {
+        return node::wallet::electrum_bind_refusal(value).value_or(std::string{});
+    }, "LOOPBACK:PORT"));
+#endif
+    app.add_option("--node.wallet_birthday",                cfg.node.wallet_birthday,
+        "The first height the node's own wallet support reads for a wallet that gives none (0: genesis).");
     add_enum_option(app, "--node.display",
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");
@@ -440,6 +458,26 @@ bool check_bloom_filters([[maybe_unused]] configuration const& cfg, [[maybe_unus
     }
 #endif
     return true;
+}
+
+// A build without the feature has no wallet support, so it does not start as
+// if it listened. The wallet reads the blocks back to its birthday, and a
+// pruning node removes them.
+bool check_wallet(configuration const& cfg, std::ostream& error) {
+    if (cfg.node.wallet_electrum.empty()) {
+        return true;
+    }
+#if ! defined(KTH_WITH_WALLET)
+    error << "Error: node.wallet_electrum needs a build with the option wallet." << std::endl;
+    return false;
+#else
+    if (cfg.database.prune_keep_blocks != 0) {
+        error << "Error: node.wallet_electrum is not allowed on a pruning node "
+                 "(db.prune_keep_blocks); the wallet reads the blocks back to its birthday." << std::endl;
+        return false;
+    }
+    return true;
+#endif
 }
 
 // A node given a proxy was asked not to connect directly. A build without the
@@ -596,7 +634,7 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
 
         if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
             || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
-            || ! check_sv2(configured, error)) {
+            || ! check_sv2(configured, error) || ! check_wallet(configured, error)) {
             return false;
         }
 
@@ -674,7 +712,7 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
 
     if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
             || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
-            || ! check_sv2(configured, error)) {
+            || ! check_sv2(configured, error) || ! check_wallet(configured, error)) {
         return false;
     }
 

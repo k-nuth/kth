@@ -22,3 +22,27 @@ only memory is what the watched targets own and a bounded cache of blocks.
 - **Broadcast** to the node's own mempool, which relays it.
 
 The calls are `kth::node::wallet::service`, made with `service::from_chain`.
+
+## The local Electrum listener
+
+For wallets that do not speak P2P, the node can answer the Electrum protocol
+(Fulcrum's method names, arguments and result shapes) from its own chain:
+
+```ini
+node.wallet_electrum = 127.0.0.1:50001
+```
+
+It is off by default. **Only a loopback address is accepted** (127.0.0.0/8, or
+`[::1]` for IPv6); any other address is refused at startup. The listener is
+for the node owner's own wallets on the same machine. A node answering
+Electrum on any other address would be a server that learns what other
+people's wallets watch, and Knuth does not serve that.
+
+`node.wallet_birthday` is the first height read for a wallet that gives none
+(0, the default, reads from genesis). The setting is refused by a build
+without the option `wallet`, and on a pruning node (`db.prune_keep_blocks`):
+the wallet reads the blocks back to its birthday.
+
+A subscription is recorded as the very answer its client got, so a change
+after that answer is never lost between two readings, and only the
+subscriptions a change touched are read again.

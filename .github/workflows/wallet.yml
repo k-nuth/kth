@@ -35,6 +35,15 @@ on:
       - src/node/test/wallet*.cpp
       - src/node/test/wallet*.hpp
       - src/node/test/sync_harness.hpp
+      - src/node/include/kth/node/rpc/json.hpp
+      - src/node/src/rpc/json.cpp
+      - src/node/include/kth/node/rpc/query.hpp
+      - src/node/src/rpc/query.cpp
+      - src/node/include/kth/node/settings.hpp
+      - src/node/src/settings.cpp
+      - src/node/include/kth/node/full_node.hpp
+      - src/node/src/full_node.cpp
+      - src/node/src/parser.cpp
       - conanfile.py
       - conan.lock
       - CMakeLists.txt

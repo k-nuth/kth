@@ -24,6 +24,7 @@ struct request {
     std::string method;
     std::string params;         // raw JSON of "params" ("" when absent)
     std::string id = "null";    // raw JSON of "id"     ("null" when absent)
+    bool has_id = false;        // false: a notification, answered with nothing
 };
 
 // Parse a JSON-RPC request body. On failure returns the rpc_error to report:

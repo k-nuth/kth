@@ -78,6 +78,12 @@ namespace kth::node {
 #if defined(KTH_WITH_NEUTRINO)
 namespace detail { struct compact_filter_blocks; }
 #endif
+#if defined(KTH_WITH_WALLET)
+namespace wallet {
+struct service;
+struct electrum_server;
+} // namespace wallet
+#endif
 
 /// Startup mode selection
 enum class start_modules {
@@ -228,6 +234,9 @@ private:
     ::asio::awaitable<void> run_sync();
     ::asio::awaitable<void> run_compact_blocks();
     ::asio::awaitable<void> run_compact_filters();
+    void start_wallet();
+    ::asio::awaitable<void> run_wallet();
+    void stop_wallet();
 #endif
 
     // Configuration references (stored in configuration object)
@@ -284,6 +293,15 @@ private:
 #endif
 #if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
     std::unique_ptr<sv2::template_provider> template_provider_;
+#endif
+#if defined(KTH_WITH_WALLET)
+    // node.wallet_electrum on a pruning node: start() refuses it.
+    bool wallet_refused_{false};
+    // Wallet support answered from this node's own chain, behind its local
+    // Electrum listener, when node.wallet_electrum names one. Declared after
+    // chain_: destroyed first.
+    std::unique_ptr<wallet::service> wallet_;
+    std::unique_ptr<wallet::electrum_server> wallet_electrum_;
 #endif
 };
 
