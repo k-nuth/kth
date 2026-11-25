@@ -9,7 +9,9 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/domain/message/inventory.hpp>
@@ -45,14 +47,9 @@ public:
     static
     expect<not_found> from_data(byte_reader& reader, uint32_t version);
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "notfound";
+    static constexpr uint32_t version_minimum = version::level::bip37;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
 };
 

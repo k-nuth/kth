@@ -354,10 +354,16 @@ struct KD_API header_index {
     //
     // Concurrency: appended/truncated by the header path (single writer) and read
     // from the block-download and UTXO-build paths. Reads are lock-free: the
-    // backing vector is pre-allocated to capacity and `active_size_` publishes
-    // how much of it is valid, so a reader never observes a partially written
-    // entry. Truncation lowers the published size first, so a concurrent reader
-    // can only ever see a *shorter* chain, never a stale entry.
+    // backing array is allocated to capacity once and `active_size_` publishes
+    // how much of it is valid, so a reader never reads a height past the chain.
+    //
+    // A chain switch truncates and then links the new branch in, over the slots
+    // of the branch it left. A reader that found a height within the chain
+    // before the truncation can read its slot while the switch writes it, so
+    // every slot is an atomic: the reader gets the entry the height had before
+    // the switch or the one it has after, whole. Both were the active entry at
+    // that height at some moment of the call; work that must not outlive a
+    // switch is stamped with generation().
 
     /// Append `idx` as the new active tip (forward extension).
     void active_push(index_t idx);
@@ -454,9 +460,9 @@ private:
     // at startup (immediately finalizable). Used by finalization's time rule.
     std::vector<uint32_t> header_received_times_;
 
-    // Active chain: height -> entry index. Pre-allocated to capacity like the SoA
+    // Active chain: height -> entry index. Allocated to capacity like the SoA
     // vectors; active_size_ publishes the valid prefix (see the accessors above).
-    std::vector<index_t> active_;
+    std::unique_ptr<std::atomic<index_t>[]> active_;
     std::atomic<int32_t> active_size_{0};
     std::atomic<uint64_t> generation_{0};
 

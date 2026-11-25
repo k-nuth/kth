@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #if defined(KTH_WITH_WEBSOCKET)
@@ -111,7 +112,9 @@ public:
     /// @param socket The connected socket
     /// @param settings Network settings
     /// @param inbound True if this is an inbound connection (we accepted it)
-    peer_session(socket_type socket, settings const& settings, bool inbound = false);
+    /// @param destination Requested SOCKS destination, when the socket reaches a proxy
+    peer_session(socket_type socket, settings const& settings, bool inbound = false,
+        std::optional<infrastructure::config::endpoint> destination = std::nullopt);
 
     /// Destructor - ensures clean shutdown
     ~peer_session();
@@ -162,6 +165,19 @@ public:
             co_return error::channel_stopped;
         }
         co_return co_await enqueue(outbound_,
+            domain::message::serialize(version_.load(), message, protocol_magic_));
+    }
+
+    /// Queue a control message without waiting: false when the control queue
+    /// is full or the session is stopped, and then nothing is queued. For a
+    /// sender that must not be held by a peer that is not reading.
+    template <typename Message>
+    [[nodiscard]]
+    bool try_send(Message const& message) {
+        if (stopped()) {
+            return false;
+        }
+        return outbound_.try_send(
             domain::message::serialize(version_.load(), message, protocol_magic_));
     }
 
@@ -348,9 +364,17 @@ public:
     // Properties
     // -------------------------------------------------------------------------
 
-    /// Get the authority (address:port) of the remote peer
+    /// Numeric peer address for wire messages; unspecified for a proxy-resolved hostname.
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
+
+    /// The requested destination; a proxy's socket address is never a peer identity.
+    [[nodiscard]]
+    infrastructure::config::endpoint const& destination() const;
+
+    /// Hostnames resolved by a proxy have no numeric authority locally.
+    [[nodiscard]]
+    bool has_numeric_authority() const;
 
     /// Get formatted string with authority and user agent (for logging)
     /// Returns "[ip:port user_agent]" or "[ip:port]" if user agent not yet known
@@ -498,6 +522,17 @@ public:
 
     void set_prefers_headers(bool value);
 
+    // -------------------------------------------------------------------------
+    // BIP152 (sendcmpct)
+    // -------------------------------------------------------------------------
+
+    /// True while the peer's last sendcmpct of version 1 asked for high
+    /// bandwidth: a new block is announced to it with a cmpctblock.
+    [[nodiscard]]
+    bool prefers_compact_blocks() const;
+
+    void set_prefers_compact_blocks(bool value);
+
 private:
     // -------------------------------------------------------------------------
     // Internal coroutines
@@ -571,6 +606,8 @@ private:
     /// channel still hands out what it already holds.
     void drain_response_channels();
     infrastructure::config::authority authority_;
+    infrastructure::config::endpoint destination_;
+    bool const has_numeric_authority_;
 
     // Protocol settings
     uint32_t const protocol_magic_;
@@ -616,6 +653,9 @@ private:
 
     // BIP130: set when the peer sends sendheaders
     std::atomic<bool> prefers_headers_{false};
+
+    // BIP152: the high-bandwidth flag of the peer's last sendcmpct, version 1
+    std::atomic<bool> prefers_compact_blocks_{false};
 
     // Buffers (only accessed from read_loop, no synchronization needed)
     data_chunk heading_buffer_;

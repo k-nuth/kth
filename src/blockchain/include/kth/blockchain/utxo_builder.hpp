@@ -61,14 +61,6 @@ struct block_chain;
 // Inputs store only the outpoint being spent.
 // =============================================================================
 
-/// UTXO storage reference: points to the transaction in blk*.dat flat files.
-/// In reference mode, this 8-byte value replaces the full serialized output data.
-struct reference_utxo_ref {
-    uint32_t file_number;   // blk*.dat file number
-    uint32_t tx_offset;     // absolute byte offset of the tx within that file
-};
-static_assert(sizeof(reference_utxo_ref) == 8);
-
 struct utxo_compact_block {
     struct output_entry {
         utxoz::raw_outpoint key;        // txid(32) + index(4) — UTXO-Z native key
