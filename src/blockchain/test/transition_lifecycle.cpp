@@ -69,6 +69,32 @@ TEST_CASE("a fresh database has no transition record", "[transition][lifecycle]"
     CHECK_FALSE(check.decode_error.has_value());
 }
 
+TEST_CASE("the end of a transition rings the tip doorbell after capture reopens",
+          "[transition][lifecycle]") {
+    chain_fixture fixture("transition_tip_doorbell");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    ::asio::error_code ec;
+    REQUIRE_FALSE(chain.tip_changes().try_receive(ec).has_value());
+
+    // Nothing rings while the transition runs: whoever it woke could not
+    // capture yet.
+    REQUIRE(chain.begin_transition());
+    CHECK_FALSE(chain.tip_changes().try_receive(ec).has_value());
+    chain.end_transition();
+    CHECK_FALSE(chain.transition_in_progress());
+    CHECK(chain.tip_changes().try_receive(ec).has_value());
+
+    // Two transitions nobody attended leave one ring.
+    REQUIRE(chain.begin_transition());
+    chain.end_transition();
+    REQUIRE(chain.begin_transition());
+    chain.end_transition();
+    CHECK(chain.tip_changes().try_receive(ec).has_value());
+    CHECK_FALSE(chain.tip_changes().try_receive(ec).has_value());
+}
+
 TEST_CASE("a record written before a transition survives a restart",
           "[transition][lifecycle]") {
     // Step 2 of the durable order is worth nothing if the record does not

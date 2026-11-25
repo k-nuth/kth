@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <istream>
 #include <string>
+#include <string_view>
 
 
 #include <kth/domain/constants.hpp>
@@ -30,6 +31,13 @@ enum class message_type {
     block,
     block_transactions,
     compact_block,
+#if defined(KTH_WITH_NEUTRINO)
+    compact_filter,
+    compact_filter_checkpoint,
+    compact_filter_headers,
+    compact_filter_proof,
+    compact_filter_range,
+#endif
     double_spend_proof,
     fee_filter,
     filter_add,
@@ -38,6 +46,13 @@ enum class message_type {
     get_address,
     get_block_transactions,
     get_blocks,
+#if defined(KTH_WITH_NEUTRINO)
+    get_compact_filter_checkpoint,
+    get_compact_filter_headers,
+    get_compact_filter_proof,
+    get_compact_filter_range,
+    get_compact_filters,
+#endif
     get_data,
     get_headers,
     headers,
@@ -68,8 +83,7 @@ struct KD_API heading {
     size_t satoshi_fixed_size();
 
     heading() = default;
-    heading(uint32_t magic, std::string const& command, uint32_t payload_size, uint32_t checksum);
-    heading(uint32_t magic, std::string&& command, uint32_t payload_size, uint32_t checksum);
+    heading(uint32_t magic, std::string_view command, uint32_t payload_size, uint32_t checksum);
 
     [[nodiscard]]
     friend bool operator==(heading const&, heading const&) = default;
@@ -84,8 +98,7 @@ struct KD_API heading {
     [[nodiscard]]
     std::string const& command() const;
 
-    void set_command(std::string const& value);
-    void set_command(std::string&& value);
+    void set_command(std::string_view value);
 
     [[nodiscard]]
     uint32_t payload_size() const;

@@ -221,12 +221,12 @@ std::expected<utxo_entry, result_code> utxoz_database::find(domain::chain::point
 namespace {
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
-// Pack a reference the way apply_delta_raw expects it to arrive:
-// {file_number(4 LE), tx_offset(4 LE)}.
+// Pack a reference the way apply_delta_raw expects it to arrive: the bytes of
+// a utxoz::reference_location.
 std::vector<uint8_t> pack_reference_ref(uint32_t file_number, uint32_t offset) {
-    std::vector<uint8_t> value(8);
-    std::memcpy(value.data(), &file_number, 4);
-    std::memcpy(value.data() + 4, &offset, 4);
+    utxoz::reference_location const location{file_number, offset};
+    std::vector<uint8_t> value(utxoz::reference_value_size);
+    std::memcpy(value.data(), &location, utxoz::reference_value_size);
     return value;
 }
 #endif

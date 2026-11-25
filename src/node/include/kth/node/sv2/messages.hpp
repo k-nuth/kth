@@ -5,6 +5,8 @@
 #ifndef KTH_NODE_SV2_MESSAGES_HPP
 #define KTH_NODE_SV2_MESSAGES_HPP
 
+#include <kth/node/sv2/feature.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -19,9 +21,7 @@
 // Stratum V2 Template Distribution Protocol messages (sv2-spec 07). For all of
 // them extension_type is 0 and the channel_msg flag is unset; message_type is
 // the value carried in the frame header. Each follows the from_data / to_data
-// convention so it flows through from_data_chunk / to_data_chunk. This header
-// covers the messages with no sequence fields; NewTemplate and
-// RequestTransactionData.Success (which carry SEQ fields) are added separately.
+// convention so it flows through from_data_chunk / to_data_chunk.
 
 namespace kth::node::sv2 {
 

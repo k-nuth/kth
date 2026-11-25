@@ -234,8 +234,8 @@ struct KD_API utxoz_database {
     // =============================================================================
 
     /// A UTXO exactly as stored, without resolving it into a utxo_entry.
-    /// `value` is the storage-native payload — in reference mode the 8-byte
-    /// {file_number, tx_offset} reference, in full mode the serialized entry —
+    /// `value` is the storage-native payload — in reference mode the bytes of
+    /// a utxoz::reference_location, in full mode the serialized entry —
     /// which is the same shape apply_delta_raw inserts. It is NOT the same type:
     /// that range holds utxo_raw_value, whose payload member is `data`, so a
     /// range of these does not compile there and the caller rebuilds the pair
@@ -348,20 +348,19 @@ struct KD_API utxoz_database {
 
         for (auto const& [key, raw] : inserts) {
 #ifdef KTH_UTXOZ_REFERENCE_MODE
-            // Reference mode: deserialize the 8-byte reference into typed fields.
-            // Checked first: these are two reads off a caller-supplied buffer,
-            // and a short payload would read past its end. A payload that is not
-            // exactly eight bytes is not a reference at all, whatever it is.
-            if (raw.data.size() != 8) {
+            // Reference mode: the payload is a utxoz::reference_location, as
+            // its bytes. Checked first: this is a read off a caller-supplied
+            // buffer, and a short payload would read past its end. A payload of
+            // any other size is not a reference at all, whatever it is.
+            if (raw.data.size() != utxoz::reference_value_size) {
                 spdlog::error("[utxoz_database] reference payload for {} is {} byte(s), "
-                    "not 8; refusing to read it as a reference",
-                    utxoz::outpoint_to_string(key), raw.data.size());
+                    "not {}; refusing to read it as a reference",
+                    utxoz::outpoint_to_string(key), raw.data.size(), utxoz::reference_value_size);
                 return result_code::other;
             }
-            uint32_t file_number, tx_offset;
-            std::memcpy(&file_number, raw.data.data(), 4);
-            std::memcpy(&tx_offset, raw.data.data() + 4, 4);
-            auto ins = db_->insert(key, file_number, tx_offset, raw.height);
+            utxoz::reference_location location;
+            std::memcpy(&location, raw.data.data(), utxoz::reference_value_size);
+            auto ins = db_->insert(key, location.file_number, location.offset, raw.height);
 #else
             auto ins = db_->insert(key, raw.data, raw.height);
 #endif

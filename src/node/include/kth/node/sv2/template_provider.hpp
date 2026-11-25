@@ -1,0 +1,168 @@
+// Copyright (c) 2016-present Knuth Project developers.
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef KTH_NODE_SV2_TEMPLATE_PROVIDER_HPP
+#define KTH_NODE_SV2_TEMPLATE_PROVIDER_HPP
+
+#include <kth/node/sv2/feature.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <deque>
+#include <optional>
+#include <system_error>
+
+#include <asio/any_io_executor.hpp>
+#include <asio/awaitable.hpp>
+#include <asio/ip/tcp.hpp>
+#include <asio/strand.hpp>
+#include <asio/experimental/concurrent_channel.hpp>
+
+#include <kth/infrastructure/utility/data.hpp>
+#include <kth/blockchain/pools/block_template.hpp>
+#include <kth/node/mining/work_changes.hpp>
+#include <kth/node/settings.hpp>
+#include <kth/node/sv2/framing.hpp>
+#include <kth/node/sv2/messages.hpp>
+
+// Stratum V2 Template Provider (sv2-spec 07, Template Distribution Protocol):
+// the listener, connection setup and block template flow. Frames are plaintext;
+// the Noise transport (sv2-spec 04) will wrap
+// them later, which is why the listener binds to localhost by default.
+
+namespace kth::blockchain { struct block_chain; }
+
+namespace kth::node::sv2 {
+
+// The protocol state of one connection, kept apart from the socket so its
+// rules can be tested without one. process() takes one complete frame and
+// says what to send back and whether to close the connection.
+struct template_provider_session {
+    // The largest payload read from a client. The client's own messages are
+    // small (SubmitSolution, the largest, carries a coinbase transaction of at
+    // most 64 KiB); the rest of the room is for extension messages, which are
+    // read and discarded. A longer frame closes the connection unread.
+    static constexpr uint32_t max_payload_size = 1024 * 1024;
+    static constexpr size_t max_templates = 8;
+
+    // Include the header and the widest CompactSize counts as well as the
+    // fixed coinbase fields and a full 100-byte scriptSig. Outputs are extra.
+    static constexpr uint64_t coinbase_fixed_reserve = 248;
+
+    struct result {
+        data_chunk response;    // A complete frame to send, or empty.
+        bool close = false;     // Close the connection after the response.
+        bool constraints_changed = false;
+        block_const_ptr solution;
+    };
+
+    [[nodiscard]]
+    result process(message_header const& header, byte_span payload);
+
+    // Publish a chain-produced selection, with NewTemplate before SetNewPrevHash.
+    // The caller fetches it using this connection's byte and SigChecks reserves.
+    [[nodiscard]]
+    result set_template(blockchain::mining_template value);
+
+    // Retire old work, but remember which issued ids belonged to an old tip.
+    // The replaced tip's templates still take solutions until the next tip.
+    // `height` is the tip's: work is kept only for a tip one block above the
+    // one it was built on, where a block found on it would be a rival.
+    void set_tip(hash_digest const& previous, size_t height);
+
+    // Whether this client holds work for `tip` built for its current
+    // constraints. Not so once the tip changed, even back to this one, or the
+    // constraints did, until the next template is set.
+    [[nodiscard]]
+    bool has_work_for(hash_digest const& tip) const {
+        return work_current_ && previous_ == tip;
+    }
+
+    // The latest CoinbaseOutputConstraints from this client, if any. Templates
+    // for this connection must leave this room in the coinbase.
+    [[nodiscard]]
+    std::optional<coinbase_output_constraints> const& constraints() const {
+        return constraints_;
+    }
+
+private:
+    enum class state { awaiting_setup, ready, closed };
+
+    result close();
+
+    struct entry {
+        uint64_t id;
+        blockchain::mining_template value;
+        std::vector<hash_digest> merkle_path;
+        // Its transactions do not fit RequestTransactionData.Success.
+        bool too_large;
+        bool refusal_logged;
+    };
+
+    // A current template, for any request. A solution may also name one of
+    // the replaced tip's.
+    [[nodiscard]] entry* find_template(uint64_t id);
+    [[nodiscard]] entry const* find_solvable(uint64_t id) const;
+    [[nodiscard]] bool stale(uint64_t id) const;
+
+    state state_ = state::awaiting_setup;
+    std::optional<coinbase_output_constraints> constraints_;
+    std::optional<hash_digest> previous_;
+    size_t tip_height_ = 0;
+    bool work_current_ = false;
+    std::deque<entry> templates_;
+    // The templates of the tip just replaced, at most max_templates.
+    std::deque<entry> replaced_;
+    uint64_t next_id_ = 1;
+    uint64_t stale_through_ = 0;
+};
+
+// Accepts Template Provider clients on sv2.bind:sv2.port. Like the JSON-RPC
+// server it runs on the node's executor, with one coroutine per connection,
+// and every socket is owned by one strand.
+struct template_provider {
+    // `work_changes` is this provider's subscription to the node's
+    // mining::work_changes: each ring has every client's tip read again.
+    template_provider(sv2_settings const& settings, ::asio::any_io_executor executor,
+        blockchain::block_chain& chain, mining::doorbell& work_changes);
+
+    // Bind the listener and serve connections until stop(). Intended to be
+    // co_spawned. Returns on a bind error, or once every connection has ended
+    // after stop().
+    ::asio::awaitable<void> run();
+
+    // A bounded stop message, including when run() has not started yet.
+    // Socket cancellation itself is performed only by the owner strand.
+    void stop();
+
+    // One startup outcome: the actual bound port, or the listener's error.
+    // May be awaited before run() starts. Cancellation wakes the waiter.
+    [[nodiscard]] ::asio::awaitable<uint16_t> wait_until_listening();
+
+    // How long a connection has to complete its setup and send its coinbase
+    // constraints. One that has not by then is closed: it would hold one of
+    // the listener's connections without ever taking work. Tests shorten it.
+    std::chrono::steady_clock::duration setup_timeout = std::chrono::seconds(30);
+
+private:
+    ::asio::awaitable<void> run_owned();
+    // `closed` is the connection's: it closes it when its inputs end, which
+    // ends its wait for work.
+    ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket,
+        mining::doorbell& closed);
+
+    sv2_settings const settings_;
+    blockchain::block_chain& chain_;
+    ::asio::strand<::asio::any_io_executor> owner_;
+    ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
+    ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
+    // Wakes the connections when the mining work changes. Rung by run_owned()
+    // on each ring of work_changes_; owner_ serializes every use.
+    mining::work_bell work_;
+    mining::doorbell& work_changes_;
+};
+
+} // namespace kth::node::sv2
+
+#endif // KTH_NODE_SV2_TEMPLATE_PROVIDER_HPP

@@ -11,9 +11,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const filter_add::command = "filteradd";
-uint32_t const filter_add::version_minimum = version::level::bip37;
-uint32_t const filter_add::version_maximum = version::level::maximum;
 
 filter_add::filter_add(data_chunk data)
     : data_(std::move(data))
