@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <array>
@@ -23,6 +24,7 @@
 
 
 #include <asio/awaitable.hpp>
+#include <asio/error.hpp>
 #include <simdjson.h>
 
 #include <kth/blockchain/interface/block_chain.hpp>
@@ -219,10 +221,44 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
 #endif
 }
 
+// BIP22 long polling: hold a getblocktemplate whose longpollid names `watched`
+// until the template it names is out of date. A new tip ends the hold at once;
+// a mempool change ends it once ctx.longpoll_wait has passed since the
+// request. It also ends when the request's connection is gone.
+//
+// Nothing polls. The server wakes the request when the tip or the mempool
+// changes, and the tip and the mempool generation are read again from the
+// chain each time, so it does not matter which change woke it or how many.
+::asio::awaitable<void> wait_for_new_template(method_context& ctx, longpoll_state const& watched) {
+    auto const deadline = std::chrono::steady_clock::now() + ctx.longpoll_wait;
+    for (;;) {
+        // Before the read below, so a change after that read ends the wait.
+        auto const watching = watch_work(ctx);
+        auto const view = ctx.chain.chain_view();
+        if ( ! view || view->tip_hash != watched.tip) {
+            co_return;
+        }
+        auto const pool_changed =
+            ctx.chain.mempool_ref().generation() != watched.mempool_generation;
+        auto const now = std::chrono::steady_clock::now();
+        if (now >= deadline && (pool_changed || ! watching)) {
+            // Without a server nothing wakes the request after its deadline.
+            co_return;
+        }
+        // Until the deadline it bounds the wait; past it only a change does.
+        auto const until = now < deadline
+            ? deadline : std::chrono::steady_clock::time_point::max();
+        if (co_await wait_for_work(ctx, watching, until) == wake::connection_closed) {
+            co_return;
+        }
+    }
+}
+
 // getblocktemplate [template_request] -> the next-block template with its
 // transactions in full (BIP22), for pools that build and submit whole blocks.
 // Only "template" mode; "proposal" is refused. The request's capabilities and
-// rules ask for nothing this template leaves out.
+// rules ask for nothing this template leaves out. A request that sends back a
+// template's longpollid is held until that template is out of date.
 // C-API counterpart: kth_chain_async_fetch_mining_template.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_template(method_context& ctx, request const& req) {
@@ -239,6 +275,7 @@ get_block_template(method_context& ctx, request const& req) {
         co_return invalid_params();
     }
     size_t count = 0;
+    std::optional<std::string> longpollid;
     for (auto element : params) {
         simdjson::ondemand::object request_object;
         if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
@@ -255,10 +292,32 @@ get_block_template(method_context& ctx, request const& req) {
                     "only template mode is supported"));
             }
         }
+        std::string_view id;
+        auto const id_error = request_object["longpollid"].get_string().get(id);
+        if (id_error != simdjson::NO_SUCH_FIELD) {
+            if (id_error != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            longpollid.emplace(id);
+        }
+    }
+
+    // An id that names another tip, or no state this node gave out, is
+    // answered at once.
+    //
+    // The client holds the template of the id it sent, so the answer to its
+    // long poll is a later one: not that one again out of the template cache.
+    std::optional<uint64_t> held_generation;
+    if (longpollid) {
+        auto const watched = parse_longpollid(*longpollid);
+        if (watched) {
+            co_await wait_for_new_template(ctx, *watched);
+            held_generation = watched->mempool_generation;
+        }
     }
 
     auto const tmpl = co_await ctx.chain.fetch_mining_template(
-        blockchain::default_coinbase_reserve_size);
+        blockchain::default_coinbase_reserve_size, std::nullopt, held_generation);
     if ( ! tmpl) {
         co_return kth::fail(from_code(tmpl.error()));
     }
@@ -999,6 +1058,118 @@ send_raw_transaction(method_context& ctx, request const& req) {
     co_return w.str();
 }
 
+// testmempoolaccept [rawtx] (allowhighfees) -> whether the mempool would admit
+// the transaction. It runs the checks sendrawtransaction runs, through the
+// same admission path, but the transaction is neither added to the pool nor
+// announced. One transaction per call. allowhighfees is accepted and changes
+// nothing: the node sets no maximum fee. A refusal names missing inputs, a
+// transaction the pool already holds, or a conflict with a pooled spend, the
+// last two with BIP61's code 18 (duplicate); any other refusal is the node's
+// own reason.
+// C-API counterpart: none yet (kth_chain_transaction_validate does not apply
+// the pool's first-seen rule).
+::asio::awaitable<std::expected<std::string, rpc_error>>
+test_mempool_accept(method_context& ctx, request const& req) {
+    auto const invalid_params = [] {
+        return kth::fail(make_error(error_code::invalid_params,
+            "testmempoolaccept requires [[rawtx]] and an optional allowhighfees boolean"));
+    };
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(req.params.empty() ? std::string_view{"[]"} : req.params);
+    simdjson::ondemand::document doc;
+    simdjson::ondemand::array params;
+    if (parser.iterate(padded).get(doc) != simdjson::SUCCESS ||
+        doc.get_array().get(params) != simdjson::SUCCESS) {
+        co_return invalid_params();
+    }
+    std::string rawtx;
+    size_t transactions = 0;
+    size_t count = 0;
+    for (auto element : params) {
+        simdjson::ondemand::value value;
+        if (element.get(value) != simdjson::SUCCESS) {
+            co_return invalid_params();
+        }
+        if (count == 0) {
+            simdjson::ondemand::array rawtxs;
+            if (value.get_array().get(rawtxs) != simdjson::SUCCESS) {
+                co_return invalid_params();
+            }
+            for (auto entry : rawtxs) {
+                std::string_view text;
+                if (entry.get_string().get(text) != simdjson::SUCCESS) {
+                    co_return invalid_params();
+                }
+                if (transactions++ == 0) {
+                    rawtx.assign(text);
+                }
+            }
+        } else if (count == 1) {
+            simdjson::ondemand::json_type type;
+            if (value.type().get(type) != simdjson::SUCCESS ||
+                (type != simdjson::ondemand::json_type::boolean &&
+                 type != simdjson::ondemand::json_type::null)) {
+                co_return invalid_params();
+            }
+        } else {
+            co_return invalid_params();
+        }
+        ++count;
+    }
+    if (count == 0) {
+        co_return invalid_params();
+    }
+    if (transactions != 1) {
+        co_return kth::fail(make_error(error_code::invalid_parameter,
+            "testmempoolaccept takes exactly one transaction"));
+    }
+
+    auto const raw = decode_base16(rawtx);
+    if ( ! raw) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not valid hex"));
+    }
+    byte_reader reader(*raw);
+    auto tx = domain::chain::transaction::from_data(reader, /*wire*/ true);
+    if ( ! tx || ! reader.is_exhausted()) {
+        co_return kth::fail(make_error(error_code::deserialization_error,
+            "rawtx is not a decodable transaction"));
+    }
+
+    auto const pooled = std::make_shared<domain::message::transaction>(std::move(*tx));
+    auto const tested = co_await ctx.chain.test_accept(pooled);
+
+    mempool_accept_result result{.txid = pooled->hash(), .allowed = tested.has_value()};
+    if (tested) {
+        result.size = pooled->serialized_size(true);
+        // What the mempool prices: the size, or the signature checks it
+        // yields at 50 bytes each if they weigh more.
+        result.vsize = blockchain::virtual_size(result.size, *tested);
+        // Validation filled in the prevouts, so the fee is known now.
+        result.fee = pooled->fees();
+        co_return render_mempool_accept(result);
+    }
+
+    auto const ec = tested.error();
+    // The node could not answer, which says nothing about the transaction.
+    if (ec == error::service_stopped || ec == error::operation_failed ||
+        ec == ::asio::error::operation_aborted) {
+        co_return kth::fail(make_error(error_code::internal_error, ec.message()));
+    }
+    if (ec == error::missing_previous_output) {
+        result.reject_reason = "missing-inputs";
+    } else if (ec == error::duplicate_transaction) {
+        result.reject_reason = "18: txn-already-in-mempool";
+        result.reject_details = ec.message();
+    } else if (ec == error::double_spend_mempool) {
+        result.reject_reason = "18: txn-mempool-conflict";
+        result.reject_details = ec.message();
+    } else {
+        result.reject_reason = ec.message();
+    }
+    co_return render_mempool_accept(result);
+}
+
 // validateaddress <address> -> whether it is a P2PKH or P2SH address of this
 // node's network and, if it is, its cashaddr form and the scriptPubKey it pays.
 // C-API counterpart: kth_wallet_payment_address_parse_from.
@@ -1494,6 +1665,7 @@ void register_builtin_methods(dispatcher& d) {
     d.add("getrawtransaction", get_raw_transaction);
     d.add("getblock", get_block);
     d.add("sendrawtransaction", send_raw_transaction);
+    d.add("testmempoolaccept", test_mempool_accept);
     d.add("validateaddress", validate_address);
     d.add("getindexinfo", get_index_info);
     d.add("decoderawtransaction", decode_raw_transaction);

@@ -5,6 +5,7 @@
 #include <kth/node/detail/local_admission_tasks.hpp>
 
 #include <utility>
+#include <variant>
 
 #include <asio/as_tuple.hpp>
 #include <asio/deferred.hpp>
@@ -66,6 +67,19 @@ namespace kth::node::detail {
     if (send_ec) {
         spdlog::debug("[local_admission] Coordinator gone; outcome of submission {} dropped with it",
             submission);
+    }
+}
+
+void close_and_refuse_unread_submissions(sync::sync_coordinator_event_channel& events) {
+    events.cancel();
+    events.close();
+    while (events.try_receive([](std::error_code ec, sync::sync_coordinator_event event) {
+        if (ec) return;
+        auto const* submitted = std::get_if<sync::local_block_submitted>(&event);
+        if (submitted == nullptr || ! submitted->submission.reply) return;
+        (void)submitted->submission.reply->try_send(
+            blockchain::block_submission_result(error::service_stopped));
+    })) {
     }
 }
 

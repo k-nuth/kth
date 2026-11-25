@@ -8,7 +8,9 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/data.hpp>
@@ -51,14 +53,9 @@ struct KD_API send_compact {
     size_t serialized_size(uint32_t version) const;
 
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "sendcmpct";
+    static constexpr uint32_t version_minimum = version::level::bip152;
+    static constexpr uint32_t version_maximum = version::level::bip152;
 
 
 private:

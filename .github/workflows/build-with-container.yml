@@ -316,7 +316,7 @@ jobs:
 
             "$METRICS" phase-start deps
             set +e
-            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o with_websocket=True --format=json --out-file=build/dependency-graph.json
+            conan install conanfile.py --lockfile=build/conan.lock -of build --build=missing -pr:b linux-ci-cd -pr:h linux-ci-cd -o march_id=ZLm9Pjh -o tests=True -o consensus=True $EXTRA_CONAN_OPTS -o websocket=True --format=json --out-file=build/dependency-graph.json
             rc=$?
             set -e
             "$METRICS" phase-end deps "$rc"
@@ -641,6 +641,9 @@ jobs:
             build/build/Release/ci-test-evidence/**/*.json
             build/build/Release/ci-test-evidence/**/*.cpp
             build/build/Release/ci-test-evidence/**/*.rsp
+            # The log each node test keeps of its own run, written to the
+            # temporary directory of its shard.
+            build/build/Release/ci-tests/**/tmp/*_dump.log
             build/package-validation.json
             build/dependency-binaries.json
           if-no-files-found: warn

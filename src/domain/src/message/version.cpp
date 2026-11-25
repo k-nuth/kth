@@ -8,10 +8,7 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 namespace kth::domain::message {
 
-std::string const version::command = "version";
 //const bounds message::version::version = { level::minimum, level::maximum };
-uint32_t const message::version::version_minimum = level::minimum;
-uint32_t const message::version::version_maximum = level::maximum;
 
 version::version(uint32_t value, uint64_t services, uint64_t timestamp, network_address const& address_receiver, network_address const& address_sender, uint64_t nonce, std::string const& user_agent, uint32_t start_height, bool relay)
     : value_(value), services_(services), timestamp_(timestamp), address_receiver_(address_receiver), address_sender_(address_sender), nonce_(nonce), user_agent_(user_agent), start_height_(start_height), relay_(relay) {

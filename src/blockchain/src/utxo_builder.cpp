@@ -398,13 +398,14 @@ expect<utxo_raw_delta> process_compact_block_utxos(
         }
 
 #ifdef KTH_UTXOZ_REFERENCE_MODE
-        // Reference: 8-byte ref = {file_number, data_pos + tx_start}
-        reference_utxo_ref ref{
-            static_cast<uint32_t>(file_number),
+        // Reference: where the transaction is in the blk*.dat files, the file
+        // and the absolute offset in it, in place of the serialized output.
+        utxoz::reference_location const location{
+            uint32_t(file_number),
             block_data_pos + out.tx_start
         };
-        utxo_raw_value::bytes value(8, boost::container::default_init);
-        std::memcpy(value.data(), &ref, 8);
+        utxo_raw_value::bytes value(utxoz::reference_value_size, boost::container::default_init);
+        std::memcpy(value.data(), &location, utxoz::reference_value_size);
 #else
         auto value = serialize_utxo_raw_value(out.raw, height, median_time_past, out.coinbase);
 #endif

@@ -206,6 +206,13 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--net.manual_attempt_limit", cfg.network.manual_attempt_limit);
     app.add_option("--net.connect_batch_size",   cfg.network.connect_batch_size);
     app.add_option("--net.connect_timeout_seconds", cfg.network.connect_timeout_seconds);
+    // Read by every build, so that one without the feature refuses it (see
+    // check_proxy) and never takes a proxy it was given for no proxy at all.
+    app.add_option("--net.proxy", cfg.network.proxy,
+        "SOCKS5 proxy as numeric IP:port; empty disables proxying. "
+        "Needs a build with the option socks5.");
+    app.add_option("--net.proxy_randomize", cfg.network.proxy_randomize,
+        "Use fresh SOCKS5 credentials for each outbound connection (default true).");
     app.add_option("--net.channel_handshake_seconds", cfg.network.channel_handshake_seconds);
     app.add_option("--net.channel_heartbeat_minutes", cfg.network.channel_heartbeat_minutes);
     app.add_option("--net.channel_inactivity_minutes", cfg.network.channel_inactivity_minutes);
@@ -288,6 +295,12 @@ void add_settings(CLI::App& app, configuration& cfg) {
 #endif
 
     // [node]
+    // Known to every build: a build without the feature refuses it (see
+    // check_bloom_filters) rather than ignore it in a configuration file.
+    app.add_option("--node.bloom_filters",         cfg.node.bloom_filters,
+        "Serve wallets that load a bloom filter: filterload, filteradd, filterclear and merkleblock "
+        "answers. Needs a build with the option bloom_filters, where it is on by default; "
+        "off in a build without it.");
     app.add_option("--node.block_latency_seconds", cfg.node.block_latency_seconds);
     app.add_option("--node.notify_limit_hours",    cfg.chain.notify_limit_hours);
     app.add_option("--node.byte_fee_satoshis",     cfg.chain.byte_fee_satoshis);
@@ -322,6 +335,11 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.refresh_transactions",           cfg.node.refresh_transactions);
     app.add_option("--node.compact_blocks_high_bandwidth",  cfg.node.compact_blocks_high_bandwidth);
     app.add_option("--node.ds_proofs",                      cfg.node.ds_proofs_enabled);
+#if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
+    app.add_option("--node.compact_filters",                cfg.node.compact_filters,
+        "Serve compact block filters to light wallets: getcfilters, getcfheaders and getcfcheckpt "
+        "(default false). Not on a pruning node.");
+#endif
     add_enum_option(app, "--node.display",
         cfg.node.display, parse_display_mode,
         "Display mode (tui, log, daemon).");
@@ -341,6 +359,14 @@ void add_settings(CLI::App& app, configuration& cfg) {
         "getblocktemplatelight jobs to keep cached (default 10).");
     app.add_option("--rpc.gbt_store_time", cfg.rpc.gbt_store_time,
         "Seconds to keep a getblocktemplatelight job (default 3600).");
+
+    // [sv2]
+    app.add_option("--sv2.enabled", cfg.sv2.enabled,
+        "Enable the plaintext Stratum V2 Template Provider. Needs a build with the option sv2.");
+    app.add_option("--sv2.bind", cfg.sv2.bind,
+        "Address the Template Provider binds to (default 127.0.0.1).");
+    app.add_option("--sv2.port", cfg.sv2.port,
+        "TCP port for the Template Provider (default 8442).");
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
@@ -381,6 +407,66 @@ void set_flat_config(CLI::App& app, std::filesystem::path const& config_path) {
 
 // Preserve the historical non-BCH configuration restriction. BCH uses the
 // independent Knuth policy and can disable it without relaxing consensus.
+// A filter header chains back to the first block, and a filter is built from
+// its block: a node that removes old blocks can serve neither.
+bool check_compact_filters(configuration const& cfg, std::ostream& error) {
+    if (cfg.node.compact_filters && cfg.database.prune_keep_blocks != 0) {
+        error << "Error: node.compact_filters is not allowed on a pruning node "
+                 "(db.prune_keep_blocks); it needs every block." << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// A build without the feature has no Template Provider, so it does not start
+// as if it listened.
+bool check_sv2([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(KTH_WITH_SV2)
+    if (cfg.sv2.enabled) {
+        error << "Error: sv2.enabled needs a build with the option sv2." << std::endl;
+        return false;
+    }
+#endif
+    return true;
+}
+
+// A build without the feature does not serve bloom filters, so it does not
+// start as if it did.
+bool check_bloom_filters([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+#if ! defined(KTH_WITH_BLOOM_FILTERS)
+    if (cfg.node.bloom_filters) {
+        error << "Error: node.bloom_filters needs a build with the option bloom_filters." << std::endl;
+        return false;
+    }
+#endif
+    return true;
+}
+
+// A node given a proxy was asked not to connect directly. A build without the
+// feature cannot use one, so it refuses to start: going on would connect
+// directly and show every peer the address the proxy was there to hide.
+bool check_proxy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
+// A WebAssembly build has no network settings: it makes no connections of its own.
+#if ! defined(__EMSCRIPTEN__)
+#if ! defined(KTH_WITH_SOCKS5)
+    if ( ! cfg.network.proxy.empty()) {
+        error << "Error: net.proxy needs a build with the option socks5; "
+                 "this one would connect directly." << std::endl;
+        return false;
+    }
+#endif
+    // WebSocket discovery resolves, with the system's resolver, the names its
+    // peers announce. Behind a proxy that is a lookup no proxy carries, of a
+    // name a peer chose.
+    if ( ! cfg.network.proxy.empty() && cfg.network.ws_discovery) {
+        error << "Error: net.ws_discovery is not allowed with net.proxy; "
+                 "it resolves names without the proxy." << std::endl;
+        return false;
+    }
+#endif // ! defined(__EMSCRIPTEN__)
+    return true;
+}
+
 bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
 #if !defined(KTH_CURRENCY_BCH)
     if (cfg.net == domain::config::network::mainnet && cfg.chain.accept_non_standard_transactions) {
@@ -508,7 +594,9 @@ bool parser::parse(int argc, char const* argv[], std::ostream& error) {
             }
         }
 
-        if ( ! check_standardness_policy(configured, error)) {
+        if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
+            || ! check_sv2(configured, error)) {
             return false;
         }
 
@@ -584,7 +672,9 @@ bool parser::parse_from_file(kth::path const& config_path, std::ostream& error) 
         }
     }
 
-    if ( ! check_standardness_policy(configured, error)) {
+    if ( ! check_standardness_policy(configured, error) || ! check_compact_filters(configured, error)
+            || ! check_proxy(configured, error) || ! check_bloom_filters(configured, error)
+            || ! check_sv2(configured, error)) {
         return false;
     }
 

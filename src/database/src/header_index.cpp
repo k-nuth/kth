@@ -48,7 +48,7 @@ header_index::header_index(size_t capacity)
     header_received_times_.resize(capacity_, 0);
 
     // Active chain (height -> index), empty until headers are linked in
-    active_.resize(capacity_, null_index);
+    active_ = std::make_unique<std::atomic<index_t>[]>(capacity_);
 
     // Reserve hash map capacity
     hash_to_idx_.reserve(capacity_);
@@ -414,8 +414,11 @@ void header_index::active_push(index_t idx) {
         return;
     }
     // Write the entry, then publish it: a reader that sees the new size is
-    // guaranteed to see the entry too.
-    active_[size] = idx;
+    // guaranteed to see the entry too. The slot is a release of its own: a
+    // reader that took the size before a chain switch can find the entry of
+    // the new chain in a slot it already counts as valid, and has to see that
+    // header as add() left it.
+    active_[size].store(idx, std::memory_order_release);
     active_size_.store(size + 1, std::memory_order_release);
 }
 
@@ -443,7 +446,7 @@ header_index::index_t header_index::active_at(int32_t height) const {
     if (height >= active_size_.load(std::memory_order_acquire)) {
         return null_index;
     }
-    return active_[height];
+    return active_[height].load(std::memory_order_acquire);
 }
 
 int32_t header_index::active_tip_height() const {

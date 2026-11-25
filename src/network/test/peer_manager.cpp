@@ -116,6 +116,53 @@ TEST_CASE("peer_manager construction unlimited", "[peer_manager]") {
     REQUIRE(!manager.stopped());
 }
 
+TEST_CASE("peer_manager keys proxied peers by destination", "[peer_manager][socks5]") {
+    ::asio::io_context ctx;
+    peer_manager manager(ctx.get_executor());
+    auto const settings = make_test_settings_pm();
+    auto make = [&](std::string const& host) {
+        return std::make_shared<peer_session>(::asio::ip::tcp::socket(ctx), settings, false,
+            infrastructure::config::endpoint(host, 8333));
+    };
+    auto first = make("First.Example.");
+    auto second = make("second.example");
+    auto duplicate = make("first.example");
+    CHECK( ! first->has_numeric_authority());
+    CHECK(first->destination().host() == "first.example");
+    CHECK(first->authority_with_agent() == "first.example:8333");
+    auto numeric = make("[2001:DB8::1]");
+    CHECK(numeric->has_numeric_authority());
+    CHECK(numeric->authority().to_hostname() == "[2001:db8::1]");
+
+    std::vector<code> admissions;
+    std::vector<bool> found;
+    bool done = false;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        admissions.push_back(co_await manager.add(first));
+        admissions.push_back(co_await manager.add(second));
+        admissions.push_back(co_await manager.add(duplicate));
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        found.push_back(co_await manager.exists_by_destination(
+            infrastructure::config::endpoint("missing.example", 8333)));
+        found.push_back(co_await manager.exists_by_authority(infrastructure::config::authority::any()));
+        found.push_back(co_await manager.exists_by_ip(::asio::ip::address_v6::any()));
+        co_await manager.remove(first);
+        found.push_back(co_await manager.exists_by_destination(first->destination()));
+        manager.stop_all();
+        found.push_back(co_await manager.exists_by_destination(second->destination()));
+        done = true;
+    }, ::asio::detached);
+    run_until_pm(ctx, [&] { return done; });
+    REQUIRE(done);
+    REQUIRE(admissions.size() == 3);
+    CHECK(admissions[0] == error::success);
+    CHECK(admissions[1] == error::success);
+    CHECK(admissions[2] == error::address_in_use);
+    CHECK(found == std::vector<bool>{true, false, false, false, false, false});
+    kth::test::drain_context(ctx);
+    CHECK(manager.count_snapshot() == 0);
+}
+
 // =============================================================================
 // Add/Remove Tests
 // =============================================================================
@@ -169,6 +216,62 @@ TEST_CASE("peer_manager add multiple peers", "[peer_manager]") {
 
     REQUIRE(added == 5);
     REQUIRE(manager.count_snapshot() == 5);
+}
+
+// BIP152: a node asks a few peers for high-bandwidth compact blocks. The
+// slots are counted where the peers are held, so one is free again as its
+// peer is removed, with nothing else to tell.
+TEST_CASE("peer_manager gives out compact block slots and takes them back with their peers", "[peer_manager][compact_blocks]") {
+    ::asio::io_context ctx;
+    test_peers pool(ctx);
+    peer_manager manager(ctx.get_executor(), 100);
+
+    std::vector<peer_session::ptr> peers;
+    for (int i = 0; i < 4; ++i) {
+        auto peer = pool.make();
+        peer->set_nonce(2000 + i);
+        peers.push_back(peer);
+    }
+    auto const stranger = pool.make();
+    stranger->set_nonce(2999);
+
+    bool done = false;
+    std::vector<bool> taken;
+    bool again = false;
+    bool unknown = true;
+    size_t held = 0;
+    bool fourth_before = true;
+    bool fourth_after = false;
+    size_t held_after = 0;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        for (auto const& peer : peers) {
+            (void)co_await manager.add(peer);
+        }
+        for (size_t i = 0; i < 3; ++i) {
+            taken.push_back(co_await manager.take_compact_slot(peers[i], 3));
+        }
+        // Its own slot, asked for again: still one slot.
+        again = co_await manager.take_compact_slot(peers[0], 3);
+        // A peer the manager does not hold gets none.
+        unknown = co_await manager.take_compact_slot(stranger, 3);
+        fourth_before = co_await manager.take_compact_slot(peers[3], 3);
+        held = co_await manager.compact_slots();
+
+        co_await manager.remove(peers[1]);
+        held_after = co_await manager.compact_slots();
+        fourth_after = co_await manager.take_compact_slot(peers[3], 3);
+        done = true;
+    }, ::asio::detached);
+    run_until_pm(ctx, [&]{ return done; });
+
+    REQUIRE(done);
+    CHECK(taken == std::vector<bool>{true, true, true});
+    CHECK(again);
+    CHECK_FALSE(unknown);
+    CHECK_FALSE(fourth_before);
+    CHECK(held == 3);
+    CHECK(held_after == 2);
+    CHECK(fourth_after);
 }
 
 TEST_CASE("peer_manager add duplicate nonce rejected", "[peer_manager]") {

@@ -9,6 +9,7 @@
 #include <istream>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
@@ -222,17 +223,9 @@ struct KD_API version {
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
-    static
-    std::string const command;
-
-    //static
-    //const bounds version;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "version";
+    static constexpr uint32_t version_minimum = level::minimum;
+    static constexpr uint32_t version_maximum = level::maximum;
 
 
 private:

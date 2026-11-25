@@ -12,8 +12,11 @@
 #include <stop_token>
 #include <variant>
 
+#include <asio/as_tuple.hpp>
+#include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
+#include <asio/use_awaitable.hpp>
 #include <asio/use_future.hpp>
 
 #include <kth/node/detail/local_admission_tasks.hpp>
@@ -358,4 +361,59 @@ TEST_CASE("storage: a local body that is stored is reported stored on its slot, 
     CHECK(contiguous.load() == 2u);
     // Storage did not wait on the full shared output, and did not use it.
     CHECK(drained_count(output) == 1u);
+}
+
+// -----------------------------------------------------------------------------
+// The coordinator's exit
+// -----------------------------------------------------------------------------
+
+TEST_CASE("coordinator exit: a submission left unread in its events is answered as stopped",
+          "[local_admission][tasks][shutdown]") {
+    ::asio::io_context ioc;
+    sync_coordinator_event_channel events(ioc.get_executor(), 4);
+
+    // As after a stop that overtook them: the stop the coordinator left on,
+    // and behind it two submissions it never read, around an event of
+    // another kind.
+    auto const first = std::make_shared<blockchain::block_submission_reply>(1);
+    auto const second = std::make_shared<blockchain::block_submission_reply>(1);
+    REQUIRE(events.try_send(std::error_code{}, stop_request{}));
+    REQUIRE(events.try_send(std::error_code{}, local_block_submitted{{nullptr, first}}));
+    REQUIRE(events.try_send(std::error_code{}, peers_updated{}));
+    REQUIRE(events.try_send(std::error_code{}, local_block_submitted{{nullptr, second}}));
+
+    close_and_refuse_unread_submissions(events);
+
+    for (auto const& reply : {first, second}) {
+        std::error_code ec;
+        auto const answer = reply->try_receive(ec);
+        REQUIRE(bool(answer));
+        CHECK(answer->error == error::service_stopped);
+    }
+    // Nothing is left in it and nothing more is taken.
+    CHECK_FALSE(events.try_receive([](std::error_code, sync_coordinator_event) {}));
+    CHECK_FALSE(events.try_send(std::error_code{}, stop_request{}));
+}
+
+TEST_CASE("coordinator exit: a sender waiting for room in its events is told the channel closed",
+          "[local_admission][tasks][shutdown]") {
+    ::asio::io_context ioc;
+    sync_coordinator_event_channel events(ioc.get_executor(), 1);
+    REQUIRE(events.try_send(std::error_code{}, stop_request{}));
+
+    // The bridge's own position: it holds the submission while it waits for
+    // room, and answers it itself when the send fails.
+    auto waiting = ::asio::co_spawn(ioc, [&]() -> ::asio::awaitable<std::error_code> {
+        auto [ec] = co_await events.async_send(std::error_code{}, local_block_submitted{},
+            ::asio::as_tuple(::asio::use_awaitable));
+        co_return ec;
+    }, ::asio::use_future);
+    drain(ioc);
+    REQUIRE(waiting.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
+
+    close_and_refuse_unread_submissions(events);
+    drain(ioc);
+
+    REQUIRE(waiting.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+    CHECK(bool(waiting.get()));
 }
