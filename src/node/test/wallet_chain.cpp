@@ -24,62 +24,14 @@
 #include <kth/node/sync/reorg.hpp>
 #include <kth/node/wallet/service.hpp>
 
-#include "sync_harness.hpp"
-#include "../../blockchain/test/reorg_chain_fixture.hpp"
-#include "../../blockchain/test/regtest_miner.hpp"
-
-using namespace kth;
-using namespace std::chrono_literals;
-namespace chain = kth::domain::chain;
-namespace message = kth::domain::message;
-namespace wallet = kth::node::wallet;
+#include "wallet_chain_fixture.hpp"
 
 namespace {
-
-template <typename Awaitable>
-auto wait_for(wallet::service& service, Awaitable&& operation) {
-    auto future = ::asio::co_spawn(service.executor(), std::forward<Awaitable>(operation), ::asio::use_future);
-    REQUIRE(future.wait_for(60s) == std::future_status::ready);
-    return future.get();
-}
 
 hash_digest digest_of(uint32_t seed) {
     uint8_t const bytes[] = {uint8_t(seed), uint8_t(seed >> 8), uint8_t(seed >> 16), uint8_t(seed >> 24), 0xc3};
     return sha256_hash(bytes);
 }
-
-// Blocks 1 to `length` paying the miner's script; when `spend_at` is set,
-// that block spends block 1's coinbase back to the miner, so that coinbase is
-// fully spent. The blocks are stored and connected by the fixture.
-struct stored_chain {
-    std::vector<chain::block> blocks;
-    std::optional<chain::transaction> spend;
-    test::chain_fixture fixture;
-
-    stored_chain(char const* name, uint32_t length, std::optional<uint32_t> spend_at) : fixture(name) {
-        auto const flags = blockchain::settings(domain::config::network::regtest).enabled_flags();
-        auto const base_time = uint32_t(zulu_time()) - (length + 30) * test::block_spacing;
-        auto previous = chain::block::genesis_regtest().hash();
-        for (uint32_t height = 1; height <= length; ++height) {
-            std::vector<chain::transaction> txs;
-            uint64_t fees = 0;
-            if (spend_at && height == *spend_at) {
-                auto const& coinbase = blocks.front().transactions().front();
-                spend = test::spend_p2pkh(coinbase, 0, coinbase.outputs()[0].value() - 1000, flags);
-                txs.push_back(*spend);
-                fees = 1000;
-            }
-            blocks.push_back(test::mine_block(previous, height, base_time + height * test::block_spacing, 3, std::move(txs), fees));
-            previous = blocks.back().hash();
-        }
-        REQUIRE(fixture.created());
-        REQUIRE(fixture.start());
-        REQUIRE(fixture.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
-        test::persist_headers(fixture, blocks, 1);
-        test::connect_bodies(fixture, blocks, 1);
-        REQUIRE(fixture.chain().chain_view()->connected_tip_height == length);
-    }
-};
 
 } // namespace
 

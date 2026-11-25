@@ -33,6 +33,7 @@ on:
       - src/node/include/kth/node/wallet/**
       - src/node/src/wallet/**
       - src/node/test/wallet*.cpp
+      - src/node/test/wallet*.hpp
       - src/node/test/sync_harness.hpp
       - conanfile.py
       - conan.lock
