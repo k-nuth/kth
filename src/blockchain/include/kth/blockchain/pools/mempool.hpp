@@ -10,7 +10,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <variant>
 #include <vector>
+
+#include <asio/experimental/channel_select.hpp>
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure/utility/prioritized_mutex.hpp>
@@ -147,6 +150,14 @@ struct mempool {
         return generation_.load(std::memory_order_relaxed);
     }
 
+    /// Rung on every mutation, for one consumer that waits for the pool to
+    /// change instead of asking again. It holds one ring: a mutation that
+    /// finds it full adds nothing, because the ring only says "read the pool
+    /// again" and the one already waiting says it. Whoever receives it takes
+    /// it, so a second consumer would be woken for some changes only.
+    using doorbell = ::asio::experimental::select_channel<std::monostate>;
+    doorbell& changes() { return changes_; }
+
 private:
     // Erase one tx from pool_ and release its input-outpoint claims in
     // spent_by_. Non-recursive: descendants are untouched. True if this call
@@ -167,6 +178,7 @@ private:
     mempool_map<outpoint_key, hash_digest, salted_outpoint_hasher> spent_by_;
     mempool_stats stats_;
     std::atomic<uint64_t> generation_{0};
+    doorbell changes_{1};
 };
 
 // A set of entries the pool actually held, and the number that labels it.

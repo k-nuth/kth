@@ -13,6 +13,9 @@
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/node/detail/compact_filters.hpp>
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -872,11 +875,11 @@ static
             fast_peers.reserve(peers.size());
             size_t slow_count = 0;
             for (auto const& p : peers) {
-                if (network.is_slow_peer(p->authority())) {
+                if (p->has_numeric_authority() && network.is_slow_peer(p->authority())) {
                     ++slow_count;
                     auto speed = network.get_peer_speed(p->authority());
                     spdlog::debug("[peer_provider] Excluding slow peer {} ({:.1f}ms/block)",
-                        p->authority(), speed);
+                        p->destination(), speed);
                 } else {
                     fast_peers.push_back(p);
                 }
@@ -959,10 +962,12 @@ static
                     bool found = false;
                     for (auto const& p : peers) {
                         if (p->nonce() == perf->peer_nonce) {
-                            network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
-                            auto speed = network.get_peer_speed(p->authority());
-                            spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
-                                p->authority(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            if (p->has_numeric_authority()) {
+                                network.record_peer_performance(p, perf->blocks_downloaded, perf->download_time_ms);
+                                auto speed = network.get_peer_speed(p->authority());
+                                spdlog::debug("[peer_provider] Perf recorded: {} blocks={}  time={}ms  avg={:.1f}ms/blk",
+                                    p->destination(), perf->blocks_downloaded, perf->download_time_ms, speed);
+                            }
                             found = true;
                             break;
                         }
@@ -2597,6 +2602,10 @@ static
                 announce_connected_tip();
                 // The orphans a connected block resolves (detail/tx_relay.hpp).
                 network.tx_relay().tip_moved();
+#if defined(KTH_WITH_NEUTRINO)
+                // The compact filter index reads the blocks connected since.
+                network.compact_filters().tip_moved();
+#endif
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
@@ -2815,8 +2824,10 @@ static
         rejection_ack.close();
         utxo_wake.cancel();
         utxo_wake.close();
-        coordinator_events.cancel();
-        coordinator_events.close();
+        // A submission that reached the channel and was never read, such as
+        // one queued behind the stop, is answered here: its requester waits
+        // for that and nothing else.
+        detail::close_and_refuse_unread_submissions(coordinator_events);
         spdlog::debug("[sync_coordinator] Task ended");
     });
 

@@ -10,9 +10,6 @@
 #include <kth/infrastructure/utility/limits.hpp>
 namespace kth::domain::message {
 
-std::string const filter_load::command = "filterload";
-uint32_t const filter_load::version_minimum = version::level::bip37;
-uint32_t const filter_load::version_maximum = version::level::maximum;
 
 filter_load::filter_load(data_chunk filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags)
     : filter_(std::move(filter)), hash_functions_(hash_functions), tweak_(tweak), flags_(flags)

@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const xverack::command = "xverack";
-uint32_t const xverack::version_minimum = version::level::minimum;
-uint32_t const xverack::version_maximum = version::level::maximum;
 
 // Serialization.
 //-----------------------------------------------------------------------------

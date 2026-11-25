@@ -379,6 +379,8 @@ set(kth_headers
     include/kth/infrastructure/utility/assert.hpp
     include/kth/infrastructure/utility/atomic.hpp
     include/kth/infrastructure/utility/binary.hpp
+    include/kth/infrastructure/utility/bit_reader.hpp
+    include/kth/infrastructure/utility/bit_writer.hpp
     include/kth/infrastructure/utility/byte_reader.hpp
     include/kth/infrastructure/utility/byte_writer.hpp
     include/kth/infrastructure/utility/collection.hpp
@@ -739,6 +741,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/string_algorithms.cpp
     test/utility/parse_integer.cpp
     test/utility/serializer.cpp
+    test/utility/bit_reader.cpp
+    test/utility/bit_writer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
     test/utility/byte_writer.cpp

@@ -25,6 +25,11 @@ using listener_event = std::variant<::asio::ip::tcp::socket, upgrade_complete>;
 
 ::asio::awaitable<void> p2p_node::run_websocket_inbound() {
     if (!settings_.ws_enabled) co_return;
+    // Like run_inbound(): a listener answers on the node's own address.
+    if ( ! settings_.proxy.empty()) {
+        spdlog::info("[p2p_node] WebSocket inbound connections disabled (net.proxy is set)");
+        co_return;
+    }
     auto strand = ::asio::make_strand(pool_.get_executor());
     auto service = [this]() -> ::asio::awaitable<void> {
         using namespace ::asio::experimental;

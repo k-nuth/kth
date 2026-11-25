@@ -7,7 +7,9 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
 #include <kth/infrastructure/utility/byte_writer.hpp>
@@ -44,14 +46,9 @@ struct KD_API memory_pool {
         return satoshi_fixed_size(version);
     }
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "mempool";
+    static constexpr uint32_t version_minimum = version::level::bip35;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 };
 
 } // namespace kth::domain::message

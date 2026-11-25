@@ -85,7 +85,7 @@ TEST_CASE("reject from data insufficient bytes failure", "[reject]") {
 TEST_CASE("reject from data insufficient version failure", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -99,7 +99,7 @@ TEST_CASE("reject from data insufficient version failure", "[reject]") {
 TEST_CASE("reject from data code malformed success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::malformed,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -115,7 +115,7 @@ TEST_CASE("reject from data code malformed success", "[reject]") {
 TEST_CASE("reject from data code invalid success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::invalid,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -132,7 +132,7 @@ TEST_CASE("reject from data code invalid success", "[reject]") {
 TEST_CASE("reject from data code obsolete success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::obsolete,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -148,7 +148,7 @@ TEST_CASE("reject from data code obsolete success", "[reject]") {
 TEST_CASE("reject from data code duplicate success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::duplicate,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -164,7 +164,7 @@ TEST_CASE("reject from data code duplicate success", "[reject]") {
 TEST_CASE("reject from data code nonstandard success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::nonstandard,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -180,7 +180,7 @@ TEST_CASE("reject from data code nonstandard success", "[reject]") {
 TEST_CASE("reject from data code dust success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -196,7 +196,7 @@ TEST_CASE("reject from data code dust success", "[reject]") {
 TEST_CASE("reject from data code insufficient fee success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::insufficient_fee,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -212,7 +212,7 @@ TEST_CASE("reject from data code insufficient fee success", "[reject]") {
 TEST_CASE("reject from data code checkpoint success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::checkpoint,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -229,7 +229,7 @@ TEST_CASE("reject from data code checkpoint success", "[reject]") {
 TEST_CASE("reject from data code undefined success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::undefined,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
@@ -246,7 +246,7 @@ TEST_CASE("reject from data code undefined success", "[reject]") {
 TEST_CASE("reject from data valid input success", "[reject]") {
     const message::reject expected(
         message::reject::reason_code::dust,
-        message::block::command,
+        std::string{message::block::command},
         reason_text,
         data);
 
