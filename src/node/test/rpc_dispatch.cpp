@@ -1481,6 +1481,10 @@ TEST_CASE("getblocktemplate in proposal mode answers what the node makes of the 
     CHECK(fixture.chain().chain_view() == view);
     CHECK(fixture.chain().headers().find(valid.hash()) == blockchain::header_index::null_index);
     CHECK(propose(valid) == answer("null"));
+
+    // A node that is stopping has no verdict to give: -28, as submitblock.
+    REQUIRE(fixture.chain().stop());
+    CHECK(propose(valid) == node::rpc::build_error("23", -28, "service stopped"));
 }
 
 namespace {

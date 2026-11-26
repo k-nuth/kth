@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <tuple>
 #include <vector>
 
 #include <asio/co_spawn.hpp>
@@ -245,6 +246,37 @@ TEST_CASE("a block proposal off the connected tip is not judged", "[block_propos
         CHECK(result.result == outcome::not_on_tip);
         CHECK(result.validity == block_validity::unknown);
     }
+}
+
+TEST_CASE("a block proposal the chain cannot judge gets no verdict", "[block_proposal]") {
+    chain_fixture fixture("proposal_no_verdict");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const candidate = std::make_shared<domain::message::block const>(
+        proposal(genesis_hash(), now(), coinbase_only(1, subsidy(1))));
+    auto const genesis_idx = chain.headers().find(genesis_hash());
+    REQUIRE(genesis_idx != blockchain::header_index::null_index);
+
+    // Judged at a height that is not its parent's next, or with no parent or
+    // no block: a caller's mistake, and no verdict on the block.
+    for (auto const& [what, proposed, height, parent] : {
+             std::tuple{"a height that is not the parent's next", candidate, size_t(2), genesis_idx},
+             std::tuple{"no parent", candidate, size_t(1), blockchain::header_index::null_index},
+             std::tuple{"no block", domain::message::block::const_ptr{}, size_t(1), genesis_idx}}) {
+        CAPTURE(what);
+        blockchain::batch_rejection rejection;
+        rejection.block = 5;
+        CHECK(blockchain::validate_block_proposal(chain, chain.chain_settings(),
+            domain::config::network::regtest, proposed, height, parent, rejection) == error::operation_failed);
+        CHECK_FALSE(rejection.block);
+    }
+
+    // A chain that has stopped answers no proposal.
+    REQUIRE(chain.stop());
+    auto const stopped = judge(chain, *candidate);
+    CHECK(stopped.result == outcome::failed);
+    CHECK(stopped.error == error::service_stopped);
 }
 
 TEST_CASE("a block proposal judged while a chain transition runs gets no verdict",
