@@ -9,6 +9,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
+#include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -109,6 +112,11 @@ full_node::full_node(configuration const& configuration)
     auto const filters = uint64_t(domain::message::version::service::node_compact_filters);
     network_settings_.services = (network_settings_.services & ~filters) | (served ? filters : 0);
     compact_filter_file_ = configuration.database.directory / "compact_filter_headers";
+#endif
+#if defined(KTH_WITH_SV2)
+    // The Noise key files are kept with the chain they serve, so a node
+    // started from another directory keeps its identity.
+    sv2_settings_ = sv2::with_noise_files(sv2_settings_, configuration.database.directory);
 #endif
 #endif
 }
@@ -262,6 +270,27 @@ full_node::~full_node() {
         });
     }
 
+#if defined(KTH_WITH_SV2) && ! defined(__EMSCRIPTEN__)
+    // The Noise credentials are loaded and checked before anything else
+    // starts: a node asked for Noise with keys or a certificate it cannot use
+    // does not start without its listener.
+    std::optional<sv2::noise_credentials> noise_identity;
+    if (sv2_settings_.enabled && sv2_settings_.noise) {
+        auto const now = sv2::noise_clock();
+        auto loaded = now
+            ? sv2::load_noise_credentials(sv2_settings_, *now)
+            : std::expected<sv2::noise_credentials, std::string>(
+                std::unexpected(std::string(sv2::to_string(now.error()))));
+        if ( ! loaded) {
+            spdlog::error("[node] Cannot start the Stratum V2 Template Provider over Noise: {}",
+                loaded.error());
+            (void)chain_.stop();
+            co_return error::operation_failed;
+        }
+        noise_identity = std::move(*loaded);
+    }
+#endif
+
 // The gRPC server binds first: if it cannot, nothing else has started yet.
 #if defined(KTH_WITH_GRPC) && ! defined(__EMSCRIPTEN__)
     if (rpc_settings_.enabled) {
@@ -334,7 +363,7 @@ full_node::~full_node() {
     if (sv2_settings_.enabled) {
         template_provider_ = std::make_unique<sv2::template_provider>(
             sv2_settings_, network_.thread_pool().get_executor(), chain_,
-            work_changes_.subscribe());
+            work_changes_.subscribe(), std::move(noise_identity));
     } else {
         spdlog::info("[node] Stratum V2 Template Provider disabled (sv2.enabled=false).");
     }

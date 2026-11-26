@@ -362,11 +362,32 @@ void add_settings(CLI::App& app, configuration& cfg) {
 
     // [sv2]
     app.add_option("--sv2.enabled", cfg.sv2.enabled,
-        "Enable the plaintext Stratum V2 Template Provider. Needs a build with the option sv2.");
+        "Enable the Stratum V2 Template Provider, in plaintext unless sv2.noise. Needs a build with the option sv2.");
     app.add_option("--sv2.bind", cfg.sv2.bind,
         "Address the Template Provider binds to (default 127.0.0.1).");
     app.add_option("--sv2.port", cfg.sv2.port,
         "TCP port for the Template Provider (default 8442).");
+#if defined(KTH_WITH_SV2)
+    app.add_option("--sv2.noise", cfg.sv2.noise,
+        "Require the Noise handshake and encrypted frames on every connection (default false).");
+    app.add_option("--sv2.static_key_file", cfg.sv2.static_key_file,
+        "The provider's 32-byte static secret key, owner-only (default sv2_static_key in the data "
+        "directory, created on the first start with sv2.noise). A relative path is taken from the "
+        "data directory.");
+    app.add_option("--sv2.authority_key_file", cfg.sv2.authority_key_file,
+        "The authority's 32-byte secret key, which signs the provider's certificates (default "
+        "sv2_authority_key in the data directory, created on the first start with sv2.noise). "
+        "Not read with sv2.certificate_file.");
+    app.add_option("--sv2.certificate_file", cfg.sv2.certificate_file,
+        "A 74-byte certificate signed offline for the static key; the authority's secret key then "
+        "stays off the node (default empty: the node signs its own).");
+    app.add_option("--sv2.authority_public_key", cfg.sv2.authority_public_key,
+        "The authority public key (sv2-spec 4.7 encoding): required with sv2.certificate_file, "
+        "checked against sv2.authority_key_file otherwise.");
+    app.add_option("--sv2.certificate_validity_seconds", cfg.sv2.certificate_validity_seconds,
+        "Lifetime of the certificates the node signs (default 2592000, 30 days). One is signed at "
+        "start-up and again when less than half of its lifetime is left.");
+#endif
 }
 
 // Read KTH_* env vars once and, for the subset of names that map to CLI11
