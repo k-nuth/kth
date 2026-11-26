@@ -18,6 +18,8 @@
 namespace kth::blockchain {
 
 settings::settings(domain::config::network net) {
+    // minimum_chain_work below: BCHN chainparamsconstants.h (master, 2026-11),
+    // MAINNET_, TESTNET_, TESTNET4_, SCALENET_ and CHIPNET_MINIMUM_CHAIN_WORK.
     namespace abla = kth::domain::chain::abla;
     switch (net) {
         case domain::config::network::mainnet: {
@@ -25,6 +27,7 @@ settings::settings(domain::config::network net) {
             asert_half_life = 2ull * 24 * 60 * 60;   // two days
             default_consensus_block_size = max_block_size::mainnet_new;
             abla_config = abla::default_config(default_consensus_block_size, false);
+            minimum_chain_work = uint256_t("0x0000000000000000000000000000000000000000030fd678912166474fe93f14");
 #endif
             break;
         }
@@ -35,6 +38,7 @@ settings::settings(domain::config::network net) {
             asert_half_life = 60ull * 60;   // one hour
             default_consensus_block_size = max_block_size::testnet3;
             abla_config = abla::default_config(default_consensus_block_size, true);
+            minimum_chain_work = uint256_t("0x00000000000000000000000000000000000000000000011fdbbe582349040762");
 #endif
             break;
         }
@@ -55,6 +59,7 @@ settings::settings(domain::config::network net) {
             asert_half_life = 60ull * 60;   // one hour
             default_consensus_block_size = max_block_size::testnet4;
             abla_config = abla::default_config(default_consensus_block_size, true);
+            minimum_chain_work = uint256_t("0x000000000000000000000000000000000000000000000000bd5a1b5bda45b5da");
             break;
         }
         case domain::config::network::scalenet: {
@@ -63,6 +68,7 @@ settings::settings(domain::config::network net) {
             asert_half_life = 2ull * 24 * 60 * 60;   // two days
             default_consensus_block_size = max_block_size::scalenet;
             abla_config = abla::default_config(default_consensus_block_size, false);
+            minimum_chain_work = uint256_t("0x00000000000000000000000000000000000000000000000003a54dce8032552f");
             break;
         }
         case domain::config::network::tempnet:
@@ -73,6 +79,9 @@ settings::settings(domain::config::network net) {
                 ? 1792065600ULL : 1794744000ULL;
             default_consensus_block_size = max_block_size::chipnet;
             abla_config = abla::default_config(default_consensus_block_size, false);
+            if (net == domain::config::network::chipnet) {
+                minimum_chain_work = uint256_t("0x0000000000000000000000000000000000000000000000007a3195391c4408f2");
+            }
             break;
         }
 #endif

@@ -766,6 +766,62 @@ TEST_CASE("getblockchaininfo dispatch leaves initial download once synchronized"
     REQUIRE(raw.find(R"("initialblockdownload":false)") != std::string::npos);
 }
 
+TEST_CASE("getblockchaininfo stays in initial download below the minimum chain work", "[rpc dispatch]") {
+    // Recent is not enough, as in BCHN: a connected tip with less work than
+    // the network asks for is still initial download.
+    test::chain_fixture fixture("rpc_blockchain_info_min_work", /*notify_limit_hours*/ 0);
+    REQUIRE(fixture.created());
+    fixture.settings().minimum_chain_work = uint256_t(1) << 200;
+    REQUIRE(fixture.start());
+    REQUIRE(fixture.chain().synchronization().synchronized());
+
+    auto const raw = blockchain_info(fixture.chain());
+    REQUIRE(raw.find(R"("initialblockdownload":true)") != std::string::npos);
+}
+
+TEST_CASE("getblockchaininfo leaves initial download once, and headers ahead do not bring it back",
+          "[rpc dispatch]") {
+    // The ordinary limit: the regtest genesis, from 2011, is initial download.
+    test::chain_fixture fixture("rpc_blockchain_info_latch");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    REQUIRE(blockchain_info(fixture.chain()).find(R"("initialblockdownload":true)") != std::string::npos);
+    REQUIRE(fixture.chain().initial_block_download());
+
+    constexpr uint32_t length = 40;
+    auto const base_time = uint32_t(zulu_time()) - (length + 10) * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= length; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    std::vector<domain::chain::block> const first(trunk.begin(), trunk.begin() + 20);
+    std::vector<domain::chain::block> const rest(trunk.begin() + 20, trunk.end());
+
+    // Connected to a recent tip: out.
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(first)).headers_added == first.size());
+    test::persist_headers(fixture, first, 1);
+    test::connect_bodies(fixture, first, 1);
+    CHECK(blockchain_info(fixture.chain()).find(R"("initialblockdownload":false)") != std::string::npos);
+
+    // Twenty headers past the connected tip: still out. The node is behind its
+    // headers, which getmininginfo says as caughtup, and it is not initial
+    // download for that.
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(rest)).headers_added == rest.size());
+    REQUIRE_FALSE(fixture.chain().synchronization().caught_up);
+    auto const raw = blockchain_info(fixture.chain());
+    CHECK(raw.find(R"("initialblockdownload":false)") != std::string::npos);
+    CHECK(raw.find(R"("headers":40)") != std::string::npos);
+    CHECK(raw.find(R"("blocks":20)") != std::string::npos);
+
+    // Latched: a condition that would hold the node in, set after it left,
+    // changes nothing. Nothing raises the minimum work at run time; it stands
+    // in here for a tip that later falls behind, which a test cannot wait for.
+    fixture.settings().minimum_chain_work = uint256_t(1) << 200;
+    CHECK_FALSE(fixture.chain().initial_block_download());
+}
+
 TEST_CASE("getchaintips dispatch reports the connected tip and the branches beyond it", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_chain_tips");
     REQUIRE(fixture.created());
@@ -1584,7 +1640,10 @@ TEST_CASE("getblockchaininfo uses the active header tip while blocks are behind"
     double progress = 1.0;
     REQUIRE(document["result"]["verificationprogress"].get_double().get(progress) == simdjson::SUCCESS);
     REQUIRE(progress == 0.0);
-    REQUIRE(raw.find(R"("initialblockdownload":true)") != std::string::npos);
+    // A limit of zero turns the clock off and regtest asks for no minimum work,
+    // so the node is out of initial download: headers ahead of the connected
+    // tip do not put it back, as in BCHN.
+    REQUIRE(raw.find(R"("initialblockdownload":false)") != std::string::npos);
 }
 #if defined(KTH_CURRENCY_BCH)
 TEST_CASE("RPC tick metadata extends existing replies without replacing block counts", "[rpc dispatch][rpc ticks]") {

@@ -91,7 +91,7 @@ counterpart.
 | `getbestblockhash` | `kth_chain_sync_block_hash` | `chain_view().tip_hash` |
 | `getblockhash` (connected blocks only: a stored header past the connected tip is out of range) | `kth_chain_sync_block_hash` | `chain_view()` + `headers()` (the connected tip's ancestor) |
 | `getdifficulty` | `kth_chain_sync_mining_info` | `fetch_mining_info().difficulty` |
-| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `synchronization(view, header_tip)` + `headers()` |
+| `getblockchaininfo` | `kth_chain_sync_mining_info` + `kth_chain_sync_block_hash` | `chain_view()` + `initial_block_download()` + `headers()` |
 | `getnetworkhashps` | `kth_chain_sync_block_header_by_height` | `chain_view()` + `headers()` (chain work, timestamps) |
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
@@ -190,10 +190,14 @@ view, so they always describe the same tip.
 
 - `verificationprogress` is the connected tip's share of the header chain by
   height, `1.0` once they meet.
-- `initialblockdownload` is `true` until the node is synchronized: its connected
-  tip has reached the header tip, and that tip is within
-  `chain.notify_limit_hours` of now. These are the two conditions
-  `getmininginfo` reports as `caughtup` and `fresh`.
+- `initialblockdownload` is `true` until the connected tip is within
+  `chain.notify_limit_hours` of now (0 turns this check off) and has at least
+  the network's minimum chain work, and `false` from then on, until the node
+  stops: headers ahead of the connected tip, or a tip that later falls behind,
+  do not make it `true` again. This is how BCHN reports it (its `-maxtipage`,
+  24 hours by default, and its minimum chain work per network). Whether the
+  node is level with its headers right now is what `getmininginfo` reports as
+  `caughtup`, and whether its tip is recent as `fresh`.
 - `chainwork` is the connected tip's cumulative work, as 64 hex digits. It is
   left out while the header index cannot name the tip.
 - `size_on_disk` is the size of the block and undo files as they are on disk,
