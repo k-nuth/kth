@@ -433,6 +433,23 @@ transaction_organizer::fetch_ds_proof(hash_digest const& hash) const {
     co_return res;
 }
 
+awaitable_expected<std::vector<double_spend_proof_const_ptr>>
+transaction_organizer::fetch_ds_proofs() const {
+    std::vector<double_spend_proof_const_ptr> proofs;
+
+    // Critical Section
+    ///////////////////////////////////////////////////////////////////////////
+    mutex_.lock_low_priority();
+    proofs.reserve(ds_proofs_.size());
+    for (auto const& [hash, proof] : ds_proofs_) {
+        proofs.push_back(proof);
+    }
+    mutex_.unlock_low_priority();
+    ///////////////////////////////////////////////////////////////////////////
+
+    co_return proofs;
+}
+
 // Utility.
 //-----------------------------------------------------------------------------
 

@@ -27,6 +27,9 @@ on:
       - src/domain/src/chain/golomb_set.cpp
       - src/domain/test/chain/compact_filter.cpp
       - src/domain/test/chain/golomb_set.cpp
+      - src/domain/include/kth/domain/chain/input_prefix_filter.hpp
+      - src/domain/src/chain/input_prefix_filter.cpp
+      - src/domain/test/chain/input_prefix_filter.cpp
       - src/domain/include/kth/domain/chain/block.hpp
       - src/domain/src/chain/block.cpp
       - src/domain/test/chain/block_merkle_branch.cpp
