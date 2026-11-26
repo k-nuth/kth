@@ -22,6 +22,7 @@
 #include <kth/blockchain/validate/validate_input.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/chain/faster_blocks.hpp>
+#include <kth/domain/chain/merkle.hpp>
 #include <kth/infrastructure/utility/assert.hpp>
 
 #if defined(KTH_SIGVERIFY_TURBO_BATCH)
@@ -995,11 +996,19 @@ code validate_block_proposal(
     }
 
     // The body, as the fast path checks it before storage and the connect
-    // path then judges it: the merkle root first, then everything else.
+    // path then judges it: the merkle root first, then everything else. As
+    // light_block::is_valid_merkle_root, a tree with two equal sibling hashes
+    // is refused too: it has the root of a shorter list of transactions
+    // (CVE-2012-2459), so it is a repeated transaction, not a wrong root.
     std::vector<hash_list> txids{block->to_hashes()};
-    if ( ! block->is_valid_merkle_root(txids.front())) {
+    bool mutated = false;
+    if (merkle_root(txids.front(), mutated) != header.merkle()) {
         rejection.block = 0;
         return error::merkle_mismatch;
+    }
+    if (mutated) {
+        rejection.block = 0;
+        return error::internal_duplicate;
     }
     return validate_batch_on(chain, settings, network, std::vector<block_const_ptr>{block}, txids,
         height, rejection, nullptr, parent);

@@ -150,6 +150,14 @@ TEST_CASE("a block proposal is refused for the first rule it breaks", "[block_pr
     spend_outputs.emplace_back(1000, miner_script(), domain::chain::token_data_opt{});
     transaction const not_coinbase(1, 0, std::move(spend_inputs), std::move(spend_outputs));
 
+    // Another one, repeated last: [coinbase, not_coinbase, repeated, repeated]
+    // has the merkle root of the list without the repeat (CVE-2012-2459).
+    domain::chain::input::list repeated_inputs;
+    repeated_inputs.emplace_back(domain::chain::output_point{make_hash(8), 0}, domain::chain::script{}, 0xffffffff);
+    domain::chain::output::list repeated_outputs;
+    repeated_outputs.emplace_back(1000, miner_script(), domain::chain::token_data_opt{});
+    transaction const repeated(1, 0, std::move(repeated_inputs), std::move(repeated_outputs));
+
     std::vector<refusal> const refusals{
         {"bits other than the next work required",
             proposal(genesis_hash(), time, coinbase_only(1, subsidy(1)), regtest_bits - 1),
@@ -171,6 +179,9 @@ TEST_CASE("a block proposal is refused for the first rule it breaks", "[block_pr
         {"a first transaction that is not a coinbase",
             proposal(genesis_hash(), time, {not_coinbase}),
             error::first_not_coinbase},
+        {"a merkle tree with a repeated last pair",
+            proposal(genesis_hash(), time, {coinbase_tx(1, 0, subsidy(1)), not_coinbase, repeated, repeated}),
+            error::internal_duplicate},
     };
     for (auto const& [what, candidate, expected] : refusals) {
         CAPTURE(what);
