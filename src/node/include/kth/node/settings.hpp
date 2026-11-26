@@ -38,12 +38,28 @@ struct KND_API rpc_settings {
     uint32_t gbt_store_time;
 };
 
-/// Stratum V2 Template Provider settings. The plaintext listener is disabled
-/// by default and binds to localhost until the Noise transport is available.
+/// Stratum V2 Template Provider settings. The listener is disabled by default,
+/// binds to localhost, and speaks plaintext frames unless `noise` is set.
 struct KND_API sv2_settings {
     bool enabled = false;
     std::string bind = "127.0.0.1";
     uint16_t port = 8442;
+    /// The Noise handshake and encrypted frames (sv2-spec 4) on every connection.
+    bool noise = false;
+    /// The Noise key and certificate files. Empty or relative paths are taken
+    /// from the data directory: sv2_static_key and sv2_authority_key there by
+    /// default, created on the first start with `noise`.
+    std::string static_key_file;
+    std::string authority_key_file;
+    /// A certificate signed offline (74 bytes, sv2-spec 4.5.2). With one, the
+    /// authority's secret key is not on the node and `authority_public_key`
+    /// is required.
+    std::string certificate_file;
+    /// The authority public key in the sv2-spec 4.7 encoding: required with
+    /// `certificate_file`, and checked against `authority_key_file` otherwise.
+    std::string authority_public_key;
+    /// The lifetime of the certificates the node signs.
+    uint32_t certificate_validity_seconds = 30 * 24 * 60 * 60;
 };
 
 /// Common database configuration settings, properties not thread safe.
