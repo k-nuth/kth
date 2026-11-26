@@ -18,6 +18,7 @@ settings::settings()
     , compact_blocks_high_bandwidth(true)
     , ds_proofs_enabled(false)
     , compact_filters(false)
+    , input_prefix_filters(false)
 #if defined(KTH_WITH_BLOOM_FILTERS)
     , bloom_filters(true)
 #else

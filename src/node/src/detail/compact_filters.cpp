@@ -4,6 +4,9 @@
 
 #include <kth/node/detail/compact_filters.hpp>
 
+#include <algorithm>
+#include <expected>
+#include <limits>
 #include <stop_token>
 #include <system_error>
 #include <utility>
@@ -15,6 +18,7 @@
 
 #include <kth/blockchain/header_index.hpp>
 #include <kth/domain/chain/compact_filter.hpp>
+#include <kth/domain/chain/input_prefix_filter.hpp>
 #include <kth/node/detail/compact_filter_store.hpp>
 #include <kth/node/p2p_node.hpp>
 
@@ -90,31 +94,91 @@ enum class progress {
     stalled,
 };
 
-struct index_owner {
-    index_owner(compact_filter_blocks blocks, kth::path file, compact_filter_index_pace pace)
-        : blocks_(std::move(blocks))
-        , store_(std::move(file))
-        , pace_(pace)
-    {}
-
-    void load() {
-        store_.load();
-        // Which block the last record belongs to is the file's word; whether
-        // that block is still on the connected chain is settled at the first
-        // look at it.
-        tip_ = store_.empty() ? null_index : blocks_.chain.headers().find(store_.tip());
-        if ( ! store_.empty()
-            && (tip_ == null_index || blocks_.chain.headers().get_height(tip_) != int32_t(store_.size() - 1))) {
-            spdlog::warn("[compact filters] the filter headers stored are of a block this node does not have "
-                "at height {}; they are computed again", store_.size() - 1);
-            drop_all();
+// The filter of type `filter_type` of `block`, as it goes on the wire.
+std::expected<data_chunk, code> filter_of(uint8_t filter_type, domain::chain::block const& block) {
+    switch (filter_type) {
+        case domain::message::regular_compact_filter: {
+            auto const filter = domain::chain::build_regular_filter(block);
+            if ( ! filter) {
+                return std::unexpected(error::operation_failed);
+            }
+            return filter->to_data();
         }
-        if ( ! store_.empty()) {
-            spdlog::info("[compact filters] filter headers loaded up to height {}", store_.size() - 1);
+        case domain::message::input_prefix_compact_filter:
+            return domain::chain::to_data(domain::chain::build_input_prefix_filter(block));
+        default:
+            return std::unexpected(error::operation_failed);
+    }
+}
+
+// The filters of one block, one for each of `filter_types` and in that order:
+// the block is read once for all of them.
+awaitable_expected<std::vector<data_chunk>> build_filters(compact_filter_blocks const& blocks,
+    hash_digest const& block, std::vector<uint8_t> filter_types) {
+    auto const of = [&filter_types](domain::chain::block const& source)
+        -> std::expected<std::vector<data_chunk>, code> {
+        std::vector<data_chunk> filters;
+        filters.reserve(filter_types.size());
+        for (auto const type : filter_types) {
+            auto filter = filter_of(type, source);
+            if ( ! filter) {
+                return std::unexpected(filter.error());
+            }
+            filters.push_back(std::move(*filter));
+        }
+        return filters;
+    };
+    if (block == blocks.genesis_hash) {
+        co_return of(blocks.genesis);
+    }
+    auto const fetched = co_await blocks.chain.fetch_block(block);
+    if ( ! fetched) {
+        co_return std::unexpected(fetched.error());
+    }
+    co_return of(*fetched->first);
+}
+
+// The records of one filter type, and the block of the last one.
+struct indexed_type {
+    uint8_t filter_type;
+    compact_filter_store store;
+    index_t tip{null_index};
+};
+
+struct index_owner {
+    index_owner(compact_filter_blocks blocks, std::vector<compact_filter_index_file> files,
+        compact_filter_index_pace pace)
+        : blocks_(std::move(blocks))
+        , pace_(pace)
+    {
+        types_.reserve(files.size());
+        for (auto& file : files) {
+            types_.push_back(indexed_type{file.filter_type, compact_filter_store(std::move(file.path))});
         }
     }
 
-    // Reads up to a slice of the blocks that have no record yet.
+    void load() {
+        for (auto& type : types_) {
+            type.store.load();
+            // Which block the last record belongs to is the file's word;
+            // whether that block is still on the connected chain is settled at
+            // the first look at it.
+            type.tip = type.store.empty() ? null_index : blocks_.chain.headers().find(type.store.tip());
+            if ( ! type.store.empty() && (type.tip == null_index
+                    || blocks_.chain.headers().get_height(type.tip) != int32_t(type.store.size() - 1))) {
+                spdlog::warn("[compact filters] the filter headers of type {} stored are of a block this node "
+                    "does not have at height {}; they are computed again", type.filter_type, type.store.size() - 1);
+                drop_all(type);
+            }
+            if ( ! type.store.empty()) {
+                spdlog::info("[compact filters] filter headers of type {} loaded up to height {}",
+                    type.filter_type, type.store.size() - 1);
+            }
+        }
+    }
+
+    // Reads up to a slice of the blocks some type has no record of yet. Each
+    // block is read once, for every type that lacks it.
     ::asio::awaitable<progress> advance() {
         auto const connected = connected_chain(blocks_.chain);
         if ( ! connected) {
@@ -122,27 +186,39 @@ struct index_owner {
         }
         follow(*connected);
         auto const tip_height = size_t(connected->height);
-        for (size_t read = 0; read < pace_.slice && store_.size() <= tip_height; ++read) {
-            auto const height = store_.size();
+        for (size_t read = 0; read < pace_.slice && lowest() <= tip_height; ++read) {
+            auto const height = lowest();
+            std::vector<uint8_t> lacking;
+            for (auto const& type : types_) {
+                if (type.store.size() == height) {
+                    lacking.push_back(type.filter_type);
+                }
+            }
             auto const idx = connected->at(height);
             auto const block = connected->index.get_hash(idx);
-            auto const filter = co_await build_compact_filter(blocks_, block);
-            if ( ! filter) {
+            auto const filters = co_await build_filters(blocks_, block, lacking);
+            if ( ! filters) {
                 spdlog::warn("[compact filters] no filter for the block at height {}: {}; the filter headers "
-                    "stop below it until the chain moves", height, filter.error().message());
+                    "stop below it until the chain moves", height, filters.error().message());
                 save();
                 co_return progress::stalled;
             }
-            store_.append(bitcoin_hash(*filter));
-            tip_ = idx;
-            if (store_.size() % pace_.save_every == 0) {
-                save();
+            size_t built = 0;
+            for (auto& type : types_) {
+                if (type.store.size() != height) {
+                    continue;
+                }
+                type.store.append(bitcoin_hash((*filters)[built++]));
+                type.tip = idx;
+                if (type.store.size() % pace_.save_every == 0) {
+                    save(type);
+                }
             }
-            if (store_.size() % (pace_.save_every * 50) == 0) {
+            if ((height + 1) % (pace_.save_every * 50) == 0) {
                 spdlog::info("[compact filters] filter headers computed up to height {}", height);
             }
         }
-        if (store_.size() <= tip_height) {
+        if (lowest() <= tip_height) {
             co_return progress::behind;
         }
         save();
@@ -168,32 +244,62 @@ struct index_owner {
     }
 
     void save() {
-        if (store_.saved()) {
-            return;
+        for (auto& type : types_) {
+            save(type);
         }
-        auto const tip = tip_ == null_index ? null_hash : blocks_.chain.headers().get_hash(tip_);
-        // A failure is logged by the store and tried again at the next save:
-        // the records stay in memory.
-        (void)store_.save(tip);
     }
 
 private:
-    void drop_all() {
-        store_.truncate(0);
-        tip_ = null_index;
+    void save(indexed_type& type) {
+        if (type.store.saved()) {
+            return;
+        }
+        auto const tip = type.tip == null_index ? null_hash : blocks_.chain.headers().get_hash(type.tip);
+        // A failure is logged by the store and tried again at the next save:
+        // the records stay in memory.
+        (void)type.store.save(tip);
+    }
+
+    static void drop_all(indexed_type& type) {
+        type.store.truncate(0);
+        type.tip = null_index;
+    }
+
+    // The height of the lowest block some type has no record of: the number
+    // of records of the type with fewest.
+    [[nodiscard]]
+    size_t lowest() const {
+        auto least = std::numeric_limits<size_t>::max();
+        for (auto const& type : types_) {
+            least = std::min(least, type.store.size());
+        }
+        return least;
+    }
+
+    // The records of a filter type, when the index keeps them.
+    [[nodiscard]]
+    indexed_type const* kept(uint8_t filter_type) const {
+        for (auto const& type : types_) {
+            if (type.filter_type == filter_type) {
+                return &type;
+            }
+        }
+        return nullptr;
     }
 
     // Drops the records of blocks that are not on `connected`: what a
     // reorganization left behind, from the end.
     void follow(chain_to const& connected) {
-        while ( ! store_.empty() && ! connected.contains(tip_)) {
-            store_.truncate(store_.size() - 1);
-            tip_ = store_.empty() ? null_index : connected.index.get_parent_index(tip_);
+        for (auto& type : types_) {
+            while ( ! type.store.empty() && ! connected.contains(type.tip)) {
+                type.store.truncate(type.store.size() - 1);
+                type.tip = type.store.empty() ? null_index : connected.index.get_parent_index(type.tip);
+            }
         }
     }
 
-    // The connected chain up to `stop`, when the records reach it.
-    std::optional<chain_to> recorded_chain_to(hash_digest const& stop) {
+    // The connected chain up to `stop`, when the records of `type` reach it.
+    std::optional<chain_to> recorded_chain_to(hash_digest const& stop, indexed_type const& type) {
         auto const connected = connected_chain(blocks_.chain);
         if ( ! connected) {
             return std::nullopt;
@@ -205,7 +311,7 @@ private:
             return std::nullopt;
         }
         auto const height = connected->index.get_height(idx);
-        if (size_t(height) >= store_.size()) {
+        if (size_t(height) >= type.store.size()) {
             return std::nullopt;
         }
         return chain_to{connected->index, idx, height};
@@ -213,10 +319,11 @@ private:
 
     std::optional<domain::message::compact_filter_headers>
     answer_to(domain::message::get_compact_filter_headers const& request) {
-        if (request.filter_type != domain::message::regular_compact_filter) {
+        auto const* const type = kept(request.filter_type);
+        if ( ! type) {
             return std::nullopt;
         }
-        auto const chain = recorded_chain_to(request.stop_hash);
+        auto const chain = recorded_chain_to(request.stop_hash, *type);
         if ( ! chain || uint64_t(request.start_height) > uint64_t(chain->height)) {
             return std::nullopt;
         }
@@ -225,23 +332,25 @@ private:
         if (count > domain::message::max_compact_filter_headers) {
             return std::nullopt;
         }
+        auto const& store = type->store;
         domain::message::compact_filter_headers answer;
         answer.filter_type = request.filter_type;
         answer.stop_hash = request.stop_hash;
-        answer.previous_filter_header = store_.header_before(first);
+        answer.previous_filter_header = store.header_before(first);
         answer.filter_hashes.reserve(count);
         for (size_t i = 0; i < count; ++i) {
-            answer.filter_hashes.push_back(store_.at(first + i).filter_hash);
+            answer.filter_hashes.push_back(store.at(first + i).filter_hash);
         }
         return answer;
     }
 
     std::optional<domain::message::compact_filter_checkpoint>
     answer_to(domain::message::get_compact_filter_checkpoint const& request) {
-        if (request.filter_type != domain::message::regular_compact_filter) {
+        auto const* const type = kept(request.filter_type);
+        if ( ! type) {
             return std::nullopt;
         }
-        auto const chain = recorded_chain_to(request.stop_hash);
+        auto const chain = recorded_chain_to(request.stop_hash, *type);
         if ( ! chain) {
             return std::nullopt;
         }
@@ -249,21 +358,21 @@ private:
         if (count > domain::message::max_compact_filter_checkpoints) {
             return std::nullopt;
         }
+        auto const& store = type->store;
         domain::message::compact_filter_checkpoint answer;
         answer.filter_type = request.filter_type;
         answer.stop_hash = request.stop_hash;
         answer.filter_headers.reserve(count);
         for (size_t i = 1; i <= count; ++i) {
-            answer.filter_headers.push_back(store_.at(i * pace_.interval).filter_header);
+            answer.filter_headers.push_back(store.at(i * pace_.interval).filter_header);
         }
         return answer;
     }
 
     compact_filter_blocks const blocks_;
-    compact_filter_store store_;
     compact_filter_index_pace const pace_;
-    // The block of the last record.
-    index_t tip_{null_index};
+    // Each filter type kept, with its records.
+    std::vector<indexed_type> types_;
 };
 
 template <typename Request, typename Answer>
@@ -302,30 +411,26 @@ void compact_filter_channels::close() {
     tip_events.close();
 }
 
-compact_filter_blocks::compact_filter_blocks(blockchain::block_chain const& chain, domain::chain::block genesis)
+compact_filter_blocks::compact_filter_blocks(blockchain::block_chain const& chain, domain::chain::block genesis,
+    bool input_prefix)
     : chain(chain)
     , genesis(std::move(genesis))
     , genesis_hash(this->genesis.hash())
+    , input_prefix(input_prefix)
 {}
+
+awaitable_expected<data_chunk> build_compact_filter(compact_filter_blocks const& blocks, uint8_t filter_type,
+    hash_digest const& block) {
+    auto filters = co_await build_filters(blocks, block, {filter_type});
+    if ( ! filters) {
+        co_return std::unexpected(filters.error());
+    }
+    co_return std::move(filters->front());
+}
 
 awaitable_expected<data_chunk> build_compact_filter(compact_filter_blocks const& blocks,
     hash_digest const& block) {
-    if (block == blocks.genesis_hash) {
-        auto const filter = domain::chain::build_regular_filter(blocks.genesis);
-        if ( ! filter) {
-            co_return std::unexpected(error::operation_failed);
-        }
-        co_return filter->to_data();
-    }
-    auto const fetched = co_await blocks.chain.fetch_block(block);
-    if ( ! fetched) {
-        co_return std::unexpected(fetched.error());
-    }
-    auto const filter = domain::chain::build_regular_filter(*fetched->first);
-    if ( ! filter) {
-        co_return std::unexpected(error::operation_failed);
-    }
-    co_return filter->to_data();
+    return build_compact_filter(blocks, domain::message::regular_compact_filter, block);
 }
 
 std::optional<hash_list> compact_filter_range(blockchain::block_chain const& chain, uint32_t start_height,
@@ -350,6 +455,13 @@ std::optional<hash_list> compact_filter_range(blockchain::block_chain const& cha
 
 ::asio::awaitable<void> run_compact_filter_index(compact_filter_channels& channels,
     compact_filter_blocks blocks, kth::path file, compact_filter_index_pace pace) {
+    std::vector<compact_filter_index_file> files;
+    files.push_back({domain::message::regular_compact_filter, std::move(file)});
+    return run_compact_filter_index(channels, std::move(blocks), std::move(files), pace);
+}
+
+::asio::awaitable<void> run_compact_filter_index(compact_filter_channels& channels,
+    compact_filter_blocks blocks, std::vector<compact_filter_index_file> files, compact_filter_index_pace pace) {
     spdlog::debug("[compact filters] Index started");
     auto const executor = co_await ::asio::this_coro::executor;
     // However the index ends, no query waits on it: what it leaves unanswered
@@ -370,7 +482,7 @@ std::optional<hash_list> compact_filter_range(blockchain::block_chain const& cha
             }
         }
     } const unanswered{channels};
-    index_owner owner(std::move(blocks), std::move(file), pace);
+    index_owner owner(std::move(blocks), std::move(files), pace);
     owner.load();
 
     // Whether the chain is to be looked at: at the start, at each ring, and
@@ -443,7 +555,7 @@ ask_compact_filter_checkpoint(compact_filter_channels& channels,
 
 ::asio::awaitable<message_result> handle_get_compact_filters(compact_filter_blocks const& blocks,
     network::peer_session& peer, domain::message::get_compact_filters const& request) {
-    if (request.filter_type != domain::message::regular_compact_filter) {
+    if ( ! blocks.serves(request.filter_type)) {
         spdlog::debug("[compact filters] getcfilters for filter type {} from [{}]; not answered",
             request.filter_type, peer.authority());
         co_return message_result::handled;
@@ -456,7 +568,7 @@ ask_compact_filter_checkpoint(compact_filter_channels& channels,
         co_return message_result::handled;
     }
     for (auto const& block : *range) {
-        auto filter = co_await build_compact_filter(blocks, block);
+        auto filter = co_await build_compact_filter(blocks, request.filter_type, block);
         if ( ! filter) {
             spdlog::debug("[compact filters] no filter for block {} asked by [{}]: {}",
                 encode_hash(block), peer.authority(), filter.error().message());
