@@ -21,8 +21,11 @@
 #include <kth/node/detail/ws_discovery_task.hpp>
 
 #include <algorithm>
-#include <kth/network/sam.hpp>
 #include <set>
+
+#if defined(KTH_WITH_I2P)
+#include <kth/network/sam.hpp>
+#endif
 
 #include <kth/node/handlers/ping.hpp>
 #include <kth/node/handlers/pong.hpp>
@@ -49,6 +52,7 @@ p2p_node::p2p_node(network::settings const& settings)
     , pool_("network", thread_ceiling(settings.threads))  // default 4, 0 = all cores
     , manager_(pool_.get_executor())
     , peer_db_(settings.peers_file, settings.host_pool_capacity)
+#if defined(KTH_WITH_I2P)
     , sam_(settings.i2psam.empty() ? nullptr : std::make_unique<sam_session>(
         pool_.get_executor(), settings.i2psam,
         settings.i2p_private_key_file.empty()
@@ -56,6 +60,7 @@ p2p_node::p2p_node(network::settings const& settings)
             : settings.i2p_private_key_file,
         settings.i2p_accept_incoming,
         std::max(90s, std::chrono::seconds(settings.connect_timeout_seconds))))
+#endif
     , top_block_({null_hash, 0})
     , new_peer_channel_(std::make_unique<concurrent_channel<peer_event>>(pool_.get_executor(), 100))
     , stop_signal_(std::make_unique<concurrent_event_channel>(pool_.get_executor(), 1))
@@ -242,6 +247,7 @@ p2p_node::~p2p_node() {
     // parallelism and proper coroutine scheduling.
     task_group network_tasks("network_tasks", pool_.get_executor());
 
+#if defined(KTH_WITH_I2P)
     if (sam_) {
         network_tasks.spawn("i2p_session", [this]() -> ::asio::awaitable<void> {
             co_await sam_->run();
@@ -252,6 +258,7 @@ p2p_node::~p2p_node() {
             });
         }
     }
+#endif
 
     spdlog::debug("[p2p_node] Spawning peer_supervisor...");
     network_tasks.spawn("peer_supervisor", [this]() -> ::asio::awaitable<void> {
@@ -320,7 +327,9 @@ void p2p_node::stop() {
     // true. std::stop_source is thread safe; a stop callback that is still
     // running when this returns holds nothing of this object.
     stop_source_.request_stop();
+#if defined(KTH_WITH_I2P)
     if (sam_) sam_->stop();
+#endif
     if (previous == lifecycle_state::fresh) {
         // Nothing was ever running, so there is nothing to cancel, stop or save —
         // but the claim above stands, and it is what refuses a later start.
@@ -881,7 +890,7 @@ awaitable_expected<peer_session::ptr> p2p_node::connect(
         host,
         port,
         settings_,
-        std::chrono::seconds(settings_.connect_timeout_seconds), sam_.get());
+        std::chrono::seconds(settings_.connect_timeout_seconds), sam());
 
     if (!result) {
         co_return std::unexpected(result.error());
@@ -1392,7 +1401,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
             seed_host,
             seed_port,
             settings_,
-            std::chrono::seconds(settings_.connect_timeout_seconds), sam_.get());
+            std::chrono::seconds(settings_.connect_timeout_seconds), sam());
 
         if (!result) {
             spdlog::debug("[p2p_node] Failed to connect to seed {}:{} - {}",
@@ -1537,6 +1546,15 @@ select_channel<peer_notification>& p2p_node::peer_events() {
     co_await maintain_outbound_connections();
 }
 
+network::sam_session* p2p_node::sam() const noexcept {
+#if defined(KTH_WITH_I2P)
+    return sam_.get();
+#else
+    return nullptr;
+#endif
+}
+
+#if defined(KTH_WITH_I2P)
 ::asio::awaitable<void> p2p_node::run_i2p_inbound() {
     auto executor = co_await ::asio::this_coro::executor;
     ::asio::steady_timer retry(executor);
@@ -1568,6 +1586,7 @@ select_channel<peer_notification>& p2p_node::peer_events() {
         }
     }
 }
+#endif
 
 ::asio::awaitable<void> p2p_node::run_inbound() {
     if (settings_.inbound_port == 0) {
@@ -1808,6 +1827,7 @@ bool p2p_node::ingest_peer_addresses(raw_message const& raw, uint32_t version) {
                 }
                 addresses.push_back(address);
             }
+#if defined(KTH_WITH_I2P)
             if (sam_ && settings_.i2p_accept_incoming && peer->wants_addrv2()) {
                 if (auto local = sam_->local_address(); local && addresses.size() < 1000) {
                     auto address = local->to_network_address();
@@ -1816,6 +1836,7 @@ bool p2p_node::ingest_peer_addresses(raw_message const& raw, uint32_t version) {
                     addresses.push_back(address);
                 }
             }
+#endif
             co_await send_addresses_auto(*peer, addresses);
             continue;
         }
@@ -1970,7 +1991,11 @@ void p2p_node::wake_status_task() noexcept {
             for (size_t attempts = 0; attempts < batch_size * 3 && addresses.size() < batch_size && !stopped(); ++attempts) {
                 domain::message::network_address addr;
                 auto ec = peer_db_.fetch_address(addr, [this](auto const& address) {
+#if defined(KTH_WITH_I2P)
                     if (address.is_i2p()) return sam_ && sam_->ready() && address.port() == 0;
+#else
+                    if (address.is_i2p()) return false;
+#endif
                     if (address.is_tor_v3()) return ! settings_.proxy.empty();
                     return true;
                 });
@@ -2302,6 +2327,7 @@ void p2p_node::wake_status_task() noexcept {
                                 && co_await manager_.take_compact_slot(peer, max_high_bandwidth_compact_peers);
                             co_await peer->send(domain::message::send_compact(high_bandwidth, 1));
                         }
+#if defined(KTH_WITH_I2P)
                         if (sam_ && settings_.i2p_accept_incoming && peer->wants_addrv2()) {
                             if (auto local = sam_->local_address()) {
                                 auto address = local->to_network_address();
@@ -2311,6 +2337,7 @@ void p2p_node::wake_status_task() noexcept {
                                 co_await send_addresses_auto(*peer, own_addresses);
                             }
                         }
+#endif
 
                         // Send success response to caller
                         if (response_channel) {

@@ -5,6 +5,10 @@
 #ifndef KTH_NETWORK_SAM_HPP
 #define KTH_NETWORK_SAM_HPP
 
+#if ! defined(KTH_WITH_I2P)
+#error "I2P through a SAM bridge is an optional feature: build with the Conan option i2p=True."
+#endif
+
 #include <chrono>
 #include <memory>
 #include <optional>

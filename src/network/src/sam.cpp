@@ -14,7 +14,6 @@
 #include <optional>
 #include <string_view>
 #include <system_error>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,6 +29,7 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 #include <spdlog/spdlog.h>
 
 #include <kth/infrastructure/formats/base_16.hpp>
@@ -42,7 +42,7 @@ namespace {
 
 using socket_type = ::asio::ip::tcp::socket;
 using authority = infrastructure::config::authority;
-using fields = std::unordered_map<std::string, std::string>;
+using fields = boost::unordered_flat_map<std::string, std::string>;
 constexpr size_t max_line_size = 65536;
 
 struct sam_reply_error : std::system_error {

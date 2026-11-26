@@ -4,10 +4,12 @@
 
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/peer_session.hpp>
-#include <kth/network/sam.hpp>
 #include <kth/network/peer_identity.hpp>
 #if defined(KTH_WITH_SOCKS5)
 #include <kth/network/socks5.hpp>
+#endif
+#if defined(KTH_WITH_I2P)
+#include <kth/network/sam.hpp>
 #endif
 
 #include <asio/cancel_after.hpp>
@@ -1050,8 +1052,6 @@ awaitable_expected<peer_session::ptr> async_connect(
     if (hostname.empty() || hostname.find('\0') != std::string::npos) {
         co_return std::unexpected(error::illegal_value);
     }
-    auto const destination = canonical_peer_endpoint(infrastructure::config::endpoint(hostname, port));
-    auto const& host = destination.host();
     auto reserved_host = hostname;
     for (auto& c : reserved_host) {
         if (c >= 'A' && c <= 'Z') c = char(c + ('a' - 'A'));
@@ -1067,14 +1067,22 @@ awaitable_expected<peer_session::ptr> async_connect(
             co_return std::unexpected(error::illegal_value);
         }
         if (address->is_i2p()) {
+#if ! defined(KTH_WITH_I2P)
+            // Only a SAM bridge reaches an I2P destination, and this build has
+            // none: the name goes nowhere else.
+            (void)sam;
+            co_return std::unexpected(error::operation_failed);
+#else
             if (settings.i2psam.empty() || sam == nullptr || port != 0) {
                 co_return std::unexpected(error::operation_failed);
             }
-            auto stream = co_await sam->connect(host);
+            auto const destination = canonical_peer_endpoint(infrastructure::config::endpoint(hostname, port));
+            auto stream = co_await sam->connect(destination.host());
             if ( ! stream) {
                 co_return std::unexpected(stream.error());
             }
             co_return std::make_shared<peer_session>(std::move(*stream), settings, false, destination);
+#endif
         }
         if (settings.proxy.empty() || port == 0) {
             co_return std::unexpected(error::operation_failed);

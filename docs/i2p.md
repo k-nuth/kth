@@ -1,6 +1,13 @@
 # P2P over I2P
 
 kth connects to and accepts BCH peers through an I2P router's SAM 3.1 bridge.
+
+I2P is an optional feature: the node has it when built with the Conan option
+`i2p=True` ([optional-features.md](optional-features.md)). A build without it
+refuses to start with `net.i2psam` set. I2P and Tor v3 addresses that peers
+announce are kept and relayed in `addrv2` by every build; only a build with
+the feature dials I2P peers or accepts them.
+
 With i2pd, enable the bridge in `i2pd.conf`:
 
 ```ini

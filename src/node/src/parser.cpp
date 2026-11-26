@@ -486,6 +486,14 @@ bool check_standardness_policy([[maybe_unused]] configuration const& cfg, [[mayb
 
 bool check_i2p_bridge([[maybe_unused]] configuration const& cfg, [[maybe_unused]] std::ostream& error) {
 #if ! defined(__EMSCRIPTEN__)
+#if ! defined(KTH_WITH_I2P)
+    // A build without the feature has no SAM client. Taking the setting and
+    // going on would leave the node without the I2P peers it was asked for.
+    if ( ! cfg.network.i2psam.empty()) {
+        error << "Error: net.i2psam needs a build with the option i2p." << std::endl;
+        return false;
+    }
+#endif
     if ( ! cfg.network.i2psam.empty()) {
         auto const bridge = authority::parse_from(cfg.network.i2psam);
         if ( ! bridge || bridge->is_overlay() || bridge->port() == 0) {

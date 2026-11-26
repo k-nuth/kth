@@ -587,7 +587,12 @@ private:
     ::asio::awaitable<void> run_seeding();
     ::asio::awaitable<void> run_outbound();
     ::asio::awaitable<void> run_inbound();
+#if defined(KTH_WITH_I2P)
     ::asio::awaitable<void> run_i2p_inbound();
+#endif
+    // The SAM session I2P peers are dialled through: none without net.i2psam,
+    // or in a build without the I2P feature.
+    [[nodiscard]] network::sam_session* sam() const noexcept;
     ::asio::awaitable<void> run_peer_protocols(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> read_peer_messages(peer_session::ptr peer, bool discovery);
     ::asio::awaitable<void> maintain_outbound_connections();
@@ -619,7 +624,9 @@ private:
     threadpool pool_;
     peer_manager manager_;
     peer_database peer_db_;  // Unified peer storage (hosts, bans, and reputation)
+#if defined(KTH_WITH_I2P)
     std::unique_ptr<network::sam_session> sam_;
+#endif
     std::atomic<size_t> inbound_count_{0};
 
     // Track IPs currently being connected to (for deduplication)

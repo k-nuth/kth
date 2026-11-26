@@ -10,13 +10,21 @@
 #include <algorithm>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <thread>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <asio/co_spawn.hpp>
 #include <asio/as_tuple.hpp>
@@ -33,6 +41,7 @@
 #include <kth/infrastructure/utility/timer.hpp>
 #include <kth/node/detail/p2p_node_test_seam.hpp>
 #include <kth/node/p2p_node.hpp>
+#include <kth/node/parser.hpp>
 
 using namespace kth;
 using namespace kth::network;
@@ -43,6 +52,27 @@ using namespace std::chrono_literals;
 namespace {
 
 using seam = node::detail::p2p_node_test_seam;
+
+int process_id() {
+#if defined(_WIN32)
+    return ::_getpid();
+#else
+    return ::getpid();
+#endif
+}
+
+// Writes a flat config file for the duration of a test.
+struct config_file {
+    explicit config_file(std::string const& tag, std::string const& text)
+        : path_(std::filesystem::temp_directory_path() / ("kth_cfg_" + tag + "_" + std::to_string(process_id()) + ".cfg"))
+    {
+        std::ofstream(path_) << text << "\n";
+    }
+    ~config_file() { std::error_code ec; std::filesystem::remove(path_, ec); }
+    std::filesystem::path const& path() const { return path_; }
+private:
+    std::filesystem::path path_;
+};
 
 template <typename T>
 struct completion {
@@ -586,4 +616,52 @@ TEST_CASE("i2p child: SAM recovery reaches manual and inbound peers and advertis
 
 TEST_CASE("SAM recovery connects manual and inbound peers and exchanges overlay advertisements", "[p2p_node][i2p]") {
     require_clean_child(run_child("i2p child: SAM recovery reaches manual and inbound peers and advertises the node"));
+}
+
+TEST_CASE("I2P settings retain defaults and command line values", "[configuration tests][parser][i2p]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.i2psam.empty());
+    CHECK(defaults.configured.network.i2p_accept_incoming);
+    CHECK(defaults.configured.network.i2p_private_key_file.empty());
+    node::parser parser(domain::config::network::mainnet);
+    auto const peer = std::string(52, 'a') + ".b32.i2p:0";
+    char const* argv[]{"kth", "--network", "regtest", "--net.i2psam", "[::1]:7656",
+        "--net.i2p_accept_incoming", "false", "--net.i2p_private_key_file", "private/i2p_key",
+        "--net.peer", peer.c_str()};
+    std::ostringstream error;
+    REQUIRE(parser.parse(11, argv, error));
+    CHECK(parser.configured.network.i2psam == "[::1]:7656");
+    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
+    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
+    REQUIRE(parser.configured.network.peers.size() == 1);
+    CHECK(parser.configured.network.peers.front().port() == 0);
+}
+
+TEST_CASE("I2P settings load config keys and reject invalid values", "[configuration tests][parser][i2p]") {
+    config_file file("i2p", "net.i2psam=127.0.0.1:7656\nnet.i2p_accept_incoming=false\nnet.i2p_private_key_file=private/i2p_key");
+    node::parser parser(domain::config::network::regtest);
+    std::ostringstream error;
+    REQUIRE(parser.parse_from_file(file.path(), error));
+    CHECK(parser.configured.network.i2psam == "127.0.0.1:7656");
+    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
+    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
+    node::parser invalid(domain::config::network::regtest);
+    char const* argv[]{"kth", "--net.i2p_accept_incoming", "sometimes"};
+    CHECK_FALSE(invalid.parse(3, argv, error));
+    node::parser bad_peer(domain::config::network::regtest);
+    char const* bad[]{"kth", "--net.peer", "bad.b32.i2p"};
+    CHECK_FALSE(bad_peer.parse(3, bad, error));
+    for (auto const& bridge : {std::string("sam.invalid:7656"), std::string("127.0.0.1:0"),
+        std::string(52, 'a') + ".b32.i2p:7656"}) {
+        node::parser bad_sam(domain::config::network::regtest);
+        char const* values[]{"kth", "--net.i2psam", bridge.c_str()};
+        CHECK_FALSE(bad_sam.parse(3, values, error));
+    }
+    config_file bad_file("bad_i2p", "net.i2psam=bridge.invalid:7656");
+    node::parser bad_config(domain::config::network::regtest);
+    CHECK_FALSE(bad_config.parse_from_file(bad_file.path(), error));
+    node::parser off(domain::config::network::regtest);
+    char const* empty[]{"kth", "--net.i2psam", ""};
+    REQUIRE(off.parse(3, empty, error));
+    CHECK(off.configured.network.i2psam.empty());
 }

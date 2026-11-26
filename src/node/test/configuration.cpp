@@ -184,6 +184,13 @@ TEST_CASE("outbound proxy settings are empty and randomized by default", "[confi
     CHECK(defaults.configured.network.proxy_randomize);
 }
 
+TEST_CASE("I2P settings are empty and accept incoming peers by default", "[configuration tests][parser][i2p]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK(defaults.configured.network.i2psam.empty());
+    CHECK(defaults.configured.network.i2p_accept_incoming);
+    CHECK(defaults.configured.network.i2p_private_key_file.empty());
+}
+
 #if ! defined(KTH_WITH_BLOOM_FILTERS)
 // A build without the feature serves no bloom filters, so it does not start as
 // if it did.
@@ -268,53 +275,55 @@ TEST_CASE("a proxy is refused by a build without the SOCKS5 feature", "[configur
         CHECK(parser.parse(5, argv, error));
     }
 }
+#endif
 
-TEST_CASE("I2P settings retain defaults and command line values", "[configuration tests][parser][i2p]") {
-    node::parser defaults(domain::config::network::regtest);
-    CHECK(defaults.configured.network.i2psam.empty());
-    CHECK(defaults.configured.network.i2p_accept_incoming);
-    CHECK(defaults.configured.network.i2p_private_key_file.empty());
-    node::parser parser(domain::config::network::mainnet);
-    auto const peer = std::string(52, 'a') + ".b32.i2p:0";
-    char const* argv[]{"kth", "--network", "regtest", "--net.i2psam", "[::1]:7656",
-        "--net.i2p_accept_incoming", "false", "--net.i2p_private_key_file", "private/i2p_key",
-        "--net.peer", peer.c_str()};
-    std::ostringstream error;
-    REQUIRE(parser.parse(11, argv, error));
-    CHECK(parser.configured.network.i2psam == "[::1]:7656");
-    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
-    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
-    REQUIRE(parser.configured.network.peers.size() == 1);
-    CHECK(parser.configured.network.peers.front().port() == 0);
+#if ! defined(KTH_WITH_I2P)
+// A build without the feature has no SAM client, so it does not start as one
+// that was asked for I2P peers.
+TEST_CASE("an I2P bridge is refused by a build without the I2P feature", "[configuration tests][parser][i2p]") {
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.i2psam", "127.0.0.1:7656"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("net.i2psam needs a build with the option i2p") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("i2p_refused", "net.i2psam=127.0.0.1:7656");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("net.i2psam needs a build with the option i2p") != std::string::npos);
+    }
+    SECTION("an empty one is no bridge") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.i2psam", ""};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
 }
 
-TEST_CASE("I2P settings load config keys and reject invalid values", "[configuration tests][parser][i2p]") {
-    config_file file("i2p", "net.i2psam=127.0.0.1:7656\nnet.i2p_accept_incoming=false\nnet.i2p_private_key_file=private/i2p_key");
-    node::parser parser(domain::config::network::regtest);
-    std::ostringstream error;
-    REQUIRE(parser.parse_from_file(file.path(), error));
-    CHECK(parser.configured.network.i2psam == "127.0.0.1:7656");
-    CHECK_FALSE(parser.configured.network.i2p_accept_incoming);
-    CHECK(parser.configured.network.i2p_private_key_file == path("private/i2p_key"));
-    node::parser invalid(domain::config::network::regtest);
-    char const* argv[]{"kth", "--net.i2p_accept_incoming", "sometimes"};
-    CHECK_FALSE(invalid.parse(3, argv, error));
-    node::parser bad_peer(domain::config::network::regtest);
-    char const* bad[]{"kth", "--net.peer", "bad.b32.i2p"};
-    CHECK_FALSE(bad_peer.parse(3, bad, error));
-    for (auto const& bridge : {std::string("sam.invalid:7656"), std::string("127.0.0.1:0"),
-        std::string(52, 'a') + ".b32.i2p:7656"}) {
-        node::parser bad_sam(domain::config::network::regtest);
-        char const* values[]{"kth", "--net.i2psam", bridge.c_str()};
-        CHECK_FALSE(bad_sam.parse(3, values, error));
-    }
-    config_file bad_file("bad_i2p", "net.i2psam=bridge.invalid:7656");
-    node::parser bad_config(domain::config::network::regtest);
-    CHECK_FALSE(bad_config.parse_from_file(bad_file.path(), error));
-    node::parser off(domain::config::network::regtest);
-    char const* empty[]{"kth", "--net.i2psam", ""};
-    REQUIRE(off.parse(3, empty, error));
-    CHECK(off.configured.network.i2psam.empty());
+TEST_CASE("a node built without I2P does not start as one that uses it", "[configuration tests][node][i2p]") {
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_i2p_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    node::configuration cfg{domain::config::network::regtest};
+    cfg.database.directory = dir;
+    cfg.database.db_max_size = 16ULL << 20;
+    cfg.network.threads = 0;
+    cfg.network.peers_file = dir / "peers.dat";
+    cfg.network.hosts_file = dir / "hosts.dat";
+    cfg.network.i2psam = "127.0.0.1:7656";
+
+    node::full_node node{cfg};
+    ::asio::io_context io;
+    auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+    io.run();
+    CHECK(started.get() == error::operation_failed);
+    std::filesystem::remove_all(dir, ec);
 }
 #endif
 

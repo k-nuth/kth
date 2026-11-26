@@ -151,6 +151,14 @@ full_node::~full_node() {
     }
 #endif
 
+#if ! defined(KTH_WITH_I2P) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if ( ! network_settings_.i2psam.empty()) {
+        spdlog::error("[node] net.i2psam needs a build with the option i2p.");
+        co_return error::operation_failed;
+    }
+#endif
+
 #if defined(KTH_WITH_NEUTRINO) && ! defined(__EMSCRIPTEN__)
     // The parser refuses this too; a configuration built by hand gets here.
     if (compact_filters_refused_) {
