@@ -12,6 +12,8 @@
 #include <kth/node/detail/fee_filter.hpp>
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
+#include <kth/node/detail/result_bridge.hpp>
+#include <kth/node/detail/stored_chunks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
 #if defined(KTH_WITH_NEUTRINO)
 #include <kth/node/detail/compact_filters.hpp>
@@ -1298,42 +1300,14 @@ static
     });
 
     // Bridge: validated_chunks -> coordinator_events (carries validation errors only)
-    all_tasks.spawn("coordinator_chunks_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:chunks_bridge] Started");
-        while (true) {
-            auto [ec, result] = co_await validated_chunks.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[coordinator:chunks_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:chunks_bridge] Channel full, chunk_validated dropped");
-                break;
-            }
-        }
-        spdlog::debug("[coordinator:chunks_bridge] Task ended");
-    });
+    all_tasks.spawn("coordinator_chunks_bridge", detail::result_bridge(
+        validated_chunks, coordinator_events, "coordinator:chunks_bridge"));
 
     // Storage results report body availability only. The builder delivers its
     // own progress after publishing a complete connected state; no timer bridge
     // or unrelated peer event is needed to wake the coordinator.
-    all_tasks.spawn("coordinator_stored_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:stored_bridge] Started");
-        while (true) {
-            auto [ec, result] = co_await stored_chunks.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[coordinator:stored_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:stored_bridge] Channel full, chunk_validated dropped");
-                break;
-            }
-        }
-        spdlog::debug("[coordinator:stored_bridge] Task ended");
-    });
+    all_tasks.spawn("coordinator_stored_bridge", detail::result_bridge(
+        stored_chunks, coordinator_events, "coordinator:stored_bridge"));
 
     // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
     // `mempool_expiry_hours` after the node first saw it leaves the pool with
@@ -1464,22 +1438,8 @@ static
     });
 
     // Bridge: validated_blocks -> coordinator_events
-    all_tasks.spawn("coordinator_blocks_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::debug("[coordinator:blocks_bridge] Started");
-        while (true) {
-            auto [ec, result] = co_await validated_blocks.async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (ec) {
-                spdlog::debug("[coordinator:blocks_bridge] Channel closed: {}", ec.message());
-                break;
-            }
-            if (!coordinator_events.try_send(std::error_code{}, result)) {
-                spdlog::warn("[coordinator:blocks_bridge] Channel full, block_validated dropped");
-                break;
-            }
-        }
-        spdlog::debug("[coordinator:blocks_bridge] Task ended");
-    });
+    all_tasks.spawn("coordinator_blocks_bridge", detail::result_bridge(
+        validated_blocks, coordinator_events, "coordinator:blocks_bridge"));
 
     // 2026-02-07: Added comprehensive exception handling for debugging
     all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
@@ -1516,7 +1476,7 @@ static
         uint32_t headers_at_start = headers_synced_to;
 
         // Buffer for out-of-order chunk validation results (keyed by start_height)
-        boost::unordered_flat_map<uint32_t, chunk_validated> pending_chunks;
+        detail::stored_chunks pending_chunks;
 
         spdlog::info("[sync_coordinator] Initial state: blocks={}, headers={}",
             blocks_synced_to, headers_synced_to);
@@ -2275,10 +2235,7 @@ static
                         // through its height would count it as a body the new
                         // branch holds — which it does not — and move the
                         // counter past a block nothing will download.
-                        for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
-                            it = it->second.start_height + it->second.block_count - 1 > blocks_synced_to
-                                ? pending_chunks.erase(it) : std::next(it);
-                        }
+                        pending_chunks.forget_above(blocks_synced_to);
 
                         // HERE, before any branching: the branches below that do
                         // not re-drive the download are exactly the ones that
@@ -2644,10 +2601,7 @@ static
                     if (blocks_synced_to >= rejected->height) {
                         blocks_synced_to = rejected->height - 1;
                     }
-                    for (auto it = pending_chunks.begin(); it != pending_chunks.end();) {
-                        it = it->second.start_height + it->second.block_count - 1 >= rejected->height
-                            ? pending_chunks.erase(it) : std::next(it);
-                    }
+                    pending_chunks.forget_above(rejected->height - 1);
                     slow_sync_end = range_end_after_rewind(slow_sync_end, blocks_synced_to);
                 }
 
@@ -2700,6 +2654,16 @@ static
                     }
                 }
 
+                if (result->peer_outcome_from_abandoned_branch(chain.chain_generation())) {
+                    // Reported before a switch and read after it. Neither its
+                    // success nor its failure is about the branch the chain is
+                    // on now: nothing is counted and nobody is blamed.
+                    spdlog::debug("[sync_coordinator] Outcome of chunk at {} dropped: it is from generation {} "
+                        "and the chain is at {}", result->start_height, result->generation,
+                        chain.chain_generation());
+                    continue;
+                }
+
                 if (!result->result) {
                     if (local_at) {
                         // Stored. Not held any more: the range may be asked up
@@ -2712,16 +2676,11 @@ static
                         settle_connected();
                     }
 
-                    // Buffer the chunk result (chunks may arrive out of order)
-                    pending_chunks[result->start_height] = *result;
-
-                    // Advance blocks_synced_to through consecutive completed chunks
-                    while (true) {
-                        auto it = pending_chunks.find(blocks_synced_to + 1);
-                        if (it == pending_chunks.end()) break;
-                        blocks_synced_to = it->second.start_height + it->second.block_count - 1;
-                        pending_chunks.erase(it);
-                    }
+                    // Chunks arrive in any order; the height moves through
+                    // consecutive ones. One stored for a branch the chain has
+                    // since left is not counted.
+                    blocks_synced_to = pending_chunks.stored(
+                        *result, chain.chain_generation(), blocks_synced_to);
 
                     // Log progress periodically (every 1000 blocks)
                     static uint32_t last_logged_k = 0;

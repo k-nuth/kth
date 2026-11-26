@@ -390,3 +390,78 @@ TEST_CASE("an aborted pause preserves a received chunk on the unchanged branch",
     CHECK_FALSE(output.try_receive([](std::error_code, chunk_validated) {}));
     CHECK(chain.reorg_barrier_state() == std::make_pair(size_t{0}, size_t{0}));
 }
+
+TEST_CASE("storage that waited for room through a switch resumes from the cursor the switch left",
+          "[reorg][storage_wakeup][waits_for_room]") {
+    chain_fixture fixture("reorg_storage_waited");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto& index = chain.headers();
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const base = genesis.header().timestamp();
+    auto const one = mine_block(genesis.hash(), 1, base + block_spacing, 0, {}, 0);
+    REQUIRE(fixture.organizer().add_headers(headers_of({one})).headers_added == 1u);
+
+    ::asio::io_context ctx;
+    block_storage_input_channel input(ctx.get_executor(), 4);
+    chunk_validated_channel output(ctx.get_executor(), 1);
+    std::atomic<uint32_t> contiguous{1};
+
+    // The output's one slot is taken by an earlier outcome nobody has read.
+    REQUIRE(output.try_send(std::error_code{}, chunk_validated{
+        .start_height = 0, .block_count = 0, .result = error::success, .source_peer = nullptr}));
+
+    auto storage = ::asio::co_spawn(ctx,
+        block_storage_task(chain, input, output, 1, fixture.organizer(), &contiguous),
+        ::asio::use_future);
+
+    // Block 1 is stored and counted, and its outcome waits for room.
+    REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+        .start_height = 1, .chunk_id = 0, .blocks = {to_light(one)},
+        .source_peer = nullptr, .generation = chain.chain_generation()}));
+    ctx.run_for(std::chrono::seconds(2));
+    REQUIRE(contiguous.load() == 2u);
+    REQUIRE(chain.reorg_barrier_state() == std::make_pair(size_t{1}, size_t{1}));
+
+    // A switch runs from start to end during that wait: the chain is now on a
+    // sibling branch of two blocks, neither of them stored, and the switch set
+    // the shared cursor back to the fork.
+    auto const one_b = mine_block(genesis.hash(), 1, base + block_spacing + 1, 0, {}, 0);
+    auto const two_b = mine_block(one_b.hash(), 2, base + 2 * block_spacing + 1, 0, {}, 0);
+    REQUIRE(index.add(one_b.hash(), one_b.header()).inserted);
+    auto const tip_b = index.add(two_b.hash(), two_b.header());
+    REQUIRE(tip_b.inserted);
+    index.active_set_tip(tip_b.index);
+    contiguous.store(1);
+
+    // Room appears: the outcome owed is delivered, and storage goes on.
+    std::vector<uint32_t> delivered;
+    auto const take = [&] {
+        return output.try_receive([&](std::error_code, chunk_validated result) {
+            delivered.push_back(result.start_height);
+        });
+    };
+    REQUIRE(take());
+    ctx.restart();
+    ctx.run_for(std::chrono::seconds(2));
+    REQUIRE(take());
+    CHECK(delivered == std::vector<uint32_t>{0, 1});
+
+    // The second block of the new branch arrives before the first.
+    REQUIRE(input.try_send(std::error_code{}, downloaded_chunk{
+        .start_height = 2, .chunk_id = 0, .blocks = {to_light(two_b)},
+        .source_peer = nullptr, .generation = chain.chain_generation()}));
+    REQUIRE(input.try_send(std::error_code{}, stop_request{}));
+    ctx.restart();
+    ctx.run_for(std::chrono::seconds(5));
+    REQUIRE(storage.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+
+    // It is stored, and the bodies are still contiguous only up to the fork:
+    // a cursor carried over from the branch the chain left would have counted
+    // height 1 as held, and the height published would be past a missing body.
+    CHECK(index.has_block_data(tip_b.index));
+    CHECK(contiguous.load() == 1u);
+    CHECK(chain.reorg_barrier_state() == std::make_pair(size_t{0}, size_t{0}));
+}

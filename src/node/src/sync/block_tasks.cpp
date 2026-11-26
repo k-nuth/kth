@@ -1315,12 +1315,17 @@ std::atomic<uint32_t> g_active_download_peers{0};
                     next_height, organize_us / 1000, tx_count, total_bytes);
             }
 
-            if (!output.try_send(std::error_code{}, block_validated{
+            // Waits for room: the coordinator counts consecutive results, so
+            // one dropped here is a height it never hears of. Ended only by
+            // the channel closing, which is shutdown.
+            auto [send_ec] = co_await output.async_send(std::error_code{}, block_validated{
                 .height = next_height,
                 .result = result,
                 .source_peer = it->second.source_peer
-            })) {
-                spdlog::warn("[block_validation] Channel full, block_validated {} dropped", next_height);
+            }, ::asio::as_tuple(::asio::use_awaitable));
+            if (send_ec) {
+                spdlog::debug("[block_validation] Output closed; ending at height {}", next_height);
+                co_return;
             }
 
             pending.erase(it);
@@ -1722,15 +1727,25 @@ std::atomic<uint32_t> g_active_download_peers{0};
                 .block_count = uint32_t(chunk_block_count),
                 .result = result,
                 .source_peer = chunk_peer,
-                .submission = chunk_submission
+                .submission = chunk_submission,
+                .generation = chunk_generation
             };
             if (chunk_local) {
                 // The one terminal outcome of this body. The slot has room by
                 // construction: nothing else writes it.
                 (void)chunk_local->try_send(std::move(verdict));
-            } else if ( ! co_await try_send_with_retry(output, std::move(verdict))) {
-                spdlog::error("[fast_validation] Output channel full after retries!");
-                break;
+            } else {
+                // A suspended send: the verdict waits for the slot its reader
+                // frees, however long that takes, and is never given up on.
+                // This task is not a barrier participant, so suspending here
+                // holds no switch.
+                auto [send_ec] = co_await output.async_send(std::error_code{},
+                    std::move(verdict), ::asio::as_tuple(::asio::use_awaitable));
+                if (send_ec) {
+                    spdlog::debug("[fast_validation] Output closed; verdict for chunk at {} not delivered",
+                        chunk_start);
+                    break;
+                }
             }
         }
     }
@@ -1793,14 +1808,18 @@ std::atomic<uint32_t> g_active_download_peers{0};
     // Compatibility boundary: retain the existing chain barrier and its pause
     // protocol; the typed input wake supplies the missing owner notification.
     // No receive is cancelled, so a received chunk remains owned across a pause.
+    // This scope also releases the parked count on cancellation or an
+    // exception, before the task's participation guard retires it.
+    struct parked_scope {
+        blockchain::block_chain& chain;
+        explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
+        ~parked_scope() { chain.leave_reorg_barrier(); }
+        parked_scope(parked_scope const&) = delete;
+        parked_scope& operator=(parked_scope const&) = delete;
+    };
+
     auto park_for_reorg = [&]() -> ::asio::awaitable<void> {
-        // This scope also releases the parked count on cancellation or an
-        // exception, before the task's participation guard retires it.
-        struct parked_scope {
-            blockchain::block_chain& chain;
-            explicit parked_scope(blockchain::block_chain& c) : chain(c) { chain.enter_reorg_barrier(); }
-            ~parked_scope() { chain.leave_reorg_barrier(); }
-        } const parked(chain);
+        parked_scope const parked(chain);
         while (chain.reorg_pause_requested() && ! chain.stopped()) {
             ::asio::steady_timer pause_timer(co_await ::asio::this_coro::executor);
             pause_timer.expires_after(std::chrono::milliseconds(50));
@@ -1818,11 +1837,49 @@ std::atomic<uint32_t> g_active_download_peers{0};
         }
     };
 
+    // Hand a peer chunk's outcome to the coordinator, waiting for room when
+    // the output is full: the outcome is never given up on. Answers false when
+    // the output is closed.
+    //
+    // The wait is spent parked at the barrier. Nothing of the chain is touched
+    // while it lasts, and what frees the room is the coordinator reading its
+    // events, which it does not do while it carries out a switch: a wait that
+    // did not count as parked would hold that switch, and the switch would hold
+    // the room.
+    auto report = [&](chunk_validated outcome) -> ::asio::awaitable<bool> {
+        if (output.try_send(std::error_code{}, chunk_validated{outcome})) {
+            co_return true;
+        }
+        parked_scope const parked(chain);
+        auto const [send_ec] = co_await output.async_send(std::error_code{},
+            std::move(outcome), ::asio::as_tuple(::asio::use_awaitable));
+        if (send_ec) {
+            co_return false;
+        }
+        co_return true;
+    };
+
     while (true) {
         if (chain.reorg_pause_requested()) {
             co_await park_for_reorg();
             if (chain.stopped()) break;
             continue;
+        }
+
+        // A switch that ran while an outcome waited for room moved the shared
+        // counter, and the local cursors follow it instead of carrying their
+        // values from before. Read here, with no pause requested: a switch
+        // sets the counter before it lifts its pause, so one that has ended
+        // is seen whole, and one that begins after this is met by the check
+        // that follows the receive.
+        if (contiguous_out) {
+            auto const published = contiguous_out->load(std::memory_order_acquire);
+            if (published != contiguous_height) {
+                contiguous_height = published;
+                max_stored_height = contiguous_height > 0 ? contiguous_height - 1 : 0;
+                spdlog::debug("[block_storage] Resuming after reorg at contiguous height {}",
+                    contiguous_height);
+            }
         }
 
         // Named tuple rather than a structured binding, for the reason given
@@ -1951,15 +2008,16 @@ std::atomic<uint32_t> g_active_download_peers{0};
             .block_count = chunk_count,
             .result = store_error,
             .source_peer = chunk_peer,
-            .submission = chunk_submission
+            .submission = chunk_submission,
+            .generation = chunk_generation
         };
         if (chunk_local) {
             // The one terminal outcome of a local body. Never a wait: this
             // task is a barrier participant, and a switch may be waiting for it
             // to park while the coordinator is busy with that switch.
             (void)chunk_local->try_send(std::move(stored));
-        } else if ( ! co_await try_send_with_retry(output, std::move(stored))) {
-            spdlog::error("[block_storage] Output channel full after retries!");
+        } else if ( ! co_await report(std::move(stored))) {
+            spdlog::debug("[block_storage] Output closed; outcome of chunk at {} not delivered", chunk_start);
             break;
         }
 
