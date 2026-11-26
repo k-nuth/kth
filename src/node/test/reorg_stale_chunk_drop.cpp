@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
@@ -116,6 +117,18 @@ TEST_CASE("a chunk from the current generation is not dropped", "[reorg][drain]"
     REQUIRE(fixture.start());
     auto& chain = fixture.chain();
 
+    // Two siblings on genesis and a switch onto the second, so the generation
+    // is no longer the one a result carries when nobody stamps it.
+    auto& index = chain.headers();
+    auto const genesis_hash = index.get_hash(index.active_at(0));
+    for (uint32_t nonce : {1u, 2u}) {
+        domain::chain::header hdr{1, genesis_hash, null_hash, 1000 + nonce, 0x207fffff, nonce};
+        auto const added = index.add(domain::chain::hash(hdr), hdr);
+        REQUIRE(added.inserted);
+        index.active_set_tip(added.index);
+    }
+    REQUIRE(index.generation() != 0u);
+
     ::asio::io_context ctx;
     block_storage_input_channel input(ctx.get_executor(), 16);
     chunk_validated_channel output(ctx.get_executor(), 16);
@@ -131,12 +144,21 @@ TEST_CASE("a chunk from the current generation is not dropped", "[reorg][drain]"
     ctx.run_for(std::chrono::seconds(5));
 
     // It was NOT dropped: storage attempted it and reported the outcome
-    // downstream. (The store itself fails here because the fixture has no header
-    // at height 1 — what matters is that the chunk was processed rather than
-    // discarded before reaching storage.)
+    // downstream. (Whether the store itself succeeds is not the point here: a
+    // blank body is not the block of that header. What matters is that the
+    // chunk was processed rather than discarded before reaching storage.)
     bool reached_storage = false;
-    output.try_receive([&](std::error_code, chunk_validated) { reached_storage = true; });
+    std::optional<uint64_t> reported_generation;
+    output.try_receive([&](std::error_code, chunk_validated reported) {
+        reached_storage = true;
+        reported_generation = reported.generation;
+    });
     CHECK(reached_storage);
+
+    // And the outcome says which generation the chunk was downloaded for, so
+    // that a switch between this report and its reading does not let it count
+    // for the new branch.
+    CHECK(reported_generation == chain.headers().generation());
 }
 
 // =============================================================================

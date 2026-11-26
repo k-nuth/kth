@@ -165,6 +165,26 @@ struct chunk_validated {
     // local outcome by this, never by height: a body handed over before a
     // switch must not answer a submission made after it at the same height.
     uint64_t submission{0};
+    // The chain generation the chunk was downloaded for. A chain switch moves
+    // the generation, so a result still on its way when the switch happens is
+    // recognisable afterwards: its heights name other blocks on the new branch.
+    uint64_t generation{0};
+
+    /// True when this reports on a chunk downloaded for a branch the chain,
+    /// now at `chain_generation`, has since left.
+    [[nodiscard]]
+    constexpr bool from_abandoned_branch(uint64_t chain_generation) const {
+        return generation != chain_generation;
+    }
+
+    /// True when this is the outcome of a peer's chunk for a branch the chain,
+    /// now at `chain_generation`, has since left. Such an outcome says nothing
+    /// about the current branch, whether it is a success or a failure. A local
+    /// body's outcome is never one: it is matched to its submission instead.
+    [[nodiscard]]
+    constexpr bool peer_outcome_from_abandoned_branch(uint64_t chain_generation) const {
+        return submission == 0 && from_abandoned_branch(chain_generation);
+    }
 };
 
 using local_body_result_channel = select_channel<chunk_validated>;
