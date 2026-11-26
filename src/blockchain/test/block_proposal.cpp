@@ -206,8 +206,10 @@ TEST_CASE("a block proposal the node holds is answered from the header index", "
     CHECK(genesis.validity == block_validity::valid);
 
     // A header the node holds without its body has no verdict.
-    auto const mined = mine_block(genesis_hash(), now() - 60, 1, {}, 0);
-    REQUIRE(fixture.organizer().add_headers(domain::message::header::list{mined.header()}).headers_added == 1);
+    auto const mined = mine_block(genesis_hash(), 1, now() - 60, 0, {}, 0);
+    domain::message::header::list headers;
+    headers.push_back(mined.header());
+    REQUIRE(fixture.organizer().add_headers(headers).headers_added == 1);
     auto const header_only = judge(chain, mined);
     CHECK(header_only.result == outcome::duplicate);
     CHECK(header_only.validity == block_validity::unknown);
@@ -234,8 +236,10 @@ TEST_CASE("a block proposal off the connected tip is not judged", "[block_propos
 
     // On a header the node holds above the connected tip, and on a block it
     // does not know. Both would be valid on the tip; neither is judged.
-    auto const mined = mine_block(genesis_hash(), now() - 60, 1, {}, 0);
-    REQUIRE(fixture.organizer().add_headers(domain::message::header::list{mined.header()}).headers_added == 1);
+    auto const mined = mine_block(genesis_hash(), 1, now() - 60, 0, {}, 0);
+    domain::message::header::list headers;
+    headers.push_back(mined.header());
+    REQUIRE(fixture.organizer().add_headers(headers).headers_added == 1);
     for (auto const& parent : {mined.hash(), make_hash(1)}) {
         auto const result = judge(chain, proposal(parent, now(), coinbase_only(2, subsidy(2))));
         CHECK(result.result == outcome::not_on_tip);
