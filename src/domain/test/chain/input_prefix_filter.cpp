@@ -5,6 +5,7 @@
 #include <test_helpers.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -171,6 +172,23 @@ chain::input_prefix_filter filter_of(std::vector<uint16_t> values) {
     return chain::input_prefix_filter{std::move(values)};
 }
 
+// The values from 0 up to `count`, one each.
+std::vector<uint16_t> first_values(uint32_t count) {
+    std::vector<uint16_t> values;
+    for (uint32_t value = 0; value < count; ++value) {
+        values.push_back(uint16_t(value));
+    }
+    return values;
+}
+
+std::string head_of(data_chunk const& bytes, size_t size) {
+    return encode_base16(data_chunk(bytes.begin(), bytes.begin() + std::ptrdiff_t(size)));
+}
+
+std::string tail_of(data_chunk const& bytes, size_t size) {
+    return encode_base16(data_chunk(bytes.end() - std::ptrdiff_t(size), bytes.end()));
+}
+
 } // namespace
 
 // Start Test Suite: input prefix filter tests
@@ -250,7 +268,7 @@ TEST_CASE("only the first 30 inputs of a transaction after the coinbase are valu
     CHECK(encode_base16(chain::to_data(alone)) == "00");
 }
 
-TEST_CASE("a block of 30,000 inputs has enough values for a Rice parameter of 0", "[input prefix filter]") {
+TEST_CASE("a block of 30,000 inputs has enough values for the bitmap", "[input prefix filter]") {
     // Transaction j (1 to 1,000) spends outputs 0 to 29 of the txid that is j
     // in four little-endian bytes and 28 zero bytes.
     chain::transaction::list transactions{coinbase()};
@@ -263,33 +281,52 @@ TEST_CASE("a block of 30,000 inputs has enough values for a Rice parameter of 0"
     }
     auto const filter = chain::build_input_prefix_filter(block_of(std::move(transactions)));
     REQUIRE(filter.values.size() == 24051);
-    CHECK(chain::input_prefix_rice_parameter(filter.values.size()) == 0);
+    CHECK(chain::input_prefix_rice_parameter(filter.values.size()) == chain::input_prefix_bitmap);
     CHECK(std::vector<uint16_t>(filter.values.begin(), filter.values.begin() + 4)
         == std::vector<uint16_t>{0x0001, 0x0002, 0x000e, 0x000f});
     CHECK(std::vector<uint16_t>(filter.values.end() - 4, filter.values.end())
         == std::vector<uint16_t>{0xfff9, 0xfffa, 0xfffc, 0xfffd});
 
+    // The count, the byte 16 and the 8,192 bytes of the bitmap.
     auto const served = chain::to_data(filter);
-    REQUIRE(served.size() == 11202);
-    CHECK(encode_base16(data_chunk(served.begin(), served.begin() + 16)) == "fdf35d00afff55d56d7fead57d56bdeb");
-    CHECK(encode_base16(data_chunk(served.end() - 8, served.end())) == "6aeddf5b7bd7dd5a");
+    REQUIRE(served.size() == 8196);
+    CHECK(head_of(served, 16) == "fdf35d106003cf5803bc3d88c206f1b0");
+    CHECK(tail_of(served, 8) == "012cdca4351184ec");
     CHECK(encode_base16(chain::input_prefix_filter_hash(filter))
-        == "7ee4807b0bfc1fc3837492fabe13527d34e16489bb69f66c7fa54d04a1165746");
+        == "a067316c9de0820f3a0d59e8f8f3afd1faa9fdabe19fcbd0240fc586bd0c0a5c");
     auto const parsed = chain::parse_input_prefix_filter(served);
     REQUIRE(parsed);
     CHECK(*parsed == filter);
 }
 
-TEST_CASE("the Rice parameter is the largest k with 2^k at most 45426 / N, and 0 below 1", "[input prefix filter]") {
-    std::vector<std::pair<size_t, uint8_t>> const expected{
-        {1, 15}, {2, 14}, {3, 13}, {5, 13}, {6, 12}, {30, 10}, {22713, 1}, {22714, 0}, {45426, 0}, {45427, 0},
-        {65536, 0}};
-    for (auto const& [count, k] : expected) {
+TEST_CASE("the byte after the count comes from the count: k from 15 down to 1, then the bitmap", "[input prefix filter]") {
+    // The first count of each k, and the bitmap from 19,197 values.
+    std::vector<std::pair<size_t, uint8_t>> const starts{
+        {1, 15}, {2, 14}, {3, 13}, {7, 12}, {15, 11}, {30, 10}, {61, 9}, {123, 8}, {246, 7}, {494, 6},
+        {992, 5}, {1997, 4}, {4051, 3}, {8356, 2}, {18055, 1}, {19197, 16}};
+    for (auto const& [count, k] : starts) {
         CAPTURE(count);
         CHECK(chain::input_prefix_rice_parameter(count) == k);
+        if (count > 1) {
+            // The count before a band is the last of the band before.
+            auto const before = chain::input_prefix_rice_parameter(count - 1);
+            CHECK(before == (k == chain::input_prefix_bitmap ? 1 : k + 1));
+        }
     }
-    // No values carry no parameter.
+    CHECK(chain::input_prefix_rice_parameter(19196) == 1);
+    CHECK(chain::input_prefix_rice_parameter(65536) == chain::input_prefix_bitmap);
+    // k = 0 is never used: every count has a k from 15 down to 1, or the
+    // bitmap, and they only go down until the bitmap.
+    uint8_t previous = 15;
+    for (size_t count = 1; count < chain::input_prefix_bitmap_from; ++count) {
+        auto const k = chain::input_prefix_rice_parameter(count);
+        REQUIRE(k >= 1);
+        REQUIRE(k <= previous);
+        previous = k;
+    }
+    // No values carry no byte, and there are no more than 65,536 values.
     CHECK(chain::input_prefix_rice_parameter(0) == 0);
+    CHECK(chain::input_prefix_rice_parameter(65537) == 0);
 }
 
 TEST_CASE("sets of known encodings, from one value to every value", "[input prefix filter]") {
@@ -302,39 +339,47 @@ TEST_CASE("sets of known encodings, from one value to every value", "[input pref
     // The set, whatever order and repeats the caller gives.
     CHECK(chain::to_data(filter_of({2, 1, 2})) == chain::to_data(filter_of({1, 2})));
 
-    // Every even value: N = 32,768, k = 0, a zero-bit for the first value and
-    // 110 for each gap of 2. That is 011 repeated, and its last group 000
-    // with the two padding bits: 6d b6 db repeated, the last byte d8.
+    // The largest Rice count, 19,196 values, at k = 1 (a zero-bit and the
+    // low bit for each gap: 00 for the first, 01 after), and the first
+    // bitmap count, 19,197 values, the reference's bytes.
+    auto const rice = chain::to_data(filter_of(first_values(19196)));
+    REQUIRE(rice.size() == 4803);
+    CHECK(head_of(rice, 8) == "fdfc4a0115555555");
+    CHECK(encode_base16(bitcoin_hash(rice)) == "c87c720767d86452f2dfde01c6a5300a755a1fc9eabda48f4d4b56dc4ad17fea");
+    REQUIRE(chain::parse_input_prefix_filter(rice));
+    CHECK(chain::parse_input_prefix_filter(rice)->values == first_values(19196));
+    auto const bitmap = chain::to_data(filter_of(first_values(19197)));
+    REQUIRE(bitmap.size() == 8196);
+    CHECK(head_of(bitmap, 8) == "fdfd4a10ffffffff");
+    CHECK(tail_of(bitmap, 8) == "0000000000000000");
+    CHECK(encode_base16(bitcoin_hash(bitmap)) == "355b13f4d81ff87e20fc33ce4ef7931acdbb3867f7b128bb71286322d3850001");
+    REQUIRE(chain::parse_input_prefix_filter(bitmap));
+    CHECK(chain::parse_input_prefix_filter(bitmap)->values == first_values(19197));
+
+    // Every even value: N = 32,768, the byte 16 and a bitmap of aa.
     std::vector<uint16_t> even;
     for (uint32_t value = 0; value < 65536; value += 2) {
         even.push_back(uint16_t(value));
     }
-    data_chunk even_bytes{0xfd, 0x00, 0x80, 0x00};
-    for (size_t i = 0; i < 4096; ++i) {
-        even_bytes.insert(even_bytes.end(), {0x6d, 0xb6, 0xdb});
-    }
-    even_bytes.back() = 0xd8;
+    data_chunk even_bytes{0xfd, 0x00, 0x80, 0x10};
+    even_bytes.insert(even_bytes.end(), 8192, 0xaa);
     auto const even_filter = filter_of(even);
     CHECK(chain::to_data(even_filter) == even_bytes);
     CHECK(encode_base16(chain::input_prefix_filter_hash(even_filter))
-        == "61071102674b83e66e64057ced5188a431ca43ab0809e21805a1d618ecfee3b5");
+        == "b0abac56021c4436c49a9de58243b2d5594633503c83cddd2e190da6a5be37b7");
     auto const even_parsed = chain::parse_input_prefix_filter(even_bytes);
     REQUIRE(even_parsed);
     CHECK(even_parsed->values == even);
 
-    // Every value: N = 65,536 in a four-byte count, k = 0, a zero-bit and then
-    // 10 for each gap of 1: 55 repeated, the last byte 54 with its padding bit.
-    std::vector<uint16_t> every;
-    for (uint32_t value = 0; value < 65536; ++value) {
-        every.push_back(uint16_t(value));
-    }
-    data_chunk every_bytes{0xfe, 0x00, 0x00, 0x01, 0x00, 0x00};
-    every_bytes.insert(every_bytes.end(), 16384, 0x55);
-    every_bytes.back() = 0x54;
+    // Every value: N = 65,536 in a four-byte count, the byte 16 and a bitmap
+    // of ff.
+    auto const every = first_values(65536);
+    data_chunk every_bytes{0xfe, 0x00, 0x00, 0x01, 0x00, 0x10};
+    every_bytes.insert(every_bytes.end(), 8192, 0xff);
     auto const every_filter = filter_of(every);
     CHECK(chain::to_data(every_filter) == every_bytes);
     CHECK(encode_base16(chain::input_prefix_filter_hash(every_filter))
-        == "7a672451d57673b0da774463ee18c04e3fe1d9aef1ce602135644a144dd0182c");
+        == "79d65549e1801072cda4736a9b36ee687cdb2ff6b94139437f242ddfc1251c01");
     auto const every_parsed = chain::parse_input_prefix_filter(every_bytes);
     REQUIRE(every_parsed);
     CHECK(every_parsed->values == every);
@@ -354,7 +399,8 @@ TEST_CASE("a filter that is not the one encoding of a set is refused", "[input p
         {"", input_prefix_filter_error::truncated, "no count"},
         {"01", input_prefix_filter_error::truncated, "a count and no Rice parameter"},
         {"010f", input_prefix_filter_error::truncated, "no bits for the value"},
-        {"0110000000", input_prefix_filter_error::rice_parameter, "k = 16"},
+        {"0111000000", input_prefix_filter_error::rice_parameter, "a byte above 16"},
+        {"0110000000", input_prefix_filter_error::rice_parameter, "the bitmap's byte for one value"},
         {"020e000a0000", input_prefix_filter_error::repeated_value, "5 and then a gap of 0"},
         {"010fc00000", input_prefix_filter_error::value_too_large, "a first gap of 65,536"},
         {"020eefffc00080", input_prefix_filter_error::value_too_large, "65,535 and then a gap of 1"},
@@ -374,9 +420,10 @@ TEST_CASE("a filter that is not the one encoding of a set is refused", "[input p
     }
 
     // A run of one-bits is refused once it passes the largest value, before
-    // its end: 65,544 of them with k = 0, the parameter of 65,536 values.
-    data_chunk run{0xfe, 0x00, 0x00, 0x01, 0x00, 0x00};
-    run.insert(run.end(), 8193, 0xff);
+    // its end: 32,776 of them with k = 1, the parameter of 19,196 values,
+    // past 65,535 at the 32,768th.
+    data_chunk run{0xfd, 0xfc, 0x4a, 0x01};
+    run.insert(run.end(), 4097, 0xff);
     auto const long_run = chain::parse_input_prefix_filter(run);
     REQUIRE( ! long_run);
     CHECK(long_run.error() == input_prefix_filter_error::value_too_large);
@@ -411,6 +458,75 @@ TEST_CASE("a filter whose Rice parameter is not its count's is refused", "[input
         auto const parsed = chain::parse_input_prefix_filter(from_hex(hex));
         REQUIRE( ! parsed);
         CHECK(parsed.error() == input_prefix_filter_error::rice_parameter);
+    }
+}
+
+TEST_CASE("a bitmap is refused for another count, with another number of values, or cut or longer", "[input prefix filter]") {
+    // Each built as the reference builds it, and checked by length and hash.
+    struct refused {
+        data_chunk bytes;
+        size_t size;
+        std::string_view hash;
+        input_prefix_filter_error error;
+        std::string_view what;
+    };
+
+    // Rice coding at k = 1 for 19,197 values (0 to 19,196): 00, then 01 for
+    // each gap of 1, padded with zero-bits.
+    data_chunk rice_19197{0xfd, 0xfd, 0x4a, 0x01, 0x15};
+    rice_19197.insert(rice_19197.end(), 4798, 0x55);
+    rice_19197.push_back(0x40);
+
+    // The bitmap of 19,197 values (0 to 19,195 and 65,535) under a count of 19,196.
+    auto const bitmap_of_19197 = [] {
+        auto values = first_values(19196);
+        values.push_back(65535);
+        return chain::to_data(filter_of(values));
+    }();
+    data_chunk bitmap_19196{0xfd, 0xfc, 0x4a};
+    bitmap_19196.insert(bitmap_19196.end(), bitmap_of_19197.begin() + 3, bitmap_of_19197.end());
+
+    auto const bitmap = chain::to_data(filter_of(first_values(19197)));
+    auto one_more = bitmap;
+    one_more.back() = uint8_t(one_more.back() | 0x01);
+    data_chunk const short_bitmap(bitmap.begin(), bitmap.end() - 1);
+    auto long_bitmap = bitmap;
+    long_bitmap.push_back(0x00);
+
+    std::vector<refused> const cases{
+        {rice_19197, 4804, "c551e5e24157e4367c8cc57f079c261da9c23a8eb8b70f018a99841b126e453d",
+            input_prefix_filter_error::rice_parameter, "Rice coding for 19,197 values"},
+        {bitmap_19196, 8196, "9b1c0366745c1b16661d5e317f16ee6d75a1d9ff3699985247e520b8c2ff9c52",
+            input_prefix_filter_error::rice_parameter, "a bitmap for 19,196 values"},
+        {one_more, 8196, "2586850d51f1817c222f702d38b16670fbe12717088b75bc13fc9fff19176e5b",
+            input_prefix_filter_error::bitmap_count, "a bitmap with a value more than the count"},
+        {short_bitmap, 8195, "a1a425d9b033a1f3f6e77f3364e07feb1976ca08d6d3c2ae8147c9a27cc084c6",
+            input_prefix_filter_error::truncated, "a bitmap a byte short"},
+        {long_bitmap, 8197, "f4ebf525e4ef4851cee0e4aef8e29461070b672df51702b2f225d44224bafb3b",
+            input_prefix_filter_error::trailing_bytes, "a bitmap a byte long"},
+    };
+    for (auto const& item : cases) {
+        CAPTURE(item.what);
+        CHECK(item.bytes.size() == item.size);
+        CHECK(encode_base16(bitcoin_hash(item.bytes)) == std::string{item.hash});
+        auto const parsed = chain::parse_input_prefix_filter(item.bytes);
+        REQUIRE( ! parsed);
+        CHECK(parsed.error() == item.error);
+    }
+
+    // A bitmap with a value fewer than the count.
+    auto one_less = bitmap;
+    one_less[4] = uint8_t(one_less[4] & 0x7f);
+    auto const fewer = chain::parse_input_prefix_filter(one_less);
+    REQUIRE( ! fewer);
+    CHECK(fewer.error() == input_prefix_filter_error::bitmap_count);
+
+    // A bitmap cut anywhere is truncated.
+    for (size_t size : {size_t(4), size_t(5), size_t(4100), bitmap.size() - 1}) {
+        CAPTURE(size);
+        auto const cut = chain::parse_input_prefix_filter(byte_span{bitmap.data(), size});
+        REQUIRE( ! cut);
+        CHECK(cut.error() == input_prefix_filter_error::truncated);
     }
 }
 
