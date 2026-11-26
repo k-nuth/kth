@@ -330,6 +330,73 @@ private:
     pick_fn pick_;
 };
 
+/// Transactions validation refused only because the connected tip was about
+/// to move, kept until it moves and then validated again, as an orphan waits
+/// for its parent. Two refusals are that:
+///
+/// - `stale_chain`: a block connected while the transaction was being
+///   checked, and again while it was checked a second time;
+/// - `transaction_non_final` for the next block, when the transaction is
+///   final for the block after the header tip: a wallet sets the lock time to
+///   its tip height, and that block is in as a header and still connecting.
+///
+/// The node checks a transaction against its connected tip while a block
+/// announced before it may still be on its way; BCHN handles a block before
+/// the transaction that follows it on the same connection, so it does not
+/// meet either refusal for this reason. A peer announces a transaction once:
+/// without this, the next tip would have taken it, and nobody offers it again.
+///
+/// Bounded as the orphanage is: by count, by the size of each transaction,
+/// by what one peer may have kept, and by age. What the connected blocks
+/// confirm or conflict with goes, as from the orphanage.
+class tx_waiting_for_tip {
+public:
+    using time_point = tx_request_tracker::time_point;
+
+    static constexpr size_t capacity = tx_orphanage::capacity;
+    /// What one peer may have kept: a quarter, so no peer fills it alone.
+    static constexpr size_t max_per_peer = capacity / 4;
+    static constexpr size_t max_transaction_size = tx_orphanage::max_transaction_size;
+    static constexpr std::chrono::minutes expire_time = tx_orphanage::expire_time;
+
+    /// Keep `tx`, from `peer`, until the connected tip moves. False when it is
+    /// kept already, too large, its peer is at max_per_peer, or this is at
+    /// capacity once what expired is gone: then it is not kept.
+    bool add(domain::message::transaction::const_ptr tx, uint64_t peer, time_point now);
+
+    [[nodiscard]]
+    bool contains(hash_digest const& txid) const;
+
+    /// The connected tip moved: everything kept that has not expired, in the
+    /// order it was kept, and nothing is kept any more.
+    [[nodiscard]]
+    std::vector<tx_admission> take(time_point now);
+
+    /// `peer` is gone: what it sent goes.
+    void erase_for_peer(uint64_t peer);
+
+    /// `block` was connected: what spends an output it spends goes, its own
+    /// transactions among them. Returns how many went.
+    size_t erase_for_block(domain::chain::block const& block);
+
+    [[nodiscard]]
+    size_t size() const { return order_.size(); }
+
+private:
+    struct waiting {
+        domain::message::transaction::const_ptr tx;
+        uint64_t peer;
+        time_point expires;
+    };
+
+    void erase(hash_digest const& txid);
+
+    boost::unordered_flat_map<hash_digest, waiting> waiting_;
+    boost::unordered_flat_map<uint64_t, size_t> per_peer_;
+    // What is kept, in the order it was kept.
+    std::vector<hash_digest> order_;
+};
+
 // -----------------------------------------------------------------------------
 // The channels around it
 // -----------------------------------------------------------------------------
@@ -499,6 +566,10 @@ struct tx_relay_view {
     /// The clock the request deadlines are read on. The steady clock when
     /// empty; controls set their own.
     std::function<tx_request_tracker::time_point()> now = {};
+    /// Whether a transaction refused as non-final for the next block is final
+    /// for the block after the header tip, by a height lock time: a block it
+    /// waits for is in as a header. When empty, none is.
+    std::function<bool(domain::chain::transaction const&)> final_after_headers = {};
 };
 
 /// What the owner reads from `chain`: the node's view.

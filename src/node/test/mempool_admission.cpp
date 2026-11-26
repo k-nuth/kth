@@ -341,6 +341,40 @@ TEST_CASE("a transaction announced while the next block arrives is asked for and
     CHECK(admitter.wait_for(0s) == std::future_status::ready);
 }
 
+// What the relay asks of the chain before it keeps a non-final transaction
+// for the next tip: final for the block after the header tip, by its lock
+// height. A wallet sets the lock time to its tip height, and that block is in
+// here as a header and not connected.
+TEST_CASE("the relay finds a transaction final after the header tip by its lock height",
+          "[mempool][admission][tx_relay][tip_wait]") {
+    using namespace kth::node::detail;
+    admission_chain built("tx_relay_final_after_headers", trunk_len);
+    auto& chain = built.chain();
+    auto const view = chain_relay_view(chain);
+    REQUIRE(view.final_after_headers);
+
+    auto const locked = [](uint32_t locktime) {
+        domain::chain::input::list inputs;
+        inputs.emplace_back(domain::chain::output_point{hash_digest{0x42}, 0}, domain::chain::script{}, 0);
+        return domain::chain::transaction(1, locktime, std::move(inputs), domain::chain::output::list{});
+    };
+
+    // Level with the headers: the next block is trunk_len + 1, final above a
+    // lock height of trunk_len and not at it.
+    CHECK(view.final_after_headers(locked(trunk_len)));
+    CHECK_FALSE(view.final_after_headers(locked(trunk_len + 1)));
+
+    // The next block in as a header: one more height is final after it.
+    auto const next = test::mine_block(built.trunk.back().hash(), trunk_len + 1,
+        built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+    REQUIRE(built.fixture.organizer().add_headers(headers_of({next})).headers_added == 1u);
+    CHECK(view.final_after_headers(locked(trunk_len + 1)));
+    CHECK_FALSE(view.final_after_headers(locked(trunk_len + 2)));
+
+    // A lock time by time is never taken for one by height.
+    CHECK_FALSE(view.final_after_headers(locked(uint32_t(locktime_threshold) + 1)));
+}
+
 // Expiry counts from when the node first saw a transaction, as BCHN's does, so
 // a restart must not reset it: mempool.dat records that time, and the reload
 // used to admit every transaction as seen at the restart.

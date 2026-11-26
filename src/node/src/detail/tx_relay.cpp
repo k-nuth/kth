@@ -5,6 +5,7 @@
 #include <kth/node/detail/tx_relay.hpp>
 
 #include <algorithm>
+#include <set>
 #include <tuple>
 #include <utility>
 
@@ -498,6 +499,107 @@ void tx_orphanage::sweep(time_point now) {
 }
 
 // =============================================================================
+// tx_waiting_for_tip
+// =============================================================================
+
+bool tx_waiting_for_tip::add(domain::message::transaction::const_ptr tx, uint64_t peer, time_point now) {
+    auto const txid = tx->hash();
+    if (waiting_.contains(txid) || tx->serialized_size(true) > max_transaction_size) {
+        return false;
+    }
+    if (auto const it = per_peer_.find(peer); it != per_peer_.end() && it->second >= max_per_peer) {
+        return false;
+    }
+    if (order_.size() >= capacity) {
+        std::vector<hash_digest> expired;
+        for (auto const& [kept, item] : waiting_) {
+            if (item.expires <= now) {
+                expired.push_back(kept);
+            }
+        }
+        for (auto const& kept : expired) {
+            erase(kept);
+        }
+        if (order_.size() >= capacity) {
+            return false;
+        }
+    }
+    waiting_.emplace(txid, waiting{std::move(tx), peer, now + expire_time});
+    ++per_peer_[peer];
+    order_.push_back(txid);
+    return true;
+}
+
+bool tx_waiting_for_tip::contains(hash_digest const& txid) const {
+    return waiting_.contains(txid);
+}
+
+std::vector<tx_admission> tx_waiting_for_tip::take(time_point now) {
+    std::vector<tx_admission> taken;
+    taken.reserve(order_.size());
+    for (auto const& txid : order_) {
+        auto const& item = waiting_.at(txid);
+        if (item.expires > now) {
+            taken.push_back(tx_admission{item.tx, item.peer});
+        }
+    }
+    waiting_.clear();
+    per_peer_.clear();
+    order_.clear();
+    return taken;
+}
+
+void tx_waiting_for_tip::erase(hash_digest const& txid) {
+    auto const it = waiting_.find(txid);
+    if (it == waiting_.end()) {
+        return;
+    }
+    auto const peer = per_peer_.find(it->second.peer);
+    if (peer != per_peer_.end() && --peer->second == 0) {
+        per_peer_.erase(peer);
+    }
+    waiting_.erase(it);
+    std::erase(order_, txid);
+}
+
+void tx_waiting_for_tip::erase_for_peer(uint64_t peer) {
+    std::vector<hash_digest> sent;
+    for (auto const& [txid, item] : waiting_) {
+        if (item.peer == peer) {
+            sent.push_back(txid);
+        }
+    }
+    for (auto const& txid : sent) {
+        erase(txid);
+    }
+}
+
+size_t tx_waiting_for_tip::erase_for_block(domain::chain::block const& block) {
+    if (waiting_.empty()) {
+        return 0;
+    }
+    std::set<std::pair<hash_digest, uint32_t>> spent;
+    for (auto const& tx : block.transactions()) {
+        for (auto const& input : tx.inputs()) {
+            spent.emplace(input.previous_output().hash(), input.previous_output().index());
+        }
+    }
+    std::vector<hash_digest> gone;
+    for (auto const& [txid, item] : waiting_) {
+        auto const conflicts = std::ranges::any_of(item.tx->inputs(), [&](auto const& input) {
+            return spent.contains({input.previous_output().hash(), input.previous_output().index()});
+        });
+        if (conflicts) {
+            gone.push_back(txid);
+        }
+    }
+    for (auto const& txid : gone) {
+        erase(txid);
+    }
+    return gone.size();
+}
+
+// =============================================================================
 // The channels
 // =============================================================================
 
@@ -701,11 +803,14 @@ public:
     }
 
     // The connected tip moved: what it resolves is read from the blocks
-    // connected since the last one seen, by a task of its own. With no orphans,
-    // or while the node does not follow the chain, there is nothing to resolve
-    // and the mark only moves. One scan at a time: a ring during it scans
-    // again after it.
-    void tip_moved() {
+    // connected since the last one seen, by a task of its own, and what waited
+    // for it is validated again once the scan has taken out what those blocks
+    // confirm or conflict with. With nothing kept, or while the node does not
+    // follow the chain, there is nothing to resolve and the mark only moves;
+    // what waited for a tip then goes, as the blocks it would be checked
+    // against are not read. One scan at a time: a ring during it scans again
+    // after it.
+    void tip_moved(tx_request_tracker::time_point now) {
         if ( ! view_.connected_tip) {
             return;
         }
@@ -717,11 +822,16 @@ public:
         if ( ! tip) {
             return;
         }
-        if ( ! seen_ || orphans_.size() == 0 || ! view_.following()) {
+        if ( ! seen_ || ! view_.following()) {
+            (void)waiting_for_tip_.take(now);
             seen_ = tip;
             return;
         }
         if (*seen_ == *tip) {
+            return;
+        }
+        if (orphans_.size() == 0 && waiting_for_tip_.size() == 0) {
+            seen_ = tip;
             return;
         }
         scanning_ = true;
@@ -760,7 +870,8 @@ private:
         remember(value.peer);
         auto const preferred = value.peer->is_preferred_download();
         for (auto const& txid : value.txids) {
-            if (rejects_.contains(txid) || orphans_.contains(txid) || view_.in_mempool(txid)) {
+            if (rejects_.contains(txid) || orphans_.contains(txid) || waiting_for_tip_.contains(txid) ||
+                    view_.in_mempool(txid)) {
                 continue;
             }
             (void)tracker_.announced(peer, preferred, txid, now);
@@ -784,7 +895,8 @@ private:
         if (value.session) {
             remember(value.session);
         }
-        if (rejects_.contains(txid) || orphans_.contains(txid) || view_.in_mempool(txid)) {
+        if (rejects_.contains(txid) || orphans_.contains(txid) || waiting_for_tip_.contains(txid) ||
+                view_.in_mempool(txid)) {
             tracker_.forget(txid);
             return;
         }
@@ -833,15 +945,21 @@ private:
             spdlog::debug("[tx_relay] {} orphan(s) resolved by block {}", gone,
                 encode_hash(value.point.hash));
         }
+        auto const settled = waiting_for_tip_.erase_for_block(*value.block);
+        if (settled > 0) {
+            spdlog::debug("[tx_relay] {} transaction(s) waiting for the tip settled by block {}", settled,
+                encode_hash(value.point.hash));
+        }
         seen_ = value.point;
     }
 
-    void on(tx_scan_ended& value, tx_request_tracker::time_point) {
+    void on(tx_scan_ended& value, tx_request_tracker::time_point now) {
         seen_ = value.reached;
         scanning_ = false;
+        release(now);
         if (rescan_) {
             rescan_ = false;
-            tip_moved();
+            tip_moved(now);
         }
     }
 
@@ -852,8 +970,47 @@ private:
             orphans_.parent_admitted(txid);
         } else if (missing_inputs(value.result)) {
             orphan(value, now);
+        } else if (waits_for_tip(value) && waiting_for_tip_.add(value.tx, value.peer, now)) {
+            spdlog::debug("[tx_relay] Transaction {} from peer {} waits for the next tip: {}",
+                encode_hash(txid), value.peer, value.result.message());
         } else if (rejected(value.result)) {
             rejects_.insert(txid);
+        }
+        feed(now);
+    }
+
+    // Refused only because the connected tip was about to move
+    // (tx_waiting_for_tip): checked while blocks connected twice, or non-final
+    // for the next block and final for the block after the header tip. Only
+    // with connected blocks to read, which is what takes out of the wait what
+    // they confirm.
+    bool waits_for_tip(tx_admitted const& value) const {
+        if ( ! view_.connected_tip || ! view_.block_at) {
+            return false;
+        }
+        if (value.result == error::stale_chain) {
+            return true;
+        }
+        return value.result == error::transaction_non_final && view_.final_after_headers &&
+            view_.final_after_headers(*value.tx);
+    }
+
+    // The connected tip moved and its blocks were read: what waited for it is
+    // validated again, after what waits already, in the order it was kept.
+    // What does not fit waits for the next tip.
+    void release(tx_request_tracker::time_point now) {
+        for (auto& item : waiting_for_tip_.take(now)) {
+            auto const txid = item.tx->hash();
+            if (view_.in_mempool(txid) || rejects_.contains(txid) || orphans_.contains(txid) ||
+                    tracker_.held(txid)) {
+                continue;
+            }
+            if (waiting_.size() >= tx_waiting_capacity) {
+                (void)waiting_for_tip_.add(item.tx, item.peer, now);
+                continue;
+            }
+            tracker_.hold(txid);
+            waiting_.push_back(std::move(item));
         }
         feed(now);
     }
@@ -879,7 +1036,8 @@ private:
         if (peer != peers_.end()) {
             auto const preferred = peer->second.session->is_preferred_download();
             for (auto const& parent : parents) {
-                if (orphans_.contains(parent) || tracker_.held(parent) || view_.in_mempool(parent)) {
+                if (orphans_.contains(parent) || waiting_for_tip_.contains(parent) || tracker_.held(parent) ||
+                        view_.in_mempool(parent)) {
                     continue;
                 }
                 (void)tracker_.announced(value.peer, preferred, parent, now);
@@ -918,6 +1076,7 @@ private:
     void leave(uint64_t peer) {
         tracker_.disconnected(peer);
         orphans_.erase_for_peer(peer);
+        waiting_for_tip_.erase_for_peer(peer);
         peers_.erase(peer);
     }
 
@@ -977,6 +1136,7 @@ private:
     recent_rejects rejects_;
     boost::unordered_flat_map<uint64_t, relay_peer> peers_;
     tx_orphanage orphans_;
+    tx_waiting_for_tip waiting_for_tip_;
     // Received, validation full: taken by it as it frees room. Bounded.
     std::deque<tx_admission> waiting_;
     // The last connected block whose orphans were resolved.
@@ -1016,7 +1176,7 @@ private:
         if (selected.index == 0) {
             owner.handle(std::move(*selected.value<0>()), now);
         } else if (selected.index == 1) {
-            owner.tip_moved();
+            owner.tip_moved(now);
         }
         owner.dispatch(now);
     }
@@ -1055,6 +1215,19 @@ tx_relay_view chain_relay_view(blockchain::block_chain& chain) {
                 co_return std::nullopt;
             }
             co_return chain_point{read->first->previous_block_hash(), read->second - 1};
+        },
+        // By height lock times only: the block after the header tip, with the
+        // tick schedule of the connected state, which is the network's.
+        .final_after_headers = [&chain](domain::chain::transaction const& tx) {
+            if (tx.locktime() >= locktime_threshold) {
+                return false;
+            }
+            auto const view = chain.chain_view();
+            auto const header_tip = chain.headers().active_tip_height();
+            if ( ! view || ! view->state || header_tip < 0) {
+                return false;
+            }
+            return tx.is_final(view->state->ticks(), size_t(header_tip) + 1, 0);
         },
     };
 }

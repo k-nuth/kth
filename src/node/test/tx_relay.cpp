@@ -342,6 +342,8 @@ struct relay_rig {
     tx_admission_channel admission{tx_admission_capacity};
 
     bool following = true;
+    // What final_after_headers answers.
+    bool final_after = false;
     boost::unordered_flat_set<hash_digest> mempool;
     hash_digest tip = txid_of(0xaa);
     code verdict = error::success;
@@ -369,6 +371,7 @@ struct relay_rig {
             .in_mempool = [this](hash_digest const& txid) { return mempool.contains(txid); },
             .tip = [this] { return tip; },
             .now = clock,
+            .final_after_headers = [this](domain::chain::transaction const&) { return final_after; },
         };
         if ( ! blocks.empty()) {
             result.connected_tip = [this]() -> std::optional<chain_point> {
@@ -1171,6 +1174,201 @@ TEST_CASE("tx relay: a block that cannot be read is read at the next ring",
     ring(rig);
     CHECK(rig.reads == 3u);
     CHECK_FALSE(kept_until_parent(rig, parent, child->hash()));
+}
+
+// -----------------------------------------------------------------------------
+// Transactions refused only because the connected tip was about to move
+// -----------------------------------------------------------------------------
+
+namespace {
+
+tx_waiting_for_tip::time_point const w0 = tx_waiting_for_tip::time_point{} + 1h;
+
+// Refused with `first` the first time it is validated, admitted after.
+std::function<code(domain::message::transaction const&)> refuse_once(relay_rig& rig, code first) {
+    return [&rig, first, seen = boost::unordered_flat_set<hash_digest>{}](
+               domain::message::transaction const& tx) mutable {
+        if (seen.insert(tx.hash()).second) {
+            return first;
+        }
+        return by_pool(rig, tx);
+    };
+}
+
+size_t submissions_of(relay_rig const& rig, hash_digest const& txid) {
+    return size_t(std::ranges::count_if(rig.submitted, [&](auto const& tx) { return tx->hash() == txid; }));
+}
+
+} // namespace
+
+TEST_CASE("tx waiting for tip: kept once, bounded by size, by peer and by count, and taken in order",
+          "[tx_relay][tip_wait]") {
+    tx_waiting_for_tip waiting;
+    auto const parent = make_tx(1)->hash();
+    auto const first = make_spend(2, parent, 0);
+    REQUIRE(waiting.add(first, 1, w0));
+    CHECK(waiting.contains(first->hash()));
+    CHECK_FALSE(waiting.add(first, 2, w0));
+
+    domain::chain::output::list outputs;
+    outputs.emplace_back(0, domain::chain::script(data_chunk(tx_waiting_for_tip::max_transaction_size, 0x6a), false),
+        std::nullopt);
+    auto const large = std::make_shared<domain::message::transaction const>(
+        domain::message::transaction(1, 3, domain::chain::input::list{
+            domain::chain::input(domain::chain::output_point{parent, 1}, domain::chain::script{}, 0)},
+            std::move(outputs)));
+    CHECK_FALSE(waiting.add(large, 1, w0));
+
+    // One peer has a quarter at most.
+    for (uint32_t i = 1; i < tx_waiting_for_tip::max_per_peer; ++i) {
+        REQUIRE(waiting.add(make_spend(100 + i, parent, i), 1, w0));
+    }
+    CHECK_FALSE(waiting.add(make_spend(99, parent, 99), 1, w0));
+    CHECK(waiting.size() == tx_waiting_for_tip::max_per_peer);
+
+    // Others fill it to the count, and then nothing more is kept.
+    uint32_t next = 200;
+    for (uint64_t peer = 2; waiting.size() < tx_waiting_for_tip::capacity; ++peer) {
+        for (size_t i = 0; i < tx_waiting_for_tip::max_per_peer && waiting.size() < tx_waiting_for_tip::capacity; ++i) {
+            REQUIRE(waiting.add(make_spend(next, parent, next), peer, w0));
+            ++next;
+        }
+    }
+    CHECK_FALSE(waiting.add(make_spend(next, parent, next), 9, w0));
+    // Unless what is kept has expired by then.
+    CHECK(waiting.add(make_spend(next, parent, next), 9, w0 + tx_waiting_for_tip::expire_time));
+    CHECK(waiting.size() == 1u);
+
+    // Taken in the order kept, what has expired left out, and nothing kept after.
+    tx_waiting_for_tip ordered;
+    auto const a = make_spend(10, parent, 10);
+    auto const b = make_spend(11, parent, 11);
+    auto const c = make_spend(12, parent, 12);
+    REQUIRE(ordered.add(a, 1, w0));
+    REQUIRE(ordered.add(b, 2, w0 + tx_waiting_for_tip::expire_time / 2));
+    REQUIRE(ordered.add(c, 1, w0 + tx_waiting_for_tip::expire_time / 2));
+    auto const taken = ordered.take(w0 + tx_waiting_for_tip::expire_time);
+    REQUIRE(taken.size() == 2u);
+    CHECK(taken[0].tx->hash() == b->hash());
+    CHECK(taken[0].peer == 2u);
+    CHECK(taken[1].tx->hash() == c->hash());
+    CHECK(ordered.size() == 0u);
+    CHECK_FALSE(ordered.contains(c->hash()));
+}
+
+TEST_CASE("tx waiting for tip: what a block confirms or conflicts with goes, and a peer's go with it",
+          "[tx_relay][tip_wait][block]") {
+    tx_waiting_for_tip waiting;
+    auto const parent = make_tx(60)->hash();
+    auto const confirmed = make_spend(61, parent, 0);
+    auto const conflicted = make_spend(62, parent, 1);
+    auto const other = make_spend(63, parent, 2);
+    auto const peers = make_spend(64, parent, 3);
+    REQUIRE(waiting.add(confirmed, 1, w0));
+    REQUIRE(waiting.add(conflicted, 1, w0));
+    REQUIRE(waiting.add(other, 1, w0));
+    REQUIRE(waiting.add(peers, 2, w0));
+
+    CHECK(waiting.erase_for_block(*make_block(null_hash, 1, {confirmed, make_spend(65, parent, 1)})) == 2u);
+    CHECK_FALSE(waiting.contains(confirmed->hash()));
+    CHECK_FALSE(waiting.contains(conflicted->hash()));
+    CHECK(waiting.contains(other->hash()));
+
+    waiting.erase_for_peer(2);
+    CHECK_FALSE(waiting.contains(peers->hash()));
+    CHECK(waiting.size() == 1u);
+}
+
+TEST_CASE("tx relay: a transaction checked while blocks connected twice is validated again on the next tip",
+          "[tx_relay][owner][tip_wait]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = refuse_once(rig, error::stale_chain);
+    rig.start();
+
+    auto const tx = make_tx(300);
+    rig.submit(tx_received{1, tx});
+    REQUIRE(submissions_of(rig, tx->hash()) == 1u);
+    CHECK_FALSE(rig.mempool.contains(tx->hash()));
+
+    // Not asked for again while it waits.
+    auto peer = connect(rig.ioc, rig.config, 1);
+    rig.submit(tx_announced{peer.session, {tx->hash()}});
+    CHECK_FALSE(contains(read_requests(rig.ioc, peer, 200ms), tx->hash()));
+
+    extend(rig, 1);
+    ring(rig);
+    CHECK(submissions_of(rig, tx->hash()) == 2u);
+    CHECK(rig.mempool.contains(tx->hash()));
+}
+
+TEST_CASE("tx relay: non-final for the next block waits only when final after the header tip",
+          "[tx_relay][owner][tip_wait]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = refuse_once(rig, error::transaction_non_final);
+    rig.start();
+
+    // The block it waits for is in as a header: validated again on the next tip.
+    rig.final_after = true;
+    auto const waits = make_tx(310);
+    rig.submit(tx_received{1, waits});
+    REQUIRE(submissions_of(rig, waits->hash()) == 1u);
+
+    // Not final even then: refused, as any other.
+    rig.final_after = false;
+    auto const refused = make_tx(311);
+    rig.submit(tx_received{1, refused});
+    REQUIRE(submissions_of(rig, refused->hash()) == 1u);
+
+    extend(rig, 1);
+    ring(rig);
+    CHECK(submissions_of(rig, waits->hash()) == 2u);
+    CHECK(rig.mempool.contains(waits->hash()));
+    CHECK(submissions_of(rig, refused->hash()) == 1u);
+    CHECK_FALSE(rig.mempool.contains(refused->hash()));
+}
+
+TEST_CASE("tx relay: what waits for the tip goes when a connected block confirms it",
+          "[tx_relay][owner][tip_wait][block]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = refuse_once(rig, error::stale_chain);
+    rig.start();
+
+    auto const parent = make_tx(320);
+    auto const confirmed = make_spend(321, parent->hash(), 0);
+    auto const stays = make_spend(322, parent->hash(), 1);
+    rig.mempool.insert(parent->hash());
+    rig.submit(tx_received{1, confirmed});
+    rig.submit(tx_received{1, stays});
+    REQUIRE(submissions_of(rig, confirmed->hash()) == 1u);
+    REQUIRE(submissions_of(rig, stays->hash()) == 1u);
+
+    extend(rig, 1, {confirmed});
+    ring(rig);
+    CHECK(submissions_of(rig, confirmed->hash()) == 1u);
+    CHECK(submissions_of(rig, stays->hash()) == 2u);
+}
+
+TEST_CASE("tx relay: what waits for the tip goes when the node stops following the chain",
+          "[tx_relay][owner][tip_wait]") {
+    relay_rig rig;
+    genesis(rig);
+    rig.judge = refuse_once(rig, error::stale_chain);
+    rig.start();
+
+    auto const tx = make_tx(330);
+    rig.submit(tx_received{1, tx});
+    REQUIRE(submissions_of(rig, tx->hash()) == 1u);
+
+    rig.following = false;
+    extend(rig, 1);
+    ring(rig);
+    rig.following = true;
+    extend(rig, 2);
+    ring(rig);
+    CHECK(submissions_of(rig, tx->hash()) == 1u);
 }
 
 TEST_CASE("tx relay: closing the channel ends both tasks, also before they ever ran",
