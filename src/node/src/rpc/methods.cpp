@@ -1361,7 +1361,11 @@ bool no_arguments(std::string_view params) {
         return false;
     }
     if (type == simdjson::ondemand::json_type::null) {
-        return true;
+        // type() names a token by its first character only, and the request
+        // parser keeps the params token without reading it, so nope or nullx
+        // gets here too; is_null() reads the whole token.
+        bool is_null = false;
+        return document.is_null().get(is_null) == simdjson::SUCCESS && is_null;
     }
     simdjson::ondemand::array args;
     if (document.get_array().get(args) != simdjson::SUCCESS) {
