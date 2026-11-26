@@ -661,8 +661,12 @@ TEST_CASE("a connected tip older than the limit serves nothing, however close it
     strict.notify_limit_hours = 1u;
     REQUIRE(fixture.restart_with(strict));
 
+    // The restarted node is back at its connected tip; the last header comes
+    // in again, as a peer announces it.
     auto& chain = fixture.chain();
     REQUIRE(chain.chain_view()->connected_tip_height == trunk_len - 1u);
+    auto const again = fixture.organizer().add_headers(headers_of({trunk.back()}));
+    REQUIRE(again.headers_added == 1u);
     REQUIRE(chain.headers().active_tip_height() == int32_t(trunk_len));
 
     auto const ready = chain.synchronization();
