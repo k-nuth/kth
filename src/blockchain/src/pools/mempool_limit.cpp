@@ -4,7 +4,9 @@
 
 #include <kth/blockchain/pools/mempool_limit.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace kth::blockchain {
 
@@ -83,6 +85,50 @@ std::size_t mempool_limit::trim(mempool& pool, uint64_t limit, uint64_t incremen
         order_.erase(lowest);
     }
     return evicted;
+}
+
+bool mempool_limit::would_evict(mempool const& pool, mempool_entry const& entry, uint64_t limit) const {
+    auto usage = usage_ + entry_usage(entry);
+    if (usage <= limit) {
+        return false;
+    }
+    // Where added() would place it: the most recent of its rate.
+    key const place{fee_per_kb(entry.fee, virtual_size(entry.size, entry.sigchecks)),
+        next_sequence_, entry.tx->hash()};
+
+    // trim() without the pool being touched: what is below the newcomer leaves
+    // first, each with its descendants, until the pool fits.
+    std::set<hash_digest> gone;
+    for (auto const& lowest : order_) {
+        if ( ! (lowest < place)) {
+            break;
+        }
+        if (gone.contains(lowest.txid)) {
+            continue;
+        }
+        auto leaving = pool.descendants(lowest.txid);
+        leaving.push_back(lowest.txid);
+        for (auto const& txid : leaving) {
+            if ( ! gone.insert(txid).second) {
+                continue;
+            }
+            auto const it = by_txid_.find(txid);
+            if (it != by_txid_.end()) {
+                usage -= std::min(usage, it->second.usage);
+            }
+        }
+        // A newcomer that spends what left is its descendant, and goes with it.
+        for (auto const& input : entry.tx->inputs()) {
+            if (gone.contains(input.previous_output().hash())) {
+                return true;
+            }
+        }
+        if (usage <= limit) {
+            return false;
+        }
+    }
+    // Nothing cheaper is left and the pool still does not fit: it is the lowest.
+    return true;
 }
 
 uint64_t mempool_limit::minimum_fee_per_kb(uint64_t limit, uint64_t now) {

@@ -11,7 +11,13 @@
 #ifndef KTH_NODE_DETAIL_P2P_NODE_TEST_SEAM_HPP_
 #define KTH_NODE_DETAIL_P2P_NODE_TEST_SEAM_HPP_
 
+#include <cstddef>
+#include <future>
+#include <system_error>
 #include <utility>
+
+#include <asio/co_spawn.hpp>
+#include <asio/use_future.hpp>
 
 #include <kth/node/p2p_node.hpp>
 
@@ -58,17 +64,26 @@ struct p2p_node_test_seam {
         return target.inbound_count_.load();
     }
 
-    static ::asio::awaitable<void> submit(p2p_node& target, network::peer_session::ptr peer,
-        peer_direction direction)
-    {
-        co_await target.new_peer_channel_->async_send(std::error_code{},
-            peer_event{std::move(peer), direction, nullptr}, ::asio::use_awaitable);
-    }
-
     [[nodiscard]] static bool ingest_addresses(p2p_node& target, network::raw_message const& raw,
         uint32_t version)
     {
         return target.ingest_peer_addresses(raw, version);
+    }
+
+    /// Hand a session to the peer supervisor as an inbound connection, as the
+    /// acceptor does, so a test can hold the other end of the handshake.
+    /// Inbound, so test peers on the loopback address are admitted up to
+    /// net.inbound_connections: an outbound session needs an address no other
+    /// session holds.
+    static bool queue_peer(p2p_node& target, network::peer_session::ptr peer) {
+        return target.new_peer_channel_->try_send(std::error_code{},
+            peer_event{std::move(peer), peer_direction::inbound, nullptr});
+    }
+
+    /// Peers holding one of the high-bandwidth compact block slots.
+    static size_t high_bandwidth_compact_peers(p2p_node& target) {
+        return ::asio::co_spawn(target.pool_.get_executor(), target.manager_.compact_slots(),
+            ::asio::use_future).get();
     }
 };
 

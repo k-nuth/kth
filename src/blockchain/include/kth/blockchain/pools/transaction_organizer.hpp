@@ -12,6 +12,8 @@
 #include <memory>
 #include <optional>
 
+#include <boost/unordered/unordered_flat_map.hpp>
+
 #include <kth/blockchain/define.hpp>
 #include <kth/blockchain/settings.hpp>
 #include <kth/blockchain/validate/validate_transaction.hpp>
@@ -61,6 +63,14 @@ struct KB_API transaction_organizer {
     [[nodiscard]]
     ::asio::awaitable<code> transaction_validate(transaction_const_ptr tx) const;
 
+    /// Whether organize() would admit `tx`, without admitting it: the pool's
+    /// first-seen rule and every check admission makes, but nothing is added
+    /// to the pool and nothing is announced. The answer is for the pool as it
+    /// is now, which can change before a later organize(). Yields the
+    /// transaction's sigchecks when it would be admitted.
+    [[nodiscard]]
+    awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
+
     [[nodiscard]]
     transaction_broadcaster::channel_ptr subscribe();
     [[nodiscard]]
@@ -80,6 +90,7 @@ protected:
 
 private:
     ::asio::awaitable<code> organize_attempt(transaction_const_ptr tx, std::optional<uint64_t> first_seen);
+    awaitable_expected<size_t> validate_attempt(transaction_const_ptr tx);
 
     // Subscription.
     void notify(transaction_const_ptr tx);
@@ -101,7 +112,7 @@ private:
     transaction_broadcaster broadcaster_;
     ds_proof_broadcaster ds_proof_broadcaster_;
 
-    std::unordered_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
+    boost::unordered_flat_map<hash_digest, double_spend_proof_const_ptr> ds_proofs_;
 };
 
 } // namespace kth::blockchain

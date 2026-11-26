@@ -54,6 +54,7 @@ struct socks5_reply {
     bool split{false};
     int stop_after{3};
     int stall_at{0};
+    std::chrono::milliseconds connect_delay{0};
 };
 
 struct fake_socks5 {
@@ -65,6 +66,7 @@ struct fake_socks5 {
     data_chunk credentials;
     data_chunk request;
     bool accepted{false};
+    int stalled_at{0};
     bool server_done{false};
     std::exception_ptr server_exception;
 
@@ -110,7 +112,7 @@ struct fake_socks5 {
         accepted = true;
         if ( ! co_await read(greeting, 2)) co_return;
         if ( ! co_await read(greeting, greeting[1])) co_return;
-        if (reply.stall_at == 1) co_return;
+        if (reply.stall_at == 1) { stalled_at = 1; co_return; }
         if ( ! co_await write(reply.method, reply.split)) co_return;
         if (reply.stop_after == 1) {
             finish_reply();
@@ -122,7 +124,7 @@ struct fake_socks5 {
             if ( ! co_await read(credentials, 1)) co_return;
             auto const password_size = credentials.back();
             if ( ! co_await read(credentials, password_size)) co_return;
-            if (reply.stall_at == 2) co_return;
+            if (reply.stall_at == 2) { stalled_at = 2; co_return; }
             if ( ! co_await write(reply.auth, reply.split)) co_return;
             if (reply.stop_after == 2) {
                 finish_reply();
@@ -141,7 +143,13 @@ struct fake_socks5 {
             default: co_return;
         }
         if ( ! co_await read(request, address_size + 2)) co_return;
-        if (reply.stall_at == 3) co_return;
+        if (reply.stall_at == 3) { stalled_at = 3; co_return; }
+        if (reply.connect_delay.count() != 0) {
+            ::asio::steady_timer pause(ctx);
+            pause.expires_after(reply.connect_delay);
+            auto [timer_ec] = co_await pause.async_wait(::asio::as_tuple(::asio::use_awaitable));
+            if (timer_ec) co_return;
+        }
         if ( ! co_await write(reply.connect, reply.split)) co_return;
         finish_reply();
     }
@@ -154,6 +162,7 @@ struct fake_socks5 {
         credentials.clear();
         request.clear();
         accepted = false;
+        stalled_at = 0;
         server_done = false;
         server_exception = nullptr;
         ctx.restart();
@@ -473,6 +482,8 @@ TEST_CASE("SOCKS5 bounds every negotiation phase by the connection deadline", "[
     proxy.start(reply);
     auto result = proxy.connect("peer.invalid", randomize, 100ms);
     REQUIRE(proxy.accepted);
+    // The deadline ended the phase under test, not an earlier one.
+    REQUIRE(proxy.stalled_at == reply.stall_at);
     REQUIRE( ! result);
     REQUIRE(result.error() == error::channel_timeout);
 }
@@ -494,9 +505,12 @@ TEST_CASE("SOCKS5 cancellation ends a stalled exchange without a session", "[soc
 
 TEST_CASE("SOCKS5 proxy TCP refusal fails without negotiation", "[socks5]") {
     fake_socks5 proxy;
-    // Reserve an ephemeral TCP port without listening on it.
-    ::asio::ip::tcp::socket unavailable(proxy.ctx, {::asio::ip::address_v4::loopback(), 0});
+    // A port nothing listens on: one the system just gave out, closed again.
+    // A socket bound to it and not listening is not refused on every system:
+    // macOS leaves the connection unanswered until the deadline.
+    ::asio::ip::tcp::acceptor unavailable(proxy.ctx, {::asio::ip::address_v4::loopback(), 0});
     auto const address = "127.0.0.1:" + std::to_string(unavailable.local_endpoint().port());
+    unavailable.close();
     std::string const hostname = "peer.invalid";
     auto result = proxy.run(async_socks5_connect(proxy.ctx.get_executor(), address, hostname, 8333, false, 1s));
     REQUIRE( ! result);
@@ -539,6 +553,21 @@ TEST_CASE("configured proxy carries an unresolvable peer hostname", "[socks5][pe
     REQUIRE(proxy.request.size() == hostname.size() + 7);
     REQUIRE(proxy.request[3] == 3);
     REQUIRE(std::string(proxy.request.begin() + 5, proxy.request.end() - 2) == hostname);
+}
+
+// A proxy answers once it has reached the destination, and through Tor that
+// takes longer than the deadline of a direct connection.
+TEST_CASE("a proxied connection outlasts the deadline of a direct one", "[socks5][peer_session]") {
+    fake_socks5 proxy;
+    socks5_reply reply;
+    reply.connect_delay = 1300ms;
+    proxy.start(reply);
+    network::settings settings(domain::config::network::regtest);
+    settings.proxy = proxy.proxy();
+    settings.proxy_randomize = false;
+    auto result = proxy.run(network::async_connect(
+        proxy.ctx.get_executor(), "192.0.2.1", 18444, settings, 1s));
+    REQUIRE(result.has_value());
 }
 
 TEST_CASE("proxy refusal never falls back to a direct peer connection", "[socks5][peer_session]") {
@@ -590,6 +619,25 @@ TEST_CASE("proxy permissions follow the destination rather than the proxy IP", "
         proxy.ctx.get_executor(), hostname, 8333, settings, 1s));
     REQUIRE(result.has_value());
     CHECK((*result)->has_permission(permission_flags::noban) == expected_noban);
+}
+
+// The proxy is asked to resolve "192.0.2.1." as a name. What it resolves to is
+// not known to the node, so the session is not the peer at 192.0.2.1.
+TEST_CASE("a name that reads as an address is not a numeric peer", "[socks5][peer_session]") {
+    fake_socks5 proxy;
+    network::settings settings(domain::config::network::regtest);
+    settings.proxy = proxy.proxy();
+    settings.proxy_randomize = false;
+    auto const entry = parse_whitelist("noban@192.0.2.1");
+    REQUIRE(entry.has_value());
+    settings.whitelist.push_back(*entry);
+    proxy.start();
+    auto result = proxy.run(network::async_connect(
+        proxy.ctx.get_executor(), "192.0.2.1.", 8333, settings, 1s));
+    REQUIRE(result.has_value());
+    REQUIRE(proxy.request[3] == 3);
+    CHECK_FALSE((*result)->has_numeric_authority());
+    CHECK_FALSE((*result)->has_permission(permission_flags::noban));
 }
 
 TEST_CASE("two outbound peers through one proxy retain distinct numeric identities", "[socks5][peer_session]") {

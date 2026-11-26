@@ -75,3 +75,26 @@ TEST_CASE("endpoint::parse_from rejects a port that overflows uint16_t", "[endpo
 TEST_CASE("endpoint::parse_from rejects non-numeric port", "[endpoint]") {
     REQUIRE( ! endpoint::parse_from("foo:bar").has_value());
 }
+
+// A link-local peer has a scoped address, whose text the parser does not take.
+TEST_CASE("endpoint from an authority keeps a scoped IPv6 address", "[endpoint]") {
+    auto address = ::asio::ip::make_address_v6("fe80::1");
+    address.scope_id(1);
+    infrastructure::config::authority const scoped(::asio::ip::address(address), 8333);
+
+    infrastructure::config::endpoint const wrapped(scoped);
+    CHECK(wrapped.host() == scoped.to_hostname());
+    CHECK(wrapped.port() == 8333);
+    CHECK(wrapped.scheme().empty());
+}
+
+TEST_CASE("endpoint from an authority matches the parsed text of a plain address", "[endpoint]") {
+    auto const numeric = infrastructure::config::authority::parse_from("192.0.2.1:8333");
+    REQUIRE(numeric.has_value());
+    auto const parsed = infrastructure::config::endpoint::parse_from("192.0.2.1:8333");
+    REQUIRE(parsed.has_value());
+
+    infrastructure::config::endpoint const wrapped(*numeric);
+    CHECK(wrapped.host() == parsed->host());
+    CHECK(wrapped.port() == parsed->port());
+}

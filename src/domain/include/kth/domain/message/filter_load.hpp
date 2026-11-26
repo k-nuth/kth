@@ -7,7 +7,9 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
 #include <kth/infrastructure/utility/byte_reader.hpp>
@@ -54,14 +56,9 @@ struct KD_API filter_load {
     size_t serialized_size(uint32_t version) const;
 
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "filterload";
+    static constexpr uint32_t version_minimum = version::level::bip37;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
 private:
     filter_load(data_chunk filter, uint32_t hash_functions, uint32_t tweak, uint8_t flags);

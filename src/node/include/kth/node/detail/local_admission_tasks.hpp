@@ -41,6 +41,14 @@ KND_API
     std::stop_token stop,
     sync::sync_coordinator_event_channel& events);
 
+/// The coordinator's last act on `events`: close it, then answer every
+/// submission still in it as a node that stopped. A submission the coordinator
+/// read is its own to answer; one that reached the channel and was never read
+/// has nobody else, and its requester waits for that answer and nothing more.
+/// Closed first, so nothing is added once this starts taking them out.
+KND_API
+void close_and_refuse_unread_submissions(sync::sync_coordinator_event_channel& events);
+
 } // namespace kth::node::detail
 
 #endif // KTH_NODE_DETAIL_LOCAL_ADMISSION_TASKS_HPP

@@ -64,7 +64,7 @@ namespace kth::node::detail {
 
     handoff.cancel();
     handoff.close();
-    spdlog::info("[header_ingest] Task ended");
+    spdlog::debug("[header_ingest] Task ended");
 }
 
 ::asio::awaitable<void> header_ingest_forwarder(
@@ -215,7 +215,11 @@ void stimulus_sender::send(network::peer_session::ptr peer, hash_list locator, u
             co_return;
         }
         if (state->cancelled) {
-            co_return;                  // withdrawn while it waited for room
+            // Withdrawn while it waited for room. From here the peer's queue
+            // can no longer take it.
+            spdlog::debug("[header_walk] Stimulus {} withdrawn before {} had room for it",
+                seq, peer->authority_with_agent());
+            co_return;
         }
         spdlog::debug("[header_walk] Stimulus {} to {} failed: {}",
             seq, peer->authority_with_agent(), ec.message());

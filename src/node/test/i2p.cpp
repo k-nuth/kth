@@ -130,7 +130,7 @@ struct admission_node {
 
     void submit(peer_session::ptr const& peer) {
         auto state = std::make_shared<completion<bool>>();
-        ::asio::co_spawn(ctx, seam::submit(node, peer, peer_direction::inbound),
+        ::asio::co_spawn(ctx, seam::admit_peer(node, peer, peer_direction::inbound),
             [state](std::exception_ptr e) { state->exception = e; state->done = true; });
         REQUIRE(pump_until(ctx, [&] { return state->done; }));
         REQUIRE( ! state->exception);

@@ -7,9 +7,6 @@
 #include <kth/domain/message/version.hpp>
 namespace kth::domain::message {
 
-std::string const send_addrv2::command = "sendaddrv2";
-uint32_t const send_addrv2::version_minimum = version::level::feature_negotiation;
-uint32_t const send_addrv2::version_maximum = version::level::maximum;
 
 // Serialization.
 //-----------------------------------------------------------------------------

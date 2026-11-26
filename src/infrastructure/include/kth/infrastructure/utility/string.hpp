@@ -19,6 +19,9 @@ namespace kth {
 
 using string_list = std::vector<std::string>;
 
+/// Return a view without leading/trailing whitespace in the current C++ locale.
+KI_API std::string_view trim_view(std::string_view text);
+
 /// Parse a complete decimal integer. Optional trimming accepts ASCII whitespace.
 /// Leading '+' is accepted; negative values are rejected for unsigned types.
 template <std::integral Value> requires (!std::same_as<Value, bool>)

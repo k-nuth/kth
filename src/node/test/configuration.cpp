@@ -4,8 +4,20 @@
 
 #include <test_helpers.hpp>
 #include <kth/node.hpp>
+#include <filesystem>
 #include <fstream>
+#include <future>
+
+#include <asio/co_spawn.hpp>
+#include <asio/io_context.hpp>
+#include <asio/use_future.hpp>
+
 #include <sstream>
+#include <algorithm>
+#include <memory>
+#include <string_view>
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <spdlog/spdlog.h>
 #if defined(_WIN32)
 #include <process.h>
 #else
@@ -23,6 +35,40 @@ TEST_CASE("parser retains explicit settings after network defaults are rebuilt",
     CHECK(parser.configured.database.directory == path{"selected-database"});
     CHECK(parser.configured.rpc.enabled);
     CHECK(parser.configured.network.outbound_connections == 0);
+}
+
+TEST_CASE("parser accepts a pruning depth of zero or at least the minimum", "[configuration tests][parser][prune]") {
+    auto const parse = [](char const* value, uint32_t* parsed = nullptr) {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--db.prune_keep_blocks", value};
+        std::ostringstream error;
+        auto const ok = parser.parse(5, argv, error);
+        if (ok && parsed) *parsed = parser.configured.database.prune_keep_blocks;
+        return ok;
+    };
+
+    // Every block is kept unless the option says otherwise.
+    {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest"};
+        std::ostringstream error;
+        REQUIRE(parser.parse(3, argv, error));
+        CHECK(parser.configured.database.prune_keep_blocks == 0u);
+    }
+
+    uint32_t parsed = 1;
+    CHECK(parse("0", &parsed));
+    CHECK(parsed == 0u);
+    CHECK(parse("288", &parsed));
+    CHECK(parsed == 288u);
+    CHECK(parse("10000", &parsed));
+    CHECK(parsed == 10000u);
+
+    // Fewer than a limited node has to serve.
+    CHECK_FALSE(parse("1"));
+    CHECK_FALSE(parse("287"));
+    CHECK_FALSE(parse("-1"));
+    CHECK_FALSE(parse("many"));
 }
 
 namespace {
@@ -50,32 +96,177 @@ private:
 
 } // namespace
 
-#if ! defined(__EMSCRIPTEN__)
-TEST_CASE("outbound proxy settings retain defaults and explicit command line values", "[configuration tests][parser][socks5]") {
+#if ! defined(KTH_WITH_SV2)
+// A build without the feature has no Template Provider, so it does not start
+// as if it listened.
+TEST_CASE("the sv2 listener is off, and refused, in a build without the feature", "[configuration tests][parser][sv2]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK_FALSE(defaults.configured.sv2.enabled);
+
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled", "true"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("sv2.enabled needs a build with the option sv2") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("sv2_refused", "sv2.enabled=true");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("sv2.enabled needs a build with the option sv2") != std::string::npos);
+    }
+    SECTION("turned off, it is what the build does anyway") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled", "false",
+            "--sv2.bind", "::1", "--sv2.port", "18442"};
+        std::ostringstream error;
+        CHECK(parser.parse(9, argv, error));
+    }
+}
+
+TEST_CASE("a node built without Stratum V2 does not start as one that listens for it", "[configuration tests][node][sv2]") {
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_sv2_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    node::configuration cfg{domain::config::network::regtest};
+    cfg.database.directory = dir;
+    cfg.database.db_max_size = 16ULL << 20;
+    cfg.network.threads = 0;
+    cfg.network.peers_file = dir / "peers.dat";
+    cfg.network.hosts_file = dir / "hosts.dat";
+    cfg.sv2.enabled = true;
+
+    // The directory holds no database, so a start that got as far as opening
+    // one fails too, with the same code. What the node wrote tells the two
+    // apart: it refuses for the setting, before it opens anything.
+    auto const sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(256);
+    auto const previous = spdlog::default_logger();
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("captured", sink));
+    code result;
+    {
+        node::full_node node{cfg};
+        ::asio::io_context io;
+        auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+        io.run();
+        result = started.get();
+    }
+    spdlog::set_default_logger(previous);
+    auto const lines = sink->last_formatted();
+    auto const wrote = [&lines](std::string_view text) {
+        return std::ranges::any_of(lines, [text](std::string const& line) {
+            return line.find(text) != std::string::npos;
+        });
+    };
+    CHECK(result == error::operation_failed);
+    CHECK(wrote("sv2.enabled needs a build with the option sv2"));
+    CHECK_FALSE(wrote("Failed to open database"));
+    std::filesystem::remove_all(dir, ec);
+}
+#endif
+
+TEST_CASE("sv2 listener settings reject invalid ports", "[configuration tests][parser][sv2 template_provider]") {
+    for (auto const* port : {"-1", "65536", "invalid"}) {
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        char const* argv[]{"kth", "--sv2.port", port};
+        CHECK_FALSE(parser.parse(3, argv, error));
+    }
+}
+
+TEST_CASE("outbound proxy settings are empty and randomized by default", "[configuration tests][parser][socks5]") {
     node::parser defaults(domain::config::network::regtest);
     CHECK(defaults.configured.network.proxy.empty());
     CHECK(defaults.configured.network.proxy_randomize);
-
-    node::parser parser(domain::config::network::mainnet);
-    char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "[::1]:9050",
-        "--net.proxy_randomize", "false"};
-    std::ostringstream error;
-    REQUIRE(parser.parse(7, argv, error));
-    CHECK(parser.configured.network.proxy == "[::1]:9050");
-    CHECK_FALSE(parser.configured.network.proxy_randomize);
 }
 
-TEST_CASE("outbound proxy settings load from dotted config keys and reject invalid booleans", "[configuration tests][parser][socks5]") {
-    config_file file("proxy", "net.proxy=127.0.0.1:9050\nnet.proxy_randomize=false");
-    node::parser parser(domain::config::network::regtest);
-    std::ostringstream error;
-    REQUIRE(parser.parse_from_file(file.path(), error));
-    CHECK(parser.configured.network.proxy == "127.0.0.1:9050");
-    CHECK_FALSE(parser.configured.network.proxy_randomize);
+#if ! defined(KTH_WITH_BLOOM_FILTERS)
+// A build without the feature serves no bloom filters, so it does not start as
+// if it did.
+TEST_CASE("bloom filters are off, and refused, in a build without the feature", "[configuration tests][parser][bloom filters]") {
+    node::parser defaults(domain::config::network::regtest);
+    CHECK_FALSE(defaults.configured.node.bloom_filters);
 
-    node::parser invalid(domain::config::network::regtest);
-    char const* argv[]{"kth", "--net.proxy_randomize", "sometimes"};
-    CHECK_FALSE(invalid.parse(3, argv, error));
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "true"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("bloom_refused", "node.bloom_filters=true");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("node.bloom_filters needs a build with the option bloom_filters") != std::string::npos);
+    }
+    SECTION("turned off, it is what the build does anyway") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--node.bloom_filters", "false"};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
+}
+
+TEST_CASE("a node built without bloom filters does not start as one that serves them", "[configuration tests][node][bloom filters]") {
+    auto const bloom = uint64_t(domain::message::version::service::node_bloom);
+    auto const dir = std::filesystem::temp_directory_path() / ("kth_bloom_node_refused_" + std::to_string(process_id()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+
+    // A configuration built by hand, which no parser checked.
+    auto const config = [&dir](bool filters) {
+        node::configuration cfg{domain::config::network::regtest};
+        cfg.database.directory = dir;
+        cfg.database.db_max_size = 16ULL << 20;
+        cfg.network.threads = 0;
+        cfg.network.peers_file = dir / "peers.dat";
+        cfg.network.hosts_file = dir / "hosts.dat";
+        cfg.node.bloom_filters = filters;
+        return cfg;
+    };
+
+    node::full_node node{config(true)};
+    CHECK((node.network_settings().services & bloom) == 0);
+
+    ::asio::io_context io;
+    auto started = ::asio::co_spawn(io, node.start(), ::asio::use_future);
+    io.run();
+    CHECK(started.get() == error::operation_failed);
+    std::filesystem::remove_all(dir, ec);
+}
+#endif
+
+#if ! defined(KTH_WITH_SOCKS5)
+// A build without the feature cannot use a proxy. Taking the setting and going
+// on would connect directly, so the node refuses to start.
+TEST_CASE("a proxy is refused by a build without the SOCKS5 feature", "[configuration tests][parser][socks5]") {
+    SECTION("on the command line") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", "127.0.0.1:9050"};
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse(5, argv, error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("in the configuration file") {
+        config_file file("proxy_refused", "net.proxy=127.0.0.1:9050");
+        node::parser parser(domain::config::network::regtest);
+        std::ostringstream error;
+        CHECK_FALSE(parser.parse_from_file(file.path(), error));
+        CHECK(error.str().find("net.proxy needs a build with the option socks5") != std::string::npos);
+    }
+    SECTION("an empty one is no proxy") {
+        node::parser parser(domain::config::network::regtest);
+        char const* argv[]{"kth", "--network", "regtest", "--net.proxy", ""};
+        std::ostringstream error;
+        CHECK(parser.parse(5, argv, error));
+    }
 }
 
 TEST_CASE("I2P settings retain defaults and command line values", "[configuration tests][parser][i2p]") {
@@ -499,8 +690,8 @@ TEST_CASE("parser config network rebuilds defaults and preserves command line pr
 }
 #endif
 
-TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[configuration tests][parser]") {
-    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 500u);
+TEST_CASE("validation_batch_blocks defaults to 20000 and accepts 1..20000", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_blocks == 20000u);
     {
         std::ostringstream error;
         config_file file("batch_blocks", "chain.validation_batch_blocks=250");
@@ -508,10 +699,27 @@ TEST_CASE("validation_batch_blocks defaults to 500 and accepts 1..1000", "[confi
         REQUIRE(parser.parse_from_file(file.path(), error));
         CHECK(parser.configured.chain.validation_batch_blocks == 250u);
     }
-    for (char const* refused : {"0", "1001"}) {
+    for (char const* refused : {"0", "20001"}) {
         std::ostringstream error;
         node::parser parser(domain::config::network::mainnet);
         char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_blocks", refused};
+        CHECK_FALSE(parser.parse(5, argv, error));
+    }
+}
+
+TEST_CASE("validation_batch_bytes defaults to 512 MiB and refuses zero", "[configuration tests][parser]") {
+    CHECK(blockchain::settings(domain::config::network::mainnet).validation_batch_bytes == (uint64_t{512} << 20));
+    {
+        std::ostringstream error;
+        config_file file("batch_bytes", "chain.validation_batch_bytes=1048576");
+        node::parser parser(domain::config::network::mainnet);
+        REQUIRE(parser.parse_from_file(file.path(), error));
+        CHECK(parser.configured.chain.validation_batch_bytes == 1048576u);
+    }
+    {
+        std::ostringstream error;
+        node::parser parser(domain::config::network::mainnet);
+        char const* argv[]{"kth", "--network", "mainnet", "--chain.validation_batch_bytes", "0"};
         CHECK_FALSE(parser.parse(5, argv, error));
     }
 }

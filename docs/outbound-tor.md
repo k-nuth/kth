@@ -1,5 +1,10 @@
 # Outbound P2P over Tor
 
+The SOCKS5 proxy is an optional feature: the node has it when built with the
+Conan option `socks5=True` ([optional-features.md](optional-features.md)). A
+build without it refuses to start with `net.proxy` set; it does not connect
+directly in its place.
+
 Run a Tor client with a SOCKS5 listener, then set the node's outbound proxy:
 
 ```ini
@@ -41,7 +46,20 @@ database records, bans, misbehavior scores, performance samples, or cooldowns
 because their numeric addresses are unknown. An error that would ban a numeric
 peer on its own disconnects a hostname peer.
 
-These options affect outbound P2P traffic. They do not change inbound listening,
-RPC, or mining services. `onion`/`onlynet` options and an inbound Tor service are
-not provided. [I2P support](i2p.md) uses its own SAM bridge and takes precedence
-over the SOCKS proxy for I2P destinations.
+The connection deadline covers the whole exchange with the proxy, which answers
+only once it has reached the destination: through Tor that includes building a
+circuit. A connection through the proxy is therefore given at least 20 seconds,
+or `net.connect_timeout_seconds` when that is longer.
+
+`net.ws_discovery` is refused together with `net.proxy`: it resolves the names
+peers announce with the system's resolver, which no proxy carries.
+
+A node with `net.proxy` set does not listen for inbound P2P connections, whatever
+`net.inbound_port` and `net.ws_enabled` say: a listener answers on the node's
+own address. Inbound I2P peers still reach it through the SAM bridge
+([i2p.md](i2p.md)): they connect to its I2P destination, not to its address.
+
+These options affect P2P traffic. They do not change RPC or mining services.
+`onion`/`onlynet` options and an inbound Tor service are not provided.
+[I2P support](i2p.md) uses its own SAM bridge and takes precedence over the
+SOCKS proxy for I2P destinations.

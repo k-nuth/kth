@@ -10,6 +10,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(KTH_SHA256_DISPATCH "runtime" CACHE STRING "SHA-256 selection: runtime or compile_time")
+set_property(CACHE KTH_SHA256_DISPATCH PROPERTY STRINGS runtime compile_time)
+if(NOT KTH_SHA256_DISPATCH MATCHES "^(runtime|compile_time)$")
+    message(FATAL_ERROR "KTH_SHA256_DISPATCH must be runtime or compile_time")
+endif()
+
 option(ENABLE_SHARED "" OFF)
 option(KTH_WASM_SIMD "Enable SIMD128 Base64 kernels for WebAssembly" ON)
 option(KTH_WASM_CODEC_TESTS "Build standalone WebAssembly codec checks" OFF)
@@ -24,7 +30,7 @@ option(JUST_KTH_SOURCES "Just Knuth source code to be linted." OFF)
 
 
 if (WITH_ICU)
-  add_definitions(-DWITH_ICU -DBOOST_HAS_ICU)
+  add_definitions(-DWITH_ICU)
 endif()
 
 if (KTH_WITH_PNG)
@@ -87,7 +93,7 @@ find_package(ctre REQUIRED)
 find_package(GMP REQUIRED)
 
 if (WITH_ICU)
-  find_package(ICU REQUIRED)
+  find_package(ICU COMPONENTS uc REQUIRED)
 endif()
 
 if (KTH_WITH_PNG)
@@ -114,10 +120,8 @@ include(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/ci_utils/cmake)
 include(KnuthTools)
 
-# Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  find_package(simdutf REQUIRED)
-endif()
+# Unicode conversion on all platforms; native Base64 also uses this backend.
+find_package(simdutf REQUIRED)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   if(KTH_WASM_SIMD)
@@ -174,7 +178,6 @@ set(kth_sources_just_legacy
         src/config/base58.cpp
         src/config/base64.cpp
         src/config/checkpoint.cpp
-        src/config/directory.cpp
         src/config/endpoint.cpp
         src/config/hash160.cpp
         src/config/hash256.cpp
@@ -194,6 +197,8 @@ set(kth_sources_just_legacy
         src/math/crypto.cpp
         src/math/elliptic_curve.cpp
         src/math/hash.cpp
+        src/math/hash_batch.cpp
+        src/math/hash_dispatch.cpp
         src/math/secp256k1_initializer.cpp
         src/math/secp256k1_initializer.hpp
         src/math/sip_hash.cpp
@@ -350,6 +355,7 @@ set(kth_headers
     include/kth/infrastructure/math/crypto.hpp
     include/kth/infrastructure/math/elliptic_curve.hpp
     include/kth/infrastructure/math/hash.hpp
+    include/kth/infrastructure/math/murmur_hash.hpp
     include/kth/infrastructure/math/sip_hash.hpp
     include/kth/infrastructure/math/uint256.hpp
 
@@ -373,6 +379,8 @@ set(kth_headers
     include/kth/infrastructure/utility/assert.hpp
     include/kth/infrastructure/utility/atomic.hpp
     include/kth/infrastructure/utility/binary.hpp
+    include/kth/infrastructure/utility/bit_reader.hpp
+    include/kth/infrastructure/utility/bit_writer.hpp
     include/kth/infrastructure/utility/byte_reader.hpp
     include/kth/infrastructure/utility/byte_writer.hpp
     include/kth/infrastructure/utility/collection.hpp
@@ -533,6 +541,15 @@ if(HAVE_X86_SHANI)
     set_property(SOURCE third-party/bitcoin-core/crypto/sha256_x86_shani.cpp
         PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS} ${X86_SHANI_CXXFLAGS}
     )
+    # The batch of messages through the same instructions.
+    list(APPEND bitcoin_core_crypto_sources
+        src/math/hash_batch_x86_shani.cpp
+    )
+    # No more than what sha256d_batch_x86_shani_usable asks the processor
+    # for: X86_SHANI_CXXFLAGS would also allow SSE4.2.
+    set_property(SOURCE src/math/hash_batch_x86_shani.cpp
+        PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS} -msha
+    )
 endif()
 
 # ARM SHA-NI (Apple Silicon, ARM64)
@@ -602,17 +619,39 @@ target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1::secp256k1)
 if (KTH_SIGNATURE_VERIFICATION STREQUAL "secp256k1_turbo")
   target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1-turbo::secp256k1-turbo)
 endif()
+if(KTH_SHA256_DISPATCH STREQUAL "compile_time")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE KTH_SHA256_COMPILE_TIME=1)
+
+    # The implementation is the best one for the instructions of the target.
+    # A target without the SHA extensions gives a binary that never uses them,
+    # on any CPU, where runtime dispatch would: say so.
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+        #if !defined(__SHA__) && !defined(__ARM_FEATURE_SHA2)
+        #error the target has no SHA extensions
+        #endif
+        int main() { return 0; }
+    " KTH_TARGET_HAS_SHA_EXTENSIONS)
+    if(KTH_TARGET_HAS_SHA_EXTENSIONS)
+        message(STATUS "Knuth: SHA-256 dispatch: compile time, with the SHA extensions of the target")
+    else()
+        message(WARNING "Knuth: SHA-256 dispatch is compile_time and the target does not enable "
+            "the SHA extensions. This binary will not use them on CPUs that have them; "
+            "runtime dispatch (KTH_SHA256_DISPATCH=runtime) would.")
+    endif()
+else()
+    message(STATUS "Knuth: SHA-256 dispatch: runtime")
+endif()
+
 target_link_libraries(${PROJECT_NAME} PUBLIC ctre::ctre)
 target_link_libraries(${PROJECT_NAME} PUBLIC gmp::gmp)
 target_link_libraries(${PROJECT_NAME} PUBLIC CLI11::CLI11)
 
-# Link the native SIMD backend; WebAssembly uses the in-tree kernels.
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
-endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC simdutf::simdutf)
 
 if (WITH_ICU)
-  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::icuuc)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC WITH_ICU)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ICU::uc)
 endif()
 
 if (KTH_WITH_PNG)
@@ -679,11 +718,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     # They are auto-generated and added via file(GLOB) below.
     test/math/elliptic_curve.cpp
     test/math/hash.cpp
+    test/math/hash_batch.cpp
+    test/math/hash_dispatch.cpp
+    test/math/murmur_hash.cpp
     test/math/uint256.cpp
 
     test/path.cpp
     test/network_address.cpp
 
+    test/unicode/utf.cpp
     test/unicode/unicode.cpp
     test/unicode/unicode_istream.cpp
     test/unicode/unicode_ostream.cpp
@@ -695,8 +738,11 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/limits.cpp
     test/utility/operators.cpp
     test/utility/pseudo_random.cpp
+    test/utility/string_algorithms.cpp
     test/utility/parse_integer.cpp
     test/utility/serializer.cpp
+    test/utility/bit_reader.cpp
+    test/utility/bit_writer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
     test/utility/byte_writer.cpp
@@ -742,7 +788,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_include_directories(kth_infrastructure_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
 
   target_link_libraries(kth_infrastructure_test PRIVATE ${PROJECT_NAME})
-  target_link_libraries(kth_infrastructure_test PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(kth_infrastructure_test PRIVATE simdutf::simdutf Catch2::Catch2WithMain)
 
   include(CTest)
   kth_register_tests(kth_infrastructure_test)

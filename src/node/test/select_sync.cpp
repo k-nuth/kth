@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -486,6 +487,10 @@ struct remote_peer {
     uint32_t version;
     std::atomic<size_t> getdata_count{0};
     std::atomic<size_t> blocks_sent{0};
+    // How many blocks of each getdata are answered; the rest are never sent.
+    size_t blocks_per_request{std::numeric_limits<size_t>::max()};
+    // Answer with a `block` message whose payload is not a block.
+    bool unparseable_blocks{false};
 
     remote_peer(::asio::ip::tcp::socket sock, std::vector<domain::chain::block> const& chain_blocks,
                 uint32_t protocol_magic, uint32_t protocol_version)
@@ -515,17 +520,33 @@ struct remote_peer {
             auto request = domain::message::get_data::from_data(reader, version);
             if ( ! request) co_return;
             ++getdata_count;
+            size_t answered = 0;
             for (auto const& inv : request->inventories()) {
+                if (answered == blocks_per_request) break;
+                ++answered;
                 auto const it = std::ranges::find_if(blocks,
                     [&](auto const& b) { return b.hash() == inv.hash(); });
                 if (it == blocks.end()) continue;
-                auto const wire = domain::message::serialize(version, domain::message::block(*it), magic);
+                auto const wire = unparseable_blocks
+                    ? unparseable_block_message()
+                    : domain::message::serialize(version, domain::message::block(*it), magic);
                 auto [wec, wn] = co_await ::asio::async_write(socket, ::asio::buffer(wire),
                     ::asio::as_tuple(::asio::use_awaitable));
                 if (wec) co_return;
                 ++blocks_sent;
             }
         }
+    }
+
+    // A well-formed message, checksum included, that carries too few bytes to
+    // be a block: the session accepts it and the parse of its payload fails.
+    data_chunk unparseable_block_message() const {
+        data_chunk const payload(10, uint8_t(0xff));
+        domain::message::heading const head(magic, domain::message::block::command,
+            uint32_t(payload.size()), bitcoin_checksum(payload));
+        auto wire = head.to_data();
+        wire.insert(wire.end(), payload.begin(), payload.end());
+        return wire;
     }
 
     ::asio::awaitable<void> ping(uint64_t nonce) {
@@ -578,7 +599,7 @@ struct fast_path_fixture {
     std::atomic<size_t> pings_seen{0};
     tracked session_run, router, serve, worker;
 
-    fast_path_fixture() {
+    explicit fast_path_fixture(uint32_t stall_timeout_secs = 3600) {
         REQUIRE(chain.created());
         REQUIRE(chain.start());
 
@@ -586,7 +607,7 @@ struct fast_path_fixture {
         REQUIRE(chain.organizer().add_headers(test::headers_of(blocks)).headers_added == blocks.size());
 
         coordinator = std::make_shared<chunk_coordinator>(chain.organizer().index(), 1, fast_block_count,
-            chunk_coordinator_config{.chunk_size = fast_chunk_size, .slots = 0, .stall_timeout_secs = 3600});
+            chunk_coordinator_config{.chunk_size = fast_chunk_size, .stall_timeout_secs = stall_timeout_secs});
 
         auto [client, server] = make_connected_sockets(ctx);
         session = std::make_shared<network::peer_session>(std::move(server), settings);
@@ -598,9 +619,9 @@ struct fast_path_fixture {
         serve.spawn(ctx, remote->serve());
     }
 
-    void start_worker() {
+    void start_worker(std::chrono::seconds batch_timeout = 60s) {
         worker.spawn(ctx, block_download_task(session, coordinator, active_peers, task_output,
-            /*task_id*/ 11, /*epoch*/ 1, &fast_val));
+            /*task_id*/ 11, /*epoch*/ 1, &fast_val, batch_timeout));
     }
 
     // The worker has delivered chunk 0 (buffered, capacity 1) and is suspended
@@ -641,6 +662,53 @@ struct fast_path_fixture {
 };
 
 } // namespace
+
+TEST_CASE("select: a worker closes the session of a peer that delivers part of a chunk and no more",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "a worker with a peer that delivers part of a chunk");
+    fast_path_fixture f;
+    f.remote->blocks_per_request = 1;   // one block of the two in each chunk
+    f.start_worker(1s);
+
+    REQUIRE(run_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
+
+    // The worker is gone, so nothing would download through this session
+    // again: it must not be left holding its slot.
+    CHECK(f.remote->blocks_sent.load() == 1u);
+    CHECK(f.session->stopped());
+    CHECK(f.session->stop_reason() == error::peer_throttling);
+
+    // The chunk went back to be claimed by another peer.
+    auto const progress = f.coordinator->get_progress();
+    CHECK(progress.chunks_completed == 0u);
+    CHECK(progress.chunks_in_progress == 0u);
+
+    f.finish();
+}
+
+TEST_CASE("select: a worker closes the session of a peer whose block does not parse",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "a worker with a peer whose block does not parse");
+    fast_path_fixture f;
+    f.remote->unparseable_blocks = true;
+    f.start_worker();
+
+    REQUIRE(run_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
+
+    // The worker is gone and no timeout will ever say so: the session must not
+    // be left holding its slot.
+    CHECK(f.session->stopped());
+    CHECK(f.session->stop_reason() == error::bad_stream);
+
+    // The chunk went back to be claimed by another peer.
+    auto const progress = f.coordinator->get_progress();
+    CHECK(progress.chunks_completed == 0u);
+    CHECK(progress.chunks_in_progress == 0u);
+
+    f.finish();
+}
 
 TEST_CASE("select: a worker on a full fast channel holds one chunk, keeps the reader live, and is resumed by the receive",
           "[node][select_sync][fast_path]") {
@@ -698,6 +766,35 @@ TEST_CASE("select: a worker on a full fast channel holds one chunk, keeps the re
     CHECK(report->coordinator_epoch == 1u);
     CHECK(f.fast_val.pending() == 0u);
 
+    f.finish();
+}
+
+TEST_CASE("select: a chunk held on a full fast channel is not handed to another peer by the stall check",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "stall check with a held chunk");
+    // No stall allowance at all: any chunk still being requested from its peer
+    // is overdue the moment the check runs.
+    fast_path_fixture f(0);
+    f.start_worker();
+
+    // Chunk 0 delivered, chunk 1 downloaded and held: validation has no room.
+    REQUIRE(run_until(f.ctx, [&] { return f.worker_suspended_on_second_chunk(); }));
+    f.worker.check();
+
+    std::this_thread::sleep_for(5ms);
+    f.coordinator->check_timeouts();
+
+    // The held chunk is downloaded, not stalled: it stays the worker's, and a
+    // second peer asking now gets the third chunk rather than a second copy.
+    CHECK(f.coordinator->get_progress().chunks_in_progress == 1u);
+    auto const other = f.coordinator->claim_chunk();
+    REQUIRE(other);
+    CHECK(other->chunk_id == 2u);
+    CHECK(f.worker_suspended_on_second_chunk());
+
+    f.coordinator->stop();
+    REQUIRE(drain_until(f.ctx, [&] { return f.worker.done.load(); }));
+    f.worker.check();
     f.finish();
 }
 
@@ -872,6 +969,64 @@ TEST_CASE("select: fast_validation_task drains what is buffered after close and 
     CHECK_FALSE(results[0].result);
     CHECK_FALSE(results[1].result);
     CHECK(input.pending() == 0u);
+}
+
+TEST_CASE("select: fast_validation_task keeps a validated chunk until storage has room for it",
+          "[node][select_sync][fast_path]") {
+    watchdog guard(120s, "fast validation waiting for storage");
+    test::chain_fixture fixture("select_sync_validation_storage");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto const blocks = test::make_chain_for_select(domain::chain::block::genesis_regtest(), 4);
+
+    ::asio::io_context ctx;
+    fast_validation_input_channel input(4);
+    chunk_validated_channel output(ctx.get_executor(), 16);
+    block_storage_input_channel storage(ctx.get_executor(), 1);
+
+    auto chunk_of = [&](uint32_t start, uint32_t count) {
+        std::vector<std::shared_ptr<domain::chain::light_block const>> light;
+        for (uint32_t h = start; h < start + count; ++h) light.push_back(test::to_light(blocks[h - 1]));
+        return downloaded_chunk{
+            .start_height = start, .chunk_id = start, .blocks = std::move(light),
+            .source_peer = nullptr, .generation = fixture.chain().headers().generation()};
+    };
+
+    // Storage is behind: its one slot is taken and nobody is receiving.
+    REQUIRE(storage.try_send(std::error_code{}, block_storage_input{storage_reorg_wake{}}));
+    REQUIRE(input.try_send(fast_validation_input{chunk_of(1, 2)}));
+    REQUIRE(input.try_send(fast_validation_input{chunk_of(3, 2)}));
+
+    tracked task;
+    task.spawn(ctx, fast_validation_task(fixture.chain(), input, output, &storage));
+
+    // Well past any bounded wait the task could apply to a full channel. The
+    // first chunk is validated and cannot be handed over; the task keeps it and
+    // leaves the second one in its input.
+    auto const until = std::chrono::steady_clock::now() + 1s;
+    while (std::chrono::steady_clock::now() < until) {
+        ctx.poll();
+        ctx.restart();
+        std::this_thread::sleep_for(5ms);
+    }
+    REQUIRE_FALSE(task.done.load());
+    CHECK(input.buffered() == 1u);
+
+    // Storage catches up: every chunk arrives, in order.
+    std::vector<uint32_t> stored;
+    auto take = [&] {
+        return storage.try_receive([&](std::error_code, block_storage_input msg) {
+            if (auto const* chunk = std::get_if<downloaded_chunk>(&msg)) stored.push_back(chunk->start_height);
+        });
+    };
+    REQUIRE(take());   // The wake-up that held the slot.
+    REQUIRE(run_until(ctx, [&] { take(); return stored.size() == 2u; }));
+    CHECK(stored[0] == 1u);
+    CHECK(stored[1] == 3u);
+
+    input.close();
+    REQUIRE(run_until(ctx, [&] { return task.done.load(); }));
+    task.check();
 }
 
 // =============================================================================

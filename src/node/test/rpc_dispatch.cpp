@@ -3,18 +3,26 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <test_helpers.hpp>
+#include <kth/domain/chain/byte_code_pattern.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <optional>
 #include <boost/make_shared.hpp>
 #include "sync_harness.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <future>
 #include <kth/node/detail/scope_action.hpp>
+#include <stop_token>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <type_traits>
+#include <vector>
 
 #include <cstdio>
 #include <memory>
@@ -114,6 +122,44 @@ TEST_CASE("validateaddress dispatch checks addresses against the node's network"
         R"(["", "ignored"])", R"(["not an address", "ignored"])"}) {
         CAPTURE(params);
         CHECK(request(params) == node::rpc::build_error("3", -32602, "validateaddress requires [address]"));
+    }
+}
+
+TEST_CASE("getindexinfo dispatch reports no index, for any name", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_index_info");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+
+    auto request = [&](std::string const& body) {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const with = [](std::string const& params) {
+        return R"({"method":"getindexinfo","params":)" + params + R"(,"id":4})";
+    };
+
+    // kth runs no index: no argument, no name, and a name of an index other
+    // nodes run, or of none at all, all find nothing.
+    auto const none = node::rpc::build_success("4", "{}");
+    CHECK(request(R"({"method":"getindexinfo","id":4})") == none);
+    for (auto const* params : {"[]", "[null]", R"([""])", R"(["txindex"])", R"(["coinstatsindex"])",
+                               R"(["basic block filter index"])", R"(["nosuchindex"])"}) {
+        CAPTURE(params);
+        CHECK(request(with(params)) == none);
+    }
+    // A name that is not a string, more than one argument, and params that
+    // are not a list are refused.
+    for (auto const* params : {"[1]", "[true]", "[{}]", R"([["txindex"]])", R"(["txindex","extra"])",
+                               R"([null,null])", "null", "{}", R"("txindex")"}) {
+        CAPTURE(params);
+        CHECK(request(with(params)) ==
+            node::rpc::build_error("4", -32602, "getindexinfo takes no argument or [index_name]"));
     }
 }
 
@@ -285,6 +331,115 @@ TEST_CASE("getblockheader dispatch counts confirmations from the connected tip",
     REQUIRE(confirmations(trunk[2].hash()) == 1);
     // Stored, but its block is not connected yet.
     REQUIRE(confirmations(trunk[4].hash()) == -1);
+}
+
+TEST_CASE("getblockhash and getbestblockhash name only connected blocks", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_hash_connected");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // Five blocks with their headers stored, three of them connected.
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 5; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, {trunk.begin(), trunk.begin() + 3}, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == 3u);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":12}";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const hash_reply = [](hash_digest const& hash) {
+        return node::rpc::build_success("12", '"' + encode_hash(hash) + '"');
+    };
+
+    REQUIRE(request("getblockhash", "[0]") == hash_reply(domain::chain::block::genesis_regtest().hash()));
+    REQUIRE(request("getblockhash", "[3]") == hash_reply(trunk[2].hash()));
+    REQUIRE(request("getbestblockhash", "[]") == hash_reply(trunk[2].hash()));
+    // Stored, but its block is not connected yet, so getblock could not return it.
+    auto const ahead = request("getblockhash", "[4]");
+    CHECK(ahead.find("block height out of range") != std::string::npos);
+    CHECK(ahead.find(encode_hash(trunk[3].hash())) == std::string::npos);
+    CHECK(request("getblockhash", "[6]").find("block height out of range") != std::string::npos);
+}
+
+TEST_CASE("getblockhash names the connected branch while a reorganization rewrites the headers", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_block_hash_reorg_window");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    auto& chain = fixture.chain();
+    auto const stamp = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    auto const genesis = domain::chain::block::genesis_regtest().hash();
+    auto const common = test::mine_block(genesis, 1, stamp, 0, {}, 0);
+    std::vector<domain::chain::block> a;
+    auto previous = common.hash();
+    for (uint32_t height = 2; height <= 3; ++height) {
+        a.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing, 1, {}, 0));
+        previous = a.back().hash();
+    }
+    std::vector<domain::chain::block> connected{common};
+    connected.insert(connected.end(), a.begin(), a.end());
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(connected)).headers_added == 3);
+    test::persist_headers(fixture, connected, 1);
+    test::connect_bodies(fixture, connected, 1);
+    REQUIRE(chain.chain_view()->connected_tip_height == 3);
+    std::vector<domain::chain::block> b;
+    previous = common.hash();
+    for (uint32_t height = 2; height <= 4; ++height) {
+        b.push_back(test::mine_block(previous, height, stamp + height * test::block_spacing + 60, 2, {}, 0));
+        previous = b.back().hash();
+    }
+    auto const candidate = fixture.organizer().add_headers(test::headers_of(b));
+    REQUIRE(candidate.reorg_candidate);
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{chain, jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& method, std::string const& params) {
+        ::asio::io_context rpc_io;
+        auto const body = "{\"method\":\"" + method + "\",\"params\":" + params + ",\"id\":13}";
+        auto result = ::asio::co_spawn(rpc_io, dispatcher.handle(context, body), ::asio::use_future);
+        rpc_io.run();
+        return result.get();
+    };
+    auto const hash_reply = [](hash_digest const& hash) {
+        return node::rpc::build_success("13", '"' + encode_hash(hash) + '"');
+    };
+    std::string at_fork;
+    std::string best;
+    size_t captured_height = 0;
+    // Ask once the header store holds branch b from height 2 on, while branch
+    // a is still the connected chain.
+    auto persist = [&](domain::chain::header::list const& headers, size_t start) {
+        auto const ec = chain.replace_headers_from(headers, start);
+        if ( ! ec) {
+            captured_height = chain.chain_view()->connected_tip_height;
+            at_fork = request("getblockhash", "[2]");
+            best = request("getbestblockhash", "[]");
+        }
+        return ec;
+    };
+    ::asio::io_context io;
+    auto switched = ::asio::co_spawn(io, node::sync::execute_reorg(chain, fixture.organizer(),
+        candidate.reorg_branch_head, 1, [] { return false; }, persist), ::asio::use_future);
+    io.run();
+    REQUIRE(switched.get().result.ok);
+    REQUIRE(captured_height == 3);
+    CHECK(at_fork == hash_reply(a[0].hash()));
+    CHECK(best == hash_reply(a[1].hash()));
 }
 
 TEST_CASE("unconnected replacement header never gets positive confirmations during reorg", "[rpc dispatch]") {
@@ -855,6 +1010,115 @@ TEST_CASE("getnetworkinfo reads the P2P node and rejects arguments", "[rpc dispa
     }
 }
 
+TEST_CASE("testmempoolaccept dispatch checks one transaction without pooling it", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_test_mempool_accept");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"testmempoolaccept","params":)" + params + R"(,"id":44})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+
+    // A spend of an output neither the chain nor the pool holds, large enough
+    // for the minimum transaction size so the missing prevout is what refuses it.
+    hash_digest unknown{};
+    unknown[0] = 0x01;
+    domain::chain::input::list ins;
+    ins.emplace_back(domain::chain::output_point{unknown, 0}, domain::chain::script{}, 0xffffffffu);
+    domain::chain::output::list outs;
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    outs.emplace_back(1000u, test::miner_script(), domain::chain::token_data_opt{});
+    domain::chain::transaction const tx{2u, 0u, std::move(ins), std::move(outs)};
+    auto const hex = encode_base16(to_data_chunk(tx, true));
+    auto const refused = node::rpc::build_success("44",
+        R"([{"txid":")" + encode_hash(tx.hash()) + R"(","allowed":false,"reject-reason":"missing-inputs"}])");
+    for (auto const& params : {R"([[")" + hex + R"("]])", R"([[")" + hex + R"("],true])",
+                               R"([[")" + hex + R"("],false])", R"([[")" + hex + R"("],null])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == refused);
+    }
+    CHECK(fixture.chain().mempool_ref().size() == 0);
+
+    // One transaction per call.
+    for (auto const& params : {std::string("[[]]"), R"([[")" + hex + R"(",")" + hex + R"("]])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("44", -8,
+            "testmempoolaccept takes exactly one transaction"));
+    }
+
+    // Hex that is not one transaction.
+    CHECK(request(R"([["zz"]])") == node::rpc::build_error("44", -22, "rawtx is not valid hex"));
+    CHECK(request(R"([["00"]])") == node::rpc::build_error("44", -22,
+        "rawtx is not a decodable transaction"));
+    CHECK(request(R"([[")" + hex + R"(00"]])") == node::rpc::build_error("44", -22,
+        "rawtx is not a decodable transaction"));
+
+    // Anything else is not the request this method takes.
+    for (auto const* params : {"[]", "{}", "null", R"(["00"])", "[[1]]",
+                               R"([["00"],"yes"])", R"([["00"],true,1])"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("44", -32602,
+            "testmempoolaccept requires [[rawtx]] and an optional allowhighfees boolean"));
+    }
+}
+
+TEST_CASE("uptime dispatch counts whole seconds from the node's start", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_uptime");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    // A node that started a minute and a half ago.
+    context.started = std::chrono::steady_clock::now() - std::chrono::seconds(90);
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string_view params) {
+        ::asio::io_context io;
+        auto const body = params.empty()
+            ? std::string(R"({"method":"uptime","id":43})")
+            : std::string(R"({"method":"uptime","params":)") + std::string(params) + R"(,"id":43})";
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto seconds = [](std::string const& reply) {
+        INFO(reply);
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string padded(reply);
+        simdjson::ondemand::document document;
+        REQUIRE(parser.iterate(padded).get(document) == simdjson::SUCCESS);
+        int64_t value = -1;
+        REQUIRE(document["result"].get_int64().get(value) == simdjson::SUCCESS);
+        return value;
+    };
+
+    auto const first = seconds(request("[]"));
+    CHECK(first >= 90);
+    // Generous, so a slow runner cannot fail it, and still far from a count
+    // taken from some other origin such as the steady clock's epoch.
+    CHECK(first < 90 + 600);
+    // Omitted params are the same request, and the count never goes back.
+    auto const second = seconds(request(""));
+    CHECK(second >= first);
+    CHECK(seconds(request("[ ]")) >= second);
+
+    // A start the clock has not reached yet answers 0, never a negative count.
+    context.started = std::chrono::steady_clock::now() + std::chrono::hours(1);
+    CHECK(request("[]") == node::rpc::build_success("43", "0"));
+
+    for (auto const params : {"[1]", "[null]", "[[]]", "[{},2]", "{}", "null", "1", R"("x")"}) {
+        CAPTURE(params);
+        CHECK(request(params) == node::rpc::build_error("43", -32602, "uptime takes no arguments"));
+    }
+}
+
 TEST_CASE("getrawmempool dispatch lists entries keyed by txid when verbose", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_raw_mempool_verbose");
     REQUIRE(fixture.created());
@@ -980,7 +1244,7 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
 
 }
 
-TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long polling", "[rpc dispatch][rpc gbt validation]") {
+TEST_CASE("getblocktemplate rejects invalid requests and names its template for long polling", "[rpc dispatch][rpc gbt validation]") {
     test::chain_fixture fixture("rpc_block_template_validation", 0);
     REQUIRE(fixture.created());
     REQUIRE(fixture.start());
@@ -999,17 +1263,236 @@ TEST_CASE("getblocktemplate rejects invalid requests and omits unsupported long 
     REQUIRE(normal.find(R"("error":null)") != std::string::npos);
     REQUIRE(request(R"([{"mode":"proposal"}])").find(R"("result":null)") != std::string::npos);
     SECTION("invalid argument types and extra arguments are rejected") {
-        for (auto const* params : {"1", "{}", "[1]", R"([{"mode":3}])", R"([{"mode":false}])", "[{},{}]"}) {
+        for (auto const* params : {"1", "{}", "[1]", R"([{"mode":3}])", R"([{"mode":false}])", "[{},{}]",
+            R"([{"longpollid":5}])", R"([{"longpollid":null}])", R"([{"longpollid":["x"]}])"}) {
             CAPTURE(params);
             auto const raw = request(params);
             INFO(raw);
             CHECK(raw.find(R"("result":null)") != std::string::npos);
         }
     }
-    // BIP22 requires omitting longpollid when long polling is unsupported.
-    SECTION("no longpollid when long polling is unsupported") {
+    // What a long-polling pool sends back: the tip and the mempool state the
+    // template was built on.
+    SECTION("the template carries a longpollid naming what it was built on") {
         INFO(normal);
-        CHECK(normal.find(R"("longpollid")") == std::string::npos);
+        auto const id = encode_hash(domain::chain::block::genesis_regtest().hash()) +
+            std::to_string(fixture.chain().mempool_ref().generation());
+        CHECK(normal.find(R"("longpollid":")" + id + '"') != std::string::npos);
+    }
+}
+
+namespace {
+
+// The longpollid of a getblocktemplate reply, empty when it has none.
+std::string longpollid_of(std::string_view reply) {
+    constexpr std::string_view field = R"("longpollid":")";
+    auto const begin = reply.find(field);
+    if (begin == std::string_view::npos) return {};
+    auto const start = begin + field.size();
+    return std::string(reply.substr(start, reply.find('"', start) - start));
+}
+
+// A long-polling getblocktemplate dispatched on a thread of its own, so the
+// test can change the chain while it is held. That thread also does what the
+// server does for a held request: it rings the request's bell when the chain
+// changes. Destruction closes the request's connection doorbell, which ends a
+// hold the test leaves behind, and joins the thread.
+struct held_template_request {
+    held_template_request(node::rpc::dispatcher const& dispatcher, blockchain::block_chain& chain,
+        node::mining::job_store& jobs, std::string const& longpollid,
+        std::chrono::steady_clock::duration wait = node::rpc::longpoll_mempool_wait)
+        : context{.chain = chain, .jobs = jobs, .work = &bell, .closed = &closed,
+            .longpoll_wait = wait}
+        , body(R"({"method":"getblocktemplate","params":[{"longpollid":")" + longpollid +
+            R"("}],"id":21})")
+        , changing(::asio::co_spawn(io, changes.run(chain), ::asio::use_future))
+        , ringing(::asio::co_spawn(io,
+            node::rpc::ring_on_work_changes(changes.subscribe(), bell, ends), ::asio::use_future))
+        , reply(::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future))
+        , runner([this] { io.run(); })
+    {}
+
+    ~held_template_request() {
+        closed.close();
+        ends.close();
+        changes.stop();
+        runner.join();
+    }
+
+    held_template_request(held_template_request const&) = delete;
+    held_template_request& operator=(held_template_request const&) = delete;
+
+    // Whether the reply arrives within `limit`. A held request's does not.
+    [[nodiscard]] bool answered_within(std::chrono::steady_clock::duration limit) const {
+        return reply.wait_for(limit) == std::future_status::ready;
+    }
+
+    node::rpc::work_bell bell;
+    node::rpc::doorbell closed{1};
+    node::rpc::doorbell ends{1};
+    node::mining::work_changes changes;
+    node::rpc::method_context context;
+    std::string body;
+    ::asio::io_context io;
+    std::future<void> changing;
+    std::future<void> ringing;
+    std::future<std::string> reply;
+    std::thread runner;
+};
+
+// Admit `tx` the way a relayed transaction is, which announces it.
+code admit(blockchain::block_chain& chain, transaction_const_ptr const& tx) {
+    return ::asio::co_spawn(chain.executor(), [&chain, tx]() -> ::asio::awaitable<code> {
+        co_return co_await chain.submit_transaction(tx);
+    }, ::asio::use_future).get();
+}
+
+} // namespace
+
+TEST_CASE("getblocktemplate answers at once a long poll on a tip the chain has left", "[rpc dispatch][rpc longpoll]") {
+    test::chain_fixture fixture("rpc_longpoll_stale", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&]() {
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context,
+            R"({"method":"getblocktemplate","params":[],"id":21})"), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const genesis_id = longpollid_of(request());
+    REQUIRE_FALSE(genesis_id.empty());
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    std::vector<domain::chain::block> const next{test::mine_block(genesis.hash(), 1,
+        uint32_t(zulu_time()) - 10 * test::block_spacing, 0, {}, 0)};
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(next)).headers_added == 1);
+    test::persist_headers(fixture, next, 1);
+    test::connect_bodies(fixture, next, 1);
+    auto const current = encode_hash(next.front().hash()) +
+        std::to_string(fixture.chain().mempool_ref().generation());
+
+    // The genesis template's id, and ids this node never gave out.
+    for (auto const& stale : {genesis_id, std::string("x"), std::string{}}) {
+        CAPTURE(stale);
+        held_template_request held(dispatcher, fixture.chain(), jobs, stale);
+        REQUIRE(held.answered_within(std::chrono::seconds(10)));
+        auto const reply = held.reply.get();
+        CHECK(reply.find(R"("error":null)") != std::string::npos);
+        CHECK(longpollid_of(reply) == current);
+    }
+}
+
+TEST_CASE("getblocktemplate holds a long poll until a block connects", "[rpc dispatch][rpc longpoll]") {
+    test::chain_fixture fixture("rpc_longpoll_block", 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto first = ::asio::co_spawn(io, dispatcher.handle(context,
+        R"({"method":"getblocktemplate","params":[],"id":21})"), ::asio::use_future);
+    io.run();
+    auto const id = longpollid_of(first.get());
+    REQUIRE_FALSE(id.empty());
+
+    held_template_request held(dispatcher, fixture.chain(), jobs, id);
+    // Nothing has changed, so nothing answers it.
+    CHECK_FALSE(held.answered_within(std::chrono::milliseconds(500)));
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    std::vector<domain::chain::block> const next{test::mine_block(genesis.hash(), 1,
+        uint32_t(zulu_time()) - 10 * test::block_spacing, 0, {}, 0)};
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(next)).headers_added == 1);
+    test::persist_headers(fixture, next, 1);
+    test::connect_bodies(fixture, next, 1);
+
+    // The connected block's tip notification answers it, with a template on
+    // that block.
+    REQUIRE(held.answered_within(std::chrono::seconds(30)));
+    auto const reply = held.reply.get();
+    INFO(reply);
+    CHECK(reply.find(R"("previousblockhash":")" + encode_hash(next.front().hash()) + '"') !=
+        std::string::npos);
+    CHECK(reply.find(R"("height":2)") != std::string::npos);
+    CHECK(longpollid_of(reply).starts_with(encode_hash(next.front().hash())));
+}
+
+TEST_CASE("getblocktemplate answers a long poll on a mempool change only after the minimum wait", "[rpc dispatch][rpc longpoll]") {
+    // The answer shows the change whether a template is rebuilt on every
+    // mempool change or served from the cache for as long as its tip lasts:
+    // the client already holds the cached one.
+    auto const refresh_seconds = GENERATE(uint32_t(0), max_uint32);
+    CAPTURE(refresh_seconds);
+    test::chain_fixture fixture("rpc_longpoll_mempool", 0);
+    REQUIRE(fixture.created());
+    fixture.settings().gbt_template_refresh_seconds = refresh_seconds;
+    REQUIRE(fixture.start());
+
+    // 101 connected blocks, so a spend of block 1's coinbase is admitted and
+    // selected.
+    constexpr uint32_t tip_height = 101;
+    auto const base_time = uint32_t(zulu_time()) - (tip_height + 10) * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= tip_height; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    REQUIRE(fixture.chain().chain_view()->connected_tip_height == tip_height);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto first = ::asio::co_spawn(io, dispatcher.handle(context,
+        R"({"method":"getblocktemplate","params":[],"id":21})"), ::asio::use_future);
+    io.run();
+    auto const id = longpollid_of(first.get());
+    REQUIRE_FALSE(id.empty());
+
+    auto const& funding = trunk.front().transactions().front();
+    auto const tx = std::make_shared<domain::message::transaction>(test::spend_p2pkh(
+        funding, 0, funding.outputs()[0].value() - 1000u,
+        fixture.chain().chain_settings().enabled_flags()));
+
+    SECTION("a change while it waits answers it once the wait is over") {
+        constexpr auto wait = std::chrono::seconds(2);
+        auto const began = std::chrono::steady_clock::now();
+        held_template_request held(dispatcher, fixture.chain(), jobs, id, wait);
+        REQUIRE(admit(fixture.chain(), tx) == error::success);
+        // The change alone did not answer it: the answer came after the wait.
+        REQUIRE(held.answered_within(std::chrono::seconds(30)));
+        CHECK(std::chrono::steady_clock::now() - began >= wait);
+        auto const reply = held.reply.get();
+        INFO(reply);
+        CHECK(reply.find(R"("txid":")" + encode_hash(tx->hash()) + '"') != std::string::npos);
+        CHECK_FALSE(longpollid_of(reply).empty());
+        CHECK(longpollid_of(reply) != id);
+        CHECK(longpollid_of(reply) != id);
+    }
+
+    SECTION("past the wait, the next admitted transaction answers it") {
+        held_template_request held(dispatcher, fixture.chain(), jobs, id,
+            std::chrono::milliseconds(200));
+        // The wait is over and the mempool has not changed: still held.
+        CHECK_FALSE(held.answered_within(std::chrono::seconds(1)));
+        REQUIRE(admit(fixture.chain(), tx) == error::success);
+        REQUIRE(held.answered_within(std::chrono::seconds(30)));
+        auto const reply = held.reply.get();
+        INFO(reply);
+        CHECK(reply.find(R"("txid":")" + encode_hash(tx->hash()) + '"') != std::string::npos);
+        CHECK(longpollid_of(reply) != id);
     }
 }
 
@@ -1060,8 +1543,10 @@ TEST_CASE("getblockchaininfo still answers when the block files cannot be listed
     REQUIRE(fixture.start());
     auto const blocks = fixture.dir() / "blocks";
     auto const saved = fixture.dir() / "saved-blocks";
-    // Genesis-only fixtures have no open block/undo files (also on Windows).
-    REQUIRE(std::filesystem::is_empty(blocks));
+    // A genesis-only fixture holds the genesis block in its first block file,
+    // and the store keeps no block or undo file open between reads and writes,
+    // so the directory can be moved while the chain is up (also on Windows).
+    REQUIRE(std::filesystem::exists(blocks / "blk00000.dat"));
     std::filesystem::rename(blocks, saved);
     node::detail::scope_action restore([&]() { std::filesystem::rename(saved, blocks); }, true);
     auto const raw = blockchain_info(fixture.chain());
@@ -1388,6 +1873,20 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
         node::rpc::build_success("12", hex(node::rpc::block_to_hex(trunk[2]))));
     REQUIRE(request("getblock", "[" + quoted(null_hash) + "]") ==
         node::rpc::build_error("12", -5, "Block not found"));
+    // A header whose block is not stored.
+    REQUIRE(request("getblock", "[" + quoted(trunk[3].hash()) + "]") ==
+        node::rpc::build_error("12", -5, "Block not found"));
+
+    // The genesis block, which was never downloaded: as stored, and with its fields.
+    auto const genesis = domain::chain::block::genesis_regtest();
+    REQUIRE(request("getblock", "[" + quoted(genesis.hash()) + ",false]") ==
+        node::rpc::build_success("12", hex(node::rpc::block_to_hex(genesis))));
+    auto const genesis_fields = request("getblock", "[" + quoted(genesis.hash()) + "]");
+    CHECK(genesis_fields.find(R"("error":null)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("height":0,)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("confirmations":4,)") != std::string::npos);
+    CHECK(genesis_fields.find(R"("nextblockhash":)" + quoted(trunk[0].hash())) != std::string::npos);
+    CHECK(genesis_fields.find("previousblockhash") == std::string::npos);
 
     // A confirmed transaction: with its block hash, and not without one.
     auto const& coinbase = trunk[2].transactions().front();
@@ -1411,6 +1910,69 @@ TEST_CASE("getblock and getrawtransaction dispatch read the block files and the 
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
     CHECK(request("getrawtransaction", "[" + quoted(pooled->hash()) + ",false,\"\"]") ==
         node::rpc::build_success("12", hex(node::rpc::transaction_to_hex(*pooled))));
+}
+
+TEST_CASE("getblock adds each script's byte code pattern only when patterns is true", "[rpc dispatch][byte code pattern]") {
+    test::chain_fixture fixture("rpc_block_patterns");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - 40u * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= 2; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblock","params":)" + params + R"(,"id":12})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const block = '"' + encode_hash(trunk[1].hash()) + '"';
+    auto const count = [](std::string const& text, std::string_view what) {
+        size_t n = 0;
+        for (auto at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+
+    // Each output script of the block's transactions gets its pattern, right
+    // after the script's kind; the coinbase input has no scriptSig to describe.
+    auto const& coinbase = trunk[1].transactions().front();
+    auto const pattern = domain::chain::make_byte_code_pattern(coinbase.outputs().front().script().bytes());
+    auto const with = request("[" + block + ",2,true]");
+    CHECK(count(with, R"("byteCodePattern":)") == coinbase.outputs().size());
+    CHECK(count(with, R"("byteCodePattern":{"fingerprint":")" + encode_base16(sha256_hash(pattern.pattern)) +
+        R"(","pattern":")" + encode_base16(pattern.pattern) + R"(","patternAsm":")") == 1);
+
+    // false, null, absent, or a block listed by txid: no patterns.
+    for (auto const& params : {"[" + block + ",2]", "[" + block + ",2,false]", "[" + block + ",2,null]",
+                               "[" + block + ",1,true]"}) {
+        CAPTURE(params);
+        auto const without = request(params);
+        CHECK(without.find("\"error\":null") != std::string::npos);
+        CHECK(count(without, R"("byteCodePattern":)") == 0);
+    }
+
+    // Anything else is refused before the block is read.
+    CHECK(request("[" + block + ",2,1]") ==
+        node::rpc::build_error("12", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + block + ",2,\"true\"]") ==
+        node::rpc::build_error("12", -32602, "patterns must be a boolean"));
+    CHECK(request("[" + block + ",2,true,1]") ==
+        node::rpc::build_error("12", -32602, "getblock requires [blockhash, verbosity=1, patterns=false]"));
 }
 
 TEST_CASE("fetch_block reports a stored block it cannot read or parse as a failure", "[rpc dispatch]") {

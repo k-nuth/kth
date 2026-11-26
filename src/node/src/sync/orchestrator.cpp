@@ -13,6 +13,9 @@
 #include <kth/node/detail/tx_announcements.hpp>
 #include <kth/node/detail/local_admission_tasks.hpp>
 #include <kth/node/detail/tx_relay.hpp>
+#if defined(KTH_WITH_NEUTRINO)
+#include <kth/node/detail/compact_filters.hpp>
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -37,6 +40,7 @@
 #include <asio/deferred.hpp>
 #include <asio/detached.hpp>
 #include <asio/steady_timer.hpp>
+#include <asio/thread_pool.hpp>
 #include <asio/use_awaitable.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel_select.hpp>
@@ -245,7 +249,7 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
     uint32_t headers_synced_to, uint32_t blocks_synced_to,
     std::optional<uint32_t> previous_end, std::optional<uint32_t> utxo) {
 
-    spdlog::info("[sync_coordinator] Opening body range [{}..{}]: trigger={} headers={} "
+    spdlog::debug("[sync_coordinator] Opening body range [{}..{}]: trigger={} headers={} "
         "bodies={} utxo={} previous_end={} ({} blocks)",
         range.start, range.end, to_string(trigger), headers_synced_to, blocks_synced_to,
         utxo ? std::to_string(*utxo) : std::string("not consulted"), end_name(previous_end),
@@ -253,6 +257,22 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
 }
 
 } // namespace
+
+// The latest height replaces one the builder has not read yet, which this
+// task alone could have sent.
+void tell_builder_remainder(body_range_deps const& deps, uint32_t height) {
+    if (deps.utxo_remainder == nullptr || height == 0) {
+        return;
+    }
+    if ( ! deps.utxo_remainder->try_send(std::error_code{}, height)) {
+        (void)deps.utxo_remainder->try_receive([](std::error_code, uint32_t) {});
+        (void)deps.utxo_remainder->try_send(std::error_code{}, height);
+    }
+    if (deps.utxo_wake != nullptr) {
+        (void)deps.utxo_wake->try_send(std::error_code{});
+    }
+}
+
 
 // Reliable delivery of a block_range_request: a dropped try_send would leave the
 // download coordinator uncreated and the node stalled with peers idle, so this
@@ -277,12 +297,12 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
     auto& [ec, selected] = completion;
 
     if ( ! ec && selected.index == 0) {
-        spdlog::info("[sync_coordinator] block_range_request {}-{} sent", start, end);
+        spdlog::debug("[sync_coordinator] block_range_request {}-{} sent", start, end);
         co_return true;
     }
     // broken_pipe: the supervisor's input was closed; operation_aborted: the
     // network stopped. Both are shutdown.
-    spdlog::info("[sync_coordinator] block_range_request {}-{} abandoned ({})",
+    spdlog::debug("[sync_coordinator] block_range_request {}-{} abandoned ({})",
         start, end, ec ? ec.message() : "not taken");
     co_return false;
 }
@@ -307,6 +327,11 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
                 to_string(trigger), quiet_name(reason), headers_synced_to, blocks_synced_to,
                 end_name(range_end));
             memory.last_quiet = reason;
+        }
+        // The bodies are level with the headers: nothing is left to ask for,
+        // and what is stored is all the builder will get until a header comes.
+        if (reason == range_quiet::no_advance) {
+            tell_builder_remainder(deps, blocks_synced_to);
         }
         co_return std::nullopt;
     }
@@ -342,11 +367,17 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
                     "cannot say how far it describes",
                     range->start, database::result_code_name(built.error()));
             } else {
-                spdlog::info("[sync_coordinator] SLOW block sync held at {}: the UTXO set is at "
+                spdlog::debug("[sync_coordinator] SLOW block sync held at {}: the UTXO set is at "
                     "{} and block {} needs it at {}; waiting for the builder",
                     range->start, *built, range->start, range->start - 1);
             }
             memory.last_hold = admission;
+        }
+
+        // The range waits for the builder, and the builder may be waiting for
+        // more blocks than the previous range held. None are coming.
+        if (admission == slow_sync_admission::builder_behind) {
+            tell_builder_remainder(deps, range->start - 1);
         }
 
         // A gap nothing is working on. There IS a range to open, which means the
@@ -368,7 +399,7 @@ void log_range_opening(slow_sync_range range, body_range_trigger trigger,
     memory.last_stall.reset();
 
     if (memory.last_hold != slow_sync_admission::start) {
-        spdlog::info("[sync_coordinator] The UTXO set reached {}; SLOW block sync released",
+        spdlog::debug("[sync_coordinator] The UTXO set reached {}; SLOW block sync released",
             *built);
         memory.last_hold = slow_sync_admission::start;
     }
@@ -516,7 +547,7 @@ static
     }
 
     auto const total = end_height - start_height + 1;
-    spdlog::info("[header_persist] Starting: {} headers ({} to {})", total, start_height, end_height);
+    spdlog::debug("[header_persist] Starting: {} headers ({} to {})", total, start_height, end_height);
 
     auto const start_time = std::chrono::steady_clock::now();
     constexpr uint32_t chunk = 10000;
@@ -535,7 +566,7 @@ static
         // Park, then give up: the switch rewrites the range it replaced itself,
         // and a later header sync re-persists whatever is above it.
         if (chain.reorg_pause_requested()) {
-            spdlog::info("[header_persist] A reorg is executing; stopping at height {}", height);
+            spdlog::debug("[header_persist] A reorg is executing; stopping at height {}", height);
             chain.enter_reorg_barrier();
             while (chain.reorg_pause_requested() && ! chain.stopped()) {
                 ::asio::steady_timer timer(co_await ::asio::this_coro::executor);
@@ -560,7 +591,7 @@ static
     auto const elapsed = std::chrono::steady_clock::now() - start_time;
     auto const elapsed_secs = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
     auto const rate = elapsed_secs > 0 ? total / elapsed_secs : total;
-    spdlog::info("[header_persist] Complete: {} headers in {}s ({}/s)", total, elapsed_secs, rate);
+    spdlog::debug("[header_persist] Complete: {} headers in {}s ({}/s)", total, elapsed_secs, rate);
 }
 
 // =============================================================================
@@ -602,7 +633,7 @@ static
     auto executor = co_await ::asio::this_coro::executor;
 
     // 2026-02-07: Log which executor is being used for debugging
-    spdlog::info("[sync_orchestrator] Starting CSP-based sync system (thread_id={})",
+    spdlog::debug("[sync_orchestrator] Starting CSP-based sync system (thread_id={})",
         std::hash<std::thread::id>{}(std::this_thread::get_id()));
     spdlog::debug("[sync_orchestrator] this_coro::executor type: {}", typeid(executor).name());
     spdlog::debug("[sync_orchestrator] Network threadpool executor type: {}",
@@ -652,6 +683,16 @@ static
     block_rejection_channel utxo_rejections(executor, 1);
     block_rejection_ack_channel rejection_ack(executor, 1);
 
+    // The builder waits on this with nothing to build (messages.hpp). The stop
+    // request rings it here; the other changes ring it where they are made.
+    utxo_build_wake_channel utxo_wake(executor, 1);
+    // The coordinator's word to the builder that a remainder is all there is.
+    // Only ever tried, never awaited, so it needs no closing to end anyone.
+    utxo_build_remainder_channel utxo_remainder(executor, 1);
+    std::stop_callback const wake_utxo_on_stop(network.stop_token(), [&utxo_wake] {
+        (void)utxo_wake.try_send(std::error_code{});
+    });
+
     // =========================================================================
     // TASKS - All independent, communicate only via channels
     // =========================================================================
@@ -686,7 +727,7 @@ static
     // One selection on the (select_channel) event channel, ended by the
     // network's stop token or by the channel closing: no timer race.
     all_tasks.spawn("peer_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::info("[peer_bridge] Started, forwarding peer events to peer_provider");
+        spdlog::debug("[peer_bridge] Started, forwarding peer events to peer_provider");
         auto exec = co_await ::asio::this_coro::executor;
 
         try {
@@ -721,7 +762,7 @@ static
         } catch (...) {
             spdlog::error("[peer_bridge] UNKNOWN EXCEPTION");
         }
-        spdlog::info("[peer_bridge] Task ended");
+        spdlog::debug("[peer_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -734,7 +775,7 @@ static
     // afford to be coalesced because what it wakes drains everything, but a ring
     // that never reaches the coordinator wakes nobody at all.
     all_tasks.spawn("announcement_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::info("[announcement_bridge] Started");
+        spdlog::debug("[announcement_bridge] Started");
         while (true) {
             auto [ec, ring] = co_await network.block_announcements().async_receive(
                 ::asio::as_tuple(::asio::use_awaitable));
@@ -751,7 +792,7 @@ static
                 break;
             }
         }
-        spdlog::info("[announcement_bridge] Task ended");
+        spdlog::debug("[announcement_bridge] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -767,7 +808,7 @@ static
     // was queued is answered, because nobody else will.
     if (submissions != nullptr) {
         all_tasks.spawn("local_admission_bridge", [&, submissions]() -> ::asio::awaitable<void> {
-            spdlog::info("[local_admission] Bridge started");
+            spdlog::debug("[local_admission] Bridge started");
             auto exec = co_await ::asio::this_coro::executor;
             while (true) {
                 auto completion = co_await ::asio::experimental::make_select(
@@ -800,7 +841,7 @@ static
                     (void)queued->reply->try_send(blockchain::block_submission_result(error::service_stopped));
                 }
             }
-            spdlog::info("[local_admission] Bridge ended");
+            spdlog::debug("[local_admission] Bridge ended");
         });
     }
 
@@ -819,7 +860,7 @@ static
     // -------------------------------------------------------------------------
     // 2026-02-07: Added comprehensive exception handling for debugging
     all_tasks.spawn("peer_provider", [&]() -> ::asio::awaitable<void> {
-        spdlog::info("[peer_provider] Task started, waiting for peers...");
+        spdlog::debug("[peer_provider] Task started, waiting for peers...");
 
         // Local peer list for broadcasting to sync tasks
         std::vector<network::peer_session::ptr> peers;
@@ -845,10 +886,10 @@ static
             }
 
             if (slow_count > 0) {
-                spdlog::info("[peer_provider] Broadcasting {} peers ({} slow excluded) to sync tasks",
+                spdlog::debug("[peer_provider] Broadcasting {} peers ({} slow excluded) to sync tasks",
                     fast_peers.size(), slow_count);
             } else {
-                spdlog::info("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
+                spdlog::debug("[peer_provider] Broadcasting {} peers to sync tasks", peers.size());
             }
 
             // Headers: send all peers (headers are small, slow is less of an
@@ -891,19 +932,19 @@ static
 
                 if (auto* np = std::get_if<new_peer>(&msg)) {
                     if (np->peer->stopped()) continue;
-                    spdlog::info("[peer_provider] New peer: {} (nonce={})",
+                    spdlog::debug("[peer_provider] New peer: {} (nonce={})",
                         np->peer->authority_with_agent(), np->peer->nonce());
                     peers.push_back(np->peer);
                     co_await broadcast_peers();
 
                 } else if (auto* dp = std::get_if<peer_disconnected>(&msg)) {
-                    spdlog::info("[peer_provider] Peer disconnected: {} (nonce={})",
+                    spdlog::debug("[peer_provider] Peer disconnected: {} (nonce={})",
                         dp->peer->authority_with_agent(), dp->peer->nonce());
                     std::erase_if(peers, [&](auto const& p) { return p->nonce() == dp->peer->nonce(); });
                     co_await broadcast_peers();
 
                 } else if (auto* err = std::get_if<peer_error>(&msg)) {
-                    spdlog::info("[peer_provider] Peer error: {} - {}",
+                    spdlog::debug("[peer_provider] Peer error: {} - {}",
                         err->peer->authority_with_agent(), err->error.message());
 
                     // Report to reputation system - it decides if peer should be banned
@@ -949,7 +990,7 @@ static
 
         // Cancel and close all data channels to unblock pending operations
         // Note: cancel() wakes up pending async ops, close() alone does NOT!
-        spdlog::info("[peer_provider:shutdown] Closing channels...");
+        spdlog::debug("[peer_provider:shutdown] Closing channels...");
         header_validation_input.cancel();
         header_validation_input.close();
         validated_headers.cancel();
@@ -978,10 +1019,12 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
+        utxo_wake.cancel();
+        utxo_wake.close();
         coordinator_events.cancel();
         coordinator_events.close();
 
-        spdlog::info("[peer_provider] Task ended");
+        spdlog::debug("[peer_provider] Task ended");
     });
 
     // -------------------------------------------------------------------------
@@ -1034,7 +1077,7 @@ static
     // when benchmarking download speed only. The task will be unblocked when
     // peer_provider closes the channel during shutdown.
     all_tasks.spawn("block_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::info("[block_bridge] Started, waiting for blocks from supervisor");
+        spdlog::debug("[block_bridge] Started, waiting for blocks from supervisor");
         uint64_t blocks_forwarded = 0;
 
         // Timing stats
@@ -1064,7 +1107,7 @@ static
 
                     // Log first few blocks and periodically
                     if (blocks_forwarded < 10 || blocks_forwarded % 1000 == 0) {
-                        spdlog::info("[block_bridge] Received block {} from supervisor (total: {})",
+                        spdlog::debug("[block_bridge] Received block {} from supervisor (total: {})",
                             block->height, blocks_forwarded);
                     }
 
@@ -1090,7 +1133,7 @@ static
                             ? static_cast<double>(total_recv_wait_us) / blocks_forwarded / 1000.0 : 0;
                         double avg_send_ms = blocks_forwarded > 0
                             ? static_cast<double>(total_send_wait_us) / blocks_forwarded / 1000.0 : 0;
-                        spdlog::info("[block_bridge] timing: recv_wait={:.2f}ms/blk send_wait={:.2f}ms/blk (n={})",
+                        spdlog::debug("[block_bridge] timing: recv_wait={:.2f}ms/blk send_wait={:.2f}ms/blk (n={})",
                             avg_recv_ms, avg_send_ms, blocks_forwarded);
                         last_stats_time = now;
                     }
@@ -1106,7 +1149,7 @@ static
         } catch (...) {
             spdlog::error("[block_bridge] UNKNOWN EXCEPTION");
         }
-        spdlog::info("[block_bridge] Task ended, forwarded {} blocks", blocks_forwarded);
+        spdlog::debug("[block_bridge] Task ended, forwarded {} blocks", blocks_forwarded);
     });
 
     // -------------------------------------------------------------------------
@@ -1184,7 +1227,8 @@ static
         stored_chunks,
         initial_stored_height + 1,
         organizer,
-        contiguous_height.get()
+        contiguous_height.get(),
+        &utxo_wake
     ));
 
     // The bridge is not a reorg participant. It can wait for coordinator room
@@ -1206,16 +1250,34 @@ static
     });
 
     // 7d. Incremental UTXO build task (reads from disk as contiguous blocks become available)
-    all_tasks.spawn("utxo_build_task", utxo_build_task(
+    //
+    // On a thread of its own, not on this group's executor. Applying a batch is
+    // synchronous from the transition record to the durability barrier: the
+    // store's sync, the mutations, the undo files and the fsyncs do not
+    // suspend. On the network pool every one of them is a thread that reads no
+    // socket for as long as the disk takes. The stage talks to the rest through
+    // its channels, which do not care which thread is at the other end.
+#if defined(KTH_BROWSER_NODE)
+    // One Worker and no threads: the stage stays where the group runs.
+    auto const utxo_executor = executor;
+#else
+    // Joined by its destructor, which runs after all_tasks.join() and so finds
+    // the thread idle.
+    ::asio::thread_pool utxo_stage(1);
+    auto const utxo_executor = utxo_stage.get_executor();
+#endif
+    all_tasks.spawn_on(utxo_executor, "utxo_build_task", utxo_build_task(
         chain,
         *contiguous_height,
+        utxo_wake,
         initial_block_height + 1,
         network_type,
         [&network]() { return network.stopped(); },
         on_fatal,
         &utxo_progress,
         &utxo_rejections,
-        &rejection_ack
+        &rejection_ack,
+        &utxo_remainder
     ));
 
     // Bridge: utxo_rejections -> coordinator_events. Awaited: a refusal
@@ -1250,7 +1312,7 @@ static
                 break;
             }
         }
-        spdlog::info("[coordinator:chunks_bridge] Task ended");
+        spdlog::debug("[coordinator:chunks_bridge] Task ended");
     });
 
     // Storage results report body availability only. The builder delivers its
@@ -1270,7 +1332,7 @@ static
                 break;
             }
         }
-        spdlog::info("[coordinator:stored_bridge] Task ended");
+        spdlog::debug("[coordinator:stored_bridge] Task ended");
     });
 
     // Mempool expiry (BCHN -mempoolexpiry): a transaction still unconfirmed
@@ -1346,7 +1408,7 @@ static
     // stop firing mysteriously. Since stop_signal is never used (nobody sends to it),
     // we remove it from the || expression and just poll network.stopped().
     all_tasks.spawn("coordinator_stop_bridge", [&]() -> ::asio::awaitable<void> {
-        spdlog::info("[coordinator:stop_bridge] Started");
+        spdlog::debug("[coordinator:stop_bridge] Started");
         auto exec = co_await ::asio::this_coro::executor;
 
         // The network's stop, as an event. A selection with nothing but a
@@ -1361,7 +1423,7 @@ static
                 ).async_wait(exec, {}, network.stop_token(), ::asio::as_tuple(::asio::deferred));
                 auto& [ec, selected] = completion;
                 (void)selected;
-                spdlog::info("[coordinator:stop_bridge] Woken ({}), network.stopped()={}",
+                spdlog::debug("[coordinator:stop_bridge] Woken ({}), network.stopped()={}",
                     ec ? ec.message() : "no error", network.stopped());
             }
         } catch (std::exception const& e) {
@@ -1375,7 +1437,7 @@ static
             spdlog::debug("[coordinator:stop_bridge] Channel full on exit, stop_request dropped (may be duplicate)");
         }
 
-        spdlog::info("[coordinator:stop_bridge] Task ended");
+        spdlog::debug("[coordinator:stop_bridge] Task ended");
     });
 
     // Bridge: validated_headers -> coordinator_events
@@ -1398,7 +1460,7 @@ static
                 break;
             }
         }
-        spdlog::info("[coordinator:headers_bridge] Task ended");
+        spdlog::debug("[coordinator:headers_bridge] Task ended");
     });
 
     // Bridge: validated_blocks -> coordinator_events
@@ -1416,13 +1478,13 @@ static
                 break;
             }
         }
-        spdlog::info("[coordinator:blocks_bridge] Task ended");
+        spdlog::debug("[coordinator:blocks_bridge] Task ended");
     });
 
     // 2026-02-07: Added comprehensive exception handling for debugging
     all_tasks.spawn("sync_coordinator", [&]() -> ::asio::awaitable<void> {
         refresh_validated_tip(chain, organizer);
-        spdlog::info("[sync_coordinator] Task started");
+        spdlog::debug("[sync_coordinator] Task started");
         try {
 
         // The bodies held, not the bodies connected: the range this opens starts
@@ -1441,7 +1503,8 @@ static
         // What the range decision needs, and what its logs remember. Both live
         // outside the loop so the decision itself is a function a control can
         // drive with real channels — see open_body_range_if_owed.
-        body_range_deps deps{chain, network, block_download_input, checkpoint_height};
+        body_range_deps deps{chain, network, block_download_input, checkpoint_height,
+            &utxo_remainder, &utxo_wake};
         body_range_log_memory range_log;
         bool body_retry_armed = false;
         uint64_t body_retry_generation = 0;
@@ -1550,7 +1613,7 @@ static
         auto resolve_local = [&](size_t at, code outcome,
                                  blockchain::block_validity validity = blockchain::block_validity::unknown) {
             auto const& pending = local_pending[at];
-            spdlog::info("[sync_coordinator] Local block {} at height {}: {}",
+            spdlog::debug("[sync_coordinator] Local block {} at height {}: {}",
                 encode_hash(pending.hash), pending.height,
                 outcome ? outcome.message() : std::string("connected"));
             held_heights.erase(pending.height);
@@ -1615,7 +1678,7 @@ static
                 .local_result = std::make_shared<local_body_result_channel>(1, 1)};
             pending.stage = local_admission::stage_t::body;
             held_heights.insert(pending.height);
-            spdlog::info("[sync_coordinator] Local block {} at height {}: body handed to validation",
+            spdlog::debug("[sync_coordinator] Local block {} at height {}: body handed to validation",
                 encode_hash(pending.hash), pending.height);
             all_tasks.spawn("local_body_handoff", detail::local_body_handoff(
                 fast_val_input, std::move(chunk), network.stop_token(), coordinator_events));
@@ -1779,7 +1842,7 @@ static
                 answer(pending, error::operation_failed);
                 return;
             }
-            spdlog::info("[sync_coordinator] Local block {}: header handed to validation",
+            spdlog::debug("[sync_coordinator] Local block {}: header handed to validation",
                 encode_hash(pending.hash));
             local_pending.push_back(std::move(pending));
         };
@@ -1860,6 +1923,8 @@ static
             if (blockchain::recency_is_stale(timestamp, announcement_max_tip_age_seconds)) {
                 return;
             }
+            spdlog::info("[sync] New tip: height {}, hash {}",
+                view->connected_tip_height, encode_hash(view->tip_hash));
             // Owed to each peer, never sent from here: each peer's service
             // takes the latest owed tip and decides between headers and an
             // inv from what it last announced to that peer.
@@ -1885,7 +1950,7 @@ static
         // version messages is not consulted. Provisional: progress or a debt
         // starts a new walk.
         auto on_tip_confirmed = [&]() -> ::asio::awaitable<void> {
-            spdlog::info("[sync_coordinator] No eligible peer left at height {} ({} connected, "
+            spdlog::debug("[sync_coordinator] No eligible peer left at height {} ({} connected, "
                 "best claimed {}): confirming the tip",
                 headers_synced_to, header_peers.size(), walk.best_known_height());
 
@@ -1911,7 +1976,7 @@ static
             auto const total_headers = headers_synced_to - headers_at_start;
             auto const rate = elapsed_secs > 0 ? total_headers / elapsed_secs : total_headers;
 
-            spdlog::info("[sync_coordinator] Header sync COMPLETE: {} headers in {}s ({}/s)",
+            spdlog::debug("[sync_coordinator] Header sync COMPLETE: {} headers in {}s ({}/s)",
                 total_headers, elapsed_secs, rate);
 
             // Owned by the task group, not detached. It holds `chain` and the
@@ -1932,7 +1997,11 @@ static
             if (headers_synced_to <= blocks_synced_to) {
                 // Nothing owed to the bodies. Nothing polls either: the next
                 // block reaches us as a header, a cmpctblock or an inv.
-                spdlog::info("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
+                // The builder may still be behind them, as after a restart
+                // with every body stored, and nothing heard from here on would
+                // tell it that they are all there are.
+                tell_builder_remainder(deps, blocks_synced_to);
+                spdlog::debug("[sync_coordinator] Fully synced at height {}", blocks_synced_to);
                 co_return;
             }
 
@@ -1987,7 +2056,7 @@ static
                         // answers. Replaces any retry for an earlier park.
                         auto const delay = detail::walk_retry_delay(
                             timing.retry_base, timing.retry_cap, step.retry->attempt);
-                        spdlog::info("[sync_coordinator] Header walk parked at height {} with {} "
+                        spdlog::debug("[sync_coordinator] Header walk parked at height {} with {} "
                             "peer(s) and none left to ask; retrying in {}ms (attempt {})",
                             headers_synced_to, header_peers.size(), delay.count(),
                             step.retry->attempt + 1);
@@ -2165,7 +2234,7 @@ static
                         [&network] { return network.stopped(); },
                         [&chain](domain::chain::header::list const& headers, size_t start_height) {
                             return chain.replace_headers_from(headers, start_height);
-                        }, reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                        }, reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                     if (reorg.fatal) {
                         // The chain moved but its persisted description did not.
@@ -2246,7 +2315,7 @@ static
                         if (asked_to <= blocks_synced_to) {
                             // Everything above the rewound tip is a body this
                             // node holds itself; nothing is peers' to supply.
-                            spdlog::info("[sync_coordinator] Reorg: every owed body is local; "
+                            spdlog::debug("[sync_coordinator] Reorg: every owed body is local; "
                                 "no range asked for");
                         } else if (co_await send_block_range(deps, blocks_synced_to + 1, asked_to)) {
                             // The only place a new end is recorded, and only once
@@ -2320,6 +2389,10 @@ static
                 // and the batch that eventually reaches them has its own barrier
                 // that does fail.
                 if (headers_synced_to > prev_headers_synced) {
+                    // The builder leaves a remainder shorter than one batch
+                    // unbuilt while the header tip is stale, and a newer tip is
+                    // what ends that.
+                    (void)utxo_wake.try_send(std::error_code{});
                     if ( ! ensure_headers_persisted(chain, organizer.index(),
                                                     headers_synced_to)) {
                         spdlog::warn("[header_persist] Could not persist headers through {}; "
@@ -2449,7 +2522,7 @@ static
 
                     // Check if fast sync stage is complete
                     if (blocks_synced_to == checkpoint_height) {
-                        spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
+                        spdlog::debug("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
                         // Nothing to build here. `utxo_build_task` applies each
                         // block's delta as it goes, following the contiguous
@@ -2458,7 +2531,7 @@ static
                         // It runs on its own schedule, so reaching the checkpoint
                         // does not mean it has arrived — this only says the
                         // coordinator has nothing to do about it.
-                        spdlog::info("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
+                        spdlog::debug("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
                     }
 
                     // Trigger SLOW block sync for the post-checkpoint range.
@@ -2477,7 +2550,7 @@ static
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
                         // Whether before or after checkpoint, we need to keep looking for more headers
                         // to stay in sync with the network tip
-                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                        spdlog::debug("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
                             blocks_synced_to, checkpoint_height);
 
                         header_sync_complete = false;
@@ -2529,6 +2602,10 @@ static
                 announce_connected_tip();
                 // The orphans a connected block resolves (detail/tx_relay.hpp).
                 network.tx_relay().tip_moved();
+#if defined(KTH_WITH_NEUTRINO)
+                // The compact filter index reads the blocks connected since.
+                network.compact_filters().tip_moved();
+#endif
                 co_await try_start_slow_sync(body_range_trigger::utxo_build_advanced);
                 continue;
             }
@@ -2554,7 +2631,7 @@ static
                 auto const outcome = co_await execute_body_rejection(
                     chain, organizer, rejected->height, rejected->hash,
                     network.stop_token(), truncate_active,
-                    reorg_pipeline{&block_storage_input, contiguous_height.get()});
+                    reorg_pipeline{&block_storage_input, contiguous_height.get(), &utxo_wake});
 
                 if (outcome.fatal) {
                     (void)rejection_ack.try_send(std::error_code{});
@@ -2651,19 +2728,19 @@ static
                     uint32_t current_k = blocks_synced_to / 1000;
                     if (current_k > last_logged_k) {
                         last_logged_k = current_k;
-                        spdlog::info("[sync_coordinator:fast] {}/{} validated (pending_chunks: {})",
+                        spdlog::debug("[sync_coordinator:fast] {}/{} validated (pending_chunks: {})",
                             blocks_synced_to, checkpoint_height, pending_chunks.size());
                     }
 
                     // Check if fast sync stage is complete
                     if (blocks_synced_to >= checkpoint_height) {
-                        spdlog::info("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
+                        spdlog::debug("[sync_coordinator] *** FAST SYNC COMPLETE at checkpoint {} ***",
                             checkpoint_height);
                         // Nothing to build here; `utxo_build_task` applies each
                         // block's delta as it goes. Reaching the checkpoint does
                         // not mean it has arrived — which is why the range below
                         // asks rather than assumes.
-                        spdlog::info("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
+                        spdlog::debug("[sync_coordinator] UTXO set built incrementally by utxo_build_task");
                     }
 
                     // Trigger SLOW block sync for the post-checkpoint range.
@@ -2674,7 +2751,7 @@ static
 
                     // Check if we've caught up to headers
                     if (blocks_synced_to >= headers_synced_to && header_sync_complete) {
-                        spdlog::info("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
+                        spdlog::debug("[sync_coordinator] Block sync caught up to headers at {} (checkpoint={}), restarting header sync",
                             blocks_synced_to, checkpoint_height);
 
                         header_sync_complete = false;
@@ -2723,7 +2800,7 @@ static
         }
         local_pending.clear();
 
-        spdlog::info("[sync_coordinator] Event loop ended, task completing...");
+        spdlog::debug("[sync_coordinator] Event loop ended, task completing...");
         } catch (std::exception const& e) {
             spdlog::error("[sync_coordinator] EXCEPTION: {}", e.what());
         } catch (...) {
@@ -2745,13 +2822,17 @@ static
         utxo_rejections.close();
         rejection_ack.cancel();
         rejection_ack.close();
-        coordinator_events.cancel();
-        coordinator_events.close();
-        spdlog::info("[sync_coordinator] Task ended");
+        utxo_wake.cancel();
+        utxo_wake.close();
+        // A submission that reached the channel and was never read, such as
+        // one queued behind the stop, is answered here: its requester waits
+        // for that and nothing else.
+        detail::close_and_refuse_unread_submissions(coordinator_events);
+        spdlog::debug("[sync_coordinator] Task ended");
     });
 
     // Wait for all tasks
-    spdlog::info("[sync_orchestrator] All {} tasks spawned, running...", all_tasks.active_count());
+    spdlog::debug("[sync_orchestrator] All {} tasks spawned, running...", all_tasks.active_count());
     co_await all_tasks.join();
 
     // AFTER the join, and that is the whole point. Draining before the channels
@@ -2772,7 +2853,7 @@ static
         }
     }
 
-    spdlog::info("[sync_orchestrator:shutdown] All tasks completed - orchestrator exiting");
+    spdlog::debug("[sync_orchestrator:shutdown] All tasks completed - orchestrator exiting");
 }
 
 } // namespace kth::node::sync

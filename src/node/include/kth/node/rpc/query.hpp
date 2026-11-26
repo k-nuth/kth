@@ -87,6 +87,24 @@ std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const
 // to whole satoshis per kB.
 std::string render_estimate_fee(float byte_fee_satoshis);
 
+// What testmempoolaccept found for one transaction.
+struct mempool_accept_result {
+    hash_digest txid;
+    bool allowed = false;
+    uint64_t size = 0;           // serialized bytes, when allowed
+    uint64_t vsize = 0;          // virtual bytes, the size its fee rate is per, when allowed
+    uint64_t fee = 0;            // satoshis, when allowed
+    std::string reject_reason;   // when refused
+    std::string reject_details;  // when refused, if there is more to say
+};
+
+// Serialize the testmempoolaccept result: a one-element array. An allowed
+// transaction carries size, vsize (the serialized size, or 50 bytes per
+// signature check if that is more: the size the mempool's fee rates are per)
+// and fees, base and effective-feerate per kB of vsize, in BCH. A refused one
+// carries reject-reason and, when set, reject-details.
+std::string render_mempool_accept(mempool_accept_result const& result);
+
 // Owned records from the header index; RPC only renders their wire format.
 using chain_tip = blockchain::header_index::chain_tip;
 
@@ -162,10 +180,12 @@ struct block_location {
 
 // The verbose getblock object. `with_transactions` (verbosity 2) lists each
 // transaction as verbose getrawtransaction's fields without the location;
-// otherwise (verbosity 1) by txid.
+// otherwise (verbosity 1) by txid. With `patterns`, every scriptSig and
+// scriptPubKey of those transactions carries its byteCodePattern object.
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
-                                 domain::config::network net, domain::script_flags_t flags);
+                                 domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns = false);
 
 // getblockheader (verbose) result object. `confirmations` is -1 for a block
 // that is not on the connected chain.

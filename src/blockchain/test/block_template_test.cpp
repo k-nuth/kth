@@ -9,6 +9,8 @@
 #include <test_helpers.hpp>
 
 #include <catch2/catch_approx.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <limits>
 
 #include <kth/blockchain/pools/block_template.hpp>
 #include <kth/blockchain/pools/mempool.hpp>
@@ -222,6 +224,40 @@ TEST_CASE("block_template: a larger coinbase sigchecks reserve caps selection", 
     REQUIRE(tpl.total_sigchecks == 40u);
 }
 
+TEST_CASE("block_template: a coinbase sigchecks reserve at or above the limit selects nothing", "[block_template]") {
+    mempool pool(0x1111u, 0x2222u);
+    auto a = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    REQUIRE(pool.add(make_entry(a, 300u, 100u, /*sigchecks*/ 40u)));
+
+    auto ctx = unlimited_ctx();
+    ctx.max_block_sigchecks = 200u;
+    // The limit itself, and a reserve so large that adding a transaction's
+    // SigChecks to it would wrap around to a small number.
+    auto const reserve = GENERATE(uint64_t(200), std::numeric_limits<uint64_t>::max() - 10u);
+    CAPTURE(reserve);
+    ctx.coinbase_reserve_sigchecks = reserve;
+
+    auto const tpl = build_block_template(view_of(pool), ctx);
+    REQUIRE(tpl.txs.empty());
+}
+
+TEST_CASE("block_template: a coinbase size reserve at or above the limit selects nothing", "[block_template]") {
+    mempool pool(0x1111u, 0x2222u);
+    auto a = as_ptr(make_tx({op(1, 0)}, 1, 1));
+    REQUIRE(pool.add(make_entry(a, 300u, 100u, /*sigchecks*/ 1u)));
+
+    auto ctx = unlimited_ctx();
+    ctx.max_block_size = 5000u;
+    // The limit itself, and a reserve so large that adding a transaction's
+    // size to it would wrap around to a small number.
+    auto const reserve = GENERATE(uint64_t(5000), std::numeric_limits<uint64_t>::max() - 10u);
+    CAPTURE(reserve);
+    ctx.coinbase_reserve_size = reserve;
+
+    auto const tpl = build_block_template(view_of(pool), ctx);
+    REQUIRE(tpl.txs.empty());
+}
+
 TEST_CASE("block_template: sigchecks limit caps selection", "[block_template]") {
     mempool pool(0x1111u, 0x2222u);
 
@@ -341,6 +377,26 @@ TEST_CASE("make_mining_template coinbase value is subsidy plus fees", "[block_te
         0x1d00ffffu, 1000u, 5000u, 32000000u, 226950u, std::move(selection));
     // Height 1 subsidy is 50 BCH.
     REQUIRE(t.coinbase_value == 5000000000ull + 1234u);
+}
+
+TEST_CASE("make_mining_template coinbase value follows the network's halving schedule", "[block_template]") {
+    // Regtest halves every 150 blocks; the other networks every 210,000.
+    // Block validation uses the network's schedule, so the template must too.
+    block_template regtest{};
+    regtest.total_fees = 7u;
+    auto const halved = make_mining_template(0x20000000u, null_hash, /*height*/ 151u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, std::move(regtest), /*retarget*/ false);
+    REQUIRE(halved.coinbase_value == 2500000000ull + 7u);
+    auto const first = make_mining_template(0x20000000u, null_hash, /*height*/ 149u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ false);
+    REQUIRE(first.coinbase_value == 5000000000ull);
+    // The halving takes effect at height 150 itself, not one block later.
+    auto const boundary = make_mining_template(0x20000000u, null_hash, /*height*/ 150u,
+        0x207fffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ false);
+    REQUIRE(boundary.coinbase_value == 2500000000ull);
+    auto const mainnet = make_mining_template(0x20000000u, null_hash, /*height*/ 151u,
+        0x1d00ffffu, 1000u, 5000u, 32000000u, 226950u, block_template{}, /*retarget*/ true);
+    REQUIRE(mainnet.coinbase_value == 5000000000ull);
 }
 
 TEST_CASE("make_mining_template passes the header fields through", "[block_template]") {

@@ -342,7 +342,10 @@ struct batch_timing_stats {
 /// @param peer The peer session
 /// @param blocks Vector of {height, hash} pairs to request
 /// @param timeout Maximum time to wait for ALL blocks
-/// @return Vector of received blocks with heights, or error
+/// @return Vector of received blocks with heights, or error. When the time
+///         runs out: error::peer_throttling if none of the requested blocks
+///         arrived, error::channel_timeout if at least one did. A block that
+///         was not requested does not count.
 /// @note Blocks may be received out of order; vector is sorted by height on return
 template<sync_mode Mode>
 [[nodiscard]]

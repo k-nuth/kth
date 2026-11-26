@@ -18,6 +18,7 @@
 
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/script.hpp>
+#include <kth/domain/chain/byte_code_pattern.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/domain/chain/token_data.hpp>
 #include <kth/domain/constants/common.hpp>
@@ -125,6 +126,34 @@ std::string render_estimate_fee(float byte_fee_satoshis) {
     return w.str();
 }
 
+std::string render_mempool_accept(mempool_accept_result const& result) {
+    writer w;
+    w.begin_array();
+    w.begin_object();
+    w.field("txid", encode_hash(result.txid));
+    w.field("allowed", result.allowed);
+    if (result.allowed) {
+        w.field("size", result.size);
+        w.field("vsize", result.vsize);
+        w.key("fees").begin_object();
+        w.field_raw("base", satoshi_to_bitcoin(result.fee));
+        // Whole satoshis per 1000 virtual bytes, truncated, as the mempool
+        // compares them. No overflow: a fee is at most the 21 million BCH
+        // supply, so a thousand times it fits.
+        uint64_t const per_kb = blockchain::fee_per_kb(result.fee, result.vsize);
+        w.field_raw("effective-feerate", satoshi_to_bitcoin(per_kb));
+        w.end_object();
+    } else {
+        w.field("reject-reason", result.reject_reason);
+        if ( ! result.reject_details.empty()) {
+            w.field("reject-details", result.reject_details);
+        }
+    }
+    w.end_object();
+    w.end_array();
+    return w.str();
+}
+
 std::string render_network_hash_ps(uint256_t const& work_before, uint256_t const& work_at_end,
                                    uint32_t min_time, uint32_t max_time) {
     writer w;
@@ -207,9 +236,31 @@ std::string_view capability_name(domain::chain::capability_t capability) {
     }
 }
 
-// A "scriptPubKey" object: asm, hex, and the kind with its addresses.
+// The "byteCodePattern" object: the SHA-256 of the pattern (in byte order),
+// the pattern as hex and as script text, the pushed data, and "error" only
+// for a script that ends in the middle of a push.
+void write_byte_code_pattern(writer& w, data_chunk const& script, domain::script_flags_t flags) {
+    auto const parsed = domain::chain::make_byte_code_pattern(script);
+    w.key("byteCodePattern").begin_object();
+    w.field("fingerprint", encode_base16(sha256_hash(parsed.pattern)));
+    w.field("pattern", encode_base16(parsed.pattern));
+    w.field("patternAsm", domain::chain::script{parsed.pattern, false}.to_string(flags));
+    w.key("data").begin_array();
+    for (auto const& datum : parsed.data) {
+        w.value(encode_base16(datum));
+    }
+    w.end_array();
+    if (parsed.error) {
+        w.field("error", true);
+    }
+    w.end_object();
+}
+
+// A "scriptPubKey" object: asm, hex, and the kind with its addresses, then
+// the byteCodePattern object when asked for.
 void write_script_pubkey(writer& w, domain::chain::script const& script,
-                         domain::config::network net, domain::script_flags_t flags) {
+                         domain::config::network net, domain::script_flags_t flags,
+                         bool patterns = false) {
     auto const destination = describe_output_script(script, net);
     w.key("scriptPubKey").begin_object();
     w.field("asm", script.to_string(flags));
@@ -224,6 +275,9 @@ void write_script_pubkey(writer& w, domain::chain::script const& script,
             w.value(address);
         }
         w.end_array();
+    }
+    if (patterns) {
+        write_byte_code_pattern(w, script.bytes(), flags);
     }
     w.end_object();
 }
@@ -248,7 +302,8 @@ namespace {
 
 // The decoderawtransaction fields, into an object the caller has opened.
 void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
-                              domain::config::network net, domain::script_flags_t flags) {
+                              domain::config::network net, domain::script_flags_t flags,
+                              bool patterns = false) {
     w.field("txid", encode_hash(tx.hash()));
     w.field("hash", encode_hash(tx.hash()));
     w.field("version", int64_t(tx.version()));
@@ -266,6 +321,9 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
             w.key("scriptSig").begin_object();
             w.field("asm", input.script().to_string(flags));
             w.field("hex", encode_base16(input.script().bytes()));
+            if (patterns) {
+                write_byte_code_pattern(w, input.script().bytes(), flags);
+            }
             w.end_object();
         }
         w.field("sequence", int64_t(input.sequence()));
@@ -279,7 +337,7 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
         w.begin_object();
         w.field_raw("value", satoshi_to_bitcoin(output.value()));
         w.field("n", n++);
-        write_script_pubkey(w, output.script(), net, flags);
+        write_script_pubkey(w, output.script(), net, flags, patterns);
         if (auto const& token = output.token_data()) {
             write_token_data(w, *token);
         }
@@ -330,7 +388,8 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
 
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
-                                 domain::config::network net, domain::script_flags_t flags) {
+                                 domain::config::network net, domain::script_flags_t flags,
+                                 bool patterns) {
     auto const& header = block.header();
     writer w;
     w.begin_object();
@@ -353,7 +412,7 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
     for (auto const& tx : block.transactions()) {
         if (with_transactions) {
             w.begin_object();
-            write_transaction_fields(w, tx, net, flags);
+            write_transaction_fields(w, tx, net, flags, patterns);
             w.field("hex", transaction_to_hex(tx));
             w.end_object();
         } else {
@@ -617,5 +676,6 @@ std::string render_validate_address(std::string_view address, domain::config::ne
     w.end_object();
     return w.str();
 }
+
 
 } // namespace kth::node::rpc

@@ -8,8 +8,8 @@
 #include <kth/domain/constants/functions.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 
-// Bitcoin Core optimized SHA256D64 for merkle tree computation
-#include <crypto/sha256.h>
+
+#include <kth/domain/chain/merkle.hpp>
 
 namespace kth::domain::chain {
 
@@ -180,49 +180,8 @@ hash_digest light_block::generate_merkle_root(bool& mutated) const {
         hashes.push_back(bitcoin_hash(tx_data));
     }
 
-    // Step 2: Build merkle tree using Bitcoin Core's optimized SHA256D64
-    // SHA256D64 uses SIMD: 2-way on ARM, 4-way on SSE4.1, 8-way on AVX2
-    std::vector<uint8_t> batch_input;
-    std::vector<uint8_t> batch_output;
-
-    while (hashes.size() > 1) {
-        auto const unpadded_size = hashes.size();
-        // Bitcoin merkle: duplicate last hash if odd count at this level
-        if (hashes.size() % 2 != 0) {
-            hashes.push_back(hashes.back());
-        }
-
-        size_t const num_pairs = hashes.size() / 2;
-
-        // Prepare batch input: all pairs concatenated (64 bytes each)
-        batch_input.resize(num_pairs * 64);
-        batch_output.resize(num_pairs * 32);
-
-        for (size_t i = 0; i < num_pairs; ++i) {
-            // Count only real siblings, not the implicit odd-leaf duplicate.
-            // Check every level: whole duplicated subtrees are ambiguous too.
-            if (i * 2 + 1 < unpadded_size && hashes[i * 2] == hashes[i * 2 + 1]) {
-                mutated = true;
-            }
-            std::copy(hashes[i * 2].begin(), hashes[i * 2].end(),
-                      batch_input.begin() + i * 64);
-            std::copy(hashes[i * 2 + 1].begin(), hashes[i * 2 + 1].end(),
-                      batch_input.begin() + i * 64 + 32);
-        }
-
-        // Process all pairs at once using Bitcoin Core's optimized SHA256D64
-        SHA256D64(batch_output.data(), batch_input.data(), num_pairs);
-
-        // Copy results back to hashes vector
-        hashes.resize(num_pairs);
-        for (size_t i = 0; i < num_pairs; ++i) {
-            std::copy(batch_output.begin() + i * 32,
-                      batch_output.begin() + (i + 1) * 32,
-                      hashes[i].begin());
-        }
-    }
-
-    return hashes.front();
+    // Step 2: Build the merkle tree over those hashes.
+    return merkle_root(std::move(hashes), mutated);
 }
 
 } // namespace kth::domain::chain

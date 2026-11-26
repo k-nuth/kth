@@ -7,8 +7,10 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include <kth/domain/message/version.hpp>
 #include <kth/domain/concepts.hpp>
 #include <kth/domain/constants.hpp>
 #include <kth/domain/define.hpp>
@@ -101,14 +103,9 @@ struct KD_API addrv2 {
     [[nodiscard]]
     size_t serialized_size(uint32_t version) const;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "addrv2";
+    static constexpr uint32_t version_minimum = version::level::feature_negotiation;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
     /// Maximum addresses per message (same as addr message)
     static constexpr size_t max_addresses = 1000;

@@ -47,6 +47,13 @@ struct block_template {
 constexpr uint64_t default_coinbase_reserve_size = 1000;
 constexpr uint64_t default_coinbase_reserve_sigchecks = 100;
 
+// A caller's coinbase budget for fetch_mining_template: the space and the
+// SigChecks held back from the selection.
+struct coinbase_reserve {
+    uint64_t size = default_coinbase_reserve_size;
+    uint64_t sigchecks = default_coinbase_reserve_sigchecks;
+};
+
 struct block_template_context {
     uint64_t max_block_size;        // consensus block size limit
     uint64_t max_block_sigchecks;   // consensus block sigchecks limit
@@ -105,6 +112,11 @@ struct mining_template {
     uint64_t size_limit;                // consensus max block size
     uint64_t sigchecks_limit;           // consensus max block sigchecks
     block_template selection;           // CTOR-ordered txs + totals (no coinbase)
+    // The mempool generation the selection was copied at. A cached template is
+    // served after the pool has moved on, so a caller asking whether the pool
+    // has changed since this template (getblocktemplate long polling) compares
+    // against this, not against the pool's current generation.
+    uint64_t mempool_generation = 0;
 };
 
 // Assemble a mining_template from the next-block parameters and the selection.

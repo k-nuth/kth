@@ -138,6 +138,7 @@ peer_manager::~peer_manager() {
             spdlog::debug("[peer_manager] Removed peer [{}], remaining: {}",
                 it->second->authority(), peers_.size() - 1);
             peers_.erase(it);
+            compact_slots_.erase(nonce);
             count_.store(peers_.size());
         } else {
             spdlog::debug("[peer_manager] Peer with nonce {} not found in map", nonce);
@@ -238,6 +239,35 @@ peer_manager::~peer_manager() {
     }
     co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<size_t> {
         co_return peers_.size();
+    }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<bool> peer_manager::take_compact_slot(peer_session::ptr peer, size_t limit) {
+    if (stopped() || ! peer) {
+        co_return false;
+    }
+    auto const nonce = peer->nonce();
+    co_return co_await ::asio::co_spawn(strand_, [this, nonce, limit]() -> ::asio::awaitable<bool> {
+        if ( ! peers_.contains(nonce)) {
+            co_return false;
+        }
+        if (compact_slots_.contains(nonce)) {
+            co_return true;
+        }
+        if (compact_slots_.size() >= limit) {
+            co_return false;
+        }
+        compact_slots_.insert(nonce);
+        co_return true;
+    }, ::asio::use_awaitable);
+}
+
+::asio::awaitable<size_t> peer_manager::compact_slots() const {
+    if (stopped()) {
+        co_return 0;
+    }
+    co_return co_await ::asio::co_spawn(strand_, [this]() -> ::asio::awaitable<size_t> {
+        co_return compact_slots_.size();
     }, ::asio::use_awaitable);
 }
 

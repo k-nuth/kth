@@ -5,6 +5,8 @@
 #ifndef KTH_DOMAIN_MESSAGE_HEADER_HPP
 #define KTH_DOMAIN_MESSAGE_HEADER_HPP
 
+#include <string_view>
+
 #include <kth/domain/chain/header.hpp>
 #include <kth/domain/message/version.hpp>
 #include <kth/infrastructure/message/message_tools.hpp>
@@ -20,14 +22,9 @@ struct KD_API header : chain::header {
     using ptr_list = std::vector<ptr>;
     using const_ptr_list = std::vector<const_ptr>;
 
-    static
-    std::string const command;
-
-    static
-    uint32_t const version_minimum;
-
-    static
-    uint32_t const version_maximum;
+    static constexpr std::string_view command = "headers";
+    static constexpr uint32_t version_minimum = version::level::minimum;
+    static constexpr uint32_t version_maximum = version::level::maximum;
 
     // Inherit constructors
     using chain::header::header;

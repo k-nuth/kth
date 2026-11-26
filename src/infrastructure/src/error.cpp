@@ -5,6 +5,7 @@
 #include <kth/infrastructure/error.hpp>
 
 #include <boost/system/error_code.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/utility/asio_helper.hpp>
@@ -31,7 +32,7 @@ char const* error_category_impl::name() const noexcept {
 }
 
 std::string error_category_impl::message(int ev) const noexcept {
-    static const std::unordered_map<int, std::string> messages = {
+    static const boost::unordered_flat_map<int, std::string> messages = {
         // general codes
         { error::success, "success" },
         { error::deprecated, "deprecated" },

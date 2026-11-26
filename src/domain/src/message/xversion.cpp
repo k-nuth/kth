@@ -8,9 +8,6 @@
 #include <kth/infrastructure/message/message_tools.hpp>
 namespace kth::domain::message {
 
-std::string const xversion::command = "xversion";
-uint32_t const message::xversion::version_minimum = version::level::minimum;
-uint32_t const message::xversion::version_maximum = version::level::maximum;
 
 // Deserialization.
 //-----------------------------------------------------------------------------

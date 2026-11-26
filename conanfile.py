@@ -87,6 +87,11 @@ class KthRecipe(KnuthConanFileV2):
         # CMAKE_CUDA_COMPILER locate it), metal (Apple), auto (every runtime
         # whose toolchain is found).
         "secp256k1_gpu": ['none', 'auto', 'cuda', 'metal'],
+        # How SHA-256 picks its implementation: runtime (CPU detection when the
+        # library is loaded), compile_time (fixed by the instructions of the
+        # target) or auto: compile_time when the package is built for the CPU
+        # of this machine (march_strategy=optimized), runtime otherwise.
+        "sha256_dispatch": ["auto", "runtime", "compile_time"],
         "verbose": [True, False],
         "consensus": [True, False],
         "db": ['dynamic'],
@@ -94,15 +99,27 @@ class KthRecipe(KnuthConanFileV2):
         "cxxflags": ["ANY"],
         "cflags": ["ANY"],
         "cmake_export_compile_commands": [True, False],
-        "with_examples": [True, False],
-        "with_icu": [True, False],
-        "with_png": [True, False],
-        "with_qrencode": [True, False],
-        "with_jemalloc": [True, False],
-        "with_stats": [True, False],
+        "examples": [True, False],
+        "icu": [True, False],
+        "png": [True, False],
+        "qrencode": [True, False],
+        "jemalloc": [True, False],
+        "stats": [True, False],
         "rpc": ["jsonrpc", "grpc", "capnproto", "none"],
         "wasm_simd": [True, False],
-        "with_websocket": [True, False],
+        "websocket": [True, False],
+        # Compact block filters for light wallets (Neutrino, BIP157/158). Not
+        # part of the consensus protocol, so off unless asked for.
+        "neutrino": [True, False],
+        # Outbound connections through a SOCKS5 proxy (Tor). Not part of the
+        # consensus protocol, so off unless asked for.
+        "socks5": [True, False],
+        # Serving wallets that load a bloom filter (BIP37). Not part of the
+        # consensus protocol, so off unless asked for.
+        "bloom_filters": [True, False],
+        # Stratum V2 for pools and miners. Not part of the consensus protocol,
+        # so off unless asked for.
+        "sv2": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -126,16 +143,17 @@ class KthRecipe(KnuthConanFileV2):
         "mempool_backend": "cfm",
         "signature_verification": "secp256k1",
         "secp256k1_gpu": "none",
+        "sha256_dispatch": "auto",
         "verbose": False,
         "consensus": False,
         "db": "dynamic",
         "db_readonly": False,
         "cmake_export_compile_commands": False,
 
-        "with_examples": False,
-        "with_icu": False,
-        "with_png": False,
-        "with_qrencode": False,
+        "examples": False,
+        "icu": False,
+        "png": False,
+        "qrencode": False,
         # WARNING: jemalloc causes crashes with LMDB (mdb_env_close/mdb_dbi_close segfaults).
         # LMDB uses mmap extensively which conflicts with jemalloc's memory management.
         # Potential solutions if jemalloc is needed:
@@ -143,11 +161,15 @@ class KthRecipe(KnuthConanFileV2):
         #   2. Use MDB_WRITEMAP flag in LMDB (writes directly to mmap, bypasses malloc)
         #   3. Compile LMDB separately without jemalloc linkage
         # For now, keep disabled until a proper solution is implemented.
-        "with_jemalloc": False,
-        "with_stats": False,
+        "jemalloc": False,
+        "stats": False,
         "rpc": "jsonrpc",
         "wasm_simd": True,
-        "with_websocket": False,
+        "websocket": False,
+        "neutrino": False,
+        "socks5": False,
+        "bloom_filters": False,
+        "sv2": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -176,21 +198,40 @@ class KthRecipe(KnuthConanFileV2):
         KnuthConanFileV2.validate(self)
         if self.options.browser_node and (self.settings.os != "Emscripten" or not self.options.asio_standalone):
             raise ConanInvalidConfiguration("browser_node requires Emscripten and standalone Asio")
+        # The regular filter built is the one of Bitcoin Cash, which is not
+        # the basic filter of BIP158.
+        if self.options.neutrino and self.options.currency != "BCH":
+            raise ConanInvalidConfiguration("neutrino requires currency=BCH")
         if self.info.settings.compiler.cppstd:
             check_min_cppstd(self, "23")
 
     def requirements(self):
-        if self.options.with_websocket and self.settings.os != "Emscripten":
+        # The scheduler the batch validation forks on. Not in the browser
+        # node, whose Worker runs validation and creates no threads.
+        if not self.options.browser_node:
+            self.requires("parlaylib/2.4.0#74d1aa86472eef841b57e8ad41311342",
+                          transitive_headers=True, transitive_libs=True)
+        if self.options.mempool_backend == "parlay":
+            self.requires("parlayhash/0.3.0#c3cf1ad464bf64787163eb1a6e59c285",
+                          transitive_headers=True, transitive_libs=True)
+        if self.options.websocket and self.settings.os != "Emscripten":
             self.requires("wslay/1.1.1", transitive_headers=True, transitive_libs=True)
-        self.requires("boost/1.91.0", transitive_headers=True, transitive_libs=True)
+        # Pin our recipe; UTXO-Z asks for the same revision.
+        self.requires("boost/1.92.0#d713722c43fa43d090bb14511e42ba0f",
+                      transitive_headers=True, transitive_libs=True)
+        if self.options.icu:
+            self.requires("icu/79.1", transitive_headers=True, transitive_libs=True)
         self.requires("cli11/2.7.2", transitive_headers=True)
         self.requires("fmt/12.1.0", transitive_headers=True, transitive_libs=True)
         self.requires("spdlog/1.17.0", transitive_headers=True, transitive_libs=True)
         self.requires("lmdb/1.0.2", transitive_headers=True, transitive_libs=True)
-        self.requires("utxoz/2.0.0", transitive_headers=True, transitive_libs=True)
+        self.requires("utxoz/2.2.0", transitive_headers=True, transitive_libs=True)
 
-        # GMP is required for BigInt support in the native interpreter.
-        self.requires("gmp/6.3.0", transitive_headers=True, transitive_libs=True)
+        # GMP is required for BigInt support in the native interpreter. Pin our
+        # recipe: for WebAssembly it builds 64-bit limbs, where the Conan Center
+        # one builds 32-bit limbs.
+        self.requires("gmp/6.3.0#eea0ccd8d7c5f60191b024d168cde1aa",
+                      transitive_headers=True, transitive_libs=True)
 
         if self.options.consensus:
             self.requires("openssl/4.1.0", transitive_headers=True, transitive_libs=True)
@@ -204,9 +245,8 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os != "Emscripten":
             self.requires("ftxui/7.0.3", transitive_headers=True, transitive_libs=True)
 
-        # Native Base64 acceleration; WebAssembly uses the in-tree SIMD128/scalar kernels.
-        if self.settings.os != "Emscripten":
-            self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
+        # Unicode conversion on every platform; also accelerates native Base64.
+        self.requires("simdutf/9.3.2", transitive_headers=True, transitive_libs=True)
 
         # simdjson for fast JSON parsing (not available for WebAssembly)
         # TODO(2026-02-02): Check if simdjson adds WASM support in future versions
@@ -240,13 +280,13 @@ class KthRecipe(KnuthConanFileV2):
             self.requires(CAPNPROTO_REF, transitive_headers=True, transitive_libs=True,
                           options={"with_openssl": False, "with_zlib": False})
 
-        if self.options.with_png:
+        if self.options.png:
             self.requires("libpng/1.6.59", transitive_headers=True, transitive_libs=True)
 
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             self.requires("libqrencode/4.1.1", transitive_headers=True, transitive_libs=True)
 
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             # https://jasone.github.io/2025/06/12/jemalloc-postmortem/
             self.requires("jemalloc/5.4.0", transitive_headers=True, transitive_libs=True)
 
@@ -292,7 +332,7 @@ class KthRecipe(KnuthConanFileV2):
         if self.settings.os == "Emscripten":
             self.options.tests = False
             self.options.rpc = "none"
-            self.options.with_websocket = False
+            self.options.websocket = False
             self.output.info("Tests and RPC disabled for Emscripten build")
 
     def configure(self):
@@ -331,6 +371,11 @@ class KthRecipe(KnuthConanFileV2):
         # standalone deps-build path where this conanfile isn't the
         # consumer.)
         self.options["boost/*"].without_cobalt = True
+        self.options["boost/*"].without_locale = True
+        if self.options.icu:
+            # Embed normalization data: no ICU_DATA environment or sidecar files.
+            self.options["icu/*"].data_packaging = "static"
+            self.options["icu/*"].with_icuio = False
 
         self.options["spdlog/*"].header_only = True
 
@@ -372,16 +417,21 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["DB_READONLY_MODE"] = option_on_off(self.options.db_readonly)
         tc.variables["CONAN_DISABLE_CHECK_COMPILER"] = option_on_off(True)
         
-        tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.with_examples)
-        tc.variables["WITH_ICU"] = option_on_off(self.options.with_icu)
-        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.with_png)
-        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.with_qrencode)
-        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.with_jemalloc)
-        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.with_stats)
+        tc.variables["WITH_EXAMPLES"] = option_on_off(self.options.examples)
+        tc.variables["KTH_SHA256_DISPATCH"] = self._sha256_dispatch()
+        tc.variables["WITH_ICU"] = option_on_off(self.options.icu)
+        tc.variables["KTH_WITH_PNG"] = option_on_off(self.options.png)
+        tc.variables["KTH_WITH_QRENCODE"] = option_on_off(self.options.qrencode)
+        tc.variables["KTH_WITH_JEMALLOC"] = option_on_off(self.options.jemalloc)
+        tc.variables["KTH_WITH_STATS"] = option_on_off(self.options.stats)
         tc.variables["KTH_RPC_BACKEND"] = str(self.options.rpc)
         if self.settings.os == "Emscripten":
             tc.variables["KTH_WASM_SIMD"] = option_on_off(self.options.wasm_simd)
-        tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.with_websocket)
+        tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.websocket)
+        tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
+        tc.variables["KTH_WITH_SOCKS5"] = option_on_off(self.options.socks5)
+        tc.variables["KTH_WITH_BLOOM_FILTERS"] = option_on_off(self.options.bloom_filters)
+        tc.variables["KTH_WITH_SV2"] = option_on_off(self.options.sv2)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -424,6 +474,18 @@ class KthRecipe(KnuthConanFileV2):
     def package(self):
         cmake = CMake(self)
         cmake.install()
+
+    def _sha256_dispatch(self):
+        """A package built for the CPU of this machine can fix the SHA-256
+        implementation: the instructions it would detect are the ones it was
+        compiled for. A package built for a reference microarchitecture runs on
+        CPUs that have more than it assumes, so it detects them."""
+        dispatch = str(self.options.sha256_dispatch)
+        if dispatch != "auto":
+            return dispatch
+        # The microarchitecture options exist for x86-64 only.
+        optimized = str(self.options.get_safe("march_strategy")) == "optimized"
+        return "compile_time" if optimized else "runtime"
 
     def _secp256k1_turbo_gpu_manifest(self):
         """The GPU runtimes src/secp256k1-turbo was built with, and where its
@@ -554,11 +616,13 @@ class KthRecipe(KnuthConanFileV2):
                 'ASIO_CHANNEL_SELECT_TIMER_HEADER="kth/infrastructure/utility/browser_runtime.hpp"',
                 "ASIO_CHANNEL_SELECT_TIMER_TYPE=::kth::browser::timer",
             ])
-        if self.options.with_png:
+        if self.options.icu:
+            infrastructure_defines.append("WITH_ICU")
+        if self.options.png:
             infrastructure_defines.append("KTH_WITH_PNG")
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             infrastructure_defines.append("KTH_WITH_QRENCODE")
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             infrastructure_defines.append("KTH_WITH_JEMALLOC")
         self.cpp_info.components["infrastructure"].defines = infrastructure_defines + sigverify_defines
         # Infrastructure directly uses GMP for big_number, independently of consensus.
@@ -572,19 +636,19 @@ class KthRecipe(KnuthConanFileV2):
             "ctre::ctre",
             "spdlog::spdlog"
         ]
-        # Native Base64 acceleration; WebAssembly has its own optional SIMD128 kernel.
-        if self.settings.os != "Emscripten":
-            self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
+        if self.options.icu:
+            self.cpp_info.components["infrastructure"].requires.append("icu::icu-uc")
+        self.cpp_info.components["infrastructure"].requires.append("simdutf::simdutf")
         # Add libpng and libqrencode when enabled
-        if self.options.with_png:
+        if self.options.png:
             self.cpp_info.components["infrastructure"].requires.append("libpng::libpng")
-        if self.options.with_qrencode:
+        if self.options.qrencode:
             self.cpp_info.components["infrastructure"].requires.append("libqrencode::libqrencode")
         # Add asio when using standalone mode
         if self.options.asio_standalone:
             self.cpp_info.components["infrastructure"].requires.append("asio::asio")
         # Add jemalloc when enabled
-        if self.options.with_jemalloc:
+        if self.options.jemalloc:
             self.cpp_info.components["infrastructure"].requires.append("jemalloc::jemalloc")
 
 
@@ -593,6 +657,8 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["domain"].names["cmake_find_package"] = "domain"
         self.cpp_info.components["domain"].names["cmake_find_package_multi"] = "domain"
         self.cpp_info.components["domain"].defines = [currency_define] + static_defines + sigverify_defines
+        if self.options.neutrino:
+            self.cpp_info.components["domain"].defines.append("KTH_WITH_NEUTRINO")
         # Domain depends on infrastructure and tiny-aes-c for wallet encryption
         self.cpp_info.components["domain"].requires = [
             "infrastructure",
@@ -629,6 +695,10 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["blockchain"].defines = [currency_define, mempool_backend_define] + static_defines + sigverify_defines
         # Blockchain depends on database and optionally consensus
         blockchain_requires = ["database"]
+        if not self.options.browser_node:
+            blockchain_requires.append("parlaylib::parlaylib")
+        if self.options.mempool_backend == "parlay":
+            blockchain_requires.append("parlayhash::parlayhash")
         if self.options.consensus:
             blockchain_requires.append("consensus")
         self.cpp_info.components["blockchain"].requires = blockchain_requires
@@ -645,7 +715,9 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].defines = [currency_define] + static_defines
             # Network depends on domain and simdjson (for peer_database JSON parsing)
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
-            if self.options.with_websocket:
+            if self.options.socks5 and self.settings.os != "Emscripten":
+                self.cpp_info.components["network"].defines.append("KTH_WITH_SOCKS5")
+            if self.options.websocket:
                 self.cpp_info.components["network"].defines.append("KTH_WITH_WEBSOCKET")
                 self.cpp_info.components["network"].requires.append("wslay::wslay")
         
@@ -654,6 +726,10 @@ class KthRecipe(KnuthConanFileV2):
         self.cpp_info.components["node"].names["cmake_find_package"] = "node"
         self.cpp_info.components["node"].names["cmake_find_package_multi"] = "node"
         self.cpp_info.components["node"].defines = [currency_define, mempool_backend_define] + rpc_defines + static_defines + sigverify_defines
+        if self.options.bloom_filters and self.settings.os != "Emscripten":
+            self.cpp_info.components["node"].defines.append("KTH_WITH_BLOOM_FILTERS")
+        if self.options.sv2 and self.settings.os != "Emscripten":
+            self.cpp_info.components["node"].defines.append("KTH_WITH_SV2")
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict

@@ -4,9 +4,11 @@
 
 #include <kth/infrastructure/utility/platform_timer.hpp>
 #include <kth/network/peer_session.hpp>
-#include <kth/network/socks5.hpp>
 #include <kth/network/sam.hpp>
 #include <kth/network/peer_identity.hpp>
+#if defined(KTH_WITH_SOCKS5)
+#include <kth/network/socks5.hpp>
+#endif
 
 #include <asio/cancel_after.hpp>
 #include <asio/cancel_at.hpp>
@@ -83,6 +85,41 @@ infrastructure::config::authority extract_authority(peer_session::socket_type co
 #endif
 }
 
+// The address of a destination given as one. A name has none, even one that
+// reads as an address once it is canonical ("192.0.2.1."): the proxy was asked
+// to resolve it, and what it resolved to is not known here.
+std::optional<infrastructure::config::authority> numeric_authority(
+    infrastructure::config::endpoint const& destination)
+{
+    if ( ! is_ip_literal(destination.host())) {
+        return std::nullopt;
+    }
+    auto const parsed = infrastructure::config::authority::parse_from(
+        canonical_peer_endpoint(destination).host(), destination.port());
+    if ( ! parsed) {
+        return std::nullopt;
+    }
+    return *parsed;
+}
+
+// The identity a destination gives its peer: the address it was given as, or
+// the I2P or Tor v3 address that its name is. Those names are keys, not names
+// a resolver answers for, so a peer reached by one is known by it. Any other
+// name gives none.
+std::optional<infrastructure::config::authority> peer_authority(
+    infrastructure::config::endpoint const& destination)
+{
+    if (auto numeric = numeric_authority(destination)) {
+        return numeric;
+    }
+    auto const overlay = infrastructure::config::authority::parse_from(
+        canonical_peer_endpoint(destination).host(), destination.port());
+    if ( ! overlay || ! overlay->is_overlay()) {
+        return std::nullopt;
+    }
+    return *overlay;
+}
+
 size_t maximum_payload(settings const& settings) {
     auto const protocol = heading::maximum_payload_size(settings.protocol_maximum,
         settings.identifier, settings.inbound_port == 48333);
@@ -120,15 +157,11 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(destination
-        ? infrastructure::config::authority::parse_from(
-            canonical_peer_endpoint(*destination).host(), destination->port())
-                .value_or(infrastructure::config::authority::any())
+        ? peer_authority(*destination).value_or(infrastructure::config::authority::any())
         : extract_authority(socket_))
     , destination_(destination ? canonical_peer_endpoint(*destination)
         : infrastructure::config::endpoint(authority_))
-    , has_numeric_authority_(( ! destination ||
-        infrastructure::config::authority::parse_from(destination_.host(), destination_.port()).has_value()) &&
-        ! authority_.is_overlay())
+    , has_numeric_authority_( ! destination || numeric_authority(*destination).has_value())
     , protocol_magic_(settings.identifier)
     , maximum_payload_(maximum_payload(settings))
     , validate_checksum_(settings.validate_checksum)
@@ -237,6 +270,21 @@ void peer_session::stop(code const& ec) {
 
     spdlog::debug("[peer_session] stop() checkpoint 1: entering, ec={}", ec.value());
 
+    // The reason is published before the flag, by every caller: whoever sees
+    // the session stopped then also sees what it was stopped with. The first
+    // reason offered is the one kept, whichever caller goes on to do the
+    // stopping below. A code that is not one of Knuth's would keep only its
+    // number, which means nothing without its category, so it is kept as
+    // unknown; a stop given no error, of whatever category, is an ordinary
+    // stop. The number is kept as a number, so one of Knuth's codes comes
+    // back exactly as it was given.
+    auto const ours = ec.category() == error::make_error_code(error::success).category();
+    int const reason = ! ec ? int(error::channel_stopped)
+        : ours ? ec.value() : int(error::unknown);
+    int running = error::success;
+    stop_reason_.compare_exchange_strong(running, reason,
+        std::memory_order_release, std::memory_order_relaxed);
+
     if (stopped_.exchange(true)) {
         spdlog::debug("[peer_session] stop() checkpoint 1b: already stopped, returning");
         return;  // Already stopped
@@ -340,6 +388,15 @@ void peer_session::drain_response_channels() {
 
 bool peer_session::stopped() const {
     return stopped_.load();
+}
+
+code peer_session::stop_reason() const {
+    // Not yet stopped is success, whatever a stop() in progress has offered.
+    if ( ! stopped()) {
+        return error::success;
+    }
+    return code{stop_reason_.load(std::memory_order_acquire),
+        error::make_error_code(error::success).category()};
 }
 
 // =============================================================================
@@ -663,6 +720,14 @@ void peer_session::set_prefers_headers(bool value) {
     prefers_headers_.store(value, std::memory_order_relaxed);
 }
 
+bool peer_session::prefers_compact_blocks() const {
+    return prefers_compact_blocks_.load(std::memory_order_relaxed);
+}
+
+void peer_session::set_prefers_compact_blocks(bool value) {
+    prefers_compact_blocks_.store(value, std::memory_order_relaxed);
+}
+
 // =============================================================================
 // Internal Coroutines
 // =============================================================================
@@ -931,6 +996,7 @@ awaitable_expected<peer_session::ptr> async_accept_websocket(
     // Scores and bans apply to the client, not to the proxy it came through.
     if (auto client = peer->websocket_->forwarded_client()) {
         peer->authority_ = infrastructure::config::authority(*client, peer->authority_.port());
+        peer->destination_ = infrastructure::config::endpoint(peer->authority_);
     }
     co_return peer;
 }
@@ -1016,15 +1082,23 @@ awaitable_expected<peer_session::ptr> async_connect(
     }
 
     if ( ! settings.proxy.empty()) {
+#if ! defined(KTH_WITH_SOCKS5)
+        // A proxy that cannot be used must never become a direct connection:
+        // the node was asked not to show its peers which address it has.
+        co_return std::unexpected(error::operation_failed);
+#else
+        // The proxy answers only once it has reached the destination, which
+        // through Tor means building a circuit first.
         auto result = co_await async_socks5_connect(
-            executor, settings.proxy, host, port, settings.proxy_randomize, timeout);
+            executor, settings.proxy, hostname, port, settings.proxy_randomize,
+            std::max(timeout, socks5_minimum_deadline));
         if ( ! result) {
             co_return std::unexpected(result.error());
         }
 
         auto session = std::make_shared<peer_session>(
             std::move(*result), settings, false,
-            destination);
+            infrastructure::config::endpoint(hostname, port));
         // A proxy never establishes that a hostname belongs to a whitelisted IP.
         if (session->has_numeric_authority()) {
             auto flags = settings.get_whitelist_permissions(session->authority());
@@ -1033,6 +1107,7 @@ awaitable_expected<peer_session::ptr> async_connect(
             }
         }
         co_return session;
+#endif
     }
 
     // Try to parse hostname as IP address first (skip DNS for IPs)
