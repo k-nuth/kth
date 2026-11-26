@@ -5,6 +5,12 @@
 #ifndef KTH_INFRASTRUCTURE_MATH_CHACHA20_POLY1305_HPP
 #define KTH_INFRASTRUCTURE_MATH_CHACHA20_POLY1305_HPP
 
+// A part of Stratum V2, an optional feature: without it this header cannot be
+// included (docs/optional-features.md).
+#if ! defined(KTH_WITH_SV2)
+#error "Stratum V2 is an optional feature: build with the Conan option sv2=True."
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>

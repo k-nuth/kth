@@ -600,6 +600,18 @@ endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${Boost_INCLUDE_DIR})
 
+# The ciphers of the Stratum V2 Noise transport (sv2-spec 4): HKDF and
+# ChaCha20-Poly1305. Part of the optional feature sv2, built only when asked
+# for (docs/optional-features.md).
+if(KTH_WITH_SV2 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_SV2)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/math/chacha20_poly1305.cpp
+    src/math/hkdf.cpp
+    include/kth/infrastructure/math/chacha20_poly1305.hpp
+    include/kth/infrastructure/math/hkdf.hpp)
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_link_libraries(${PROJECT_NAME} PUBLIC Boost::thread)
 elseif(NOT KTH_BROWSER_NODE)
@@ -792,6 +804,18 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
   include(CTest)
   kth_register_tests(kth_infrastructure_test)
+
+  # The tests of an optional feature are an executable of their own, so that
+  # its workflow builds and runs them and nothing else.
+  if(KTH_WITH_SV2)
+    add_executable(kth_infrastructure_sv2_test
+      test/math/chacha20_poly1305.cpp
+      test/math/hkdf.cpp)
+    target_include_directories(kth_infrastructure_sv2_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_infrastructure_sv2_test PRIVATE ${PROJECT_NAME})
+    target_link_libraries(kth_infrastructure_sv2_test PRIVATE Catch2::Catch2WithMain)
+    kth_register_tests(kth_infrastructure_sv2_test)
+  endif()
 
   _group_sources(kth_infrastructure_test "${CMAKE_CURRENT_LIST_DIR}/test")
 
