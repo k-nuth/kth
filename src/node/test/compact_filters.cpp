@@ -825,7 +825,8 @@ TEST_CASE("input prefix filter of a block is built from the block, the first blo
         }
         // One spend: the value of its input, the one value of the block, Rice
         // coded with the parameter of a single value.
-        auto const& transactions = c.block(height).transactions();
+        auto const block = c.block(height);
+        auto const& transactions = block.transactions();
         REQUIRE(transactions.size() == 2);
         auto const value = value_of(transactions[1].inputs().front());
         CHECK(*filter == one_value_filter(value));
@@ -892,7 +893,6 @@ TEST_CASE("input prefix filter index answers getcfheaders and getcfcheckpt from 
         CHECK(at_tip->stop_hash == c.hash(108));
         REQUIRE(at_tip->filter_headers.size() == 27);
         for (size_t i = 0; i < at_tip->filter_headers.size(); ++i) {
-            CAPTURE(i);
             CHECK(at_tip->filter_headers[i] == chained[(i + 1) * filtered_chain::interval]);
         }
         auto const below = co_await ask_compact_filter_checkpoint(channels,
@@ -945,7 +945,6 @@ TEST_CASE("input prefix filter index does not answer another type, a block off t
         // Filter types the index keeps no records of: the script filter, the
         // one after the input prefix filter, and the last there is.
         for (auto const type : {uint8_t(1), uint8_t(3), uint8_t(255)}) {
-            CAPTURE(int(type));
             CHECK( ! co_await ask_compact_filter_headers(channels, headers_request(0, c.hash(103), type)));
             CHECK( ! co_await ask_compact_filter_checkpoint(channels, checkpoint_request(c.hash(103), type)));
         }
@@ -1007,23 +1006,23 @@ TEST_CASE("input prefix filter index drops the records of a branch the chain lef
     filtered_chain c("ipf_reorg", 108, 108, 101);
     auto& chain = c.fixture.chain();
 
-    // A heavier branch off height 104. Its blocks spend the coinbases the
+    // A heavier branch off height 105. Its blocks spend the coinbases the
     // trunk's spend at the same heights, with other fees: other inputs.
     std::vector<domain::chain::block> branch;
-    auto prev = c.hash(104);
-    for (uint32_t h = 105; h <= 110; ++h) {
+    auto prev = c.hash(105);
+    for (uint32_t h = 106; h <= 110; ++h) {
         branch.push_back(c.mine(prev, h, 2, 60));
         prev = branch.back().hash();
     }
     std::vector<domain::chain::block> on_branch;
-    for (size_t h = 0; h <= 104; ++h) {
+    for (size_t h = 0; h <= 105; ++h) {
         on_branch.push_back(c.block(h));
     }
     on_branch.insert(on_branch.end(), branch.begin(), branch.end());
     auto const expected = records_of(on_branch, input_prefix_type);
     auto const expected_regular = records_of(on_branch);
     auto const on_trunk = records_of(c, 108, input_prefix_type);
-    REQUIRE(expected[105].filter_hash != on_trunk[105].filter_hash);
+    REQUIRE(expected[106].filter_hash != on_trunk[106].filter_hash);
 
     auto const switch_to_branch = [&] {
         auto const added = c.fixture.organizer().add_headers(test::headers_of(branch));
@@ -1031,13 +1030,13 @@ TEST_CASE("input prefix filter index drops the records of a branch the chain lef
         reorg_outcome reorg;
         ::asio::io_context switch_ctx;
         ::asio::co_spawn(switch_ctx,
-            execute_reorg(chain, c.fixture.organizer(), added.reorg_branch_head, 104,
+            execute_reorg(chain, c.fixture.organizer(), added.reorg_branch_head, 105,
                 [] { return false; }, test::real_persister(chain)),
             [&reorg](std::exception_ptr, reorg_outcome result) { reorg = result; });
         switch_ctx.run_for(std::chrono::seconds(30));
         REQUIRE(reorg.result.ok);
-        REQUIRE(chain.chain_view()->connected_tip_height == 104u);
-        test::connect_bodies(c.fixture, branch, 105);
+        REQUIRE(chain.chain_view()->connected_tip_height == 105u);
+        test::connect_bodies(c.fixture, branch, 106);
         REQUIRE(chain.chain_view()->tip_hash == branch.back().hash());
     };
 
@@ -1060,9 +1059,9 @@ TEST_CASE("input prefix filter index drops the records of a branch the chain lef
             CHECK( ! co_await ask_compact_filter_headers(channels,
                 headers_request(0, branch.front().hash(), input_prefix_type)));
             CHECK( ! co_await ask_compact_filter_checkpoint(channels,
-                checkpoint_request(branch[3].hash(), input_prefix_type)));
+                checkpoint_request(branch[2].hash(), input_prefix_type)));
             // Below the fork it is the same chain.
-            CHECK(co_await ask_compact_filter_headers(channels, headers_request(0, c.hash(104), input_prefix_type)));
+            CHECK(co_await ask_compact_filter_headers(channels, headers_request(0, c.hash(105), input_prefix_type)));
 
             channels.tip_moved();
             auto const after = co_await ask_compact_filter_headers(channels,
