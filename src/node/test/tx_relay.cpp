@@ -341,7 +341,7 @@ struct relay_rig {
     tx_relay_channels channels;
     tx_admission_channel admission{tx_admission_capacity};
 
-    bool synchronized = true;
+    bool following = true;
     boost::unordered_flat_set<hash_digest> mempool;
     hash_digest tip = txid_of(0xaa);
     code verdict = error::success;
@@ -365,7 +365,7 @@ struct relay_rig {
 
     tx_relay_view view() {
         tx_relay_view result{
-            .synchronized = [this] { return synchronized; },
+            .following = [this] { return following; },
             .in_mempool = [this](hash_digest const& txid) { return mempool.contains(txid); },
             .tip = [this] { return tip; },
             .now = clock,
@@ -580,10 +580,10 @@ TEST_CASE("tx relay: what validation did not judge is not remembered as rejected
     CHECK(contains(read_requests(rig.ioc, peer, 2s), tx->hash()));
 }
 
-TEST_CASE("tx relay: until the node is synchronized, nothing is asked for or validated",
+TEST_CASE("tx relay: until the node follows the chain, nothing is asked for or validated",
           "[tx_relay][owner]") {
     relay_rig rig;
-    rig.synchronized = false;
+    rig.following = false;
     auto peer = connect(rig.ioc, rig.config, 1);
     rig.start();
 

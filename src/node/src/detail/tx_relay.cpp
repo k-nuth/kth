@@ -702,8 +702,9 @@ public:
 
     // The connected tip moved: what it resolves is read from the blocks
     // connected since the last one seen, by a task of its own. With no orphans,
-    // or before synchronization, there is nothing to resolve and the mark only
-    // moves. One scan at a time: a ring during it scans again after it.
+    // or while the node does not follow the chain, there is nothing to resolve
+    // and the mark only moves. One scan at a time: a ring during it scans
+    // again after it.
     void tip_moved() {
         if ( ! view_.connected_tip) {
             return;
@@ -716,7 +717,7 @@ public:
         if ( ! tip) {
             return;
         }
-        if ( ! seen_ || orphans_.size() == 0 || ! view_.synchronized()) {
+        if ( ! seen_ || orphans_.size() == 0 || ! view_.following()) {
             seen_ = tip;
             return;
         }
@@ -752,7 +753,7 @@ public:
 
 private:
     void on(tx_announced& value, tx_request_tracker::time_point now) {
-        if ( ! view_.synchronized()) {
+        if ( ! view_.following()) {
             return;
         }
         auto const peer = value.peer->nonce();
@@ -775,7 +776,7 @@ private:
     void on(tx_received& value, tx_request_tracker::time_point) {
         auto const txid = value.tx->hash();
         tracker_.received(value.peer, txid);
-        if ( ! view_.synchronized()) {
+        if ( ! view_.following()) {
             return;
         }
         // Unannounced or not, the sender is who its orphan's parents are
@@ -1031,7 +1032,7 @@ private:
 
 tx_relay_view chain_relay_view(blockchain::block_chain& chain) {
     return {
-        .synchronized = [&chain] { return chain.synchronization().synchronized(); },
+        .following = [&chain] { return chain.synchronization().following(); },
         .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
         .tip = [&chain] {
             auto const view = chain.chain_view();

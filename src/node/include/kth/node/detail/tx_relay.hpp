@@ -475,9 +475,16 @@ private:
 /// What the owner reads from the chain. Each must be safe to call from the
 /// owner's executor while the chain runs.
 struct tx_relay_view {
-    /// Announcements and transactions are ignored until this holds: the node
-    /// has nothing current to check them against.
-    std::function<bool()> synchronized;
+    /// Announcements and transactions are ignored until this holds: in
+    /// initial sync, or further behind than blocks arriving, the node has
+    /// nothing current to check them against. It holds while the next blocks
+    /// arrive (sync_status::following()): a transaction is checked against the
+    /// connected tip, as at any other moment, and a block connected in the
+    /// meantime is what admission already answers for. The commit is refused
+    /// against a publication other than the one it was checked against and
+    /// tried again, and connecting a block takes out of the pool what it
+    /// confirms or conflicts with.
+    std::function<bool()> following;
     std::function<bool(hash_digest const&)> in_mempool;
     /// The connected tip, which clears the recent rejects when it moves.
     std::function<hash_digest()> tip;

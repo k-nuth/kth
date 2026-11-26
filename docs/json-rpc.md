@@ -287,8 +287,11 @@ up with its headers" when the headers are too far ahead or on another branch,
 fails, and "a batch or reorganization is in progress" for the last case, which
 clears within moments. `getblockchaininfo` still reports `initialblockdownload`
 as `true` while any header is above the connected tip, and `getmininginfo`
-reports `caughtup` as `false` then: those describe synchronization, and only
-mining work is served in that window.
+reports `caughtup` as `false` then: those describe synchronization. Mining
+work is served in that window, and the node goes on asking its peers for the
+transactions they announce and offering them to the mempool, checked against
+the connected tip; in initial block download and further behind it ignores
+them, as before.
 
 ### Long polling
 

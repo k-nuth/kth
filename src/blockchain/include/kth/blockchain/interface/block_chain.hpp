@@ -819,20 +819,24 @@ struct KB_API block_chain {
     /// that half only, and never turns a node that is behind into one that is
     /// caught up.
     ///
-    /// `arriving` is a third reading, for mining work alone: the active header
-    /// chain runs through the connected tip and past it by no more than
-    /// template_max_headers_ahead blocks, so the blocks above it are on their
-    /// way. serves_templates() builds on the connected tip then, as long as that
-    /// tip is fresh: a node in initial sync, whose connected tip is old, and one
-    /// further behind than that, are refused as before. synchronized() does not
-    /// read it; whether that window counts as synchronized for anything other
-    /// than mining work is left to each of its other readers.
+    /// `arriving` is a third reading: the active header chain runs through the
+    /// connected tip and past it by no more than template_max_headers_ahead
+    /// blocks, so the blocks above it are on their way. following() holds then,
+    /// as long as that tip is fresh: a node in initial sync, whose connected tip
+    /// is old, and one further behind than that, do not follow the chain.
+    /// Mining work (serves_templates()) and the transaction relay read it;
+    /// synchronized() does not, and whether that window counts as synchronized
+    /// for its other readers is left to each of them.
     struct sync_status {
         bool caught_up;
         bool fresh;
         bool arriving = false;
         [[nodiscard]] bool synchronized() const { return caught_up && fresh; }
-        [[nodiscard]] bool serves_templates() const { return (caught_up || arriving) && fresh; }
+        /// Level with the headers, or with the next blocks arriving, on a
+        /// recent tip: the connected tip is the one to build on and to check
+        /// transactions against.
+        [[nodiscard]] bool following() const { return (caught_up || arriving) && fresh; }
+        [[nodiscard]] bool serves_templates() const { return following(); }
     };
 
     [[nodiscard]]
