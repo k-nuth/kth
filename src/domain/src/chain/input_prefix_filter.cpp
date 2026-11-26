@@ -5,6 +5,7 @@
 #include <kth/domain/chain/input_prefix_filter.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,11 @@ namespace kth::domain::chain {
 namespace {
 
 static_assert(max_input_prefix_rice_parameter < 32, "A gap and its low bits fit in a uint32.");
+
+// The first count of each Rice parameter, from 15 down to 1: the coding with
+// the fewest expected bits for that many distinct values drawn at random.
+constexpr std::array<size_t, max_input_prefix_rice_parameter> rice_parameter_from{
+    1, 2, 3, 7, 15, 30, 61, 123, 246, 494, 992, 1997, 4051, 8356, 18055};
 
 // The count as a CompactSize, in its shortest form. A filter holds at most
 // 65,536 values, so four bytes after the marker always suffice.
@@ -64,15 +70,18 @@ input_prefix_filter build_input_prefix_filter(block const& blk) {
 }
 
 uint8_t input_prefix_rice_parameter(size_t count) {
-    // A filter with no values carries no parameter.
-    if (count == 0) {
+    // A filter with no values carries no byte after its count, and there are
+    // no more than 65,536 values.
+    if (count == 0 || count > input_prefix_values) {
         return 0;
     }
-    auto const quotient = input_prefix_rice_scale / count;
-    if (quotient == 0) {
-        return 0;
+    if (count >= input_prefix_bitmap_from) {
+        return input_prefix_bitmap;
     }
-    return uint8_t(std::bit_width(quotient) - 1);
+    // One band for each k: the bands that start at or below `count`, counted
+    // down from 16.
+    auto const started = std::ranges::upper_bound(rice_parameter_from, count) - rice_parameter_from.begin();
+    return uint8_t(input_prefix_bitmap - started);
 }
 
 data_chunk to_data(input_prefix_filter const& filter) {
@@ -90,6 +99,16 @@ data_chunk to_data(input_prefix_filter const& filter) {
     }
     auto const k = input_prefix_rice_parameter(values.size());
     out.push_back(k);
+    if (k == input_prefix_bitmap) {
+        // A bit for each of the 65,536 values, most significant first.
+        auto const start = out.size();
+        out.resize(start + input_prefix_bitmap_bytes);
+        for (auto const value : values) {
+            auto& byte = out[start + value / 8];
+            byte = uint8_t(byte | (0x80u >> (value % 8)));
+        }
+        return out;
+    }
 
     // Each value's gap from the one before, from 0 for the first, so its gap
     // is the value itself: the gap shifted right by k in one-bits, a zero-bit,
@@ -142,10 +161,35 @@ parse_input_prefix_filter(byte_span data) {
     if ( ! k) {
         return std::unexpected(input_prefix_filter_error::truncated);
     }
-    // Each count has one Rice parameter, so each set of values has one
-    // encoding; this also refuses any parameter above 15.
+    // Each count has one coding, so each set of values has one encoding;
+    // this also refuses 0 and anything above 16.
     if (*k != input_prefix_rice_parameter(size_t(*count))) {
         return std::unexpected(input_prefix_filter_error::rice_parameter);
+    }
+
+    if (*k == input_prefix_bitmap) {
+        // Exactly the bitmap's bytes, with as many bits set as the count.
+        auto const bitmap = data.subspan(reader.position());
+        if (bitmap.size() < input_prefix_bitmap_bytes) {
+            return std::unexpected(input_prefix_filter_error::truncated);
+        }
+        if (bitmap.size() > input_prefix_bitmap_bytes) {
+            return std::unexpected(input_prefix_filter_error::trailing_bytes);
+        }
+        size_t set = 0;
+        for (auto const byte : bitmap) {
+            set += size_t(std::popcount(byte));
+        }
+        if (set != *count) {
+            return std::unexpected(input_prefix_filter_error::bitmap_count);
+        }
+        filter.values.reserve(set);
+        for (uint32_t value = 0; value < input_prefix_values; ++value) {
+            if ((bitmap[value / 8] & (0x80u >> (value % 8))) != 0) {
+                filter.values.push_back(uint16_t(value));
+            }
+        }
+        return filter;
     }
 
     bit_reader bits(data.subspan(reader.position()));
