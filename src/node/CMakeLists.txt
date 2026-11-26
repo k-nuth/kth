@@ -412,6 +412,28 @@ if(KTH_WITH_NEUTRINO AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     include/kth/node/detail/compact_filters.hpp)
 endif()
 
+# Wallet support in the node, answered from the node's own chain. An optional
+# feature: built only when asked for (docs/optional-features.md).
+if(KTH_WITH_WALLET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_WALLET)
+  target_sources(${PROJECT_NAME} PRIVATE
+    src/wallet/blocks.cpp
+    src/wallet/chain_source.cpp
+    src/wallet/electrum.cpp
+    src/wallet/history.cpp
+    src/wallet/service.cpp
+    include/kth/node/wallet/blocks.hpp
+    include/kth/node/wallet/detail/service_impl.hpp
+    include/kth/node/wallet/electrum.hpp
+    include/kth/node/wallet/history.hpp
+    include/kth/node/wallet/service.hpp)
+  # The local Electrum listener reads requests and writes answers with the
+  # JSON-RPC server's JSON code, built here when the server is not.
+  if(NOT KTH_WITH_RPC)
+    target_sources(${PROJECT_NAME} PRIVATE src/rpc/json.cpp)
+  endif()
+endif()
+
 # JSON-RPC server: link the llhttp HTTP parser and enable the feature macro.
 if(KTH_WITH_RPC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   find_package(llhttp REQUIRED)
@@ -603,6 +625,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_neutrino_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_neutrino_test PRIVATE Catch2::Catch2WithMain)
   endif()
+  if(KTH_WITH_WALLET AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_wallet_test
+      test/wallet.cpp
+      test/wallet_chain.cpp
+      test/wallet_electrum.cpp)
+    target_include_directories(kth_node_wallet_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_wallet_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_wallet_test PRIVATE Catch2::Catch2WithMain)
+  endif()
   if(KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_executable(kth_node_socks5_test
       test/socks5.cpp)
@@ -644,6 +675,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   endif()
   if(TARGET kth_node_socks5_test)
     kth_register_tests(kth_node_socks5_test TIMEOUT 600)
+  endif()
+  if(TARGET kth_node_wallet_test)
+    kth_register_tests(kth_node_wallet_test TIMEOUT 600)
   endif()
 
   # README C++ snippet checks disabled: v1.0 switched the public API

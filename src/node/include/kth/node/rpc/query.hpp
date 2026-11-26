@@ -157,6 +157,9 @@ struct transaction_location {
     int64_t confirmations;     // -1 when its block is off the connected chain
     uint32_t block_time;
     std::optional<int64_t> confirmations_ticks = std::nullopt;
+    // The caller named the block (getrawtransaction's blockhash argument):
+    // only then is `in_active_chain` shown, as BCHN shows it.
+    bool block_named = true;
 };
 
 // The verbose getrawtransaction object: the decoderawtransaction fields, `hex`,

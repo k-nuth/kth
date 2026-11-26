@@ -467,8 +467,10 @@ if (KTH_WITH_NEUTRINO)
     target_sources(${PROJECT_NAME} PRIVATE
         src/chain/compact_filter.cpp
         src/chain/golomb_set.cpp
+        src/chain/input_prefix_filter.cpp
         include/kth/domain/chain/compact_filter.hpp
         include/kth/domain/chain/golomb_set.hpp
+        include/kth/domain/chain/input_prefix_filter.hpp
         src/chain/script_filter.cpp
         src/chain/script_filter_builder.cpp
         include/kth/domain/chain/script_filter.hpp
@@ -735,6 +737,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         test/chain/block_merkle_branch.cpp
         test/chain/compact_filter.cpp
         test/chain/golomb_set.cpp
+        test/chain/input_prefix_filter.cpp
         test/chain/script_filter.cpp
         test/chain/script_filter_bchd.cpp
         test/chain/script_filter_builder.cpp

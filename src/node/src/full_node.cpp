@@ -22,6 +22,10 @@
 #include <asio/thread_pool.hpp>
 #endif
 #include <kth/node/detail/tx_announcements.hpp>
+#if defined(KTH_WITH_WALLET)
+#include <kth/node/wallet/electrum.hpp>
+#include <kth/node/wallet/service.hpp>
+#endif
 #include <kth/node/handlers/chain_data.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
 #include <kth/node/user_agent.hpp>
@@ -110,6 +114,12 @@ full_node::full_node(configuration const& configuration)
     network_settings_.services = (network_settings_.services & ~filters) | (served ? filters : 0);
     compact_filter_file_ = configuration.database.directory / "compact_filter_headers";
 #endif
+#if defined(KTH_WITH_WALLET)
+    // The wallet reads the blocks back to its birthday: not on a pruning
+    // node, which start() refuses.
+    wallet_refused_ = ! configuration.node.wallet_electrum.empty()
+        && configuration.database.prune_keep_blocks != 0;
+#endif
 #endif
 }
 
@@ -147,6 +157,30 @@ full_node::~full_node() {
     // The parser refuses this too; a configuration built by hand gets here.
     if (sv2_settings_.enabled) {
         spdlog::error("[node] sv2.enabled needs a build with the option sv2.");
+        co_return error::operation_failed;
+    }
+#endif
+
+#if ! defined(KTH_WITH_WALLET) && ! defined(__EMSCRIPTEN__)
+    // The parser refuses this too; a configuration built by hand gets here.
+    if ( ! node_settings_.wallet_electrum.empty()) {
+        spdlog::error("[node] node.wallet_electrum needs a build with the option wallet.");
+        co_return error::operation_failed;
+    }
+#endif
+
+#if defined(KTH_WITH_WALLET)
+    // The parser refuses these too; a configuration built by hand gets here.
+    // The node's own wallet listener answers only wallets on this machine.
+    if ( ! node_settings_.wallet_electrum.empty()) {
+        if (auto const refusal = wallet::electrum_bind_refusal(node_settings_.wallet_electrum)) {
+            spdlog::error("[node] node.wallet_electrum is refused: {}", *refusal);
+            co_return error::operation_failed;
+        }
+    }
+    if (wallet_refused_) {
+        spdlog::error("[node] node.wallet_electrum is not allowed on a pruning node "
+            "(db.prune_keep_blocks); the wallet reads the blocks back to its birthday.");
         co_return error::operation_failed;
     }
 #endif
@@ -376,6 +410,7 @@ full_node::~full_node() {
     // This blocks until ALL tasks complete (i.e., until stop() is called).
     // No detached coroutines - everything is properly awaited.
     spdlog::debug("[full_node] Starting parallel tasks with && operator");
+    start_wallet();
     auto core = [this]() -> ::asio::awaitable<void> {
         co_await (run_blockchain_subscriber() && network_.run() && run_sync() && run_compact_blocks()
             && run_compact_filters());
@@ -394,8 +429,13 @@ full_node::~full_node() {
 #if defined(KTH_WITH_SV2)
         if (template_provider_) template_provider_->stop();
 #endif
+        stop_wallet();
     };
-    co_await (core() && run_rpc() && run_sv2() && work_changes_.run(chain_));
+    co_await (core() && run_rpc() && run_sv2() && work_changes_.run(chain_) && run_wallet());
+#if defined(KTH_WITH_WALLET)
+    wallet_electrum_.reset();
+    wallet_.reset();
+#endif
     spdlog::debug("[full_node] All parallel tasks completed");
 #else
     // WASM: only blockchain subscriber (no network)
@@ -420,6 +460,52 @@ full_node::~full_node() {
     if (template_provider_) co_await template_provider_->run();
 #endif
     co_return;
+}
+
+// The node's own wallet support, answered from its own chain, behind a local
+// Electrum listener for wallets that do not speak P2P. Runs on its own
+// executor; nothing of it is reachable unless node.wallet_electrum names it.
+void full_node::start_wallet() {
+#if defined(KTH_WITH_WALLET)
+    auto const& bind = node_settings_.wallet_electrum;
+    if (bind.empty()) return;
+    auto const parsed = wallet::parse_electrum_bind(bind);
+    if ( ! parsed) return;
+    auto const& [address, port] = *parsed;
+    wallet::chain_settings settings;
+    settings.birthday = node_settings_.wallet_birthday;
+    wallet_ = wallet::service::from_chain(chain_, network_type_, settings);
+    wallet_electrum_ = std::make_unique<wallet::electrum_server>(*wallet_, network_type_);
+    auto const bound = wallet_electrum_->listen(address, port);
+    if ( ! bound) {
+        spdlog::error("[node] The wallet's Electrum listener cannot listen on {}", bind);
+        wallet_electrum_.reset();
+        wallet_.reset();
+        return;
+    }
+    spdlog::info("[node] Wallet support answered from this node's own chain; Electrum listener on {}:{}",
+        address, *bound);
+#endif
+}
+
+// Until stop_wallet(): the wallet's own executor runs it, and the node waits
+// for it as for its other tasks.
+::asio::awaitable<void> full_node::run_wallet() {
+#if defined(KTH_WITH_WALLET)
+    if ( ! wallet_) co_return;
+    auto const executor = wallet_->executor();
+    (void)co_await (::asio::co_spawn(executor, wallet_->run(), ::asio::use_awaitable) &&
+                    ::asio::co_spawn(executor, wallet_electrum_->run(), ::asio::use_awaitable));
+#endif
+    co_return;
+}
+
+// Ends run_wallet(). Thread safe.
+void full_node::stop_wallet() {
+#if defined(KTH_WITH_WALLET)
+    if (wallet_electrum_) wallet_electrum_->stop();
+    if (wallet_) wallet_->stop();
+#endif
 }
 #endif
 
