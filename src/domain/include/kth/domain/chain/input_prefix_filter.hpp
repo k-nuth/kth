@@ -40,6 +40,14 @@ namespace kth::domain::chain {
 //
 // Everything in it comes from the block itself, so a node builds it for any
 // block it holds and keeps nothing for it.
+//
+// A filter of N values is coded the one way N gives: Rice coding with a
+// parameter k from 15 down to 1 for N up to 19,196, and a bitmap of the
+// 65,536 values from 19,197 on. For each N it is the coding with the fewest
+// expected bits for N distinct values drawn at random (the larger k on the
+// one tie, at N = 1); past 19,196 every k takes more than the bitmap's 65,536
+// bits. k = 0 is never used. The largest filter a block can have is 8,899
+// bytes: a Rice coding of 19,196 values whose gaps were chosen to be large.
 
 /// The inputs of a transaction a sender may grind: the first 30.
 inline constexpr size_t input_prefix_inputs = 30;
@@ -50,8 +58,14 @@ inline constexpr uint32_t input_prefix_values = 1u << 16;
 /// The largest Rice parameter, the one of a filter of one value.
 inline constexpr uint8_t max_input_prefix_rice_parameter = 15;
 
-/// The number the Rice parameter is chosen from: 65,536 times ln 2, rounded.
-inline constexpr uint32_t input_prefix_rice_scale = 45426;
+/// The byte after the count of a filter coded as a bitmap.
+inline constexpr uint8_t input_prefix_bitmap = 16;
+
+/// The first count coded as a bitmap.
+inline constexpr size_t input_prefix_bitmap_from = 19197;
+
+/// The bitmap: a bit for each value, 8,192 bytes.
+inline constexpr size_t input_prefix_bitmap_bytes = input_prefix_values / 8;
 
 /// The sorted distinct values of a block's inputs.
 struct KD_API input_prefix_filter {
@@ -62,12 +76,15 @@ struct KD_API input_prefix_filter {
 
 /// Why bytes were refused as an input prefix filter, or a prefix was refused.
 enum class input_prefix_filter_error {
-    /// The bytes end before the count, the Rice parameter or the last value.
+    /// The bytes end before the count, the byte after it, the last value or
+    /// the end of the bitmap.
     truncated,
     /// The count is not in its shortest form, or is above 65,536, the number
     /// of values there are.
     count,
-    /// A Rice parameter other than the one its count gives (never above 15).
+    /// A byte after the count other than the one the count gives: the Rice
+    /// parameter of another count, the bitmap's 16 for fewer than 19,197
+    /// values, a Rice parameter for 19,197 values or more, or anything above 16.
     rice_parameter,
     /// A value after the first that is not above the one before it: a gap of 0.
     repeated_value,
@@ -75,8 +92,10 @@ enum class input_prefix_filter_error {
     value_too_large,
     /// A bit after the last value, in its byte, that is not zero.
     padding,
-    /// A byte after the one that holds the last value.
+    /// A byte after the one that holds the last value, or after the bitmap.
     trailing_bytes,
+    /// A bitmap whose bits set are not as many as the count.
+    bitmap_count,
     /// A prefix of more than 16 bits, or with a bit set past its length.
     prefix,
 };
@@ -93,26 +112,34 @@ uint16_t input_prefix(input const& in);
 KD_API
 input_prefix_filter build_input_prefix_filter(block const& blk);
 
-/// The Rice parameter of a filter of `count` values: the largest k with
-/// 2^k <= 45426 / count (integer division), and 0 when that quotient is 0.
-/// One parameter for each count, so each filter has one encoding.
+/// The byte after the count of a filter of `count` values: the Rice
+/// parameter k, 15 for 1 value, 14 for 2, 13 from 3, 12 from 7, 11 from 15,
+/// 10 from 30, 9 from 61, 8 from 123, 7 from 246, 6 from 494, 5 from 992,
+/// 4 from 1,997, 3 from 4,051, 2 from 8,356 and 1 from 18,055 to 19,196; then
+/// input_prefix_bitmap (16) from 19,197 to 65,536. 0 for no values and for
+/// more than 65,536. One coding for each count, so each filter has one
+/// encoding.
 [[nodiscard]]
 KD_API
 uint8_t input_prefix_rice_parameter(size_t count);
 
 /// Served bytes: the count as a CompactSize and, when there are values, the
-/// Rice parameter in one byte, then each value's gap from the one before
-/// (from 0 for the first) Rice coded: the gap shifted right by k in one-bits,
-/// a zero-bit, then the low k bits of the gap; most significant bit first,
-/// the last byte padded with zero-bits.
+/// byte the count gives. Up to 19,196 values it is the Rice parameter k, then
+/// each value's gap from the one before (from 0 for the first) Rice coded:
+/// the gap shifted right by k in one-bits, a zero-bit, then the low k bits of
+/// the gap; most significant bit first, the last byte padded with zero-bits.
+/// From 19,197 values it is 16, then the bitmap: value v is the bit
+/// 0x80 >> (v % 8) of byte v / 8.
 [[nodiscard]]
 KD_API
 data_chunk to_data(input_prefix_filter const& filter);
 
 /// Reads served bytes, and refuses any that are not the one encoding of a
-/// set: a Rice parameter other than its count's, a gap of 0 after the first value, a value
-/// above 65,535, fewer or more values than the count, a padding bit set,
-/// trailing bytes, and a count not in its shortest form.
+/// set: a byte after the count other than the one the count gives, a gap of
+/// 0 after the first value, a value above 65,535, fewer or more values than
+/// the count, a padding bit set, a bitmap shorter or longer than 8,192 bytes
+/// or with another number of bits set than the count, trailing bytes, and a
+/// count above 65,536 or not in its shortest form.
 [[nodiscard]]
 KD_API
 std::expected<input_prefix_filter, input_prefix_filter_error>
