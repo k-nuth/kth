@@ -350,6 +350,9 @@ struct quiet_peer {
         session = std::make_shared<network::peer_session>(std::move(server), config, false);
         session->set_nonce(nonce);
         domain::message::version version;
+        // Serves every block, as a node does: a peer that serves none is
+        // asked for neither headers nor blocks.
+        version.set_services(domain::message::version::service::node_network);
         version.set_start_height(claimed_height);
         session->set_peer_version(std::make_shared<domain::message::version const>(std::move(version)));
         runner = std::thread([this] { ioc.run(); });

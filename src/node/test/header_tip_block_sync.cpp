@@ -244,9 +244,20 @@ struct wire_peer {
         session = std::make_shared<network::peer_session>(std::move(server), config, false);
         session->set_nonce(nonce);
         domain::message::version version;
+        // Serves every block, as a node does, unless the case says otherwise
+        // with set_services.
+        version.set_services(domain::message::version::service::node_network);
         version.set_start_height(claimed_height);
         session->set_peer_version(std::make_shared<domain::message::version const>(std::move(version)));
         runner = std::thread([this] { ioc.run(); });
+    }
+
+    // What the peer advertises in place of NODE_NETWORK. Set before the node
+    // is told of the peer, which reads it from then on.
+    void set_services(uint64_t services) {
+        domain::message::version version = *session->peer_version();
+        version.set_services(services);
+        session->set_peer_version(std::make_shared<domain::message::version const>(std::move(version)));
     }
 
     void start() {
@@ -3074,4 +3085,181 @@ TEST_CASE("integrated: the bodies past the checkpoint are asked for after a swit
     CHECK(log.first_index("Reorg complete") < log.first_index("Starting FAST block sync"));
     CHECK(reached);
     CHECK(fixture.organizer().header_tip_hash() == heavy.back().hash());
+}
+
+// =============================================================================
+// Peers by the blocks they serve: NODE_NETWORK, NODE_NETWORK_LIMITED (BIP159),
+// or neither
+// =============================================================================
+
+namespace {
+
+// How many of `sent` ask for headers or blocks.
+size_t asks_for_chain_data(std::vector<wire_peer::sent_message> const& sent) {
+    return size_t(std::count_if(sent.begin(), sent.end(), [](wire_peer::sent_message const& message) {
+        return message.command == domain::message::get_headers::command ||
+            message.command == domain::message::get_data::command;
+    }));
+}
+
+// The hashes a getdata the node sent to `peer` asks for.
+std::vector<hash_digest> asked_hashes(wire_peer const& peer, network::raw_message const& sent) {
+    byte_reader reader(sent.payload);
+    auto const request = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
+    REQUIRE(request);
+    std::vector<hash_digest> hashes;
+    for (auto const& inventory : request->inventories()) {
+        hashes.push_back(inventory.hash());
+    }
+    return hashes;
+}
+
+} // namespace
+
+TEST_CASE("integrated: a peer that serves no blocks is asked for neither headers nor blocks, and hears of new tips",
+          "[header_tip][integration][block_service]") {
+    // A light client, or a pool's P2P listener, advertises neither
+    // NODE_NETWORK nor NODE_NETWORK_LIMITED. Asked for headers, it left each
+    // request to its deadline; handed a chunk, it held the chunk until its
+    // timeout, and its session was then closed.
+    captured_log log;
+    chain_fixture fixture{"serves_none"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    // Headers two ahead of the bodies: two blocks are owed once the tip is
+    // confirmed.
+    auto const staged = stage(fixture, 5, 3);
+
+    wire_peer listener(node_settings("serves_none_listener"), 9141, 5);
+    listener.set_services(domain::message::version::service::none);
+    listener.session->set_prefers_headers(true);
+    wire_peer source(node_settings("serves_none_source"), 9142, 5);
+
+    std::vector<wire_peer::sent_message> to_listener_alone;
+    std::optional<hash_digest> asked;
+    std::optional<network::raw_message> fetched;
+    bool connected = false;
+    bool listener_kept = false;
+    std::vector<wire_peer::sent_message> to_listener_after;
+    std::vector<std::future<void>> services;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "serves_none");
+        run.network.set_tip_announcement_handler(
+            [&fixture](network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last) {
+                return node::sync::announce_tip(fixture.chain().headers(), peer, tip, last);
+            });
+        for (auto* peer : {&listener, &source}) {
+            services.push_back(::asio::co_spawn(peer->ioc,
+                run.network.dispatcher().serve(*peer->session), ::asio::use_future));
+        }
+
+        // Alone, it is asked for nothing.
+        run.connect(listener.session);
+        to_listener_alone = listener.sent_until_quiet(quiet);
+
+        // A peer that serves blocks is asked for headers, and then for the
+        // two bodies owed.
+        run.connect(source.session);
+        asked = source.next_getheaders(quick);
+        REQUIRE(asked);
+        run.deliver(source.session, source.headers(staged.trunk));
+        fetched = next_sent(source, domain::message::get_data::command);
+        REQUIRE(fetched);
+        for (size_t at = 3; at < 5; ++at) {
+            REQUIRE(source.session->block_responses().try_send(
+                source.message(domain::message::block::command, serialized(staged.trunk[at]))));
+        }
+        connected = wait_until([&] { return connected_at(fixture, staged.trunk.back(), 5); }, quick);
+
+        // Every peer hears of the new tip, this one too.
+        to_listener_after = listener.sent_until_quiet(quiet);
+        listener_kept = ! listener.session->stopped();
+        stopped_cleanly = run.stop_with({listener.session, source.session}, std::chrono::seconds(120));
+    }
+    log.dump("serves_none");
+    CHECK(stopped_cleanly);
+    for (auto& service : services) {
+        REQUIRE(service.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+        service.get();
+    }
+
+    CHECK(asks_for_chain_data(to_listener_alone) == 0u);
+    CHECK(asks_for_chain_data(to_listener_after) == 0u);
+    CHECK(listener_kept);
+    REQUIRE(fetched);
+    CHECK(asked_hashes(source, *fetched) ==
+        std::vector<hash_digest>{staged.trunk[3].hash(), staged.trunk[4].hash()});
+    CHECK(connected);
+    CHECK(log.count("from block download: it serves no blocks") >= 1u);
+
+    // The announcement: headers, as it asked for (BIP130), up to the new tip.
+    std::optional<hash_digest> announced;
+    auto const version = listener.session->negotiated_version();
+    for (auto const& sent : to_listener_after) {
+        if (sent.command != domain::message::headers::command) continue;
+        byte_reader reader(sent.payload);
+        auto const headers = domain::message::headers::from_data(reader, version);
+        REQUIRE(headers);
+        REQUIRE_FALSE(headers->elements().empty());
+        announced = domain::chain::hash(headers->elements().back());
+    }
+    REQUIRE(announced);
+    CHECK(*announced == staged.trunk.back().hash());
+}
+
+TEST_CASE("integrated: a peer that serves only recent blocks is asked for headers, and for blocks within its last 288",
+          "[header_tip][integration][block_service]") {
+    // NODE_NETWORK_LIMITED alone: the peer serves the last 288 blocks below
+    // its tip, and a BCHN peer closes the connection that asks for one
+    // deeper. Headers it serves in full.
+    captured_log log;
+    chain_fixture fixture{"serves_recent"};
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+    // Headers to 400, bodies to 100: the range [101..400] is owed. At 400,
+    // the peer serves 113..400 of it.
+    auto const staged = stage(fixture, 400, 100);
+
+    wire_peer recent(node_settings("serves_recent_limited"), 9151, 400);
+    recent.set_services(domain::message::version::service::node_network_limited);
+    wire_peer full(node_settings("serves_recent_full"), 9152, 400);
+
+    std::optional<hash_digest> asked;
+    std::optional<network::raw_message> from_recent;
+    std::optional<network::raw_message> from_full;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "serves_recent");
+        run.connect(recent.session);
+
+        // Asked for headers, as any peer that serves blocks is.
+        asked = recent.next_getheaders(quick);
+        REQUIRE(asked);
+        run.deliver(recent.session, recent.headers(staged.trunk));
+
+        // The first chunk it is handed starts within its last 288 blocks.
+        from_recent = next_sent(recent, domain::message::get_data::command);
+
+        // The chunk below them waits for a peer that serves every block.
+        run.connect(full.session);
+        from_full = next_sent(full, domain::message::get_data::command);
+
+        stopped_cleanly = run.stop_with({recent.session, full.session}, std::chrono::seconds(120));
+    }
+    log.dump("serves_recent");
+    CHECK(stopped_cleanly);
+    CHECK(log.count("block_range_request 101-400") == 1u);
+    CHECK(log.count("serves only recent blocks: chunks from height 113") >= 1u);
+
+    REQUIRE(from_recent);
+    auto const recent_hashes = asked_hashes(recent, *from_recent);
+    REQUIRE_FALSE(recent_hashes.empty());
+    // 117..132: the first chunk of 16 from 101 that starts at 113 or above.
+    CHECK(recent_hashes.front() == staged.trunk[116].hash());
+
+    REQUIRE(from_full);
+    auto const full_hashes = asked_hashes(full, *from_full);
+    REQUIRE_FALSE(full_hashes.empty());
+    CHECK(full_hashes.front() == staged.trunk[100].hash());
 }

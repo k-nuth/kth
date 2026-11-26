@@ -421,6 +421,111 @@ TEST_CASE("chunk_coordinator ignores reports for chunks outside the range", "[ch
     CHECK_FALSE(coord.is_complete());
 }
 
+// =============================================================================
+// A peer that serves only recent blocks (NODE_NETWORK_LIMITED, BIP159)
+// =============================================================================
+
+TEST_CASE("chunk_coordinator hands a peer that serves only recent blocks no chunk that starts below them",
+          "[chunk_coordinator][block_service]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 400);
+
+    // 101..400 in chunks of 16: 101-116, 117-132, ..., 389-400.
+    chunk_coordinator_config cfg{.chunk_size = 16, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 101, 400, cfg);
+    REQUIRE(coord.end_height() == 400u);
+    REQUIRE(coord.get_progress().total_chunks == 19u);
+
+    // It serves 113..400. Chunk 0 starts at 101, below that; chunk 1, at
+    // 117, is the first it is handed.
+    auto const recent = coord.claim_chunk(113);
+    REQUIRE(recent);
+    CHECK(recent->chunk_id == 1u);
+    CHECK(coord.chunk_range(recent->chunk_id).first == 117u);
+
+    // A peer that serves every block is handed the lowest, as before.
+    auto const full = coord.claim_chunk();
+    REQUIRE(full);
+    CHECK(full->chunk_id == 0u);
+
+    // A lowest height on a chunk's first block takes that chunk.
+    auto const exact = coord.claim_chunk(133);
+    REQUIRE(exact);
+    CHECK(exact->chunk_id == 2u);
+
+    // Every chunk from there up, then none.
+    uint32_t taken = 0;
+    while (auto const next = coord.claim_chunk(113)) {
+        CHECK(next->chunk_id == 3u + taken);
+        ++taken;
+    }
+    CHECK(taken == 16u);
+
+    // A chunk given back below what it serves waits for another peer.
+    coord.chunk_failed(*full);
+    CHECK_FALSE(coord.claim_chunk(113).has_value());
+    auto const again = coord.claim_chunk();
+    REQUIRE(again);
+    CHECK(again->chunk_id == 0u);
+}
+
+TEST_CASE("chunk_coordinator hands nothing to a peer whose lowest height is above the range",
+          "[chunk_coordinator][block_service]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 50);
+
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 11, 50, cfg);
+
+    CHECK_FALSE(coord.claim_chunk(51).has_value());
+    CHECK_FALSE(coord.claim_chunk(1000).has_value());
+
+    // The range is whole for the others, and a lowest height at or below its
+    // start restricts nothing.
+    auto const any = coord.claim_chunk();
+    REQUIRE(any);
+    CHECK(any->chunk_id == 0u);
+    auto const from_start = coord.claim_chunk(11);
+    REQUIRE(from_start);
+    CHECK(from_start->chunk_id == 1u);
+    auto const below_start = coord.claim_chunk(1);
+    REQUIRE(below_start);
+    CHECK(below_start->chunk_id == 2u);
+}
+
+TEST_CASE("chunk_coordinator still moves past completed chunks for a peer that serves only recent blocks",
+          "[chunk_coordinator][block_service]") {
+    header_index index(1024);
+    populate_dummy_headers(index, 1, 60);
+
+    chunk_coordinator_config cfg{.chunk_size = 10, .stall_timeout_secs = 5};
+    chunk_coordinator coord(index, 1, 60, cfg);
+
+    for (uint32_t id = 0; id < 3; ++id) {
+        auto const claim = coord.claim_chunk();
+        REQUIRE(claim);
+        REQUIRE(claim->chunk_id == id);
+        coord.chunk_completed(*claim);
+    }
+
+    // 41..60 are what it serves; 31..40, above the completed ones, are not.
+    auto const recent = coord.claim_chunk(41);
+    REQUIRE(recent);
+    CHECK(recent->chunk_id == 4u);
+    auto const full = coord.claim_chunk();
+    REQUIRE(full);
+    CHECK(full->chunk_id == 3u);
+    auto const last = coord.claim_chunk(41);
+    REQUIRE(last);
+    CHECK(last->chunk_id == 5u);
+    CHECK_FALSE(coord.claim_chunk(41).has_value());
+
+    for (auto const& claim : {*recent, *full, *last}) {
+        coord.chunk_completed(claim);
+    }
+    CHECK(coord.is_complete());
+}
+
 TEST_CASE("chunk_coordinator hands each chunk to one of many concurrent peers", "[chunk_coordinator]") {
     constexpr uint32_t chunks = 4000;
     constexpr size_t peers = 8;

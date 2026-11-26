@@ -98,15 +98,21 @@ struct chunk_coordinator {
     // Peer Interface (Lock-Free)
     // -------------------------------------------------------------------------
 
-    /// Claim the lowest free chunk
-    /// @return the claim, or nullopt if every chunk is assigned or completed
+    /// Claim the lowest free chunk that starts at or above `lowest_height`.
+    /// A peer that serves only recent blocks passes the lowest height it
+    /// serves (detail/block_service.hpp); any other peer, nothing.
+    /// @return the claim, or nullopt if every such chunk is assigned or completed
     [[nodiscard]]
-    std::optional<chunk_claim> claim_chunk();
+    std::optional<chunk_claim> claim_chunk(uint32_t lowest_height = 0);
 
     /// Get block range for a chunk
     /// @return {start_height, end_height} for the chunk
     [[nodiscard]]
     std::pair<uint32_t, uint32_t> chunk_range(uint32_t chunk_id) const;
+
+    /// The last height of the range
+    [[nodiscard]]
+    uint32_t end_height() const { return end_height_; }
 
     /// Get block hash for a height (from header index)
     [[nodiscard]]
