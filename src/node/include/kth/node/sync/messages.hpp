@@ -165,6 +165,26 @@ struct chunk_validated {
     // local outcome by this, never by height: a body handed over before a
     // switch must not answer a submission made after it at the same height.
     uint64_t submission{0};
+    // The chain generation the chunk was downloaded for. A chain switch moves
+    // the generation, so a result still on its way when the switch happens is
+    // recognisable afterwards: its heights name other blocks on the new branch.
+    uint64_t generation{0};
+
+    /// True when this reports on a chunk downloaded for a branch the chain,
+    /// now at `chain_generation`, has since left.
+    [[nodiscard]]
+    constexpr bool from_abandoned_branch(uint64_t chain_generation) const {
+        return generation != chain_generation;
+    }
+
+    /// True when this is the outcome of a peer's chunk for a branch the chain,
+    /// now at `chain_generation`, has since left. Such an outcome says nothing
+    /// about the current branch, whether it is a success or a failure. A local
+    /// body's outcome is never one: it is matched to its submission instead.
+    [[nodiscard]]
+    constexpr bool peer_outcome_from_abandoned_branch(uint64_t chain_generation) const {
+        return submission == 0 && from_abandoned_branch(chain_generation);
+    }
 };
 
 using local_body_result_channel = select_channel<chunk_validated>;
@@ -297,6 +317,22 @@ using block_rejection_channel = concurrent_channel<block_rejected>;
 // The coordinator's answer: the chain has been moved off the rejected block and
 // the cursors re-derived; the builder may go on. Closing it is the shutdown.
 using block_rejection_ack_channel = concurrent_event_channel;
+
+// Tells the UTXO builder that something it decides by has changed: the
+// contiguous stored height, the reorg pause, the header tip its recency is
+// judged by, or the stop request. It carries nothing; the builder reads those
+// again when it wakes. Capacity one, sent with try_send: a full channel already
+// holds a wake that has not been read, and one is all a re-read needs.
+using utxo_build_wake_channel = concurrent_event_channel;
+
+// Tells the UTXO builder a height that nothing will be stored above until the
+// set describes it: every body up to it has been downloaded, and the next
+// range is not asked for before the builder reaches it. The builder waits for
+// a full batch while the chain is behind, because more blocks are about to
+// come; up to this height none are, so it builds what there is. Sent by the
+// coordinator alone, which then rings the wake channel. Capacity one, and the
+// latest height is the one that counts: a height not yet read is replaced.
+using utxo_build_remainder_channel = concurrent_channel<uint32_t>;
 
 // -----------------------------------------------------------------------------
 // Local block admission

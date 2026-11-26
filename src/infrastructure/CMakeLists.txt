@@ -194,11 +194,11 @@ set(kth_sources_just_legacy
         src/formats/base_85.cpp
 
         src/math/checksum.cpp
-        src/math/chacha20_poly1305.cpp
         src/math/crypto.cpp
         src/math/elliptic_curve.cpp
         src/math/hash.cpp
-        src/math/hkdf.cpp
+        src/math/hash_batch.cpp
+        src/math/hash_dispatch.cpp
         src/math/secp256k1_initializer.cpp
         src/math/secp256k1_initializer.hpp
         src/math/sip_hash.cpp
@@ -352,11 +352,9 @@ set(kth_headers
     include/kth/infrastructure/impl/machine/number.ipp
 
     include/kth/infrastructure/math/checksum.hpp
-    include/kth/infrastructure/math/chacha20_poly1305.hpp
     include/kth/infrastructure/math/crypto.hpp
     include/kth/infrastructure/math/elliptic_curve.hpp
     include/kth/infrastructure/math/hash.hpp
-    include/kth/infrastructure/math/hkdf.hpp
     include/kth/infrastructure/math/murmur_hash.hpp
     include/kth/infrastructure/math/sip_hash.hpp
     include/kth/infrastructure/math/uint256.hpp
@@ -381,6 +379,8 @@ set(kth_headers
     include/kth/infrastructure/utility/assert.hpp
     include/kth/infrastructure/utility/atomic.hpp
     include/kth/infrastructure/utility/binary.hpp
+    include/kth/infrastructure/utility/bit_reader.hpp
+    include/kth/infrastructure/utility/bit_writer.hpp
     include/kth/infrastructure/utility/byte_reader.hpp
     include/kth/infrastructure/utility/byte_writer.hpp
     include/kth/infrastructure/utility/collection.hpp
@@ -540,6 +540,15 @@ if(HAVE_X86_SHANI)
     )
     set_property(SOURCE third-party/bitcoin-core/crypto/sha256_x86_shani.cpp
         PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS} ${X86_SHANI_CXXFLAGS}
+    )
+    # The batch of messages through the same instructions.
+    list(APPEND bitcoin_core_crypto_sources
+        src/math/hash_batch_x86_shani.cpp
+    )
+    # No more than what sha256d_batch_x86_shani_usable asks the processor
+    # for: X86_SHANI_CXXFLAGS would also allow SSE4.2.
+    set_property(SOURCE src/math/hash_batch_x86_shani.cpp
+        PROPERTY COMPILE_OPTIONS ${SSE41_CXXFLAGS} -msha
     )
 endif()
 
@@ -703,13 +712,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 
     test/machine/number.cpp
 
-    test/math/chacha20_poly1305.cpp
     test/math/checksum.cpp
 
     # IMPORTANT: Do not list big_number_gen_*.cpp files here.
     # They are auto-generated and added via file(GLOB) below.
     test/math/elliptic_curve.cpp
     test/math/hash.cpp
+    test/math/hash_batch.cpp
+    test/math/hash_dispatch.cpp
     test/math/murmur_hash.cpp
     test/math/uint256.cpp
 
@@ -731,6 +741,8 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     test/utility/string_algorithms.cpp
     test/utility/parse_integer.cpp
     test/utility/serializer.cpp
+    test/utility/bit_reader.cpp
+    test/utility/bit_writer.cpp
     test/utility/byte_reader.cpp
     test/unicode/streambuf.cpp
     test/utility/byte_writer.cpp

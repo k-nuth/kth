@@ -4,13 +4,14 @@
 
 #include <test_helpers.hpp>
 
+#include <catch2/generators/catch_generators.hpp>
+
 #include "sync_harness.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <exception>
-#include <fstream>
 #include <future>
 #include <limits>
 #include <memory>
@@ -135,6 +136,9 @@ struct completion {
 // a deadline, so a server that never answers fails the test instead of hanging.
 struct listener_fixture {
     test::chain_fixture chain{"sv2_listener", 0};
+    // As in the node: one consumer of the chain's doorbells, whose rings
+    // reach the provider through its subscription.
+    node::mining::work_changes work_changes;
     ::asio::io_context io;
     // The endpoint block_chain::submit_block feeds, for a case whose solutions
     // a submission_pipeline drains. Without one, a submission is refused at
@@ -150,11 +154,14 @@ struct listener_fixture {
     {
         REQUIRE(chain.created());
         REQUIRE(chain.start(submissions));
-        provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain());
+        provider = std::make_shared<template_provider>(settings, io.get_executor(), chain.chain(),
+            work_changes.subscribe());
+        ::asio::co_spawn(io, work_changes.run(chain.chain()), ::asio::detached);
     }
 
     ~listener_fixture() {
         provider->stop();
+        work_changes.stop();
         for (auto const& client : clients) {
             std::error_code ignored;
             client->close(ignored);
@@ -284,79 +291,9 @@ struct listener_fixture {
 node::sv2_settings loopback_settings() {
     node::sv2_settings settings;
     settings.enabled = true;
-    settings.noise = false;
     settings.port = 0;
     return settings;
 }
-
-struct noise_listener_fixture : listener_fixture {
-    node::sv2_settings noise_settings;
-    hash_digest authority{};
-
-    noise_listener_fixture()
-        : listener_fixture(loopback_settings())
-        , noise_settings(loopback_settings())
-    {
-        noise_settings.noise = true;
-        noise_settings.static_key_file = (chain.dir() / "noise-static").string();
-        noise_settings.authority_key_file = (chain.dir() / "noise-authority").string();
-        auto const now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-        std::string error;
-        auto const credentials = load_noise_credentials(noise_settings, now, error);
-        INFO(error);
-        REQUIRE(credentials.has_value());
-        authority = credentials->authority_public_key;
-        configure();
-    }
-
-    void configure() {
-        provider = std::make_shared<template_provider>(noise_settings, io.get_executor(), chain.chain());
-    }
-
-    noise_transport handshake(::asio::ip::tcp::socket& client) {
-        auto const now = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-        noise_initiator initiator(noise_keypair::generate(), authority, now);
-        auto const first = initiator.start();
-        REQUIRE(first.has_value());
-        write(client, byte_span(*first).first(13));
-        write(client, byte_span(*first).subspan(13));
-        auto const second = read(client, noise_responder::flight_size);
-        REQUIRE_FALSE(second->error);
-        REQUIRE(initiator.finish(second->bytes));
-        REQUIRE(initiator.keys().has_value());
-        return noise_transport(*initiator.keys(), true);
-    }
-
-    template <typename Message>
-    void send(::asio::ip::tcp::socket& client, noise_transport& transport, Message const& message) {
-        auto const bytes = transport.encrypt_frame(frame(message));
-        REQUIRE(bytes.has_value());
-        write(client, byte_span(*bytes).first(7));
-        write(client, byte_span(*bytes).subspan(7));
-    }
-
-    template <typename Message>
-    Message receive(::asio::ip::tcp::socket& client, noise_transport& transport) {
-        // Reading a byte at a time also proves that the decryptor retains an
-        // incomplete header or tag without treating it as a plaintext frame.
-        auto const deadline = std::chrono::steady_clock::now() + 5s;
-        for (size_t count = 0; count < 65536; ++count) {
-            REQUIRE(std::chrono::steady_clock::now() < deadline);
-            auto const next = read(client, 1);
-            REQUIRE_FALSE(next->error);
-            auto const frames = transport.feed(next->bytes);
-            REQUIRE(frames.has_value());
-            if ( ! frames->empty()) {
-                REQUIRE(frames->size() == 1);
-                return response<Message>(frames->front());
-            }
-        }
-        FAIL("Noise frame exceeded the bounded test read");
-        return {};
-    }
-};
 
 std::vector<domain::chain::block> seed_chain(listener_fixture& fixture, uint32_t height) {
     auto const base = uint32_t(zulu_time()) - (height + 10) * test::block_spacing;
@@ -682,7 +619,128 @@ TEST_CASE("sv2 session closes on malformed, server-only and undefined messages",
     require_closed(oversized.process({0, 0, template_provider_session::max_payload_size + 1}, {}));
 }
 
+TEST_CASE("sv2 keeps the replaced tip's work only one block above it", "[sv2 template_provider]") {
+    hash_digest next_tip{};
+    next_tip[0] = 1;
+    auto value = empty_template();
+    value.height = 10;   // built on a tip at height 9
+    auto session = ready_session();
+    auto const job = template_messages(session.set_template(value));
+    auto const solution = solution_message(job, domain::chain::block({}, {coinbase_for(job)}));
+
+    SECTION("the tip just replaced still takes a solution") {
+        session.set_tip(next_tip, 10);
+        REQUIRE(process(session, solution).solution);
+    }
+    SECTION("a tip it would not stand beside does not") {
+        // Two blocks later seen in one step; another tip at the same height,
+        // as after the chain went one block back and up again; a lower tip.
+        auto const height = GENERATE(size_t(11), size_t(9), size_t(8));
+        session.set_tip(next_tip, height);
+        auto const ignored = process(session, solution);
+        require_silent(ignored);
+        REQUIRE_FALSE(ignored.solution);
+    }
+}
+
+TEST_CASE("sv2 session holds work for a tip only until the tip or the constraints change", "[sv2 template_provider]") {
+    hash_digest other{};
+    other[0] = 1;
+    auto value = empty_template();
+    value.height = 10;
+    auto const tip = value.previous_block_hash;
+    auto session = ready_session();
+    REQUIRE_FALSE(session.has_work_for(tip));
+    (void)session.set_template(value);
+    REQUIRE(session.has_work_for(tip));
+    REQUIRE_FALSE(session.has_work_for(other));
+
+    SECTION("the same tip seen again keeps it") {
+        session.set_tip(tip, 9);
+        REQUIRE(session.has_work_for(tip));
+    }
+    SECTION("a tip the chain left and came back to has none") {
+        // The work was retired when the other tip was seen; the client has
+        // to be sent work again though the tip is the one it was sent for.
+        session.set_tip(other, 9);
+        REQUIRE_FALSE(session.has_work_for(other));
+        session.set_tip(tip, 9);
+        REQUIRE_FALSE(session.has_work_for(tip));
+        (void)session.set_template(value);
+        REQUIRE(session.has_work_for(tip));
+    }
+    SECTION("the constraints it already has, sent again, keep it") {
+        auto const current = *session.constraints();
+        auto const repeated = process(session, current);
+        require_silent(repeated);
+        REQUIRE_FALSE(repeated.constraints_changed);
+        REQUIRE(session.has_work_for(tip));
+    }
+    SECTION("new constraints leave it without work for them") {
+        REQUIRE(process(session, coinbase_output_constraints{400, 5}).constraints_changed);
+        REQUIRE_FALSE(session.has_work_for(tip));
+        (void)session.set_template(value);
+        REQUIRE(session.has_work_for(tip));
+    }
+}
+
 // The listener, over loopback sockets on an OS-assigned port.
+
+TEST_CASE("sv2 closes a connection that does not complete its setup in time", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    (void)seed_chain(fixture, 101);
+    fixture.provider->setup_timeout = 300ms;
+    auto const port = fixture.start();
+
+    SECTION("one that sends nothing") {
+        auto client = fixture.connect(port);
+        fixture.require_closed(*client);
+    }
+    SECTION("one that sets up and never sends its constraints") {
+        auto client = fixture.connect(port);
+        fixture.write(*client, frame(setup()));
+        (void)fixture.receive<setup_connection_success>(*client);
+        fixture.require_closed(*client);
+    }
+    SECTION("one that has its work is kept past it") {
+        auto client = fixture.connect(port);
+        fixture.write(*client, frame(setup()));
+        (void)fixture.receive<setup_connection_success>(*client);
+        auto const job = request_template(fixture, *client);
+        int slices = 0;
+        (void)fixture.wait_until([&] { return ++slices > 120; });   // twice the timeout
+        fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
+        REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == job.work.template_id);
+    }
+    fixture.stop();
+}
+
+TEST_CASE("sv2 sends work for new constraints once it can, on the same tip", "[sv2 template_provider]") {
+    // The client has work, then changes its constraints at a moment when the
+    // chain has no template. The work it holds leaves the old room, so the
+    // wake-up that follows brings work for the new constraints though the
+    // tip is the same.
+    listener_fixture fixture(loopback_settings());
+    (void)seed_chain(fixture, 101);
+    auto client = fixture.connect(fixture.start());
+    fixture.write(*client, frame(setup()));
+    (void)fixture.receive<setup_connection_success>(*client);
+    auto const first = request_template(fixture, *client);
+
+    auto& chain = fixture.chain.chain();
+    REQUIRE(chain.begin_transition());
+    fixture.write(*client, frame(coinbase_output_constraints{400, 5}));
+    int slices = 0;
+    (void)fixture.wait_until([&] { return ++slices > 20; });
+    chain.end_transition();
+
+    auto const work = fixture.receive<new_template>(*client);
+    auto const activation = fixture.receive<set_new_prev_hash>(*client);
+    CHECK(work.template_id > first.work.template_id);
+    CHECK(activation.template_id == work.template_id);
+    CHECK(activation.prev_hash == first.prev.prev_hash);
+    fixture.stop();
+}
 
 TEST_CASE("sv2 templates encode the BIP34 height and distinguish evicted from stale ids", "[sv2 template_provider]") {
     auto session = ready_session();
@@ -710,7 +768,7 @@ TEST_CASE("sv2 templates encode the BIP34 height and distinguish evicted from st
         request_transaction_data{first_id}).response).error_code == "template-id-not-found");
     hash_digest next_tip{};
     next_tip[0] = 1;
-    session.set_tip(next_tip);
+    session.set_tip(next_tip, 128);
     REQUIRE(response<request_transaction_data_error>(process(session,
         request_transaction_data{first_id}).response).error_code == "stale-template-id");
     REQUIRE(response<request_transaction_data_error>(process(session,
@@ -793,202 +851,6 @@ TEST_CASE("sv2 sends a template too large for its transaction data and refuses o
     REQUIRE(data.transaction_list == std::vector<data_chunk>{bytes});
     REQUIRE(response<request_transaction_data_error>(process(session,
         request_transaction_data{large.work.template_id}).response).error_code == "template-too-large");
-}
-
-TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted frames", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    auto const trunk = seed_chain(fixture, 5);
-    auto const expected = fixture.execute(fixture.chain.chain().fetch_mining_template(blockchain::coinbase_reserve{248 + 120, 3}));
-    REQUIRE(expected.has_value());
-    auto client = fixture.connect(fixture.start());
-    auto transport = fixture.handshake(*client);
-    fixture.send(*client, transport, setup());
-    auto const success = fixture.receive<setup_connection_success>(*client, transport);
-    REQUIRE(success.used_version == 2);
-    REQUIRE(success.flags == 0);
-
-    fixture.send(*client, transport, coinbase_output_constraints{120, 3});
-    auto const work = fixture.receive<new_template>(*client, transport);
-    auto const previous = fixture.receive<set_new_prev_hash>(*client, transport);
-    REQUIRE(work.template_id == previous.template_id);
-    REQUIRE(work.future_template);
-    REQUIRE(work.version == expected->version);
-    REQUIRE(work.coinbase_tx_value_remaining == expected->coinbase_value);
-    REQUIRE(previous.prev_hash == trunk.back().hash());
-    REQUIRE(previous.n_bits == expected->bits);
-
-    fixture.send(*client, transport, request_transaction_data{work.template_id});
-    fixture.finish_writing(*client);
-    REQUIRE(fixture.receive<request_transaction_data_success>(*client, transport).template_id
-        == work.template_id);
-    fixture.require_closed(*client);
-    fixture.stop();
-}
-
-TEST_CASE("sv2 Noise listener never downgrades and bounds incomplete handshakes", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    fixture.noise_settings.handshake_timeout_seconds = 1;
-    fixture.configure();
-    auto const port = fixture.start();
-    SECTION("plaintext setup is closed without a setup response") {
-        auto client = fixture.connect(port);
-        auto const bytes = frame(setup());
-        fixture.write(*client, byte_span(bytes).first(3));
-        fixture.write(*client, byte_span(bytes).subspan(3));
-        fixture.finish_writing(*client);
-        fixture.require_closed(*client);
-    }
-    SECTION("idle and incomplete first flights expire") {
-        auto idle = fixture.connect(port);
-        auto partial = fixture.connect(port);
-        fixture.write(*partial, data_chunk(63, 1));
-        fixture.require_closed(*idle);
-        fixture.require_closed(*partial);
-    }
-    SECTION("stop joins an incomplete handshake") {
-        auto client = fixture.connect(port);
-        fixture.write(*client, data_chunk(13, 1));
-        fixture.stop();
-        fixture.require_closed(*client);
-    }
-    fixture.stop();
-}
-
-TEST_CASE("sv2 Noise listener closes on split encrypted tag failures", "[sv2 noise]") {
-    for (bool const payload_tag : {false, true}) {
-        CAPTURE(payload_tag);
-        noise_listener_fixture fixture;
-        auto client = fixture.connect(fixture.start());
-        auto transport = fixture.handshake(*client);
-        auto bytes = transport.encrypt_frame(frame(setup()));
-        REQUIRE(bytes.has_value());
-        (*bytes)[payload_tag ? bytes->size() - 1 : noise_transport::encrypted_header_size - 1] ^= 1;
-        if ( ! payload_tag) bytes->resize(noise_transport::encrypted_header_size);
-        auto const split = payload_tag ? bytes->size() - 1 : noise_transport::encrypted_header_size - 1;
-        fixture.write(*client, byte_span(*bytes).first(split));
-        fixture.write(*client, byte_span(*bytes).subspan(split));
-        fixture.finish_writing(*client);
-        fixture.require_closed(*client);
-        fixture.stop();
-    }
-}
-
-TEST_CASE("sv2 Noise listener refuses handshakes once an offline certificate expires", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    auto const unix_now = [] {
-        return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    };
-    auto const now = unix_now();
-    std::string error;
-    auto const online = load_noise_credentials(fixture.noise_settings, now, error);
-    REQUIRE(online.has_value());
-    REQUIRE(online->authority.has_value());
-    auto const certificate = noise_certificate::sign(online->authority->secret(),
-        online->static_key.public_key(), now - 10, now + 2);
-    REQUIRE(certificate.has_value());
-    fixture.noise_settings.certificate_file = (fixture.chain.dir() / "offline-certificate").string();
-    {
-        auto const bytes = certificate->bytes();
-        std::ofstream output(fixture.noise_settings.certificate_file, std::ios::binary);
-        output.write(reinterpret_cast<char const*>(bytes.data()), bytes.size());
-        REQUIRE(output.good());
-    }
-    fixture.noise_settings.authority_public_key = noise_authority_key(fixture.authority);
-    fixture.configure();
-    auto const port = fixture.start();
-
-    REQUIRE(fixture.wait_until([&] { return unix_now() > now + 2; }));
-    auto client = fixture.connect(port);
-    noise_initiator initiator(noise_keypair::generate(), fixture.authority, unix_now());
-    auto const first = initiator.start();
-    REQUIRE(first.has_value());
-    fixture.write(*client, *first);
-    fixture.require_closed(*client);
-    fixture.stop();
-}
-
-TEST_CASE("sv2 Noise listener reports invalid credentials before binding", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    fixture.noise_settings.certificate_file = (fixture.chain.dir() / "absent-certificate").string();
-    fixture.noise_settings.authority_public_key = noise_authority_key(fixture.authority);
-    fixture.configure();
-    fixture.run();
-    auto const state = fixture.listening();
-    REQUIRE(state->error == std::make_error_code(std::errc::invalid_argument));
-    REQUIRE(state->port == 0);
-    REQUIRE(fixture.wait_until([&] { return fixture.completed->done; }));
-    REQUIRE_FALSE(fixture.completed->error);
-}
-
-TEST_CASE("sv2 Noise stop joins partial encrypted headers and payloads", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    auto const port = fixture.start();
-    auto in_header = fixture.connect(port);
-    auto header_transport = fixture.handshake(*in_header);
-    auto const header_bytes = header_transport.encrypt_frame(frame(setup()));
-    REQUIRE(header_bytes);
-    fixture.write(*in_header, byte_span(*header_bytes).first(3));
-
-    auto in_payload = fixture.connect(port);
-    auto payload_transport = fixture.handshake(*in_payload);
-    auto const payload_bytes = payload_transport.encrypt_frame(frame(setup()));
-    REQUIRE(payload_bytes);
-    fixture.write(*in_payload,
-        byte_span(*payload_bytes).first(noise_transport::encrypted_header_size + 1));
-
-    auto ready = fixture.connect(port);
-    auto ready_transport = fixture.handshake(*ready);
-    fixture.send(*ready, ready_transport, setup());
-    REQUIRE(fixture.receive<setup_connection_success>(*ready, ready_transport).used_version == 2);
-    fixture.stop();
-    fixture.require_closed(*in_header);
-    fixture.require_closed(*in_payload);
-    fixture.require_closed(*ready);
-}
-
-TEST_CASE("sv2 Noise preserves setup and frame refusal across reads", "[sv2 noise]") {
-    noise_listener_fixture fixture;
-    auto client = fixture.connect(fixture.start());
-    auto transport = fixture.handshake(*client);
-    SECTION("unsupported setup receives an encrypted error") {
-        auto message = setup();
-        message.protocol = setup_connection::protocol_mining;
-        fixture.send(*client, transport, message);
-        fixture.finish_writing(*client);
-        REQUIRE(fixture.receive<setup_connection_error>(*client, transport).error_code
-            == "unsupported-protocol");
-    }
-    SECTION("channel messages remain invalid") {
-        fixture.send(*client, transport, setup());
-        (void)fixture.receive<setup_connection_success>(*client, transport);
-        auto const bytes = transport.encrypt_frame(frame(coinbase_output_constraints{120, 3},
-            message_header::channel_msg_flag));
-        REQUIRE(bytes);
-        fixture.write(*client, byte_span(*bytes).first(21));
-        fixture.write(*client, byte_span(*bytes).subspan(21));
-        fixture.finish_writing(*client);
-    }
-    SECTION("an oversized authenticated header is refused before its payload") {
-        auto plain = to_data_chunk(message_header{0, 0,
-            template_provider_session::max_payload_size + 1});
-        plain.resize(message_header::size + template_provider_session::max_payload_size + 1);
-        auto const bytes = transport.encrypt_frame(plain);
-        REQUIRE(bytes);
-        fixture.write(*client, byte_span(*bytes).first(21));
-        fixture.write(*client, byte_span(*bytes).subspan(21, 1));
-        fixture.finish_writing(*client);
-    }
-    SECTION("an incomplete encrypted payload is refused at EOF") {
-        auto const bytes = transport.encrypt_frame(frame(setup()));
-        REQUIRE(bytes);
-        fixture.write(*client, byte_span(*bytes).first(21));
-        fixture.write(*client,
-            byte_span(*bytes).subspan(21, bytes->size() - 22));
-        fixture.finish_writing(*client);
-    }
-    fixture.require_closed(*client);
-    fixture.stop();
 }
 
 TEST_CASE("sv2 listener reports its port and serves a client whose frames arrive in pieces", "[sv2 template_provider]") {
@@ -1074,7 +936,11 @@ TEST_CASE("sv2 listener closes a connection on an oversized, partial or channel 
         }
         fixture.write(*client, byte_span(bytes).first(3));
         fixture.write(*client, byte_span(bytes).subspan(3));
-        fixture.finish_writing(*client);
+        // A truncated frame is one the client stopped sending. The others
+        // are refused as they are, with the client still able to write.
+        if (invalid == 1 || invalid == 2) {
+            fixture.finish_writing(*client);
+        }
         fixture.require_closed(*client);
         fixture.stop();
     }
@@ -1110,6 +976,19 @@ TEST_CASE("sv2 stop before run wakes a startup waiter", "[sv2 template_provider]
     REQUIRE(state->port == 0);
     fixture.run();
     fixture.stop();
+}
+
+TEST_CASE("sv2 stop wakes a startup waiter that is already waiting", "[sv2 template_provider]") {
+    listener_fixture fixture(loopback_settings());
+    auto state = std::make_shared<startup>();
+    ::asio::co_spawn(fixture.io, await_listening(fixture.provider, state), ::asio::detached);
+    int slices = 0;
+    (void)fixture.wait_until([&] { return ++slices > 4; });
+    REQUIRE_FALSE(state->done);
+
+    fixture.provider->stop();
+    REQUIRE(fixture.wait_until([&] { return state->done; }));
+    REQUIRE(state->error);
 }
 
 TEST_CASE("sv2 listener reaps finished connections before admitting more", "[sv2 template_provider]") {
@@ -1315,7 +1194,9 @@ TEST_CASE("sv2 submits solutions for the replaced tip's templates, not older one
 }
 
 TEST_CASE("sv2 refuses malformed coinbase solutions even across reads", "[sv2 template_provider]") {
-    listener_fixture fixture(loopback_settings());
+    // With the endpoint a submission would be sent to, and nothing draining
+    // it: a malformed coinbase that got that far would be found there.
+    listener_fixture fixture(loopback_settings(), true);
     auto const trunk = seed_chain(fixture, 5);
     auto client = fixture.connect(fixture.start());
     fixture.write(*client, frame(setup()));
@@ -1336,6 +1217,8 @@ TEST_CASE("sv2 refuses malformed coinbase solutions even across reads", "[sv2 te
         fixture.write(*client, frame(request_transaction_data{job.work.template_id}));
         REQUIRE(fixture.receive<request_transaction_data_success>(*client).template_id == job.work.template_id);
         REQUIRE(fixture.chain.chain().chain_view()->tip_hash == trunk.back().hash());
+        std::error_code none;
+        CHECK_FALSE(fixture.submissions->try_receive(none).has_value());
     }
     fixture.stop();
 }
@@ -1348,7 +1231,8 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     auto const first = request_template(fixture, *client);
     auto previous = first.work.template_id;
     for (size_t i = 0; i < 16; ++i) {
-        auto const current = request_template(fixture, *client, {uint32_t(120 + i), 3});
+        // Other constraints each time: the same ones again bring nothing.
+        auto const current = request_template(fixture, *client, {uint32_t(121 + i), 3});
         REQUIRE(current.work.template_id > previous);
         previous = current.work.template_id;
     }
@@ -1360,7 +1244,7 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
     auto const oversized = frame(coinbase_output_constraints{std::numeric_limits<uint32_t>::max(), 0});
     fixture.write(*client, byte_span(oversized).first(oversized.size() - 1));
     fixture.write(*client, byte_span(oversized).last(1));
-    fixture.finish_writing(*client);
+    // The client keeps its side open: the server is the one that closes.
     fixture.require_closed(*client);
     fixture.stop();
 }

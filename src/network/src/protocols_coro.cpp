@@ -517,7 +517,7 @@ awaitable_expected<domain::message::address> request_addresses(
     auto const& command = raw.heading.command();
     byte_reader reader(raw.payload);
 
-    spdlog::info("[protocol] Received address response from [{}]: command='{}', payload_size={}",
+    spdlog::debug("[protocol] Received address response from [{}]: command='{}', payload_size={}",
         peer.authority(), command, raw.payload.size());
 
     // Handle both addr (legacy) and addrv2 (BIP155) formats
@@ -798,7 +798,11 @@ awaitable_expected<std::vector<block_result<Mode>>> request_blocks_batch(
         if (index == 1) {
             spdlog::debug("[protocol] Timeout waiting for batch blocks from [{}] ({}/{} received)",
                 peer.authority(), received_blocks.size(), blocks.size());
-            co_return std::unexpected(error::channel_timeout);
+            // A peer that sent part of the batch is slow. One that sent
+            // nothing in the whole time is not serving blocks at all, which
+            // the caller treats differently.
+            co_return std::unexpected(received_blocks.empty()
+                ? error::peer_throttling : error::channel_timeout);
         }
 
         // Ours now; the slot is cleared when the next wait begins.

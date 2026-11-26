@@ -353,3 +353,45 @@ TEST_CASE("block transactions operator boolean not equals differs returns true",
     REQUIRE(instance != expected);
 }
 
+TEST_CASE("block transactions refuses impossible counts before allocation", "[block transactions][bip152]") {
+    SECTION("more transactions than fit in a block") {
+        data_chunk raw(hash_size + 9, 0);
+        byte_writer writer(raw);
+        REQUIRE(writer.write_hash(null_hash));
+        REQUIRE(writer.write_variable_little_endian(max_compact_transactions() + 1));
+        byte_reader reader(raw);
+        auto const parsed = message::block_transactions::from_data(reader,
+            message::block_transactions::version_minimum);
+        REQUIRE_FALSE(parsed);
+        REQUIRE(parsed.error() == error::invalid_size);
+    }
+
+    SECTION("transaction count cannot fit the payload") {
+        data_chunk raw(hash_size + 1, 0);
+        raw.back() = 1;
+        byte_reader reader(raw);
+        auto const parsed = message::block_transactions::from_data(reader,
+            message::block_transactions::version_minimum);
+        REQUIRE_FALSE(parsed);
+        REQUIRE(parsed.error() == error::invalid_size);
+    }
+}
+
+TEST_CASE("block transactions empty reply round trips and truncated replies fail", "[block transactions][bip152]") {
+    auto const version = message::block_transactions::version_minimum;
+    message::block_transactions const empty(null_hash, chain::transaction::list{});
+    auto const raw_empty = kth::to_data_chunk(empty, version);
+    byte_reader reader(raw_empty);
+    auto const parsed = message::block_transactions::from_data(reader, version);
+    REQUIRE(parsed);
+    REQUIRE(*parsed == empty);
+
+    message::block_transactions const reply(null_hash, {chain::transaction(1, 0, {}, {})});
+    auto const raw = kth::to_data_chunk(reply, version);
+    for (size_t size = 0; size < raw.size(); ++size) {
+        CAPTURE(size);
+        byte_reader truncated(byte_span{raw}.first(size));
+        REQUIRE_FALSE(message::block_transactions::from_data(truncated, version));
+    }
+}
+

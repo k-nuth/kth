@@ -9,7 +9,10 @@
 #include <cstdint>
 #include <type_traits>
 
+#include <boost/unordered/unordered_flat_map.hpp>
+
 #include <kth/infrastructure/math/sip_hash.hpp>
+#include <kth/infrastructure/utility/pseudo_random.hpp>
 
 namespace kth::blockchain {
 
@@ -76,6 +79,25 @@ struct salted_outpoint_hasher {
             sip_hash_uint256_extra(k0, k1, outpoint.hash, outpoint.index));
     }
 };
+
+// The short IDs of a compact block (BIP152), each with the position of its
+// transaction in the block. A peer chooses the short IDs it sends, so it could
+// choose them to collide in a table whose hash it can compute, and make every
+// insertion walk the ones before it. The hash is keyed with a salt drawn for
+// each table, which the peer cannot know: where its short IDs land is not its
+// to choose, and there is nothing to bound.
+struct salted_short_id_hasher {
+    using is_avalanching = std::true_type;  // SipHash output is well-distributed.
+
+    uint64_t k0 = pseudo_random::generate<uint64_t>();
+    uint64_t k1 = pseudo_random::generate<uint64_t>();
+
+    size_t operator()(uint64_t short_id) const {
+        return size_t(sip_hasher(k0, k1).write(short_id).finalize());
+    }
+};
+
+using short_id_slots = boost::unordered_flat_map<uint64_t, size_t, salted_short_id_hasher>;
 
 } // namespace kth::blockchain
 

@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <kth/blockchain/prune.hpp>
 #include <kth/blockchain/tick_schedule.hpp>
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
@@ -22,8 +23,9 @@
 #include <memory>
 #include <numeric>
 #include <string>
-#include <unordered_set>
 #include <utility>
+
+#include <boost/unordered/unordered_flat_set.hpp>
 
 #include <kth/blockchain/pools/mempool_config.hpp>
 #include <kth/blockchain/pools/template_prevouts.hpp>
@@ -49,27 +51,6 @@
 #include <asio/experimental/concurrent_channel.hpp>
 
 #include <utxoz/logging.hpp>
-
-namespace kth::blockchain {
-
-using spent_value_type = std::pair<hash_digest, uint32_t>;
-using spent_container = std::unordered_set<spent_value_type>;
-
-} // namespace kth::blockchain
-
-namespace std {
-
-template <>
-struct hash<kth::blockchain::spent_value_type> {
-    size_t operator()(kth::blockchain::spent_value_type const& point) const {
-        size_t seed = 0;
-        boost::hash_combine(seed, point.first);
-        boost::hash_combine(seed, point.second);
-        return seed;
-    }
-};
-
-} // namespace std
 
 namespace kth {
 
@@ -120,6 +101,7 @@ block_chain::block_chain(blockchain::settings const& chain_settings,
     , chain_state_populator_(*this, chain_settings, network)
     , database_(database_settings)
     , in_place_nocow_(database_settings.nocow)
+    , prune_keep_blocks_(database_settings.prune_keep_blocks)
     , validation_mutex_(relay_transactions)
     , priority_pool_("priority", std::min(size_t(8), thread_ceiling(chain_settings.cores)))
     , template_rebuild_gate_(priority_pool_.get_executor(), 1)
@@ -256,12 +238,27 @@ bool block_chain::start(uint32_t disk_magic) {
     // block_store_ is not yet initialized here — we wire it below after initialization.
 #endif
 
+#ifdef KTH_UTXOZ_REFERENCE_MODE
+    // In reference mode a UTXO entry names the block file its output is in.
+    // Removing block files would leave entries pointing at nothing.
+    if (prune_keep_blocks_ != 0) {
+        spdlog::error("[blockchain] db.prune_keep_blocks cannot be used with the UTXO reference "
+            "mode: its entries point into the block files that pruning removes");
+        return false;
+    }
+#endif
+
     // Initialize flat file block storage
     // Convert disk magic to little-endian bytes for file header
     auto blocks_path = database_.internal_db_dir.parent_path() / "blocks";
     auto magic = to_little_endian(disk_magic);
     block_store_ = std::make_unique<database::block_store>(blocks_path, magic);
-    if ( ! block_store_->initialize()) {
+    // A pruning node's block files start above zero once it has removed some.
+    // Any other node treats a missing first file as a lost one.
+    auto const numbering = prune_keep_blocks_ != 0
+        ? database::block_store::numbering::pruned
+        : database::block_store::numbering::complete;
+    if ( ! block_store_->initialize(numbering)) {
         spdlog::error("[blockchain] Failed to initialize block store at {}", blocks_path.string());
         return false;
     }
@@ -559,7 +556,12 @@ bool block_chain::start(uint32_t disk_magic) {
             // Undo is captured from the first height that is validated, which is
             // the trusted height + 1, not the anchor + 1: in full-validation mode
             // it starts at height 1.
-            auto const first = static_cast<int32_t>(settings_.trusted_checkpoint_height()) + 1;
+            //
+            // A pruning node has removed the files below its prune height, undo
+            // included, so its range starts above that.
+            auto const first = static_cast<int32_t>(first_height_with_undo(
+                static_cast<uint32_t>(settings_.trusted_checkpoint_height()), *built,
+                prune_keep_blocks_));
             for (int32_t height = first; height <= static_cast<int32_t>(*built); ++height) {
                 auto const at = static_cast<size_t>(height);
                 if (at >= persisted_chain_indices.size() ||
@@ -583,6 +585,31 @@ bool block_chain::start(uint32_t disk_magic) {
                 return false;
             }
         }
+
+#if ! defined(KTH_DB_READONLY)
+        // The genesis block is the one block no sync stores: it is never
+        // downloaded, and creating the database writes only its header. Its body
+        // is written here, the first time a start does not find it in the block
+        // files, so that it is served and read like any other block. That is the
+        // first start of a new database, or the first start of a database
+        // created before this was done. It has no undo record and gets none:
+        // genesis is never connected or disconnected, and its coinbase output
+        // stays out of the UTXO set.
+        auto const genesis = domain::chain::block::genesis(chain_state_populator_.network());
+        auto const genesis_idx = header_index_.find(genesis.hash());
+        if (genesis_idx != header_index::null_index && ! header_index_.has_block_data(genesis_idx)) {
+            auto const pos = block_store_->save_block(genesis, 0);
+            if (pos.is_null()) {
+                spdlog::critical("[blockchain] The genesis block could not be written to the "
+                    "block files");
+                return false;
+            }
+            header_index_.set_block_pos(genesis_idx, static_cast<int16_t>(pos.file), pos.pos);
+            header_index_.add_status(genesis_idx, header_status::have_data);
+            spdlog::info("[blockchain] Stored the genesis block {} in the block files",
+                encode_hash(genesis.hash()));
+        }
+#endif
 
         auto const scan_elapsed = std::chrono::steady_clock::now() - scan_start;
         auto const scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_elapsed).count();
@@ -608,7 +635,7 @@ bool block_chain::start(uint32_t disk_magic) {
             db.set_header_index(&header_index_);
         });
     }
-    spdlog::info("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
+    spdlog::debug("[blockchain] UTXO-Z reference mode: block_store and header_index wired for find resolution");
 #endif
 
     return true;
@@ -1119,6 +1146,33 @@ bool block_chain::insert(block_const_ptr block, size_t height) {
     (void)block;
     (void)height;
     return false;
+}
+
+std::expected<size_t, database::result_code> block_chain::prune_block_files(uint32_t built_height) {
+    // How far the built height moves between passes. A pass reads the whole
+    // header index, and a block file holds far more blocks than this.
+    constexpr uint32_t pass_interval = 64;
+
+    if (prune_keep_blocks_ == 0 || ! block_store_) {
+        return 0;
+    }
+    if (pruned_at_height_ != 0 && built_height < pruned_at_height_ + pass_interval) {
+        return 0;
+    }
+    pruned_at_height_ = built_height;
+
+    auto const pruned = blockchain::prune_block_files(header_index_, *block_store_,
+        built_height, prune_keep_blocks_);
+    if ( ! pruned) {
+        return std::unexpected(pruned.error());
+    }
+    if (pruned->files_removed != 0) {
+        spdlog::info("[blockchain] Pruned {} block file(s) holding {} block(s) below height {}; "
+            "the block files now start at blk{:05d}.dat",
+            pruned->files_removed, pruned->blocks_forgotten,
+            prune_height(built_height, prune_keep_blocks_) + 1, pruned->first_file);
+    }
+    return pruned->files_removed;
 }
 
 std::expected<uint32_t, database::result_code> block_chain::get_utxo_built_height() const {
@@ -2164,11 +2218,8 @@ bool block_chain::begin_transition() {
 
 void block_chain::end_transition() {
     capture_gate_.end_transition();
-    // Consumers may build mining work as soon as they receive this wake-up,
-    // so publishing it while capture is still closed would lose the update.
-    if (auto const view = chain_view()) {
-        block_organizer_.notify_tip(view->connected_tip_height);
-    }
+    // After the gate, so whoever this wakes can capture at once.
+    (void)tip_changes_.try_send(std::monostate{});
 }
 
 bool block_chain::transition_in_progress() const {
@@ -2573,23 +2624,9 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     };
     validation_mutex_.lock_low_priority();
     unlock const release{validation_mutex_};
-    // A pooled parent may have been removed while script validation was running.
-    // Its hash commits to the output, so presence is enough to recheck it here.
-    for (auto const& input : entry.tx->inputs()) {
-        auto const& point = input.previous_output();
-        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
-            return error::missing_previous_output;
-        }
-    }
-
-    // A pool that has been full asks more for a while (BCHN "mempool min fee
-    // not met"), per virtual byte, so a transaction heavy in signature checks
-    // pays for them. Checked here, under the lock that orders it against the
-    // evictions and blocks that move it.
     auto const limit = settings_.mempool_limit_bytes();
-    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
-    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
-        return error::insufficient_fee;
+    if (auto const refused = admission_refusal(entry, limit)) {
+        return refused;
     }
 
     auto const txid = entry.tx->hash();
@@ -2611,6 +2648,44 @@ code block_chain::commit_validated_transaction(mempool_entry entry, chain_view_p
     mempool_admissions_.record(tracked.entry_id, txid, mempool_);
     (void)mempool_admission_events_.try_send(std::monostate{});
     return error::success;
+}
+
+code block_chain::admission_refusal(mempool_entry const& entry, uint64_t limit) {
+    // A pooled parent may have been removed while script validation was running.
+    // Its hash commits to the output, so presence is enough to recheck it here.
+    for (auto const& input : entry.tx->inputs()) {
+        auto const& point = input.previous_output();
+        if (point.validation.from_mempool && ! mempool_.resolve(point)) {
+            return error::missing_previous_output;
+        }
+    }
+
+    // A pool that has been full asks more for a while (BCHN "mempool min fee
+    // not met"), per virtual byte, so a transaction heavy in signature checks
+    // pays for them. Checked under the lock that orders it against the
+    // evictions and blocks that move it.
+    auto const minimum = mempool_limit_.minimum_fee_per_kb(limit, unix_now());
+    if (entry.fee < fee_for(minimum, virtual_size(entry.size, entry.sigchecks))) {
+        return error::insufficient_fee;
+    }
+    return error::success;
+}
+
+::asio::awaitable<code> block_chain::test_commit_validated_transaction(mempool_entry entry) {
+    co_return co_await ::asio::co_spawn(executor(),
+        [this, entry = std::move(entry)]() -> ::asio::awaitable<code> {
+            validation_low_priority_lock const lock(validation_mutex_);
+            auto const limit = settings_.mempool_limit_bytes();
+            if (auto const refused = admission_refusal(entry, limit)) {
+                co_return refused;
+            }
+            // Past its limit the pool evicts the lowest fee per virtual byte,
+            // and a transaction that would be the one evicted is refused.
+            if (mempool_limit_.would_evict(mempool_, entry, limit)) {
+                co_return error::insufficient_fee;
+            }
+            co_return error::success;
+        }, ::asio::use_awaitable);
 }
 
 ::asio::awaitable<block_chain::mempool_admitted> block_chain::mempool_admitted_after(uint64_t after, size_t limit) {
@@ -2694,6 +2769,10 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
 
 ::asio::awaitable<code> block_chain::transaction_validate(transaction_const_ptr tx) const {
     co_return co_await transaction_organizer_.transaction_validate(tx);
+}
+
+awaitable_expected<size_t> block_chain::test_accept(transaction_const_ptr tx) {
+    co_return co_await transaction_organizer_.test_accept(tx);
 }
 
 // =============================================================================
@@ -3044,6 +3123,46 @@ block_chain::fetch_blocks_raw(uint32_t from, uint32_t to) const {
 
     // Read all blocks from flat files
     auto result = block_store_->read_blocks_raw(positions);
+    if (!result) {
+        return std::unexpected(database::result_code::other);
+    }
+
+    return std::move(*result);
+}
+
+std::expected<std::vector<data_chunk>, database::result_code>
+block_chain::fetch_blocks_raw_within(uint32_t from, uint32_t to, uint64_t max_bytes) const {
+    // A range that ends before it starts holds no block, and the count below
+    // would wrap.
+    if (from > to) {
+        return std::unexpected(database::result_code::key_not_found);
+    }
+
+    // Read blocks from flat files using positions stored in header_index
+    // NOTE: During IBD, blocks are stored sequentially, so index == height
+    std::vector<database::flat_file_pos> positions;
+    positions.reserve(to - from + 1);
+
+    for (uint32_t h = from; h <= to; ++h) {
+        // Resolve through the active chain — the index also holds side branches,
+        // numbered in arrival order, so an entry's index is not its height.
+        auto const idx = header_index_.active_at(static_cast<int32_t>(h));
+
+        if (idx == header_index::null_index) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: Height {} is not on the active chain", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+
+        auto const pos = header_index_.get_block_pos(idx);
+        if (pos.is_null()) {
+            spdlog::error("[blockchain] fetch_blocks_raw_within: No block data for height {}", h);
+            return std::unexpected(database::result_code::key_not_found);
+        }
+        positions.push_back(pos);
+    }
+
+    // Read all blocks from flat files
+    auto result = block_store_->read_blocks_raw_within(positions, max_bytes);
     if (!result) {
         return std::unexpected(database::result_code::other);
     }
@@ -3461,12 +3580,15 @@ block_chain::fetch_mining_template(uint64_t coinbase_reserve_size) const {
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time) const {
-    co_return co_await fetch_mining_template(blockchain::coinbase_reserve{coinbase_reserve_size}, request_time);
+block_chain::fetch_mining_template(uint64_t coinbase_reserve_size, std::optional<uint32_t> request_time,
+    std::optional<uint64_t> after_generation) const {
+    co_return co_await fetch_mining_template(blockchain::coinbase_reserve{coinbase_reserve_size}, request_time,
+        after_generation);
 }
 
 awaitable_expected<blockchain::mining_template>
-block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::optional<uint32_t> request_time) const {
+block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::optional<uint32_t> request_time,
+    std::optional<uint64_t> after_generation) const {
     auto const coinbase_reserve_size = reserve.size;
     auto const coinbase_reserve_sigchecks = reserve.sigchecks;
     if (stopped()) {
@@ -3506,6 +3628,12 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
     // unchanged or its last change is still within the refresh window; a new tip
     // always forces a rebuild. The tip and generation are parameters rather than
     // captures because this is asked twice, against two different captures.
+    //
+    // A caller that asks for a selection later than the one it holds is not
+    // served that one, or an earlier one, out of the refresh window.
+    auto const later = [&](boost::shared_ptr<template_snapshot> const& s) {
+        return ! after_generation || s->generation > *after_generation;
+    };
     auto const usable = [&](boost::shared_ptr<template_snapshot> const& s,
                             hash_digest const& tip, uint64_t gen, uint32_t at) {
         return s &&
@@ -3513,7 +3641,7 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
                s->coinbase_reserve_size == coinbase_reserve_size &&
                s->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
                (s->generation == gen ||
-                at - s->time < settings_.gbt_template_refresh_seconds);
+                (later(s) && at - s->time < settings_.gbt_template_refresh_seconds));
     };
 
     // Selection remains cached, but header time and time-sensitive work are
@@ -3538,10 +3666,12 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
     // value; ownership itself is acquired by receiving the token below.
     // The budget is both reserves: a snapshot built for another SigChecks
     // reserve leaves the caller's coinbase a different amount of room.
+    // A caller that asks for a later selection waits for the owner instead.
     if (!template_rebuild_gate_.ready() && snapshot &&
         snapshot->previous == served->tip_hash &&
         snapshot->coinbase_reserve_size == coinbase_reserve_size &&
-        snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks) {
+        snapshot->coinbase_reserve_sigchecks == coinbase_reserve_sigchecks &&
+        later(snapshot)) {
         co_return refresh_header(snapshot->value, served, now);
     }
 
@@ -3653,6 +3783,9 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
         , state->ticks()
 #endif
         , settings_.retarget);
+    // Sampled inside the lease, so it names these entries; a cache hit serves
+    // it with them.
+    built.mempool_generation = view.generation;
 
     auto next = boost::make_shared<template_snapshot>(
         template_snapshot{std::move(built), previous, view.generation, now,
@@ -3799,7 +3932,8 @@ std::vector<mempool_transaction_summary> block_chain::get_mempool_transactions(
 
     std::vector<mempool_transaction_summary> ret;
 
-    std::unordered_set<kth::domain::wallet::payment_address> addrs;
+    boost::unordered_flat_set<kth::domain::wallet::payment_address,
+        std::hash<kth::domain::wallet::payment_address>> addrs;
     for (auto const& payment_address : payment_addresses) {
         if (auto address = kth::domain::wallet::payment_address::parse_from(payment_address); address) {
             addrs.insert(*address);
@@ -3910,39 +4044,41 @@ block_chain::mempool_mini_hash_map block_chain::get_mempool_mini_hash_map(
     return mempool;
 }
 
-void block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
-                                            size_t& mempool_count,
-                                            std::vector<domain::chain::transaction>& txn_available,
-                                            std::unordered_map<uint64_t, uint16_t> const& shorttxids) const {
+block_chain::mempool_fill block_chain::fill_tx_list_from_mempool(domain::message::compact_block const& block,
+                                                                domain::chain::transaction::list slots,
+                                                                short_id_slots const& positions) const {
 
-    std::vector<bool> have_txn(txn_available.size());
+    mempool_fill filled{std::move(slots), 0, false};
+    auto& transactions = filled.transactions;
+    std::vector<bool> have(transactions.size());
 
-    auto header_hash = hash(block);
-    auto k0 = from_little_endian_unsafe<uint64_t>(header_hash);
-    auto k1 = from_little_endian_unsafe<uint64_t>(std::span{header_hash}.subspan(sizeof(uint64_t)));
+    auto const header_hash = hash(block);
 
     mempool_.for_each([&](mempool_entry const& e) {
         auto const& tx = *e.tx;
+        auto const short_id = domain::message::compact_short_id(header_hash, tx.hash());
 
-        uint64_t shortid = sip_hash_uint256(k0, k1, tx.hash()) & uint64_t(0xffffffffffff);
-
-        auto idit = shorttxids.find(shortid);
-        if (idit != shorttxids.end()) {
-            if ( ! have_txn[idit->second]) {
-                txn_available[idit->second] = tx;
-                have_txn[idit->second] = true;
-                ++mempool_count;
-            } else {
-                // A second transaction maps to the same short id, so the slot
-                // is ambiguous and gets cleared. A cleared slot holds the null
-                // transaction, so clear (and decrement) only once.
-                if ( ! txn_available[idit->second].is_null()) {
-                    txn_available[idit->second] = domain::chain::transaction::null();
-                    --mempool_count;
-                }
-            }
+        auto const found = positions.find(short_id);
+        if (found == positions.end() || found->second >= transactions.size()) {
+            return;
         }
+        auto const at = found->second;
+        if ( ! have[at]) {
+            transactions[at] = tx;
+            have[at] = true;
+            ++filled.matched;
+            return;
+        }
+        // A second transaction maps to the same short id, so the slot is
+        // ambiguous and gets cleared. A cleared slot holds the null
+        // transaction, so clear (and decrement) only once.
+        if ( ! transactions[at].is_null()) {
+            transactions[at] = domain::chain::transaction::null();
+            --filled.matched;
+        }
+        filled.collided = true;
     });
+    return filled;
 }
 
 // =============================================================================

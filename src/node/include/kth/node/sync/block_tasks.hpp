@@ -41,14 +41,32 @@ uint32_t resume_utxo_built_height(std::optional<uint32_t> saved, uint32_t start_
 [[nodiscard]]
 uint32_t utxo_batch_len(uint32_t available, uint32_t batch_size, bool stale);
 
+/// How far a batch chosen as `batch_start`..`batch_end` may reach when it is at
+/// or below the checkpoint: as far as the `available` stored blocks allow, up
+/// to `max_blocks`, and never past the checkpoint. Such a batch is then cut by
+/// the bytes it holds, when its blocks are read. A batch above the checkpoint
+/// is returned as it came: those are sized by the validation settings.
+///
+/// `max_blocks` limits only how far the batch is extended. It never shortens
+/// the batch that came in: 1..1000 with a `max_blocks` of 500 stays 1..1000.
+[[nodiscard]]
+uint32_t utxo_fast_batch_reach(uint32_t batch_start, uint32_t batch_end, uint32_t available,
+    uint32_t checkpoint_height, uint32_t max_blocks);
+
 /// Last height of the batch that starts at `batch_start` and could reach
 /// `batch_end`. It never crosses `checkpoint_height` (the trusted height): the
-/// blocks at or below it are their own batch. Above it, the batch holds at most
-/// `validated_blocks` blocks, whose parsed bodies and undo data stay in memory
-/// until the batch is applied.
+/// blocks at or below it are their own batch.
 [[nodiscard]]
-uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height,
-                        uint32_t validated_blocks);
+uint32_t utxo_batch_end(uint32_t batch_start, uint32_t batch_end, uint32_t checkpoint_height);
+
+/// How far a batch above the checkpoint that starts at `batch_start` may
+/// reach: as far as the `available` stored blocks allow and never more than
+/// `max_blocks` of them, with one block at the least. Such a batch is then cut
+/// by the bytes it holds when its blocks are read; its parsed bodies and undo
+/// data stay in memory until it is applied, and those follow the bytes.
+[[nodiscard]]
+uint32_t utxo_validated_batch_reach(uint32_t batch_start, uint32_t available, uint32_t max_blocks);
+
 
 /// How far the store holds bodies above the connected tip: the highest height H
 /// such that every block in (connected, H] on the active chain has its data on
@@ -138,7 +156,8 @@ using download_worker_launcher = std::function<void(
     block_download_task_output_channel& output,  // Single output: blocks + task_ended
     uint64_t task_id,            // this instance, so a late report cannot retire a newer one (#652)
     uint64_t coordinator_epoch,  // the range it belongs to; NOT index_.generation()
-    fast_validation_input_channel* fast_val = nullptr  // chunk-based fast validation (nullptr = old path)
+    fast_validation_input_channel* fast_val = nullptr,  // chunk-based fast validation (nullptr = old path)
+    std::chrono::seconds batch_timeout = std::chrono::seconds{60}  // time a peer has to deliver one chunk
 );
 
 // =============================================================================
@@ -199,16 +218,21 @@ using download_worker_launcher = std::function<void(
     chunk_validated_channel& output,
     uint32_t start_height,
     blockchain::header_organizer& organizer,  // advance finalization as blocks validate
-    std::atomic<uint32_t>* contiguous_out = nullptr  // publish contiguous height for utxo_build_task
+    std::atomic<uint32_t>* contiguous_out = nullptr,  // publish contiguous height for utxo_build_task
+    utxo_build_wake_channel* utxo_wake = nullptr      // rung after each publication
 );
 
 // =============================================================================
 // Incremental UTXO Build Task
 // =============================================================================
 //
-// Independent task that monitors contiguous_height and builds the UTXO set
-// incrementally by reading blocks from flat files (disk).
-// Runs in parallel with block_storage_task — zero coupling, zero buffering.
+// Independent task that builds the UTXO set incrementally, up to
+// contiguous_height, by reading blocks from flat files (disk).
+// Runs in parallel with block_storage_task — zero buffering.
+//
+// With nothing to build it waits on `wake` and holds no timer. Whoever changes
+// what it decides by rings that channel (see utxo_build_wake_channel); closing
+// it ends the task.
 //
 // =============================================================================
 
@@ -219,6 +243,7 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
@@ -228,6 +253,7 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,  // node-owned stop signal (e.g. network.stopped())
@@ -250,13 +276,19 @@ using download_worker_launcher = std::function<void(
 ::asio::awaitable<void> utxo_build_task(
     blockchain::block_chain& chain,
     std::atomic<uint32_t> const& contiguous_height,
+    utxo_build_wake_channel& wake,
     uint32_t start_height,
     domain::config::network network,
     std::function<bool()> should_stop,
     std::function<void(std::string const&)> on_fatal,
     utxo_build_progress_channel* progress,
     block_rejection_channel* rejections,
-    block_rejection_ack_channel* rejection_ack
+    block_rejection_ack_channel* rejection_ack,
+    // Heights the coordinator says nothing will be stored above until they are
+    // built (see utxo_build_remainder_channel). Up to the latest of them a
+    // batch is whatever is stored, however short and however far behind the
+    // chain is. Null: a short batch is built only once the chain is current.
+    utxo_build_remainder_channel* remainder = nullptr
 );
 
 } // namespace kth::node::sync

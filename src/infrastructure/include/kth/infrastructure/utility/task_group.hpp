@@ -104,6 +104,14 @@ public:
     //   - A callable returning awaitable<void>: tasks.spawn("name", [&]() -> awaitable<void> { ... })
     template<typename Coro>
     void spawn(std::string_view task_name, Coro&& coro) {
+        spawn_on(state_->executor, task_name, std::forward<Coro>(coro));
+    }
+
+    // The same, for a task that runs on an executor of its own instead of the
+    // group's: a stage that blocks its thread, say. It is a task of this group
+    // like any other and join() waits for it; the executor must outlive it.
+    template<typename Coro>
+    void spawn_on(::asio::any_io_executor executor, std::string_view task_name, Coro&& coro) {
         ++state_->active_count;
         ++state_->total_spawned;
 
@@ -111,7 +119,7 @@ public:
         auto state = state_;
         std::string name{task_name};
 
-        ::asio::co_spawn(state_->executor,
+        ::asio::co_spawn(std::move(executor),
             [state, name = std::move(name), c = std::forward<Coro>(coro)]() mutable -> ::asio::awaitable<void> {
                 spdlog::debug("[task_group:{}] START: {} (active: {})", state->name, name, state->active_count.load());
                 try {

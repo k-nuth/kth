@@ -10,18 +10,18 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <limits>
 #include <optional>
-#include <string>
-#include <unordered_set>
+#include <stop_token>
+#include <boost/unordered/unordered_flat_set.hpp>
 #include <utility>
-#include <variant>
 
 #include <asio/as_tuple.hpp>
 #include <asio/buffer.hpp>
 #include <asio/co_spawn.hpp>
+#include <asio/deferred.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/channel.hpp>
+#include <asio/experimental/channel_select.hpp>
 #include <asio/ip/address.hpp>
 #include <asio/read.hpp>
 #include <asio/steady_timer.hpp>
@@ -71,14 +71,6 @@ hash_digest merkle_parent(hash_digest const& left, hash_digest const& right) {
     return bitcoin_hash(build_chunk({left, right}));
 }
 
-// Certificate timestamps are U32 seconds (sv2-spec 4.5.2).
-std::optional<uint32_t> unix_time() {
-    auto const now = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    if (now < 0 || now > std::numeric_limits<uint32_t>::max()) return std::nullopt;
-    return static_cast<uint32_t>(now);
-}
-
 std::vector<hash_digest> coinbase_merkle_path(std::vector<transaction_const_ptr> const& txs) {
     // The unknown coinbase occupies index zero. Its hash does not affect any
     // sibling on its branch, so a placeholder gives the same path.
@@ -106,14 +98,25 @@ auto find_entry(Entries& entries, uint64_t id) {
 
 } // namespace
 
-void template_provider_session::set_tip(hash_digest const& previous) {
+void template_provider_session::set_tip(hash_digest const& previous, size_t height) {
     if (previous_ && *previous_ != previous) {
+        work_current_ = false;
         stale_through_ = next_id_ - 1;
-        // A block found on the replaced tip's work still competes at its
-        // height (sv2-spec 7). Work from any earlier tip is dropped.
-        replaced_ = std::exchange(templates_, {});
+        // A block found on the replaced tip's work still competes with the
+        // new tip when it would stand at the new tip's height (sv2-spec 7).
+        // That is so only when the tip is one block above the one this work
+        // was built on, whatever tips the chain went through in between: a
+        // chain that moved further, or back and up again to the same height,
+        // has left this work behind. Work from any earlier tip is dropped.
+        auto held = std::exchange(templates_, {});
+        if (height == tip_height_ + 1) {
+            replaced_ = std::move(held);
+        } else {
+            replaced_.clear();
+        }
     }
     previous_ = previous;
+    tip_height_ = height;
 }
 
 template_provider_session::entry*
@@ -185,9 +188,10 @@ template_provider_session::set_template(blockchain::mining_template value) {
         value.previous_block_hash, value.current_time, value.bits, target_bytes});
     bytes.insert(bytes.end(), activation.begin(), activation.end());
 
-    set_tip(value.previous_block_hash);
+    set_tip(value.previous_block_hash, value.height == 0 ? 0 : size_t(value.height) - 1);
     templates_.push_back({next_id_++, std::move(value), std::move(message.merkle_path), too_large, false});
     if (templates_.size() > max_templates) templates_.pop_front();
+    work_current_ = true;
     return {std::move(bytes), false};
 }
 
@@ -254,7 +258,18 @@ template_provider_session::result template_provider_session::process(
             if ( ! constraints) {
                 return close();
             }
+            // The same constraints again change nothing: the work this
+            // client holds already leaves that room.
+            if (constraints_
+                    && constraints_->coinbase_output_max_additional_size
+                        == constraints->coinbase_output_max_additional_size
+                    && constraints_->coinbase_output_max_additional_sigops
+                        == constraints->coinbase_output_max_additional_sigops) {
+                return {};
+            }
             constraints_ = *constraints;
+            // The work sent so far leaves the room the old constraints asked for.
+            work_current_ = false;
             return {{}, false, true};
         }
         case request_transaction_data::message_type: {
@@ -317,52 +332,21 @@ template_provider_session::result template_provider_session::process(
 }
 
 template_provider::template_provider(sv2_settings const& settings,
-    ::asio::any_io_executor executor, blockchain::block_chain& chain)
+    ::asio::any_io_executor executor, blockchain::block_chain& chain,
+    mining::doorbell& work_changes)
     : settings_(settings)
     , chain_(chain)
     , owner_(::asio::make_strand(executor))
     , stop_requests_(owner_, 1)
     , listening_(owner_, 1)
+    , work_changes_(work_changes)
 {}
 
-::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket) {
+::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket,
+    mining::doorbell& closed) {
     using namespace ::asio::experimental::awaitable_operators;
 
-    std::optional<noise_transport> transport;
-    if (credentials_) {
-        ::asio::steady_timer deadline(owner_);
-        deadline.expires_after(std::chrono::seconds(settings_.handshake_timeout_seconds));
-        auto exchange = [&]() -> ::asio::awaitable<bool> {
-            byte_array<64> first{};
-            auto [read_error, count] = co_await ::asio::async_read(socket,
-                ::asio::buffer(first), ::asio::as_tuple(::asio::use_awaitable));
-            if (read_error) co_return false;
-            auto const now = unix_time();
-            auto const certificate = now ? credentials_->certificate_at(*now) : std::nullopt;
-            if ( ! certificate) {
-                spdlog::error("[sv2] Noise certificate is not valid now; renew it and restart");
-                co_return false;
-            }
-            noise_responder responder(noise_keypair::generate(), credentials_->static_key,
-                *certificate);
-            auto const second = responder.respond(first);
-            if ( ! second) co_return false;
-            auto [write_error, written] = co_await ::asio::async_write(socket,
-                ::asio::buffer(*second), ::asio::as_tuple(::asio::use_awaitable));
-            if (write_error) co_return false;
-            transport.emplace(*responder.keys(), false, template_provider_session::max_payload_size);
-            co_return true;
-        };
-        // Join the cancelled operation before its buffers leave this scope.
-        // The deadline covers both flights; it is never extended by input.
-        auto const outcome = co_await (exchange()
-            || deadline.async_wait(::asio::as_tuple(::asio::use_awaitable)));
-        if (outcome.index() != 0 || ! std::get<0>(outcome)) co_return;
-    }
-
     template_provider_session session;
-    auto tips = chain_.subscribe_blockchain();
-    if ( ! tips) co_return;
 
     enum class event_kind { frame, tip, end };
     struct event {
@@ -381,35 +365,31 @@ template_provider::template_provider(sv2_settings const& settings,
         socket.close(ignored);
         inbox.cancel();
         inbox.close();
-        tips->cancel();
-        tips->close();
+        closed.close();
     };
-    detail::scope_action cleanup([&] {
-        end_inputs();
-        chain_.unsubscribe_blockchain(tips);
-    }, true);
+    detail::scope_action cleanup(end_inputs, true);
+
+    // Rung by dispatch once the client has sent its coinbase constraints:
+    // from then on it is a client waiting for work, for as long as it likes.
+    mining::doorbell set_up{1};
+    auto await_setup = [&]() -> ::asio::awaitable<void> {
+        using namespace ::asio::experimental;
+        auto const executor = co_await ::asio::this_coro::executor;
+        auto completion = co_await make_select(
+            receive(closed),
+            receive(set_up),
+            after(std::chrono::steady_clock::now() + setup_timeout)
+        ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+        auto const& [ec, selected] = completion;
+        if (selected.index == 2) {
+            spdlog::debug("[sv2] Closing a connection that did not complete its setup in time");
+            end_inputs();
+        }
+    };
 
     auto read_frames = [&]() -> ::asio::awaitable<void> {
         std::array<uint8_t, message_header::size> header_bytes{};
-        std::array<uint8_t, 8192> encrypted{};
         for (;;) {
-            if (transport) {
-                auto [read_error, size] = co_await socket.async_read_some(
-                    ::asio::buffer(encrypted), ::asio::as_tuple(::asio::use_awaitable));
-                if (read_error) break;
-                auto frames = transport->feed(byte_span(encrypted).first(size));
-                if ( ! frames) break;
-                for (auto const& bytes : *frames) {
-                    auto const header = from_data_chunk<message_header>(
-                        byte_span(bytes).first(message_header::size));
-                    data_chunk payload(bytes.begin() + message_header::size, bytes.end());
-                    auto [error] = co_await inbox.async_send(std::error_code{},
-                        event{event_kind::frame, *header, std::move(payload)},
-                        ::asio::as_tuple(::asio::use_awaitable));
-                    if (error) co_return;
-                }
-                continue;
-            }
             auto [header_error, header_size] = co_await ::asio::async_read(socket,
                 ::asio::buffer(header_bytes), ::asio::as_tuple(::asio::use_awaitable));
             if (header_error) break;
@@ -431,20 +411,34 @@ template_provider::template_provider(sv2_settings const& settings,
             ::asio::as_tuple(::asio::use_awaitable));
     };
     auto receive_tips = [&]() -> ::asio::awaitable<void> {
+        using namespace ::asio::experimental;
+        auto const executor = co_await ::asio::this_coro::executor;
+        // In this order: a connection that is gone ends the wait even when
+        // the work changed too.
+        channel_select_options options;
+        options.biased = true;
         for (;;) {
-            auto [error, height, incoming, outgoing] = co_await tips->async_receive(
-                ::asio::as_tuple(::asio::use_awaitable));
-            if (error) {
-                inbox.cancel();
-                inbox.close();
-                co_return;
+            // Taken before the tip is read, so a change after that read
+            // finds it.
+            auto const watched = work_.watch();
+            auto const view = chain_.chain_view();
+            if ( ! view || ! session.has_work_for(view->tip_hash)) {
+                // The mining work changes with the mempool too; only another
+                // tip, or a tip this client has no template for, is passed on.
+                // Read from the session, which dispatch alone changes: a tip
+                // the chain left and came back to is one it has no work for.
+                auto [send_error] = co_await inbox.async_send(std::error_code{},
+                    event{event_kind::tip, {}, {}}, ::asio::as_tuple(::asio::use_awaitable));
+                if (send_error) co_return;
             }
-            auto [send_error] = co_await inbox.async_send(std::error_code{},
-                event{event_kind::tip, {}, {}}, ::asio::as_tuple(::asio::use_awaitable));
-            if (send_error) co_return;
+            auto completion = co_await make_select(
+                receive(closed),
+                receive(*watched)
+            ).async_wait(executor, options, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+            auto const& [ec, selected] = completion;
+            if (selected.index == 0) co_return;
         }
     };
-    std::optional<hash_digest> sent_previous;
     auto next_template = [&]() -> ::asio::awaitable<template_provider_session::result> {
         auto const& constraints = *session.constraints();
         auto value = co_await chain_.fetch_mining_template(blockchain::coinbase_reserve{
@@ -460,7 +454,6 @@ template_provider::template_provider(sv2_settings const& settings,
                 value.error().message());
             co_return template_provider_session::result{};
         }
-        sent_previous = value->previous_block_hash;
         co_return session.set_template(std::move(*value));
     };
     auto dispatch = [&]() -> ::asio::awaitable<void> {
@@ -472,31 +465,22 @@ template_provider::template_provider(sv2_settings const& settings,
                 ::asio::as_tuple(::asio::use_awaitable));
             if (error || input.kind == event_kind::end) co_return;
             auto const view = chain_.chain_view();
-            if (view) session.set_tip(view->tip_hash);
+            if (view) session.set_tip(view->tip_hash, view->connected_tip_height);
 
             template_provider_session::result result;
             if (input.kind == event_kind::tip) {
-                if ( ! session.constraints() || (view && sent_previous == view->tip_hash)) continue;
+                if ( ! session.constraints() || (view && session.has_work_for(view->tip_hash))) continue;
                 result = co_await next_template();
             } else {
                 result = session.process(input.header, input.payload);
+                // Before anything is awaited for this client: the time a
+                // template or its write takes is not the client's.
+                if (session.constraints()) (void)set_up.try_send(std::monostate{});
+                // The session counts the tip as one this client has no work
+                // for until work for the new constraints is sent.
                 if (result.constraints_changed) result = co_await next_template();
             }
             if ( ! result.response.empty()) {
-                if (transport) {
-                    data_chunk encrypted;
-                    byte_span remaining(result.response);
-                    while ( ! remaining.empty()) {
-                        auto const header = from_data_chunk<message_header>(
-                            remaining.first(message_header::size));
-                        auto const size = message_header::size + header->msg_length;
-                        auto bytes = transport->encrypt_frame(remaining.first(size));
-                        if ( ! bytes) co_return;
-                        encrypted.insert(encrypted.end(), bytes->begin(), bytes->end());
-                        remaining = remaining.subspan(size);
-                    }
-                    result.response = std::move(encrypted);
-                }
                 auto [write_error, written] = co_await ::asio::async_write(socket,
                     ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
                 if (write_error) co_return;
@@ -513,7 +497,7 @@ template_provider::template_provider(sv2_settings const& settings,
             }
         }
     };
-    co_await (read_frames() && receive_tips() && dispatch());
+    co_await (read_frames() && receive_tips() && dispatch() && await_setup());
 }
 
 void template_provider::stop() {
@@ -545,21 +529,6 @@ void template_provider::stop() {
         co_return;
     }
 
-    if (settings_.noise) {
-        credentials_.reset();
-        auto const now = unix_time();
-        std::string error;
-        if (now) credentials_ = load_noise_credentials(settings_, *now, error);
-        if ( ! credentials_) {
-            spdlog::error("[sv2] Cannot start Noise listener: {}",
-                error.empty() ? "clock outside certificate timestamp range" : error);
-            (void)listening_.try_send(std::make_error_code(std::errc::invalid_argument), uint16_t{});
-            co_return;
-        }
-        spdlog::info("[sv2] Noise authority public key: {}",
-            noise_authority_key(credentials_->authority_public_key));
-    }
-
     tcp::endpoint const endpoint(address, settings_.port);
     tcp::acceptor acceptor(owner_);
     acceptor.open(endpoint.protocol(), ec);
@@ -589,20 +558,29 @@ void template_provider::stop() {
         co_return;
     }
     (void)listening_.try_send(std::error_code{}, bound.port());
-    spdlog::info("[sv2] Template Provider listening on {}:{} ({})", settings_.bind,
-        bound.port(), settings_.noise ? "Noise" : "plaintext");
+    spdlog::info("[sv2] Template Provider listening on {}:{} (plaintext)", settings_.bind,
+        bound.port());
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.
-    constexpr std::size_t capacity = 64;
+    constexpr size_t capacity = 64;
     ::asio::experimental::channel<void(std::error_code, std::exception_ptr)> ended(owner_, capacity);
-    std::unordered_set<std::shared_ptr<tcp::socket>> connections;
-    std::size_t pending = 0;
+    // A connection's socket with the doorbell that ends its wait for work,
+    // closed by the connection itself when its inputs end.
+    struct connection {
+        tcp::socket socket;
+        mining::doorbell closed{1};
+    };
+    boost::unordered_flat_set<std::shared_ptr<connection>> connections;
+    // Closed to end the task that rings work_.
+    mining::doorbell work_watch_ends{1};
+    size_t pending = 0;
     bool stopping = false;
     ::asio::steady_timer accept_retry(owner_);
     std::exception_ptr failure;
     auto close_owned = [&] {
         stopping = true;
+        work_watch_ends.close();
         std::error_code ignored;
         acceptor.close(ignored);
         try {
@@ -611,8 +589,9 @@ void template_provider::stop() {
             // A timer-service error must not bypass closing or joining children.
             if ( ! failure) failure = std::current_exception();
         }
-        for (auto const& socket : connections) {
-            socket->close(ignored);
+        for (auto const& child : connections) {
+            // Its reader then ends the connection, which closes its doorbell.
+            child->socket.close(ignored);
         }
     };
     auto reap = [&]() -> ::asio::awaitable<void> {
@@ -645,17 +624,17 @@ void template_provider::stop() {
                     socket.close(ignored);
                     break;
                 }
-                auto child = std::make_shared<tcp::socket>(std::move(socket));
+                auto child = std::make_shared<connection>(std::move(socket));
                 connections.insert(child);
                 ++pending;
                 // co_spawn's completion adapter only publishes an owned result.
                 // It runs on the same strand; its captures cannot outlive the
                 // drain below, even for partial frames or handler errors.
                 try {
-                    ::asio::co_spawn(owner_, serve_connection(*child),
+                    ::asio::co_spawn(owner_, serve_connection(child->socket, child->closed),
                         [&, child](std::exception_ptr error) {
                             std::error_code ignored;
-                            child->close(ignored);
+                            child->socket.close(ignored);
                             connections.erase(child);
                             (void)ended.try_send(std::error_code{}, error);
                         });
@@ -683,7 +662,10 @@ void template_provider::stop() {
         spdlog::info("[sv2] Stop received; closing listener and {} connections", connections.size());
         close_owned();
     };
-    co_await (accept_connections() && receive_stop());
+    // Turns each ring of the node's work changes into a wake for every
+    // connection; each reads the chain again.
+    co_await (accept_connections() && receive_stop()
+        && mining::ring_on_work_changes(work_changes_, work_, work_watch_ends));
     spdlog::info("[sv2] Listener stopped; all connections joined");
     if (failure) std::rethrow_exception(failure);
 }

@@ -17,6 +17,12 @@ settings::settings()
     , refresh_transactions(true)
     , compact_blocks_high_bandwidth(true)
     , ds_proofs_enabled(false)
+    , compact_filters(false)
+#if defined(KTH_WITH_BLOOM_FILTERS)
+    , bloom_filters(true)
+#else
+    , bloom_filters(false)
+#endif
 {}
 
 // There are no current distinctions spanning chain contexts.
@@ -36,19 +42,6 @@ rpc_settings::rpc_settings()
     , password()
     , gbt_cache_size(10)
     , gbt_store_time(3600)
-{}
-
-sv2_settings::sv2_settings()
-    : enabled(false)
-    , bind("127.0.0.1")
-    , port(8442)
-    , noise(true)
-    , static_key_file(".sv2-static-key")
-    , authority_key_file(".sv2-authority-key")
-    , certificate_file()
-    , authority_public_key()
-    , certificate_validity_seconds(30 * 24 * 60 * 60)
-    , handshake_timeout_seconds(10)
 {}
 
 } // namespace kth::node

@@ -8,9 +8,10 @@
 #include <memory>
 #include <limits>
 #include <system_error>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/unordered/unordered_flat_map.hpp>
 
 #include <asio/cancellation_state.hpp>
 #include <asio/post.hpp>
@@ -75,7 +76,7 @@ awaitable_expected<std::vector<mempool_entry>> refresh_on_chain_executor(
     co_await ::asio::post(owner, ::asio::use_awaitable);
     if (cancelled()) co_return std::unexpected(error::service_stopped);
     auto const count = entries.size();
-    std::unordered_map<hash_digest, size_t, digest_hasher> index;
+    boost::unordered_flat_map<hash_digest, size_t, digest_hasher> index;
     index.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         if (yield_due()) {

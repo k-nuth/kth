@@ -2,10 +2,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <asio/as_tuple.hpp>
+#include <asio/deferred.hpp>
+#include <asio/experimental/channel_select.hpp>
+#include <asio/this_coro.hpp>
 #include <kth/node/sync/tip_announcement.hpp>
+
+#include <memory>
+#include <utility>
 
 #include <kth/domain/message/headers.hpp>
 #include <kth/domain/message/inventory.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -50,7 +58,8 @@ std::optional<tip_announcement> next_tip_announcement(blockchain::header_index c
 }
 
 ::asio::awaitable<void> announce_tip(blockchain::header_index const& index,
-    network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced) {
+    network::peer_session& peer, hash_digest const& tip, std::optional<hash_digest>& last_announced,
+    compact_block_source compact) {
 
     // Nothing announced to this peer yet: it is taken to hold the tip's
     // parent, what the node connected before. If it does not, the headers do
@@ -69,8 +78,17 @@ std::optional<tip_announcement> next_tip_announcement(blockchain::header_index c
         co_return;
     }
     last_announced = tip;
+    // BIP152 high bandwidth: one new block on what the peer was last told
+    // about goes out whole but for the transactions its mempool should hold.
+    // Further than that the peer could not connect it, as with headers.
+    domain::message::compact_block::const_ptr compact_tip;
+    if (announcement->headers.size() == 1 && peer.prefers_compact_blocks() && compact) {
+        compact_tip = co_await compact(tip);
+    }
     code ec;
-    if ( ! announcement->headers.empty() && peer.prefers_headers()) {
+    if (compact_tip) {
+        ec = co_await peer.send_data(*compact_tip);
+    } else if ( ! announcement->headers.empty() && peer.prefers_headers()) {
         auto headers = domain::message::headers::create(announcement->headers);
         if ( ! headers) {
             co_return;
@@ -86,6 +104,75 @@ std::optional<tip_announcement> next_tip_announcement(blockchain::header_index c
     }
     if (ec) {
         spdlog::debug("[tip_announcement] Could not announce to [{}]: {}", peer.authority(), ec.message());
+    }
+}
+
+compact_tip_source::compact_tip_source(blockchain::block_chain const& chain)
+    : chain_(chain)
+    , requests_(16)
+{}
+
+::asio::awaitable<domain::message::compact_block::const_ptr> compact_tip_source::get(hash_digest const& hash) {
+    auto executor = co_await ::asio::this_coro::executor;
+    auto const answer = std::make_shared<answer_channel>(1);
+    // Waits for room, then for the answer: run() answers every request it
+    // takes, and closes the channel when it ends.
+    auto asked = co_await ::asio::experimental::make_select(
+        ::asio::experimental::send(requests_, request{hash, answer})
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    if (std::get<0>(asked)) {
+        co_return nullptr;
+    }
+    auto completion = co_await ::asio::experimental::make_select(
+        ::asio::experimental::receive(*answer)
+    ).async_wait(executor, {}, std::stop_token{}, ::asio::as_tuple(::asio::deferred));
+    auto& [ec, selected] = completion;
+    if (ec) {
+        co_return nullptr;
+    }
+    co_return std::move(*selected.value<0>());
+}
+
+::asio::awaitable<void> compact_tip_source::run(std::stop_token stop) {
+    auto executor = co_await ::asio::this_coro::executor;
+    // Owned here: the one cmpctblock held, and the block it is of.
+    hash_digest held_hash = null_hash;
+    domain::message::compact_block::const_ptr held;
+
+    auto const answer = [&](request const& asked) -> ::asio::awaitable<void> {
+        if ( ! held || held_hash != asked.hash) {
+            auto const block = co_await chain_.fetch_block(asked.hash);
+            if ( ! block || block->first->transactions().empty()) {
+                spdlog::debug("[tip_announcement] No cmpctblock for {}: the block could not be read",
+                    encode_hash(asked.hash));
+                (void)asked.answer->try_send(nullptr);
+                co_return;
+            }
+            held = std::make_shared<domain::message::compact_block const>(
+                domain::message::compact_block::factory_from_block(*block->first));
+            held_hash = asked.hash;
+        }
+        auto shared = held;
+        (void)asked.answer->try_send(std::move(shared));
+    };
+
+    while ( ! stop.stop_requested()) {
+        auto completion = co_await ::asio::experimental::make_select(
+            ::asio::experimental::receive(requests_)
+        ).async_wait(executor, {}, stop, ::asio::as_tuple(::asio::deferred));
+        auto& [ec, selected] = completion;
+        if (ec) {
+            break;
+        }
+        co_await answer(*selected.value<0>());
+    }
+
+    // Nobody is left waiting: later requests are refused, and those already
+    // queued are told there is none.
+    requests_.close();
+    std::error_code drained;
+    while (auto const left = requests_.try_receive(drained)) {
+        (void)left->answer->try_send(nullptr);
     }
 }
 
