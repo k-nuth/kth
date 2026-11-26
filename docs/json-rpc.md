@@ -114,6 +114,7 @@ counterpart.
 | `getmempoolancestors` | `kth_chain_get_mempool_ancestors` | `get_mempool_ancestors()` |
 | `getmempooldescendants` | `kth_chain_get_mempool_descendants` | `get_mempool_descendants()` |
 | `getblocktemplate` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` (long polling: `chain_view()`, `mempool_ref().generation()`, `tip_changes()`, `mempool_ref().changes()`) |
+| `getblocktemplate` (`"mode":"proposal"`, BIP23) | — (no C-API counterpart yet) | `test_block_proposal(block)` |
 | `getblocktemplatelight` | `kth_chain_sync_mining_template` / `kth_chain_async_mining_template` | `fetch_mining_template()` |
 | `getmininginfo` | `kth_chain_sync_mining_info` / `kth_chain_async_mining_info` | `fetch_mining_info()` |
 | `submitblock` | `kth_chain_sync_submit_block` / `kth_chain_async_submit_block` | `submit_block(block)` |
@@ -255,9 +256,52 @@ sigchecks, from the captured selection), `coinbaseaux`, `coinbasevalue`,
 `longpollid`, `target`, `mintime`, `mutable`, `noncerange`, `sigoplimit` (the
 block's sigchecks limit), `sizelimit`, `curtime`, `bits` and `height`. It is the
 same template `getblocktemplatelight` serves, so the two agree on the selection.
-Only `template` mode is supported. Fees and sigchecks are captured with the
-selected transactions and remain unchanged when a cached template is served
-after mempool changes.
+`capabilities` is `["proposal"]`: the node takes a block back in proposal mode
+(below). Fees and sigchecks are captured with the selected transactions and
+remain unchanged when a cached template is served after mempool changes.
+`mode` is `"template"` (the default) or `"proposal"`; any other mode is a
+`-32602` error.
+
+### Proposal mode (BIP23)
+
+`getblocktemplate [{"mode":"proposal","data":"<block hex>"}]` asks what the
+node would make of a whole block if it were submitted now, without storing or
+connecting it. Pools use it to check a block a miner built from its own
+template, as in Stratum V2 Job Declaration. The block is judged as the next
+block on the connected tip with every check `submitblock` applies except proof
+of work: its header as header validation judges every header (bits as the next
+work required, including a test network's minimum-difficulty rule for a block
+stamped more than two of its intervals after its parent; checkpoints; the
+version; a timestamp after the median time past and at most two hours ahead),
+its merkle root, and its body against the UTXO set as of the tip (block size
+against the adaptive limit, the coinbase's height and value, finality,
+canonical order, every transaction's inputs, scripts, SigChecks and
+CashTokens, and double spends within the block). The UTXO set is only read,
+and nothing about the block is kept: proposed again, it is judged again.
+
+The answer is BIP22's:
+
+- `null`: valid as the next block, proof of work aside.
+- `"duplicate"`, `"duplicate-invalid"` or `"duplicate-inconclusive"`: the node
+  holds the block already, connected on the active chain, refused, or with no
+  verdict (a header without its body, a side branch). It is not judged again.
+- `"inconclusive-not-best-prevblk"`: the block is built on another block than
+  the connected tip, so it is not judged. A block whose tip moved while it was
+  judged, twice, gets the same answer: the verdict would describe no state.
+- Otherwise the reason it is refused, as `submitblock` gives it: for example
+  `"bad-cb-amount"`, `"bad-txnmrklroot"`, `"bad-diffbits"`, `"bad-cb-height"`,
+  `"time-too-old"`, `"time-too-new"`, `"bad-version(0x00000001)"`, `"tx-ordering"`,
+  `"bad-txns-inputs-missingorspent"` or `"bad-txns-premature-spend-of-coinbase"`.
+  An input script that fails, or a SigChecks limit exceeded, is
+  `"blk-bad-inputs"`, whatever the script error. A rule with no specific
+  reason is `"rejected"`.
+
+`data` must be a string (`-3`, "Missing data String key for proposal"). Data
+that is not hex, does not decode as a block, or has bytes after the block is
+`-22`, "Block decode failed". The rest of the request is not read: a proposal
+does not long-poll. A node that is stopping answers `-28`, and one whose store
+did not answer `-25`. The block is judged on the chain's thread pool, and a
+block connected meanwhile does not wait for it.
 
 ### Long polling
 

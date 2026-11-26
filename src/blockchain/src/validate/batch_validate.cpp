@@ -161,7 +161,12 @@ code validate_block_batch(
     return validate_block_batch(chain, settings, network, blocks, txids, start_height, rejection);
 }
 
-code validate_block_batch(
+namespace {
+
+// validate_block_batch, on the branch `branch` names when it is given: the
+// index entry that stands in for the last block's own, for a block the index
+// does not hold (validate_block_proposal). Empty reads the last block's entry.
+code validate_batch_on(
     block_chain& chain,
     settings const& settings,
     domain::config::network network,
@@ -169,22 +174,31 @@ code validate_block_batch(
     std::span<hash_list const> txids,
     size_t start_height,
     batch_rejection& rejection,
-    [[maybe_unused]] database::header_abla_record const* unpublished_parent) {
+    [[maybe_unused]] database::header_abla_record const* unpublished_parent,
+    [[maybe_unused]] std::optional<header_index::index_t> branch) {
 
     if (blocks.empty()) {
         return error::success;
     }
 
-    // Every refusal leaves through one of these two, so the report cannot drift
-    // from the verdict. `refuse` names the block; `fault` is for a failure that
-    // is not any block's — a store that did not answer, a state that could not
-    // be derived — and names none.
+    // Every refusal leaves through one of these, so the report cannot drift
+    // from the verdict. `refuse` names the block, and `refuse_script` names it
+    // as refused by the script checks; `fault` is for a failure that is not any
+    // block's — a store that did not answer, a state that could not be derived
+    // — and names none.
     auto const refuse = [&rejection](size_t block, code ec) {
         rejection.block = block;
+        rejection.script = false;
+        return ec;
+    };
+    auto const refuse_script = [&rejection](size_t block, code ec) {
+        rejection.block = block;
+        rejection.script = true;
         return ec;
     };
     auto const fault = [&rejection](code ec) {
         rejection.block.reset();
+        rejection.script = false;
         return ec;
     };
 
@@ -274,7 +288,7 @@ code validate_block_batch(
         for (size_t i = 0; i < blocks.size(); ++i) {
             sizes[i] = alone[i].size;
         }
-        auto const last_idx = header_index.find(blocks.back()->hash());
+        auto const last_idx = branch ? *branch : header_index.find(blocks.back()->hash());
         if (last_idx == header_index::null_index) {
             return fault(error::not_found);
         }
@@ -899,7 +913,7 @@ code validate_block_batch(
                 encode_base16(to_data_chunk(inputs[ii].script(), false)));
             break;
         }
-        return refuse(task.height - start_height, task_errors[t]);
+        return refuse_script(task.height - start_height, task_errors[t]);
     }
 
     // -----------------------------------------------------------------------
@@ -922,9 +936,73 @@ code validate_block_batch(
     size_t over_limit = 0;
     if (auto const ec = enforce_sigcheck_limits(
             entries, block_sigcheck_limit, block_tx_sigcheck_limit, over_limit); ec) {
-        return refuse(over_limit, ec);
+        return refuse_script(over_limit, ec);
     }
     return error::success;
+}
+
+} // namespace
+
+code validate_block_batch(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    std::vector<block_const_ptr> const& blocks,
+    std::span<hash_list const> txids,
+    size_t start_height,
+    batch_rejection& rejection,
+    database::header_abla_record const* unpublished_parent) {
+    return validate_batch_on(chain, settings, network, blocks, txids, start_height, rejection,
+        unpublished_parent, std::nullopt);
+}
+
+code validate_block_proposal(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    block_const_ptr const& block,
+    size_t height,
+    header_index::index_t parent,
+    batch_rejection& rejection) {
+    rejection = batch_rejection{};
+    if ( ! block || height == 0 || parent == header_index::null_index) {
+        return error::operation_failed;
+    }
+    auto const& index = chain.headers();
+    if (index.get_height(parent) < 0 || size_t(index.get_height(parent)) + 1 != height) {
+        return error::operation_failed;
+    }
+
+    // The header, as header validation judges every header, proof of work
+    // aside. A verdict, attributed to the one block there is. accept_full
+    // fails with a local code only when the state cannot be built from the
+    // index, which is no verdict.
+    auto const& header = block->header();
+    auto const hash = block->hash();
+    validate_header const validator(settings, network);
+    if (auto const ec = validator.accept_full(header, hash, height, parent, index); ec) {
+        if (ec == error::operation_failed || ec == error::not_found) {
+            return ec;
+        }
+        rejection.block = 0;
+        return ec;
+    }
+    // The other half of validate_header::check, whose proof of work is not
+    // asked of a proposal.
+    if ( ! header.is_valid_timestamp()) {
+        rejection.block = 0;
+        return error::futuristic_timestamp;
+    }
+
+    // The body, as the fast path checks it before storage and the connect
+    // path then judges it: the merkle root first, then everything else.
+    std::vector<hash_list> txids{block->to_hashes()};
+    if ( ! block->is_valid_merkle_root(txids.front())) {
+        rejection.block = 0;
+        return error::merkle_mismatch;
+    }
+    return validate_batch_on(chain, settings, network, std::vector<block_const_ptr>{block}, txids,
+        height, rejection, nullptr, parent);
 }
 
 std::expected<parsed_block_batch, batch_parse_failure>

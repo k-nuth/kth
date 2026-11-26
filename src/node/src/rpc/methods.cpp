@@ -254,11 +254,16 @@ get_block_template_light(method_context& ctx, request const& /*req*/) {
     }
 }
 
+::asio::awaitable<std::expected<std::string, rpc_error>>
+propose_block(method_context& ctx, std::string_view data);
+
 // getblocktemplate [template_request] -> the next-block template with its
 // transactions in full (BIP22), for pools that build and submit whole blocks.
-// Only "template" mode; "proposal" is refused. The request's capabilities and
-// rules ask for nothing this template leaves out. A request that sends back a
-// template's longpollid is held until that template is out of date.
+// The request's capabilities and rules ask for nothing this template leaves
+// out. A request that sends back a template's longpollid is held until that
+// template is out of date. In "proposal" mode (BIP23) the request carries a
+// block in "data" instead, and the answer is what the node makes of it
+// (propose_block).
 // C-API counterpart: kth_chain_async_fetch_mining_template.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_block_template(method_context& ctx, request const& req) {
@@ -276,6 +281,7 @@ get_block_template(method_context& ctx, request const& req) {
     }
     size_t count = 0;
     std::optional<std::string> longpollid;
+    std::optional<std::string_view> proposal;
     for (auto element : params) {
         simdjson::ondemand::object request_object;
         if (count++ != 0 || element.get_object().get(request_object) != simdjson::SUCCESS) {
@@ -287,9 +293,20 @@ get_block_template(method_context& ctx, request const& req) {
             if (mode_error != simdjson::SUCCESS) {
                 co_return invalid_params();
             }
+            if (mode == "proposal") {
+                // BIP23 reads the block and nothing else of the request, as
+                // BCHN does: a proposal has no template to long-poll for.
+                std::string_view data;
+                if (request_object["data"].get_string().get(data) != simdjson::SUCCESS) {
+                    co_return kth::fail(make_error(error_code::type_error,
+                        "Missing data String key for proposal"));
+                }
+                proposal.emplace(data);
+                continue;
+            }
             if (mode != "template") {
                 co_return kth::fail(make_error(error_code::invalid_params,
-                    "only template mode is supported"));
+                    R"(mode must be "template" or "proposal")"));
             }
         }
         std::string_view id;
@@ -300,6 +317,9 @@ get_block_template(method_context& ctx, request const& req) {
             }
             longpollid.emplace(id);
         }
+    }
+    if (proposal) {
+        co_return co_await propose_block(ctx, *proposal);
     }
 
     // An id that names another tip, or no state this node gave out, is
@@ -455,6 +475,20 @@ std::optional<std::string> bip22_reject_reason(code const& ec, uint32_t version)
     return std::nullopt;
 }
 
+// The answer for a block the node holds already, by what it knows of it.
+[[nodiscard]]
+std::string_view duplicate_reason(blockchain::block_validity validity) {
+    switch (validity) {
+        case blockchain::block_validity::valid:
+            return "duplicate";
+        case blockchain::block_validity::invalid:
+            return "duplicate-invalid";
+        case blockchain::block_validity::unknown:
+            break;
+    }
+    return "duplicate-inconclusive";
+}
+
 // Full and light RPC submissions share the complete admission response.
 [[nodiscard]]
 std::expected<std::string, rpc_error> render_block_submission(
@@ -468,17 +502,7 @@ std::expected<std::string, rpc_error> render_block_submission(
     }
     if (result.duplicate) {
         writer w;
-        switch (result.validity) {
-            case blockchain::block_validity::valid:
-                w.value("duplicate");
-                break;
-            case blockchain::block_validity::invalid:
-                w.value("duplicate-invalid");
-                break;
-            case blockchain::block_validity::unknown:
-                w.value("duplicate-inconclusive");
-                break;
-        }
+        w.value(duplicate_reason(result.validity));
         return w.str();
     }
     writer w;
@@ -498,6 +522,64 @@ std::expected<std::string, rpc_error> render_block_submission(
         return kth::fail(make_error(error_code::verify_error, ec.message()));
     }
     return w.str();
+}
+
+// A proposal's answer, as BIP22 and BIP23 spell it. A refusal by the script
+// checks is "blk-bad-inputs" whatever the script error was, which is the one
+// reason BCHN gives a block for it.
+[[nodiscard]]
+std::expected<std::string, rpc_error> render_block_proposal(
+    blockchain::block_proposal_result const& result, uint32_t version) {
+    using outcome = blockchain::block_proposal_result::outcome;
+    writer w;
+    switch (result.result) {
+        case outcome::valid:
+            w.value_null();
+            break;
+        case outcome::duplicate:
+            w.value(duplicate_reason(result.validity));
+            break;
+        case outcome::not_on_tip:
+            w.value("inconclusive-not-best-prevblk");
+            break;
+        case outcome::invalid:
+            if (result.script) {
+                w.value("blk-bad-inputs");
+            } else if (auto reason = bip22_reject_reason(result.error, version)) {
+                w.value(*reason);
+            } else {
+                w.value("rejected");
+            }
+            break;
+        case outcome::failed:
+            if (result.error == error::service_stopped) {
+                return kth::fail(make_error(error_code::in_warmup, result.error.message()));
+            }
+            return kth::fail(make_error(error_code::verify_error, result.error.message()));
+    }
+    return w.str();
+}
+
+// getblocktemplate {"mode":"proposal","data":"<block hex>"} (BIP23) -> null when
+// the block would be valid as the next block on the connected tip, proof of
+// work aside; "duplicate", "duplicate-invalid" or "duplicate-inconclusive" for a
+// block the node holds; "inconclusive-not-best-prevblk" when its parent is not
+// the connected tip; otherwise the reason it is refused. Nothing is stored.
+// A block that does not decode, or has bytes after it, is error -22.
+::asio::awaitable<std::expected<std::string, rpc_error>>
+propose_block(method_context& ctx, std::string_view data) {
+    auto const raw = decode_base16(data);
+    if ( ! raw) {
+        co_return kth::fail(make_error(error_code::deserialization_error, "Block decode failed"));
+    }
+    byte_reader reader(*raw);
+    auto block = domain::message::block::from_data(reader, 0u);
+    if ( ! block || reader.remaining_size() != 0) {
+        co_return kth::fail(make_error(error_code::deserialization_error, "Block decode failed"));
+    }
+    auto const proposed = std::make_shared<domain::message::block const>(std::move(*block));
+    auto const result = co_await ctx.chain.test_block_proposal(proposed);
+    co_return render_block_proposal(result, proposed->header().version());
 }
 
 // submitblock -> submit a full wire block, with an optional ignored second arg.

@@ -163,7 +163,7 @@ TEST_CASE("render_block_template serializes the GBT fields with the transactions
         return encode_base16(to_data_chunk(chain_tx, /*wire*/ true));
     };
     REQUIRE(json ==
-        std::string(R"({"capabilities":[],"version":536870912,)") +
+        std::string(R"({"capabilities":["proposal"],"version":536870912,)") +
         R"("previousblockhash":"0000000000000000000000000000000000000000000000000000000000000000",)" +
         R"("transactions":[{"data":")" + hex(parent) + R"(","txid":")" + encode_hash(parent->hash()) +
         R"(","hash":")" + encode_hash(parent->hash()) + R"(","fee":300,"sigops":2},)" +

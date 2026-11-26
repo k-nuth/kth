@@ -1228,8 +1228,10 @@ TEST_CASE("getblocktemplate dispatch serves the template with its transactions",
     REQUIRE(request(R"([{"capabilities":["coinbasetxn","workid","coinbase/append"]}])").find(R"("error":null)") !=
         std::string::npos);
     REQUIRE(request("[]").find(R"("error":null)") != std::string::npos);
+    // The template says it takes a proposal back (BIP23).
+    REQUIRE(reply.starts_with(R"({"result":{"capabilities":["proposal"],"version":)"));
     REQUIRE(request(R"([{"mode":"proposal","data":"00"}])") ==
-        node::rpc::build_error("11", -32602, "only template mode is supported"));
+        node::rpc::build_error("11", -22, "Block decode failed"));
 
     // A cache hit must retain metadata from the same capture as its selection.
     // Change only the pool, leaving the template's parent and refresh budget intact.
@@ -1261,7 +1263,10 @@ TEST_CASE("getblocktemplate rejects invalid requests and names its template for 
     };
     auto const normal = request("[]");
     REQUIRE(normal.find(R"("error":null)") != std::string::npos);
-    REQUIRE(request(R"([{"mode":"proposal"}])").find(R"("result":null)") != std::string::npos);
+    REQUIRE(request(R"([{"mode":"proposal"}])") ==
+        node::rpc::build_error("17", -3, "Missing data String key for proposal"));
+    REQUIRE(request(R"([{"mode":"submit"}])") ==
+        node::rpc::build_error("17", -32602, R"(mode must be "template" or "proposal")"));
     SECTION("invalid argument types and extra arguments are rejected") {
         for (auto const* params : {"1", "{}", "[1]", R"([{"mode":3}])", R"([{"mode":false}])", "[{},{}]",
             R"([{"longpollid":5}])", R"([{"longpollid":null}])", R"([{"longpollid":["x"]}])"}) {
@@ -1279,6 +1284,203 @@ TEST_CASE("getblocktemplate rejects invalid requests and names its template for 
             std::to_string(fixture.chain().mempool_ref().generation());
         CHECK(normal.find(R"("longpollid":")" + id + '"') != std::string::npos);
     }
+}
+
+namespace {
+
+// A block on `prev` at `height` with nonce 0: a proposal is not asked for proof
+// of work. Its coinbase claims `claim`, and the other transactions are in
+// canonical order unless `ordered` is false.
+domain::chain::block proposed_block(hash_digest const& prev, uint32_t height, uint32_t time,
+    uint64_t claim, std::vector<domain::chain::transaction> txs, bool ordered = true,
+    uint32_t bits = test::regtest_bits, uint32_t coinbase_height = 0) {
+    if (ordered) {
+        std::ranges::sort(txs, [](domain::chain::transaction const& a, domain::chain::transaction const& b) {
+            auto const x = a.hash();
+            auto const y = b.hash();
+            return std::lexicographical_compare(x.rbegin(), x.rend(), y.rbegin(), y.rend());
+        });
+    }
+    domain::chain::transaction::list all;
+    all.push_back(test::coinbase_tx(coinbase_height == 0 ? height : coinbase_height, 0, claim));
+    for (auto& tx : txs) {
+        all.push_back(std::move(tx));
+    }
+    domain::chain::block const candidate(
+        domain::chain::header{0x20000000, prev, null_hash, time, bits, 0}, std::move(all));
+    auto const merkle = candidate.generate_merkle_root();
+    return domain::chain::block(domain::chain::header{0x20000000, prev, merkle, time, bits, 0},
+        domain::chain::transaction::list(candidate.transactions()));
+}
+
+std::string block_hex(domain::chain::block const& blk) {
+    data_chunk raw(blk.serialized_size());
+    byte_writer writer(raw);
+    REQUIRE(blk.to_data(writer));
+    return encode_base16(raw);
+}
+
+} // namespace
+
+TEST_CASE("getblocktemplate in proposal mode answers what the node makes of the block (BIP23)",
+          "[rpc dispatch][rpc gbt proposal]") {
+    test::chain_fixture fixture("rpc_block_proposal", /*notify_limit_hours*/ 0);
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    // 101 connected blocks, so the coinbases of blocks 1 and 2 are mature for
+    // a block at height 102 and the coinbase of block 101 is not.
+    constexpr uint32_t tip_height = 101;
+    auto const base_time = uint32_t(zulu_time()) - (tip_height + 10) * test::block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= tip_height; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * test::block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+    REQUIRE(fixture.organizer().add_headers(test::headers_of(trunk)).headers_added == trunk.size());
+    test::persist_headers(fixture, trunk, 1);
+    test::connect_bodies(fixture, trunk, 1);
+    auto const view = fixture.chain().chain_view();
+    REQUIRE(view->connected_tip_height == tip_height);
+
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](std::string const& params) {
+        auto const body = R"({"method":"getblocktemplate","params":)" + params + R"(,"id":23})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run();
+        return result.get();
+    };
+    auto const propose = [&](domain::chain::block const& candidate) {
+        return request(R"([{"mode":"proposal","data":")" + block_hex(candidate) + R"("}])");
+    };
+    auto const answer = [](std::string_view reason) {
+        return node::rpc::build_success("23", reason == "null" ? std::string("null") : '"' + std::string(reason) + '"');
+    };
+
+    auto const flags = fixture.chain().chain_settings().enabled_flags();
+    auto const& tip = trunk.back().hash();
+    constexpr uint32_t height = tip_height + 1;
+    auto const time = uint32_t(zulu_time());
+    auto const subsidy = domain::chain::block::subsidy(height, /*retarget*/ false);
+    auto const& first = trunk[0].transactions().front();
+    auto const& second = trunk[1].transactions().front();
+    auto const& immature = trunk.back().transactions().front();
+    auto const spend = [&](domain::chain::transaction const& funding, uint64_t fee) {
+        return test::spend_p2pkh(funding, 0, funding.outputs()[0].value() - fee, flags);
+    };
+
+    // The valid block every refusal below changes one thing of.
+    auto const valid = proposed_block(tip, height, time, subsidy + 500, {spend(first, 500)});
+    CHECK(propose(valid) == answer("null"));
+
+    // A refused block gets the reason BCHN gives it.
+    {
+        // The spend of block 2's coinbase with a script that does not unlock it.
+        auto const unlocking = spend(second, 500);
+        domain::chain::input::list inputs;
+        inputs.emplace_back(unlocking.inputs()[0].previous_output(),
+            domain::chain::script(data_chunk{0x01, 0x01}, false), 0xffffffff);
+        domain::chain::transaction const bad_script(1, 0, std::move(inputs),
+            domain::chain::output::list(unlocking.outputs()));
+
+        hash_digest unknown{};
+        unknown[0] = 1;
+        domain::chain::input::list missing_inputs;
+        missing_inputs.emplace_back(domain::chain::output_point{unknown, 7},
+            domain::chain::script(data_chunk{0x01, 0x01}, false), 0xffffffff);
+        domain::chain::output::list missing_outputs;
+        missing_outputs.emplace_back(1000, test::miner_script(), domain::chain::token_data_opt{});
+        domain::chain::transaction const missing(1, 0, std::move(missing_inputs), std::move(missing_outputs));
+
+        domain::chain::block const bad_merkle(
+            domain::chain::header{0x20000000, tip, null_hash, time, test::regtest_bits, 0},
+            domain::chain::transaction::list(valid.transactions()));
+
+        // Two spends in an order the canonical one is not.
+        std::vector<domain::chain::transaction> pair{spend(first, 500), spend(second, 500)};
+        std::ranges::sort(pair, [](auto const& a, auto const& b) {
+            auto const x = a.hash();
+            auto const y = b.hash();
+            return std::lexicographical_compare(y.rbegin(), y.rend(), x.rbegin(), x.rend());
+        });
+
+        auto const mtp = view->state->median_time_past();
+        struct refusal {
+            char const* what;
+            domain::chain::block candidate;
+            char const* reason;
+        };
+        std::vector<refusal> const refusals{
+            {"a coinbase claiming one satoshi more than subsidy and fees",
+                proposed_block(tip, height, time, subsidy + 501, {spend(first, 500)}), "bad-cb-amount"},
+            {"a merkle root that is not its transactions'", bad_merkle, "bad-txnmrklroot"},
+            {"bits other than the next work required",
+                proposed_block(tip, height, time, subsidy + 500, {spend(first, 500)}, true,
+                    test::regtest_bits - 1), "bad-diffbits"},
+            {"an input script that fails",
+                proposed_block(tip, height, time, subsidy + 500, {bad_script}), "blk-bad-inputs"},
+            {"two spends of one output",
+                proposed_block(tip, height, time, subsidy, {spend(first, 500), spend(first, 600)}),
+                "bad-txns-inputs-missingorspent"},
+            {"a spend of an output that is not there",
+                proposed_block(tip, height, time, subsidy, {missing}), "bad-txns-inputs-missingorspent"},
+            {"a spend of a coinbase 1 block deep",
+                proposed_block(tip, height, time, subsidy + 500, {spend(immature, 500)}),
+                "bad-txns-premature-spend-of-coinbase"},
+            {"a spend paying more than it spends",
+                proposed_block(tip, height, time, subsidy, {test::spend_p2pkh(first, 0,
+                    first.outputs()[0].value() + 1, flags)}), "bad-txns-in-belowout"},
+            {"transactions out of canonical order",
+                proposed_block(tip, height, time, subsidy + 1000, pair, false), "tx-ordering"},
+            {"a timestamp not after the median time past",
+                proposed_block(tip, height, mtp, subsidy + 500, {spend(first, 500)}), "time-too-old"},
+            {"a timestamp more than two hours ahead",
+                proposed_block(tip, height, time + 3 * 3600, subsidy + 500, {spend(first, 500)}),
+                "time-too-new"},
+            {"a coinbase with the height of its parent",
+                proposed_block(tip, height, time, subsidy + 500, {spend(first, 500)}, true,
+                    test::regtest_bits, tip_height), "bad-cb-height"},
+        };
+        for (auto const& [what, candidate, reason] : refusals) {
+            CAPTURE(what);
+            CHECK(propose(candidate) == answer(reason));
+        }
+    }
+
+    // A block on another parent, or one the node holds, is not judged.
+    {
+        auto const on_parent = proposed_block(trunk[tip_height - 2].hash(), tip_height, time,
+            domain::chain::block::subsidy(tip_height, false), {});
+        CHECK(propose(on_parent) == answer("inconclusive-not-best-prevblk"));
+        CHECK(propose(proposed_block(null_hash, height, time, subsidy, {})) ==
+            answer("inconclusive-not-best-prevblk"));
+        CHECK(propose(trunk.back()) == answer("duplicate"));
+        CHECK(propose(trunk[49]) == answer("duplicate"));
+    }
+
+    // A block that does not decode is error -22, and data must be a string.
+    {
+        auto const decode_failed = node::rpc::build_error("23", -22, "Block decode failed");
+        for (auto const& data : {std::string("zz"), std::string(), std::string("00"), block_hex(valid) + "00"}) {
+            CAPTURE(data.size());
+            CHECK(request(R"([{"mode":"proposal","data":")" + data + R"("}])") == decode_failed);
+        }
+        for (auto const* params : {R"([{"mode":"proposal","data":5}])", R"([{"mode":"proposal","data":null}])"}) {
+            CAPTURE(params);
+            CHECK(request(params) == node::rpc::build_error("23", -3, "Missing data String key for proposal"));
+        }
+    }
+
+    // Nothing of any of them was stored: the tip is where it was, and the
+    // valid block, proposed again, is judged again.
+    CHECK(fixture.chain().chain_view() == view);
+    CHECK(fixture.chain().headers().find(valid.hash()) == blockchain::header_index::null_index);
+    CHECK(propose(valid) == answer("null"));
 }
 
 namespace {
