@@ -6,7 +6,7 @@ versioning, component release dates could differ.
 
 ## Contents
 
-- **1.x:** [1.7.0](#version-170) · [1.6.1](#version-161) · [1.6.0](#version-160) · [1.5.2](#version-152) · [1.5.1](#version-151) · [1.5.0](#version-150) · [1.4.0](#version-140) · [1.3.0](#version-130) · [1.2.0](#version-120) · [1.1.0](#version-110) · [1.0.0](#version-100)
+- **1.x:** [1.8.0](#version-180) · [1.7.0](#version-170) · [1.6.1](#version-161) · [1.6.0](#version-160) · [1.5.2](#version-152) · [1.5.1](#version-151) · [1.5.0](#version-150) · [1.4.0](#version-140) · [1.3.0](#version-130) · [1.2.0](#version-120) · [1.1.0](#version-110) · [1.0.0](#version-100)
 - **0.80–0.89:** [0.85.0](#version-0850) · [0.84.0](#version-0840) · [0.83.0](#version-0830) · [0.82.0](#version-0820) · [0.81.1](#version-0811) · [0.81.0](#version-0810) · [0.80.1](#version-0801) · [0.80.0](#version-0800)
 - **0.70–0.79:** [0.79.0](#version-0790) · [0.78.0](#version-0780) · [0.77.0](#version-0770) · [0.76.0](#version-0760) · [0.75.0](#version-0750) · [0.74.0](#version-0740) · [0.73.0](#version-0730) · [0.72.0](#version-0720) · [0.71.0](#version-0710) · [0.70.0](#version-0700)
 - **0.60–0.69:** [0.68.1](#version-0681) · [0.68.0](#version-0680)
@@ -19,6 +19,117 @@ versioning, component release dates could differ.
 - [Versioning history: 0.59.0–0.67.0](#versioning-history-note-v0590---v0670)
 
 <!-- release-notes-index:end -->
+
+## version 1.8.0
+
+**Published:** [2026-11-27](https://github.com/k-nuth/kth/releases/tag/v1.8.0)
+
+### What's Changed
+* refactor: remove obsolete Boost.Log implementation by @fpelliccioni in https://github.com/k-nuth/kth/pull/961
+* refactor: remove unused legacy sync collections by @fpelliccioni in https://github.com/k-nuth/kth/pull/962
+* test: remove the fixtures of the legacy sync collections by @fpelliccioni in https://github.com/k-nuth/kth/pull/969
+* refactor: remove unused Boost includes by @fpelliccioni in https://github.com/k-nuth/kth/pull/963
+* refactor: replace lexical casts with checked integer parsing by @fpelliccioni in https://github.com/k-nuth/kth/pull/965
+* refactor: remove unused Boost.Range imports by @fpelliccioni in https://github.com/k-nuth/kth/pull/966
+* ci: migrate remaining actions to Node.js 24 by @fpelliccioni in https://github.com/k-nuth/kth/pull/972
+* ci: pin the pull request approval action to a commit by @fpelliccioni in https://github.com/k-nuth/kth/pull/973
+* fix: keep the code separator position when a program is copied by @fpelliccioni in https://github.com/k-nuth/kth/pull/970
+* perf: make a debug step cost one operation, whatever the script's length by @fpelliccioni in https://github.com/k-nuth/kth/pull/975
+* ci: install unzip before container CMake setup by @fpelliccioni in https://github.com/k-nuth/kth/pull/976
+* perf: make a debug step cost one operation, whatever the script's length by @fpelliccioni in https://github.com/k-nuth/kth/pull/977
+* refactor: replace PNG streams with byte buffers by @fpelliccioni in https://github.com/k-nuth/kth/pull/964
+* refactor: return PNG bytes through expected by @fpelliccioni in https://github.com/k-nuth/kth/pull/974
+* refactor: replace Boost string algorithms by @fpelliccioni in https://github.com/k-nuth/kth/pull/967
+* ci: run sanitizers, RPC backends and the second package variant nightly by @fpelliccioni in https://github.com/k-nuth/kth/pull/979
+* deps: use the Knuth Boost 1.92.0 recipe by @fpelliccioni in https://github.com/k-nuth/kth/pull/978
+* test: a chunk completed by two peers is counted once by @fpelliccioni in https://github.com/k-nuth/kth/pull/980
+* sync: count a downloaded chunk once and drop slot rounds by @fpelliccioni in https://github.com/k-nuth/kth/pull/981
+* sync: tie a chunk to the peer that holds it and search past completed chunks by @fpelliccioni in https://github.com/k-nuth/kth/pull/982
+* refactor: replace Boost.Locale with simdutf and direct ICU by @fpelliccioni in https://github.com/k-nuth/kth/pull/968
+* build: take UTXO-Z 2.1.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/983
+* crypto: select the fastest SHA-256 when the library is loaded by @fpelliccioni in https://github.com/k-nuth/kth/pull/984
+* build: compile secp256k1 without AVX-512VL under GCC 16 by @fpelliccioni in https://github.com/k-nuth/kth/pull/985
+* sync: hold a validated chunk until storage has room for it by @fpelliccioni in https://github.com/k-nuth/kth/pull/994
+* build: take the Knuth recipe of GMP by @fpelliccioni in https://github.com/k-nuth/kth/pull/989
+* validation: compute the shared hashes of a signature hash once per transaction by @fpelliccioni in https://github.com/k-nuth/kth/pull/990
+* validation: size the batch tables once and move stored prevouts into their inputs by @fpelliccioni in https://github.com/k-nuth/kth/pull/991
+* crypto: select SHA-256 at compile time in builds for the CPU of the machine by @fpelliccioni in https://github.com/k-nuth/kth/pull/986
+* database: hash the undo checksum without copying the payload by @fpelliccioni in https://github.com/k-nuth/kth/pull/992
+* crypto: hash the merkle tree of large blocks on the GPU by @fpelliccioni in https://github.com/k-nuth/kth/pull/988
+* blockchain: test the template subsidy on regtest's halving schedule by @CyberAshven in https://github.com/k-nuth/kth/pull/855
+* network: test the inbound message waits under deadlines, stops and races by @CyberAshven in https://github.com/k-nuth/kth/pull/857
+* rpc: add uptime by @CyberAshven in https://github.com/k-nuth/kth/pull/866
+* blockchain: test the template subsidy at regtest's halving height by @fpelliccioni in https://github.com/k-nuth/kth/pull/1006
+* rpc: answer getblockhash and getbestblockhash from the connected chain by @CyberAshven in https://github.com/k-nuth/kth/pull/883
+* rpc: add each script's byte code pattern to getblock with patterns by @CyberAshven in https://github.com/k-nuth/kth/pull/941
+* feat(domain): the peer bloom filter and the partial merkle tree (BIP37, 1 of 2) by @CyberAshven in https://github.com/k-nuth/kth/pull/998
+* log: keep sync internals out of the default console by @fpelliccioni in https://github.com/k-nuth/kth/pull/1018
+* deps: use UTXO-Z 2.1.1 for debug-level database reports by @fpelliccioni in https://github.com/k-nuth/kth/pull/1021
+* docs: correct the verbose logging option by @fpelliccioni in https://github.com/k-nuth/kth/pull/1022
+* Use our published ParlayHash 0.3.0 package by @fpelliccioni in https://github.com/k-nuth/kth/pull/1023
+* fix(node): wait longer before redialling a peer that keeps dropping the session by @fpelliccioni in https://github.com/k-nuth/kth/pull/1016
+* style(node): declare outbound_retry as a struct by @fpelliccioni in https://github.com/k-nuth/kth/pull/1033
+* fix(node): close the session of a peer that sends no blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/1017
+* fix(node): close the session of a peer that does not finish a chunk in time by @fpelliccioni in https://github.com/k-nuth/kth/pull/1019
+* fix(node): end seeding when it has enough addresses by @fpelliccioni in https://github.com/k-nuth/kth/pull/1020
+* perf(node): run the UTXO stage on a thread of its own by @fpelliccioni in https://github.com/k-nuth/kth/pull/1014
+* test(node): show the task start line the RPC accept-recovery check waits for by @fpelliccioni in https://github.com/k-nuth/kth/pull/1035
+* perf(node): wake the UTXO build by event instead of polling by @fpelliccioni in https://github.com/k-nuth/kth/pull/1015
+* perf(blockchain): run batch validation on a fixed group of threads by @fpelliccioni in https://github.com/k-nuth/kth/pull/1010
+* perf(node): size the UTXO batches below the checkpoint by bytes by @fpelliccioni in https://github.com/k-nuth/kth/pull/1028
+* perf(blockchain): keep a UTXO delta's output values in place by @fpelliccioni in https://github.com/k-nuth/kth/pull/1029
+* perf(infrastructure): add a batch form of the double SHA-256 by @fpelliccioni in https://github.com/k-nuth/kth/pull/1027
+* perf(secp256k1-turbo): double SHA-256 of messages of any length on the GPU by @fpelliccioni in https://github.com/k-nuth/kth/pull/1030
+* perf(infrastructure): decide per batch where it is hashed, from measured costs by @fpelliccioni in https://github.com/k-nuth/kth/pull/1031
+* perf(blockchain): hash a batch's transaction ids together by @fpelliccioni in https://github.com/k-nuth/kth/pull/1032
+* feat(database): let the block store remove its oldest files by @fpelliccioni in https://github.com/k-nuth/kth/pull/1025
+* feat(node): remove the block files a pruning node no longer keeps by @fpelliccioni in https://github.com/k-nuth/kth/pull/1026
+* fix(node): build the blocks a range left when no more are coming by @fpelliccioni in https://github.com/k-nuth/kth/pull/1038
+* perf(node): close a fully validated batch by the bytes of its blocks by @fpelliccioni in https://github.com/k-nuth/kth/pull/1039
+* refactor(blockchain): run batch validation on the shared ParlayLib scheduler by @fpelliccioni in https://github.com/k-nuth/kth/pull/1036
+* refactor(infrastructure): give the hash dispatch model to the task that hashes by @fpelliccioni in https://github.com/k-nuth/kth/pull/1037
+* feat(rpc): getindexinfo, which reports no index by @CyberAshven in https://github.com/k-nuth/kth/pull/1008
+* feat(infrastructure): add a bit reader and a bit writer by @fpelliccioni in https://github.com/k-nuth/kth/pull/1050
+* feat(domain): Golomb-coded set and the regular compact filter of a block (Neutrino, 1 of 3) by @CyberAshven in https://github.com/k-nuth/kth/pull/995
+* build: put the compact filters (Neutrino) behind a build option by @fpelliccioni in https://github.com/k-nuth/kth/pull/1052
+* build!: name the Conan options after what they select, without with_ by @fpelliccioni in https://github.com/k-nuth/kth/pull/1053
+* refactor(domain): make the static members of the P2P messages constexpr by @fpelliccioni in https://github.com/k-nuth/kth/pull/1054
+* style: function-style casts in the Golomb-coded set and the bit writer by @fpelliccioni in https://github.com/k-nuth/kth/pull/1055
+* refactor(domain): build the Merkle tree in one place, each level hashed in place by @fpelliccioni in https://github.com/k-nuth/kth/pull/1056
+* feat(domain): the script filter of a block and its entry tree (Neutrino script filter, 1 of 3) by @CyberAshven in https://github.com/k-nuth/kth/pull/1002
+* feat(domain): the compact filter messages: getcfilters, cfilter, getcfheaders, cfheaders, getcfcheckpt, cfcheckpt (Neutrino, 2 of 3) by @CyberAshven in https://github.com/k-nuth/kth/pull/996
+* feat(domain): the script filter tree messages: getcfrange, cfrange, getcfproof, cfproof (Neutrino script filter, 2 of 3) by @CyberAshven in https://github.com/k-nuth/kth/pull/1003
+* test(node): run the template cancellation control with one ParlayLib thread by @fpelliccioni in https://github.com/k-nuth/kth/pull/1058
+* feat(node): serve compact filters from an index of filter headers (Neutrino) by @fpelliccioni in https://github.com/k-nuth/kth/pull/1057
+* ci: keep the logs the node tests write of their own runs by @fpelliccioni in https://github.com/k-nuth/kth/pull/1059
+* fix(database): make the slots of the active chain atomic by @fpelliccioni in https://github.com/k-nuth/kth/pull/1060
+* style(database): function-style casts in the block store by @fpelliccioni in https://github.com/k-nuth/kth/pull/1061
+* deps: use UTXO-Z 2.2.0 for the value of a reference-mode entry by @fpelliccioni in https://github.com/k-nuth/kth/pull/1063
+* database: keep a replayed block's last undo record, and accept a reference-mode replay by @CyberAshven in https://github.com/k-nuth/kth/pull/1034
+* network: make outbound connections through a SOCKS5 proxy by @CyberAshven in https://github.com/k-nuth/kth/pull/803
+* fix: build the WebAssembly targets with the proxy checks in place by @fpelliccioni in https://github.com/k-nuth/kth/pull/1067
+* feat(node): serve wallets that load a bloom filter (BIP37, 2 of 2) by @CyberAshven in https://github.com/k-nuth/kth/pull/999
+* rpc: add testmempoolaccept by @CyberAshven in https://github.com/k-nuth/kth/pull/867
+* node: relay compact blocks (BIP152) by @CyberAshven in https://github.com/k-nuth/kth/pull/816
+* node: give the compact block state one owner each, and no lock by @fpelliccioni in https://github.com/k-nuth/kth/pull/1069
+* refactor(blockchain): return what the mempool gave a compact block by @fpelliccioni in https://github.com/k-nuth/kth/pull/1070
+* refactor: use flat containers where the standard unordered ones were left by @fpelliccioni in https://github.com/k-nuth/kth/pull/1071
+* rpc: let a request wait for the mining work to change by @fpelliccioni in https://github.com/k-nuth/kth/pull/1072
+* rpc: long-poll getblocktemplate (BIP22) by @CyberAshven in https://github.com/k-nuth/kth/pull/877
+* fix(blockchain): store the genesis block in the block files by @CyberAshven in https://github.com/k-nuth/kth/pull/1011
+* node: tell every server of mining work that the work changed by @fpelliccioni in https://github.com/k-nuth/kth/pull/1073
+* build: put Stratum V2 behind the sv2 option by @fpelliccioni in https://github.com/k-nuth/kth/pull/1074
+* rpc: end a hold the server can no longer watch by @fpelliccioni in https://github.com/k-nuth/kth/pull/1075
+* rpc: answer a long poll with a later template than the one it holds by @fpelliccioni in https://github.com/k-nuth/kth/pull/1076
+* sync: answer a submitted block the coordinator never read when it stops by @fpelliccioni in https://github.com/k-nuth/kth/pull/1077
+* sv2: serve Template Distribution clients: listener, setup and the template flow by @CyberAshven in https://github.com/k-nuth/kth/pull/804
+* test(node): wait for a stimulus to be withdrawn before giving its peer room by @fpelliccioni in https://github.com/k-nuth/kth/pull/1078
+* fix(node): close the session of a peer whose block does not parse by @fpelliccioni in https://github.com/k-nuth/kth/pull/1079
+* fix(node): deliver every stage result to the sync coordinator, and only for the current chain by @fpelliccioni in https://github.com/k-nuth/kth/pull/1080
+* release: 1.8.0 by @fpelliccioni in https://github.com/k-nuth/kth/pull/1094
+
+
+
 
 ## version 1.7.0
 
