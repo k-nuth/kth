@@ -10,6 +10,7 @@
 
 #include <kth/domain.hpp>
 #include <kth/infrastructure/config/endpoint.hpp>
+#include <kth/infrastructure/math/hash.hpp>
 
 #include <kth/blockchain/define.hpp>
 
@@ -81,6 +82,11 @@ struct KB_API settings {
     // BCHN compatibility checks remain independent diagnostics.
     bool accept_non_standard_transactions = false;
     uint32_t notify_limit_hours = 24;
+    // BCHN nMinimumChainWork (-minimumchainwork): a connected tip with less
+    // cumulative work is still initial block download, however recent its
+    // timestamp. Per network from BCHN chainparamsconstants.h; zero on regtest
+    // and tempnet, and outside BCH.
+    uint256_t minimum_chain_work = 0;
     uint32_t reorganization_limit = 256;
     // Finalization (BCHN parity). A block is finalized once it is `max_reorg_depth`
     // deep and its header is `finalization_delay_seconds` old. Headers forking below

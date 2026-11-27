@@ -731,8 +731,6 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
     if (header_tip < 0) {
         co_return kth::fail(make_error(error_code::internal_error, "chain height unavailable"));
     }
-    auto const synced = ctx.chain.synchronization(*view, header_tip);
-
     auto const chain_work = ctx.chain.headers().total_chain_work(view->tip_hash);
 
 
@@ -751,7 +749,7 @@ get_blockchain_info(method_context& ctx, request const& /*req*/) {
         .median_time = view->state->median_time_past(),
         .chain_work = chain_work,
         .size_on_disk = files_size(ctx.chain.data_dir() / "blocks", is_block_file),
-        .initial_block_download = ! synced.synchronized()
+        .initial_block_download = ctx.chain.initial_block_download()
 #if defined(KTH_CURRENCY_BCH)
         , .progress = *progress
 #endif

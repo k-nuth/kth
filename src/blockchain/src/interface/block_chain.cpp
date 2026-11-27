@@ -2272,6 +2272,38 @@ block_chain::sync_status block_chain::synchronization(
     return {caught_up, fresh};
 }
 
+bool block_chain::initial_block_download() const {
+    // As BCHN: once false, false for good. The relaxed load is only the fast
+    // path; leaving is decided below and stored once.
+    if (left_initial_download_.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    auto const view = chain_view();
+    if ( ! view) {
+        return true;
+    }
+
+    // Recent is not enough: a peer can hand over a short chain with fresh
+    // timestamps. BCHN asks the active tip for nMinimumChainWork as well.
+    auto const work = header_index_.total_chain_work(view->tip_hash);
+    if ( ! work || *work < settings_.minimum_chain_work) {
+        return true;
+    }
+
+    // The clock half of synchronization(): the connected tip within the limit,
+    // which is what -maxtipage measures. A limit of zero turns it off here as
+    // well. Whether headers run ahead does not enter into it.
+    if ( ! synchronization(*view, header_index_.active_tip_height()).fresh) {
+        return true;
+    }
+
+    if ( ! left_initial_download_.exchange(true, std::memory_order_acq_rel)) {
+        spdlog::info("[blockchain] Leaving initial block download at height {}, {}",
+            view->connected_tip_height, encode_hash(view->tip_hash));
+    }
+    return false;
+}
+
 block_chain::chain_view_ptr block_chain::chain_view() const {
     return chain_view_.load();
 }

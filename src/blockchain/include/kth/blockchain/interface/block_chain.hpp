@@ -812,6 +812,17 @@ struct KB_API block_chain {
     [[nodiscard]]
     sync_status synchronization(published_chain_view const& view, int32_t header_tip) const;
 
+    /// Initial block download as BCHN IsInitialBlockDownload() decides it:
+    /// true until the connected tip is within notify_limit_hours of now (as
+    /// -maxtipage) and has at least the network's minimum chain work, then
+    /// false for good. Once left, it is not entered again: not when headers
+    /// run ahead of the connected tip, nor when the tip later falls behind.
+    /// Unlike synchronization(), which says whether the node is level with
+    /// its headers right now, this says whether the node has ever caught up
+    /// with the network since it started.
+    [[nodiscard]]
+    bool initial_block_download() const;
+
     /// The state for a branch under consideration, seeded from the published
     /// one. Block validation only; the published view is what everything else
     /// reads.
@@ -1327,6 +1338,8 @@ private:
     ::asio::experimental::select_channel<std::monostate> reorg_barrier_events_{1, 1};
     settings const& settings_;
     time_t const notify_limit_seconds_;
+    // initial_block_download() latches false, as BCHN latchToFalse.
+    mutable std::atomic<bool> left_initial_download_{false};
 
     populate_chain_state const chain_state_populator_;
     database::data_base database_;

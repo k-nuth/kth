@@ -52,7 +52,7 @@ struct blockchain_info {
     uint32_t median_time;           // median time past of the connected tip
     std::optional<uint256_t> chain_work; // absent while the header index cannot name the tip
     uint64_t size_on_disk;          // block and undo files
-    bool initial_block_download;         // the node is not yet synchronized
+    bool initial_block_download;         // block_chain::initial_block_download(), as BCHN
     std::optional<chain_progress> progress = std::nullopt;
 };
 
