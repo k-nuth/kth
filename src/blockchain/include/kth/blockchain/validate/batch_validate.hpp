@@ -17,6 +17,7 @@
 #include <kth/domain/config/network.hpp>
 
 #include <kth/blockchain/define.hpp>
+#include <kth/blockchain/header_index.hpp>
 
 namespace kth::blockchain {
 
@@ -86,6 +87,12 @@ struct batch_rejection {
     // not run scripts for blocks 0..k-1. A caller that keeps a prefix must
     // validate it again as a batch of its own.
     std::optional<size_t> block;
+
+    // Set with `block` when the script checks refused it: an input script that
+    // failed, or a SigChecks limit exceeded. The code is then the
+    // interpreter's or the limit's, which says how the script failed and not
+    // that it was a script; BCHN answers every such block "blk-bad-inputs".
+    bool script = false;
 };
 
 // The same validation, reporting which block it refused. The old form above is
@@ -118,6 +125,34 @@ code validate_block_batch(
     size_t start_height,
     batch_rejection& rejection,
     database::header_abla_record const* unpublished_parent = nullptr);
+
+// A block proposal (BIP23): `block` judged as the block at `height` on top of
+// `parent`, with every check the connect path makes except proof of work, and
+// nothing stored. The header gets what header validation gives every header —
+// bits as the next work required, checkpoints, version, median time past
+// (validate_header::accept_full) — and the two-hour limit on its timestamp;
+// the body gets the fast path's merkle root check and then the validation
+// above, against the UTXO set as it is.
+//
+// The block is not in the header index and is not put there. Its branch is
+// `parent`'s, whose schedule already covers the block after it
+// (tick_schedule_for_tip), so `parent` stands in for the block's own entry
+// where the batch reads the branch. `parent` must be the connected tip, so
+// that the UTXO set is the state the block spends from, and the caller must
+// know the set did not move while this ran: a verdict reached while a block
+// was connected describes no state.
+//
+// As for a batch, `rejection.block` is set (to 0) for a verdict on the block
+// and left empty for a failure to judge it.
+KB_API
+code validate_block_proposal(
+    block_chain& chain,
+    settings const& settings,
+    domain::config::network network,
+    block_const_ptr const& block,
+    size_t height,
+    header_index::index_t parent,
+    batch_rejection& rejection);
 
 // Stored blocks parsed for validation, in the order given, with each block's
 // transaction identifiers (txids[i] == blocks[i]->to_hashes()).

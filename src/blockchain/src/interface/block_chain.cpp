@@ -8,6 +8,7 @@
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 
 #include <kth/blockchain/utxo_builder.hpp>
+#include <kth/blockchain/validate/batch_validate.hpp>
 #include <kth/database/flat_file_pos.hpp>
 
 #include <algorithm>
@@ -2773,6 +2774,104 @@ void block_chain::unsubscribe_ds_proof(ds_proof_channel_ptr const& channel) {
 
 awaitable_expected<size_t> block_chain::test_accept(transaction_const_ptr tx) {
     co_return co_await transaction_organizer_.test_accept(tx);
+}
+
+::asio::awaitable<block_proposal_result> block_chain::test_block_proposal(block_const_ptr block) {
+    using outcome = block_proposal_result::outcome;
+    if ( ! block) {
+        co_return block_proposal_result{outcome::failed, error::operation_failed};
+    }
+    if (stopped()) {
+        co_return block_proposal_result{outcome::failed, error::service_stopped};
+    }
+
+    // A block the index holds is answered from what the index knows of it,
+    // as submit_block answers a duplicate: valid once connected on the active
+    // chain, invalid once refused or built on a refused block, and otherwise
+    // (a header without its body, a side branch) without a verdict.
+    if (auto const idx = header_index_.find(block->hash()); idx != header_index::null_index) {
+        auto validity = block_validity::unknown;
+        if (header_index_.has_status(idx, header_status::failed_valid) ||
+            header_index_.has_status(idx, header_status::failed_child)) {
+            validity = block_validity::invalid;
+        } else {
+            auto const view = chain_view();
+            auto const height = header_index_.get_height(idx);
+            if (view && height >= 0 && uint64_t(height) <= view->connected_tip_height &&
+                    header_index_.active_at(height) == idx && header_index_.has_block_data(idx)) {
+                validity = block_validity::valid;
+            }
+        }
+        co_return block_proposal_result{outcome::duplicate, error::duplicate_block, validity};
+    }
+
+    // Judged on the chain's pool: the work reads the UTXO set and runs every
+    // script, which the caller's executor must not wait on.
+    using result_channel = ::asio::experimental::concurrent_channel<void(std::error_code, block_proposal_result)>;
+    auto channel = std::make_shared<result_channel>(priority_pool_.get_executor(), 1);
+    ::asio::post(priority_pool_.get_executor(), [this, block, channel]() {
+        block_proposal_result answer{outcome::not_on_tip};
+        try {
+            // Twice at most. A block connected while this one was judged
+            // changes the state the verdict was reached on, so the verdict is
+            // dropped; the second attempt judges it on the new state, or finds
+            // that its parent is no longer the tip. A chain that moves under
+            // both attempts leaves it on a parent that is not the tip either.
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                auto const view = chain_view();
+                if ( ! view) {
+                    answer = block_proposal_result{outcome::failed, error::service_stopped};
+                    break;
+                }
+                if (block->header().previous_block_hash() != view->tip_hash) {
+                    answer = block_proposal_result{outcome::not_on_tip};
+                    break;
+                }
+                auto const parent = header_index_.find(view->tip_hash);
+                if (parent == header_index::null_index) {
+                    answer = block_proposal_result{outcome::failed, error::operation_failed};
+                    break;
+                }
+                batch_rejection rejection;
+                auto const ec = validate_block_proposal(*this, settings_, chain_state_populator_.network(),
+                    block, view->connected_tip_height + 1, parent, rejection);
+
+                // The gate template capture uses. It admits only while no
+                // transition runs, and a transition publishes a new view
+                // before it reopens the gate, so the same view read under it
+                // means no block was connected or disconnected since `view`
+                // was read: every UTXO read above saw that state.
+                {
+                    captured_lease const lease(capture_gate_);
+                    if ( ! lease || chain_view() != view) {
+                        answer = block_proposal_result{outcome::not_on_tip};
+                        continue;
+                    }
+                }
+                if ( ! ec) {
+                    answer = block_proposal_result{outcome::valid, error::success, block_validity::valid};
+                } else if (rejection.block) {
+                    answer = block_proposal_result{outcome::invalid, ec, block_validity::invalid, rejection.script};
+                } else {
+                    answer = block_proposal_result{outcome::failed, ec};
+                }
+                break;
+            }
+        } catch (std::exception const& e) {
+            spdlog::error("[blockchain] judging a block proposal threw: {}", e.what());
+            answer = block_proposal_result{outcome::failed, error::operation_failed};
+        } catch (...) {
+            spdlog::error("[blockchain] judging a block proposal threw");
+            answer = block_proposal_result{outcome::failed, error::operation_failed};
+        }
+        channel->try_send(std::error_code{}, answer);
+    });
+
+    auto [ec, answer] = co_await channel->async_receive(::asio::as_tuple(::asio::use_awaitable));
+    if (ec) {
+        co_return block_proposal_result{outcome::failed, error::operation_failed};
+    }
+    co_return answer;
 }
 
 // =============================================================================

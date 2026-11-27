@@ -343,6 +343,7 @@ if (ENABLE_TEST)
         test/batch_rejection_attribution.cpp
         test/batch_contextual_consensus.cpp
         test/local_block_submission.cpp
+        test/block_proposal.cpp
         test/faster_blocks_batch.cpp
         test/faster_blocks_abla.cpp
         test/abla_candidate_restore.cpp

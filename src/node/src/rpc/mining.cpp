@@ -109,7 +109,8 @@ std::string render_block_template(blockchain::mining_template const& tmpl,
 
     writer w;
     w.begin_object();
-    w.key("capabilities").begin_array().end_array();
+    // BIP23: the server takes a block back in "proposal" mode.
+    w.key("capabilities").begin_array().value("proposal").end_array();
     w.field("version", int64_t(tmpl.version));
     w.field("previousblockhash", encode_hash(tmpl.previous_block_hash));
     w.key("transactions").begin_array();

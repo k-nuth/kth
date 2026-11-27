@@ -959,6 +959,16 @@ struct KB_API block_chain {
     [[nodiscard]]
     awaitable_expected<size_t> test_accept(transaction_const_ptr tx);
 
+    /// What submit_block(block) would make of `block` as the next block on the
+    /// connected tip, proof of work aside, without storing or connecting it: a
+    /// block proposal (BIP23). A block the header index holds is answered
+    /// from what the index knows of it, and one built on another block than
+    /// the connected tip is not judged. Otherwise validate_block_proposal
+    /// judges it on the chain's pool, reading the UTXO set; a verdict reached
+    /// while a block was connected is dropped and the block judged again.
+    [[nodiscard]]
+    ::asio::awaitable<block_proposal_result> test_block_proposal(block_const_ptr block);
+
     // =========================================================================
     // PROPERTIES
     // =========================================================================
