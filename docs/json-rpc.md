@@ -259,6 +259,40 @@ Only `template` mode is supported. Fees and sigchecks are captured with the
 selected transactions and remain unchanged when a cached template is served
 after mempool changes.
 
+### When there is a template
+
+`getblocktemplate`, `getblocktemplatelight` and the Stratum V2 Template
+Provider follow one rule. The template is always built on the connected tip,
+the last block whose transactions are applied, and it is served when:
+
+- That tip is within `chain.notify_limit_hours` of now (24 by default; 0 turns
+  this check off). An older tip means initial block download.
+- The header chain is level with that tip, or runs through it and at most 16
+  blocks past it (`template_max_headers_ahead`). A block arrives as its header
+  first (a headers announcement, a compact block, a `submitblock`), and its
+  body is fetched and connected after. When blocks come seconds apart, several
+  headers can be in before the first of their bodies connects. The node is then
+  following the chain, not behind it: the template is built on the connected
+  tip, and the next one follows as soon as that tip moves (a held long poll is
+  answered then). Sixteen is one round of body requests near the tip: kth asks
+  a peer for up to 16 blocks at a time, and BCHN, while its tip is recent,
+  fetches at most 16 missing blocks straight from the peer that announced them.
+  Headers further ahead, or on another branch than the connected tip, mean the
+  node is catching up.
+- No batch of blocks is being connected and no reorganization is running.
+
+Otherwise the answer is a `-32603` error: "the connected chain has not caught
+up with its headers" when the headers are too far ahead or on another branch,
+"the chain tip is older than the configured limit" when only the tip's age
+fails, and "a batch or reorganization is in progress" for the last case, which
+clears within moments. `getblockchaininfo` still reports `initialblockdownload`
+as `true` while any header is above the connected tip, and `getmininginfo`
+reports `caughtup` as `false` then: those describe synchronization. Mining
+work is served in that window, and the node goes on asking its peers for the
+transactions they announce and offering them to the mempool, checked against
+the connected tip; in initial block download and further behind it ignores
+them, as before.
+
 ### Long polling
 
 `longpollid` names what the template was built on: the tip, and the mempool's
