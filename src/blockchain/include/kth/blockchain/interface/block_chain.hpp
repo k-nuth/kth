@@ -67,6 +67,26 @@ namespace kth::blockchain {
 [[nodiscard]]
 KB_API bool recency_is_stale(std::optional<uint32_t> tip_timestamp, time_t limit_seconds);
 
+/// How far the active header chain may run past the connected tip while mining
+/// work is still built on that tip.
+///
+/// Headers come first. A block reaches the node as its header (a BIP130
+/// headers announcement, a BIP152 compact block, a submitblock), and its body
+/// is fetched and connected after; the next body range opens only once the last
+/// one is built. When blocks come seconds apart, several headers can be in
+/// before the first of their bodies connects, and for that long the connected
+/// tip is below its headers. That is a node following the chain, not one that
+/// is behind it: a template on the connected tip, which the headers extend, is
+/// what the node has, and the next one follows as soon as the tip moves.
+///
+/// Sixteen is one round of body requests near the tip: kth asks a peer for up
+/// to sixteen blocks at a time (chunk_coordinator_config::chunk_size), and BCHN,
+/// while its tip is recent, fetches at most sixteen missing blocks straight
+/// from the peer that announced them (MAX_BLOCKS_IN_TRANSIT_PER_PEER) and leaves
+/// a longer run to its block download. Past it the node is catching up, and
+/// templates are refused as before.
+constexpr size_t template_max_headers_ahead = 16;
+
 /// The startup reconciliation decision, pure for the same reason: an operational
 /// read failure cannot be forced out of the database on demand.
 [[nodiscard]]
@@ -798,10 +818,21 @@ struct KB_API block_chain {
     /// tip's timestamp against the configured limit; a limit of zero disables
     /// that half only, and never turns a node that is behind into one that is
     /// caught up.
+    ///
+    /// `arriving` is a third reading, for mining work alone: the active header
+    /// chain runs through the connected tip and past it by no more than
+    /// template_max_headers_ahead blocks, so the blocks above it are on their
+    /// way. serves_templates() builds on the connected tip then, as long as that
+    /// tip is fresh: a node in initial sync, whose connected tip is old, and one
+    /// further behind than that, are refused as before. synchronized() does not
+    /// read it; whether that window counts as synchronized for anything other
+    /// than mining work is left to each of its other readers.
     struct sync_status {
         bool caught_up;
         bool fresh;
+        bool arriving = false;
         [[nodiscard]] bool synchronized() const { return caught_up && fresh; }
+        [[nodiscard]] bool serves_templates() const { return (caught_up || arriving) && fresh; }
     };
 
     [[nodiscard]]

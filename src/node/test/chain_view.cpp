@@ -128,7 +128,40 @@ struct built_chain {
         REQUIRE(added.headers_added == blocks.size());
         persist_headers(fixture, blocks, start);
     }
+
+    // Connect the trunk's blocks `from`..`to`, whose headers are already in.
+    void connect(uint32_t from, uint32_t to) {
+        std::vector<domain::chain::block> const run(trunk.begin() + (from - 1), trunk.begin() + to);
+        connect_bodies(fixture, run, from);
+        REQUIRE(chain().chain_view()->connected_tip_height == to);
+    }
 };
+
+// One getblocktemplate's worth of mining work, or the reason there is none.
+inline std::expected<blockchain::mining_template, code> request_mining_template(
+    blockchain::block_chain& chain) {
+    ::asio::io_context ctx;
+    std::optional<std::expected<blockchain::mining_template, code>> out;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        out = co_await chain.fetch_mining_template(1000u);
+    }, ::asio::detached);
+    ctx.run_for(std::chrono::seconds(30));
+    REQUIRE(out);
+    return *out;
+}
+
+// The pool selection alone, fetch_template()'s answer: the same rule decides it.
+inline std::expected<blockchain::block_template, code> request_pool_template(
+    blockchain::block_chain& chain) {
+    ::asio::io_context ctx;
+    std::optional<std::expected<blockchain::block_template, code>> out;
+    ::asio::co_spawn(ctx, [&]() -> ::asio::awaitable<void> {
+        out = co_await chain.fetch_template();
+    }, ::asio::detached);
+    ctx.run_for(std::chrono::seconds(30));
+    REQUIRE(out);
+    return *out;
+}
 
 // Make the undo record at `height` disown its block, so disconnecting that block
 // fails while the ones above it succeed.
@@ -477,6 +510,11 @@ TEST_CASE("headers ahead of the connected chain mean the node is behind", "[chai
     CHECK_FALSE(ready.caught_up);
     CHECK(ready.fresh);
     CHECK_FALSE(ready.synchronized());
+
+    // Twenty headers past the tip are more than blocks arriving: no mining work.
+    static_assert(trunk_len - 20 > blockchain::template_max_headers_ahead);
+    CHECK_FALSE(ready.arriving);
+    CHECK_FALSE(ready.serves_templates());
 }
 
 TEST_CASE("a chain that has connected nothing is behind and stale at once", "[chain_view][sync]") {
@@ -490,6 +528,156 @@ TEST_CASE("a chain that has connected nothing is behind and stale at once", "[ch
     CHECK_FALSE(ready.caught_up);
     CHECK_FALSE(ready.fresh);
     CHECK_FALSE(ready.synchronized());
+
+    // Initial sync: mining work is refused, and as behind.
+    CHECK_FALSE(ready.arriving);
+    CHECK_FALSE(ready.serves_templates());
+    auto const refused = request_mining_template(built.chain());
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error() == error::node_behind);
+}
+
+TEST_CASE("headers a few blocks past the connected tip serve a template on that tip",
+          "[chain_view][sync]") {
+    // Headers come first: a block is in as a header before its body connects,
+    // and when blocks come seconds apart several can be in at once. The node is
+    // following the chain then, not behind it, and its mining work is the next
+    // block on the connected tip. One header more than
+    // template_max_headers_ahead and it is catching up, and refuses as before.
+    constexpr auto reach = uint32_t(blockchain::template_max_headers_ahead);
+    static_assert(reach + 4 < trunk_len);
+
+    built_chain built("sync_arriving", trunk_len);
+    built.add_headers(built.trunk, 1);
+    auto& chain = built.chain();
+
+    // One header too many.
+    auto const far = trunk_len - reach - 1;
+    built.connect(1, far);
+    auto ready = chain.synchronization();
+    CHECK_FALSE(ready.caught_up);
+    CHECK(ready.fresh);
+    CHECK_FALSE(ready.arriving);
+    CHECK_FALSE(ready.serves_templates());
+
+    auto const refused = request_mining_template(chain);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error() == error::node_behind);
+    auto const refused_pool = request_pool_template(chain);
+    REQUIRE_FALSE(refused_pool);
+    CHECK(refused_pool.error() == error::node_behind);
+
+    // The edge of the reach, a few headers ahead, and the next block alone:
+    // each served, on the connected tip and never on a header above it.
+    for (auto const connected : {far + 1, trunk_len - 3, trunk_len - 1}) {
+        built.connect(uint32_t(chain.chain_view()->connected_tip_height) + 1, connected);
+        ready = chain.synchronization();
+        CHECK_FALSE(ready.caught_up);
+        CHECK(ready.fresh);
+        CHECK(ready.arriving);
+        CHECK_FALSE(ready.synchronized());
+        CHECK(ready.serves_templates());
+
+        auto const served = request_mining_template(chain);
+        REQUIRE(served);
+        CHECK(served->previous_block_hash == built.trunk[connected - 1].hash());
+        CHECK(served->previous_block_hash == chain.chain_view()->tip_hash);
+        CHECK(served->previous_block_hash != built.trunk.back().hash());
+        CHECK(served->height == connected + 1);
+        CHECK(request_pool_template(chain).has_value());
+    }
+
+    // Level with the headers: served as before.
+    built.connect(trunk_len, trunk_len);
+    ready = chain.synchronization();
+    CHECK(ready.caught_up);
+    CHECK_FALSE(ready.arriving);
+    CHECK(ready.serves_templates());
+    auto const level = request_mining_template(chain);
+    REQUIRE(level);
+    CHECK(level->previous_block_hash == built.trunk.back().hash());
+    CHECK(level->height == trunk_len + 1);
+}
+
+TEST_CASE("headers that left the connected tip for another branch serve no template",
+          "[chain_view][sync]") {
+    // Close in height is not enough. A heavier branch from four blocks down,
+    // adopted as the header chain the way the node adopts one after a switch
+    // and with none of its blocks connected, runs five headers past the
+    // connected tip, and none of them extends it: a template on that tip would
+    // build on a block the header chain has left.
+    built_chain built("sync_left_branch", trunk_len);
+    built.add_headers(built.trunk, 1);
+    built.connect(1, trunk_len);
+    auto& chain = built.chain();
+    REQUIRE(chain.synchronization().serves_templates());
+
+    auto const fork_height = trunk_len - 4u;
+    auto const head = competing_branch(built, fork_height, /*length*/ 9u);
+    built.fixture.organizer().adopt_tip(head);
+
+    auto const header_tip = chain.headers().active_tip_height();
+    REQUIRE(header_tip == int32_t(fork_height + 9u));
+    REQUIRE(size_t(header_tip) - trunk_len <= blockchain::template_max_headers_ahead);
+    REQUIRE(chain.chain_view()->connected_tip_height == trunk_len);
+
+    auto const ready = chain.synchronization();
+    CHECK_FALSE(ready.caught_up);
+    CHECK_FALSE(ready.arriving);
+    CHECK_FALSE(ready.serves_templates());
+
+    auto const refused = request_mining_template(chain);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error() == error::node_behind);
+}
+
+TEST_CASE("a connected tip older than the limit serves nothing, however close its headers",
+          "[chain_view][sync]") {
+    // The headers one block past the tip are blocks arriving, and the clock
+    // half still has to hold: an old connected tip is initial sync, and blocks
+    // arriving do not change that. Built under the ordinary limit and read
+    // under a one-hour one, as in the caught-up case above, so the connect path
+    // builds the chain at all; the tip is four hours old.
+    test::chain_fixture fixture("sync_arriving_stale");
+    REQUIRE(fixture.created());
+    REQUIRE(fixture.start());
+
+    auto const base_time = uint32_t(zulu_time()) - (trunk_len + 120) * block_spacing;
+    std::vector<domain::chain::block> trunk;
+    auto prev = domain::chain::block::genesis_regtest().hash();
+    for (uint32_t h = 1; h <= trunk_len; ++h) {
+        trunk.push_back(test::mine_block(prev, h, base_time + h * block_spacing, 0, {}, 0));
+        prev = trunk.back().hash();
+    }
+
+    auto const added = fixture.organizer().add_headers(headers_of(trunk));
+    REQUIRE(added.headers_added == trunk.size());
+    persist_headers(fixture, trunk, 1);
+    std::vector<domain::chain::block> const connected(trunk.begin(), trunk.end() - 1);
+    connect_bodies(fixture, connected, 1);
+    REQUIRE(fixture.chain().synchronization().serves_templates());
+
+    blockchain::settings strict(domain::config::network::regtest);
+    strict.notify_limit_hours = 1u;
+    REQUIRE(fixture.restart_with(strict));
+
+    // The restarted node is back at its connected tip; the last header comes
+    // in again, as a peer announces it.
+    auto& chain = fixture.chain();
+    REQUIRE(chain.chain_view()->connected_tip_height == trunk_len - 1u);
+    auto const again = fixture.organizer().add_headers(headers_of({trunk.back()}));
+    REQUIRE(again.headers_added == 1u);
+    REQUIRE(chain.headers().active_tip_height() == int32_t(trunk_len));
+
+    auto const ready = chain.synchronization();
+    CHECK_FALSE(ready.caught_up);
+    CHECK(ready.arriving);
+    CHECK_FALSE(ready.fresh);
+    CHECK_FALSE(ready.serves_templates());
+
+    auto const refused = request_mining_template(chain);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error() == error::node_stale);
 }
 
 TEST_CASE("a connected chain at its header tip is caught up", "[chain_view][sync]") {
