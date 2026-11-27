@@ -88,11 +88,15 @@ std::string checked_base58(data_chunk bytes) {
     return encode_base58(bytes);
 }
 
-void require_failed(noise_transport& transport, byte_span valid_frame) {
+// A direction that failed stays closed; each fails on its own.
+void require_receive_closed(noise_transport& transport) {
     auto const received = transport.feed({});
     REQUIRE_FALSE(received.status);
     CHECK(received.status.error() == noise_error::closed);
     CHECK(received.frames.empty());
+}
+
+void require_send_closed(noise_transport& transport, byte_span valid_frame) {
     auto const sealed = transport.encrypt_frame(valid_frame);
     REQUIRE_FALSE(sealed);
     CHECK(sealed.error() == noise_error::closed);
@@ -539,7 +543,9 @@ TEST_CASE("sv2 noise transport keeps a valid frame read with a bad one, however 
         CHECK(received.frames.front() == frame(5));
         REQUIRE_FALSE(received.status);
         CHECK(received.status.error() == noise_error::authentication);
-        require_failed(receiver, frame(1));
+        require_receive_closed(receiver);
+        // The valid frame can still be answered.
+        CHECK(receiver.encrypt_frame(frame(1)));
     }
 }
 
@@ -566,12 +572,13 @@ TEST_CASE("sv2 noise transport refuses tampered tags even across reads", "[sv2 n
             } else {
                 CHECK_FALSE(receiver.feed(changed).status);
             }
-            require_failed(receiver, plain);
+            require_receive_closed(receiver);
+            CHECK(receiver.encrypt_frame(plain));
         }
     }
     noise_transport wrong_direction(keys, true, u24_max);
     CHECK_FALSE(wrong_direction.feed(*encrypted).status);
-    require_failed(wrong_direction, plain);
+    require_receive_closed(wrong_direction);
 }
 
 TEST_CASE("sv2 noise transport moves buffered input without reusing nonces", "[sv2 noise]") {
@@ -585,14 +592,16 @@ TEST_CASE("sv2 noise transport moves buffered input without reusing nonces", "[s
     REQUIRE(partial.status);
     CHECK(partial.frames.empty());
     noise_transport moved_receiver(std::move(receiver));
-    require_failed(receiver, plain);
+    require_receive_closed(receiver);
+    require_send_closed(receiver, plain);
     auto const opened = moved_receiver.feed(byte_span(*first).subspan(25));
     REQUIRE(opened.status);
     REQUIRE(opened.frames.size() == 1);
     CHECK(opened.frames.front() == plain);
 
     noise_transport moved_sender(std::move(sender));
-    require_failed(sender, plain);
+    require_receive_closed(sender);
+    require_send_closed(sender, plain);
     auto const second = moved_sender.encrypt_frame(plain);
     REQUIRE(second);
     CHECK(*second != *first);
@@ -612,7 +621,7 @@ TEST_CASE("sv2 noise transport preserves payload bounds and exact frame lengths"
         auto const refused = sender.encrypt_frame(changed);
         REQUIRE_FALSE(refused);
         CHECK(refused.error() == noise_error::malformed_frame);
-        require_failed(sender, valid);
+        require_send_closed(sender, valid);
     }
     noise_transport sender(keys, true, u24_max);
     auto const encrypted = sender.encrypt_frame(valid);
@@ -631,7 +640,7 @@ TEST_CASE("sv2 noise transport preserves payload bounds and exact frame lengths"
         } else {
             CHECK_FALSE(receiver.feed(*encrypted).status);
         }
-        require_failed(receiver, valid);
+        require_receive_closed(receiver);
     }
 
     // Valid tags do not permit a sender to choose shorter intermediate
@@ -650,7 +659,7 @@ TEST_CASE("sv2 noise transport preserves payload bounds and exact frame lengths"
     REQUIRE(first_chunk.status);
     CHECK(first_chunk.frames.empty());
     CHECK_FALSE(strict.feed(byte_span(wrong_chunks).subspan(39)).status);
-    require_failed(strict, valid);
+    require_receive_closed(strict);
 }
 
 TEST_CASE("sv2 noise transport refuses exhausted nonces without wrapping", "[sv2 noise]") {
@@ -662,7 +671,7 @@ TEST_CASE("sv2 noise transport refuses exhausted nonces without wrapping", "[sv2
     auto const refused = exhausted_sender.encrypt_frame(empty);
     REQUIRE_FALSE(refused);
     CHECK(refused.error() == noise_error::nonce_exhausted);
-    require_failed(exhausted_sender, empty);
+    require_send_closed(exhausted_sender, empty);
     noise_transport sender(keys, true, u24_max);
     auto const wire = sender.encrypt_frame(empty);
     REQUIRE(wire);
@@ -670,7 +679,7 @@ TEST_CASE("sv2 noise transport refuses exhausted nonces without wrapping", "[sv2
     auto const unopened = exhausted_receiver.feed(*wire);
     REQUIRE_FALSE(unopened.status);
     CHECK(unopened.status.error() == noise_error::nonce_exhausted);
-    require_failed(exhausted_receiver, empty);
+    require_receive_closed(exhausted_receiver);
 
     auto last_sender = noise_detail::transport_at(keys, true, u24_max, limit - 1, 0);
     auto last_receiver = noise_detail::transport_at(keys, false, u24_max, 0, limit - 1);
@@ -692,7 +701,7 @@ TEST_CASE("sv2 noise transport refuses exhausted nonces without wrapping", "[sv2
     sealed_header.resize(sealed_header.size() + 17);
     auto partial_receiver = noise_detail::transport_at(keys, false, u24_max, 0, limit - 1);
     CHECK_FALSE(partial_receiver.feed(sealed_header).status);
-    require_failed(partial_receiver, empty);
+    require_receive_closed(partial_receiver);
 
     kth::node::sv2::noise_detail::noise_cipher cipher;
     cipher.key = keys.initiator_to_responder;

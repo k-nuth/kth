@@ -419,7 +419,8 @@ noise_transport::noise_transport(noise_transport&& other) noexcept
     : send_(other.send_)
     , receive_(other.receive_)
     , max_payload_(other.max_payload_)
-    , failed_(std::exchange(other.failed_, true))
+    , send_failed_(std::exchange(other.send_failed_, true))
+    , receive_failed_(std::exchange(other.receive_failed_, true))
     , reading_payload_(other.reading_payload_)
     , remaining_(other.remaining_)
     , pending_(std::move(other.pending_))
@@ -429,11 +430,17 @@ noise_transport::noise_transport(noise_transport&& other) noexcept
     pseudo_random::wipe(other.receive_.key);
 }
 
-noise_error noise_transport::fail(noise_error error) {
-    // Nothing further is sealed or opened, so neither key is kept, and the
-    // plaintext of a frame left half read goes with them.
-    failed_ = true;
+noise_error noise_transport::fail_send(noise_error error) {
+    // Nothing further is sealed, so the key is not kept.
+    send_failed_ = true;
     pseudo_random::wipe(send_.key);
+    return error;
+}
+
+noise_error noise_transport::fail_receive(noise_error error) {
+    // Nothing further is opened, so the key is not kept, and the plaintext
+    // of a frame left half read goes with it.
+    receive_failed_ = true;
     pseudo_random::wipe(receive_.key);
     pseudo_random::wipe(frame_);
     frame_.clear();
@@ -442,15 +449,15 @@ noise_error noise_transport::fail(noise_error error) {
 }
 
 std::expected<data_chunk, noise_error> noise_transport::encrypt_frame(byte_span plaintext) {
-    if (failed_) return std::unexpected(noise_error::closed);
+    if (send_failed_) return std::unexpected(noise_error::closed);
     if (plaintext.size() < message_header::size
         || payload_size(plaintext) != plaintext.size() - message_header::size) {
-        return std::unexpected(fail(noise_error::malformed_frame));
+        return std::unexpected(fail_send(noise_error::malformed_frame));
     }
     auto const payload = plaintext.subspan(message_header::size);
     auto const blocks = 1 + (payload.size() + max_chunk_size - 1) / max_chunk_size;
     if (blocks > nonce_limit - send_.nonce) {
-        return std::unexpected(fail(noise_error::nonce_exhausted));
+        return std::unexpected(fail_send(noise_error::nonce_exhausted));
     }
     auto bytes = send_.encrypt({}, plaintext.first(message_header::size));
     // The preflight check guarantees every nonce for this frame is available.
@@ -466,7 +473,7 @@ std::expected<data_chunk, noise_error> noise_transport::encrypt_frame(byte_span 
 
 noise_received noise_transport::feed(byte_span ciphertext) {
     noise_received received;
-    if (failed_) {
+    if (receive_failed_) {
         received.status = std::unexpected(noise_error::closed);
         return received;
     }
@@ -483,13 +490,13 @@ noise_received noise_transport::feed(byte_span ciphertext) {
         pending_.clear();
         if ( ! plaintext) {
             // The frames already opened in this call stay with the caller.
-            received.status = std::unexpected(fail(plaintext.error()));
+            received.status = std::unexpected(fail_receive(plaintext.error()));
             return received;
         }
         if ( ! reading_payload_) {
             remaining_ = payload_size(*plaintext);
             if (remaining_ > max_payload_) {
-                received.status = std::unexpected(fail(noise_error::frame_too_large));
+                received.status = std::unexpected(fail_receive(noise_error::frame_too_large));
                 return received;
             }
             frame_ = std::move(*plaintext);

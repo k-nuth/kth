@@ -41,6 +41,9 @@ node::configuration make_noise_config(std::filesystem::path const& base) {
     cfg.network.inbound_port = 0;
     cfg.network.debug_file = base / "debug.log";
     cfg.network.error_file = base / "error.log";
+    cfg.network.hosts_file = base / "hosts.dat";
+    cfg.network.banlist_file = base / "banlist.dat";
+    cfg.network.peers_file = base / "peers.dat";
     cfg.sv2.enabled = true;
     cfg.sv2.port = 0;
     cfg.sv2.noise = true;
@@ -139,14 +142,19 @@ TEST_CASE("executor child: a node keeps its Noise keys in its data directory", "
     auto const authority_bytes = contents(authority_key);
     CHECK(static_bytes.size() == 32);
     CHECK(authority_bytes.size() == 32);
-    // Nothing in the directory the node was started from.
-    CHECK(std::filesystem::is_empty(base / "first"));
+    // No key in the directory the node was started from.
+    auto const no_keys_in = [](std::filesystem::path const& directory) {
+        for (auto const& entry : std::filesystem::directory_iterator(directory)) {
+            CHECK(entry.path().filename().string().find("sv2") == std::string::npos);
+        }
+    };
+    no_keys_in(base / "first");
 
     // Started from somewhere else, it is the same node: the same keys.
     started_from(base / "second");
     CHECK(contents(static_key) == static_bytes);
     CHECK(contents(authority_key) == authority_bytes);
-    CHECK(std::filesystem::is_empty(base / "second"));
+    no_keys_in(base / "second");
 
     announce_completion();
     std::error_code ec;

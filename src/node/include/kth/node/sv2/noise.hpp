@@ -200,21 +200,26 @@ struct noise_transport {
     noise_transport(noise_transport&& other) noexcept;
     noise_transport& operator=(noise_transport&&) = delete;
 
+    // A failure closes that direction for good and wipes its key at once.
+    // The other direction stays open, so that the frames that authenticated
+    // before a failure can still be answered; the caller then closes the
+    // connection.
     [[nodiscard]] std::expected<data_chunk, noise_error> encrypt_frame(byte_span plaintext);
-    // Incomplete input is kept for the next call. A failure closes both
-    // directions for good and wipes both keys.
+    // Incomplete input is kept for the next call.
     [[nodiscard]] noise_received feed(byte_span ciphertext);
 
 private:
     friend noise_transport noise_detail::transport_at(noise_keys const& keys, bool initiator,
         uint32_t max_receive_payload, uint64_t send_nonce, uint64_t receive_nonce);
 
-    noise_error fail(noise_error error);
+    noise_error fail_send(noise_error error);
+    noise_error fail_receive(noise_error error);
 
     noise_detail::noise_cipher send_;
     noise_detail::noise_cipher receive_;
     uint32_t max_payload_;
-    bool failed_ = false;
+    bool send_failed_ = false;
+    bool receive_failed_ = false;
     bool reading_payload_ = false;
     size_t remaining_ = 0;
     data_chunk pending_;

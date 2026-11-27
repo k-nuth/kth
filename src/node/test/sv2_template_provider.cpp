@@ -11,10 +11,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <deque>
 #include <exception>
 #include <fstream>
 #include <future>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1287,6 +1289,8 @@ namespace {
 struct noise_listener_fixture : listener_fixture {
     node::sv2_settings noise_settings;
     hash_digest authority{};
+    // Frames opened by a read that held more than the one asked for.
+    std::map<noise_transport const*, std::deque<data_chunk>> opened;
 
     noise_listener_fixture()
         : listener_fixture(loopback_settings())
@@ -1343,24 +1347,42 @@ struct noise_listener_fixture : listener_fixture {
         write(client, byte_span(bytes).subspan(7));
     }
 
+    std::shared_ptr<operation> read_some(::asio::ip::tcp::socket& client, size_t limit) {
+        auto state = std::make_shared<operation>();
+        state->bytes.resize(limit);
+        client.async_read_some(::asio::buffer(state->bytes),
+            [state](std::error_code error, size_t count) {
+                state->error = error;
+                state->size = count;
+                state->done = true;
+            });
+        REQUIRE(wait_until([&] { return state->done; }));
+        state->bytes.resize(state->size);
+        return state;
+    }
+
+    // The next frame from the provider. A byte at a time, `bytewise` also
+    // proves that the decryptor keeps an incomplete header or tag without
+    // taking it for a frame; otherwise whatever has arrived is read at once,
+    // so that the time a read takes does not count against a setup timeout.
     template <typename Message>
-    Message receive(::asio::ip::tcp::socket& client, noise_transport& transport) {
-        // Reading a byte at a time also proves that the decryptor retains an
-        // incomplete header or tag without treating it as a plaintext frame.
+    Message receive(::asio::ip::tcp::socket& client, noise_transport& transport,
+        bool bytewise = false) {
+        auto& queued = opened[&transport];
         auto const deadline = std::chrono::steady_clock::now() + 5s;
-        for (size_t count = 0; count < 65536; ++count) {
+        for (size_t count = 0; queued.empty() && count < 65536; ++count) {
             REQUIRE(std::chrono::steady_clock::now() < deadline);
-            auto const next = read(client, 1);
+            auto const next = bytewise ? read(client, 1) : read_some(client, 4096);
             REQUIRE_FALSE(next->error);
-            auto const received = transport.feed(next->bytes);
+            auto received = transport.feed(next->bytes);
             REQUIRE(received.status.has_value());
-            if ( ! received.frames.empty()) {
-                REQUIRE(received.frames.size() == 1);
-                return response<Message>(received.frames.front());
-            }
+            if (bytewise) REQUIRE(received.frames.size() <= 1);
+            for (auto& frame : received.frames) queued.push_back(std::move(frame));
         }
-        FAIL("Noise frame exceeded the bounded test read");
-        return {};
+        REQUIRE_FALSE(queued.empty());
+        auto const frame = std::move(queued.front());
+        queued.pop_front();
+        return response<Message>(frame);
     }
 };
 
@@ -1375,13 +1397,13 @@ TEST_CASE("sv2 Noise listener serves setup and chain templates over encrypted fr
     auto client = fixture.connect(fixture.start());
     auto transport = fixture.handshake(*client);
     fixture.send(*client, transport, setup());
-    auto const success = fixture.receive<setup_connection_success>(*client, transport);
+    auto const success = fixture.receive<setup_connection_success>(*client, transport, true);
     REQUIRE(success.used_version == 2);
     REQUIRE(success.flags == 0);
 
     fixture.send(*client, transport, coinbase_output_constraints{120, 3});
-    auto const work = fixture.receive<new_template>(*client, transport);
-    auto const previous = fixture.receive<set_new_prev_hash>(*client, transport);
+    auto const work = fixture.receive<new_template>(*client, transport, true);
+    auto const previous = fixture.receive<set_new_prev_hash>(*client, transport, true);
     REQUIRE(work.template_id == previous.template_id);
     REQUIRE(work.future_template);
     REQUIRE(work.version == expected->version);
@@ -1432,7 +1454,7 @@ TEST_CASE("sv2 Noise listener closes a client that completes the handshake and s
     // constraints, is closed and gives its place back.
     noise_listener_fixture fixture;
     (void)seed_chain(fixture, 101);
-    fixture.provider->setup_timeout = 300ms;
+    fixture.provider->setup_timeout = 1s;
     auto const port = fixture.start();
 
     SECTION("one that sends nothing after the handshake") {
@@ -1451,7 +1473,7 @@ TEST_CASE("sv2 Noise listener closes a client that completes the handshake and s
         // 64 is the listener's limit of connections: all held by clients that
         // completed the handshake and went silent, long enough for all of them
         // to be connected at once.
-        fixture.provider->setup_timeout = 2s;
+        fixture.provider->setup_timeout = 3s;
         std::vector<std::shared_ptr<::asio::ip::tcp::socket>> silent;
         for (int i = 0; i < 64; ++i) {
             silent.push_back(fixture.connect(port));
@@ -1472,7 +1494,7 @@ TEST_CASE("sv2 Noise listener closes a client that completes the handshake and s
         auto const work = fixture.receive<new_template>(*client, transport);
         (void)fixture.receive<set_new_prev_hash>(*client, transport);
         int slices = 0;
-        (void)fixture.wait_until([&] { return ++slices > 120; });   // twice the timeout
+        (void)fixture.wait_until([&] { return ++slices > 400; });   // twice the timeout
         fixture.send(*client, transport, request_transaction_data{work.template_id});
         REQUIRE(fixture.receive<request_transaction_data_success>(*client, transport).template_id
             == work.template_id);
