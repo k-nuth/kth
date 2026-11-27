@@ -2491,6 +2491,103 @@ TEST_CASE("integrated: missing transactions come with blocktxn, and a block that
     }
 }
 
+TEST_CASE("integrated: a range whose first block a compact block stored on its own is counted, and the next range opens",
+          "[header_tip][integration][compact_blocks][stored_chunks]") {
+    // The defect: a cmpctblock for 101 is being rebuilt when the headers of
+    // 101 and 102 arrive, and the range [101..102] is asked of the peer. The
+    // block is rebuilt and stored on its own, which moves the body height to
+    // 101. The peer's chunk for the range then starts at 101, a height the
+    // body height has already reached, and was never counted: the height
+    // stayed at 101, the range read as in flight for good, and the header of
+    // 103 opened no range. The node took headers and never their blocks.
+    captured_log log;
+    chain_fixture fixture{"compact_overlap"};
+    REQUIRE(fixture.created());
+    auto submissions = std::make_shared<blockchain::block_submission_channel>(4, 1);
+    REQUIRE(fixture.start(submissions));
+    auto const staged = stage(fixture, 100, 100);
+    // Its spend is not in the mempool: the rebuild waits for blocktxn, which
+    // is the time the range needs to be opened in.
+    auto const first = spending_block(fixture, staged, staged.trunk.back(), 101, false);
+    auto const second = mine_block(first.hash(), 102, first.header().timestamp() + block_spacing, 0, {}, 0);
+    auto const third = mine_block(second.hash(), 103, second.header().timestamp() + block_spacing, 0, {}, 0);
+    auto const compact = domain::message::compact_block::factory_from_block(domain::message::block{first});
+    REQUIRE(compact.short_ids().size() == 1u);
+    wire_peer peer(node_settings("compact_overlap_peer"), 9811, 100);
+
+    std::vector<hash_digest> ranged;
+    bool alone = false;
+    bool counted = false;
+    std::optional<network::raw_message> next_range;
+    bool followed = false;
+    bool stopped_cleanly = false;
+    {
+        node_run run(fixture, "compact_overlap", node_header_walk_timing, submissions.get());
+        // Longer than the case can take: the case answers the rebuild itself.
+        compact_receiver receiver(fixture, run.network, std::chrono::milliseconds(60000));
+        confirm_tip(run, peer, log, 100);
+
+        CHECK_FALSE(run.network.observe_block_message(peer.session, from_peer(peer, compact)));
+        REQUIRE(next_sent(peer, domain::message::get_block_transactions::command));
+
+        // While the rebuild waits, the headers of 101 and 102: the range that
+        // holds both is asked of the peer.
+        run.deliver(peer.session, peer.headers({first, second}));
+        auto const asked = next_sent(peer, domain::message::get_data::command);
+        REQUIRE(asked);
+        byte_reader reader(asked->payload);
+        auto const request = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
+        REQUIRE(request);
+        for (auto const& inventory : request->inventories()) {
+            ranged.push_back(inventory.hash());
+        }
+        REQUIRE(log.count("block_range_request 101-102") == 1u);
+
+        // The spend comes: 101 is rebuilt, stored on its own and connected.
+        domain::message::block_transactions const answered(first.hash(),
+            domain::chain::transaction::list{first.transactions()[1]});
+        CHECK(run.network.observe_block_message(peer.session,
+            peer.message(domain::message::block_transactions::command, payload_of(peer, answered))));
+        // Connected, and counted by the coordinator: it answers a submission
+        // only once it has read the body's storage outcome.
+        alone = wait_until([&] {
+            return connected_at(fixture, first, 101) && log.count("at height 101: connected") > 0;
+        }, quick);
+        REQUIRE(alone);
+
+        // The peer answers the range: 101 again, and 102.
+        REQUIRE(peer.session->block_responses().try_send(
+            peer.message(domain::message::block::command, serialized(first))));
+        REQUIRE(peer.session->block_responses().try_send(
+            peer.message(domain::message::block::command, serialized(second))));
+        counted = wait_until([&] { return connected_at(fixture, second, 102); }, quick);
+
+        // The next header opens the next range, and its block connects.
+        run.deliver(peer.session, peer.headers({third}));
+        next_range = next_sent(peer, domain::message::get_data::command);
+        if (next_range) {
+            REQUIRE(peer.session->block_responses().try_send(
+                peer.message(domain::message::block::command, serialized(third))));
+            followed = wait_until([&] { return connected_at(fixture, third, 103); }, quick);
+        }
+        stopped_cleanly = run.stop_with({peer.session}, std::chrono::seconds(120));
+    }
+    log.dump("compact_overlap");
+    CHECK(stopped_cleanly);
+    CHECK(ranged == std::vector<hash_digest>{first.hash(), second.hash()});
+    CHECK(counted);
+    // Without the chunk counted, no range followed: "the previous range is
+    // still in flight".
+    REQUIRE(next_range.has_value());
+    byte_reader reader(next_range->payload);
+    auto const request = domain::message::get_data::from_data(reader, peer.session->negotiated_version());
+    REQUIRE(request);
+    REQUIRE(request->inventories().size() == 1u);
+    CHECK(request->inventories().front().hash() == third.hash());
+    CHECK(log.count("block_range_request 103-103") == 1u);
+    CHECK(followed);
+}
+
 TEST_CASE("a cmpctblock is left to the header ingest during initial sync, and when its block cannot be rebuilt",
           "[header_tip][compact_blocks]") {
     enum class setup { initial_sync, queue_full, no_submission, trailing_byte, too_many, no_work, wrong_bits };

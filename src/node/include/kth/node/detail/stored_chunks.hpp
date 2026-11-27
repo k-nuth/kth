@@ -7,7 +7,7 @@
 
 // Not installed. The stored chunks the sync coordinator has heard of and has
 // not yet counted: chunks are stored in any order, and the height the bodies
-// are synced to moves only through consecutive ones.
+// are synced to moves only through chunks that reach it.
 //
 // Owned by the coordinator and touched by nothing else.
 
@@ -27,20 +27,43 @@ struct stored_chunks {
     /// has since left is not counted: its heights name other blocks on the new
     /// branch, and counting it would move the height past bodies this node
     /// does not hold.
+    ///
+    /// Chunks can overlap. A body that arrives on its own, such as the block a
+    /// compact block rebuilds, is stored as a chunk of one block, and a range
+    /// asked of a peer before it came can hold the same height and the ones
+    /// after it. Whichever of the two is stored second starts at or below the
+    /// height the first one moved to. It counts for the blocks it holds above
+    /// that height, and is dropped when it holds none.
     [[nodiscard]]
     uint32_t stored(sync::chunk_validated const& chunk, uint64_t chain_generation, uint32_t synced_to) {
         if (chunk.from_abandoned_branch(chain_generation)) {
             return synced_to;
         }
-        waiting_[chunk.start_height] = chunk.block_count;
-        while (true) {
-            auto const next = waiting_.find(synced_to + 1);
-            if (next == waiting_.end()) {
-                return synced_to;
-            }
-            synced_to = next->first + next->second - 1;
-            waiting_.erase(next);
+        // Two at one height: the longer holds every block the shorter does.
+        auto const [slot, fresh] = waiting_.try_emplace(chunk.start_height, chunk.block_count);
+        if ( ! fresh && chunk.block_count > slot->second) {
+            slot->second = chunk.block_count;
         }
+        // Through every chunk that reaches the height, until none does. One
+        // that starts below the height reaches it as well as one that starts
+        // right after it: left waiting, its blocks were never counted, the
+        // height stayed below the end of its range, and that range read as in
+        // flight for good.
+        for (bool moved = true; moved;) {
+            moved = false;
+            for (auto it = waiting_.begin(); it != waiting_.end();) {
+                if (it->first > synced_to + 1) {
+                    ++it;
+                    continue;
+                }
+                if (it->second != 0 && it->first + it->second - 1 > synced_to) {
+                    synced_to = it->first + it->second - 1;
+                    moved = true;
+                }
+                it = waiting_.erase(it);
+            }
+        }
+        return synced_to;
     }
 
     /// Forget every chunk that reaches above `height`: the chain moved, and

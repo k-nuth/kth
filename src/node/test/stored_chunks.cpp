@@ -92,6 +92,113 @@ TEST_CASE("stored chunks: after a rewind, what waited above the new height is fo
 }
 
 // =============================================================================
+// Chunks that overlap: a body stored on its own, and a range that also held it
+// =============================================================================
+
+TEST_CASE("stored chunks: a chunk that starts at or below the height and reaches past it moves the height",
+          "[stored_chunks]") {
+    constexpr uint64_t generation = 3;
+    stored_chunks chunks;
+
+    SECTION("it starts at the height: its first block came on its own") {
+        // A compact block's body at 11, stored alone, moves the height to 11.
+        // The range [11..20] a peer was asked for before it came completes
+        // after it, and starts at the height the body moved to.
+        CHECK(chunks.stored(stored_at(11, 1, generation), generation, 10) == 11u);
+        CHECK(chunks.stored(stored_at(11, 10, generation), generation, 11) == 20u);
+        CHECK(chunks.size() == 0u);
+    }
+
+    SECTION("it starts below the height") {
+        CHECK(chunks.stored(stored_at(13, 8, generation), generation, 15) == 20u);
+        CHECK(chunks.size() == 0u);
+    }
+
+    SECTION("and carries the height on through what waited above it") {
+        CHECK(chunks.stored(stored_at(21, 10, generation), generation, 10) == 10u);
+        CHECK(chunks.stored(stored_at(11, 1, generation), generation, 10) == 11u);
+        CHECK(chunks.stored(stored_at(11, 10, generation), generation, 11) == 30u);
+        CHECK(chunks.size() == 0u);
+    }
+
+    SECTION("it waited before the height reached it") {
+        // [12..20] waits for 11; 11 arrives on its own and the height goes
+        // through both.
+        CHECK(chunks.stored(stored_at(12, 9, generation), generation, 10) == 10u);
+        CHECK(chunks.stored(stored_at(11, 1, generation), generation, 10) == 20u);
+        CHECK(chunks.size() == 0u);
+    }
+}
+
+TEST_CASE("stored chunks: a chunk wholly at or below the height is dropped",
+          "[stored_chunks]") {
+    constexpr uint64_t generation = 3;
+    stored_chunks chunks;
+
+    SECTION("a body stored on its own after the range that held it") {
+        CHECK(chunks.stored(stored_at(11, 10, generation), generation, 10) == 20u);
+        CHECK(chunks.stored(stored_at(11, 1, generation), generation, 20) == 20u);
+        CHECK(chunks.size() == 0u);
+    }
+
+    SECTION("a chunk that ends at the height") {
+        CHECK(chunks.stored(stored_at(15, 6, generation), generation, 20) == 20u);
+        CHECK(chunks.size() == 0u);
+    }
+
+    SECTION("one that waited and was overtaken") {
+        // [15..16] waits; [11..20] arrives and passes it. Nothing of it is
+        // left waiting for a later chunk.
+        CHECK(chunks.stored(stored_at(15, 2, generation), generation, 10) == 10u);
+        CHECK(chunks.stored(stored_at(11, 10, generation), generation, 10) == 20u);
+        CHECK(chunks.size() == 0u);
+        CHECK(chunks.stored(stored_at(22, 1, generation), generation, 20) == 20u);
+        CHECK(chunks.size() == 1u);
+    }
+}
+
+TEST_CASE("stored chunks: two chunks at one start keep the longer",
+          "[stored_chunks]") {
+    constexpr uint64_t generation = 3;
+    stored_chunks chunks;
+
+    SECTION("the shorter first") {
+        CHECK(chunks.stored(stored_at(12, 1, generation), generation, 10) == 10u);
+        CHECK(chunks.stored(stored_at(12, 9, generation), generation, 10) == 10u);
+        CHECK(chunks.size() == 1u);
+    }
+
+    SECTION("the longer first") {
+        CHECK(chunks.stored(stored_at(12, 9, generation), generation, 10) == 10u);
+        CHECK(chunks.stored(stored_at(12, 1, generation), generation, 10) == 10u);
+        CHECK(chunks.size() == 1u);
+    }
+
+    // Either way, 11 carries the height to the end of the longer.
+    CHECK(chunks.stored(stored_at(11, 1, generation), generation, 10) == 20u);
+    CHECK(chunks.size() == 0u);
+}
+
+TEST_CASE("stored chunks: an overlapping chunk for a branch the chain has left moves nothing",
+          "[stored_chunks]") {
+    // A body at 11 on the new branch moved the height to 11. The range
+    // [11..20] was downloaded before the switch: it reaches past the height,
+    // and is not counted all the same.
+    stored_chunks chunks;
+
+    CHECK(chunks.stored(stored_at(11, 1, 4), 4, 10) == 11u);
+    CHECK(chunks.stored(stored_at(11, 10, 3), 4, 11) == 11u);
+    CHECK(chunks.size() == 0u);
+
+    // Nor does one that starts below the height, nor one that would close a
+    // gap below a chunk of this branch.
+    CHECK(chunks.stored(stored_at(9, 10, 3), 4, 11) == 11u);
+    CHECK(chunks.stored(stored_at(13, 1, 4), 4, 11) == 11u);
+    CHECK(chunks.stored(stored_at(12, 2, 3), 4, 11) == 11u);
+    CHECK(chunks.size() == 1u);
+}
+
+// =============================================================================
 // An outcome from a branch the chain has left is nobody's, success or failure
 // =============================================================================
 
