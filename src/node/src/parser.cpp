@@ -339,6 +339,9 @@ void add_settings(CLI::App& app, configuration& cfg) {
     app.add_option("--node.compact_filters",                cfg.node.compact_filters,
         "Serve compact block filters to light wallets: getcfilters, getcfheaders and getcfcheckpt "
         "(default false). Not on a pruning node.");
+    app.add_option("--node.input_prefix_filters",           cfg.node.input_prefix_filters,
+        "Also serve the input prefix filter (filter type 2), for wallets of reusable payment addresses "
+        "(default false). Needs node.compact_filters.");
 #endif
     add_enum_option(app, "--node.display",
         cfg.node.display, parse_display_mode,
@@ -413,6 +416,13 @@ bool check_compact_filters(configuration const& cfg, std::ostream& error) {
     if (cfg.node.compact_filters && cfg.database.prune_keep_blocks != 0) {
         error << "Error: node.compact_filters is not allowed on a pruning node "
                  "(db.prune_keep_blocks); it needs every block." << std::endl;
+        return false;
+    }
+    // The input prefix filter is served beside the regular filter: a wallet
+    // finds the nodes that serve filters by the compact filters service bit,
+    // which says the regular filter is served.
+    if (cfg.node.input_prefix_filters && ! cfg.node.compact_filters) {
+        error << "Error: node.input_prefix_filters needs node.compact_filters." << std::endl;
         return false;
     }
     return true;

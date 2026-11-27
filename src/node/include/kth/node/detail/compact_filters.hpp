@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 #include <asio/awaitable.hpp>
 
@@ -42,19 +43,24 @@ enum class message_result;
 namespace detail {
 
 // =============================================================================
-// Serving compact block filters (the regular filter, BIP157/158)
+// Serving compact block filters (BIP157/158)
 // =============================================================================
+//
+// The regular filter (filter type 0), and the input prefix filter (filter
+// type 2, for wallets of reusable payment addresses) when the node is set to
+// serve it. Both are built from the block alone.
 //
 // A filter is built from its block when a peer asks for it, by the peer's own
 // service: nothing of it is shared.
 //
 // A filter header chains back to the first block, so the node keeps the filter
-// hash and the filter header of every block of the connected chain: 64 bytes a
-// block (compact_filter_store.hpp). One task owns those records, the index. It
-// follows the connected chain, reading each new block once, and it answers
-// what is asked about the records. The peers' services reach it through
-// `compact_filter_channels` and wait for its answer; nothing else touches the
-// records.
+// hash and the filter header of every block of the connected chain, for each
+// filter type it serves: 64 bytes a block and a type, each type in a file of
+// its own (compact_filter_store.hpp). One task owns those records, the index.
+// It follows the connected chain, reading each new block once for all the
+// types, and it answers what is asked about the records. The peers' services
+// reach it through `compact_filter_channels` and wait for its answer; nothing
+// else touches the records.
 
 template <typename Request, typename Answer>
 struct compact_filter_query {
@@ -98,15 +104,33 @@ struct KND_API compact_filter_channels {
     select_channel<std::monostate> tip_events;
 };
 
-// The block a filter is built from, by its hash. The node stores no record of
-// the first block, so that one is the configured genesis block.
+// The block a filter is built from, by its hash, and the filter types served.
+// The node stores no record of the first block, so that one is the configured
+// genesis block.
 struct compact_filter_blocks {
-    compact_filter_blocks(blockchain::block_chain const& chain, domain::chain::block genesis);
+    // `input_prefix`: the input prefix filter is served besides the regular
+    // filter.
+    compact_filter_blocks(blockchain::block_chain const& chain, domain::chain::block genesis,
+        bool input_prefix = false);
+
+    [[nodiscard]]
+    bool serves(uint8_t filter_type) const noexcept {
+        return filter_type == domain::message::regular_compact_filter
+            || (input_prefix && filter_type == domain::message::input_prefix_compact_filter);
+    }
 
     blockchain::block_chain const& chain;
     domain::chain::block const genesis;
     hash_digest const genesis_hash;
+    bool const input_prefix;
 };
+
+// The filter of type `filter_type` of a block the node holds, as it goes on
+// the wire: the regular filter or the input prefix filter. operation_failed
+// for another type.
+[[nodiscard]] KND_API
+awaitable_expected<data_chunk> build_compact_filter(compact_filter_blocks const& blocks, uint8_t filter_type,
+    hash_digest const& block);
 
 // The regular filter of a block the node holds, as it goes on the wire.
 [[nodiscard]] KND_API
@@ -131,17 +155,33 @@ struct compact_filter_index_pace {
     size_t interval = domain::message::compact_filter_checkpoint_interval;
 };
 
-// The index: until `channels` is closed. It loads `file`, drops the records of
-// blocks that left the connected chain, reads the blocks it has no record of,
-// and answers the queries between slices of that. It looks at the chain when
-// it starts and at each `tip_moved`.
+// A filter type the index keeps the records of, and the file it keeps them in.
+struct compact_filter_index_file {
+    uint8_t filter_type;
+    kth::path path;
+};
+
+// The index: until `channels` is closed. For each of `files`, it loads the
+// file and drops the records of blocks that left the connected chain. It reads
+// the blocks some type has no record of, each block once for every type that
+// lacks it, and answers the queries between slices of that. It looks at the
+// chain when it starts and at each `tip_moved`. The records of one type do
+// not wait for another's: a type served for the first time on a chain whose
+// other types have their records reads the chain from the first block for
+// that type alone.
+[[nodiscard]] KND_API
+::asio::awaitable<void> run_compact_filter_index(compact_filter_channels& channels,
+    compact_filter_blocks blocks, std::vector<compact_filter_index_file> files, compact_filter_index_pace pace = {});
+
+// The index of the regular filter alone, in `file`.
 [[nodiscard]] KND_API
 ::asio::awaitable<void> run_compact_filter_index(compact_filter_channels& channels,
     compact_filter_blocks blocks, kth::path file, compact_filter_index_pace pace = {});
 
 // The answer to a `getcfheaders`, asked of the index. Nothing when it is not
-// answered: another filter type, a stop block off the connected chain, a range
-// beyond the limit or past the records, or an index that is busy or ended.
+// answered: a filter type it keeps no records of, a stop block off the
+// connected chain, a range beyond the limit or past the records, or an index
+// that is busy or ended.
 [[nodiscard]] KND_API
 ::asio::awaitable<std::optional<domain::message::compact_filter_headers>>
 ask_compact_filter_headers(compact_filter_channels& channels,
@@ -158,7 +198,8 @@ ask_compact_filter_checkpoint(compact_filter_channels& channels,
 // request that cannot be answered is ignored, as other Bitcoin Cash nodes do:
 // the wallet asks another peer.
 
-/// getcfilters -> one cfilter for each block, lowest first.
+/// getcfilters -> one cfilter for each block, lowest first, for a filter type
+/// `blocks` serves.
 [[nodiscard]] KND_API
 ::asio::awaitable<message_result> handle_get_compact_filters(compact_filter_blocks const& blocks,
     network::peer_session& peer, domain::message::get_compact_filters const& request);

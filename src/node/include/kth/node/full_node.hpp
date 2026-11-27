@@ -257,6 +257,9 @@ private:
     // Set when node.compact_filters is on. The peers' services and the index
     // read it, and both end before the node does.
     kth::path compact_filter_file_;
+    // Where the index keeps the records of the input prefix filter, when
+    // node.input_prefix_filters is on too.
+    kth::path input_prefix_filter_file_;
     // node.compact_filters on a pruning node: start() refuses it.
     bool compact_filters_refused_{false};
     std::unique_ptr<detail::compact_filter_blocks> compact_filter_blocks_;

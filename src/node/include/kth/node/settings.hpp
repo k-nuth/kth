@@ -61,6 +61,10 @@ struct KND_API settings {
     // Serve compact block filters to light wallets (the cfilter messages). Read
     // only by a build with the option `neutrino`.
     bool compact_filters;
+    // Serve the input prefix filter (filter type 2, for wallets of reusable
+    // payment addresses) beside the regular filter. Needs compact_filters;
+    // read only by a build with the option `neutrino`.
+    bool input_prefix_filters;
     // Serve wallets that load a bloom filter (BIP37). On unless turned off in
     // a build with the option `bloom_filters`, as on other Bitcoin Cash nodes;
     // off, and refused, in a build without it.

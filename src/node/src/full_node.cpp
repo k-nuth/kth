@@ -109,6 +109,10 @@ full_node::full_node(configuration const& configuration)
     auto const filters = uint64_t(domain::message::version::service::node_compact_filters);
     network_settings_.services = (network_settings_.services & ~filters) | (served ? filters : 0);
     compact_filter_file_ = configuration.database.directory / "compact_filter_headers";
+    // The input prefix filter has no service bit of its own: it is served
+    // beside the regular filter, by a node with the bit, and a wallet that
+    // wants it asks such a node.
+    input_prefix_filter_file_ = configuration.database.directory / "input_prefix_filter_headers";
 #endif
 #endif
 }
@@ -195,7 +199,7 @@ full_node::~full_node() {
     // headers are asked of the index.
     if (node_settings_.compact_filters) {
         compact_filter_blocks_ = std::make_unique<detail::compact_filter_blocks>(chain_,
-            get_genesis_block(network_type_));
+            get_genesis_block(network_type_), node_settings_.input_prefix_filters);
         network_.register_served_message_handler<domain::message::get_compact_filters>(
             [this](peer_session& peer, domain::message::get_compact_filters const& request) {
                 return detail::handle_get_compact_filters(*compact_filter_blocks_, peer, request);
@@ -532,13 +536,18 @@ full_node::~full_node() {
     if ( ! compact_filter_blocks_) {
         co_return;
     }
-    // The index on a thread of its own: it owns the records, and its file is
+    // The index on a thread of its own: it owns the records, and its files are
     // written from there, off the network pool. It ends when the network
-    // closes its channels.
+    // closes its channels. One index for every filter type served, each type
+    // in its own file: a block is read once for all of them.
+    std::vector<detail::compact_filter_index_file> files;
+    files.push_back({domain::message::regular_compact_filter, compact_filter_file_});
+    if (compact_filter_blocks_->input_prefix) {
+        files.push_back({domain::message::input_prefix_compact_filter, input_prefix_filter_file_});
+    }
     ::asio::thread_pool pool(1);
     co_await ::asio::co_spawn(pool.get_executor(),
-        detail::run_compact_filter_index(network_.compact_filters(), *compact_filter_blocks_,
-            compact_filter_file_),
+        detail::run_compact_filter_index(network_.compact_filters(), *compact_filter_blocks_, std::move(files)),
         ::asio::use_awaitable);
     pool.join();
 #endif

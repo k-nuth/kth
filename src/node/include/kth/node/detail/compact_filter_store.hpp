@@ -22,9 +22,10 @@
 
 namespace kth::node::detail {
 
-// What the node keeps of the regular compact filter of one block: the hash of
-// the filter and the filter header, which chains that hash to the filter
-// header of the block before (all zeros before the first block).
+// What the node keeps of a compact filter of one block, the regular filter or
+// another type it serves: the hash of the filter and the filter header, which
+// chains that hash to the filter header of the block before (all zeros before
+// the first block).
 struct compact_filter_record {
     hash_digest filter_hash{null_hash};
     hash_digest filter_header{null_hash};
@@ -38,8 +39,9 @@ struct compact_filter_record {
 [[nodiscard]] KND_API
 hash_digest chain_filter_header(hash_digest const& filter_hash, hash_digest const& previous) noexcept;
 
-// The records of one chain, lowest first: record `h` is the block at height
-// `h`. Held whole in memory, 64 bytes a block, and in one file:
+// The records of one chain and one filter type, lowest first: record `h` is
+// the block at height `h`. Held whole in memory, 64 bytes a block, and in one
+// file, each filter type in its own:
 //
 //     "KTHCFIDX"  version  count  tip      then `count` records
 //      8 bytes    4        4      32       64 bytes each
