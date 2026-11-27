@@ -94,7 +94,7 @@ dispatcher::handle(method_context& ctx, std::string_view body) const {
         }
         first = false;
         if ( ! member.object) {
-            reply += build_error("null", static_cast<int>(error_code::invalid_request),
+            reply += build_error("null", int(error_code::invalid_request),
                 "Invalid Request object");
             continue;
         }
