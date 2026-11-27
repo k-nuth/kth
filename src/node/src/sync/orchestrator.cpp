@@ -877,7 +877,13 @@ static
             fast_peers.reserve(peers.size());
             size_t slow_count = 0;
             for (auto const& p : peers) {
-                if (p->has_numeric_authority() && network.is_slow_peer(p->authority())) {
+                if ( ! p->is_full_node()) {
+                    // Advertises neither NODE_NETWORK nor NODE_NETWORK_LIMITED:
+                    // it serves no blocks, and a chunk given to it would wait
+                    // out its timeout. See detail/block_service.hpp.
+                    spdlog::debug("[peer_provider] Excluding peer {} from block download: it serves no blocks",
+                        p->authority_with_agent());
+                } else if (p->has_numeric_authority() && network.is_slow_peer(p->authority())) {
                     ++slow_count;
                     auto speed = network.get_peer_speed(p->authority());
                     spdlog::debug("[peer_provider] Excluding slow peer {} ({:.1f}ms/block)",
@@ -895,7 +901,9 @@ static
             }
 
             // Headers: send all peers (headers are small, slow is less of an
-            // issue) to the coordinator, which owns the header walk. Awaited: a
+            // issue) to the coordinator, which owns the header walk and
+            // announces new tips; it leaves the peers that serve no blocks out
+            // of the walk and announces to every one. Awaited: a
             // peer set dropped is a walk that never learns who it may ask. The
             // coordinator never waits on this task, and closes its channel when
             // it ends, so this cannot wait forever.
@@ -2094,13 +2102,18 @@ static
                 for (auto const& peer : update->peers) {
                     if (peer->stopped()) continue;
                     auto const version = peer->peer_version();
+                    // Every peer hears of new tips.
                     header_peers.push_back(peer);
+                    // Only one that serves blocks is asked for headers: one
+                    // that serves none, such as a light client or a pool's
+                    // listener, would leave each stimulus to its deadline.
+                    if ( ! peer->is_full_node()) continue;
                     walk_peers.push_back(detail::walk_peer{
                         .nonce = peer->nonce(),
                         .claimed_height = version ? version->start_height() : 0u});
                 }
-                spdlog::debug("[sync_coordinator] Header peers updated: {} connected",
-                    header_peers.size());
+                spdlog::debug("[sync_coordinator] Header peers updated: {} connected, {} asked for headers",
+                    header_peers.size(), walk_peers.size());
                 co_await apply(walk.peers_changed(std::move(walk_peers), headers_synced_to), "peers");
                 continue;
             }

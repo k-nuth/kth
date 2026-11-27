@@ -517,6 +517,7 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
           test/local_admission_tasks.cpp
           test/result_bridge.cpp
           test/stored_chunks.cpp
+          test/block_service.cpp
           test/local_admission_range.cpp
           test/main.cpp
           test/node.cpp

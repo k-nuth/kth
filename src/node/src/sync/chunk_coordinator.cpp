@@ -37,10 +37,14 @@ chunk_coordinator::chunk_coordinator(
 // Peer Interface (Lock-Free)
 // =============================================================================
 
-std::optional<chunk_claim> chunk_coordinator::claim_chunk() {
+std::optional<chunk_claim> chunk_coordinator::claim_chunk(uint32_t lowest_height) {
     if (stopped_.load(std::memory_order_acquire)) {
         return std::nullopt;
     }
+
+    // The first chunk that starts at or above `lowest_height`.
+    auto const first = lowest_height <= start_height_ ? size_t{0}
+        : (size_t(lowest_height - start_height_) + config_.chunk_size - 1) / config_.chunk_size;
 
     // Start at the first chunk that may not be completed and move that mark
     // over the completed chunks found on the way.
@@ -58,6 +62,12 @@ std::optional<chunk_claim> chunk_coordinator::claim_chunk() {
             continue;
         }
         prefix_completed = false;
+        if (i < first) {
+            // Below what the peer serves, and so is every chunk up to the
+            // first: none of them is this peer's to claim.
+            i = first - 1;
+            continue;
+        }
         if (state != FREE) {
             continue;
         }

@@ -5,6 +5,7 @@
 #include <kth/blockchain/utxo_deletion_sweep.hpp>
 #include <kth/node/sync/block_tasks.hpp>
 
+#include <kth/node/detail/block_service.hpp>
 #include <kth/node/sync/download_ownership.hpp>
 
 #include <algorithm>
@@ -203,6 +204,16 @@ std::atomic<uint32_t> g_active_download_peers{0};
     auto const peer_nonce = peer->nonce();
     size_t chunks_downloaded = 0;
 
+    // A peer that serves only recent blocks is handed only chunks within
+    // them; any other peer, every chunk. See detail/block_service.hpp.
+    auto const version = peer->peer_version();
+    auto const lowest_served = detail::lowest_height_served(version ? version->services() : 0,
+        version ? version->start_height() : 0, coordinator->end_height());
+    if (lowest_served != 0) {
+        spdlog::debug("[block_download] Peer {} serves only recent blocks: chunks from height {}",
+            addr, lowest_served);
+    }
+
     // Timing stats accumulation
     std::vector<uint64_t> download_times_ms;
     std::vector<uint64_t> send_times_ms;
@@ -317,9 +328,11 @@ std::atomic<uint32_t> g_active_download_peers{0};
 
     while (!peer->stopped() && !coordinator->is_stopped()) {
         // Claim chunk via coordinator - lock-free CAS
-        auto maybe_chunk = coordinator->claim_chunk();
+        auto maybe_chunk = coordinator->claim_chunk(lowest_served);
         if (!maybe_chunk) {
-            // No more chunks or all slots busy - wait and retry
+            // No more chunks or all slots busy - wait and retry. A peer that
+            // serves only recent blocks also waits here while the chunks it
+            // could serve are taken: those below are for other peers.
             if (coordinator->is_complete() || coordinator->is_stopped()) {
                 spdlog::debug("[block_download] Peer {} exiting: sync complete or stopped (complete={}, stopped={})",
                     addr, coordinator->is_complete(), coordinator->is_stopped());
