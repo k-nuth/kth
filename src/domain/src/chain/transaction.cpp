@@ -493,7 +493,7 @@ code transaction::accept(
 
 #if defined(KTH_CURRENCY_BCH)
     if (serialized_size(true) < min_tx_size(flags)) {
-        return error::transaction_size_limit;
+        return error::transaction_undersize;
     }
 
     if (is_enabled(flags, kth::domain::machine::script_flags::bch_tokens)) {

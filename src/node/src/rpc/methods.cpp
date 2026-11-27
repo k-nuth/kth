@@ -407,6 +407,7 @@ std::optional<std::string> bip22_reject_reason(code const& ec, uint32_t version)
         {error::coinbase_transaction, "bad-tx-coinbase"},
         {error::transaction_internal_double_spend, "bad-txns-inputs-duplicate"},
         {error::transaction_size_limit, "bad-txns-oversize"},
+        {error::transaction_undersize, "bad-txns-undersize"},
         {error::transaction_non_final, "bad-txns-nonfinal"},
         {error::unspent_duplicate, "bad-txns-BIP30"},
         {error::missing_previous_output, "bad-txns-inputs-missingorspent"},

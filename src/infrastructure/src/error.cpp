@@ -126,6 +126,7 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::coinbase_transaction, "coinbase transaction disallowed in memory pool" },
         { error::transaction_internal_double_spend, "double spend internal to transaction" },
         { error::transaction_size_limit, "transaction size limit exceeded" },
+        { error::transaction_undersize, "transaction under the minimum size" },
         { error::transaction_legacy_sigop_limit, "too many transaction legacy signature operations" },
 
 #if defined(KTH_CURRENCY_BCH)
