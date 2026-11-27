@@ -212,10 +212,10 @@ TEST_CASE("a transaction a peer announces is asked for and reaches the mempool",
     tx_admission_channel admission{tx_admission_capacity};
     auto peer = connect(ioc, config, 1);
 
-    // The chain is current, but the clock half of synchronized() reads this
-    // regtest trunk as stale; the gate itself is controlled in tx_relay.cpp.
+    // The gate itself is controlled in tx_relay.cpp; the case below reads the
+    // chain's own.
     tx_relay_view view{
-        .synchronized = [] { return true; },
+        .following = [] { return true; },
         .in_mempool = [&chain](hash_digest const& txid) { return chain.mempool_ref().contains(txid); },
         .tip = [&chain] { return chain.chain_view()->tip_hash; },
     };
@@ -248,6 +248,131 @@ TEST_CASE("a transaction a peer announces is asked for and reaches the mempool",
     }
     CHECK(owner.wait_for(0s) == std::future_status::ready);
     CHECK(admitter.wait_for(0s) == std::future_status::ready);
+}
+
+// The same path, gated by the chain's own reading (chain_relay_view). A block
+// that is in as a header and not yet connected does not stop the relay: the
+// transaction is asked for and checked against the connected tip, as when the
+// node is level with its headers. Seventeen headers past the tip is catching
+// up, and then nothing is asked for or validated.
+TEST_CASE("a transaction announced while the next block arrives is asked for and reaches the mempool",
+          "[mempool][admission][tx_relay]") {
+    using namespace kth::node::detail;
+    admission_chain built("tx_relay_arriving", trunk_len);
+    auto& chain = built.chain();
+    auto const tx = std::make_shared<domain::message::transaction const>(built.matured_spend(fee));
+
+    // The next blocks, for their headers.
+    constexpr auto reach = uint32_t(blockchain::template_max_headers_ahead);
+    std::vector<domain::chain::block> next;
+    auto prev = built.trunk.back().hash();
+    auto stamp = built.trunk.back().header().timestamp();
+    for (uint32_t h = trunk_len + 1; h <= trunk_len + reach + 1; ++h) {
+        stamp += block_spacing;
+        next.push_back(test::mine_block(prev, h, stamp, 0, {}, 0));
+        prev = next.back().hash();
+    }
+    REQUIRE(built.fixture.organizer().add_headers(headers_of({next.front()})).headers_added == 1u);
+
+    auto const ready = chain.synchronization();
+    REQUIRE_FALSE(ready.caught_up);
+    REQUIRE(ready.arriving);
+    REQUIRE(ready.fresh);
+    REQUIRE_FALSE(ready.synchronized());
+    REQUIRE(ready.following());
+
+    ::asio::io_context ioc;
+    auto const config = relay_settings();
+    tx_relay_channels channels;
+    tx_admission_channel admission{tx_admission_capacity};
+    auto peer = connect(ioc, config, 1);
+
+    auto view = chain_relay_view(chain);
+    REQUIRE(view.following());
+    size_t submitted = 0;
+    auto owner = ::asio::co_spawn(ioc, tx_relay_task(channels, std::move(view), admission,
+        [&ioc](::asio::awaitable<void> task) { ::asio::co_spawn(ioc, std::move(task), ::asio::detached); }),
+        ::asio::use_future);
+    auto admitter = ::asio::co_spawn(ioc, tx_admission_task(admission,
+        [&chain, &submitted](domain::message::transaction::const_ptr pooled) {
+            ++submitted;
+            return ::asio::co_spawn(chain.executor(), chain.submit_transaction(std::move(pooled)), ::asio::use_awaitable);
+        }, channels), ::asio::use_future);
+
+    REQUIRE(channels.submit(tx_announced{peer.session, {tx->hash()}}));
+    CHECK(contains(read_requests(ioc, peer, 2s), tx->hash()));
+
+    REQUIRE(channels.submit(tx_received{1, tx}));
+    auto const deadline = std::chrono::steady_clock::now() + 10s;
+    while ( ! chain.mempool_ref().contains(tx->hash()) && std::chrono::steady_clock::now() < deadline) {
+        ioc.restart();
+        ioc.run_for(5ms);
+    }
+    CHECK(chain.mempool_ref().contains(tx->hash()));
+    CHECK(submitted == 1u);
+    // Checked against the connected tip: the header above it changed nothing.
+    CHECK(chain.chain_view()->tip_hash == built.trunk.back().hash());
+
+    // The rest of the headers: one more than blocks arriving.
+    std::vector<domain::chain::block> const rest(next.begin() + 1, next.end());
+    REQUIRE(built.fixture.organizer().add_headers(headers_of(rest)).headers_added == reach);
+    auto const behind = chain.synchronization();
+    REQUIRE_FALSE(behind.arriving);
+    REQUIRE_FALSE(behind.following());
+
+    auto const other = std::make_shared<domain::message::transaction const>(built.matured_spend(fee + 1));
+    REQUIRE(channels.submit(tx_announced{peer.session, {other->hash()}}));
+    // Every getdata the peer was sent, the first one's included.
+    CHECK_FALSE(contains(read_requests(ioc, peer, 200ms, 2), other->hash()));
+    REQUIRE(channels.submit(tx_received{1, other}));
+    ioc.restart();
+    ioc.run_for(200ms);
+    CHECK(submitted == 1u);
+    CHECK_FALSE(chain.mempool_ref().contains(other->hash()));
+
+    channels.close();
+    while ((owner.wait_for(0s) != std::future_status::ready
+            || admitter.wait_for(0s) != std::future_status::ready)
+           && std::chrono::steady_clock::now() < deadline + 10s) {
+        ioc.restart();
+        ioc.run_for(5ms);
+    }
+    CHECK(owner.wait_for(0s) == std::future_status::ready);
+    CHECK(admitter.wait_for(0s) == std::future_status::ready);
+}
+
+// What the relay asks of the chain before it keeps a non-final transaction
+// for the next tip: final for the block after the header tip, by its lock
+// height. A wallet sets the lock time to its tip height, and that block is in
+// here as a header and not connected.
+TEST_CASE("the relay finds a transaction final after the header tip by its lock height",
+          "[mempool][admission][tx_relay][tip_wait]") {
+    using namespace kth::node::detail;
+    admission_chain built("tx_relay_final_after_headers", trunk_len);
+    auto& chain = built.chain();
+    auto const view = chain_relay_view(chain);
+    REQUIRE(view.final_after_headers);
+
+    auto const locked = [](uint32_t locktime) {
+        domain::chain::input::list inputs;
+        inputs.emplace_back(domain::chain::output_point{hash_digest{0x42}, 0}, domain::chain::script{}, 0);
+        return domain::chain::transaction(1, locktime, std::move(inputs), domain::chain::output::list{});
+    };
+
+    // Level with the headers: the next block is trunk_len + 1, final above a
+    // lock height of trunk_len and not at it.
+    CHECK(view.final_after_headers(locked(trunk_len)));
+    CHECK_FALSE(view.final_after_headers(locked(trunk_len + 1)));
+
+    // The next block in as a header: one more height is final after it.
+    auto const next = test::mine_block(built.trunk.back().hash(), trunk_len + 1,
+        built.trunk.back().header().timestamp() + block_spacing, 0, {}, 0);
+    REQUIRE(built.fixture.organizer().add_headers(headers_of({next})).headers_added == 1u);
+    CHECK(view.final_after_headers(locked(trunk_len + 1)));
+    CHECK_FALSE(view.final_after_headers(locked(trunk_len + 2)));
+
+    // A lock time by time is never taken for one by height.
+    CHECK_FALSE(view.final_after_headers(locked(uint32_t(locktime_threshold) + 1)));
 }
 
 // Expiry counts from when the node first saw a transaction, as BCHN's does, so

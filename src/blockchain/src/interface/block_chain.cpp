@@ -2244,15 +2244,26 @@ block_chain::sync_status block_chain::synchronization(
     bool const caught_up = header_tip >= 0 &&
         view.connected_tip_height == size_t(header_tip);
 
+    // Headers a few blocks past the connected tip, on a chain that runs through
+    // it: blocks still arriving (see template_max_headers_ahead). The height
+    // alone is not enough. Headers that switched to another branch are not the
+    // connected tip's next blocks, however close their height, and a template
+    // on that tip would build on a block the header chain has left.
+    auto const idx = header_index_.find(view.tip_hash);
+    bool const arriving = header_tip >= 0 &&
+        view.connected_tip_height < size_t(header_tip) &&
+        size_t(header_tip) - view.connected_tip_height <= template_max_headers_ahead &&
+        idx != header_index::null_index &&
+        header_index_.active_at(int32_t(view.connected_tip_height)) == idx;
+
     // A limit of zero disables the clock half. It does not say the node is at
     // the head — that is what caught_up is for, and it still has to hold.
     if (notify_limit_seconds_ == 0) {
-        return {caught_up, true};
+        return {caught_up, true, arriving};
     }
 
-    auto const idx = header_index_.find(view.tip_hash);
     if (idx == header_index::null_index) {
-        return {caught_up, false};
+        return {caught_up, false, arriving};
     }
 
     auto const now = uint32_t(zulu_time());
@@ -2269,7 +2280,7 @@ block_chain::sync_status block_chain::synchronization(
         : static_cast<uint32_t>(notify_limit_seconds_);
 
     bool const fresh = stamp >= floor_subtract(now, limit);
-    return {caught_up, fresh};
+    return {caught_up, fresh, arriving};
 }
 
 block_chain::chain_view_ptr block_chain::chain_view() const {
@@ -3510,9 +3521,11 @@ block_chain::fetch_template() const {
         co_return std::unexpected(error::service_stopped);
     }
 
+    // Mining work: built on the connected tip while the headers are level with
+    // it or a few blocks past it (see template_max_headers_ahead).
     auto const ready = synchronization();
-    if ( ! ready.synchronized()) {
-        co_return std::unexpected(ready.caught_up ? error::node_stale : error::node_behind);
+    if ( ! ready.serves_templates()) {
+        co_return std::unexpected(ready.caught_up || ready.arriving ? error::node_stale : error::node_behind);
     }
 
     // A single owner issues UTXO-library reads on the chain executor. Other
@@ -3595,9 +3608,11 @@ block_chain::fetch_mining_template(blockchain::coinbase_reserve reserve, std::op
         co_return std::unexpected(error::service_stopped);
     }
 
+    // Mining work: built on the connected tip while the headers are level with
+    // it or a few blocks past it (see template_max_headers_ahead).
     auto const ready = synchronization();
-    if ( ! ready.synchronized()) {
-        co_return std::unexpected(ready.caught_up ? error::node_stale : error::node_behind);
+    if ( ! ready.serves_templates()) {
+        co_return std::unexpected(ready.caught_up || ready.arriving ? error::node_stale : error::node_behind);
     }
 
     // This capture decides only whether an ALREADY BUILT template can be served.

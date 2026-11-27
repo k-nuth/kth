@@ -446,9 +446,9 @@ template_provider::template_provider(sv2_settings const& settings,
                 + uint64_t{constraints.coinbase_output_max_additional_size},
             constraints.coinbase_output_max_additional_sigops});
         if ( ! value) {
-            // A node that has a new header but not yet its block, or is in a
-            // chain transition, has no template for a moment; the tip wake-up
-            // sent once the block connects asks again. The client is kept: a
+            // A node in a chain transition, or further behind its headers than
+            // blocks still arriving, has no template for now; the tip wake-up
+            // sent once a block connects asks again. The client is kept: a
             // stopping node stops this provider, which ends the connection.
             spdlog::info("[sv2] No template yet ({}); waiting for the next tip",
                 value.error().message());

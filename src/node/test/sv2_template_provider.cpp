@@ -1250,9 +1250,8 @@ TEST_CASE("sv2 bounds retained templates and rejects constraints that cannot fit
 }
 
 TEST_CASE("sv2 keeps a client through a moment without a template and sends one when it can", "[sv2 template_provider]") {
-    // A chain mid-transition, like one holding a new header whose block is
-    // still connecting, has no template for a moment. The client is kept, and
-    // the wake-up that ends the transition brings its work.
+    // A chain mid-transition has no template for a moment. The client is kept,
+    // and the wake-up that ends the transition brings its work.
     listener_fixture fixture(loopback_settings());
     (void)seed_chain(fixture, 101);
     auto client = fixture.connect(fixture.start());
