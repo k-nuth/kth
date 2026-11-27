@@ -131,6 +131,11 @@ kth_script_execution_context_const_t kth_vm_program_context(kth_program_const_t 
     return opt.has_value() ? &(*opt) : nullptr;
 }
 
+kth_operation_list_const_t kth_vm_program_operations(kth_program_const_t self) {
+    KTH_PRECONDITION(self != nullptr);
+    return &(kth::cpp_ref<cpp_t>(self).operations());
+}
+
 kth_script_const_t kth_vm_program_get_script(kth_program_const_t self) {
     KTH_PRECONDITION(self != nullptr);
     return &(kth::cpp_ref<cpp_t>(self).get_script());

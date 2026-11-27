@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <string_view>
 #include <utility>
 
 #include <kth/capi/domain/chain/script.h>
@@ -66,6 +67,24 @@ kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data
         auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
         auto const size_cpp = kth::sz(size);
         auto result = cpp_t::from_data_with_size(data_cpp, size_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = kth::to_owned(std::move(*result));
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_domain_chain_script_parse_from(char const* mnemonic, KTH_OUT_OWNED kth_script_mut_t* out) {
+    KTH_PRECONDITION(mnemonic != nullptr);
+    KTH_PRECONDITION(out != nullptr);
+    KTH_PRECONDITION(*out == nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const mnemonic_cpp = std::string_view(mnemonic);
+        auto result = cpp_t::parse_from(mnemonic_cpp);
         if ( ! result) return kth::to_c_err(result.error());
         *out = kth::to_owned(std::move(*result));
         return kth_ec_success;

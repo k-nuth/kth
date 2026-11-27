@@ -157,6 +157,14 @@ kth_bool_t kth_domain_machine_operation_from_string(kth_operation_mut_t self, ch
 KTH_EXPORT KTH_OWNED
 char* kth_domain_machine_operation_to_string(kth_operation_const_t self, kth_script_flags_t active_flags);
 
+/**
+ * @return Owned byte buffer. Caller must release with `kth_core_destruct_array`.
+ * On success, resets the operation and writes the length to `out_size`.
+ * On allocation failure, returns NULL and leaves the operation and `out_size` unchanged.
+ */
+KTH_EXPORT KTH_OWNED
+uint8_t* kth_domain_machine_operation_take_data(kth_operation_mut_t self, kth_size_t* out_size);
+
 
 // Static utilities
 
@@ -174,6 +182,9 @@ kth_opcode_t kth_domain_machine_operation_opcode_from_positive(uint8_t value);
 
 KTH_EXPORT
 uint8_t kth_domain_machine_operation_opcode_to_positive(kth_opcode_t code);
+
+KTH_EXPORT
+kth_error_code_t kth_domain_machine_operation_read_data_size(kth_opcode_t code, uint8_t const* data, kth_size_t n, uint32_t* out);
 
 #ifdef __cplusplus
 } // extern "C"

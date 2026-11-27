@@ -108,6 +108,10 @@ kth_transaction_const_t kth_vm_program_transaction(kth_program_const_t self);
 KTH_EXPORT
 kth_script_execution_context_const_t kth_vm_program_context(kth_program_const_t self);
 
+/** @return Borrowed `kth_operation_list_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
+KTH_EXPORT
+kth_operation_list_const_t kth_vm_program_operations(kth_program_const_t self);
+
 /** @return Borrowed `kth_script_const_t` view into `self`. Do not destruct; the parent object retains ownership. Invalidated by any mutation of `self`. */
 KTH_EXPORT
 kth_script_const_t kth_vm_program_get_script(kth_program_const_t self);
