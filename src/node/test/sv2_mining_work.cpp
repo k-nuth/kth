@@ -297,9 +297,11 @@ TEST_CASE("Mining coinbase carries the configured tag right after the height", "
     // The bytes a payout request commits to carry the same tag at the same place.
     auto const payout_prefix = payout_coinbase_prefix(1, 7, 12, 8, tag);
     REQUIRE(payout_prefix);
-    REQUIRE(payout_prefix->size() >= 5 + tag.size());
+    REQUIRE(payout_prefix->size() >= 6 + tag.size());
     REQUIRE(payout_prefix->front() == 0x51);
-    REQUIRE(std::equal(tag.begin(), tag.end(), payout_prefix->begin() + 1));
+    // One data push after the height: its length, then the tag.
+    REQUIRE((*payout_prefix)[1] == tag.size());
+    REQUIRE(std::equal(tag.begin(), tag.end(), payout_prefix->begin() + 2));
     REQUIRE(payout_coinbase_prefix(1, 7, 12, 8) != payout_prefix);
 
     // A tag one byte past the limit builds no work and stops the node at startup.

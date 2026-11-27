@@ -120,6 +120,19 @@ struct coinbase_parts {
     size_t size = 0;
 };
 
+// The tag as one data push: its length, then its bytes. Written raw, the first
+// byte of the text would be read as an opcode (a '/' pushes the next 47 bytes),
+// so a tag reader would find no push holding it. Empty writes nothing. The
+// tag is at most max_coinbase_tag_size bytes, so one byte gives its length.
+static data_chunk tag_push(data_chunk const& coinbase_tag) {
+    if (coinbase_tag.empty()) return {};
+    data_chunk out;
+    out.reserve(coinbase_tag.size() + 1);
+    out.push_back(uint8_t(coinbase_tag.size()));
+    out.insert(out.end(), coinbase_tag.begin(), coinbase_tag.end());
+    return out;
+}
+
 // BCH coinbase: version, one null input, BIP34, the channel extranonce, the
 // supplied outputs, locktime 0. There is no segwit marker and no witness
 // commitment to strip (sv2-spec 5.3.16 assumes a Bitcoin coinbase).
@@ -143,7 +156,8 @@ std::optional<coinbase_parts> split_coinbase(size_t height, uint32_t job_id,
     // when its payout and channel extranonce have not changed.
     // The tag follows the height, where pools and explorers expect a
     // coinbase's text.
-    bip34.insert(bip34.end(), coinbase_tag.begin(), coinbase_tag.end());
+    auto const tag = tag_push(coinbase_tag);
+    bip34.insert(bip34.end(), tag.begin(), tag.end());
     auto const generation = to_little_endian(job_id);
     bip34.insert(bip34.end(), generation.begin(), generation.end());
     // BCH required 100-byte transactions before CashTokens reduced the
@@ -239,19 +253,20 @@ std::optional<data_chunk> script_prefix_for(size_t height, uint32_t generation,
     auto bip34 = domain::machine::operation(number->data()).to_data();
     if (bip34.empty() || bip34.size() > bip34_reserve) return std::nullopt;
     auto const job = to_little_endian(generation);
+    auto const tag = tag_push(coinbase_tag);
     // 4 version + 1 input count + 36 outpoint + 1 script length + 4 sequence
     // + 1 output count + 9 minimal output + 4 locktime.
     constexpr size_t fixed_min = 4 + 1 + 36 + 1 + 4 + 1 + 9 + 4;
-    auto const unpadded = fixed_min + bip34.size() + job.size() + coinbase_tag.size()
+    auto const unpadded = fixed_min + bip34.size() + job.size() + tag.size()
         + extranonce_prefix_size + size_t{extranonce_size};
     size_t const pad = unpadded < 100 ? 100 - unpadded : 0;
-    auto const body = bip34.size() + job.size() + coinbase_tag.size() + pad
+    auto const body = bip34.size() + job.size() + tag.size() + pad
         + extranonce_prefix_size + size_t{extranonce_size};
     if (body > coinbase_script_limit || body >= 253) return std::nullopt;
     data_chunk prefix;
-    prefix.reserve(bip34.size() + job.size() + coinbase_tag.size() + pad);
+    prefix.reserve(bip34.size() + job.size() + tag.size() + pad);
     prefix.insert(prefix.end(), bip34.begin(), bip34.end());
-    prefix.insert(prefix.end(), coinbase_tag.begin(), coinbase_tag.end());
+    prefix.insert(prefix.end(), tag.begin(), tag.end());
     prefix.insert(prefix.end(), job.begin(), job.end());
     prefix.insert(prefix.end(), pad, uint8_t{0});
     return prefix;
