@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <stop_token>
+#include <string>
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <utility>
 
@@ -34,6 +35,7 @@
 #include <kth/blockchain/interface/block_chain.hpp>
 #include <kth/domain/chain/compact.hpp>
 #include <kth/domain/machine/operation.hpp>
+#include <kth/infrastructure/formats/base_16.hpp>
 #include <kth/infrastructure/machine/number.hpp>
 #include <kth/infrastructure/math/hash.hpp>
 #include <kth/node/detail/scope_action.hpp>
@@ -51,7 +53,7 @@ template <typename Message>
 data_chunk frame(Message const& message) {
     auto const payload = to_data_chunk(message);
     auto bytes = to_data_chunk(message_header{0, Message::message_type,
-        static_cast<uint32_t>(payload.size())});
+        uint32_t(payload.size())});
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     return bytes;
 }
@@ -94,6 +96,25 @@ auto find_entry(Entries& entries, uint64_t id) {
     auto const it = std::find_if(entries.begin(), entries.end(),
         [id](auto const& item) { return item.id == id; });
     return it == entries.end() ? nullptr : &*it;
+}
+
+// Each frame of a response is sealed on its own (sv2-spec 4.5.3): one
+// response may hold NewTemplate and SetNewPrevHash together.
+std::expected<data_chunk, noise_error> seal(noise_transport& transport, byte_span frames) {
+    data_chunk sealed;
+    while ( ! frames.empty()) {
+        auto const header = from_data_chunk<message_header>(
+            frames.first(std::min(frames.size(), message_header::size)));
+        if ( ! header || frames.size() - message_header::size < header->msg_length) {
+            return std::unexpected(noise_error::malformed_frame);
+        }
+        auto const size = message_header::size + header->msg_length;
+        auto bytes = transport.encrypt_frame(frames.first(size));
+        if ( ! bytes) return std::unexpected(bytes.error());
+        sealed.insert(sealed.end(), bytes->begin(), bytes->end());
+        frames = frames.subspan(size);
+    }
+    return sealed;
 }
 
 } // namespace
@@ -142,7 +163,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
         + uint64_t{constraints_->coinbase_output_max_additional_size};
     auto const target = domain::chain::compact::from_compact(value.bits);
     auto const height = infrastructure::machine::number::from_int(
-        static_cast<int64_t>(value.height));
+        int64_t(value.height));
     if (size_reserve > value.size_limit
         || constraints_->coinbase_output_max_additional_sigops > value.sigchecks_limit
         || ! target || ! height) {
@@ -180,7 +201,7 @@ template_provider_session::set_template(blockchain::mining_template value) {
     hash_digest target_bytes{};
     auto big = target->big();
     for (auto& byte : target_bytes) {
-        byte = static_cast<uint8_t>(big & 0xffu);
+        byte = uint8_t(big & 0xffu);
         big >>= 8;
     }
     auto bytes = frame(message);
@@ -333,20 +354,76 @@ template_provider_session::result template_provider_session::process(
 
 template_provider::template_provider(sv2_settings const& settings,
     ::asio::any_io_executor executor, blockchain::block_chain& chain,
-    mining::doorbell& work_changes)
+    mining::doorbell& work_changes, std::optional<noise_credentials> credentials)
     : settings_(settings)
     , chain_(chain)
+    , executor_(executor)
     , owner_(::asio::make_strand(executor))
     , stop_requests_(owner_, 1)
     , listening_(owner_, 1)
     , work_changes_(work_changes)
+    , credentials_(std::move(credentials))
 {}
+
+::asio::awaitable<std::expected<noise_keys, std::string>> template_provider::noise_handshake(
+    ::asio::ip::tcp::socket& socket) {
+    byte_array<noise_initiator::flight_size> first{};
+    auto [read_error, count] = co_await ::asio::async_read(socket, ::asio::buffer(first),
+        ::asio::as_tuple(::asio::use_awaitable));
+    if (read_error) {
+        co_return std::unexpected("its first flight did not arrive: " + read_error.message());
+    }
+    auto const now = noise_clock();
+    if ( ! now) co_return std::unexpected(std::string(to_string(now.error())));
+    auto const certificate = credentials_->certificate_at(*now);
+    if ( ! certificate) {
+        // Only a certificate signed offline is refused here, and every later
+        // handshake for the same reason until it is renewed: said once.
+        if ( ! certificate_refusal_logged_) {
+            certificate_refusal_logged_ = true;
+            spdlog::error("[sv2] Refusing every Noise handshake: the certificate in {} is {}; "
+                "sign a new one and restart", settings_.certificate_file,
+                to_string(certificate.error()));
+        }
+        co_return std::unexpected("the certificate of this provider is "
+            + std::string(to_string(certificate.error())));
+    }
+
+    // A new ephemeral key and two ECDH for every handshake: on the node's
+    // executor, so that a burst of handshakes does not hold owner_, which
+    // serves every connection. The static key does not change once loaded.
+    struct answer {
+        data_chunk flight;
+        noise_keys keys;
+    };
+    auto const& static_key = credentials_->static_key;
+    auto response = co_await ::asio::co_spawn(executor_,
+        [&static_key, &first, shown = *certificate]()
+            -> ::asio::awaitable<std::expected<answer, noise_error>> {
+            noise_responder responder(noise_keypair::generate(), static_key, shown);
+            auto flight = responder.respond(first);
+            if ( ! flight) co_return std::unexpected(flight.error());
+            co_return answer{std::move(*flight), *responder.keys()};
+        }, ::asio::use_awaitable);
+    if ( ! response) co_return std::unexpected(std::string(to_string(response.error())));
+
+    auto [write_error, written] = co_await ::asio::async_write(socket,
+        ::asio::buffer(response->flight), ::asio::as_tuple(::asio::use_awaitable));
+    if (write_error) {
+        co_return std::unexpected("its answer could not be sent: " + write_error.message());
+    }
+    co_return response->keys;
+}
 
 ::asio::awaitable<void> template_provider::serve_connection(::asio::ip::tcp::socket& socket,
     mining::doorbell& closed) {
     using namespace ::asio::experimental::awaitable_operators;
 
     template_provider_session session;
+    // With Noise, set by read_frames once the handshake completes and before
+    // it queues a frame. dispatch writes only in answer to a frame, so it
+    // never writes before the handshake is done.
+    std::optional<noise_transport> transport;
 
     enum class event_kind { frame, tip, end };
     struct event {
@@ -389,7 +466,44 @@ template_provider::template_provider(sv2_settings const& settings,
 
     auto read_frames = [&]() -> ::asio::awaitable<void> {
         std::array<uint8_t, message_header::size> header_bytes{};
-        for (;;) {
+        std::array<uint8_t, 8192> encrypted{};
+        // Within the setup timeout, like the rest of the setup: a client that
+        // never completes the handshake is closed by await_setup.
+        if (credentials_) {
+            auto keys = co_await noise_handshake(socket);
+            if (keys) {
+                transport.emplace(*keys, false, template_provider_session::max_payload_size);
+            } else {
+                spdlog::debug("[sv2] Closing a connection whose Noise handshake failed: {}",
+                    keys.error());
+            }
+        }
+        // After a failed handshake nothing is read: the end is its only input.
+        while ( ! credentials_ || transport) {
+            if (transport) {
+                auto [read_error, size] = co_await socket.async_read_some(
+                    ::asio::buffer(encrypted), ::asio::as_tuple(::asio::use_awaitable));
+                if (read_error) break;
+                auto received = transport->feed(byte_span(encrypted).first(size));
+                // The frames that authenticated go to dispatch before a
+                // failure after them is acted on.
+                for (auto& bytes : received.frames) {
+                    auto const header = from_data_chunk<message_header>(
+                        byte_span(bytes).first(message_header::size));
+                    if ( ! header) break;
+                    data_chunk payload(bytes.begin() + message_header::size, bytes.end());
+                    auto [error] = co_await inbox.async_send(std::error_code{},
+                        event{event_kind::frame, *header, std::move(payload)},
+                        ::asio::as_tuple(::asio::use_awaitable));
+                    if (error) co_return;
+                }
+                if ( ! received.status) {
+                    spdlog::debug("[sv2] Closing a Noise connection: {}",
+                        to_string(received.status.error()));
+                    break;
+                }
+                continue;
+            }
             auto [header_error, header_size] = co_await ::asio::async_read(socket,
                 ::asio::buffer(header_bytes), ::asio::as_tuple(::asio::use_awaitable));
             if (header_error) break;
@@ -481,6 +595,15 @@ template_provider::template_provider(sv2_settings const& settings,
                 if (result.constraints_changed) result = co_await next_template();
             }
             if ( ! result.response.empty()) {
+                if (transport) {
+                    auto sealed = seal(*transport, result.response);
+                    if ( ! sealed) {
+                        spdlog::debug("[sv2] Closing a Noise connection: {}",
+                            to_string(sealed.error()));
+                        co_return;
+                    }
+                    result.response = std::move(*sealed);
+                }
                 auto [write_error, written] = co_await ::asio::async_write(socket,
                     ::asio::buffer(result.response), ::asio::as_tuple(::asio::use_awaitable));
                 if (write_error) co_return;
@@ -558,8 +681,20 @@ void template_provider::stop() {
         co_return;
     }
     (void)listening_.try_send(std::error_code{}, bound.port());
-    spdlog::info("[sv2] Template Provider listening on {}:{} (plaintext)", settings_.bind,
-        bound.port());
+    spdlog::info("[sv2] Template Provider listening on {}:{} ({})", settings_.bind,
+        bound.port(), credentials_ ? "Noise" : "plaintext");
+    if (credentials_) {
+        // What pool and Job Declarator configurations take (sv2-spec 4.7).
+        spdlog::info("[sv2] Noise authority public key: {}",
+            noise_authority_key(credentials_->authority_public_key));
+        // An offline authority signs for this key; the operator renews the
+        // certificate before it ends.
+        if ( ! credentials_->authority) {
+            spdlog::info("[sv2] Noise static public key {}, with a certificate valid until {}",
+                encode_base16(credentials_->static_key.public_key()),
+                credentials_->certificate.not_valid_after);
+        }
+    }
 
     // All mutable listener/connection state has one owner. At most 64 children
     // are admitted, and every completion is consumed before this scope exits.

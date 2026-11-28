@@ -78,3 +78,35 @@ TEST_CASE("sv2 listener settings survive network selection and config loading", 
     CHECK(overridden.configured.sv2.bind == "127.0.0.2");
     CHECK(overridden.configured.sv2.port == 18443u);
 }
+
+TEST_CASE("sv2 Noise settings parse and default to plaintext", "[configuration tests][parser][sv2 noise]") {
+    node::parser defaults(domain::config::network::regtest);
+    char const* none[]{"kth", "--network", "regtest", "--sv2.enabled=true"};
+    std::ostringstream error;
+    REQUIRE(defaults.parse(4, none, error));
+    // Plaintext stays the default, as it was before Noise.
+    CHECK_FALSE(defaults.configured.sv2.noise);
+    CHECK(defaults.configured.sv2.static_key_file.empty());
+    CHECK(defaults.configured.sv2.authority_key_file.empty());
+    CHECK(defaults.configured.sv2.certificate_file.empty());
+    CHECK(defaults.configured.sv2.certificate_validity_seconds == 2592000u);
+
+    config_file file("sv2_noise", "sv2.enabled=true\nsv2.noise=true\n"
+        "sv2.static_key_file=keys/provider.key\nsv2.authority_key_file=/secure/authority.key\n"
+        "sv2.authority_public_key=9bXiEd8boQVhq7WddEcERUL5tyyJVFYdU8th3HfbNXK3Yw6GRXh\n"
+        "sv2.certificate_validity_seconds=86400");
+    node::parser from_file(domain::config::network::regtest);
+    REQUIRE(from_file.parse_from_file(file.path(), error));
+    auto const& sv2 = from_file.configured.sv2;
+    CHECK(sv2.noise);
+    CHECK(sv2.static_key_file == "keys/provider.key");
+    CHECK(sv2.authority_key_file == "/secure/authority.key");
+    CHECK(sv2.authority_public_key == "9bXiEd8boQVhq7WddEcERUL5tyyJVFYdU8th3HfbNXK3Yw6GRXh");
+    CHECK(sv2.certificate_validity_seconds == 86400u);
+
+    node::parser offline(domain::config::network::regtest);
+    char const* argv[]{"kth", "--network", "regtest", "--sv2.enabled=true", "--sv2.noise=true",
+        "--sv2.certificate_file", "provider.cert"};
+    REQUIRE(offline.parse(7, argv, error));
+    CHECK(offline.configured.sv2.certificate_file == "provider.cert");
+}

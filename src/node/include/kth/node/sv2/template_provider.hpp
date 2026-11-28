@@ -10,7 +10,9 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <expected>
 #include <optional>
+#include <string>
 #include <system_error>
 
 #include <asio/any_io_executor.hpp>
@@ -25,11 +27,14 @@
 #include <kth/node/settings.hpp>
 #include <kth/node/sv2/framing.hpp>
 #include <kth/node/sv2/messages.hpp>
+#include <kth/node/sv2/noise.hpp>
+#include <kth/node/sv2/noise_credentials.hpp>
 
 // Stratum V2 Template Provider (sv2-spec 07, Template Distribution Protocol):
-// the listener, connection setup and block template flow. Frames are plaintext;
-// the Noise transport (sv2-spec 04) will wrap
-// them later, which is why the listener binds to localhost by default.
+// the listener, connection setup and block template flow. With Noise
+// credentials every connection completes the Noise handshake (sv2-spec 04)
+// first and its frames are encrypted; without them frames are plaintext, which
+// is why the listener binds to localhost by default.
 
 namespace kth::blockchain { struct block_chain; }
 
@@ -124,8 +129,10 @@ private:
 struct template_provider {
     // `work_changes` is this provider's subscription to the node's
     // mining::work_changes: each ring has every client's tip read again.
+    // `credentials`, loaded and checked before the node starts, turn Noise on.
     template_provider(sv2_settings const& settings, ::asio::any_io_executor executor,
-        blockchain::block_chain& chain, mining::doorbell& work_changes);
+        blockchain::block_chain& chain, mining::doorbell& work_changes,
+        std::optional<noise_credentials> credentials = std::nullopt);
 
     // Bind the listener and serve connections until stop(). Intended to be
     // co_spawned. Returns on a bind error, or once every connection has ended
@@ -141,8 +148,11 @@ struct template_provider {
     [[nodiscard]] ::asio::awaitable<uint16_t> wait_until_listening();
 
     // How long a connection has to complete its setup and send its coinbase
-    // constraints. One that has not by then is closed: it would hold one of
-    // the listener's connections without ever taking work. Tests shorten it.
+    // constraints, the Noise handshake included. One that has not by then is
+    // closed: it would hold one of the listener's connections without ever
+    // taking work. Noise does not authenticate the client, so one that
+    // completes the handshake and then stays silent is cut here too. Tests
+    // shorten it.
     std::chrono::steady_clock::duration setup_timeout = std::chrono::seconds(30);
 
 private:
@@ -151,9 +161,16 @@ private:
     // ends its wait for work.
     ::asio::awaitable<void> serve_connection(::asio::ip::tcp::socket& socket,
         mining::doorbell& closed);
+    // The responder's side of Noise NX: the client's 64-byte key, then this
+    // provider's 234-byte answer. The keys, or why the handshake failed.
+    ::asio::awaitable<std::expected<noise_keys, std::string>> noise_handshake(
+        ::asio::ip::tcp::socket& socket);
 
     sv2_settings const settings_;
     blockchain::block_chain& chain_;
+    // The node's executor. A handshake's key generation and its two ECDH run
+    // there, off owner_, which serves every connection.
+    ::asio::any_io_executor executor_;
     ::asio::strand<::asio::any_io_executor> owner_;
     ::asio::experimental::concurrent_channel<void(std::error_code, int)> stop_requests_;
     ::asio::experimental::concurrent_channel<void(std::error_code, uint16_t)> listening_;
@@ -161,6 +178,9 @@ private:
     // on each ring of work_changes_; owner_ serializes every use.
     mining::work_bell work_;
     mining::doorbell& work_changes_;
+    // Only owner_ uses it: certificate_at() may sign the certificate again.
+    std::optional<noise_credentials> credentials_;
+    bool certificate_refusal_logged_ = false;
 };
 
 } // namespace kth::node::sv2

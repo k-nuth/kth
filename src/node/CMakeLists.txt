@@ -393,12 +393,17 @@ if(KTH_WITH_SV2 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     src/sv2/primitives.cpp
     src/sv2/messages.cpp
     src/sv2/connection.cpp
+    src/sv2/noise.cpp
+    src/sv2/noise_credentials.cpp
     src/sv2/template_provider.cpp
+    include/kth/node/detail/noise_file.hpp
     include/kth/node/sv2/feature.hpp
     include/kth/node/sv2/framing.hpp
     include/kth/node/sv2/primitives.hpp
     include/kth/node/sv2/messages.hpp
     include/kth/node/sv2/connection.hpp
+    include/kth/node/sv2/noise.hpp
+    include/kth/node/sv2/noise_credentials.hpp
     include/kth/node/sv2/template_provider.hpp)
 endif()
 
@@ -627,10 +632,17 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
       test/sv2_messages.cpp
       test/sv2_configuration.cpp
       test/sv2_connection.cpp
+      test/sv2_full_node.cpp
+      test/sv2_noise.cpp
+      test/sv2_noise_credentials.cpp
       test/sv2_template_provider.cpp)
     target_include_directories(kth_node_sv2_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
     target_link_libraries(kth_node_sv2_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_sv2_test PRIVATE Catch2::Catch2WithMain)
+    # test/sv2_full_node.cpp runs a node in a child process, as
+    # test/executor_lifecycle.cpp does: this is how it finds the binary.
+    target_compile_definitions(kth_node_sv2_test PRIVATE
+      KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_node_sv2_test>")
   endif()
 
   include(CTest)

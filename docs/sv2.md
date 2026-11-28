@@ -27,9 +27,112 @@ sv2.port    = 8442
 The same settings are `--sv2.enabled`, `--sv2.bind` and `--sv2.port` on the
 command line.
 
-The listener speaks plaintext SV2 frames until the Noise transport is added, so
-it has no encryption and no authentication. Keep it on localhost or another
-trusted interface.
+By default the listener speaks plaintext SV2 frames, with no encryption and no
+authentication, as it did before Noise was added. Keep a plaintext listener on
+localhost or another trusted interface.
+
+## Noise
+
+With `sv2.noise = true` every connection completes the
+`Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256` handshake (sv2-spec 4) before
+`SetupConnection`, and both the six-byte frame header and every payload are
+then encrypted and authenticated. There is no plaintext fallback: a client that
+sends anything else is closed. Pools and Job Declarators that reach their
+Template Provider over a network need it.
+
+```ini
+sv2.enabled = true
+sv2.noise   = true
+```
+
+Noise is off by default, so a node that served plaintext clients keeps serving
+them after an upgrade. Turning it on is a step for the operator anyway: every
+client has to be given the authority public key below.
+
+A connection has 30 seconds to complete the handshake, `SetupConnection` and its
+first `CoinbaseOutputConstraints`. Noise does not authenticate the client, so a
+client that completes the handshake and then stays silent is closed at the same
+deadline as one that never sends its constraints.
+
+### Keys
+
+On the first start with Noise, Knuth creates two raw 32-byte secp256k1 secret
+keys with owner-only permissions (`0600`) in its data directory (`db.directory`):
+
+- `sv2_static_key`, the provider's static key;
+- `sv2_authority_key`, the authority's key, which signs the provider's
+  certificates.
+
+They are kept with the chain, so a node started from another directory keeps
+its identity. Other paths can be given with `sv2.static_key_file` and
+`sv2.authority_key_file`; a relative path is taken from the data directory, and
+its parent directory must exist. A key is written to a temporary file beside
+it, flushed to disk and only then given its name, so a write that fails or is
+interrupted never leaves a short key behind.
+
+An existing key file must hold exactly one valid secret key, belong to the
+node's user and have no group or other permissions. The file itself must not
+be a symbolic link; the directories on its path may be. A file that does not
+pass is refused and never replaced. Back up both keys: a new authority key
+changes what every client has to pin.
+
+Startup logs `Noise authority public key: <key>`. Give that key to the Job
+Declarator or pool over a trusted channel and configure it as the client's
+authority public key. It is the sv2-spec 4.7 encoding: Base58Check of `01 00`
+followed by the 32-byte BIP340 x-only authority public key. SV2 clients that
+take a URL carry the key in its path, for example:
+
+```text
+stratum2+tcp://your-node:8442/<authority-public-key>
+```
+
+`sv2.authority_public_key` may also be set beside the authority key file; the
+node then refuses to start if the file holds another key.
+
+### Certificates
+
+With the authority key on the node, Knuth signs a certificate for its static
+key at start-up and signs a new one when less than half of its lifetime is
+left, so every handshake shows one with at least half a lifetime ahead and a
+node that runs for months keeps working. Each certificate starts one hour
+before the node's clock, so a client whose clock is a little behind still takes
+it, and lasts `sv2.certificate_validity_seconds` (default 2592000, 30 days).
+
+To keep the authority key off the node, give a certificate signed elsewhere
+and the authority public key instead:
+
+```ini
+sv2.certificate_file     = provider.cert
+sv2.authority_public_key = <authority-public-key>
+```
+
+Knuth then never opens or creates an authority key file. The certificate file
+holds exactly the 74 bytes of `SIGNATURE_NOISE_MESSAGE` (sv2-spec 4.5.2): the
+version as a little-endian U16 (zero), `valid_from` and `not_valid_after` as
+U32, then a 64-byte BIP340 signature by the authority of the SHA-256 of the
+first ten bytes followed by the provider's 32-byte x-only static public key.
+BIP340 is not the Schnorr scheme of BCH transactions.
+
+The first start with `sv2.certificate_file` and no certificate there yet creates
+the static key and stops with an error that gives its public key in hex: that
+is the key to sign. Once a certificate is there, a missing static key file is
+not created again, since a new key could not match it. On every start the
+signature, the version, the validity window and the static key are checked
+before the listener is bound, and the log gives the static public key and the
+end of the certificate. When an offline certificate expires while the node
+runs, every handshake is refused and the log says so; put a renewed one in
+place and restart before then.
+
+### Start-up checks
+
+With `sv2.enabled` and `sv2.noise`, the node does not start when its keys or
+its certificate cannot be used: a malformed or unreadable key file, one others
+can read, an authority public key that is malformed or does not match, an
+invalid, expired or mismatched certificate, or a certificate lifetime of zero.
+The log gives the reason.
+
+Key files need POSIX owner-only permissions. A build for Windows refuses
+`sv2.noise`; plaintext still works there.
 
 ## Template flow
 
