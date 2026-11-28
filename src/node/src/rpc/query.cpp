@@ -238,9 +238,10 @@ std::string_view capability_name(domain::chain::capability_t capability) {
 
 // The "byteCodePattern" object: the SHA-256 of the pattern (in byte order),
 // the pattern as hex and as script text, the pushed data, and "error" only
-// for a script that ends in the middle of a push.
-void write_byte_code_pattern(writer& w, data_chunk const& script, domain::script_flags_t flags) {
-    auto const parsed = domain::chain::make_byte_code_pattern(script);
+// for a script that ends in the middle of a push. For a redeem script,
+// `p2sh_type` is the kind of output it unlocks, as "p2shType".
+void write_byte_code_pattern(writer& w, domain::chain::byte_code_pattern const& parsed,
+                             domain::script_flags_t flags, std::string_view p2sh_type = {}) {
     w.key("byteCodePattern").begin_object();
     w.field("fingerprint", encode_base16(sha256_hash(parsed.pattern)));
     w.field("pattern", encode_base16(parsed.pattern));
@@ -253,7 +254,14 @@ void write_byte_code_pattern(writer& w, data_chunk const& script, domain::script
     if (parsed.error) {
         w.field("error", true);
     }
+    if ( ! p2sh_type.empty()) {
+        w.field("p2shType", p2sh_type);
+    }
     w.end_object();
+}
+
+void write_byte_code_pattern(writer& w, data_chunk const& script, domain::script_flags_t flags) {
+    write_byte_code_pattern(w, domain::chain::make_byte_code_pattern(script), flags);
 }
 
 // A "scriptPubKey" object: asm, hex, and the kind with its addresses, then
@@ -296,14 +304,73 @@ void write_token_data(writer& w, domain::chain::token_data_t const& token) {
     w.end_object();
 }
 
+// The kind of pay-to-script-hash output a byte code pattern is, as "p2shType"
+// names it: OP_HASH160 or OP_HASH256, one push, OP_EQUAL (a95187 and aa5187).
+// Empty for any other pattern.
+std::string_view p2sh_type_of(data_chunk const& pattern) {
+    using domain::machine::opcode;
+    if (pattern.size() != 3 || pattern[1] != uint8_t(opcode::push_positive_1) ||
+            pattern[2] != uint8_t(opcode::equal)) {
+        return {};
+    }
+    if (pattern[0] == uint8_t(opcode::hash160)) {
+        return "p2sh20";
+    }
+    if (pattern[0] == uint8_t(opcode::hash256)) {
+        return "p2sh32";
+    }
+    return {};
+}
+
+// The "redeemScript" object of an input that spends a pay-to-script-hash
+// output: the last push of its scriptSig read as a script, and that script's
+// byteCodePattern object with the kind of output it unlocks.
+void write_redeem_script(writer& w, data_chunk const& redeem, domain::script_flags_t flags,
+                         std::string_view type) {
+    w.key("redeemScript").begin_object();
+    w.field("asm", domain::chain::script{redeem, false}.to_string(flags));
+    w.field("hex", encode_base16(redeem));
+    write_byte_code_pattern(w, domain::chain::make_byte_code_pattern(redeem), flags, type);
+    w.end_object();
+}
+
+// The output an input spends, into the input's object: its value in BCH, its
+// script with the kind and the one address it pays, if any, then the
+// byteCodePattern object when asked for, and its token data.
+void write_spent_output(writer& w, domain::chain::output const& spent,
+                        domain::config::network net, domain::script_flags_t flags,
+                        std::optional<domain::chain::byte_code_pattern> const& pattern) {
+    auto const& script = spent.script();
+    w.field_raw("value", satoshi_to_bitcoin(spent.value()));
+    w.key("scriptPubKey").begin_object();
+    w.field("asm", script.to_string(flags));
+    w.field("hex", encode_base16(script.bytes()));
+    auto const destination = describe_output_script(script, net);
+    w.field("type", destination.type);
+    // A bare multisig names several keys and pays no one address.
+    if (script.output_pattern() != domain::machine::script_pattern::pay_to_multisig &&
+            ! destination.addresses.empty()) {
+        w.field("address", destination.addresses.front());
+    }
+    if (pattern) {
+        write_byte_code_pattern(w, *pattern, flags);
+    }
+    w.end_object();
+    if (auto const& token = spent.token_data()) {
+        write_token_data(w, *token);
+    }
+}
+
 } // namespace
 
 namespace {
 
 // The decoderawtransaction fields, into an object the caller has opened.
+// `prevouts` is empty or holds the output each input spends.
 void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
                               domain::config::network net, domain::script_flags_t flags,
-                              bool patterns = false) {
+                              bool patterns = false,
+                              std::span<domain::chain::output const> prevouts = {}) {
     w.field("txid", encode_hash(tx.hash()));
     w.field("hash", encode_hash(tx.hash()));
     w.field("version", int64_t(tx.version()));
@@ -311,20 +378,39 @@ void write_transaction_fields(writer& w, domain::chain::transaction const& tx,
     w.field("locktime", int64_t(tx.locktime()));
 
     w.key("vin").begin_array();
-    for (auto const& input : tx.inputs()) {
+    auto const& inputs = tx.inputs();
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        auto const& input = inputs[i];
         w.begin_object();
         if (tx.is_coinbase()) {
             w.field("coinbase", encode_base16(input.script().bytes()));
         } else {
+            auto const* spent = prevouts.empty() ? nullptr : &prevouts[i];
+            // The spent output's pattern, read once: it is shown with that
+            // output, and it says whether the scriptSig ends in a redeem script.
+            std::optional<domain::chain::byte_code_pattern> spent_pattern;
+            if (patterns && spent != nullptr) {
+                spent_pattern = domain::chain::make_byte_code_pattern(spent->script().bytes());
+            }
             w.field("txid", encode_hash(input.previous_output().hash()));
             w.field("vout", int64_t(input.previous_output().index()));
             w.key("scriptSig").begin_object();
             w.field("asm", input.script().to_string(flags));
             w.field("hex", encode_base16(input.script().bytes()));
             if (patterns) {
-                write_byte_code_pattern(w, input.script().bytes(), flags);
+                auto const pattern = domain::chain::make_byte_code_pattern(input.script().bytes());
+                write_byte_code_pattern(w, pattern, flags);
+                // The redeem script is the last push of a scriptSig read to its end.
+                if (spent_pattern && ! pattern.error && ! pattern.data.empty()) {
+                    if (auto const type = p2sh_type_of(spent_pattern->pattern); ! type.empty()) {
+                        write_redeem_script(w, pattern.data.back(), flags, type);
+                    }
+                }
             }
             w.end_object();
+            if (spent != nullptr) {
+                write_spent_output(w, *spent, net, flags, spent_pattern);
+            }
         }
         w.field("sequence", int64_t(input.sequence()));
         w.end_object();
@@ -359,10 +445,31 @@ std::string render_transaction(domain::chain::transaction const& tx,
 
 std::string render_transaction_verbose(domain::chain::transaction const& tx,
                                        domain::config::network net, domain::script_flags_t flags,
-                                       std::optional<transaction_location> const& location) {
+                                       std::optional<transaction_location> const& location,
+                                       std::span<domain::chain::output const> prevouts,
+                                       bool patterns) {
+    // One spent output for each input, or none at all; a coinbase spends nothing.
+    auto const with_prevouts = ! tx.is_coinbase() && ! prevouts.empty() &&
+        prevouts.size() == tx.inputs().size();
     writer w;
     w.begin_object();
-    write_transaction_fields(w, tx, net, flags);
+    write_transaction_fields(w, tx, net, flags, patterns,
+        with_prevouts ? prevouts : std::span<domain::chain::output const>{});
+    // What the inputs spend less what the outputs pay; nothing for a
+    // transaction that would pay more than it spends.
+    if (with_prevouts) {
+        uint64_t in = 0;
+        for (auto const& spent : prevouts) {
+            in += spent.value();
+        }
+        uint64_t out = 0;
+        for (auto const& output : tx.outputs()) {
+            out += output.value();
+        }
+        if (out <= in) {
+            w.field_raw("fee", satoshi_to_bitcoin(in - out));
+        }
+    }
     w.field("hex", transaction_to_hex(tx));
     if (location) {
         auto const active = location->confirmations >= 0;
@@ -386,11 +493,37 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
     return w.str();
 }
 
+std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
+                                                      std::span<domain::chain::output const> spent) {
+    auto const& txs = block.transactions();
+    std::vector<uint64_t> fees(txs.size(), 0);
+    size_t used = 0;
+    for (size_t i = 1; i < txs.size(); ++i) {
+        uint64_t in = 0;
+        for (size_t j = 0; j < txs[i].inputs().size(); ++j) {
+            if (used == spent.size()) return std::nullopt;
+            in += spent[used++].value();
+        }
+        uint64_t out = 0;
+        for (auto const& output : txs[i].outputs()) {
+            out += output.value();
+        }
+        if (out > in) return std::nullopt;
+        fees[i] = in - out;
+    }
+    if (used != spent.size()) return std::nullopt;
+    return fees;
+}
+
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
-                                 bool patterns) {
+                                 bool patterns,
+                                 std::span<uint64_t const> fees) {
     auto const& header = block.header();
+    // One fee for each transaction, or none at all.
+    auto const with_fees = fees.size() == block.transactions().size();
+    size_t place = 0;
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(block.hash()));
@@ -413,11 +546,16 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
         if (with_transactions) {
             w.begin_object();
             write_transaction_fields(w, tx, net, flags, patterns);
+            // The coinbase pays no fee.
+            if (with_fees && place != 0) {
+                w.field_raw("fee", satoshi_to_bitcoin(fees[place]));
+            }
             w.field("hex", transaction_to_hex(tx));
             w.end_object();
         } else {
             w.value(encode_hash(tx.hash()));
         }
+        ++place;
     }
     w.end_array();
     w.field("time", int64_t(header.timestamp()));

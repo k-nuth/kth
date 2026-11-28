@@ -96,8 +96,8 @@ counterpart.
 | `getchaintips` | — (the C-API does not expose the header index) | `chain_view()` + `headers()` |
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
-| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
+| `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)`; verbosity 2: `fetch_spent_outputs(blockhash, block)` (the block's undo record), or `mempool_ref().resolve()` + `get_utxo()` + `utxo_resolve()` |
+| `getblock` (verbosity 2: each transaction after the coinbase has its `fee`, in BCH, when the node has the block's undo record; a block connected at or below the checkpoint without `chain.full_validation` has none, and the field is left out) | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) + `fetch_spent_outputs(hash, block)` (the block's undo record) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `testmempoolaccept` | — (`kth_chain_transaction_validate` does not apply the pool's first-seen rule) | `test_accept(tx)` |
@@ -315,16 +315,18 @@ too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+transaction with its `decoderawtransaction` fields and `hex`, and each one
+after the coinbase with its `fee`, in BCH, when the node has the undo record of
+the block. With `patterns`
 true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
 object: the script with each run of data pushes replaced by its count
 (`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
 pushed data in order (`data`), and `error` for a script that ends in the middle
-of a push. `fee` per transaction and `ablastate` are not reported.
+of a push. `ablastate` is not reported.
 
-`getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
-mempool transaction. Confirmed transactions are not indexed by txid (#491), so
-for one of those pass the block hash as the third parameter:
+`getrawtransaction "<txid>" [verbose=false] ["<blockhash>"] [patterns=false]`
+answers for a mempool transaction. Confirmed transactions are not indexed by
+txid (#491), so for one of those pass the block hash as the third parameter:
 `getrawtransaction "<txid>" false "<blockhash>"`. KTH currently has neither a
 confirmed transaction index nor BCHN's slow UTXO-based lookup; confirmed reads
 therefore require the block hash. An empty block hash is treated as omitted.
@@ -333,8 +335,25 @@ with `hex`, and for a transaction read from a block also `blockhash`,
 `confirmations`, `confirmations_ticks`, `time`, `blocktime` and
 `in_active_chain`. For a block off the connected chain both confirmation fields
 are 0, the times are left out and `in_active_chain` is false. A mempool
-transaction omits both confirmation fields. Verbosity 2 (fees and prevouts) is
-not implemented and is rejected, as is any higher value.
+transaction omits both confirmation fields. Verbosity 2 gives each input of a
+transaction that is not a coinbase the output it spends, in the input itself
+between its `scriptSig` and its `sequence`: `value`, `scriptPubKey` (`asm`,
+`hex`, `type`, and `address` when the script pays one) and `tokenData` when it
+carries a token. The transaction then has its `fee`, between `vout` and `hex`.
+For a transaction read from a block these come from the block's undo record; a
+block connected at or below the checkpoint without `chain.full_validation` has
+none, and they are left out; a record that cannot be read, or that does not
+cover the transaction's inputs or what it pays, is an error, as for `getblock`.
+For a mempool transaction they come from its parents in the mempool and from
+the UTXO set; when an input spends an output that is in neither, they are left
+out and the call succeeds. Any higher verbosity is rejected. With `patterns` true, each `scriptSig` and
+`scriptPubKey`, the spent outputs' too, has the `byteCodePattern` object
+`getblock` gives. At verbosity 2
+an input that spends a pay-to-script-hash output (pattern `a95187` or `aa5187`)
+also has a `redeemScript` object in its `scriptSig`: the last push decoded as a
+script, with `asm`, `hex` and its own `byteCodePattern`, which ends with
+`p2shType` (`p2sh20` or `p2sh32`). A `patterns` that is not a boolean, or a
+fifth argument, is a `-32602` error.
 
 Tick depth includes the containing block's own target interval and follows the
 selected branch schedule across activation. These fields measure scheduled
