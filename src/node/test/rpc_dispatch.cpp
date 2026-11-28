@@ -562,6 +562,26 @@ TEST_CASE("estimatefee dispatch answers with or without a target", "[rpc dispatc
     }
 }
 
+TEST_CASE("getmempoolinfo dispatch reports the fee floor in BCH per kB", "[rpc dispatch]") {
+    test::chain_fixture fixture("rpc_mempool_info");
+    REQUIRE(fixture.created());
+    fixture.settings().byte_fee_satoshis = 2.5f;
+    REQUIRE(fixture.start());
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{fixture.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    ::asio::io_context io;
+    auto result = ::asio::co_spawn(io,
+        dispatcher.handle(context, R"({"method":"getmempoolinfo","params":[],"id":3})"),
+        ::asio::use_future);
+    io.run();
+    // An empty pool that has never been full asks the relay floor: 2.5
+    // satoshis per byte.
+    REQUIRE(result.get() == node::rpc::build_success("3",
+        R"({"size":0,"bytes":0,"total_fee":0,"mempoolminfee":0.000025,"minrelaytxfee":0.000025})"));
+}
+
 TEST_CASE("estimatefee dispatch rejects non-array params", "[rpc dispatch]") {
     test::chain_fixture fixture("rpc_estimatefee_roots");
     REQUIRE(fixture.created());
