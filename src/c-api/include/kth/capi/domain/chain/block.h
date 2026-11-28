@@ -57,6 +57,10 @@ kth_block_mut_t kth_domain_chain_block_genesis_scalenet(void);
 KTH_EXPORT KTH_OWNED
 kth_block_mut_t kth_domain_chain_block_genesis_chipnet(void);
 
+/** @return Owned `kth_block_mut_t`. Caller must release with `kth_domain_chain_block_destruct`. */
+KTH_EXPORT KTH_OWNED
+kth_block_mut_t kth_domain_chain_block_genesis(kth_network_t network);
+
 
 // Destructor
 
@@ -174,6 +178,9 @@ kth_bool_t kth_domain_chain_block_is_valid_coinbase_claim_with_ticks(kth_block_c
 
 KTH_EXPORT
 kth_bool_t kth_domain_chain_block_has_forbidden_coinbase_shape(kth_block_const_t self);
+
+KTH_EXPORT
+kth_bool_t kth_domain_chain_block_has_forbidden_coinbase_shape_at_height(kth_block_const_t self, kth_network_t network, kth_size_t height);
 
 
 // Operations

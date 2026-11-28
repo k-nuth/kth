@@ -247,6 +247,19 @@ char* kth_domain_machine_operation_to_string(kth_operation_const_t self, kth_scr
     return kth::create_c_str(s);
 }
 
+uint8_t* kth_domain_machine_operation_take_data(kth_operation_mut_t self, kth_size_t* out_size) {
+    KTH_PRECONDITION(self != nullptr);
+    KTH_PRECONDITION(out_size != nullptr);
+    auto& operation = kth::cpp_ref<cpp_t>(self);
+    uint8_t* out = nullptr;
+    if (kth::try_create_c_array(operation.data(), &out, out_size) != kth_ec_success) {
+        return nullptr;
+    }
+    // Consume only after the C-owned copy has been allocated successfully.
+    (void)std::move(operation).take_data();
+    return out;
+}
+
 
 // Static utilities
 
@@ -274,6 +287,24 @@ kth_opcode_t kth_domain_machine_operation_opcode_from_positive(uint8_t value) {
 uint8_t kth_domain_machine_operation_opcode_to_positive(kth_opcode_t code) {
     auto const code_cpp = kth::opcode_to_cpp(code);
     return cpp_t::opcode_to_positive(code_cpp);
+}
+
+kth_error_code_t kth_domain_machine_operation_read_data_size(kth_opcode_t code, uint8_t const* data, kth_size_t n, uint32_t* out) {
+    KTH_PRECONDITION(data != nullptr || n == 0);
+    KTH_PRECONDITION(out != nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const code_cpp = kth::opcode_to_cpp(code);
+        auto data_cpp = kth::byte_reader(kth::byte_span(data, kth::sz(n)));
+        auto const result = cpp_t::read_data_size(code_cpp, data_cpp);
+        if ( ! result) return kth::to_c_err(result.error());
+        *out = static_cast<uint32_t>(*result);
+        return kth_ec_success;
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
 }
 
 } // extern "C"

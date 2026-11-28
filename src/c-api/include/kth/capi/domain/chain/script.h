@@ -42,6 +42,10 @@ kth_script_mut_t kth_domain_chain_script_construct_from_encoded_prefix(uint8_t c
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_script_from_data_with_size(uint8_t const* data, kth_size_t n, kth_size_t size, KTH_OUT_OWNED kth_script_mut_t* out);
 
+/** @param[out] out Must point to a null `kth_script_mut_t` slot. On success, populated with an owned handle that the caller must release via `kth_domain_chain_script_destruct`. Untouched on error. */
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_script_parse_from(char const* mnemonic, KTH_OUT_OWNED kth_script_mut_t* out);
+
 
 // Destructor
 

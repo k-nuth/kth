@@ -213,6 +213,12 @@ kth_error_code_t kth_domain_chain_transaction_connect_input(kth_transaction_cons
 KTH_EXPORT
 kth_error_code_t kth_domain_chain_transaction_accept_with_ticks(kth_transaction_const_t self, kth_block_ticks_const_t ticks, kth_script_flags_t flags, kth_size_t height, uint32_t median_time_past, kth_size_t max_sigops, kth_bool_t is_under_checkpoint, kth_bool_t transaction_pool, kth_bool_t duplicate);
 
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_transaction_validate_tokens(kth_transaction_const_t self, kth_script_flags_t flags);
+
+KTH_EXPORT
+kth_error_code_t kth_domain_chain_transaction_validate_token_birth(kth_transaction_const_t self, kth_script_flags_t flags, kth_network_t network);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

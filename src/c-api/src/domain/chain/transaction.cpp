@@ -403,4 +403,29 @@ kth_error_code_t kth_domain_chain_transaction_accept_with_ticks(kth_transaction_
 #endif
 }
 
+kth_error_code_t kth_domain_chain_transaction_validate_tokens(kth_transaction_const_t self, kth_script_flags_t flags) {
+    KTH_PRECONDITION(self != nullptr);
+    auto operation = [&]() noexcept(noexcept(kth::to_c_err(kth::cpp_ref<cpp_t>(self).validate_tokens(flags)))) -> kth_error_code_t {
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).validate_tokens(flags));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
+kth_error_code_t kth_domain_chain_transaction_validate_token_birth(kth_transaction_const_t self, kth_script_flags_t flags, kth_network_t network) {
+    KTH_PRECONDITION(self != nullptr);
+    auto operation = [&]() noexcept(false) -> kth_error_code_t {
+        auto const network_cpp = kth::network_to_cpp(network);
+        return kth::to_c_err(kth::cpp_ref<cpp_t>(self).validate_token_birth(flags, network_cpp));
+    };
+#if defined(KTH_CAPI_EXCEPTION_BARRIERS)
+    return kth::capi_invoke(operation);
+#else
+    return operation();
+#endif
+}
+
 } // extern "C"

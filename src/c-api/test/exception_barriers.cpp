@@ -38,6 +38,7 @@
 #include <kth/capi/config/settings.h>
 #include <kth/capi/hash_list.h>
 #include <kth/capi/node.h>
+#include <kth/capi/domain/machine/operation.h>
 #include <kth/capi/domain/chain/block.h>
 #include <kth/capi/domain/chain/header.h>
 #include <kth/capi/domain/chain/transaction_list.h>
@@ -1921,6 +1922,38 @@ TEST_CASE("C-API exception barrier - destructors of newly covered classes accept
 // ---------------------------------------------------------------------------
 
 #if defined(KTH_CAPI_TEST_MALLOC_WRAP)
+
+TEST_CASE("C-API operation take_data preserves its source when malloc fails",
+          "[C-API exception barrier][malloc][domain-api]") {
+    uint8_t const wire[] = {3, 0xaa, 0xbb, 0xcc};
+    for (auto const size : {kth_size_t{0}, kth_size_t{3}}) {
+        kth_operation_mut_t operation = nullptr;
+        uint8_t const empty[] = {0};
+        auto const* encoded = size == 0 ? empty : wire;
+        REQUIRE(kth_domain_machine_operation_construct_from_data(encoded, size + 1, &operation) == kth_ec_success);
+        kth_size_t out_size = 0xdeadu;
+        uint8_t* out = nullptr;
+        long const fired_before = g_malloc_faults_fired.load();
+        {
+            malloc_fault_scope scope(size == 0 ? 1 : size);
+            out = kth_domain_machine_operation_take_data(operation, &out_size);
+        }
+        CHECK(g_malloc_faults_fired.load() - fired_before == 1);
+        CHECK(out == nullptr);
+        CHECK(out_size == 0xdeadu);
+        CHECK(kth_domain_machine_operation_is_valid(operation));
+        kth_core_destruct_array(out);
+
+        // The original bytes remain available after the failed attempt.
+        out = kth_domain_machine_operation_take_data(operation, &out_size);
+        REQUIRE(out != nullptr);
+        CHECK(out_size == size);
+        CHECK(std::memcmp(out, encoded + 1, size) == 0);
+        CHECK_FALSE(kth_domain_machine_operation_is_valid(operation));
+        kth_core_destruct_array(out);
+        kth_domain_machine_operation_destruct(operation);
+    }
+}
 
 TEST_CASE("C-API exception barrier - create_endorsement reports out_of_memory when the buffer malloc fails",
           "[C-API exception barrier][malloc]") {
