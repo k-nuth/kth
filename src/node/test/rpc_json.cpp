@@ -72,6 +72,68 @@ TEST_CASE("parse_request rejects missing method", "[rpc json]") {
     REQUIRE_FALSE(parse_request(R"({"id":1})").has_value());
 }
 
+TEST_CASE("parse_request keeps the id of a request it refuses", "[rpc json]") {
+    // No method, or one that is not a string: the error carries the id.
+    auto const missing = parse_request(R"({"id":7})");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().error.code == int(error_code::invalid_request));
+    CHECK(missing.error().id == "7");
+    auto const not_string = parse_request(R"({"method":5,"params":[],"id":"a"})");
+    REQUIRE_FALSE(not_string.has_value());
+    CHECK(not_string.error().id == R"("a")");
+    // The id may come before or after the method, and may be any JSON value.
+    auto const after = parse_request(R"({"params":[1],"method":null,"id":[1,{"x":2}]})");
+    REQUIRE_FALSE(after.has_value());
+    CHECK(after.error().id == R"([1,{"x":2}])");
+    // Without an id, or when the body is not an object, it is null.
+    CHECK(parse_request(R"({"params":[]})").error().id == "null");
+    CHECK(parse_request("7").error().id == "null");
+    CHECK(parse_request(R"(["id"])").error().id == "null");
+}
+
+TEST_CASE("is_batch looks at the first character after whitespace", "[rpc json]") {
+    REQUIRE(is_batch("[]"));
+    REQUIRE(is_batch(" \r\n\t[{\"method\":\"m\"}]"));
+    REQUIRE_FALSE(is_batch(R"({"method":"m"})"));
+    REQUIRE_FALSE(is_batch("  {\"method\":\"m\"}"));
+    REQUIRE_FALSE(is_batch(""));
+    REQUIRE_FALSE(is_batch("   "));
+    REQUIRE_FALSE(is_batch("x["));
+}
+
+TEST_CASE("parse_batch keeps each member's raw text and whether it is an object", "[rpc json]") {
+    auto const members = parse_batch(
+        R"([{"method":"a","id":1}, 5, "s", [{"method":"b"}], null, {"id":2}])");
+    REQUIRE(members.has_value());
+    REQUIRE(members->size() == 6);
+    CHECK((*members)[0].object);
+    CHECK((*members)[0].raw == R"({"method":"a","id":1})");
+    CHECK_FALSE((*members)[1].object);
+    CHECK_FALSE((*members)[2].object);
+    // A nested array is a member that is not a request, not a batch of its own.
+    CHECK_FALSE((*members)[3].object);
+    CHECK_FALSE((*members)[4].object);
+    CHECK((*members)[5].object);
+    CHECK((*members)[5].raw == R"({"id":2})");
+    // Each object member parses as the request it is.
+    auto const req = parse_request((*members)[0].raw);
+    REQUIRE(req.has_value());
+    CHECK(req->method == "a");
+    CHECK(req->id == "1");
+}
+
+TEST_CASE("parse_batch takes an empty array and refuses malformed bodies", "[rpc json]") {
+    auto const empty = parse_batch("[]");
+    REQUIRE(empty.has_value());
+    REQUIRE(empty->empty());
+    for (auto const* bad : {"[", "[{\"method\":\"a\"}", "[1,]", "[1] 2", "[{\"method\":}]", "{}"}) {
+        CAPTURE(bad);
+        auto const members = parse_batch(bad);
+        REQUIRE_FALSE(members.has_value());
+        REQUIRE(members.error().code == int(error_code::parse_error));
+    }
+}
+
 TEST_CASE("build_success wraps result", "[rpc json]") {
     REQUIRE(build_success("1", "0") == R"({"result":0,"error":null,"id":1})");
 }

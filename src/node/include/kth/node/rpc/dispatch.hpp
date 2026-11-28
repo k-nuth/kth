@@ -122,10 +122,17 @@ struct dispatcher {
     [[nodiscard]] std::vector<std::string> const& methods() const noexcept;
 
     // Parse `body`, invoke the matching handler, and return the full response body.
+    // A batch (a JSON array of requests) is answered with an array holding each
+    // member's response, in order; a member that is not an object gets an
+    // invalid request error, and an empty batch an empty array.
     [[nodiscard]] ::asio::awaitable<std::string>
     handle(method_context& ctx, std::string_view body) const;
 
 private:
+    // One request object: its handler's outcome in a response envelope.
+    [[nodiscard]] ::asio::awaitable<std::string>
+    handle_request(method_context& ctx, std::string_view body) const;
+
     struct method_hash {
         using is_transparent = void;
         size_t operator()(std::string_view value) const noexcept {
