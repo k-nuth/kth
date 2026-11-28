@@ -5,7 +5,8 @@
 #include <kth/infrastructure/error.hpp>
 
 #include <boost/system/error_code.hpp>
-#include <boost/unordered/unordered_flat_map.hpp>
+#include <array>
+#include <utility>
 
 #include <kth/infrastructure/compat.hpp>
 #include <kth/infrastructure/utility/asio_helper.hpp>
@@ -31,8 +32,10 @@ char const* error_category_impl::name() const noexcept {
     return "bitcoin";
 }
 
-std::string error_category_impl::message(int ev) const noexcept {
-    static const boost::unordered_flat_map<int, std::string> messages = {
+std::string_view kth::error::message(int ev) noexcept {
+    // Indexed at compile time: error reporting must also work when the heap is
+    // exhausted, including the first lookup. Every view refers to a literal.
+    static constexpr std::pair<int, std::string_view> entries[] = {
         // general codes
         { error::success, "success" },
         { error::deprecated, "deprecated" },
@@ -317,9 +320,23 @@ std::string error_category_impl::message(int ev) const noexcept {
         { error::address_invalid_script, "script is not P2PKH" },
 
     };
+    static constexpr auto messages = [] {
+        std::array<std::string_view, error::last_error_code> table{};
+        for (auto const& [value, text] : entries) {
+            table[static_cast<size_t>(value)] = text;
+        }
+        return table;
+    }();
 
-    auto const message = messages.find(ev);
-    return message != messages.end() ? message->second : "invalid code";
+    if (ev < 0 || static_cast<size_t>(ev) >= messages.size()) {
+        return "invalid code";
+    }
+    auto const text = messages[static_cast<size_t>(ev)];
+    return text.empty() ? std::string_view{"invalid code"} : text;
+}
+
+std::string error_category_impl::message(int ev) const noexcept {
+    return std::string{kth::error::message(ev)};
 }
 
 // We are not currently using this.

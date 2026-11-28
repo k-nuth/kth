@@ -175,6 +175,7 @@ endif()
 
 set(kth_sources
 
+  src/error_message.cpp
   src/node_info.cpp
   src/secure_memory.cpp
   src/string_list.cpp
@@ -704,6 +705,15 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     endif()
 
 
+    # Use the static C API so the test's operator new reaches the lookup
+    # on every platform, including those without DLL interposition.
+    get_target_property(_kth_capi_type ${PROJECT_NAME} TYPE)
+    if (_kth_capi_type STREQUAL "STATIC_LIBRARY")
+        add_executable(kth_capi_error_message_test test/error_message_first_call.cpp)
+        target_link_libraries(kth_capi_error_message_test PRIVATE ${PROJECT_NAME})
+        add_test(NAME capi_error_message_first_call COMMAND kth_capi_error_message_test)
+    endif()
+
     # Real C++ exceptions through the generated wrappers. The executable
     # replaces the global allocation functions to inject failures, so it is
     # kept apart from kth_capi_test and built only with the barriers on.
@@ -715,7 +725,6 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         # which only reaches the malloc calls linked into the executable. A
         # shared C-API keeps its own malloc references, so the malloc-fault
         # tests are enabled only when the C-API target is a static library.
-        get_target_property(_kth_capi_type ${PROJECT_NAME} TYPE)
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND _kth_capi_type STREQUAL "STATIC_LIBRARY")
             target_compile_definitions(kth_capi_exception_test PRIVATE KTH_CAPI_TEST_MALLOC_WRAP)
             target_link_options(kth_capi_exception_test PRIVATE -Wl,--wrap=malloc)

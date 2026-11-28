@@ -11,11 +11,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <stdint.h>
+#include <string.h>
 
 #include <kth/capi/bool_list.h>
 #include <kth/capi/chain/opcode.h>
 #include <kth/capi/domain/machine/operation.h>
 #include <kth/capi/domain/chain/script.h>
+#include <kth/capi/error.h>
 #include <kth/capi/primitives.h>
 #include <kth/capi/vm/debug_snapshot.h>
 #include <kth/capi/vm/debug_snapshot_list.h>
@@ -70,6 +72,20 @@ TEST_CASE("C-API Interpreter - run_operation rejects OP_CODESEPARATOR standalone
     kth_vm_program_destruct(prog);
 
     REQUIRE(ec == kth_ec_not_implemented);
+}
+
+TEST_CASE("C-API Interpreter - an empty alternate stack has a readable error",
+          "[C-API Interpreter][error]") {
+    kth_program_mut_t prog = kth_vm_program_construct_default();
+    kth_operation_mut_t op = kth_domain_machine_operation_construct_from_code(kth_opcode_fromaltstack);
+    kth_error_code_t const ec = kth_vm_interpreter_run(op, prog);
+    kth_domain_machine_operation_destruct(op);
+    kth_vm_program_destruct(prog);
+
+    REQUIRE(ec == kth_ec_insufficient_alt_stack);
+    REQUIRE(strcmp(kth_error_message(ec), "insufficient alt stack") == 0);
+    REQUIRE(strcmp(kth_error_message(INT32_MAX), "invalid code") == 0);
+    REQUIRE(strcmp(kth_error_message(kth_ec_out_of_memory), "out of memory") == 0);
 }
 
 // ---------------------------------------------------------------------------
