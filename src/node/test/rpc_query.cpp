@@ -306,6 +306,209 @@ TEST_CASE("render_transaction decodes a spend with its inputs and outputs", "[rp
     CHECK(contains(json, R"("addresses":["bchreg:qpc9pwf9s7x7hpwywylusjc2zewume9lsguuvvdnkl"])"));
 }
 
+TEST_CASE("render_block_verbose gives each transaction after the coinbase its fee", "[rpc query]") {
+    auto const spend = parse_tx(
+        "02000000013cd49214320f36fd78fd8ed5daf9c25c95d392fbfd9c5e3d1b2da4fa6f7927f0000000006441a51a5935eb9d2b"
+        "2c36aa9d1d1d855ee54fac0a1e8e3ef507a2f52eb4afa28997722a551b5449824e7a9cd30a4630881969ad5cb0612a5a8a16"
+        "d8db0451581a2f4121028cffeaef2d58730ff8f558425a0fd37d37db7b7bf0679c4990581c4ea84389a6feffffff0280d1f0"
+        "08000000001976a914ff5e8c6fe7e2dd7918232f05a4db1fe1239bb07d88aca51f1521010000001976a9147050b925878deb"
+        "85c4713fc84b0a165dcde4bf8288ac6e000000");
+    auto const genesis = domain::chain::block::genesis_regtest();
+    domain::chain::block const block{genesis.header(),
+        domain::chain::transaction::list{genesis.transactions().front(), spend}};
+    block_location const location{5, 1, 1700000000, std::nullopt, std::nullopt};
+
+    // The spend's one input spent 50 BCH, and it pays 1.5 and 48.49999781.
+    std::vector<domain::chain::output> const spent{
+        domain::chain::output{5'000'000'000u, domain::chain::script{}, domain::chain::token_data_opt{}}};
+    auto const fees = transaction_fees(block, spent);
+    REQUIRE(fees);
+    CHECK(*fees == std::vector<uint64_t>{0, 219});
+
+    // Between the outputs and the hex of the spend, and on no other transaction.
+    auto const json = render_block_verbose(block, location, true, regtest, flags, false, *fees);
+    auto const at = json.find(R"(}],"fee":0.00000219,"hex":"0200000001)");
+    REQUIRE(at != std::string::npos);
+    CHECK(json.find(R"("fee":)") == at + 3);
+    CHECK(json.find(R"("fee":)", at + 4) == std::string::npos);
+
+    // Without fees, and with txids only, no transaction has the field.
+    CHECK_FALSE(contains(render_block_verbose(block, location, true, regtest, flags), R"("fee":)"));
+    CHECK_FALSE(contains(render_block_verbose(block, location, false, regtest, flags, false, *fees), R"("fee":)"));
+    // A list that is not one fee for each transaction is no list.
+    std::vector<uint64_t> const one{0};
+    CHECK_FALSE(contains(render_block_verbose(block, location, true, regtest, flags, false, one), R"("fee":)"));
+}
+
+TEST_CASE("transaction_fees needs one spent output for each input and no transaction paying more than it spends",
+          "[rpc query]") {
+    auto const spend = parse_tx(
+        "02000000013cd49214320f36fd78fd8ed5daf9c25c95d392fbfd9c5e3d1b2da4fa6f7927f0000000006441a51a5935eb9d2b"
+        "2c36aa9d1d1d855ee54fac0a1e8e3ef507a2f52eb4afa28997722a551b5449824e7a9cd30a4630881969ad5cb0612a5a8a16"
+        "d8db0451581a2f4121028cffeaef2d58730ff8f558425a0fd37d37db7b7bf0679c4990581c4ea84389a6feffffff0280d1f0"
+        "08000000001976a914ff5e8c6fe7e2dd7918232f05a4db1fe1239bb07d88aca51f1521010000001976a9147050b925878deb"
+        "85c4713fc84b0a165dcde4bf8288ac6e000000");
+    auto const genesis = domain::chain::block::genesis_regtest();
+    auto const& coinbase = genesis.transactions().front();
+    domain::chain::block const block{genesis.header(), domain::chain::transaction::list{coinbase, spend, spend}};
+    auto const worth = [](uint64_t value) {
+        return domain::chain::output{value, domain::chain::script{}, domain::chain::token_data_opt{}};
+    };
+
+    // Each transaction takes its own inputs' outputs, in block order.
+    auto const fees = transaction_fees(block, std::vector{worth(5'000'000'000u), worth(4'999'999'781u)});
+    REQUIRE(fees);
+    CHECK(*fees == std::vector<uint64_t>{0, 219, 0});
+
+    // An output short, one too many, and an input worth less than the outputs.
+    CHECK( ! transaction_fees(block, std::vector{worth(5'000'000'000u)}));
+    CHECK( ! transaction_fees(block, std::vector{worth(5'000'000'000u), worth(5'000'000'000u), worth(1)}));
+    CHECK( ! transaction_fees(block, std::vector{worth(5'000'000'000u), worth(4'999'999'780u)}));
+
+    // A block of its coinbase alone spends nothing.
+    domain::chain::block const alone{genesis.header(), domain::chain::transaction::list{coinbase}};
+    auto const none = transaction_fees(alone, {});
+    REQUIRE(none);
+    CHECK(*none == std::vector<uint64_t>{0});
+    CHECK( ! transaction_fees(alone, std::vector{worth(1)}));
+}
+
+namespace {
+
+// A pay-to-public-key-hash output: 8 bytes of value, then 26 of script.
+domain::chain::output p2pkh(uint64_t value) {
+    data_chunk bytes{0x76, 0xa9, 0x14};
+    bytes.insert(bytes.end(), 20, 0x11);
+    bytes.push_back(0x88);
+    bytes.push_back(0xac);
+    return domain::chain::output{value, domain::chain::script{std::move(bytes), false},
+        domain::chain::token_data_opt{}};
+}
+
+// An input with an empty script: 41 bytes.
+domain::chain::input spending(uint8_t first, uint32_t index) {
+    hash_digest hash{};
+    hash.front() = first;
+    return domain::chain::input{domain::chain::output_point{hash, index}, domain::chain::script{},
+        max_input_sequence};
+}
+
+// The coinbase of 96 bytes, then four transactions of known size and fee.
+struct stats_block {
+    domain::chain::block block;
+    std::vector<domain::chain::output> spent;    // what each input spends, in block order
+};
+
+stats_block block_for_stats() {
+    auto const coinbase = parse_tx(
+        "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0b016f0101062f"
+        "41424c412fffffffff01dbf2052a010000001976a9146cafb31b9a10a61a992bf94af8db42bdb3a23b1488ac00000000");
+    // 219 bytes: 50 BCH in, 1.5 and 48.49999781 out.
+    auto const spend = parse_tx(
+        "02000000013cd49214320f36fd78fd8ed5daf9c25c95d392fbfd9c5e3d1b2da4fa6f7927f0000000006441a51a5935eb9d2b"
+        "2c36aa9d1d1d855ee54fac0a1e8e3ef507a2f52eb4afa28997722a551b5449824e7a9cd30a4630881969ad5cb0612a5a8a16"
+        "d8db0451581a2f4121028cffeaef2d58730ff8f558425a0fd37d37db7b7bf0679c4990581c4ea84389a6feffffff0280d1f0"
+        "08000000001976a914ff5e8c6fe7e2dd7918232f05a4db1fe1239bb07d88aca51f1521010000001976a9147050b925878deb"
+        "85c4713fc84b0a165dcde4bf8288ac6e000000");
+    // 4 + 1 + 2 * 41 + 1 + 34 + 4 = 126 bytes.
+    domain::chain::transaction const two_in{2, 0, domain::chain::input::list{spending(1, 0), spending(1, 1)},
+        domain::chain::output::list{p2pkh(10'000)}};
+    // 4 + 1 + 41 + 1 + 2 * 34 + 4 = 119 bytes.
+    domain::chain::transaction const two_out{2, 0, domain::chain::input::list{spending(2, 0)},
+        domain::chain::output::list{p2pkh(3'000), p2pkh(2'000)}};
+    // 4 + 1 + 41 + 1 + 34 + 4 = 85 bytes.
+    domain::chain::transaction const one_each{2, 0, domain::chain::input::list{spending(3, 0)},
+        domain::chain::output::list{p2pkh(700)}};
+    REQUIRE(coinbase.serialized_size(true) == 96);
+    REQUIRE(spend.serialized_size(true) == 219);
+    REQUIRE(two_in.serialized_size(true) == 126);
+    REQUIRE(two_out.serialized_size(true) == 119);
+    REQUIRE(one_each.serialized_size(true) == 85);
+
+    auto const genesis = domain::chain::block::genesis_regtest();
+    // Fees: 219 (1 satoshi per byte), 11,000 - 10,000 = 1,000 (7 per byte,
+    // 7.9 rounded down), 5,600 - 5,000 = 600 (5) and 1,000 - 700 = 300 (3).
+    // The last input spends a 10-byte output, OP_TRUE; the others 34-byte ones.
+    return {domain::chain::block{genesis.header(),
+                domain::chain::transaction::list{coinbase, spend, two_in, two_out, one_each}},
+        {p2pkh(5'000'000'000u), p2pkh(6'000), p2pkh(5'000), p2pkh(5'600),
+         domain::chain::output{1'000, domain::chain::script{data_chunk{0x51}, false},
+             domain::chain::token_data_opt{}}}};
+}
+
+} // namespace
+
+TEST_CASE("render_block_stats gives each statistic of a block of known fees and sizes", "[rpc query]") {
+    auto const [block, spent] = block_for_stats();
+    block_stats_location const location{5, 1700000000, 5'000'000'000u};
+
+    // Four transactions after the coinbase: fees 219, 1,000, 600 and 300 (2,119
+    // in all), sizes 219, 126, 119 and 85 (549), feerates 1, 7, 5 and 3.
+    //   avgfee 2,119 / 4 = 529, avgfeerate 2,119 / 549 = 3, avgtxsize 549 / 4 = 137;
+    //   medianfee (300 + 600) / 2 = 450, mediantxsize (119 + 126) / 2 = 122;
+    //   by feerate the sizes add up to 219, 304, 423 and 549 bytes, against
+    //   percentiles of 54.9, 137.25, 274.5, 411.75 and 494.1: 1, 1, 3, 5, 7;
+    //   ins 1 + 2 + 1 + 1 = 5, outs 1 + 2 + 1 + 2 + 1 = 7, the coinbase's included;
+    //   total_out 4,999,999,781 + 10,000 + 5,000 + 700, the coinbase's not;
+    //   utxo_size_inc 7 * (34 + 41) - 4 * (34 + 41) - (10 + 41) = 174.
+    auto const json = render_block_stats(block, location, spent, {});
+    REQUIRE(json);
+    CHECK(*json == R"({"avgfee":0.00000529,"avgfeerate":0.00000003,"avgtxsize":137,"blockhash":")" +
+        encode_hash(block.hash()) + R"(","feerate_percentiles":[0.00000001,0.00000001,0.00000003,0.00000005,)"
+        R"(0.00000007],"height":5,"ins":5,"maxfee":0.00001,"maxfeerate":0.00000007,"maxtxsize":219,)"
+        R"("medianfee":0.0000045,"mediantime":1700000000,"mediantxsize":122,"minfee":0.00000219,)"
+        R"("minfeerate":0.00000001,"mintxsize":85,"outs":7,"subsidy":50,"time":)" +
+        std::to_string(block.header().timestamp()) + R"(,"total_out":50.00015481,"total_size":549,)"
+        R"("totalfee":0.00002119,"txs":5,"utxo_increase":2,"utxo_size_inc":174})");
+
+    // Only the ones asked for, each once and in name order.
+    auto const picked = render_block_stats(block, location, spent,
+        std::vector<std::string>{"utxo_size_inc", "height", "avgfee", "height"});
+    REQUIRE(picked);
+    CHECK(*picked == R"({"avgfee":0.00000529,"height":5,"utxo_size_inc":174})");
+}
+
+TEST_CASE("render_block_stats needs the spent outputs only for what is computed from them", "[rpc query]") {
+    auto const [block, spent] = block_for_stats();
+    block_stats_location const location{5, 1700000000, 5'000'000'000u};
+
+    // What the block holds by itself.
+    auto const own = render_block_stats(block, location, std::nullopt,
+        std::vector<std::string>{"txs", "ins", "total_out", "mintxsize"});
+    REQUIRE(own);
+    CHECK(*own == R"({"ins":5,"mintxsize":85,"total_out":50.00015481,"txs":5})");
+    // Everything, or any fee, feerate or utxo_size_inc, needs them.
+    CHECK( ! render_block_stats(block, location, std::nullopt, {}));
+    CHECK( ! render_block_stats(block, location, std::nullopt, std::vector<std::string>{"txs", "medianfee"}));
+
+    // Outputs that do not fit the inputs are no answer: one short, and one
+    // worth less than the transaction spending it pays.
+    CHECK( ! render_block_stats(block, location, std::span(spent).first(4), {}));
+    auto short_of_pay = spent;
+    short_of_pay.back() = p2pkh(699);
+    CHECK( ! render_block_stats(block, location, short_of_pay, {}));
+}
+
+TEST_CASE("getblockstats names: which need the spent outputs, and which are unknown", "[rpc query]") {
+    using names = std::vector<std::string>;
+    CHECK(block_stats_need_spent(names{}));
+    for (auto const* name : {"avgfee", "avgfeerate", "feerate_percentiles", "maxfee", "maxfeerate",
+                             "medianfee", "minfee", "minfeerate", "totalfee", "utxo_size_inc"}) {
+        CAPTURE(name);
+        CHECK(block_stats_need_spent(names{"height", name}));
+    }
+    names const own{"avgtxsize", "blockhash", "height", "ins", "maxtxsize", "mediantime", "mediantxsize",
+                    "mintxsize", "outs", "subsidy", "time", "total_out", "total_size", "txs", "utxo_increase"};
+    CHECK_FALSE(block_stats_need_spent(own));
+    CHECK_FALSE(block_stats_need_spent(names{"nosuchstat"}));
+
+    // The first unknown name in name order, as the reference reports it.
+    CHECK( ! unknown_block_stat(names{}));
+    CHECK( ! unknown_block_stat(own));
+    CHECK(unknown_block_stat(names{"txs", "zzz", "fee", "height"}) == std::optional<std::string>{"fee"});
+    CHECK(unknown_block_stat(names{"height", ""}) == std::optional<std::string>{""});
+}
+
 TEST_CASE("render_transaction decodes token data and an OP_RETURN output", "[rpc query]") {
     // A mutable NFT with commitment aabb and 1000 fungible tokens of category
     // 0102...20 (as stored), then OP_RETURN "test".

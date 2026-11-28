@@ -5,6 +5,7 @@
 #include <kth/node/rpc/query.hpp>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <system_error>
 #include <cmath>
@@ -386,11 +387,37 @@ std::string render_transaction_verbose(domain::chain::transaction const& tx,
     return w.str();
 }
 
+std::optional<std::vector<uint64_t>> transaction_fees(domain::chain::block const& block,
+                                                      std::span<domain::chain::output const> spent) {
+    auto const& txs = block.transactions();
+    std::vector<uint64_t> fees(txs.size(), 0);
+    size_t used = 0;
+    for (size_t i = 1; i < txs.size(); ++i) {
+        uint64_t in = 0;
+        for (size_t j = 0; j < txs[i].inputs().size(); ++j) {
+            if (used == spent.size()) return std::nullopt;
+            in += spent[used++].value();
+        }
+        uint64_t out = 0;
+        for (auto const& output : txs[i].outputs()) {
+            out += output.value();
+        }
+        if (out > in) return std::nullopt;
+        fees[i] = in - out;
+    }
+    if (used != spent.size()) return std::nullopt;
+    return fees;
+}
+
 std::string render_block_verbose(domain::chain::block const& block, block_location const& location,
                                  bool with_transactions,
                                  domain::config::network net, domain::script_flags_t flags,
-                                 bool patterns) {
+                                 bool patterns,
+                                 std::span<uint64_t const> fees) {
     auto const& header = block.header();
+    // One fee for each transaction, or none at all.
+    auto const with_fees = fees.size() == block.transactions().size();
+    size_t place = 0;
     writer w;
     w.begin_object();
     w.field("hash", encode_hash(block.hash()));
@@ -413,11 +440,16 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
         if (with_transactions) {
             w.begin_object();
             write_transaction_fields(w, tx, net, flags, patterns);
+            // The coinbase pays no fee.
+            if (with_fees && place != 0) {
+                w.field_raw("fee", satoshi_to_bitcoin(fees[place]));
+            }
             w.field("hex", transaction_to_hex(tx));
             w.end_object();
         } else {
             w.value(encode_hash(tx.hash()));
         }
+        ++place;
     }
     w.end_array();
     w.field("time", int64_t(header.timestamp()));
@@ -435,6 +467,209 @@ std::string render_block_verbose(domain::chain::block const& block, block_locati
     if (location.next_block_hash) {
         w.field("nextblockhash", encode_hash(*location.next_block_hash));
     }
+    w.end_object();
+    return w.str();
+}
+
+namespace {
+
+// The statistics getblockstats reports, in the order it reports them.
+constexpr std::array<std::string_view, 25> block_stat_names{
+    "avgfee", "avgfeerate", "avgtxsize", "blockhash", "feerate_percentiles", "height", "ins",
+    "maxfee", "maxfeerate", "maxtxsize", "medianfee", "mediantime", "mediantxsize", "minfee",
+    "minfeerate", "mintxsize", "outs", "subsidy", "time", "total_out", "total_size", "totalfee",
+    "txs", "utxo_increase", "utxo_size_inc"};
+static_assert(std::ranges::is_sorted(block_stat_names));
+
+// The ones that need the outputs the block spends.
+constexpr std::array<std::string_view, 10> spent_stat_names{
+    "avgfee", "avgfeerate", "feerate_percentiles", "maxfee", "maxfeerate", "medianfee",
+    "minfee", "minfeerate", "totalfee", "utxo_size_inc"};
+static_assert(std::ranges::is_sorted(spent_stat_names));
+
+// What an output adds to the UTXO set beyond its own serialized size, as other
+// nodes estimate it: its outpoint (36 bytes), the height it was created at (4)
+// and whether a coinbase created it (1).
+constexpr int64_t utxo_entry_overhead = 36 + 4 + 1;
+
+// The middle one of `values`, or the mean of the two middle ones rounded down.
+// Zero when there are none.
+template <typename T>
+T truncated_median(std::vector<T> values) {
+    if (values.empty()) {
+        return T{};
+    }
+    std::ranges::sort(values);
+    auto const middle = values.size() / 2;
+    return values.size() % 2 == 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle];
+}
+
+// The smallest and the largest of `values`. Zero for both when there are none.
+template <typename T>
+std::pair<T, T> extremes(std::vector<T> const& values) {
+    if (values.empty()) {
+        return {};
+    }
+    auto const [low, high] = std::ranges::minmax(values);
+    return {low, high};
+}
+
+// The feerates at the 10th, 25th, 50th, 75th and 90th percentile of the bytes
+// of the transactions, taken in order of feerate, each weighing its size.
+// Zeros when there are none.
+std::array<uint64_t, 5> feerate_percentiles(std::vector<uint64_t> const& feerates,
+                                            std::vector<int64_t> const& sizes, int64_t total_size) {
+    std::array<uint64_t, 5> result{};
+    std::vector<std::pair<uint64_t, int64_t>> weighed;
+    weighed.reserve(feerates.size());
+    for (size_t i = 0; i < feerates.size(); ++i) {
+        weighed.emplace_back(feerates[i], sizes[i]);
+    }
+    std::ranges::sort(weighed);
+    std::array<double, 5> const weights{total_size / 10.0, total_size / 4.0, total_size / 2.0,
+        (total_size * 3.0) / 4.0, (total_size * 9.0) / 10.0};
+    size_t next = 0;
+    int64_t cumulative = 0;
+    for (auto const& [feerate, size] : weighed) {
+        cumulative += size;
+        while (next < result.size() && double(cumulative) >= weights[next]) {
+            result[next++] = feerate;
+        }
+    }
+    return result;
+}
+
+bool is_block_stat(std::string_view name) {
+    return std::ranges::binary_search(block_stat_names, name);
+}
+
+} // namespace
+
+bool block_stats_need_spent(std::span<std::string const> selected) {
+    return selected.empty() || std::ranges::any_of(selected, [](std::string const& name) {
+        return std::ranges::binary_search(spent_stat_names, std::string_view{name});
+    });
+}
+
+std::optional<std::string> unknown_block_stat(std::span<std::string const> selected) {
+    std::optional<std::string> first;
+    for (auto const& name : selected) {
+        if ( ! is_block_stat(name) && ( ! first || name < *first)) {
+            first = name;
+        }
+    }
+    return first;
+}
+
+std::optional<std::string> render_block_stats(domain::chain::block const& block,
+                                              block_stats_location const& location,
+                                              std::optional<std::span<domain::chain::output const>> spent,
+                                              std::span<std::string const> selected) {
+    if ( ! spent && block_stats_need_spent(selected)) {
+        return std::nullopt;
+    }
+    auto const& txs = block.transactions();
+
+    // Every output the block creates adds to the UTXO set, the coinbase's
+    // included, and every one it spends takes away.
+    int64_t utxo_size_inc = 0;
+    std::vector<uint64_t> fees(txs.size(), 0);
+    if (spent) {
+        auto computed = transaction_fees(block, *spent);
+        if ( ! computed) {
+            return std::nullopt;
+        }
+        fees = std::move(*computed);
+        for (auto const& output : *spent) {
+            utxo_size_inc -= int64_t(output.serialized_size(true)) + utxo_entry_overhead;
+        }
+    }
+
+    int64_t inputs = 0;
+    int64_t outputs = 0;
+    uint64_t total_out = 0;
+    int64_t total_size = 0;
+    uint64_t total_fee = 0;
+    // One of each for every transaction after the coinbase.
+    std::vector<int64_t> sizes;
+    std::vector<uint64_t> paid;
+    std::vector<uint64_t> feerates;
+    for (size_t i = 0; i < txs.size(); ++i) {
+        auto const& tx = txs[i];
+        outputs += int64_t(tx.outputs().size());
+        uint64_t tx_out = 0;
+        for (auto const& output : tx.outputs()) {
+            tx_out += output.value();
+            utxo_size_inc += int64_t(output.serialized_size(true)) + utxo_entry_overhead;
+        }
+        // The coinbase spends nothing, and what it pays is the reward.
+        if (i == 0) {
+            continue;
+        }
+        inputs += int64_t(tx.inputs().size());
+        total_out += tx_out;
+        auto const size = int64_t(tx.serialized_size(true));
+        sizes.push_back(size);
+        total_size += size;
+        paid.push_back(fees[i]);
+        total_fee += fees[i];
+        feerates.push_back(fees[i] / uint64_t(size));
+    }
+    auto const count = uint64_t(sizes.size());
+    auto const [min_fee, max_fee] = extremes(paid);
+    auto const [min_feerate, max_feerate] = extremes(feerates);
+    auto const [min_size, max_size] = extremes(sizes);
+
+    auto const wanted = [&](std::string_view name) {
+        return selected.empty() || std::ranges::any_of(selected, [&](std::string const& stat) {
+            return stat == name;
+        });
+    };
+    writer w;
+    auto const amount = [&](std::string_view name, uint64_t satoshis) {
+        if (wanted(name)) {
+            w.field_raw(name, satoshi_to_bitcoin(satoshis));
+        }
+    };
+    auto const number = [&](std::string_view name, int64_t value) {
+        if (wanted(name)) {
+            w.field(name, value);
+        }
+    };
+    w.begin_object();
+    amount("avgfee", count == 0 ? 0 : total_fee / count);
+    amount("avgfeerate", total_size == 0 ? 0 : total_fee / uint64_t(total_size));
+    number("avgtxsize", count == 0 ? 0 : total_size / int64_t(count));
+    if (wanted("blockhash")) {
+        w.field("blockhash", encode_hash(block.hash()));
+    }
+    if (wanted("feerate_percentiles")) {
+        w.key("feerate_percentiles").begin_array();
+        for (auto const feerate : feerate_percentiles(feerates, sizes, total_size)) {
+            w.value_raw(satoshi_to_bitcoin(feerate));
+        }
+        w.end_array();
+    }
+    number("height", int64_t(location.height));
+    number("ins", inputs);
+    amount("maxfee", max_fee);
+    amount("maxfeerate", max_feerate);
+    number("maxtxsize", max_size);
+    amount("medianfee", truncated_median(paid));
+    number("mediantime", int64_t(location.median_time));
+    number("mediantxsize", truncated_median(sizes));
+    amount("minfee", min_fee);
+    amount("minfeerate", min_feerate);
+    number("mintxsize", min_size);
+    number("outs", outputs);
+    amount("subsidy", location.subsidy);
+    number("time", int64_t(block.header().timestamp()));
+    amount("total_out", total_out);
+    number("total_size", total_size);
+    amount("totalfee", total_fee);
+    number("txs", int64_t(txs.size()));
+    number("utxo_increase", outputs - inputs);
+    number("utxo_size_inc", utxo_size_inc);
     w.end_object();
     return w.str();
 }

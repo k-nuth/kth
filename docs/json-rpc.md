@@ -97,7 +97,8 @@ counterpart.
 | `getnetworkinfo` | `kth_network_settings` + `kth_blockchain_settings.byte_fee_satoshis` | `p2p_node::network_settings()` + `connection_count()` + `stopped()` |
 | `uptime` | — (it describes this server's process) | — (`full_node`'s start, on the steady clock) |
 | `getrawtransaction` | `kth_chain_sync_transaction` (+ `kth_chain_sync_block_by_hash`) | `fetch_transaction(hash)` (mempool), or `fetch_block(blockhash)` |
-| `getblock` | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) |
+| `getblock` (verbosity 2: each transaction after the coinbase has its `fee`, in BCH, when the node has the block's undo record; a block connected at or below the checkpoint without `chain.full_validation` has none, and the field is left out) | `kth_chain_sync_block_by_hash` | `fetch_block(hash)` (flat-file block store) + `fetch_spent_outputs(hash, block)` (the block's undo record) |
+| `getblockstats` (a block of the connected chain, by hash or height; the fees, feerates and `utxo_size_inc` need the block's undo record) | `kth_chain_sync_block_by_hash` | `chain_view()` + `headers()` + `fetch_block(hash)` + `fetch_spent_outputs(hash, block)` (the block's undo record) |
 | `getblockheader` (`verbose=false`: raw 80-byte header hex; verbose: `confirmations`, -1 off the connected chain) | `kth_chain_sync_block_header_by_hash` | `fetch_block_header(hash)` + `chain_view()` |
 | `sendrawtransaction` | `kth_chain_sync_organize_transaction` | `submit_transaction(tx)` |
 | `testmempoolaccept` | — (`kth_chain_transaction_validate` does not apply the pool's first-seen rule) | `test_accept(tx)` |
@@ -315,12 +316,14 @@ too. Verbosity `0` (or `false`) returns it as hex. `1` (or `true`) returns `hash
 `height`, `ticks`, `target_time`, `next_target_time`, `version`, `versionHex`,
 `merkleroot`, `tx` (txids), `time`, `mediantime`, `nonce`, `bits`, `difficulty`,
 `chainwork`, `nTx`, `previousblockhash` and `nextblockhash`. `2` lists each
-transaction with its `decoderawtransaction` fields and `hex`. With `patterns`
+transaction with its `decoderawtransaction` fields and `hex`, and each one
+after the coinbase with its `fee`, in BCH, when the node has the undo record of
+the block. With `patterns`
 true, each `scriptSig` and `scriptPubKey` there also has a `byteCodePattern`
 object: the script with each run of data pushes replaced by its count
 (`pattern`, `patternAsm`), the SHA-256 of that pattern (`fingerprint`), the
 pushed data in order (`data`), and `error` for a script that ends in the middle
-of a push. `fee` per transaction and `ablastate` are not reported.
+of a push. `ablastate` is not reported.
 
 `getrawtransaction "<txid>" [verbose=false] ["<blockhash>"]` answers for a
 mempool transaction. Confirmed transactions are not indexed by txid (#491), so
@@ -347,6 +350,30 @@ to the requested block and match its merkle root; a damaged or unreadable
 stored record is an internal error, including through `getrawtransaction` with
 an explicit block hash. Wrong argument types, an out-of-range verbosity and
 extra arguments are rejected with `-32602`.
+
+## getblockstats
+
+`getblockstats <hash_or_height> [stats]` returns the statistics of a block of
+the connected chain, named by its hash (a string) or its height (a number), as
+other Bitcoin Cash nodes compute them: `avgfee`, `avgfeerate`, `avgtxsize`,
+`blockhash`, `feerate_percentiles`, `height`, `ins`, `maxfee`, `maxfeerate`,
+`maxtxsize`, `medianfee`, `mediantime`, `mediantxsize`, `minfee`, `minfeerate`,
+`mintxsize`, `outs`, `subsidy`, `time`, `total_out`, `total_size`, `totalfee`,
+`txs`, `utxo_increase` and `utxo_size_inc`. Amounts are in BCH and feerates in
+BCH per byte, rounded down to whole satoshis, as are the averages and medians.
+The coinbase counts only in `outs`, `txs` and the two UTXO figures;
+`utxo_size_inc` counts each output's serialized size and 41 bytes for its
+outpoint, height and coinbase flag. `stats`, a list of names, limits the answer
+to those; null or an empty list returns them all. An unknown name is error `-8`.
+
+The fees, the feerates and `utxo_size_inc` come from the outputs the block
+spends, read from its undo record; nothing is stored for them. A block connected
+without that record, at or below the checkpoint of a node that does not run
+`chain.full_validation`, answers `-1` (`Can't read undo data from disk`) when
+any of them is asked for, and the other statistics without it. A hash the node
+does not know is `-5`; one off the connected chain, a negative height and a
+height past the connected tip are `-8`. Wrong argument types, a height outside
+32 bits and extra arguments are rejected with `-32602`.
 
 ## Mining: getblocktemplatelight
 
