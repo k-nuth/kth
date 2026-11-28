@@ -23,6 +23,7 @@ settings::settings()
 #else
     , bloom_filters(false)
 #endif
+    , wallet_birthday(0)
 {}
 
 // There are no current distinctions spanning chain contexts.

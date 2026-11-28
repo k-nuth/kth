@@ -30,6 +30,14 @@ std::expected<request, rpc_error> parse_request(std::string_view body) {
     simdjson::ondemand::parser parser;
     simdjson::padded_string padded(body);
 
+    // The whole body first: what is not JSON is a parse error, as JSON-RPC
+    // says, even where the on-demand reader would stop before reaching it
+    // (it reads "not json" as a document that is no object).
+    simdjson::dom::parser validator;
+    if (validator.parse(padded).error() != simdjson::SUCCESS) {
+        return std::unexpected(make_error(error_code::parse_error, "Parse error"));
+    }
+
     simdjson::ondemand::document doc;
     if (parser.iterate(padded).get(doc) != simdjson::SUCCESS) {
         return std::unexpected(make_error(error_code::parse_error, "Parse error"));
@@ -54,7 +62,7 @@ std::expected<request, rpc_error> parse_request(std::string_view body) {
     // "id" is optional; echoed back verbatim. Absent => "null" (default).
     simdjson::ondemand::value id;
     if (doc["id"].get(id) == simdjson::SUCCESS) {
-        copy_raw(id, req.id);
+        req.has_id = copy_raw(id, req.id);
     }
 
     return req;

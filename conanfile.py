@@ -120,6 +120,10 @@ class KthRecipe(KnuthConanFileV2):
         # Stratum V2 for pools and miners. Not part of the consensus protocol,
         # so off unless asked for.
         "sv2": [True, False],
+        # Wallet support in the node: answers for the wallet of the node's own
+        # user. Not part of the consensus protocol, so off unless asked for.
+        # It needs neutrino, whose script keys and input prefixes it uses.
+        "wallet": [True, False],
         "embed_utxo_bloom": [True, False],
         "utxoz_reference": [True, False],
         "asio_standalone": [True, False],
@@ -170,6 +174,7 @@ class KthRecipe(KnuthConanFileV2):
         "socks5": False,
         "bloom_filters": False,
         "sv2": False,
+        "wallet": False,
         "embed_utxo_bloom": False,
         "utxoz_reference": False,
         "asio_standalone": True,
@@ -202,6 +207,8 @@ class KthRecipe(KnuthConanFileV2):
         # the basic filter of BIP158.
         if self.options.neutrino and self.options.currency != "BCH":
             raise ConanInvalidConfiguration("neutrino requires currency=BCH")
+        if self.options.wallet and not self.options.neutrino:
+            raise ConanInvalidConfiguration("wallet requires neutrino")
         if self.info.settings.compiler.cppstd:
             check_min_cppstd(self, "23")
 
@@ -432,6 +439,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_SOCKS5"] = option_on_off(self.options.socks5)
         tc.variables["KTH_WITH_BLOOM_FILTERS"] = option_on_off(self.options.bloom_filters)
         tc.variables["KTH_WITH_SV2"] = option_on_off(self.options.sv2)
+        tc.variables["KTH_WITH_WALLET"] = option_on_off(self.options.wallet)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
         tc.variables["KTH_UTXOZ_REFERENCE_MODE"] = option_on_off(self.options.utxoz_reference)
         tc.variables["KTH_ASIO_STANDALONE"] = option_on_off(self.options.asio_standalone)
@@ -730,6 +738,8 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["node"].defines.append("KTH_WITH_BLOOM_FILTERS")
         if self.options.sv2 and self.settings.os != "Emscripten":
             self.cpp_info.components["node"].defines.append("KTH_WITH_SV2")
+        if self.options.wallet and self.settings.os != "Emscripten":
+            self.cpp_info.components["node"].defines.append("KTH_WITH_WALLET")
         # Node depends on blockchain and optionally network (if not Emscripten).
         # ftxui is consumed by the node-exe TUI dashboard (executable, not a
         # library component); listing it here keeps Conan 2's strict

@@ -30,6 +30,13 @@ namespace kth::domain::message {
 // script that is not empty.
 inline constexpr uint8_t regular_compact_filter = 0;
 
+// Filter type 2, the input prefix filter: the first two bytes of the double
+// SHA-256 of each of the first 30 inputs of every transaction after the
+// coinbase, for wallets of reusable payment addresses. It is built from the
+// block alone and has no entry tree, so no `getcfrange` or `getcfproof` asks
+// about it.
+inline constexpr uint8_t input_prefix_compact_filter = 2;
+
 // `cfilter`: the filter of one block, as its Golomb-coded set goes on the
 // wire (the item count, then the bit stream).
 struct KD_API compact_filter {
