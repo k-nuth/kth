@@ -13,7 +13,8 @@ namespace kth::infrastructure::message {
 // TODO(legacy): create derived address that adds the timestamp.
 
 bool network_address::operator==(network_address const& x) const {
-    return (services_ == x.services_) && (port_ == x.port_) && (ip_ == x.ip_);
+    return (services_ == x.services_) && (port_ == x.port_) &&
+        (network_ == x.network_) && (ip_ == x.ip_) && (overlay_ == x.overlay_);
 }
 
 bool network_address::operator!=(network_address const& x) const {
@@ -21,6 +22,7 @@ bool network_address::operator!=(network_address const& x) const {
 }
 
 bool network_address::is_valid() const {
+    if (is_overlay()) return true;
     return (timestamp_ != 0)
         || (services_ != 0)
         || (port_ != 0)
@@ -121,6 +123,8 @@ inline bool is_ipv6_unspecified(ip_address const& ip) {
 } // anonymous namespace
 
 bool network_address::is_routable() const {
+    if (network_ == address_network::i2p) return port_ == 0;
+    if (network_ == address_network::torv3) return port_ != 0;
     if (!is_valid()) return false;
     if (port_ == 0) return false;
 
@@ -150,6 +154,8 @@ void network_address::reset() {
     services_ = 0;
     ip_.fill(0);
     port_ = 0;
+    network_ = address_network::ip;
+    overlay_.fill(0);
 }
 
 // static
@@ -184,6 +190,7 @@ expect<network_address> network_address::from_data(byte_reader& reader, uint32_t
 }
 
 expect<void> network_address::to_data(byte_writer& writer, uint32_t /*version*/, bool with_timestamp) const noexcept {
+    if (is_overlay()) return std::unexpected(error::invalid_address);
     if (with_timestamp) {
         if (auto r = writer.write_little_endian<uint32_t>(timestamp_); ! r) return r;
     }
@@ -232,6 +239,8 @@ ip_address const& network_address::ip() const {
 
 void network_address::set_ip(ip_address const& value) {
     ip_ = value;
+    network_ = address_network::ip;
+    overlay_.fill(0);
 }
 
 uint16_t network_address::port() const {

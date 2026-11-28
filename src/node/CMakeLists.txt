@@ -612,6 +612,16 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_node_socks5_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_node_socks5_test PRIVATE Catch2::Catch2WithMain)
   endif()
+  if(KTH_WITH_I2P AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_node_i2p_test
+      test/i2p.cpp)
+    target_include_directories(kth_node_i2p_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_node_i2p_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_node_i2p_test PRIVATE Catch2::Catch2WithMain)
+    # Some cases run as subprocesses of this executable (child_process_harness.hpp).
+    target_compile_definitions(kth_node_i2p_test PRIVATE
+      KTH_NODE_TEST_BINARY="$<TARGET_FILE:kth_node_i2p_test>")
+  endif()
   if(KTH_WITH_BLOOM_FILTERS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     add_executable(kth_node_bloom_filters_test
       test/bloom_filters.cpp)
@@ -646,6 +656,9 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   endif()
   if(TARGET kth_node_socks5_test)
     kth_register_tests(kth_node_socks5_test TIMEOUT 600)
+  endif()
+  if(TARGET kth_node_i2p_test)
+    kth_register_tests(kth_node_i2p_test TIMEOUT 600)
   endif()
 
   # README C++ snippet checks disabled: v1.0 switched the public API

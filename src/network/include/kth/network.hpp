@@ -18,6 +18,9 @@
 #if defined(KTH_WITH_SOCKS5)
 #include <kth/network/socks5.hpp>
 #endif
+#if defined(KTH_WITH_I2P)
+#include <kth/network/sam.hpp>
+#endif
 
 // Modern coroutine-based networking (keep these)
 #include <kth/network/peer_record.hpp>

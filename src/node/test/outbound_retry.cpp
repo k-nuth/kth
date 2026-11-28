@@ -5,17 +5,23 @@
 #include <test_helpers.hpp>
 
 #include <chrono>
+#include <string>
 
 #include <kth/node/detail/outbound_retry.hpp>
 
 using namespace std::chrono_literals;
+using kth::network::normalized_address;
 using kth::node::detail::outbound_retry;
 
 namespace {
 
-auto const peer = ::asio::ip::make_address("203.0.113.7");
-auto const other = ::asio::ip::make_address("203.0.113.8");
+auto const peer = normalized_address(::asio::ip::make_address("203.0.113.7"));
+auto const other = normalized_address(::asio::ip::make_address("203.0.113.8"));
 outbound_retry::clock::time_point const t0{};
+
+normalized_address i2p(std::string const& key) {
+    return normalized_address(kth::infrastructure::config::authority::parse_from(key + ".b32.i2p", 0).value());
+}
 
 } // namespace
 
@@ -113,4 +119,21 @@ TEST_CASE("outbound retry: the count outlives the wait, and is dropped an hour a
     CHECK(retry.short_sessions(peer) == 0);
     retry.session_ended(peer, 1s, t0 + 4000s);
     CHECK_FALSE(retry.cooling(peer, t0 + 4000s + 30s));
+}
+
+TEST_CASE("outbound retry: an I2P peer is left alone by its own address",
+          "[node][outbound_retry]") {
+    // I2P and onion peers have no IP: each is kept by its overlay address, not
+    // by the unspecified address they would all share.
+    auto const first = i2p(std::string(52, 'a'));
+    auto const second = i2p("b" + std::string(51, 'a'));
+    outbound_retry retry;
+    retry.connect_failed(first, t0);
+    CHECK(retry.cooling(first, t0 + 29s));
+    CHECK_FALSE(retry.cooling(second, t0 + 1s));
+    CHECK_FALSE(retry.cooling(normalized_address(::asio::ip::address_v4::any()), t0 + 1s));
+
+    retry.session_ended(second, 200ms, t0);
+    CHECK(retry.short_sessions(second) == 1);
+    CHECK(retry.short_sessions(first) == 0);
 }

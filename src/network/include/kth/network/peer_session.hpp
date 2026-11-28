@@ -39,6 +39,8 @@
 
 namespace kth::network {
 
+class sam_session;
+
 using kth::awaitable_expected;
 
 // =============================================================================
@@ -364,7 +366,7 @@ public:
     // Properties
     // -------------------------------------------------------------------------
 
-    /// Numeric peer address for wire messages; unspecified for a proxy-resolved hostname.
+    /// Tagged peer identity; unspecified for an ordinary proxy-resolved hostname.
     [[nodiscard]]
     infrastructure::config::authority const& authority() const;
 
@@ -372,7 +374,11 @@ public:
     [[nodiscard]]
     infrastructure::config::endpoint const& destination() const;
 
-    /// Hostnames resolved by a proxy have no numeric authority locally.
+    /// Whether the identity can have a peer database and ban record.
+    [[nodiscard]]
+    bool has_peer_address() const;
+
+    /// Whether the peer identity is an IP address.
     [[nodiscard]]
     bool has_numeric_authority() const;
 
@@ -684,7 +690,8 @@ awaitable_expected<peer_session::ptr> async_connect(
     std::string const& hostname,
     uint16_t port,
     settings const& settings,
-    std::chrono::seconds timeout);
+    std::chrono::seconds timeout,
+    sam_session* sam = nullptr);
 
 /// Connect to a peer by authority (address:port)
 [[nodiscard]]
@@ -692,7 +699,8 @@ awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
-    std::chrono::seconds timeout);
+    std::chrono::seconds timeout,
+    sam_session* sam = nullptr);
 
 /// Accept a single incoming connection
 /// @param acceptor An already-listening TCP acceptor

@@ -222,6 +222,15 @@ if(KTH_WITH_SOCKS5 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         include/kth/network/socks5.hpp)
 endif()
 
+# I2P peers through a router's SAM bridge. An optional feature: built only when
+# asked for (docs/optional-features.md). Not in the browser node.
+if(KTH_WITH_I2P AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_I2P)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/sam.cpp
+        include/kth/network/sam.hpp)
+endif()
+
 if(KTH_WITH_WEBSOCKET)
     find_package(wslay 1.1.1 REQUIRED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC KTH_WITH_WEBSOCKET)
@@ -271,6 +280,14 @@ if (ENABLE_TEST AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_link_libraries(kth_network_socks5_test PUBLIC ${PROJECT_NAME})
     target_link_libraries(kth_network_socks5_test PRIVATE Catch2::Catch2WithMain)
     kth_register_tests(kth_network_socks5_test)
+  endif()
+  if (KTH_WITH_I2P AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    add_executable(kth_network_i2p_test
+      test/sam.cpp)
+    target_include_directories(kth_network_i2p_test PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/test>)
+    target_link_libraries(kth_network_i2p_test PUBLIC ${PROJECT_NAME})
+    target_link_libraries(kth_network_i2p_test PRIVATE Catch2::Catch2WithMain)
+    kth_register_tests(kth_network_i2p_test)
   endif()
 endif()
 

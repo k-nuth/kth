@@ -19,7 +19,7 @@ addresses use brackets, for example `[::1]:9050`. An empty `net.proxy` disables
 proxying. A malformed proxy address or a proxy failure makes the connection fail;
 the node never falls back to connecting directly.
 
-When configured, the proxy carries every outbound P2P connection, including
+When configured, the proxy carries outbound IP, DNS and onion P2P connections, including
 configured peers and peers selected from the peer database. Destination hostnames
 are sent to the proxy for resolution, without local DNS lookup. At startup and
 when reseeding, built-in seeds and `net.seed` hostnames are sent through SOCKS5 as
@@ -36,7 +36,12 @@ different SOCKS credentials on separate circuits by default (`IsolateSOCKSAuth`)
 
 Proxied sessions keep their requested destination as their identity, rather than
 the proxy's socket address. Numeric peers retain their per-peer database and ban
-records. Hostname destinations have distinct runtime identities but no peer
+records. Tor v3 onion addresses are validated, kept in the peer database, and
+retain their own ban and misbehavior records. They are sent to the proxy as
+domain-name CONNECT requests and are never resolved locally or dialled directly.
+Learned onion peers are kept and relayed in `addrv2` even without a proxy; automatic
+selection skips them until a proxy is configured. Overlay addresses are never
+included in legacy `addr` messages. Other hostname destinations have distinct runtime identities but no peer
 database records, bans, misbehavior scores, performance samples, or cooldowns
 because their numeric addresses are unknown. An error that would ban a numeric
 peer on its own disconnects a hostname peer.
@@ -51,7 +56,10 @@ peers announce with the system's resolver, which no proxy carries.
 
 A node with `net.proxy` set does not listen for inbound P2P connections, whatever
 `net.inbound_port` and `net.ws_enabled` say: a listener answers on the node's
-own address.
+own address. Inbound I2P peers still reach it through the SAM bridge
+([i2p.md](i2p.md)): they connect to its I2P destination, not to its address.
 
-These options affect P2P traffic. They do not change RPC or mining services. Onion peer identities, onion address advertisement,
-`onion`/`onlynet` options, and I2P are not supported by this feature.
+These options affect P2P traffic. They do not change RPC or mining services.
+`onion`/`onlynet` options and an inbound Tor service are not provided.
+[I2P support](i2p.md) uses its own SAM bridge and takes precedence over the
+SOCKS proxy for I2P destinations.

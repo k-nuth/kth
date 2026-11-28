@@ -11,9 +11,7 @@
 
 #include <boost/unordered/concurrent_flat_map.hpp>
 
-#include <asio/ip/address.hpp>
-
-#include <kth/infrastructure.hpp>
+#include <kth/network/normalized_address.hpp>
 
 namespace kth::node::detail {
 
@@ -26,10 +24,11 @@ namespace kth::node::detail {
 // outbound slot on a handshake that leads nowhere.
 //
 // Nothing here is an offence. No score is touched and no address is banned;
-// the address is only left alone for a while.
+// the address is only left alone for a while. An I2P or onion peer is kept by
+// its own address, not by the unspecified IP all of them share.
 struct outbound_retry {
     using clock = std::chrono::steady_clock;
-    using address = ::asio::ip::address;
+    using address = network::normalized_address;
 
     static constexpr std::chrono::seconds base_cooldown{30};
     static constexpr std::chrono::seconds max_cooldown{30 * 60};
@@ -100,7 +99,7 @@ private:
         uint32_t short_sessions;
     };
 
-    boost::concurrent_flat_map<address, entry, salted_ip_hasher> entries_;
+    boost::concurrent_flat_map<address, entry, network::salted_address_hasher> entries_;
 };
 
 } // namespace kth::node::detail

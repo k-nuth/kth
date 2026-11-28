@@ -114,6 +114,9 @@ class KthRecipe(KnuthConanFileV2):
         # Outbound connections through a SOCKS5 proxy (Tor). Not part of the
         # consensus protocol, so off unless asked for.
         "socks5": [True, False],
+        # I2P peers through a router's SAM bridge. Not part of the consensus
+        # protocol, so off unless asked for.
+        "i2p": [True, False],
         # Serving wallets that load a bloom filter (BIP37). Not part of the
         # consensus protocol, so off unless asked for.
         "bloom_filters": [True, False],
@@ -168,6 +171,7 @@ class KthRecipe(KnuthConanFileV2):
         "websocket": False,
         "neutrino": False,
         "socks5": False,
+        "i2p": False,
         "bloom_filters": False,
         "sv2": False,
         "embed_utxo_bloom": False,
@@ -430,6 +434,7 @@ class KthRecipe(KnuthConanFileV2):
         tc.variables["KTH_WITH_WEBSOCKET"] = option_on_off(self.options.websocket)
         tc.variables["KTH_WITH_NEUTRINO"] = option_on_off(self.options.neutrino)
         tc.variables["KTH_WITH_SOCKS5"] = option_on_off(self.options.socks5)
+        tc.variables["KTH_WITH_I2P"] = option_on_off(self.options.i2p)
         tc.variables["KTH_WITH_BLOOM_FILTERS"] = option_on_off(self.options.bloom_filters)
         tc.variables["KTH_WITH_SV2"] = option_on_off(self.options.sv2)
         tc.variables["KTH_EMBED_UTXO_BLOOM"] = option_on_off(self.options.embed_utxo_bloom)
@@ -717,6 +722,8 @@ class KthRecipe(KnuthConanFileV2):
             self.cpp_info.components["network"].requires = ["domain", "simdjson::simdjson"]
             if self.options.socks5 and self.settings.os != "Emscripten":
                 self.cpp_info.components["network"].defines.append("KTH_WITH_SOCKS5")
+            if self.options.i2p and self.settings.os != "Emscripten":
+                self.cpp_info.components["network"].defines.append("KTH_WITH_I2P")
             if self.options.websocket:
                 self.cpp_info.components["network"].defines.append("KTH_WITH_WEBSOCKET")
                 self.cpp_info.components["network"].requires.append("wslay::wslay")

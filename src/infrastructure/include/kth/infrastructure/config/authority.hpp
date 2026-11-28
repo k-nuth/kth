@@ -21,7 +21,7 @@
 namespace kth::infrastructure::config {
 
 /**
- * Serialization helper for a network authority: `{ip address, port}`.
+ * Serialization helper for an IP, I2P or Tor v3 address and port.
  *
  * Valid-by-construction: no default ctor, no throwing ctor. Fallible
  * inputs (host-port strings) go through `parse_from` returning
@@ -39,7 +39,7 @@ struct KI_API authority {
     authority any() noexcept;
 
     /**
-     * Parse a text authority (`host:port`, IPv4 or bracketed IPv6).
+     * Parse IPv4, bracketed IPv6, I2P b32 or Tor v3 host[:port] text.
      * Returns `error::illegal_value` on malformed input.
      */
     [[nodiscard]] static
@@ -74,6 +74,9 @@ struct KI_API authority {
     [[nodiscard]] std::string           to_hostname() const;
     [[nodiscard]] std::string           to_string() const;
     [[nodiscard]] message::network_address to_network_address() const;
+    [[nodiscard]] bool is_i2p() const { return network_ == message::address_network::i2p; }
+    [[nodiscard]] bool is_tor_v3() const { return network_ == message::address_network::torv3; }
+    [[nodiscard]] bool is_overlay() const { return network_ != message::address_network::ip; }
 
     [[nodiscard]]
     friend bool operator==(authority const&, authority const&) = default;
@@ -85,6 +88,8 @@ private:
 
     asio::ipv6 ip_;
     uint16_t   port_{0};
+    message::address_network network_{message::address_network::ip};
+    message::overlay_address overlay_{};
 };
 
 } // namespace kth::infrastructure::config

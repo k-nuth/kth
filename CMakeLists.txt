@@ -83,6 +83,7 @@ endif()
 option(KTH_WITH_WEBSOCKET "Build native P2P WebSocket server transport" OFF)
 option(KTH_WITH_NEUTRINO "Build the compact block filters for light wallets (Neutrino, BIP157/158)" OFF)
 option(KTH_WITH_SOCKS5 "Build outbound connections through a SOCKS5 proxy" OFF)
+option(KTH_WITH_I2P "Build I2P peers through a SAM bridge" OFF)
 option(KTH_WITH_BLOOM_FILTERS "Build serving wallets that load a bloom filter (BIP37)" OFF)
 option(KTH_WITH_SV2 "Build Stratum V2 for pools and miners" OFF)
 # The regular filter built is the one of Bitcoin Cash, which is not the basic

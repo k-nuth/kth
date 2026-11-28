@@ -102,7 +102,7 @@ void peer_database::clear() {
 }
 
 bool peer_database::exists(infrastructure::config::authority const& auth) const {
-    return records_.contains(normalized_address(auth.asio_ip()));
+    return records_.contains(normalized_address(auth));
 }
 
 std::optional<peer_record> peer_database::get_by_ip(::asio::ip::address const& ip_param) const {
@@ -117,7 +117,11 @@ std::optional<peer_record> peer_database::get_by_ip(::asio::ip::address const& i
 }
 
 std::optional<peer_record> peer_database::get(infrastructure::config::authority const& auth) const {
-    return get_by_ip(auth.asio_ip());
+    std::optional<peer_record> result;
+    records_.cvisit(normalized_address(auth), [&](auto const& entry) {
+        result = entry.second;
+    });
+    return result;
 }
 
 peer_record peer_database::create_record(infrastructure::config::authority const& auth) {
@@ -130,7 +134,7 @@ peer_record peer_database::create_record(infrastructure::config::authority const
 }
 
 std::pair<peer_record, get_result> peer_database::get_or_create(infrastructure::config::authority const& auth) {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
 
     peer_record result;
     bool found = false;
@@ -163,7 +167,7 @@ bool peer_database::update(peer_record const& record) {
 }
 
 bool peer_database::remove(infrastructure::config::authority const& auth) {
-    return records_.erase(normalized_address(auth.asio_ip())) > 0;
+    return records_.erase(normalized_address(auth)) > 0;
 }
 
 std::pair<size_t, size_t> peer_database::count_by_status() const {
@@ -212,7 +216,7 @@ bool peer_database::store_address(domain::message::network_address const& addr) 
         return false;
     }
 
-    auto const ip = normalized_address(authority.asio_ip());
+    auto const ip = normalized_address(authority);
 
     // 3. Banned check
     bool is_banned = false;
@@ -236,8 +240,9 @@ bool peer_database::store_address(domain::message::network_address const& addr) 
         if (last_active > entry.second.last_active) {
             entry.second.last_active = last_active;
         }
-        // Update address if we now have a port
-        if (entry.second.authority.port() == 0 && authority.port() != 0) {
+        // SAM 3.1 always uses port zero; a future port must not replace it.
+        if (authority.is_i2p() ? authority.port() == 0 :
+            entry.second.authority.port() == 0 && authority.port() != 0) {
             entry.second.authority = authority;
         }
         // Update services if changed
@@ -262,15 +267,19 @@ bool peer_database::store_address(domain::message::network_address const& addr) 
     return is_new;
 }
 
-code peer_database::fetch_address(domain::message::network_address& out) const {
+code peer_database::fetch_address(domain::message::network_address& out,
+    reachability const& reachable) const
+{
     // Collect non-banned addresses
     std::vector<infrastructure::config::authority> available;
     available.reserve(256);  // Reasonable pre-allocation
 
     records_.cvisit_all([&](auto const& entry) {
-        if (!entry.second.is_banned() && entry.second.authority.port() != 0) {
-            available.push_back(entry.second.authority);
-        }
+        auto const& authority = entry.second.authority;
+        if (entry.second.is_banned()) return;
+        if (authority.is_i2p() ? authority.port() != 0 : authority.port() == 0) return;
+        if (reachable && ! reachable(authority)) return;
+        available.push_back(authority);
     });
 
     if (available.empty()) {
@@ -283,12 +292,7 @@ code peer_database::fetch_address(domain::message::network_address& out) const {
     auto const& selected = available[dist(rng)];
 
     // Convert to network_address
-    out = domain::message::network_address{
-        0,  // timestamp
-        0,  // services (unknown)
-        selected.ip(),
-        selected.port()
-    };
+    out = selected.to_network_address();
 
     return error::success;
 }
@@ -314,7 +318,11 @@ bool peer_database::is_banned(::asio::ip::address const& ip_param) const {
 }
 
 bool peer_database::is_banned(infrastructure::config::authority const& auth) const {
-    return is_banned(auth.asio_ip());
+    bool banned = false;
+    records_.cvisit(normalized_address(auth), [&](auto const& entry) {
+        banned = entry.second.is_banned();
+    });
+    return banned;
 }
 
 void peer_database::ban(::asio::ip::address const& ip_param,
@@ -362,7 +370,7 @@ void peer_database::ban(infrastructure::config::authority const& auth,
                         std::chrono::seconds duration,
                         ban_reason reason)
 {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
     bool found = false;
 
     records_.visit(ip, [&](auto& entry) {
@@ -425,7 +433,17 @@ bool peer_database::unban(::asio::ip::address const& ip_param) {
 }
 
 bool peer_database::unban(infrastructure::config::authority const& auth) {
-    return unban(auth.asio_ip());
+    bool found = false;
+    records_.visit(normalized_address(auth), [&](auto& entry) {
+        if (entry.second.ban.has_value()) {
+            entry.second.clear_ban();
+            found = true;
+        }
+    });
+    if (found && ! save()) {
+        spdlog::warn("[peer_database] Failed to persist unban for {}", auth.to_string());
+    }
+    return found;
 }
 
 std::vector<peer_record> peer_database::get_banned() const {
@@ -463,7 +481,7 @@ bool peer_database::add_misbehavior(infrastructure::config::authority const& aut
                                     int score,
                                     int ban_threshold)
 {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
     bool should_ban = false;
     bool already_banned = false;
 
@@ -509,7 +527,7 @@ void peer_database::record_block_download(infrastructure::config::authority cons
                                           uint32_t blocks,
                                           uint32_t time_ms)
 {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
 
     bool found = false;
     records_.visit(ip, [&](auto& entry) {
@@ -550,7 +568,7 @@ bool peer_database::is_slow_peer(infrastructure::config::authority const& auth,
                                   double threshold_ms,
                                   uint32_t min_samples) const
 {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
 
     bool is_slow = false;
     records_.cvisit(ip, [&](auto const& entry) {
@@ -565,7 +583,7 @@ bool peer_database::is_slow_peer(infrastructure::config::authority const& auth,
 
 double peer_database::get_peer_speed(infrastructure::config::authority const& auth) const
 {
-    auto const ip = normalized_address(auth.asio_ip());
+    auto const ip = normalized_address(auth);
 
     double speed = 0.0;
     records_.cvisit(ip, [&](auto const& entry) {
@@ -579,7 +597,9 @@ double peer_database::get_peer_speed(infrastructure::config::authority const& au
 // Query Operations
 // =============================================================================
 
-std::vector<infrastructure::config::authority> peer_database::get_connectable(size_t max_count) const {
+std::vector<infrastructure::config::authority> peer_database::get_connectable(size_t max_count,
+    reachability const& reachable) const
+{
     std::vector<std::pair<infrastructure::config::authority, peer_database::clock::time_point>> candidates;
 
     records_.cvisit_all([&](auto const& entry) {
@@ -587,7 +607,8 @@ std::vector<infrastructure::config::authority> peer_database::get_connectable(si
 
         if (record.is_banned()) return;
         if (record.is_bad_for_sync()) return;
-        if (record.authority.port() == 0) return;
+        if (record.authority.is_i2p() ? record.authority.port() != 0 : record.authority.port() == 0) return;
+        if (reachable && ! reachable(record.authority)) return;
 
         candidates.emplace_back(record.authority, record.last_seen);
     });
@@ -651,7 +672,7 @@ bool peer_database::load() {
 
         auto record = parse_line(line, parser);
         if (record) {
-            auto const ip = normalized_address(record->authority.asio_ip());
+            auto const ip = normalized_address(record->authority);
             records_.insert_or_assign(ip, *record);
             ++loaded;
         } else {
@@ -711,7 +732,7 @@ std::optional<peer_record> peer_database::parse_line(std::string_view line, simd
     }
     auto parsed_auth = infrastructure::config::authority::parse_from(
         std::string_view{endpoint_result.value()});
-    if ( ! parsed_auth || parsed_auth->port() == 0) {
+    if ( ! parsed_auth || (parsed_auth->port() == 0 && ! parsed_auth->is_i2p())) {
         return std::nullopt;
     }
     record.authority = std::move(*parsed_auth);
@@ -803,10 +824,10 @@ size_t peer_database::import_hosts_cache(kth::path const& file_path) {
 
         try {
             auto parsed = infrastructure::config::authority::parse_from(line);
-            if ( ! parsed || parsed->port() == 0) continue;
+            if ( ! parsed || (parsed->port() == 0 && ! parsed->is_i2p())) continue;
 
             auto const& address = *parsed;
-            auto const ip = normalized_address(address.asio_ip());
+            auto const ip = normalized_address(address);
 
             if (!records_.contains(ip) && records_.size() < capacity_) {
                 peer_record record;

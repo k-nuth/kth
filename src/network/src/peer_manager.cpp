@@ -76,11 +76,15 @@ peer_manager::~peer_manager() {
         auto const& new_destination = peer->destination();
         for (auto const& [existing_nonce, existing_peer] : peers_) {
             // One session per address, where the caller asks for it, compares
-            // addresses. A destination given by hostname has none.
+            // addresses. A destination given by hostname has none, and two
+            // overlay peers are one peer when their names are the same.
+            bool const same_overlay = peer->authority().is_overlay()
+                && existing_peer->authority().is_overlay()
+                && existing_peer->authority().to_hostname() == peer->authority().to_hostname();
             bool const same_address = unique_ip && peer->has_numeric_authority()
                 && existing_peer->has_numeric_authority()
                 && existing_peer->authority().asio_ip() == peer->authority().asio_ip();
-            if (existing_peer->destination() == new_destination || same_address) {
+            if (existing_peer->destination() == new_destination || same_overlay || same_address) {
                 co_return error::address_in_use;
             }
         }
@@ -162,7 +166,7 @@ peer_manager::~peer_manager() {
     }
     co_return co_await ::asio::co_spawn(strand_, [this, &authority]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->has_numeric_authority() && peer->authority() == authority) {
+            if (peer->has_peer_address() && peer->authority() == authority) {
                 co_return true;
             }
         }
@@ -193,7 +197,8 @@ peer_manager::~peer_manager() {
     auto const canonical = canonical_peer_endpoint(destination);
     co_return co_await ::asio::co_spawn(strand_, [this, canonical]() -> ::asio::awaitable<bool> {
         for (auto const& [nonce, peer] : peers_) {
-            if (peer->destination() == canonical) {
+            if (peer->destination() == canonical ||
+                (peer->authority().is_overlay() && peer->destination().host() == canonical.host())) {
                 co_return true;
             }
         }

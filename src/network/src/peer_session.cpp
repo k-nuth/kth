@@ -8,6 +8,9 @@
 #if defined(KTH_WITH_SOCKS5)
 #include <kth/network/socks5.hpp>
 #endif
+#if defined(KTH_WITH_I2P)
+#include <kth/network/sam.hpp>
+#endif
 
 #include <asio/cancel_after.hpp>
 #include <asio/cancel_at.hpp>
@@ -101,6 +104,24 @@ std::optional<infrastructure::config::authority> numeric_authority(
     return *parsed;
 }
 
+// The identity a destination gives its peer: the address it was given as, or
+// the I2P or Tor v3 address that its name is. Those names are keys, not names
+// a resolver answers for, so a peer reached by one is known by it. Any other
+// name gives none.
+std::optional<infrastructure::config::authority> peer_authority(
+    infrastructure::config::endpoint const& destination)
+{
+    if (auto numeric = numeric_authority(destination)) {
+        return numeric;
+    }
+    auto const overlay = infrastructure::config::authority::parse_from(
+        canonical_peer_endpoint(destination).host(), destination.port());
+    if ( ! overlay || ! overlay->is_overlay()) {
+        return std::nullopt;
+    }
+    return *overlay;
+}
+
 size_t maximum_payload(settings const& settings) {
     auto const protocol = heading::maximum_payload_size(settings.protocol_maximum,
         settings.identifier, settings.inbound_port == 48333);
@@ -138,7 +159,7 @@ peer_session::peer_session(socket_type socket, settings const& settings, bool in
     , inactivity_timer_(strand_)
     , expiration_timer_(strand_)
     , authority_(destination
-        ? numeric_authority(*destination).value_or(infrastructure::config::authority::any())
+        ? peer_authority(*destination).value_or(infrastructure::config::authority::any())
         : extract_authority(socket_))
     , destination_(destination ? canonical_peer_endpoint(*destination)
         : infrastructure::config::endpoint(authority_))
@@ -504,6 +525,10 @@ infrastructure::config::endpoint const& peer_session::destination() const {
 
 bool peer_session::has_numeric_authority() const {
     return has_numeric_authority_;
+}
+
+bool peer_session::has_peer_address() const {
+    return has_numeric_authority_ || authority_.is_overlay();
 }
 
 std::string peer_session::authority_with_agent() const {
@@ -1007,7 +1032,8 @@ awaitable_expected<peer_session::ptr> async_connect(
     std::string const& hostname,
     uint16_t port,
     settings const& settings,
-    std::chrono::seconds timeout)
+    std::chrono::seconds timeout,
+    sam_session* sam)
 {
     using namespace ::asio::experimental::awaitable_operators;
 
@@ -1023,6 +1049,46 @@ awaitable_expected<peer_session::ptr> async_connect(
     if (ec) co_return std::unexpected(error::boost_to_error_code(ec));
     co_return std::make_shared<peer_session>(std::move(socket), settings, false);
 #else
+    if (hostname.empty() || hostname.find('\0') != std::string::npos) {
+        co_return std::unexpected(error::illegal_value);
+    }
+    auto reserved_host = hostname;
+    for (auto& c : reserved_host) {
+        if (c >= 'A' && c <= 'Z') c = char(c + ('a' - 'A'));
+    }
+    while ( ! reserved_host.empty() && reserved_host.back() == '.') reserved_host.pop_back();
+    bool const i2p_name = reserved_host.ends_with(".i2p");
+    bool const onion_name = reserved_host.ends_with(".onion");
+    // Refuse reserved overlay names before either DNS or a direct connection.
+    // Invalid names must not escape through the ordinary hostname path.
+    if (i2p_name || onion_name) {
+        auto const address = infrastructure::config::authority::parse_from(hostname, port);
+        if ( ! address || ! address->is_overlay()) {
+            co_return std::unexpected(error::illegal_value);
+        }
+        if (address->is_i2p()) {
+#if ! defined(KTH_WITH_I2P)
+            // Only a SAM bridge reaches an I2P destination, and this build has
+            // none: the name goes nowhere else.
+            (void)sam;
+            co_return std::unexpected(error::operation_failed);
+#else
+            if (settings.i2psam.empty() || sam == nullptr || port != 0) {
+                co_return std::unexpected(error::operation_failed);
+            }
+            auto const destination = canonical_peer_endpoint(infrastructure::config::endpoint(hostname, port));
+            auto stream = co_await sam->connect(destination.host());
+            if ( ! stream) {
+                co_return std::unexpected(stream.error());
+            }
+            co_return std::make_shared<peer_session>(std::move(*stream), settings, false, destination);
+#endif
+        }
+        if (settings.proxy.empty() || port == 0) {
+            co_return std::unexpected(error::operation_failed);
+        }
+    }
+
     if ( ! settings.proxy.empty()) {
 #if ! defined(KTH_WITH_SOCKS5)
         // A proxy that cannot be used must never become a direct connection:
@@ -1185,14 +1251,16 @@ awaitable_expected<peer_session::ptr> async_connect(
     ::asio::any_io_executor executor,
     infrastructure::config::authority const& authority,
     settings const& settings,
-    std::chrono::seconds timeout)
+    std::chrono::seconds timeout,
+    sam_session* sam)
 {
     co_return co_await async_connect(
         executor,
         authority.to_hostname(),
         authority.port(),
         settings,
-        timeout);
+        timeout,
+        sam);
 }
 
 awaitable_expected<peer_session::ptr> async_accept(
