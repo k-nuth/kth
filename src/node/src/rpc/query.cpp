@@ -67,9 +67,24 @@ std::string render_blockchain_info(blockchain_info const& info) {
         w.field("chainwork", encode_hash(*info.chain_work));
     }
     w.field("size_on_disk", info.size_on_disk);
+    w.field("pruned", info.pruned);
+    if (info.prune_height) {
+        w.field("pruneheight", uint64_t(*info.prune_height));
+    }
     w.field("warnings", "");
     w.end_object();
     return w.str();
+}
+
+size_t lowest_stored_height(blockchain::header_index const& index,
+                            blockchain::header_index::index_t tip) {
+    auto lowest = tip;
+    for (auto parent = index.get_parent_index(lowest);
+         parent != blockchain::header_index::null_index && index.has_block_data(parent);
+         parent = index.get_parent_index(parent)) {
+        lowest = parent;
+    }
+    return size_t(index.get_height(lowest));
 }
 
 namespace {

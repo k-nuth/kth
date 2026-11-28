@@ -84,6 +84,10 @@ struct chain_fixture {
     // validators copy what they need when the chain is constructed.
     [[nodiscard]] blockchain::settings& settings() { return chain_settings_; }
 
+    // The database settings the chain is started with, for a test of the node
+    // under a database option such as pruning. Adjust before start().
+    [[nodiscard]] database::settings& db_settings() { return db_settings_; }
+
     // Construct and start the chain. Separate from the constructor so a test can
     // assert on creation failure without the chain half-built.
     [[nodiscard]] bool start(std::shared_ptr<blockchain::block_submission_channel> submissions = {}) {
