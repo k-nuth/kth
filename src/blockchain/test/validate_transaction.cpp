@@ -5,6 +5,7 @@
 // These limits and network defaults are BCH consensus and relay policy.
 #if defined(KTH_CURRENCY_BCH)
 #include <test_helpers.hpp>
+#include <limits>
 #include <kth/blockchain.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -60,6 +61,38 @@ TEST_CASE("transaction consensus maximum is inclusive and independent of block s
             CHECK(candidate.check_body() == expected);
         }
     }
+}
+
+TEST_CASE("the pool refuses a transaction under the minimum size with the code blocks are refused with",
+          "[tx_size][tx_min_size]") {
+    // Regtest turns every height-based rule on, so the flags of an era are
+    // the settings with the upgrades after it switched off.
+    auto const flags = [](bool euclid, bool descartes) {
+        settings s{domain::config::network::regtest};
+        s.bch_euclid = s.bch_pisano = s.bch_mersenne = s.bch_fermat = s.bch_euler = s.bch_gauss = euclid;
+        s.bch_descartes = s.bch_lobachevski = s.bch_galois = s.bch_leibniz = descartes;
+        return s.enabled_flags();
+    };
+    // A transaction that passes the size rule goes on to its inputs, which
+    // are not known here.
+    auto const accept = [](size_t size, domain::script_flags_t active) {
+        return sized_transaction(size).accept(active, 1, 0, std::numeric_limits<size_t>::max(), false, true, false);
+    };
+    struct era {
+        bool euclid;
+        bool descartes;
+        size_t refused;
+        size_t accepted;
+    };
+    for (auto const& [euclid, descartes, refused, accepted] : {
+            era{true, true, 64, 65},       // Descartes (BCHN: Upgrade 9)
+            era{true, false, 99, 100}}) {  // Euclid (BCHN: Magnetic Anomaly)
+        CAPTURE(euclid, descartes);
+        CHECK(accept(refused, flags(euclid, descartes)) == error::transaction_undersize);
+        CHECK(accept(accepted, flags(euclid, descartes)) == error::missing_previous_output);
+    }
+    CHECK(accept(64, flags(false, false)) == error::missing_previous_output);
+    CHECK(error::make_error_code(error::transaction_undersize).message() == "transaction under the minimum size");
 }
 
 TEST_CASE("Knuth standardness initially permits every consensus transaction size", "[tx_size]") {

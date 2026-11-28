@@ -314,6 +314,10 @@ typedef enum kth_error_code {
     // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
     // Appended last so no existing code is renumbered.
     kth_ec_coinbase_shape,
+    // A transaction under the minimum transaction size: 100 bytes from Euclid
+    // (BCHN: Magnetic Anomaly), 65 from Descartes (BCHN: Upgrade 9). Appended
+    // last so no existing code is renumbered.
+    kth_ec_transaction_undersize,
 
     // C-API boundary errors
     kth_ec_out_of_memory = 10000,  // Allocation failed inside the C-API

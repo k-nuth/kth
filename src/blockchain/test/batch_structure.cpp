@@ -77,6 +77,9 @@ std::vector<domain::message::block::const_ptr> build_chain(spec const& sp, uint3
                 inputs.emplace_back(output_point{source.hash(), 0}, script{}, 0xffffffff);
                 output::list outputs;
                 domain::machine::operation::list ops;
+                // Four OP_NOP take the spend to 65 bytes, the minimum
+                // transaction size of Descartes (BCHN: Upgrade 9).
+                for (int nop = 0; nop < 4; ++nop) ops.emplace_back(domain::machine::opcode::nop);
                 ops.emplace_back(domain::machine::opcode::push_positive_1);
                 outputs.emplace_back(source.outputs().front().value(), script{std::move(ops)}, domain::chain::token_data_opt{});
                 txs.emplace_back(1, 0, std::move(inputs), std::move(outputs));

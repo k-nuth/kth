@@ -200,15 +200,20 @@ code validate_block_batch(
         }
     }
 
-    // What each block can be judged on alone: its body, its size and whether a
-    // transaction exceeds the size cap. No block's answer depends on another's,
-    // so they are computed in parallel, one slot per block; they are read where
-    // the walk in height order below used to compute them, so the block refused
-    // and the error it is refused with stay the same.
+    // What each block can be judged on alone: its body, its size, whether a
+    // transaction exceeds the size cap, and its smallest transaction. No block's
+    // answer depends on another's, so they are computed in parallel, one slot
+    // per block; they are read where the walk in height order below used to
+    // compute them, so the block refused and the error it is refused with stay
+    // the same.
     struct block_alone {
         code body;
         size_t size = 0;
         bool oversized_tx = false;
+        // The smallest transaction and its size. The minimum it is held to
+        // follows the rules of the block's height, which the walk below derives.
+        size_t smallest_tx = 0;
+        size_t smallest_tx_size = std::numeric_limits<size_t>::max();
     };
     std::vector<block_alone> alone(blocks.size());
     bool const judged_alone = fork_join_for(blocks.size(), [&](size_t i) {
@@ -217,11 +222,18 @@ code validate_block_batch(
         slot.body = block.check_body(txids[i]);
         slot.size = block.serialized_size(0);
 #if defined(KTH_CURRENCY_BCH)
-        // Consensus per-transaction size cap, coinbase included and independent
-        // of the block size limit.
-        slot.oversized_tx = std::ranges::any_of(block.transactions(), [](transaction const& tx) {
-            return tx.serialized_size(true) > max_tx_size;
-        });
+        // Consensus per-transaction size bounds, coinbase included: the cap,
+        // independent of the block size limit, and the smallest transaction,
+        // for the minimum.
+        auto const& txs = block.transactions();
+        for (size_t t = 0; t < txs.size(); ++t) {
+            auto const tx_size = txs[t].serialized_size(true);
+            slot.oversized_tx = slot.oversized_tx || tx_size > max_tx_size;
+            if (tx_size < slot.smallest_tx_size) {
+                slot.smallest_tx = t;
+                slot.smallest_tx_size = tx_size;
+            }
+        }
 #endif
     });
     if ( ! judged_alone) {
@@ -414,6 +426,21 @@ code validate_block_batch(
 #if defined(KTH_CURRENCY_BCH)
         if (alone[i].oversized_tx) {
             return refuse(i, error::transaction_size_limit);
+        }
+        // The minimum transaction size, 100 bytes from Euclid (BCHN: Magnetic
+        // Anomaly) and 65 from Descartes (BCHN: Upgrade 9), holds for every
+        // transaction of the block, coinbase included. Blocks do not go through
+        // accept(), which holds the pool to it.
+        //
+        // No minimum below the Euclid height, read from the height as for
+        // canonical ordering above: on testnet4, scalenet and chipnet the
+        // flags carry Euclid's bch_cleanstack from height 0 (Pisano and
+        // Fermat, whose flags include it, are active from 0 there), while the
+        // minimum starts at height 4001 on those networks.
+        auto const& smallest = block.transactions()[alone[i].smallest_tx];
+        if (state->is_euclid_enabled()
+            && alone[i].smallest_tx_size < smallest.min_tx_size(block_flags[i])) {
+            return refuse(i, error::transaction_undersize);
         }
 #endif
 

@@ -20,7 +20,8 @@ inline transaction sized_transaction(size_t size, bool coinbase = false,
                      input_script.value_or(script(operation::list{operation(data_chunk{0x51}, false)})),
                      0xffffffff);
     output::list outs;
-    auto const count = (size - 70) / 34;
+    // Below 70 bytes there is no room for a payment output.
+    auto const count = size > 70 ? (size - 70) / 34 : 0;
     for (size_t i = 0; i < count; ++i) {
         outs.emplace_back(1000, test::miner_script(), std::nullopt);
     }

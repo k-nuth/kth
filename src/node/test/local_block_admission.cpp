@@ -218,6 +218,33 @@ domain::chain::block overclaiming_block(hash_digest const& prev, uint32_t height
     return mine_with(prev, timestamp_at(height), std::move(txs));
 }
 
+#if defined(KTH_WITH_RPC) && defined(KTH_CURRENCY_BCH)
+// A block whose coinbase is exactly `size` bytes: the height, then a push of
+// zeros, in its input script, and the subsidy locked to OP_TRUE.
+domain::chain::block coinbase_sized_block(hash_digest const& prev, uint32_t height, size_t size) {
+    using domain::machine::operation;
+    auto const height_number = infrastructure::machine::number::from_int(int64_t(height));
+    operation::list ops;
+    ops.emplace_back(height_number->data(), true);
+    auto const unpadded = domain::chain::script(operation::list(ops)).serialized_size(false);
+    // 61 bytes around the input script, which takes at least 2.
+    REQUIRE(size > 61 + unpadded);
+    // A push of n bytes takes n + 1 of them.
+    ops.emplace_back(data_chunk(size - 61 - unpadded - 1, 0), false);
+    domain::chain::input::list inputs;
+    inputs.emplace_back(domain::chain::output_point{null_hash, domain::chain::point::null_index},
+        domain::chain::script(std::move(ops)), 0xffffffff);
+    domain::chain::output::list outputs;
+    outputs.emplace_back(domain::chain::block::subsidy(height, false),
+        domain::chain::script(operation::list{operation(domain::machine::opcode::push_positive_1)}),
+        domain::chain::token_data_opt{});
+    domain::chain::transaction::list txs;
+    txs.emplace_back(1, 0, std::move(inputs), std::move(outputs));
+    REQUIRE(txs.front().serialized_size(true) == size);
+    return mine_with(prev, timestamp_at(height), std::move(txs));
+}
+#endif
+
 // `valid`'s header over a different body: the merkle root does not match.
 domain::chain::block wrong_body_for(domain::chain::block const& valid, uint32_t height) {
     domain::chain::transaction::list txs;
@@ -605,5 +632,47 @@ TEST_CASE("submitblock RPC publishes acceptance and returns standard duplicates"
     CHECK(request(invalid, "") == node::rpc::build_success("9", R"("duplicate-invalid")"));
     REQUIRE(run.stop());
 }
+
+#if defined(KTH_CURRENCY_BCH)
+// Regtest has Descartes (BCHN: Upgrade 9) on from the first block, so every
+// transaction of a block, the coinbase included, takes at least 65 bytes.
+TEST_CASE("submitblock RPC refuses a block holding a transaction under the minimum size and does not connect it",
+          "[local admission][rpc submitblock][tx_min_size]") {
+    running_node run("rpc_submitblock_undersize");
+    node::mining::job_store jobs(1, 60);
+    node::rpc::method_context context{run.chain(), jobs};
+    node::rpc::dispatcher dispatcher;
+    node::rpc::register_builtin_methods(dispatcher);
+    auto request = [&](domain::chain::block const& block) {
+        auto const body = std::string(R"({"method":"submitblock","params":[")")
+            + encode_base16(to_data_chunk(block)) + R"("],"id":9})";
+        ::asio::io_context io;
+        auto result = ::asio::co_spawn(io, dispatcher.handle(context, body), ::asio::use_future);
+        io.run_for(answer_limit);
+        REQUIRE(result.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+        return result.get();
+    };
+    auto const genesis = run.connected_tip();
+    auto const undersized = coinbase_sized_block(genesis, 1, 64);
+    CHECK(request(undersized) == node::rpc::build_success("9", R"("bad-txns-undersize")"));
+
+    // Nothing connected, and the header tip back on genesis. On a chain where
+    // nothing ever was, the built-height marker has not been written at all.
+    CHECK(run.connected_tip() == genesis);
+    CHECK(run.connected_height() == 0u);
+    auto const built = run.chain().get_utxo_built_height();
+    CHECK(( ! built || *built == 0));
+    CHECK(run.header_tip_height() == 0);
+    CHECK_FALSE(run.chain().get_header(1));
+    CHECK(request(undersized) == node::rpc::build_success("9", R"("duplicate-invalid")"));
+
+    // One byte more is a block like any other.
+    auto const smallest = coinbase_sized_block(genesis, 1, 65);
+    CHECK(request(smallest) == node::rpc::build_success("9", "null"));
+    CHECK(run.connected_tip() == smallest.hash());
+    CHECK(run.connected_height() == 1u);
+    REQUIRE(run.stop());
+}
+#endif
 
 #endif

@@ -344,6 +344,10 @@ enum error_code_t {
     // CHIP-2025-03 coinbase shape: version 1, locktime 0 and outputs >= 25 BCH.
     // Appended last so no existing code is renumbered.
     coinbase_shape,
+    // A transaction under the minimum transaction size: 100 bytes from Euclid
+    // (BCHN: Magnetic Anomaly), 65 from Descartes (BCHN: Upgrade 9). Appended
+    // last so no existing code is renumbered.
+    transaction_undersize,
 
     // Last error code.
     last_error_code

@@ -265,7 +265,10 @@ std::vector<domain::message::block::const_ptr> chain_with_spends(
             auto const bh = b.hash();
             return std::lexicographical_compare(ah.rbegin(), ah.rend(), bh.rbegin(), bh.rend());
         });
-        auto mined = mine_block(prev, h, base + h * 600, 0, std::move(txs), fees);
+        // The pre-SigChecks settings keep Euclid (BCHN: Magnetic Anomaly)
+        // without Descartes (BCHN: Upgrade 9): a coinbase takes 100 bytes.
+        auto mined = mine_block(prev, h, base + h * 600, 0, std::move(txs), fees,
+            min_transaction_size_euclid);
         prev = mined.hash();
         blocks.push_back(std::make_shared<domain::message::block const>(std::move(mined)));
     }

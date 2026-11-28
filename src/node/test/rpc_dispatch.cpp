@@ -2430,6 +2430,7 @@ TEST_CASE("submitblock RPC translates admission outcomes to BIP22", "[rpc dispat
                  scenario{error::coinbase_maturity, block_validity::invalid, R"("bad-txns-premature-spend-of-coinbase")"},
                  scenario{error::spend_exceeds_value, block_validity::invalid, R"("bad-txns-in-belowout")"},
                  scenario{error::invalid_tx_version, block_validity::invalid, R"("bad-txns-version")"},
+                 scenario{error::transaction_undersize, block_validity::invalid, R"("bad-txns-undersize")"},
 #if defined(KTH_CURRENCY_BCH)
                  scenario{error::token_fungible_insufficient, block_validity::invalid, R"("bad-txns-token-in-belowout")"},
                  scenario{error::token_input_created_pre_activation, block_validity::invalid, R"("bad-txns-vin-token-created-pre-activation")"},

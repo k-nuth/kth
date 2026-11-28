@@ -5,6 +5,7 @@
 #ifndef KTH_BLOCKCHAIN_TEST_REGTEST_MINER_HPP
 #define KTH_BLOCKCHAIN_TEST_REGTEST_MINER_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -76,15 +77,34 @@ inline domain::chain::script coinbase_script(uint32_t height, uint32_t salt) {
     return domain::chain::script(std::move(ops));
 }
 
-inline domain::chain::transaction coinbase_tx(uint32_t height, uint32_t salt, uint64_t value) {
-    domain::chain::input::list inputs;
-    inputs.emplace_back(domain::chain::output_point{null_hash, domain::chain::point::null_index},
-                        coinbase_script(height, salt), 0xffffffff);
+// `minimum_size` pads the input script with a push of zeros until the coinbase
+// has at least that many bytes, as a miner pads it to the minimum transaction
+// size: 100 bytes from Euclid (BCHN: Magnetic Anomaly) until Descartes (BCHN:
+// Upgrade 9), more than the 91 or 92 bytes of a coinbase built here.
+inline domain::chain::transaction coinbase_tx(uint32_t height, uint32_t salt, uint64_t value,
+                                              size_t minimum_size = 0) {
+    auto const build = [value](domain::chain::script const& input_script) {
+        domain::chain::input::list inputs;
+        inputs.emplace_back(domain::chain::output_point{null_hash, domain::chain::point::null_index},
+                            input_script, 0xffffffff);
 
-    domain::chain::output::list outputs;
-    outputs.emplace_back(value, miner_script(), domain::chain::token_data_opt{});
+        domain::chain::output::list outputs;
+        outputs.emplace_back(value, miner_script(), domain::chain::token_data_opt{});
 
-    return domain::chain::transaction(1, 0, std::move(inputs), std::move(outputs));
+        return domain::chain::transaction(1, 0, std::move(inputs), std::move(outputs));
+    };
+
+    auto const script = coinbase_script(height, salt);
+    auto coinbase = build(script);
+    auto const size = coinbase.serialized_size(true);
+    if (size >= minimum_size) {
+        return coinbase;
+    }
+
+    // A push of n bytes takes n + 1 of them below 76.
+    auto ops = script.operations();
+    ops.emplace_back(data_chunk(minimum_size - size - 1, 0), false);
+    return build(domain::chain::script(std::move(ops)));
 }
 
 // A P2PKH spend of `prev_tx`'s output `index`, paying `value` back to the same
@@ -134,15 +154,16 @@ inline domain::chain::transaction spend_p2pkh(
 }
 
 // Mine a block on top of `prev`. `txs` are appended after the coinbase, and the
-// coinbase claims the subsidy plus their fees.
+// coinbase claims the subsidy plus their fees. `minimum_coinbase_size` as in
+// coinbase_tx.
 inline domain::chain::block mine_block(
     hash_digest const& prev, uint32_t height, uint32_t timestamp, uint32_t salt,
-    std::vector<domain::chain::transaction> txs, uint64_t fees) {
+    std::vector<domain::chain::transaction> txs, uint64_t fees, size_t minimum_coinbase_size = 0) {
 
     domain::chain::transaction::list all;
     all.reserve(txs.size() + 1);
     all.push_back(coinbase_tx(height, salt,
-        domain::chain::block::subsidy(height, /*retarget*/ false) + fees));
+        domain::chain::block::subsidy(height, /*retarget*/ false) + fees, minimum_coinbase_size));
     for (auto& tx : txs) {
         all.push_back(std::move(tx));
     }
