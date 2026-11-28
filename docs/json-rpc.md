@@ -293,16 +293,17 @@ and `warnings`. `version` is `kth::version` as one number:
 `networkactive` is false while the P2P node is not running. `relayfee` is the
 size part of the node's transaction price, `node.byte_fee_satoshis` per byte, in
 BCH per kB; a `node.sigop_fee_satoshis` set by the operator is charged on top
-per signature operation. The method takes no arguments: anything other than omitted params or
-an empty array is a `-32602` error.
+per signature operation. The method takes no arguments: omitted params, an empty
+array and null (as clients built on rust-jsonrpc, such as Rostrum, send for a
+call without arguments) are accepted, and anything else is a `-32602` error.
 
 ## uptime
 
 `uptime` returns the whole seconds since the node started, counted from when
 `full_node` was built, before the database is opened and the network comes up.
 It reads the steady clock, so changing the system clock does not change the
-answer. The method takes no arguments: anything other than omitted params or an
-empty array is a `-32602` error.
+answer. The method takes no arguments: omitted params, an empty array and null
+are accepted, and anything else is a `-32602` error.
 
 ## Blocks and transactions
 

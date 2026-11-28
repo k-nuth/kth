@@ -1344,6 +1344,40 @@ get_tx_out(method_context& ctx, request const& req) {
     );
 }
 
+// The params of a method that takes no arguments: omitted, an empty array, or
+// null, which BCHN takes as no arguments too. Clients built on rust-jsonrpc,
+// such as Rostrum, send "params":null for a call without any. Anything else is
+// refused.
+bool no_arguments(std::string_view params) {
+    if (params.empty()) {
+        return true;
+    }
+    simdjson::ondemand::parser parser;
+    simdjson::padded_string padded(params);
+    simdjson::ondemand::document document;
+    simdjson::ondemand::json_type type;
+    if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
+        document.type().get(type) != simdjson::SUCCESS) {
+        return false;
+    }
+    if (type == simdjson::ondemand::json_type::null) {
+        // type() names a token by its first character only, and the request
+        // parser keeps the params token without reading it, so nope or nullx
+        // gets here too; is_null() reads the whole token.
+        bool is_null = false;
+        return document.is_null().get(is_null) == simdjson::SUCCESS && is_null;
+    }
+    simdjson::ondemand::array args;
+    if (document.get_array().get(args) != simdjson::SUCCESS) {
+        return false;
+    }
+    for (auto element : args) {
+        (void)element;
+        return false;
+    }
+    return true;
+}
+
 // getnetworkinfo -> this node's version and user agent, protocol version,
 // services, whether it relays transactions, its connection count, and the
 // relay fee (the size part of its transaction price) in BCH per kB.
@@ -1351,24 +1385,9 @@ get_tx_out(method_context& ctx, request const& req) {
 // services, relay_transactions) + kth_blockchain_settings.byte_fee_satoshis.
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 get_network_info(method_context& ctx, request const& req) {
-    // Omitted parameters and an empty array are the only accepted forms.
-    if ( ! req.params.empty()) {
-        auto const invalid_params = [] {
-            return kth::fail(make_error(error_code::invalid_params,
-                "getnetworkinfo takes no arguments"));
-        };
-        simdjson::ondemand::parser parser;
-        simdjson::padded_string padded(req.params);
-        simdjson::ondemand::document document;
-        simdjson::ondemand::array args;
-        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
-            document.get_array().get(args) != simdjson::SUCCESS) {
-            co_return invalid_params();
-        }
-        for (auto element : args) {
-            (void)element;
-            co_return invalid_params();
-        }
+    if ( ! no_arguments(req.params)) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "getnetworkinfo takes no arguments"));
     }
     if (ctx.network == nullptr) {
         co_return kth::fail(make_error(error_code::internal_error,
@@ -1396,24 +1415,9 @@ get_network_info(method_context& ctx, request const& req) {
 // C-API counterpart: none (it describes this server's process).
 ::asio::awaitable<std::expected<std::string, rpc_error>>
 uptime(method_context& ctx, request const& req) {
-    // Omitted parameters and an empty array are the only accepted forms.
-    if ( ! req.params.empty()) {
-        auto const invalid_params = [] {
-            return kth::fail(make_error(error_code::invalid_params,
-                "uptime takes no arguments"));
-        };
-        simdjson::ondemand::parser parser;
-        simdjson::padded_string padded(req.params);
-        simdjson::ondemand::document document;
-        simdjson::ondemand::array args;
-        if (parser.iterate(padded).get(document) != simdjson::SUCCESS ||
-            document.get_array().get(args) != simdjson::SUCCESS) {
-            co_return invalid_params();
-        }
-        for (auto element : args) {
-            (void)element;
-            co_return invalid_params();
-        }
+    if ( ! no_arguments(req.params)) {
+        co_return kth::fail(make_error(error_code::invalid_params,
+            "uptime takes no arguments"));
     }
     auto const elapsed = std::chrono::steady_clock::now() - ctx.started;
     auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
