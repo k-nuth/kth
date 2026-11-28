@@ -7,6 +7,9 @@
 #ifndef KTH_CAPI_ERROR_H_
 #define KTH_CAPI_ERROR_H_
 
+#include <stdint.h>
+#include <kth/capi/visibility.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -319,6 +322,10 @@ typedef enum kth_error_code {
     kth_ec_out_of_memory = 10000,  // Allocation failed inside the C-API
     kth_ec_unhandled_exception = 10001,  // A C++ exception reached the C boundary
 } kth_error_code_t;
+
+/// Return a NUL-terminated description in static storage, including for unknown codes.
+KTH_EXPORT
+char const* kth_error_message(int32_t code);
 
 #ifdef __cplusplus
 } // extern "C"

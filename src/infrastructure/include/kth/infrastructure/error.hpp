@@ -6,6 +6,7 @@
 #define KTH_INFRASTRUCTURE_ERROR_HPP
 
 #include <string>
+#include <string_view>
 #include <system_error>
 
 
@@ -352,6 +353,8 @@ enum error_code_t {
 enum error_condition_t {};
 
 KI_API code make_error_code(error_code_t e) noexcept;
+/// Borrowed, NUL-terminated text in static storage; lookup never allocates.
+KI_API std::string_view message(int value) noexcept;
 KI_API std::error_condition make_error_condition(error_condition_t e);
 KI_API error_code_t boost_to_error_code(boost_code const& ec);
 KI_API error_code_t posix_to_error_code(int ec);
